@@ -172,6 +172,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	var ok bool
 
 	origin := cfg.Admin.Origin()
+	navigationClick := func(selector string, options ...chromedp.QueryOption) chromedp.Action {
+		return chromedp.ActionFunc(func(step context.Context) error {
+			_, err := chromedp.RunResponse(step, chromedp.Click(selector, options...))
+			return err
+		})
+	}
 	check := func(actions ...chromedp.Action) {
 		t.Helper()
 
@@ -190,23 +196,14 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Navigate(origin+"/login"),
 		chromedp.WaitVisible("#unlock"),
 		chromedp.SendKeys("#unlock", "synthetic-browser-unlock"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("button[type=\"submit\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`button[type="submit"]`),
 		chromedp.WaitVisible("#main-navigation"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("a[href=\"/connections\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`a[href="/connections"]`),
 		chromedp.WaitVisible("#connection-name"),
 		chromedp.SendKeys("#connection-name", "Synthetic IBKR"),
 		chromedp.SendKeys("#query-id", "123"),
 		chromedp.SendKeys("#flex-token", "synthetic-token"),
-		chromedp.Evaluate(
-			`document.querySelector('form[action="/connections"] button[type="submit"]').click()`,
-			nil,
-		),
+		navigationClick(`form[action="/connections"] button[type="submit"]`),
 		chromedp.WaitVisible(`form[action^="/connections/"][action$="/settings"]`),
 		chromedp.WaitVisible("#connection-name"),
 	)
@@ -235,16 +232,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector('a[href*="account=U-SYNTHETIC"]');if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`a[href*="account=U-SYNTHETIC"]`),
 		chromedp.WaitVisible("#account-name"),
 		chromedp.SendKeys("#account-name", "My confirmed account"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("button[type=\"submit\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`button[type="submit"]`),
 		chromedp.WaitVisible("#activity-rows"),
 	)
 	clock.Add(6)
@@ -275,10 +266,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("a[href^=\"/executions/\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`a[href^="/executions/"]`),
 		chromedp.WaitVisible("dl"),
 		chromedp.Poll(
 			`document.body.textContent.includes('2026-10-20T13:30:00.120Z') && document.body.textContent.includes('accepted')`,
@@ -291,10 +279,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Evaluate(
-			`document.querySelector("a[href^=\"/instruments/\"]:not([href$=\"/correct\"])").click()`,
-			nil,
-		),
+		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
 		chromedp.WaitVisible("h1"),
 		chromedp.Poll(
 			`document.querySelector('h1').textContent==='REFERENCE EQUITY' && document.body.textContent.includes('BBG000000002')`,
@@ -324,7 +309,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		chromedp.Click(
+		navigationClick(
 			`//tr[contains(.,"Reported option")]//a[starts-with(@href,"/executions/")][1]`,
 			chromedp.BySearch,
 		),
@@ -340,15 +325,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Evaluate(
-			`document.querySelector("a[href^=\"/instruments/\"]:not([href$=\"/correct\"])").click()`,
-			nil,
-		),
+		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
 		chromedp.WaitVisible("h1"),
-		chromedp.Evaluate(
-			`document.querySelector("a[href^=\"/instruments/\"]:not([href$=\"/correct\"])").click()`,
-			nil,
-		),
+		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
 		chromedp.WaitVisible("h1"),
 		chromedp.Poll(`document.querySelector('h1').textContent==='REFERENCE EQUITY'`, &ok),
 	)
@@ -360,7 +339,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		chromedp.Click(
+		navigationClick(
 			`//tr[contains(.,"assignment")]//a[starts-with(@href,"/activity/")][1]`,
 			chromedp.BySearch,
 		),
@@ -378,7 +357,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		chromedp.Click(
+		navigationClick(
 			`//tr[contains(.,"Synthetic debt")]//a[starts-with(@href,"/executions/")][1]`,
 			chromedp.BySearch,
 		),
@@ -396,7 +375,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		chromedp.Click(
+		navigationClick(
 			`//tr[contains(.,"Currency conversion")]//a[starts-with(@href,"/activity/")][1]`,
 			chromedp.BySearch,
 		),
@@ -428,15 +407,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		chromedp.Click(
+		navigationClick(
 			`//tr[contains(.,"Reported option")]//a[starts-with(@href,"/executions/")][1]`,
 			chromedp.BySearch,
 		),
 		chromedp.WaitVisible("dl"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("a[href$=\"/correct\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`a[href$="/correct"]`),
 		chromedp.WaitVisible("#decision-scope"),
 		chromedp.SetValue("#decision-scope", "price"),
 		chromedp.SetValue("#decision-value", "2.999000000000001"),
@@ -446,10 +422,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			`new URLSearchParams(new FormData(document.querySelector('form[aria-label="Correct a field or link"]'))).toString()`,
 			&submitted,
 		),
-		chromedp.Evaluate(
-			`document.querySelector("form[aria-label=\"Correct a field or link\"] button").click()`,
-			nil,
-		),
+		navigationClick(`form[aria-label="Correct a field or link"] button`),
 		chromedp.WaitVisible(`//li[contains(.,"Browser field correction")]`, chromedp.BySearch),
 		chromedp.WaitVisible("#decision-scope"),
 		chromedp.Poll(
@@ -492,10 +465,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[aria-label^=\"Release \"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[aria-label^="Release "] button`),
 		chromedp.WaitVisible(`//li[contains(.,"release")]`, chromedp.BySearch),
 		chromedp.WaitVisible("#decision-scope"),
 		chromedp.Poll(`!document.body.textContent.includes('Active decision')`, &ok),
@@ -508,16 +478,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/connections"),
 		chromedp.WaitVisible("#workflow-progress"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action^=\"/processing/\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action^="/processing/"] button`),
 		chromedp.WaitVisible("#workflow-progress"),
 		chromedp.WaitVisible(`form[action="/recovery/rebuild"] button`),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action=\"/recovery/rebuild\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action="/recovery/rebuild"] button`),
 		chromedp.WaitVisible(`//section[@id='workflow-progress']//p[contains(.,'Rebuild ')]`, chromedp.BySearch),
 		chromedp.Poll(
 			`Array.from(document.querySelectorAll('#workflow-progress p')).some(p=>p.textContent.includes('Rebuild ')&&p.textContent.includes('complete'))`,
@@ -584,10 +548,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 	// The resume action cannot grant authority before access and reference review.
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action=\"/recovery/resume\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action="/recovery/resume"] button`),
 		chromedp.WaitVisible(`[role="alert"]`),
 	)
 	check(
@@ -598,25 +559,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			"Recovered IBKR",
 		),
 		chromedp.SetValue(`form[action$="/settings"] input[name="query_id"]`, "123"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action$=\"/settings\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action$="/settings"] button`),
 		chromedp.WaitVisible(`//h2[text()="Recovered IBKR"]`, chromedp.BySearch),
 		chromedp.SetValue(
 			`input[id^="token-"]`,
 			"synthetic-token",
 		),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action$=\"/token\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action$="/token"] button`),
 		chromedp.WaitNotPresent(`p[id^="access-missing-"]`),
 		chromedp.SetValue("#openfigi-key", "synthetic-reference-key"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action=\"/reference/key\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action="/reference/key"] button`),
 		chromedp.WaitNotPresent("#reference-review-required"),
 	)
 
@@ -627,10 +579,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	keyedReference.Store(true)
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action=\"/recovery/resume\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action="/recovery/resume"] button`),
 		chromedp.WaitVisible("#workflow-progress"),
 		chromedp.WaitNotPresent("#storage-recovery-title"),
 	)
@@ -676,10 +625,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("form[action=\"/recovery/resume\"] button");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`form[action="/recovery/resume"] button`),
 		chromedp.WaitNotPresent("#storage-recovery-title"),
 	)
 
@@ -703,16 +649,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector('a[href*="account=U-SYNTHETIC"]');if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`a[href*="account=U-SYNTHETIC"]`),
 		chromedp.WaitVisible("#account-name"),
 		chromedp.SetValue("#account-name", "Fresh confirmed account"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("button[type=\"submit\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		navigationClick(`button[type="submit"]`),
 		chromedp.WaitVisible("#activity-rows"),
 	)
 	clock.Add(6)

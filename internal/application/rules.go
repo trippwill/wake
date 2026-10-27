@@ -112,13 +112,20 @@ func CompatibleLifecycle(a, b source.Lifecycle) bool {
 func CompatibleDebt(a, b source.DebtTerms) bool {
 	x, y := a.Fields(), b.Fields()
 
-	return (x.Type == "" || y.Type == "" || x.Type == y.Type) &&
+	compatible := (x.Type == "" || y.Type == "" || x.Type == y.Type) &&
 		(x.Currency == (financial.Currency{}) || y.Currency == (financial.Currency{}) || x.Currency == y.Currency) &&
 		(x.Coupon.Value() == "" || y.Coupon.Value() == "" || x.Coupon == y.Coupon) &&
 		(x.Maturity.IsZero() || y.Maturity.IsZero() || x.Maturity == y.Maturity) &&
 		(x.IssueDate.IsZero() || y.IssueDate.IsZero() || x.IssueDate == y.IssueDate) &&
 		(x.DatedDate.IsZero() || y.DatedDate.IsZero() || x.DatedDate == y.DatedDate) &&
 		(x.PaymentsPerYear == 0 || y.PaymentsPerYear == 0 || x.PaymentsPerYear == y.PaymentsPerYear)
+	if !compatible {
+		return false
+	}
+
+	_, err := enrichDebt(a, b)
+
+	return err == nil
 }
 
 func CompatibleConversion(a, b source.Conversion) bool {

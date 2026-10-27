@@ -43,7 +43,7 @@ func selectObservations[T any](
 	for _, o := range candidates[1:] {
 		selected, err = enrich(selected, o)
 		if err != nil {
-			return base, false, err
+			return base, true, nil
 		}
 	}
 
@@ -154,44 +154,89 @@ func EnrichInstrument(a, b source.Instrument) (source.Instrument, error) {
 	}
 
 	if f.Kind == source.Debt {
-		x, y := f.Debt.Fields(), g.Debt.Fields()
-		if x.Type == "" {
-			x.Type = y.Type
-		}
-
-		if x.Currency == (financial.Currency{}) {
-			x.Currency = y.Currency
-		}
-
-		if x.Coupon.Value() == "" {
-			x.Coupon = y.Coupon
-		}
-
-		if x.Maturity.IsZero() {
-			x.Maturity = y.Maturity
-		}
-
-		if x.IssueDate.IsZero() {
-			x.IssueDate = y.IssueDate
-		}
-
-		if x.DatedDate.IsZero() {
-			x.DatedDate = y.DatedDate
-		}
-
-		if x.PaymentsPerYear == 0 {
-			x.PaymentsPerYear = y.PaymentsPerYear
-		}
-
 		var err error
 
-		f.Debt, err = source.NewDebtTerms(x)
+		f.Debt, err = enrichDebt(f.Debt, g.Debt)
 		if err != nil {
 			return source.Instrument{}, err
 		}
 	}
 
 	return source.NewInstrument(f)
+}
+
+func enrichDebt(a, b source.DebtTerms) (source.DebtTerms, error) {
+	x, y := a.Fields(), b.Fields()
+	if x.Type == "" {
+		x.Type = y.Type
+	}
+
+	if x.Currency == (financial.Currency{}) {
+		x.Currency = y.Currency
+	}
+
+	if x.Coupon.Value() == "" {
+		x.Coupon = y.Coupon
+	}
+
+	if x.Maturity.IsZero() {
+		x.Maturity = y.Maturity
+	}
+
+	if x.IssueDate.IsZero() {
+		x.IssueDate = y.IssueDate
+	}
+
+	if x.DatedDate.IsZero() {
+		x.DatedDate = y.DatedDate
+	}
+
+	if x.PaymentsPerYear == 0 {
+		x.PaymentsPerYear = y.PaymentsPerYear
+	}
+
+	return source.NewDebtTerms(x)
+}
+
+func mergeCharges(a, b []source.Charge) ([]source.Charge, error) {
+	type role struct{ field, scope string }
+
+	known := make(map[role]source.Charge, len(a)+len(b))
+	for _, charges := range [][]source.Charge{a, b} {
+		for _, charge := range charges {
+			key := role{charge.Field(), charge.Scope()}
+			if previous, ok := known[key]; ok {
+				if !equalCharge(previous, charge) {
+					return nil, ErrInvalid
+				}
+			} else {
+				known[key] = charge
+			}
+		}
+	}
+
+	if len(known) > 32 {
+		return nil, ErrInvalid
+	}
+
+	if len(known) == 0 {
+		return nil, nil
+	}
+
+	out := make([]source.Charge, 0, len(known))
+	for _, charge := range known {
+		out = append(out, charge)
+	}
+
+	slices.SortFunc(out, func(a, b source.Charge) int {
+		if n := cmp.Compare(a.Field(), b.Field()); n != 0 {
+			return n
+		}
+
+		return cmp.Compare(a.Scope(), b.Scope())
+	})
+
+	return out, nil
 }
 
 func enrichTrade(a, b source.Trade) (source.Trade, error) {
@@ -224,9 +269,12 @@ func enrichTrade(a, b source.Trade) (source.Trade, error) {
 		f.PositionEffect = g.PositionEffect
 	}
 
-	if len(f.Charges) == 0 {
-		f.Charges = g.Charges
+	charges, chargeErr := mergeCharges(f.Charges, g.Charges)
+	if chargeErr != nil {
+		return source.Trade{}, chargeErr
 	}
+
+	f.Charges = charges
 
 	if f.SettlementDate.IsZero() {
 		f.SettlementDate = g.SettlementDate
@@ -309,9 +357,12 @@ func enrichConversion(a, b source.Conversion) (source.Conversion, error) {
 		f.NetWithBillable = g.NetWithBillable
 	}
 
-	if len(f.Charges) == 0 {
-		f.Charges = g.Charges
+	charges, chargeErr := mergeCharges(f.Charges, g.Charges)
+	if chargeErr != nil {
+		return source.Conversion{}, chargeErr
 	}
+
+	f.Charges = charges
 
 	return source.NewConversion(f)
 }

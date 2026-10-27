@@ -214,3 +214,5 @@ budgets and retry eligibility are independent of rebuild. Refresh hints follow
 committed progress, and recovery controls stay outside refreshed status regions.
 
 Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.
+
+Restoring lost access settings invalidates opaque source continuations while preserving retained pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier enrichment continues beneath an operator link override, so releasing the decision restores the source-established link.

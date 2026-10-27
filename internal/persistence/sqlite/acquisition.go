@@ -119,7 +119,7 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return err
 	}
 
-	if previous.ID != "" && !bytes.Equal(previous.Settings, data) {
+	if previous.ID == "" || !bytes.Equal(previous.Settings, data) {
 		if err = q.ResetConnectionWork(ctx, c.ID); err != nil {
 			return err
 		}

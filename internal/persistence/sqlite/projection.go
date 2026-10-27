@@ -292,7 +292,15 @@ func enrichRootFromActivity(
 	}
 
 	if !application.CompatibleInstrument(previous.Reported(), i) {
-		return nil
+		return resolveAutomaticInstrument(
+			ctx,
+			q,
+			sqlc.ResolveInstrumentParams{
+				ID:              root.ID,
+				ReferenceStatus: "conflict",
+				ReferenceNext:   root.ReferenceNext,
+			},
+		)
 	}
 
 	enriched, err := application.EnrichInstrument(previous.Reported(), i)
@@ -319,7 +327,16 @@ func enrichRootFromActivity(
 		}
 	}
 
-	if !root.UnderlierID.Valid {
+	if err = q.EnsureInstrumentSelection(ctx, root.ID); err != nil {
+		return err
+	}
+
+	selection, err := q.InstrumentSelection(ctx, root.ID)
+	if err != nil {
+		return err
+	}
+
+	if !selection.UnderlierID.Valid {
 		if u := enriched.Option().Fields().Underlier; u.Kind() != "" {
 			underlier, _, e := acceptInstrument(ctx, q, "retained", root.ID+"/underlier", u, "")
 			if e != nil {
