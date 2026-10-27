@@ -85,7 +85,9 @@ financial authority. Normalization receives retained bytes and a sequential clai
 sink; it receives no credentials, reference lookup, SQL or presentation services.
 
 The host scopes work and credential callbacks to a connection and joins admitted
-operations on shutdown. A source step's evidence, continuation revision, discovery
+operations on shutdown. Explicit retry uses the same per-connection admission,
+refuses active work and advances the checkpoint revision so an earlier acquisition
+cannot overwrite the retry. A source step's evidence, continuation revision, discovery
 candidates and acknowledged progress commit atomically. Observed progress is
 separate and can remain visible after an unacknowledged failure. Shared pacing
 reservations and cooldowns survive restart. Unknown continuation versions remain

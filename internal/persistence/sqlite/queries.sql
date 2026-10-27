@@ -60,9 +60,9 @@ SELECT id FROM connections ORDER BY rowid;
 -- name: SetScheduled :exec
 INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
 -- name: RetryWork :exec
-UPDATE work SET failure='',next='' WHERE connection_id=? AND stream=? AND operation=?;
+UPDATE work SET revision=revision+1,failure='',next='' WHERE connection_id=? AND stream=? AND operation=?;
 -- name: RestartDiscovery :exec
-UPDATE work SET state_version='',state=X'',failure='',next='' WHERE connection_id=? AND stream=? AND operation='discover';
+UPDATE work SET revision=revision+1,state_version='',state=X'',failure='',next='' WHERE connection_id=? AND stream=? AND operation='discover';
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure NOT IN ('source access not authorized','invalid provider contract value','source capability unavailable','malformed source evidence','source resource limit exceeded') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many

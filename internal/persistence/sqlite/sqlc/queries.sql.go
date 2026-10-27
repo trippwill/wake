@@ -1523,7 +1523,7 @@ func (q *Queries) ResolveInstrument(ctx context.Context, arg ResolveInstrumentPa
 }
 
 const restartDiscovery = `-- name: RestartDiscovery :exec
-UPDATE work SET state_version='',state=X'',failure='',next='' WHERE connection_id=? AND stream=? AND operation='discover'
+UPDATE work SET revision=revision+1,state_version='',state=X'',failure='',next='' WHERE connection_id=? AND stream=? AND operation='discover'
 `
 
 type RestartDiscoveryParams struct {
@@ -1586,7 +1586,7 @@ func (q *Queries) Retained(ctx context.Context, id string) (RetainedRow, error) 
 }
 
 const retryWork = `-- name: RetryWork :exec
-UPDATE work SET failure='',next='' WHERE connection_id=? AND stream=? AND operation=?
+UPDATE work SET revision=revision+1,failure='',next='' WHERE connection_id=? AND stream=? AND operation=?
 `
 
 type RetryWorkParams struct {

@@ -47,6 +47,7 @@ type (
 	Store interface {
 		Configure(context.Context, Connection, map[string][]byte) error
 		Reconfigure(context.Context, Connection) error
+		Retry(context.Context, WorkKey) error
 		Connection(context.Context, string) (Connection, error)
 		Secret(context.Context, string, string) ([]byte, error)
 		ReplaceSecret(context.Context, string, string, []byte) error
@@ -331,6 +332,21 @@ func (h *Host) ReplaceSecret(ctx context.Context, id, key string, secret *creden
 	}
 
 	if err = h.store.ReplaceSecret(work, id, key, payload); err != nil {
+		return ErrStorage
+	}
+
+	return nil
+}
+
+// Retry serializes checkpoint repair with acquisition, discovery and access changes.
+func (h *Host) Retry(ctx context.Context, key WorkKey) error {
+	work, finish, err := h.admit(ctx, key.Connection)
+	if err != nil {
+		return err
+	}
+	defer finish()
+
+	if err = h.store.Retry(work, key); err != nil {
 		return ErrStorage
 	}
 

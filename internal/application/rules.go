@@ -4,8 +4,6 @@
 package application
 
 import (
-	"slices"
-
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
 )
@@ -50,9 +48,21 @@ func Compatible(a, b source.Trade) bool {
 		}
 	}
 
-	if len(x.Charges) > 0 && len(y.Charges) > 0 && !slices.Equal(x.Charges, y.Charges) {
-		return false
+	return compatibleCharges(x.Charges, y.Charges)
+}
+
+func compatibleCharges(a, b []source.Charge) bool {
+	for _, left := range a {
+		for _, right := range b {
+			if left.Field() == right.Field() && left.Scope() == right.Scope() && !equalCharge(left, right) {
+				return false
+			}
+		}
 	}
 
 	return true
+}
+
+func equalCharge(a, b source.Charge) bool {
+	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money() == b.Money()
 }

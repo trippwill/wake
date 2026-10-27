@@ -43,7 +43,6 @@ type (
 	}
 	Store interface {
 		Schedule(context.Context, host.WorkKey, bool) error
-		Retry(context.Context, host.WorkKey) error
 		Confirm(context.Context, string, string, source.Reference, AccountDetails) (Account, error)
 		Dashboard(context.Context) (Dashboard, error)
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
@@ -180,7 +179,7 @@ func (w *Workflow) Retry(ctx context.Context, id string) error {
 		operation = "acquire"
 	}
 
-	err = w.store.Retry(ctx, host.WorkKey{Connection: id, Stream: w.stream, Operation: operation})
+	err = w.host.Retry(ctx, host.WorkKey{Connection: id, Stream: w.stream, Operation: operation})
 	if err == nil {
 		w.notify()
 	}

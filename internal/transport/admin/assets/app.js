@@ -31,7 +31,9 @@
             headers: { Accept: "text/html" },
           });
           if (!response.ok || response.redirected) return;
-          region.innerHTML = await response.text();
+          const content = await response.text();
+          if (region.contains(document.activeElement)) return;
+          region.innerHTML = content;
         }),
       );
     } catch {

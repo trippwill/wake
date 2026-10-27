@@ -104,6 +104,10 @@ Missing, zero and inapplicable differ. A date is not an invented midnight instan
 Price, gross amount, net cash, accrued interest and charges are not interchangeable.
 Calculations and rounded displays do not replace source values.
 
+Charges are compared by their reported field and total/component scope. Reordering
+or omitting a charge role does not establish disagreement. Different monetary
+values or currencies for the same reported role remain conflicting evidence.
+
 Establish identity through explicit corroboration before combining fields. Weighted
 confidence cannot outweigh a strong contradiction. Repeated observations must not duplicate
 activity. Compatible evidence can fill a missing value; incompatible claims remain
