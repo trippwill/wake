@@ -35,6 +35,7 @@ type Querier interface {
 	EventLink(ctx context.Context, arg EventLinkParams) (string, error)
 	EventLinks(ctx context.Context, arg EventLinksParams) ([]string, error)
 	Execution(ctx context.Context, id string) (Execution, error)
+	ExecutionKnownTrades(ctx context.Context, executionID sql.NullString) ([][]byte, error)
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
 	ExecutionObservations(ctx context.Context, executionID sql.NullString) ([]ExecutionObservation, error)
 	Executions(ctx context.Context) ([]Execution, error)

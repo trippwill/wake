@@ -4,6 +4,8 @@
 package application
 
 import (
+	"maps"
+
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
 )
@@ -20,7 +22,7 @@ func Compatible(a, b source.Trade) bool {
 	x, y := a.Fields(), b.Fields()
 	if x.Account != y.Account || x.Side != y.Side || x.Quantity != y.Quantity || x.Price != y.Price ||
 		x.TradeDate != y.TradeDate ||
-		x.Instrument.Kind() != y.Instrument.Kind() {
+		!compatibleInstrument(x.Instrument, y.Instrument) {
 		return false
 	}
 
@@ -65,4 +67,33 @@ func compatibleCharges(a, b []source.Charge) bool {
 
 func equalCharge(a, b source.Charge) bool {
 	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money() == b.Money()
+}
+
+func compatibleInstrument(a, b source.Instrument) bool {
+	if a.Kind() != b.Kind() ||
+		(!a.Reference().IsZero() && !b.Reference().IsZero() && a.Reference() != b.Reference()) {
+		return false
+	}
+
+	ids := func(i source.Instrument) map[source.IdentifierKind]map[string]bool {
+		out := map[source.IdentifierKind]map[string]bool{}
+		for _, id := range i.Identifiers() {
+			if out[id.Kind()] == nil {
+				out[id.Kind()] = map[string]bool{}
+			}
+
+			out[id.Kind()][id.Value()] = true
+		}
+
+		return out
+	}
+
+	x, y := ids(a), ids(b)
+	for kind, values := range x {
+		if other, reported := y[kind]; reported && !maps.Equal(values, other) {
+			return false
+		}
+	}
+
+	return true
 }

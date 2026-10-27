@@ -160,3 +160,8 @@ UPDATE work SET revision=revision+1,state_version='',state=X'',next='',failure='
 
 -- name: InstrumentObservations :many
 SELECT execution_observations.* FROM execution_observations JOIN executions ON executions.id=execution_id WHERE executions.instrument_id=? ORDER BY execution_observations.rowid DESC LIMIT 100;
+
+-- name: ExecutionKnownTrades :many
+SELECT r.data FROM records r JOIN execution_observations o
+ON o.artifact_id=r.artifact_id AND o.version=r.version AND o.location=r.location
+WHERE o.execution_id=? AND r.kind='trade';

@@ -106,7 +106,7 @@ Calculations and rounded displays do not replace source values.
 
 Charges are compared by their reported field and total/component scope. Reordering
 or omitting a charge role does not establish disagreement. Different monetary
-values or currencies for the same reported role remain conflicting evidence.
+values or currencies for the same reported role remain conflicting evidence. Repeated observations also compare retained known facts, including identifiers when a native reference is absent; an initially unknown fact cannot hide later disagreement.
 
 Establish identity through explicit corroboration before combining fields. Weighted
 confidence cannot outweigh a strong contradiction. Repeated observations must not duplicate

@@ -145,8 +145,23 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						}
 					}
 
+					known, e := q.ExecutionKnownTrades(ctx, sql.NullString{String: execution, Valid: true})
+					if e != nil {
+						return e
+					}
+
+					compatible := application.Compatible(accepted, t)
+					for _, data := range known {
+						prior, decodeErr := decodeTrade(data)
+						if decodeErr != nil {
+							return decodeErr
+						}
+
+						compatible = application.Compatible(prior, t) && compatible
+					}
+
 					observation.Outcome = "corroborating observation"
-					if !application.Compatible(accepted, t) {
+					if !compatible {
 						observation.Outcome = "conflicting terms; needs review"
 
 						if e = q.ConflictExecution(ctx, execution); e != nil {

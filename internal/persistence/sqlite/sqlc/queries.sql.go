@@ -454,6 +454,35 @@ func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
 	return i, err
 }
 
+const executionKnownTrades = `-- name: ExecutionKnownTrades :many
+SELECT r.data FROM records r JOIN execution_observations o
+ON o.artifact_id=r.artifact_id AND o.version=r.version AND o.location=r.location
+WHERE o.execution_id=? AND r.kind='trade'
+`
+
+func (q *Queries) ExecutionKnownTrades(ctx context.Context, executionID sql.NullString) ([][]byte, error) {
+	rows, err := q.db.QueryContext(ctx, executionKnownTrades, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items [][]byte
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		items = append(items, data)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const executionLinks = `-- name: ExecutionLinks :many
 SELECT reference FROM event_links WHERE execution_id=?
 `
