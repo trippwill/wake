@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  build-tags: [browser, frontend, racefocused]
+
+linters:
+  enable:
+    - errcheck
+    - gocritic
+    - goheader
+    - gosec
+    - govet
+    - staticcheck
+    - usestdlibvars
+    - unconvert
+    - wsl_v5
+  exclusions:
+    generated: strict
+  settings:
+    wsl_v5:
+      allow-whole-block: true
+      cuddle-max-statements: 3
+    goheader:
+      template: |-
+        SPDX-FileCopyrightText: 2026 trippwill
+        SPDX-License-Identifier: MPL-2.0
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+    - golines
+  exclusions:
+    generated: strict
+  settings:
+    gofumpt:
+      extra:
+        group-params: true
+    golines:
+      max-len: 110
+      tab-len: 2
+      shorten-comments: true
+      reformat-tags: true
+      chain-split-dots: true

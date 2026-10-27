@@ -1,0 +1,1 @@
+CREATE TABLE wake_format (version TEXT NOT NULL PRIMARY KEY) STRICT;

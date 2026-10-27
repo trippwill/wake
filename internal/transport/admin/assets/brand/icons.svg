@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- SPDX-FileCopyrightText: 2026 trippwill -->
+  <!-- SPDX-License-Identifier: MPL-2.0 -->
+  <symbol id="overview" viewBox="0 0 24 24">
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1"/>
+    <rect x="14" y="3.5" width="6.5" height="7" rx="1"/>
+    <rect x="3.5" y="14" width="7" height="6.5" rx="1"/>
+    <rect x="14" y="14" width="6.5" height="6.5" rx="1"/>
+  </symbol>
+  <symbol id="trades" viewBox="0 0 24 24">
+    <path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>
+  </symbol>
+  <symbol id="imports" viewBox="0 0 24 24">
+    <path d="M12 3v11m-4-4 4 4 4-4M4 14v6h16v-6"/>
+  </symbol>
+  <symbol id="processing" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="6" height="6" rx="1"/>
+    <rect x="15" y="15" width="6" height="6" rx="1"/>
+    <path d="M15 6h3v5M9 18H6v-5"/>
+  </symbol>
+  <symbol id="review" viewBox="0 0 24 24">
+    <path d="m12 3 9 9-9 9-9-9 9-9Zm0 4v6m0 3v.5"/>
+  </symbol>
+  <symbol id="configuration" viewBox="0 0 24 24">
+    <path d="M3 6h4m6 0h8M3 18h8m6 0h4"/>
+    <circle cx="10" cy="6" r="3"/>
+    <circle cx="14" cy="18" r="3"/>
+  </symbol>
+</svg>

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "includes": ["**", "!internal/transport/admin/assets/vendor/**"]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2 },
+  "html": { "experimentalFullSupportEnabled": true, "formatter": { "enabled": false } },
+  "linter": {
+    "rules": {
+      "recommended": true,
+      "nursery": { "useControlLabel": "error" }
+    }
+  }
+}

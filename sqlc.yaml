@@ -1,0 +1,11 @@
+version: "2"
+sql:
+  - engine: sqlite
+    schema: [internal/persistence/sqlite/catalog.sql, internal/persistence/sqlite/schema.sql]
+    queries: internal/persistence/sqlite/queries.sql
+    gen:
+      go:
+        package: sqlc
+        out: internal/persistence/sqlite/sqlc
+        sql_package: database/sql
+        emit_interface: true

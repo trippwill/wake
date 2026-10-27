@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 204 64" fill="none">
+  <!-- SPDX-FileCopyrightText: 2026 trippwill -->
+  <!-- SPDX-License-Identifier: MPL-2.0 -->
+  <title>Wake</title>
+  <path d="M20 7C18 16 12 25 5 32M20 7c2 9 8 18 15 25M20 19c-1.5 4-4 9-7 13m7-13c1.5 4 4 9 7 13" transform="translate(0 12)" stroke="#e7eaed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <g stroke="#e7eaed" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m58 23 7 23 9-16 9 16 7-23"/>
+    <path d="M120 23v23m0-11.5c0-15.3-22-15.3-22 0s22 15.3 22 0Z"/>
+    <path d="M136 12v34m0-11 16-12m-12 9 14 14"/>
+    <path d="M170 34h22c0-15-23-15-23 0 0 14 16 16 23 8"/>
+  </g>
+</svg>

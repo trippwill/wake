@@ -1,0 +1,145 @@
+[settings]
+locked = true
+idiomatic_version_file_enable_tools = ["go", "golangci-lint"]
+
+[tools]
+biome = "2.5.15"
+"aqua:sqlc-dev/sqlc" = "1.31.1"
+"aqua:a-h/templ" = "0.3.1020"
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
+
+[env]
+GOFLAGS = "-modcacherw"
+GOCACHE = "{{config_root}}/.cache/go-build"
+GOMODCACHE = "{{config_root}}/.cache/go-mod"
+GOLANGCI_LINT_CACHE = "{{config_root}}/.cache/golangci-lint"
+
+[hooks]
+postinstall = { task = "go:modules" }
+
+[tasks.ci]
+description = "Run continuous integration tasks"
+depends = ["check", "build", "test:coverage", "test:race", "test:browser"]
+
+[tasks.'ci:pr']
+description = "Run PR checks with full behavior, focused races and browser smoke"
+depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke"]
+
+[tasks.validate]
+description = "Generate, fix, and validate sources for local development"
+run = [
+  { task = "gen" },
+  { task = "fix" },
+  { task = "ci" },
+]
+
+[tasks.'go:modules']
+description = "Download and verify Go module dependencies after Mise installation"
+run = ["go mod download", "go mod verify"]
+
+[tasks.check]
+description = "Run static checks"
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check"]
+wait_for = ["sqlc:gen", "templ:gen"]
+
+[tasks.'source:check']
+description = "Generate and format sources, then verify no tracked source changes"
+depends = ["gen", "fmt"]
+run = "git diff --exit-code"
+
+[tasks.build]
+description = "Build all Go packages"
+wait_for = ["sqlc:gen", "templ:gen"]
+run = "CGO_ENABLED=0 go build ./..."
+
+[tasks.clean]
+description = "Explicitly clean build artifacts and the test cache"
+run = "go clean -x ./... && go clean -x -i && go clean -x -testcache"
+
+[tasks.test]
+description = "Run ordinary behavioral tests without instrumentation"
+run = "go test -count=1 ./..."
+
+[tasks.serve]
+description = "Run the Wake daemon"
+run = "go run ./cmd/wake serve"
+
+[tasks.bin]
+description = "Run the wake binary with arguments"
+raw_args = true
+run = "go run ./cmd/wake -- "
+
+[tasks.gen]
+description = "Generate code for all tools"
+depends = ["sqlc:gen", "templ:gen"]
+
+[tasks.fix]
+description = "Fix lint issues and format all Go files"
+depends = ["lint:fix", "fmt"]
+
+[tasks.fmt]
+description = "Format all Go files"
+depends = ["lint:fmt", "templ:fmt", "frontend:fmt"]
+
+[tasks.'test:integration']
+description = "Run opt-in live integration checks (requires WAKE_IBKR_FLEX_LIVE=1 and external secrets)"
+run = "go test -tags=integration -count=1 ./..."
+
+[tasks.'frontend:fmt']
+description = "Format handwritten JS/CSS without touching vendored assets or templ"
+run = "biome format --write internal/transport/admin/assets/app.js internal/transport/admin/assets/theme.js internal/transport/admin/assets/app.css"
+
+[tasks.'frontend:render']
+description = "Render synthetic templ pages for HTML accessibility linting"
+run = "go test -tags=frontend ./internal/transport/admin -run '^TestRenderFrontend$' -count=1"
+env = { WAKE_HTML_DIR = "{{config_root}}/.cache/frontend" }
+wait_for = ["templ:gen"]
+
+[tasks.'frontend:check']
+description = "Check handwritten JS/CSS and accessibility of synthetic rendered HTML"
+depends = ["frontend:render"]
+run = [
+  "biome check --error-on-warnings internal/transport/admin/assets/app.js internal/transport/admin/assets/theme.js internal/transport/admin/assets/app.css",
+  "biome lint --error-on-warnings .cache/frontend",
+]
+
+[tasks.'lint:check']
+description = "Lint all Go packages"
+wait_for = ["lint:fmt", "lint:headers"]
+run = "golangci-lint run"
+
+[tasks.'lint:fix']
+description = "Fix lint issues in all Go packages"
+run = "golangci-lint run --fix"
+
+[tasks.'lint:fmt']
+description = "Format all Go files"
+wait_for = ["sqlc:gen", "templ:gen"]
+run = "golangci-lint fmt"
+
+[tasks.'lint:headers']
+description = "Add required SPDX headers to Go files"
+run = "golangci-lint run --fix --enable-only=goheader"
+
+[tasks.'vuln:check']
+description = "Scan dependencies for known vulnerabilities"
+wait_for = ["sqlc:gen", "templ:gen"]
+run = "govulncheck ./..."
+
+[tasks.'codecov:validate']
+description = "Validate the repository Codecov configuration"
+run = "curl --fail --show-error --silent --data-binary @codecov.yml https://api.codecov.io/validate"
+
+[tasks.'templ:gen']
+description = "Generate Go code from templ components"
+run = "templ generate"
+
+[tasks.'templ:check']
+description = "Verify generated templ output is current"
+wait_for = ["templ:gen"]
+run = 'templ generate -check && templ fmt . -fail -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
+
+[tasks.'templ:fmt']
+description = "Format all templ files"
+wait_for = ["templ:gen"]
+run = 'templ fmt . -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'

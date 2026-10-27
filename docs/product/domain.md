@@ -1,0 +1,126 @@
+# Financial language
+
+These meanings guide product decisions. They do not prescribe Go types, SQL tables
+or wire fields. [The product brief](brief.md) owns intent, the
+[current coverage](../product/coverage.md) describes supported behavior, and the
+[README](../../README.md) provides descriptive usage help.
+
+## Identity and grouping
+
+| Concept | Meaning |
+| --- | --- |
+| Institution | The real financial institution holding an account. |
+| Provider | The service or format through which Wake obtains evidence. It may differ from the institution. |
+| Connection | Configured access to a provider, distinct from the financial account it reports. |
+| Discovered account | Source-reported account information awaiting operator selection and confirmation. |
+| Account | Wake's identity for a real financial account, independent of its connection, provider or source IDs. |
+| Party | A beneficial owner or controller. An account need not represent one person. |
+| Portfolio | A user-defined grouping or view; it does not redefine ownership or provenance. |
+| Instrument | A financial asset or specific contract, independent of its source representation. |
+| Listing | A venue representation linked to one root instrument. It is distinct from execution and routing venue. |
+| Source identifier | A reported reference, qualified by issuer, scheme, role and scope. It is not Wake's primary identity. |
+
+Wake identities survive source changes. Ticker text, a matching name or an opaque
+broker ID alone does not establish financial identity. Grouping several objects
+does not make them the same object. A connection or query change does not create
+a different real account or instrument.
+
+### Account source authority
+
+Each account has one operator-designated authoritative connection, provider and
+stream, bound to the reported source account. Discovering a candidate or installing
+a provider does not grant that authority. Account confirmation establishes the
+financial account and binding together; repeating it must not create another account.
+
+Source authority governs broker financial activity. OpenFIGI has a separate role
+for instrument identity/naming, and operator assertions remain attributable in their
+own right. Authority never bypasses identity, currency or unit checks, erases
+conflicts, or silently switches when a source fails. Prior bindings and accepted
+history remain explainable after an explicit authority change.
+
+### Instruments and representations
+
+An equity or fund root represents one share class. Listings link to that root;
+the root need not enumerate every venue-level identifier. A trade's optional
+listing must belong to the same root as the trade. ISIN and share-class FIGI are
+useful together but are not a universal one-to-one hierarchy.
+
+An equity option is one specific contract, linked to its equity/fund underlier.
+The underlier's identifier does not identify the option. Contract adjustments can
+preserve identity while changing terms. A premium multiplier is not a deliverable;
+an unknown deliverable must not become an assumed 100 shares. Historical activity
+retains the terms used to interpret it.
+
+Treasuries and gilts represent individual debt issues. Nominal quantity, coupon,
+maturity, quoted price and accrued interest have separate meanings. A reopening
+or a different venue representation does not by itself establish a new issue.
+Distinct rights, depositary receipts, share classes and contracts remain distinct.
+
+Supported global identifiers, including ISIN, CUSIP, SEDOL and FIGI, are accepted
+at their actual subject/allocation level.
+Source-local references stay qualified links. Unverified or disputed identifiers
+remain assertions rather than accepted master data. Resolve a reported venue FIGI
+to its appropriate root relationship; do not relabel it as a share-class identifier.
+
+OpenFIGI supplies default ticker and name spelling after a suitable reference is
+selected. A share-class result can contain several venue names/tickers; the first
+row is not a naming policy. Ambiguity retains a provisional/current label. A new
+listing does not silently replace an established naming selection. An operator
+correction survives replay and reference refresh until superseded or
+released. There is no separate reporting-symbol identity.
+
+## Evidence and accepted views
+
+An evidence artifact is the original retained report or reference response with
+its context. A source record locates reported content within that artifact.
+Normalization expresses its financial meaning as a source claim; it does not
+make that claim an accepted Wake conclusion.
+
+Linking establishes identity and relationships. Reconciliation selects an accepted
+view while preserving dissent. An operator decision records who chose what, why
+when supplied, and the decision's scope. Corrections add information rather than
+rewrite evidence. A wrong link can be superseded without repurposing an old ID.
+
+Provenance, reference evidence, field selections, named/versioned rules and decisions
+are linked explanations. Ordinary financial views expose useful values and compact
+uncertainty/conflict status; users need not traverse the evidence to learn that a
+problem exists. A missing enrichment, a service failure and a contradiction are
+different outcomes.
+
+## Financial activity and values
+
+A trade is a purchase/sale at its reported grain. Exchange executions, booked stock
+trades, option exercise/assignment/expiration and order membership have distinct
+meanings. An order groups fills or legs; it does not merge their identities.
+Reported lifecycle relationships do not authorize invented stock deliveries or cash.
+An expiry date alone does not establish an outcome.
+
+A cash asset identifies account and currency without asserting a balance. FX activity
+preserves reported currencies and amount roles; missing legs stay missing. Attached
+charges retain their reporting scope. A summary fee is not copied onto each fill.
+
+Keep exact reported values, units, quotation meanings, currencies and time precision.
+Missing, zero and inapplicable differ. A date is not an invented midnight instant.
+Price, gross amount, net cash, accrued interest and charges are not interchangeable.
+Calculations and rounded displays do not replace source values.
+
+Establish identity through explicit corroboration before combining fields. Weighted
+confidence cannot outweigh a strong contradiction. Repeated observations must not duplicate
+activity. Compatible evidence can fill a missing value; incompatible claims remain
+visible for resolution. Arrival order is not source revision order, and absence
+from a later report is not cancellation. Explicit cancellation/replacement preserves
+the original history. Core identity and operator-created trades do not require
+fabricated broker identifiers or reports.
+
+## Events, observations and continuity
+
+Activity records something that happened. A reported position, balance or valuation
+is an observation, not an explanation of how it arose. Derived state is a calculation
+from retained information. Never invent an event to make observations and calculated
+state agree. Tax-relevant source facts differ from a user's tax treatment.
+
+Changes to accepted values, links, relevant reference data or conflict status matter
+to consumers even without a new trade. Stable identities and reproducible views
+support restart and recovery. Rebuilding a view is different from reconstructing
+missing financial history, and explicit warehouse disposal is different from
+reinterpreting retained evidence.

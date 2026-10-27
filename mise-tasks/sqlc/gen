@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+#MISE description="Generate SQLite query code for private core storage"
+set -euo pipefail
+shopt -s nullglob
+for config in sqlc.yaml; do
+  sqlc -f "$config" compile
+  sqlc -f "$config" generate
+done

@@ -1,0 +1,25 @@
+# Generated source is checked for freshness and excluded from behavior coverage.
+ignore:
+  - "**/*_templ.go"
+  - "internal/persistence/sqlite/sqlc/**"
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 0.05
+comment:
+  layout: "header, diff, components"
+component_management:
+  default_rules:
+    statuses: []
+  individual_components:
+    - component_id: storage
+      name: Storage
+      paths: ["internal/persistence/**"]
+    - component_id: interfaces
+      name: Interfaces
+      paths: ["cmd/wake/**", "internal/transport/**"]
+    - component_id: runtime
+      name: Runtime
+      paths: ["internal/daemon/**", "internal/config/**", "internal/credential/**"]

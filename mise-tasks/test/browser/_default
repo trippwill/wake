@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+#MISE description="Run isolated synthetic Chromium browser workflows"
+#MISE wait_for=["test:race", "test:coverage"]
+set -euo pipefail
+export WAKE_SCREENSHOT_DIR="$PWD/.cache/browser/screenshots"
+mkdir -p .cache/test-results
+go test -json -tags=browser -run '^TestBrowser' -count=1 -timeout=5m ./internal/transport/admin \
+  | tee .cache/test-results/browser.jsonl

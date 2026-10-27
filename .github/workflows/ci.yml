@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Validation profile (full by default; pr measures the PR gate).
+        type: choice
+        options: [full, pr]
+        default: full
+      cold_cache:
+        description: Disable caches to measure a cold run.
+        type: boolean
+        default: false
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  push:
+    tags: ["*"]
+    branches: ["main"]
+    paths-ignore:
+      - '**/*.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          role: checks
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - run: mise run source:check
+      - run: "mise run check ::: build"
+
+  behavior:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          role: coverage
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - run: mise run test:coverage
+      - uses: codecov/codecov-action@v7
+        with:
+          files: coverage.txt
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: behavior-results
+          path: .cache/test-results/
+          if-no-files-found: error
+
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          role: race
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - name: Run selected race suite
+        env:
+          RACE_TASK: ${{ (github.event_name == 'pull_request' || inputs.profile == 'pr') && 'test:race:focused' || 'test:race' }}
+        run: mise run "$RACE_TASK"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: race-results
+          path: .cache/test-results/
+          if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          role: browser
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - name: Run selected browser suite
+        env:
+          BROWSER_TASK: ${{ (github.event_name == 'pull_request' || inputs.profile == 'pr') && 'test:browser:smoke' || 'test:browser' }}
+          # Installed Chrome has Ubuntu's supported sandbox profile.
+          WAKE_BROWSER: /usr/bin/google-chrome
+        run: mise run "$BROWSER_TASK"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-browser-screenshots
+          path: .cache/browser/screenshots/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: .cache/test-results/
+          if-no-files-found: error
+
+  ci:
+    if: always()
+    needs: [checks, behavior, race, browser]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every check to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: test "$RESULTS" = 'success,success,success,success'

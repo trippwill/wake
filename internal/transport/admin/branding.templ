@@ -1,0 +1,30 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+templ ThemeControl() {
+	<label class="wake-preference wake-theme-control" data-theme-control hidden>
+		<span>Theme</span>
+		<select class="select select-sm" data-theme-preference>
+			<option value="system">System</option>
+			<option value="light">Light</option>
+			<option value="dark">Dark</option>
+		</select>
+	</label>
+}
+
+templ SidebarLink(label string, href string, icon string, active bool) {
+	<a
+		class="wake-nav-link"
+		href={ href }
+		if active {
+			aria-current="page"
+		}
+	>
+		<svg class="wake-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+			<use href={ "/assets/brand/icons.svg#" + icon }></use>
+		</svg>
+		<span>{ label }</span>
+	</a>
+}

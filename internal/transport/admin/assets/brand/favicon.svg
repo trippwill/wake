@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- SPDX-FileCopyrightText: 2026 trippwill -->
+  <!-- SPDX-License-Identifier: MPL-2.0 -->
+  <title>Wake</title>
+  <rect width="40" height="40" rx="9" fill="#2b3036"/>
+  <path d="M20 7C18 16 12 25 5 32M20 7c2 9 8 18 15 25M20 19c-1.5 4-4 9-7 13m7-13c1.5 4 4 9 7 13" stroke="#e7eaed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

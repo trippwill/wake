@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+#MISE description="Run explicit concurrent behaviors with race detection"
+#MISE wait_for=["test:coverage"]
+set -euo pipefail
+mkdir -p .cache/test-results
+go test -json -race  -count=1 -timeout=5m ./internal/credential ./internal/daemon ./internal/persistence/sqlite ./internal/transport/cli \
+  | tee .cache/test-results/focused.jsonl
