@@ -51,3 +51,5 @@ the saved query configuration, then use the connection's repair/retry controls.
 Changing connection settings restarts the bounded source protocol while preserving
 the confirmed account and retained reports. Source financial authority stays with
 the selected account and Confirmation stream.
+
+Wake rejects upstream reports whose raw bytes or decoded XML attributes contain the access token, and rejects credential-bearing decoded generation references. Accepted report bytes remain unchanged as evidence.

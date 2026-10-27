@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.trippwill.dev/wake/provider"
@@ -104,6 +105,18 @@ func (s *Source) request(
 			return reply{}, provider.ErrMalformed
 		}
 
+		if err = walk(ctx, body, func(path []node) error {
+			for _, value := range path[len(path)-1].attributes {
+				if strings.Contains(value, string(secret)) {
+					return provider.ErrMalformed
+				}
+			}
+
+			return nil
+		}); err != nil {
+			return reply{}, err
+		}
+
 		result.body = body
 
 		return result, nil
@@ -128,7 +141,7 @@ func (s *Source) request(
 			return reply{}, provider.ErrMalformed
 		}
 
-		if !safeText(message.Reference, 1024) {
+		if !safeText(message.Reference, 1024) || strings.Contains(message.Reference, string(secret)) {
 			return reply{}, provider.ErrMalformed
 		}
 
