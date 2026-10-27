@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Compile and test an unrelated provider module with a temporary workspace"
+set -euo pipefail
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+export GOWORK="$workspace/go.work"
+go work init "$PWD" "$PWD/testdata/external-provider" "$PWD/testdata/provider-integration"
+go work edit -replace="go.trippwill.dev/wake@v0.0.0=$PWD"
+go work edit -replace="example.org/wakefixture@v0.0.0=$PWD/testdata/external-provider"
+go test -count=1 ./financial ./source ./provider
+go test -count=1 ./testdata/external-provider/...
+go test -race -count=1 ./testdata/provider-integration/...

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
 )
 
@@ -27,8 +28,10 @@ type (
 		Status(context.Context) (Status, error)
 	}
 	Dependencies struct {
-		Queries Queries
-		Config  config.Config
+		Queries  Queries
+		Config   config.Config
+		Workflow *application.Workflow
+		Stopping <-chan struct{}
 	}
 )
 
@@ -46,6 +49,10 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 	mux.Handle("GET /assets/", cacheAssets(http.StripPrefix("/assets/", http.FileServerFS(assetFS))))
 	registerLoginRoutes(mux, auth)
+
+	if deps.Workflow != nil {
+		registerWorkflowRoutes(mux, auth, deps.Workflow, deps.Stopping)
+	}
 
 	for _, path := range []string{"/{$}", "/configuration", "/status"} {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {

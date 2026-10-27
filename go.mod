@@ -11,6 +11,7 @@ require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.14.0
+	go.trippwill.dev/num v0.3.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
@@ -19,6 +20,7 @@ require (
 
 require (
 	github.com/chromedp/sysutil v1.1.0 // indirect
+	github.com/cockroachdb/apd/v3 v3.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect

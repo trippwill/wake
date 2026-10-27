@@ -15,6 +15,7 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - The [README](README.md#using-wake-v010) is a descriptive quick helper for
   v0.1.0 use, not an authoritative specification. Keep it in the present tense,
   within selected release scope, without deprecated workflows or future speculation.
+  [IBKR setup](docs/providers/ibkr-flex.md) provides source setup help.
   CLI help and published contracts own exact public interfaces.
 - Use [$wake-docs](.agents/skills/wake-docs/SKILL.md) for substantive documentation
   changes. The [index](docs/README.md) assigns document ownership. Do not recreate

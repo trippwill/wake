@@ -1,0 +1,72 @@
+{
+  "checked_on": "2026-10-25",
+  "source": "https://www.openfigi.com/api/documentation",
+  "mappings": [
+    {
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG000BPHFS9"
+      },
+      "response": {
+        "data": [
+          {
+            "figi": "BBG000BPHFS9",
+            "name": "MICROSOFT CORP",
+            "ticker": "MSFT",
+            "exchCode": "UW",
+            "compositeFIGI": "BBG000BPH459",
+            "securityType": "Common Stock",
+            "marketSector": "Equity",
+            "shareClassFIGI": "BBG001S5TD05",
+            "securityType2": "Common Stock",
+            "securityDescription": "MSFT"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "GB00BDRHNP05"
+      },
+      "response": {
+        "data": [
+          {
+            "figi": "BBG00G5GVKZ6",
+            "name": "UNITED KINGDOM GILT",
+            "ticker": "UKT 1.25 07/22/27",
+            "exchCode": "LONDON",
+            "compositeFIGI": null,
+            "securityType": "UK GILT STOCK",
+            "marketSector": "Govt",
+            "shareClassFIGI": null,
+            "securityType2": "Govt",
+            "securityDescription": "UKT 1 1/4 07/22/27"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "US912797UJ40"
+      },
+      "response": {
+        "data": [
+          {
+            "figi": "BBG021BCBPC5",
+            "name": "TREASURY BILL",
+            "ticker": "B 0 10/08/26",
+            "exchCode": "FRANKFURT",
+            "compositeFIGI": null,
+            "securityType": "US GOVERNMENT",
+            "marketSector": "Govt",
+            "shareClassFIGI": null,
+            "securityType2": "Bill",
+            "securityDescription": "B 10/08/26"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 
-#MISE description="Run keyboard sign-in/navigation and live-status JavaScript"
+#MISE description="Run sign-in, shell navigation, status and theme browser checks"
 #MISE wait_for=["test:coverage", "test:race:focused"]
 set -euo pipefail
 export WAKE_SCREENSHOT_DIR="$PWD/.cache/browser/screenshots"
 mkdir -p .cache/test-results
-go test -json -tags=browser -run '^TestBrowserShell$' -count=1 -timeout=5m ./internal/transport/admin \
+go test -json -tags=browser -run '^TestBrowserShell$' -count=1 -timeout=5m ./internal/transport/admin ./internal/daemon \
   | tee .cache/test-results/browser-smoke.jsonl

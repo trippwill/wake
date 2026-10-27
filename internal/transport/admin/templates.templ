@@ -32,7 +32,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 		<h1>{ pageTitle(path) }</h1>
 		if path == "/configuration" {
 			<dl><dt>Data directory</dt><dd>{ cfg.Paths.DataDir }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl>
-			<p>No acquisition providers are installed.</p>
+			<p><a href="/connections">Manage IBKR connections and the OpenFIGI reference setting.</a></p>
 		} else {
 			<p role="status">Daemon running</p>
 			<dl>
@@ -47,7 +47,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 					}
 				</dd>
 			</dl>
-			<p>Financial synchronization, imports and financial queries are unavailable in this foundation build.</p>
+			<p><a href="/connections">Connect and confirm an IBKR account</a>, then <a href="/activity">inspect equity executions</a>.</p>
 		}
 	</div>
 }
