@@ -31,6 +31,7 @@ type (
 		Queries  Queries
 		Config   config.Config
 		Workflow *application.Workflow
+		Stopping <-chan struct{}
 	}
 )
 
@@ -50,7 +51,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 	registerLoginRoutes(mux, auth)
 
 	if deps.Workflow != nil {
-		registerWorkflowRoutes(mux, auth, deps.Workflow)
+		registerWorkflowRoutes(mux, auth, deps.Workflow, deps.Stopping)
 	}
 
 	for _, path := range []string{"/{$}", "/configuration", "/status"} {

@@ -18,7 +18,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-func TestBrowserRefreshPreservesFocusAcquiredDuringFetch(t *testing.T) {
+func TestBrowserRefreshPreservesFocusAndResumesAfterRestore(t *testing.T) {
 	browser := os.Getenv("WAKE_BROWSER")
 	if browser == "" {
 		for _, name := range []string{"brave-browser", "chromium", "google-chrome"} {
@@ -42,6 +42,15 @@ func TestBrowserRefreshPreservesFocusAcquiredDuringFetch(t *testing.T) {
 		if r.URL.Path == "/app.js" {
 			w.Header().Set("Content-Type", "text/javascript")
 			_, _ = w.Write(script)
+
+			return
+		}
+
+		if r.URL.Path == "/lifecycle" {
+			_, _ = fmt.Fprint(
+				w,
+				`<!doctype html><html><body data-streams="0" data-closed="0" data-timers="0"><div data-refresh="/region">Status</div><script>window.EventSource=class{constructor(){document.body.dataset.streams=String(Number(document.body.dataset.streams)+1)}addEventListener(){}close(){document.body.dataset.closed=String(Number(document.body.dataset.closed)+1)}};window.setInterval=()=>{document.body.dataset.timers=String(Number(document.body.dataset.timers)+1);return 1};window.clearInterval=()=>{document.body.dataset.timers=String(Number(document.body.dataset.timers)-1)};window.fetch=async()=>({ok:false});</script><script src="/app.js"></script></body></html>`,
+			)
 
 			return
 		}
@@ -89,5 +98,20 @@ func TestBrowserRefreshPreservesFocusAcquiredDuringFetch(t *testing.T) {
 
 	if err != nil || !focused {
 		t.Fatal("refresh removed newly focused link", focused, err)
+	}
+
+	var resumed bool
+
+	err = chromedp.Run(
+		ctx,
+		chromedp.Navigate(server.URL+"/lifecycle"),
+		chromedp.WaitVisible("[data-refresh]"),
+		chromedp.Evaluate(
+			`(() => { for (let i=0;i<2;i++) { window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true})); window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true})); } return document.body.dataset.streams==='3' && document.body.dataset.closed==='2' && document.body.dataset.timers==='1'; })()`,
+			&resumed,
+		),
+	)
+	if err != nil || !resumed {
+		t.Fatal("refresh did not restart once per cache restore", resumed, err)
 	}
 }

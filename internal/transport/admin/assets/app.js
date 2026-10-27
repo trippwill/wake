@@ -42,15 +42,26 @@
       refreshing = false;
     }
   };
-  const events = new EventSource("/events");
-  events.addEventListener("refresh", refresh);
-  const poll = setInterval(refresh, 10000);
-  window.addEventListener(
-    "pagehide",
-    () => {
-      clearInterval(poll);
-      events.close();
-    },
-    { once: true },
-  );
+  let events = null;
+  let poll = null;
+  const stop = () => {
+    if (poll !== null) clearInterval(poll);
+    poll = null;
+    events?.close();
+    events = null;
+  };
+  const start = () => {
+    stop();
+    events = new EventSource("/events");
+    events.addEventListener("refresh", refresh);
+    poll = setInterval(refresh, 10000);
+  };
+  start();
+  window.addEventListener("pagehide", stop);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      start();
+      refresh();
+    }
+  });
 })();

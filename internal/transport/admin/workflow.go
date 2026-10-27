@@ -17,7 +17,12 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func registerWorkflowRoutes(mux *http.ServeMux, auth *authenticator, workflow *application.Workflow) {
+func registerWorkflowRoutes(
+	mux *http.ServeMux,
+	auth *authenticator,
+	workflow *application.Workflow,
+	stopping <-chan struct{},
+) {
 	gate := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
@@ -289,6 +294,8 @@ func registerWorkflowRoutes(mux *http.ServeMux, auth *authenticator, workflow *a
 
 		for {
 			select {
+			case <-stopping:
+				return
 			case <-r.Context().Done():
 				return
 			case <-ch:

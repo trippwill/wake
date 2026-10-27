@@ -127,3 +127,5 @@ merge. Financial processing remains useful with provisional reference identity.
 Administrative commands use authenticated HTTP forms. Committed work triggers
 SSE refresh hints; fallback polling reads the same status regions. Editable forms
 remain outside those regions, and refreshes preserve focused controls.
+
+Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.

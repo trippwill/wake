@@ -22,3 +22,5 @@ The executable targets Linux and one account. Storage uses a pre-release develop
 format; unsupported stores fail closed without conversion or deletion. Preserve
 backups and select fresh paths or explicitly move unsupported stores and sidecars
 aside. Source credentials and private reports are never repository fixtures.
+
+Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.

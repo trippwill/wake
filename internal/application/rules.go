@@ -40,6 +40,10 @@ func Compatible(a, b source.Trade) bool {
 		return false
 	}
 
+	if !x.Order.IsZero() && !y.Order.IsZero() && x.Order != y.Order {
+		return false
+	}
+
 	if x.PositionEffect != "" && y.PositionEffect != "" && x.PositionEffect != y.PositionEffect {
 		return false
 	}

@@ -25,3 +25,5 @@ CREATE TABLE reference_budget(singleton INTEGER PRIMARY KEY CHECK(singleton=1), 
 CREATE TABLE reference_evidence(id TEXT PRIMARY KEY NOT NULL, retrieved TEXT NOT NULL, request BLOB NOT NULL, response BLOB NOT NULL, http_status INTEGER NOT NULL, headers BLOB NOT NULL) STRICT;
 CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;
 CREATE TABLE instrument_reference_attempts(instrument_id TEXT NOT NULL REFERENCES instruments(id), evidence_id TEXT NOT NULL REFERENCES reference_evidence(id), status TEXT NOT NULL,rule TEXT NOT NULL, PRIMARY KEY(instrument_id,evidence_id)) STRICT;
+
+CREATE INDEX execution_observations_execution ON execution_observations(execution_id);

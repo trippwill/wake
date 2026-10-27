@@ -162,6 +162,7 @@ func run(
 	defer cancelRequests()
 
 	requests := &requestGroup{}
+	stopping := make(chan struct{})
 
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -195,6 +196,7 @@ func run(
 				},
 				Config:   cfg,
 				Workflow: workflow,
+				Stopping: stopping,
 			},
 		)
 		if e != nil {
@@ -238,6 +240,7 @@ func run(
 	}
 
 	phase("joining shutdown")
+	close(stopping)
 	shutdownHTTPServers(servers...)
 	cancelRequests()
 	requests.stop()

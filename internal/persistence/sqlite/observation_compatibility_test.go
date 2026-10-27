@@ -78,6 +78,7 @@ func TestConflictsAcrossIncompleteObservations(t *testing.T) {
 	}{
 		{"missing incoming native ID", []string{base, strings.Replace(strings.Replace(base, ` conid="100"`, "", 1), `US0000000001`, `US0000000002`, 1)}},
 		{"missing baseline native ID", []string{strings.Replace(base, ` conid="100"`, "", 1), strings.Replace(base, `US0000000001`, `US0000000002`, 1)}},
+		{"changed order", []string{base, strings.Replace(base, `orderID="O1"`, `orderID="O2"`, 1)}},
 		{"late net cash", []string{absentNet, strings.Replace(absentNet, ` proceeds=`, ` netCash="-100" proceeds=`, 1), strings.Replace(absentNet, ` proceeds=`, ` netCash="-200" proceeds=`, 1)}},
 		{"late component", []string{base, strings.Replace(base, ` commission=`, ` brokerExecutionCommission="-1" commission=`, 1), strings.Replace(base, ` commission=`, ` brokerExecutionCommission="-2" commission=`, 1)}},
 	} {
