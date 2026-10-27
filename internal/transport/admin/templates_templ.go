@@ -202,7 +202,7 @@ func OverviewBody(path string, status Status, cfg config.Config) templ.Component
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</dd></dl><p>No acquisition providers are installed.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</dd></dl><p><a href=\"/connections\">Manage IBKR connections and the OpenFIGI reference setting.</a></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -235,7 +235,7 @@ func OverviewBody(path string, status Status, cfg config.Config) templ.Component
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</dd></dl><p>Financial synchronization, imports and financial queries are unavailable in this foundation build.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</dd></dl><p><a href=\"/connections\">Connect and confirm an IBKR account</a>, then <a href=\"/activity\">inspect equity executions</a>.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

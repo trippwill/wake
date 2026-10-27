@@ -15,10 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
+	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
 type shell struct{ status admin.Status }
@@ -29,6 +33,25 @@ func Run(
 	ctx context.Context,
 	cfg config.Config,
 	logger *slog.Logger,
+	progress ...func(string),
+) (result error) {
+	return run(ctx, cfg, logger, sourceOptions{}, progress...)
+}
+
+// Source endpoints are composed here, never read from broker settings. Tests use
+// controlled TLS servers through the same daemon/host/store/admin composition.
+type sourceOptions struct {
+	IBKR            ibkrflex.Options
+	ReferenceClient *http.Client
+	ReferenceURL    string
+	Now             func() time.Time
+}
+
+func run(
+	ctx context.Context,
+	cfg config.Config,
+	logger *slog.Logger,
+	options sourceOptions,
 	progress ...func(string),
 ) (result error) {
 	phase := func(value string) {
@@ -66,6 +89,8 @@ func Run(
 	phase("checking credential protection")
 
 	protected := false
+
+	var envelope *credential.Envelope
 	if cfg.Credentials.MasterKeyPath != "" {
 		key, e := credential.LoadMasterKey(cfg.Credentials.MasterKeyPath)
 		if e != nil {
@@ -73,7 +98,7 @@ func Run(
 		}
 		defer key.Clear()
 
-		envelope, e := credential.NewEnvelope(key)
+		envelope, e = credential.NewEnvelope(key)
 		if e != nil {
 			return e
 		}
@@ -81,6 +106,57 @@ func Run(
 
 		protected = true
 	}
+
+	registration, err := ibkrflex.Registration(options.IBKR)
+	if err != nil {
+		return err
+	}
+
+	providerHost, err := host.New(ctx, store, envelope, options.Now, registration)
+	if err != nil {
+		return err
+	}
+	defer providerHost.Close()
+
+	referenceService, err := reference.New(
+		store,
+		envelope,
+		options.ReferenceClient,
+		options.ReferenceURL,
+		options.Now,
+	)
+	if err != nil {
+		return err
+	}
+
+	workflow := application.New(
+		store,
+		providerHost,
+		referenceService,
+		registration.Descriptor().ID(),
+		ibkrflex.Confirmations,
+		ibkrflex.Version,
+		options.Now,
+	)
+
+	workContext, cancelWork := context.WithCancel(ctx)
+
+	var background sync.WaitGroup
+	background.Add(1)
+	go func() {
+		defer background.Done()
+
+		workflow.Run(workContext, func() {
+			logger.ErrorContext(
+				workContext,
+				"durable workflow work failed; retrying retained work",
+				"event",
+				"workflow_retry",
+			)
+		})
+	}()
+
+	defer func() { cancelWork(); background.Wait() }()
 
 	requestsContext, cancelRequests := context.WithCancel(context.Background())
 	defer cancelRequests()
@@ -117,7 +193,8 @@ func Run(
 				Queries: shell{
 					admin.Status{CredentialProtection: protected, StartedAt: time.Now().UTC().Format(time.RFC3339)},
 				},
-				Config: cfg,
+				Config:   cfg,
+				Workflow: workflow,
 			},
 		)
 		if e != nil {

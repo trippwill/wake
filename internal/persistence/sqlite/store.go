@@ -26,7 +26,7 @@ const (
 	ErrUnsupportedSchema Error = "unsupported development store; recreate explicitly"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
-	schemaVersion              = "wake-foundation-1"
+	schemaVersion              = "wake-m2-1"
 )
 
 //go:embed schema.sql
@@ -70,7 +70,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	count, probeErr := queries.CountTables(ctx)
 	if probeErr == nil && count != 0 {
 		version, e := queries.ReadFormat(ctx)
-		if e != nil || version != schemaVersion || count != 1 {
+		if e != nil || version != schemaVersion || count != 21 {
 			probeErr = ErrUnsupportedSchema
 		}
 	}
@@ -124,7 +124,7 @@ func (s *Store) initialize(ctx context.Context) error {
 
 	if count != 0 {
 		version, versionErr := s.queries.ReadFormat(ctx)
-		if versionErr != nil || version != schemaVersion || count != 1 {
+		if versionErr != nil || version != schemaVersion || count != 21 {
 			return ErrUnsupportedSchema
 		}
 	}
@@ -134,7 +134,7 @@ func (s *Store) initialize(ctx context.Context) error {
 	}
 
 	if count != 0 {
-		return nil
+		return s.queries.InterruptAttempts(ctx)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)

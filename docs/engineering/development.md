@@ -32,7 +32,7 @@ but are not mandatory for every local change. CI workflows and task definitions
 own exact execution. Report checks actually run and material gaps; prior results
 are not current evidence.
 
-Keep source stable while generators or checks read it. SQL, OpenAPI and templ source
+Keep source stable while generators or checks read it. SQL, public contract and templ source
 changes require their generated-output checks. Stage completed code/generated/docs
 changes and run `mise run source:check` before code delivery. Documentation-only
 changes check links, ownership, preservation of intent and diffs; do not run
@@ -74,7 +74,7 @@ architecture, current coverage or descriptive usage help.
 
 Document decisions and rationale that source alone cannot explain. Do not maintain
 parallel catalogs of packages, schemas, CLI flags, API fields, rule implementations
-or test results. CLI help, OpenAPI, source and tests own those details.
+or test results. CLI help, public contracts, source and tests own those details.
 
 Keep everyday usage help in the root README. It describes selected v0.1.0 behavior
 in the present tense, without deprecated workflows or future speculation. It is
@@ -82,3 +82,8 @@ not a specification, task list or acceptance gate. Keep commands grounded in hel
 and source; avoid inventing screen labels or implementation details. Coverage and
 limitations belong in the coverage document. Remove obsolete documents and repair
 inbound links.
+
+The provider proof uses disposable Go workspace files to compile an unrelated
+module and run it through the actual private host and SQLite store. Run
+`mise run test:provider` for that proof, including race detection. CI and behavior
+coverage include the same proof; the production module imports no fixture.

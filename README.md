@@ -7,10 +7,9 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
-Wake provides the administrative foundation. Wake supports
-local setup, protected credentials, sign-in, appearance preferences and process
-configuration/status. Financial synchronization, imports and financial queries are
-unavailable in this build.
+Wake connects one IBKR account, automatically acquires Confirmation reports, and
+shows exchange equity/ETF executions in the admin console. It retains original
+reports, exact financial values, provisional instrument identity and conflicts.
 
 ### Set up and start
 
@@ -32,6 +31,34 @@ For a separate configuration, pass the same absolute path to both commands:
 mise run bin -- setup --config /absolute/private/path/config.toml
 mise run bin -- serve --config /absolute/private/path/config.toml
 ```
+
+If startup reports an unsupported development store, stop Wake and preserve a
+backup of its database and sidecars. Explicitly move them aside or select a fresh
+data directory before restarting. Startup preserves unsupported data. Use current
+settings from `config describe`; retired acquisition settings are rejected.
+
+### Connect and inspect
+
+Open **Connections**, enter a connection name, the saved Confirmation Query ID
+and the Flex Web Service token. See [IBKR setup](docs/providers/ibkr-flex.md) for
+query preparation. Wake encrypts the token and performs one bounded discovery
+attempt. It shows the available accounts and any missing profile information.
+
+Select **Confirm account**, enter a display name, and confirm the available
+details. Leave an unknown account currency empty. Confirmation activates one
+account and starts automatic synchronization; other discovered accounts remain
+candidates.
+
+Open **Activity** to inspect equity executions, instruments and their reference
+status. Execution and instrument pages link to retained evidence when needed.
+The pages state the processing coverage; unsupported rows remain in the reports.
+Status regions refresh automatically while preserving unfinished forms.
+
+Connections also provides token replacement, Query ID repair and explicit retry.
+Its optional OpenFIGI setting uses an encrypted key independently of IBKR access.
+A rejected configured key stays visible until repaired or explicitly cleared to
+select anonymous access. Reference failures leave provisional financial views
+available.
 
 ### Find help
 

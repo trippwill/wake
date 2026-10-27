@@ -5,7 +5,13 @@
 #MISE description="Verify generated SQLite query code for private core storage"
 #MISE wait_for=["sqlc:gen"]
 set -euo pipefail
-shopt -s nullglob
-for config in sqlc.yaml; do
-  sqlc -f "$config" diff
+snapshot=$(mktemp -d)
+trap 'rm -rf "$snapshot"' EXIT
+mkdir -p "$snapshot/internal/persistence/sqlite"
+cp sqlc.yaml "$snapshot/"
+cp internal/persistence/sqlite/*.sql "$snapshot/internal/persistence/sqlite/"
+sqlc -f "$snapshot/sqlc.yaml" generate
+for file in "$snapshot"/internal/persistence/sqlite/sqlc/*.go; do
+  sed -i '1i// SPDX-FileCopyrightText: 2026 trippwill\n// SPDX-License-Identifier: MPL-2.0\n' "$file"
 done
+diff -ru internal/persistence/sqlite/sqlc "$snapshot/internal/persistence/sqlite/sqlc"

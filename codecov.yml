@@ -1,4 +1,4 @@
-# Generated source is checked for freshness and excluded from behavior coverage.
+# Generated source is checked for freshness; behavior coverage includes the external host proof.
 ignore:
   - "**/*_templ.go"
   - "internal/persistence/sqlite/sqlc/**"
@@ -14,6 +14,12 @@ component_management:
   default_rules:
     statuses: []
   individual_components:
+    - component_id: contracts
+      name: Public contracts
+      paths: ["financial/**", "source/**", "provider/**"]
+    - component_id: host
+      name: Host
+      paths: ["internal/host/**"]
     - component_id: storage
       name: Storage
       paths: ["internal/persistence/**"]

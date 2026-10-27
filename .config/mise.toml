@@ -19,11 +19,11 @@ postinstall = { task = "go:modules" }
 
 [tasks.ci]
 description = "Run continuous integration tasks"
-depends = ["check", "build", "test:coverage", "test:race", "test:browser"]
+depends = ["check", "build", "test:coverage", "test:race", "test:browser", "test:provider"]
 
 [tasks.'ci:pr']
 description = "Run PR checks with full behavior, focused races and browser smoke"
-depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke"]
+depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke", "test:provider"]
 
 [tasks.validate]
 description = "Generate, fix, and validate sources for local development"
@@ -79,7 +79,7 @@ depends = ["lint:fix", "fmt"]
 
 [tasks.fmt]
 description = "Format all Go files"
-depends = ["lint:fmt", "templ:fmt", "frontend:fmt"]
+depends = ["lint:fmt", "templ:fmt", "frontend:fmt", "provider:fmt"]
 
 [tasks.'test:integration']
 description = "Run opt-in live integration checks (requires WAKE_IBKR_FLEX_LIVE=1 and external secrets)"
@@ -143,3 +143,11 @@ run = 'templ generate -check && templ fmt . -fail -v -prettier-required -prettie
 description = "Format all templ files"
 wait_for = ["templ:gen"]
 run = 'templ fmt . -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
+
+[tasks.'test:host']
+description = "Run the external-provider proof through the real SQLite-backed host with races"
+depends = ["test:provider"]
+
+[tasks.'provider:fmt']
+description = "Format external fixture and host proof modules"
+run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go"

@@ -4,8 +4,8 @@
 
 #MISE description="Generate SQLite query code for private core storage"
 set -euo pipefail
-shopt -s nullglob
-for config in sqlc.yaml; do
-  sqlc -f "$config" compile
-  sqlc -f "$config" generate
+sqlc -f sqlc.yaml compile
+sqlc -f sqlc.yaml generate
+for file in internal/persistence/sqlite/sqlc/*.go; do
+  sed -i '1i// SPDX-FileCopyrightText: 2026 trippwill\n// SPDX-License-Identifier: MPL-2.0\n' "$file"
 done

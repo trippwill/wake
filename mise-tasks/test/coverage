@@ -4,6 +4,12 @@
 
 #MISE description="Run ordinary behavior with Wake-wide coverage"
 set -euo pipefail
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+export GOWORK="$workspace/go.work"
+go work init "$PWD" "$PWD/testdata/external-provider" "$PWD/testdata/provider-integration"
+go work edit -replace="go.trippwill.dev/wake@v0.0.0=$PWD"
+go work edit -replace="example.org/wakefixture@v0.0.0=$PWD/testdata/external-provider"
 mkdir -p .cache/test-results
-go test -json -count=1 -timeout=5m -coverpkg=go.trippwill.dev/wake/... -coverprofile=coverage.txt ./... \
+go test -json -count=1 -timeout=5m -coverpkg=go.trippwill.dev/wake/... -coverprofile=coverage.txt ./... ./testdata/external-provider/... ./testdata/provider-integration/... \
   | tee .cache/test-results/coverage.jsonl

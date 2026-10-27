@@ -86,7 +86,7 @@ func TestBrowserShell(t *testing.T) {
 		chromedp.Click(`button[type="submit"]`),
 		chromedp.WaitVisible("#main-navigation"),
 		chromedp.Evaluate(
-			`document.querySelectorAll('#main-navigation a').length === 3 && !document.querySelector('a[href="/trades"]')`,
+			`document.querySelectorAll('#main-navigation a').length === 5 && !document.querySelector('a[href="/trades"]')`,
 			&ok,
 		),
 	)
@@ -99,7 +99,7 @@ func TestBrowserShell(t *testing.T) {
 		chromedp.Click(`a[href="/configuration"]`),
 		chromedp.WaitVisible("h1"),
 		chromedp.Evaluate(
-			`document.querySelector('h1').textContent==='Configuration' && document.body.textContent.includes('No acquisition providers')`,
+			`document.querySelector('h1').textContent==='Configuration' && document.body.textContent.includes('Manage IBKR connections')`,
 			&ok,
 		),
 	)

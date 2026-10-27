@@ -1,0 +1,205 @@
+{
+  "description": "Synthetic scenarios using the supplied Confirmation XML shape; not copied trading history or application acceptance evidence.",
+  "account_id": "U0000001",
+  "reports": [
+    {
+      "file": "initial.xml",
+      "execution_rows": 17,
+      "exchange_trades": 12,
+      "bookings": 5,
+      "order_summaries": 1,
+      "symbol_summaries": 1,
+      "window": [
+        "2026-07-13",
+        "2026-07-17"
+      ]
+    },
+    {
+      "file": "overlap.xml",
+      "execution_rows": 12,
+      "exchange_trades": 7,
+      "bookings": 5,
+      "order_summaries": 0,
+      "symbol_summaries": 0,
+      "window": [
+        "2026-07-16",
+        "2026-07-20"
+      ],
+      "unchanged_from_initial": 10,
+      "new_to_reader": 2
+    }
+  ],
+  "sequence_expectations": {
+    "after_initial_distinct_trade_ids": 17,
+    "after_exact_replay": 17,
+    "after_overlap": 19,
+    "after_overlap_replay": 19,
+    "omission_is_not_cancellation": true
+  },
+  "cases": [
+    {
+      "name": "fractional-fill-a",
+      "trade_id": "900000001",
+      "kind": "ExchTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "fractional-fill-b",
+      "trade_id": "900000002",
+      "kind": "ExchTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "equity-close",
+      "trade_id": "900000003",
+      "kind": "ExchTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "long-call-open",
+      "trade_id": "900000004",
+      "kind": "ExchTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "long-call-close",
+      "trade_id": "900000005",
+      "kind": "ExchTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "short-put-open",
+      "trade_id": "900000006",
+      "kind": "ExchTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "put-assignment-outcome",
+      "trade_id": "900000007",
+      "kind": "BookTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "assigned-stock-purchase",
+      "trade_id": "900000008",
+      "kind": "BookTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "short-call-open",
+      "trade_id": "900000009",
+      "kind": "ExchTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "call-assignment-outcome",
+      "trade_id": "900000010",
+      "kind": "BookTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "assigned-stock-sale",
+      "trade_id": "900000011",
+      "kind": "BookTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "long-put-open",
+      "trade_id": "900000012",
+      "kind": "ExchTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "put-expiration-outcome",
+      "trade_id": "900000013",
+      "kind": "BookTrade",
+      "asset_category": "OPT"
+    },
+    {
+      "name": "fx-cross-currency-commission",
+      "trade_id": "900000014",
+      "kind": "ExchTrade",
+      "asset_category": "CASH"
+    },
+    {
+      "name": "fx-quoted-usd",
+      "trade_id": "900000015",
+      "kind": "ExchTrade",
+      "asset_category": "CASH"
+    },
+    {
+      "name": "gilt-accrued-interest",
+      "trade_id": "900000016",
+      "kind": "ExchTrade",
+      "asset_category": "BOND"
+    },
+    {
+      "name": "treasury-bill-rounded-amount",
+      "trade_id": "900000017",
+      "kind": "ExchTrade",
+      "asset_category": "BILL"
+    },
+    {
+      "name": "late-arriving-execution",
+      "trade_id": "900000018",
+      "kind": "ExchTrade",
+      "asset_category": "STK"
+    },
+    {
+      "name": "new-execution",
+      "trade_id": "900000019",
+      "kind": "ExchTrade",
+      "asset_category": "STK"
+    }
+  ],
+  "relationships": {
+    "same_order_distinct_fills": [
+      "900000001",
+      "900000002"
+    ],
+    "all_option_underlying_conid": "99001001",
+    "option_outcomes_and_stock_bookings_have_distinct_trade_ids": true,
+    "lifecycle_pairing": "No explicit pair reference is supplied. Do not infer a durable lifecycle link merely from date, underlier or amounts."
+  },
+  "exact_values": {
+    "900000001": {
+      "quantity": "0.125000000000",
+      "price": "400.123456789",
+      "amount": "50.015432098625000000000",
+      "commission": "-0.125000000001",
+      "netCash": "-50.140432098626000000000"
+    },
+    "900000014": {
+      "currency": "GBP",
+      "commissionCurrency": "USD",
+      "quantity": "125",
+      "price": "0.80000000",
+      "amount": "100.00000000",
+      "commission": "-0.25",
+      "netCash": "-100.00000000"
+    },
+    "900000016": {
+      "currency": "GBP",
+      "quantity": "2000",
+      "price": "91.5000001",
+      "amount": "1830.0000020",
+      "accruedInt": "-12.345",
+      "commission": "-1.25",
+      "netCash": "-1843.595002"
+    },
+    "900000017": {
+      "quantity": "10000",
+      "price": "99.1234567",
+      "amount": "9912.35",
+      "commission": "-0.25",
+      "netCash": "-9912.60"
+    }
+  },
+  "limits": [
+    "Options have fictional terms and provider identifiers, no asserted global identifiers; do not live-resolve them.",
+    "Not a measured IBKR publication timeline or correction protocol.",
+    "No exercise, explicit source cancellation/replacement, adjusted-option deliverable, or second account.",
+    "The long call has one remaining contract and no reported outcome despite its expiry date; do not infer expiration.",
+    "Only two representative summaries are retained; this is a focused report fixture, not a complete production export."
+  ]
+}

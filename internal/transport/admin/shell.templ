@@ -46,6 +46,12 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 									@SidebarLink("Overview", "/", "overview", section == "Overview")
 								</li>
 								<li>
+									@SidebarLink("Connections", "/connections", "configuration", section == "Connections")
+								</li>
+								<li>
+									@SidebarLink("Activity", "/activity", "overview", section == "Activity")
+								</li>
+								<li>
 									@SidebarLink("Daemon status", "/status", "overview", section == "Daemon status")
 								</li>
 								<li class="menu-title">Settings</li>

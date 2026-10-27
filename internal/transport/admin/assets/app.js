@@ -13,3 +13,42 @@
     });
   }
 })();
+
+(() => {
+  const regions = [...document.querySelectorAll("[data-refresh]")];
+  if (!regions.length) return;
+  let refreshing = false;
+  const refresh = async () => {
+    if (refreshing || document.hidden) return;
+    refreshing = true;
+    try {
+      await Promise.all(
+        regions.map(async (region) => {
+          // Editable forms live outside status regions; keep focused links usable.
+          if (region.contains(document.activeElement)) return;
+          const response = await fetch(region.dataset.refresh, {
+            credentials: "same-origin",
+            headers: { Accept: "text/html" },
+          });
+          if (!response.ok || response.redirected) return;
+          region.innerHTML = await response.text();
+        }),
+      );
+    } catch {
+      // Polling continues through a lost SSE connection or a daemon restart.
+    } finally {
+      refreshing = false;
+    }
+  };
+  const events = new EventSource("/events");
+  events.addEventListener("refresh", refresh);
+  const poll = setInterval(refresh, 10000);
+  window.addEventListener(
+    "pagehide",
+    () => {
+      clearInterval(poll);
+      events.close();
+    },
+    { once: true },
+  );
+})();
