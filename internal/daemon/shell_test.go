@@ -135,11 +135,11 @@ func shellConfig(t *testing.T) config.Config {
 	_ = l.Close()
 
 	return config.Config{
-		Paths: config.Paths{
-			ConfigDir:  resetPrivateDir(t),
-			DataDir:    resetPrivateDir(t),
-			StateDir:   resetPrivateDir(t),
-			RuntimeDir: resetPrivateDir(t),
+		Paths: config.Paths{ConfigDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)},
+		Storage: config.Storage{
+			WarehousePath:   filepath.Join(resetPrivateDir(t), "history.sqlite"),
+			ConnectionsPath: filepath.Join(resetPrivateDir(t), "credentials.sqlite"),
+			OperationalPath: filepath.Join(resetPrivateDir(t), "execution.sqlite"),
 		},
 		//nolint:gosec // Port obtained from a bound TCP listener.
 		Admin: config.Admin{Port: uint16(port), AuthMode: "local"},

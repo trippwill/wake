@@ -38,11 +38,15 @@ func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
 		return err
 	}
 
+	if err = q.ReviewReference(ctx); err != nil {
+		return err
+	}
+
 	if err = q.WakeReference(ctx); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	return s.accessUpdated(ctx, "reference_setting", tx.Commit())
 }
 
 func (s *Store) ReferenceFailure(ctx context.Context, failure string) error {
@@ -70,6 +74,15 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 	defer func() { _ = tx.Rollback() }()
 
 	q := s.queries.WithTx(tx)
+
+	profile, e := q.Profile(ctx)
+	if e != nil {
+		return false, time.Time{}, e
+	}
+
+	if profile.Paused != 0 {
+		return false, time.Time{}, nil
+	}
 
 	r, err := q.ReferenceBudget(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -326,8 +339,19 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
+	if err = q.EnsureInstrumentSelection(ctx, id); err != nil {
+		return err
+	}
+
+	base, err := q.InstrumentSelection(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	root.Name, root.Ticker, root.ReferenceFigi, root.EvidenceID, root.ReferenceStatus = base.Name, base.Ticker, base.Figi, base.Evidence, base.Status
+
 	status := result.Status
-	name, figi, evidence := root.Name, root.ShareClassFigi, root.EvidenceID
+	name, figi, evidence := root.Name, root.ReferenceFigi, root.EvidenceID
 	ticker := root.Ticker
 	if root.ReferenceStatus == "conflict" {
 		status = "conflict"
@@ -348,57 +372,69 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 	}
 
 	if status == "resolved" {
-		if len(result.Records) != 1 || result.Records[0].ShareClass == "" {
-			return ErrCorrupt
+		record, selectedFIGI, compatible := reference.Select(source.InstrumentKind(root.Kind), result.Records)
+		if !compatible {
+			status = "ambiguous"
 		}
 
-		record := result.Records[0]
-		if figi != "" && figi != record.ShareClass {
-			status = "conflict"
-		} else {
-			other, e := q.InstrumentByFIGI(ctx, record.ShareClass)
-			if e != nil && !errors.Is(e, sql.ErrNoRows) {
-				return e
-			}
-
-			if e == nil && other.ID != id {
+		if compatible {
+			if figi != "" && figi != selectedFIGI {
 				status = "conflict"
-
-				if e = q.ResolveInstrument(
-					ctx,
-					sqlc.ResolveInstrumentParams{
-						ID:              other.ID,
-						Name:            other.Name,
-						Ticker:          other.Ticker,
-						ShareClassFigi:  other.ShareClassFigi,
-						EvidenceID:      other.EvidenceID,
-						ReferenceStatus: "conflict",
-						ReferenceNext:   other.ReferenceNext,
-					},
-				); e != nil {
+			} else {
+				other, e := q.InstrumentByFIGI(ctx, selectedFIGI)
+				if e != nil && !errors.Is(e, sql.ErrNoRows) {
 					return e
 				}
-			} else {
-				name, figi, evidence = record.Name, record.ShareClass, result.Evidence
-				if record.Ticker != "" {
-					ticker = record.Ticker
+
+				if e == nil && other.ID != id {
+					status = "conflict"
+
+					if e = resolveAutomaticInstrument(ctx, q,
+						sqlc.ResolveInstrumentParams{
+							ID:              other.ID,
+							Name:            other.Name,
+							Ticker:          other.Ticker,
+							ReferenceFigi:   other.ReferenceFigi,
+							EvidenceID:      other.EvidenceID,
+							ReferenceStatus: "conflict",
+							ReferenceNext:   other.ReferenceNext,
+						},
+					); e != nil {
+						return e
+					}
+				} else {
+					name, figi, evidence = record.Name, selectedFIGI, result.Evidence
+					if record.Ticker != "" {
+						ticker = record.Ticker
+					}
 				}
 			}
 		}
 	}
 
-	if err = q.ResolveInstrument(
+	if err = q.SaveInstrumentSelection(
 		ctx,
-		sqlc.ResolveInstrumentParams{
-			ID:              id,
-			Name:            name,
-			Ticker:          ticker,
-			ShareClassFigi:  figi,
-			EvidenceID:      evidence,
-			ReferenceStatus: status,
-			ReferenceNext:   result.Next.UTC().Format(time.RFC3339Nano),
+		sqlc.SaveInstrumentSelectionParams{
+			InstrumentID: id,
+			Name:         name,
+			Ticker:       ticker,
+			Figi:         figi,
+			Evidence:     evidence,
+			Status:       status,
+			UnderlierID:  base.UnderlierID,
 		},
 	); err != nil {
+		return err
+	}
+
+	if err = q.ReferenceNext(
+		ctx,
+		sqlc.ReferenceNextParams{ID: id, ReferenceNext: result.Next.UTC().Format(time.RFC3339Nano)},
+	); err != nil {
+		return err
+	}
+
+	if err = projectInstrument(ctx, q, id); err != nil {
 		return err
 	}
 

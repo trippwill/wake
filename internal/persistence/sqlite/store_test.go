@@ -44,7 +44,14 @@ func TestUnsupportedStoreIsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if s, err := Open(context.Background(), path); !errors.Is(err, ErrUnsupportedSchema) {
+	if s, err := Open(
+		context.Background(),
+		testProfile(path),
+		nil,
+	); !errors.Is(
+		err,
+		ErrUnsupportedSchema,
+	) {
 		if s != nil {
 			_ = s.Close()
 		}
@@ -69,12 +76,23 @@ func TestPrivateStoreOwnershipAndRestart(t *testing.T) {
 	_ = os.Chmod(dir, 0o700)
 	path := filepath.Join(dir, "wake.db")
 
-	s, err := Open(context.Background(), path)
+	s, err := Open(
+		context.Background(),
+		testProfile(path),
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if other, e := Open(context.Background(), path); !errors.Is(e, ErrUnsafeStore) {
+	if other, e := Open(
+		context.Background(),
+		testProfile(path),
+		nil,
+	); !errors.Is(
+		e,
+		ErrUnsafeStore,
+	) {
 		if other != nil {
 			_ = other.Close()
 		}
@@ -86,7 +104,11 @@ func TestPrivateStoreOwnershipAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err = Open(context.Background(), path)
+	s, err = Open(
+		context.Background(),
+		testProfile(path),
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +120,14 @@ func TestPrivateStoreOwnershipAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = Open(context.Background(), alias); !errors.Is(err, ErrUnsafeStore) {
+	if _, err = Open(
+		context.Background(),
+		testProfile(alias),
+		nil,
+	); !errors.Is(
+		err,
+		ErrUnsafeStore,
+	) {
 		t.Fatal("hardlink accepted", err)
 	}
 }
@@ -141,7 +170,7 @@ func TestUnsupportedWALStorePreflightPreservesAllFiles(t *testing.T) {
 
 	if s, e := Open(
 		context.Background(),
-		filepath.Join(target, "wake.db"),
+		testProfile(filepath.Join(target, "wake.db")), nil,
 	); !errors.Is(
 		e,
 		ErrUnsupportedSchema,

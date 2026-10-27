@@ -142,6 +142,20 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action: performServe,
 		},
 		{
+			Name:        "reset",
+			Usage:       "Preview resetting credentials or financial data; --confirm executes",
+			ArgsUsage:   "credentials|warehouse",
+			Description: "Stop Wake before reset. A warehouse reset includes its disposable operational state. Selected database files and SQLite sidecars are removed without opening SQLite or reading credentials. Configuration, key and browser access files are retained.",
+			Flags: append(
+				append(common(), config.Flags()...),
+				&cli.BoolFlag{
+					Name:  "confirm",
+					Usage: "Delete the selected files; without this flag only preview the reset",
+				},
+			),
+			Action: performReset,
+		},
+		{
 			Name:            "admin",
 			Usage:           "Provision reverse-proxy access",
 			HideHelpCommand: true,

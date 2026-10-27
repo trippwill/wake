@@ -86,13 +86,13 @@ func TestCommandDiscoveryReflectsFoundation(t *testing.T) {
 		names[command.Name] = true
 	}
 
-	for _, name := range []string{"wake setup", "wake serve", "wake admin", "wake config", "wake help"} {
+	for _, name := range []string{"wake setup", "wake serve", "wake admin", "wake config", "wake reset", "wake help"} {
 		if !names[name] {
 			t.Fatal("retained command missing", name)
 		}
 	}
 
-	for _, name := range []string{"ingest", "trades", "connections", "warehouse", "reset"} {
+	for _, name := range []string{"ingest", "trades", "connections", "warehouse"} {
 		stdout.Reset()
 		stderr.Reset()
 

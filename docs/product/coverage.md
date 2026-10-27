@@ -1,26 +1,92 @@
 # Current coverage
 
-Wake connects one IBKR account through Trade Confirmation Flex, retains original
-reports and normalized claims transactionally, and accepts equity executions with
-exact financial values and qualified source references. Account discovery does
-not authorize recurring acquisition: the operator confirms one account and its
-authoritative connection/provider/stream before synchronization starts.
+Wake supports one IBKR account with automatic Confirmation acquisition, financial
+review and attributable corrections to existing activity. This document owns
+coverage and limitations; the [README](../../README.md) provides usage help and
+the [domain vocabulary](domain.md) owns financial policy.
 
-Repeated and overlapping reports preserve observation history without duplicating
-fills. OpenFIGI resolution retains evidence and supports anonymous or encrypted-key
-access with durable pacing. Unresolved identity and conflicting claims stay visible.
-The admin console supports connection setup, account confirmation, synchronization
-status and evidence/activity inspection. Public provider contracts are verified by
-an unrelated module running through the real transactional host.
+## Account setup and authority
 
-Option, debt, FX, correction/rebuild workflows and financial socket publishing are
-outside this snapshot's coverage. Source summaries remain retained evidence.
+The workflow is:
+
+1. The operator creates an IBKR connection with its access and saved Confirmation
+   query configuration.
+2. Wake discovers the account information available through that connection.
+3. The operator selects one discovered account and confirms or edits its details.
+4. Wake creates the financial account and binds its reported account reference to
+   the connection, provider and Confirmation stream as its authoritative source.
+5. Automatic synchronization and financial processing start for that account.
+
+Discovery may return several candidates; v0.1.0 activates one account. Discovery
+does not create financial accounts or start ongoing history synchronization.
+The [domain vocabulary](../product/domain.md#account-source-authority) defines
+account identity, source authority and financial meaning.
+
+Each account has one designated authoritative `(connection, provider, stream)`
+for its financial activity. This does not designate IBKR as the instrument
+reference master or remove attributable operator corrections. OpenFIGI remains
+the primary instrument identity and naming reference.
+
+## Included coverage
+
+| Area | Coverage |
+| --- | --- |
+| Acquisition | One IBKR account, one authoritative Confirmation stream, automatic acquisition, retained original reports, overlapping windows, restart and catch-up. |
+| Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
+| Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, charges and dates. |
+| Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
+| Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
+| Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
+| Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
+| Reference data | Core OpenFIGI lookup, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Missing enrichment remains visible. |
+| Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, compact conflicts, optional linked evidence/rules and correction of existing activity. |
+| Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
+
+Some reported bookings lack execution IDs; acceptance cannot universally require
+one. Keep exact reported values, currencies, units and time precision. Source money
+is not recomputed to make an equation agree. Reported settlement dates are not proof
+of completed cash settlement. Preserve reported option multipliers and terms;
+unknown deliverables remain unknown, rather than an assumed 100 shares. Historical
+activity retains the terms used to interpret it. A general automatic contract-
+adjustment or financial reconstruction engine is not required.
+
+Source-established relationships are useful when present. A missing relationship
+does not authorize an inferred stock delivery, cash payment or strategy. Family
+and market examples are representative, not rejection lists
+for otherwise interpretable records.
+
+## Deferred coverage
+
+- Creation of new financial activity through manual-entry workflows.
+- Activity Flex acquisition and processing, including Activity-to-Confirmation
+  enrichment and summary/component reconciliation.
+- Financial contributions from Confirmation order or symbol summaries. Preserve
+  them in the original report; execution/booked rows supply financial activity.
+- Deposits, withdrawals, standalone fees, dividends, coupons, withholding and
+  other non-trade cash activity absent from the Confirmation stream.
+- Securities transfers, reported lot/cost allocations, wash-sale adjustments and
+  dedicated corporate-action processing, including Treasury-bill maturity events.
+- Positions, balances, NAV, reported or calculated P&L, and reconstruction of
+  holdings, cash, lots or missing lifecycle outcomes.
+- SnapTrade and other acquisition providers, multiple-account workflows, file
+  imports, automatic source switching and peer-source reconciliation.
+
+Exercise, explicit cancellation/replacement, adjusted-option and representative
+gilt checks use representative evidence or clearly identified synthetic cases.
+Raw report retention alone does not establish financial coverage. Private reports
+and credentials are not repository fixtures.
+
+Financial socket publishing is outside this snapshot's coverage.
 
 ## Compatibility
 
-The executable targets Linux and one account. Storage uses a pre-release development
-format; unsupported stores fail closed without conversion or deletion. Preserve
-backups and select fresh paths or explicitly move unsupported stores and sidecars
-aside. Source credentials and private reports are never repository fixtures.
+The executable targets Linux. Storage uses explicit pre-release development
+formats with no automatic compatibility migration. Unsupported stores fail closed
+with recreate guidance and preserve the original files. Back up stores and sidecars
+before explicitly moving or resetting them. Warehouse, connections and operational
+stores have independent paths; recovery preserves financial identity, evidence,
+decisions and durable progress. See [architecture](../engineering/architecture.md)
+for trust and recovery boundaries and [development](../engineering/development.md)
+for verification and reset procedures. No version tag is implied by this coverage.
 
 Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.

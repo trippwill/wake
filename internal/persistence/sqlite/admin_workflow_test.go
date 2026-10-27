@@ -47,7 +47,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, store, envelope, func() time.Time { return now }, registration)
+	h, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +59,13 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		upstream.Client(),
 		upstream.URL+"/mapping",
 		func() time.Time { return now },
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil)
+	workflow := application.New(store, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, nil)
 
 	dir := t.TempDir()
 	if err = admin.SetUnlock(dir, []byte("synthetic-http-unlock")); err != nil {

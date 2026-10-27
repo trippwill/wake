@@ -34,6 +34,10 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 	defer func() { _ = tx.Rollback() }()
 
 	q := s.queries.WithTx(tx)
+	if err = q.PutDescriptor(ctx, sqlc.PutDescriptorParams{ID: c.ID, Provider: c.Provider}); err != nil {
+		return err
+	}
+
 	if err = q.PutConnection(
 		ctx,
 		sqlc.PutConnectionParams{ID: c.ID, Provider: c.Provider, Settings: data},
@@ -55,6 +59,17 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 
 func (s *Store) Connection(ctx context.Context, id string) (host.Connection, error) {
 	row, err := s.queries.Connection(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		descriptor, e := s.queries.Descriptor(ctx, id)
+		if e != nil {
+			return host.Connection{}, e
+		}
+
+		settings, _ := provider.NewSettings(map[string]string{})
+
+		return host.Connection{ID: id, Provider: descriptor.Provider, Settings: settings}, nil
+	}
+
 	if err != nil {
 		return host.Connection{}, err
 	}
@@ -88,8 +103,13 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 	q := s.queries.WithTx(tx)
 
 	previous, err := q.Connection(ctx, c.ID)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+
+	descriptor, e := q.Descriptor(ctx, c.ID)
+	if e != nil || descriptor.Provider != c.Provider {
+		return ErrAssociation
 	}
 
 	if err = q.UpdateConnection(
@@ -99,13 +119,13 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return err
 	}
 
-	if !bytes.Equal(previous.Settings, data) {
+	if previous.ID != "" && !bytes.Equal(previous.Settings, data) {
 		if err = q.ResetConnectionWork(ctx, c.ID); err != nil {
 			return err
 		}
 	}
 
-	return tx.Commit()
+	return s.accessUpdated(ctx, "connection_settings", tx.Commit())
 }
 
 func (s *Store) Secret(ctx context.Context, id, key string) ([]byte, error) {
@@ -113,10 +133,12 @@ func (s *Store) Secret(ctx context.Context, id, key string) ([]byte, error) {
 }
 
 func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byte) error {
-	return s.queries.ReplaceSecret(
+	err := s.queries.ReplaceSecret(
 		ctx,
 		sqlc.ReplaceSecretParams{ConnectionID: id, Key: key, Encrypted: payload},
 	)
+
+	return s.accessUpdated(ctx, "connection_credential", err)
 }
 
 func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint, error) {
@@ -293,7 +315,7 @@ func (s *Store) Accept(
 	}
 
 	if k.Operation == "discover" && id != "" && step.State().IsZero() {
-		if err = q.SetScheduled(
+		if err = setScheduled(q,
 			ctx,
 			sqlc.SetScheduledParams{
 				ConnectionID: k.Connection,
@@ -483,3 +505,35 @@ func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.T
 }
 
 var _ host.Store = (*Store)(nil)
+
+func (s *Store) accessUpdated(ctx context.Context, kind string, err error) error {
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"access repair failed",
+			"event",
+			"storage_access_failed",
+			"operation",
+			kind,
+			"code",
+			storageCode(err),
+			"outcome",
+			"failed",
+		)
+
+		return err
+	}
+
+	s.logger.InfoContext(
+		ctx,
+		"access configuration saved",
+		"event",
+		"storage_access_updated",
+		"operation",
+		kind,
+		"outcome",
+		"succeeded",
+	)
+
+	return nil
+}

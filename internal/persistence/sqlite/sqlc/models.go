@@ -11,6 +11,32 @@ import (
 	"database/sql"
 )
 
+type AccessConfiguration struct {
+	ID       string
+	Provider string
+	Settings []byte
+}
+
+type AccessCredential struct {
+	ConnectionID string
+	Key          string
+	Encrypted    []byte
+}
+
+type AccessReferenceSetting struct {
+	Singleton int64
+	Encrypted []byte
+	Failure   string
+}
+
+type AccessStoreMetadatum struct {
+	Singleton   int64
+	Kind        string
+	Version     string
+	ID          string
+	WarehouseID string
+}
+
 type Account struct {
 	ID           string
 	Singleton    int64
@@ -25,6 +51,19 @@ type Account struct {
 	Value        string
 	ArtifactID   string
 	Rule         string
+}
+
+type ActivityBasis struct {
+	ActivityID   string
+	Data         []byte
+	InstrumentID sql.NullString
+	ListingID    sql.NullString
+}
+
+type ActivityRelationship struct {
+	ActivityID string
+	Kind       string
+	Target     string
 }
 
 type Artifact struct {
@@ -46,14 +85,6 @@ type Artifact struct {
 	ReportedTo        string
 }
 
-type Attempt struct {
-	ID         string
-	ArtifactID string
-	Version    string
-	Outcome    string
-	Counts     []byte
-}
-
 type Candidate struct {
 	ArtifactID string
 	Authority  string
@@ -67,13 +98,6 @@ type Candidate struct {
 type Connection struct {
 	ID       string
 	Provider string
-	Settings []byte
-}
-
-type Credential struct {
-	ConnectionID string
-	Key          string
-	Encrypted    []byte
 }
 
 type EventLink struct {
@@ -83,10 +107,12 @@ type EventLink struct {
 }
 
 type Execution struct {
+	Revision     int64
+	Kind         string
 	ID           string
 	AccountID    string
-	InstrumentID string
-	ListingID    string
+	InstrumentID sql.NullString
+	ListingID    sql.NullString
 	Accepted     []byte
 	Status       string
 	Rule         string
@@ -102,6 +128,7 @@ type ExecutionObservation struct {
 }
 
 type Instrument struct {
+	Revision        int64
 	ID              string
 	SourceKey       string
 	Name            string
@@ -109,10 +136,11 @@ type Instrument struct {
 	Kind            string
 	Reported        []byte
 	ReferenceStatus string
-	ShareClassFigi  string
+	ReferenceFigi   string
 	EvidenceID      string
 	ReferenceNext   string
 	Rule            string
+	UnderlierID     sql.NullString
 }
 
 type InstrumentReferenceAttempt struct {
@@ -120,6 +148,16 @@ type InstrumentReferenceAttempt struct {
 	EvidenceID   string
 	Status       string
 	Rule         string
+}
+
+type InstrumentSelection struct {
+	InstrumentID string
+	Name         string
+	Ticker       string
+	Figi         string
+	Evidence     string
+	Status       string
+	UnderlierID  sql.NullString
 }
 
 type Listing struct {
@@ -131,11 +169,74 @@ type Listing struct {
 	Figi         string
 }
 
+type NormalizationReceipt struct {
+	ArtifactID string
+	Version    string
+	Counts     []byte
+}
+
+type OperationalAttempt struct {
+	ID         string
+	ArtifactID string
+	Version    string
+	Outcome    string
+	Counts     []byte
+}
+
+type OperationalExecution struct {
+	ConnectionID string
+	Stream       string
+	Operation    string
+}
+
+type OperationalReferenceCache struct {
+	Key        string
+	Status     string
+	Records    []byte
+	Expires    string
+	EvidenceID string
+}
+
+type OperationalStoreMetadatum struct {
+	Singleton   int64
+	Kind        string
+	Version     string
+	ID          string
+	WarehouseID string
+}
+
+type OperatorDecision struct {
+	ID         string
+	TargetKind string
+	TargetID   string
+	Scope      string
+	Text       string
+	Currency   string
+	Action     string
+	Actor      string
+	At         string
+	Rationale  string
+	Supersedes string
+	Submission string
+	Request    []byte
+}
+
 type Pacing struct {
 	Provider string
 	Policy   string
 	Scope    string
 	Next     string
+}
+
+type Profile struct {
+	Singleton        int64
+	AccessID         string
+	Paused           int64
+	ReferenceReview  int64
+	WarehouseReset   int64
+	RecoveryRevision int64
+	ResumedBy        string
+	ResumedAt        string
 }
 
 type Record struct {
@@ -146,19 +247,29 @@ type Record struct {
 	Data       []byte
 }
 
+type RecoveryItem struct {
+	JobID    string
+	GroupID  string
+	Kind     string
+	EntityID string
+	Complete int64
+}
+
+type RecoveryJob struct {
+	ID        string
+	Status    string
+	Completed int64
+	Total     int64
+	Failure   string
+	Actor     string
+	Created   string
+}
+
 type ReferenceBudget struct {
 	Singleton   int64
 	WindowStart string
 	Used        int64
 	Cooldown    string
-}
-
-type ReferenceCache struct {
-	Key        string
-	Status     string
-	Records    []byte
-	Expires    string
-	EvidenceID string
 }
 
 type ReferenceEvidence struct {
@@ -170,12 +281,6 @@ type ReferenceEvidence struct {
 	Headers    []byte
 }
 
-type ReferenceSetting struct {
-	Singleton int64
-	Encrypted []byte
-	Failure   string
-}
-
 type Scheduled struct {
 	ConnectionID string
 	Stream       string
@@ -183,13 +288,28 @@ type Scheduled struct {
 	Enabled      int64
 }
 
+type SourceCorrection struct {
+	ArtifactID  string
+	Version     string
+	Location    string
+	AccountID   string
+	Kind        string
+	Target      string
+	Replacement string
+	Status      string
+}
+
 type SqliteSchema struct {
 	Type string
 	Name string
 }
 
-type WakeFormat struct {
-	Version string
+type StoreMetadatum struct {
+	Singleton   int64
+	Kind        string
+	Version     string
+	ID          string
+	WarehouseID string
 }
 
 type Work struct {

@@ -8,8 +8,9 @@ MPL-2.0 ([LICENSE](LICENSE)).
 ## Using Wake v0.1.0
 
 Wake connects one IBKR account, automatically acquires Confirmation reports, and
-shows exchange equity/ETF executions in the admin console. It retains original
-reports, exact financial values, provisional instrument identity and conflicts.
+shows security executions, option outcomes and reported FX conversions in the
+admin console. It retains original reports, exact financial values, provisional
+instrument identity and conflicts.
 
 ### Set up and start
 
@@ -33,8 +34,8 @@ mise run bin -- serve --config /absolute/private/path/config.toml
 ```
 
 If startup reports an unsupported development store, stop Wake and preserve a
-backup of its database and sidecars. Explicitly move them aside or select a fresh
-data directory before restarting. Startup preserves unsupported data. Use current
+backup of its stores and sidecars. Explicitly move the profile aside or select
+fresh database paths before restarting. Startup preserves unsupported data. Use current
 settings from `config describe`; retired acquisition settings are rejected.
 
 ### Connect and inspect
@@ -49,8 +50,8 @@ details. Leave an unknown account currency empty. Confirmation activates one
 account and starts automatic synchronization; other discovered accounts remain
 candidates.
 
-Open **Activity** to inspect equity executions, instruments and their reference
-status. Execution and instrument pages link to retained evidence when needed.
+Open **Activity** to inspect security executions, option outcomes, currency
+conversions, instruments and their reference status. Execution and instrument pages link to retained evidence when needed.
 The pages state the processing coverage; unsupported rows remain in the reports.
 Status regions refresh automatically while preserving unfinished forms.
 
@@ -59,6 +60,49 @@ Its optional OpenFIGI setting uses an encrypted key independently of IBKR access
 A rejected configured key stays visible until repaired or explicitly cleared to
 select anonymous access. Reference failures leave provisional financial views
 available.
+
+Use **Correct accepted data** on an activity or **Correct instrument data** on an
+instrument to retain a field, link, naming or candidate-selection decision. The form
+shows its target and revision. Decision history records the authenticated session,
+time and optional rationale; supersede a scope with another decision or release it
+to return to automatic selection. Source reports remain available for inspection.
+
+Connections provides **Retry processing report** and **Rebuild accepted views**.
+Recovery uses retained inputs and decisions; progress resumes after restart without
+resetting identities, reference caches or retry eligibility. A failed rebuild keeps
+committed progress and offers retry after the problem is repaired.
+
+Each store has its own file setting under `[storage]`: `warehouse_path` for financial
+history, `connections_path` for active access and encrypted credentials, and
+`operational_path` for execution state. Defaults use the XDG data, config and state
+locations respectively. Override individual files in TOML, with `--warehouse-path`,
+`--connections-path` or `--operational-path` on `serve`, or through the corresponding
+`WAKE_*_PATH` environment variables.
+
+If a companion store is lost, Wake recreates it and pauses upstream work. Retained
+history stays inspectable. In **Connections**, repair missing settings and tokens,
+review the OpenFIGI setting when requested, then select **Resume upstream work**.
+An ordinary restart with intact stores keeps the existing authorization.
+
+The daemon writes structured operational logs to stderr, including completed work,
+failures and recovery actions. Startup always reports the admin binding and port,
+or reports that admin is disabled. Use `--log-level debug` with `serve` for stage,
+validation, pacing and cache detail.
+
+To clear credentials or financial history, stop Wake and preview the configured files:
+
+```sh
+mise run bin -- reset warehouse
+mise run bin -- reset warehouse --confirm
+```
+
+Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
+and works with corrupt or unsupported databases. A warehouse reset also clears its
+operational state and retains credentials. Start Wake, select **Resume upstream
+work**, then confirm the rediscovered account. A credentials reset retains financial
+history; repair access in **Connections** and resume. Configuration, keys and browser
+access are retained. See the
+[development guide](docs/engineering/development.md#workspaces-and-tools) for details.
 
 ### Find help
 

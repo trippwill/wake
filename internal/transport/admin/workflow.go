@@ -4,9 +4,13 @@
 package admin
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/a-h/templ"
@@ -27,24 +31,32 @@ func registerWorkflowRoutes(
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
 			if !ok {
+				rejection(r, "session_required")
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
+
 				return
 			}
 
 			if r.Method == http.MethodPost {
 				if !auth.sameOrigin(r) {
+					rejection(r, "invalid_origin")
 					http.Error(w, "invalid origin", http.StatusForbidden)
+
 					return
 				}
 
 				r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 				if r.ParseForm() != nil {
+					rejection(r, "invalid_form")
 					http.Error(w, "invalid form", http.StatusBadRequest)
+
 					return
 				}
 
 				if subtle.ConstantTimeCompare([]byte(csrf), []byte(r.PostForm.Get("csrf"))) != 1 {
+					rejection(r, "invalid_csrf")
 					http.Error(w, "invalid CSRF token", http.StatusForbidden)
+
 					return
 				}
 			}
@@ -61,6 +73,10 @@ func registerWorkflowRoutes(
 			message = "Enter an account display name and a valid currency, or leave currency unknown."
 		case application.ErrAccountLimit:
 			message = "One account is already activated. Other discovered accounts remain candidates."
+		case application.ErrStale, application.ErrAccessReview:
+			message = err.Error()
+		case application.ErrRecoveryGroup:
+			message = err.Error()
 		case application.ErrCandidate:
 			message = "This account was not discovered through the selected connection."
 		case provider.ErrInvalid:
@@ -241,6 +257,26 @@ func registerWorkflowRoutes(
 
 		templ.Handler(SectionShell("Execution", csrf, "Activity", ExecutionPage(detail))).ServeHTTP(w, r)
 	})
+
+	gate("GET /activity/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
+			templ.Handler(SectionShell("Activity", csrf, "Activity", ExecutionPage(d))).ServeHTTP(w, r)
+			return
+		}
+
+		if d, err := workflow.ConversionDetail(r.Context(), r.PathValue("id")); err == nil {
+			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d))).ServeHTTP(w, r)
+			return
+		}
+
+		d, err := workflow.LifecycleDetail(r.Context(), r.PathValue("id"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		templ.Handler(SectionShell("Option outcome", csrf, "Activity", LifecyclePage(d))).ServeHTTP(w, r)
+	})
 	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.InstrumentDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
@@ -270,6 +306,123 @@ func registerWorkflowRoutes(
 		templ.Handler(SectionShell("Reference evidence", csrf, "Activity", EvidencePage("OpenFIGI mapping", evidence.Retrieved, evidence.Request+"\n"+evidence.Response))).
 			ServeHTTP(w, r)
 	})
+
+	gate("POST /processing/{id}/retry", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		if err := workflow.RetryProcessing(r.Context(), r.PathValue("id")); err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+
+		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	})
+	gate("POST /recovery/resume", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		revision, err := strconv.ParseInt(r.PostForm.Get("revision"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid recovery revision", http.StatusBadRequest)
+			return
+		}
+
+		digest := sha256.Sum256([]byte(csrf))
+		actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
+		if err = workflow.ResumeStorage(r.Context(), revision, actor); err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+
+		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	})
+	gate("POST /recovery/rebuild", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		digest := sha256.Sum256([]byte(csrf))
+		actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
+		if _, err := workflow.StartRebuild(r.Context(), r.PostForm.Get("submission"), actor); err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+
+		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	})
+	gate("POST /recovery/{id}/retry", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		if err := workflow.RetryRecovery(r.Context(), r.PathValue("id")); err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+
+		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	})
+
+	for _, kind := range []string{"activity", "instrument"} {
+		path := "/activity/{id}/correct"
+		if kind == "instrument" {
+			path = "/instruments/{id}/correct"
+		}
+
+		gate("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			form, err := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id"))
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+
+			templ.Handler(SectionShell("Correct accepted data", csrf, "Activity", CorrectionPage(csrf, form))).
+				ServeHTTP(w, r)
+		})
+		gate("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			revision, err := strconv.ParseInt(r.PostForm.Get("revision"), 10, 64)
+			if err != nil {
+				http.Error(w, "invalid revision", http.StatusBadRequest)
+				return
+			}
+
+			decision, err := application.NewDecision(
+				application.DecisionInput{
+					TargetKind:       kind,
+					TargetID:         r.PathValue("id"),
+					Scope:            r.PostForm.Get("scope"),
+					Text:             r.PostForm.Get("value"),
+					Currency:         r.PostForm.Get("currency"),
+					Action:           r.PostForm.Get("action"),
+					Submission:       r.PostForm.Get("submission"),
+					Rationale:        r.PostForm.Get("rationale"),
+					ExpectedRevision: revision,
+				},
+			)
+			// Attribution comes from the authenticated session, never posted form data.
+			digest := sha256.Sum256([]byte(csrf))
+
+			actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
+			if err == nil {
+				err = workflow.SaveDecision(r.Context(), decision, actor)
+			}
+
+			if err != nil {
+				status := http.StatusBadRequest
+				message := "The correction is invalid for this field or link. Check its value, currency and target, then reload the correction form."
+				if err == application.ErrStale {
+					status = http.StatusConflict
+					message = err.Error()
+				}
+
+				w.WriteHeader(status)
+				_ = SectionShell(
+					"Correction not saved",
+					csrf,
+					"Activity",
+					CorrectionError(message, r.URL.Path),
+				).Render(r.Context(), w)
+
+				return
+			}
+
+			destination := "/activity/" + url.PathEscape(r.PathValue("id")) + "/correct"
+			if kind == "instrument" {
+				destination = "/instruments/" + url.PathEscape(r.PathValue("id")) + "/correct"
+			}
+
+			//nolint:gosec // Fixed local route plus one escaped entity ID; cannot redirect to another origin.
+			http.Redirect(w, r, destination, http.StatusSeeOther)
+		})
+	}
+
 	gate("GET /events", func(w http.ResponseWriter, r *http.Request, _ string) {
 		if http.NewResponseController(w).SetWriteDeadline(time.Time{}) != nil {
 			return

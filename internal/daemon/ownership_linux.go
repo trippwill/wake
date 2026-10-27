@@ -81,18 +81,25 @@ func claimOwnershipFile(path string, flags int, private bool) (*os.File, error) 
 // CheckStopped probes existing kernel ownership and the Unix socket without
 // creating paths or opening SQLite. An unknown runtime path is allowed during
 // initial setup. This is a point-in-time check; it does not reserve the paths.
-func CheckStopped(paths config.Paths) error {
-	database := filepath.Join(paths.DataDir, "wake.db")
-	files := []string{database}
+func CheckStopped(cfg config.Config) error {
+	files := []string{}
+	dirs := []string{}
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath} {
+		if path == "" {
+			continue
+		}
 
-	dirs := []string{paths.DataDir}
-	if paths.StateDir != "" {
-		dirs = append(dirs, paths.StateDir)
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return ErrOwnership
+		}
+
+		files = append(files, path)
+		dirs = append(dirs, filepath.Dir(path))
 	}
 
-	if paths.RuntimeDir != "" {
-		files = append(files, filepath.Join(paths.RuntimeDir, "wake.sock.lock"))
-		dirs = append(dirs, paths.RuntimeDir)
+	if cfg.Paths.RuntimeDir != "" {
+		files = append(files, filepath.Join(cfg.Paths.RuntimeDir, "wake.sock.lock"))
+		dirs = append(dirs, cfg.Paths.RuntimeDir)
 	}
 
 	for _, path := range dirs {
@@ -122,11 +129,11 @@ func CheckStopped(paths config.Paths) error {
 		_ = file.Close()
 	}
 
-	if paths.RuntimeDir == "" {
+	if cfg.Paths.RuntimeDir == "" {
 		return nil
 	}
 
-	return checkOfflineSocket(filepath.Join(paths.RuntimeDir, "wake.sock"))
+	return checkOfflineSocket(filepath.Join(cfg.Paths.RuntimeDir, "wake.sock"))
 }
 
 func (owner *daemonOwnership) close() {

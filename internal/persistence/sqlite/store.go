@@ -1,19 +1,25 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-// Package persistence implements the port's private SQLite storage boundary.
+// Package persistence implements Wake's private three-store SQLite boundary.
 package persistence
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"database/sql/driver"
 	_ "embed"
 	"errors"
+	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
+	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	modernsqlite "modernc.org/sqlite"
 )
@@ -23,118 +29,343 @@ type Error string
 func (e Error) Error() string { return string(e) }
 
 const (
-	ErrUnsupportedSchema Error = "unsupported development store; recreate explicitly"
+	ErrUnsupportedSchema Error = "unsupported development store; stop Wake and preview wake reset warehouse or wake reset credentials using the same configuration; add --confirm to reset explicitly"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
-	schemaVersion              = "wake-m2-1"
+	ErrAssociation       Error = "store associations do not match; restore matching stores or explicitly recreate companions"
+	schemaVersion              = "wake-m4-2"
 )
+
+// Profile selects the warehouse, connections file and operational storage.
+type Profile struct{ WarehousePath, ConnectionsPath, OperationalPath string }
+
+func (p Profile) paths() [3]string {
+	return [3]string{p.WarehousePath, p.ConnectionsPath, p.OperationalPath}
+}
 
 //go:embed schema.sql
 var schemaSQL string
 
+//go:embed connections_schema.sql
+var connectionsSQL string
+
+//go:embed operational_schema.sql
+var operationalSQL string
+
 //go:embed connection.sql
 var connectionSQL string
 
-//go:embed journal.sql
-var journalSQL string
+//go:embed profile.sql
+var profileSQL string
 
-type Store struct {
-	db         *sql.DB
-	queries    *sqlc.Queries
-	owner      *os.File
-	closeOnce  sync.Once
-	closeError error
+func profileStatement(name, schema string) string {
+	start := strings.Index(profileSQL, "-- name: "+name+"\n")
+	if start < 0 {
+		panic("unknown profile statement")
+	}
+
+	statement := profileSQL[start+len("-- name: "+name+"\n"):]
+	if end := strings.Index(statement, "-- name:"); end >= 0 {
+		statement = statement[:end]
+	}
+
+	return strings.ReplaceAll(statement, "{{schema}}", schema)
 }
 
-func Open(ctx context.Context, path string) (*Store, error) {
-	owner, err := claimFile(path)
-	if err != nil {
-		return nil, err
+type Store struct {
+	db                             *sql.DB
+	queries                        *sqlc.Queries
+	owners                         [3]*os.File
+	logger                         *slog.Logger
+	closeOnce                      sync.Once
+	closeError                     error
+	recoveryMu                     sync.Mutex
+	recoveryJob, recoveryOperation string
+	recoveryNext                   time.Time
+}
+
+type storeMetadata struct{ kind, version, id, warehouse string }
+
+var (
+	storeKinds   = [3]string{"warehouse", "connections", "operational"}
+	storeSchemas = [3]string{"main", "access", "operational"}
+)
+
+func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *Store, resultErr error) {
+	started := time.Now()
+
+	logger = logging.Component(logger, "storage")
+	logger.InfoContext(ctx, "validating storage profile", "event", "storage_opening", "stage", "preflight")
+
+	stage, storeKind := "preflight", "profile"
+	defer func() {
+		if resultErr != nil {
+			logger.ErrorContext(
+				ctx,
+				"storage profile refused",
+				"event",
+				"storage_open_failed",
+				"stage", stage, "store", storeKind,
+				"code",
+				storageCode(resultErr),
+				"outcome",
+				"failed",
+				"elapsed",
+				time.Since(started),
+			)
+		}
+	}()
+
+	for _, dir := range []string{filepath.Dir(profile.WarehousePath), filepath.Dir(profile.ConnectionsPath), filepath.Dir(profile.OperationalPath)} {
+		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
+			return nil, ErrUnsafeStore
+		}
+
+		info, err := os.Lstat(dir)
+		if err != nil || !info.IsDir() || !privateOwned(info) {
+			return nil, ErrUnsafeStore
+		}
 	}
 
-	// This format uses rollback journals. Never open a retired WAL namespace.
-	for _, suffix := range []string{"-wal", "-shm"} {
-		if _, e := os.Lstat(path + suffix); e == nil {
-			_ = owner.Close()
+	paths := profile.paths()
+	for i, path := range paths {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return nil, ErrUnsafeStore
+		}
+
+		for _, other := range paths[:i] {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
+				if path == other+suffix || other == path+suffix {
+					return nil, ErrUnsafeStore
+				}
+			}
+
+			if strings.HasPrefix(path, other+"-mj") || strings.HasPrefix(other, path+"-mj") {
+				return nil, ErrUnsafeStore
+			}
+		}
+	}
+
+	s := &Store{logger: logger}
+	defer func() {
+		if result == nil {
+			_ = s.Close()
+		}
+	}()
+
+	var (
+		metadata [3]storeMetadata
+		present  [3]bool
+		previous string
+	)
+	for i, path := range paths {
+		storeKind = storeKinds[i]
+
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return nil, ErrUnsafeStore
+		}
+
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			sidecars, e := storeSidecars(path)
+			if e != nil {
+				return nil, e
+			}
+
+			for _, sidecar := range sidecars {
+				if _, e := os.Lstat(sidecar); !os.IsNotExist(e) {
+					return nil, ErrUnsupportedSchema
+				}
+			}
+
+			continue
+		}
+
+		if err != nil || !info.Mode().IsRegular() {
+			return nil, ErrUnsafeStore
+		}
+
+		s.owners[i], err = claimFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		present[i] = true
+		// Unsupported files must be rejected before SQLite can recover any journal.
+		for _, suffix := range []string{"-wal", "-shm"} {
+			if _, e := os.Lstat(path + suffix); e == nil {
+				return nil, ErrUnsupportedSchema
+			} else if !os.IsNotExist(e) {
+				return nil, e
+			}
+		}
+
+		probe := sql.OpenDB(&connector{paths: [3]string{path}, owners: [3]*os.File{s.owners[i]}, probe: true})
+
+		var count int
+
+		err = probe.QueryRowContext(ctx, profileStatement("ObjectCount", "main")).Scan(&count)
+		if err == nil && count > 0 {
+			m := &metadata[i]
+			err = probe.QueryRowContext(ctx, profileStatement("Metadata", "main")).
+				Scan(&m.kind, &m.version, &m.id, &m.warehouse)
+			expected := strings.Count([3]string{schemaSQL, connectionsSQL, operationalSQL}[i], "CREATE TABLE")
+			if err == nil &&
+				(m.kind != storeKinds[i] || m.version != schemaVersion || m.id == "" || (i == 1 && m.warehouse != "") || (i != 1 && m.warehouse == "") || count != expected) {
+				err = ErrUnsupportedSchema
+			}
+
+			if err == nil && i == 0 {
+				err = probe.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&previous)
+			}
+		} else if err == nil {
+			if info.Size() != 0 {
+				err = ErrUnsupportedSchema
+			}
+
+			if j, e := os.Lstat(path + "-journal"); e == nil && j.Size() > 0 {
+				err = ErrUnsupportedSchema
+			}
+
+			present[i] = false
+		}
+
+		_ = probe.Close()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+
 			return nil, ErrUnsupportedSchema
-		} else if !os.IsNotExist(e) {
-			_ = owner.Close()
-			return nil, e
-		}
-	}
-	// Probe immutable main-file metadata before SQLite may recover a journal.
-	// This format never mutates its schema after initialization.
-	probe := sql.OpenDB(&connector{path: path, owner: owner, probe: true})
-
-	queries := sqlc.New(probe)
-	count, probeErr := queries.CountTables(ctx)
-	if probeErr == nil && count != 0 {
-		version, e := queries.ReadFormat(ctx)
-		if e != nil || version != schemaVersion || count != 21 {
-			probeErr = ErrUnsupportedSchema
-		}
-	}
-
-	_ = probe.Close()
-
-	if probeErr == nil && count == 0 {
-		if info, e := os.Lstat(path + "-journal"); e == nil && info.Size() > 0 {
-			probeErr = ErrUnsupportedSchema
-		}
-	}
-
-	if probeErr != nil {
-		_ = owner.Close()
-
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
 		}
 
-		return nil, ErrUnsupportedSchema
+		logger.DebugContext(
+			ctx,
+			"store preflight complete",
+			"event",
+			"storage_validated",
+			"stage",
+			"preflight",
+			"store",
+			storeKinds[i],
+		)
 	}
 
-	s := &Store{owner: owner}
-	s.db = sql.OpenDB(&connector{path: path, owner: owner})
+	stage, storeKind = "association", "profile"
+
+	rebuildOperational := present[2] && (!present[0] || metadata[2].warehouse != metadata[0].id)
+	accessChanged := present[0] && present[1] && metadata[1].id != previous
+	if present[0] && metadata[0].warehouse != metadata[0].id {
+		return nil, ErrAssociation
+	}
+
+	stage, storeKind = "ownership", "profile"
+	// Do not create missing files until every existing store has passed preflight.
+	for i, path := range paths {
+		if s.owners[i] == nil {
+			var err error
+
+			s.owners[i], err = claimFile(path)
+			storeKind = storeKinds[i]
+
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	s.db = sql.OpenDB(&connector{paths: paths, owners: s.owners})
 	s.db.SetMaxOpenConns(1)
 	s.db.SetMaxIdleConns(1)
-
 	s.queries = sqlc.New(s.db)
-	if err = s.initialize(ctx); err != nil {
-		_ = s.Close()
+
+	stage, storeKind = "initialize", "profile"
+
+	stopProgress := s.progress(ctx, "storage_open_progress", "open")
+	defer stopProgress()
+
+	if err := s.initialize(ctx, present, metadata, rebuildOperational, accessChanged); err != nil {
 		return nil, err
 	}
+
+	logger.InfoContext(
+		ctx,
+		"storage profile opened",
+		"event",
+		"storage_opened",
+		"outcome",
+		"succeeded",
+		"elapsed",
+		time.Since(started),
+	)
 
 	return s, nil
 }
 
+func storageCode(err error) string {
+	switch {
+	case errors.Is(err, ErrUnsafeStore):
+		return "unsafe_or_owned"
+	case errors.Is(err, ErrUnsupportedSchema):
+		return "unsupported_format"
+	case errors.Is(err, ErrAssociation):
+		return "association_mismatch"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline"
+	default:
+		return "storage_failure"
+	}
+}
+
 func (s *Store) Close() error {
-	s.closeOnce.Do(func() { s.closeError = errors.Join(s.db.Close(), s.owner.Close()) })
+	s.closeOnce.Do(func() {
+		if s.db != nil {
+			s.closeError = s.db.Close()
+		}
+
+		for i := 2; i >= 0; i-- {
+			if s.owners[i] != nil {
+				s.closeError = errors.Join(s.closeError, s.owners[i].Close())
+			}
+		}
+
+		if s.logger != nil && s.db != nil {
+			s.logger.Info(
+				"storage closed",
+				"event",
+				"storage_closed",
+				"outcome",
+				map[bool]string{true: "failed", false: "succeeded"}[s.closeError != nil],
+			)
+		}
+	})
+
 	return s.closeError
 }
 
-func (s *Store) initialize(ctx context.Context) error {
-	count, err := s.queries.CountTables(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+func (s *Store) initialize(
+	ctx context.Context,
+	present [3]bool,
+	metadata [3]storeMetadata,
+	rebuildOperational, accessChanged bool,
+) error {
+	started := time.Now()
 
-		return ErrUnsupportedSchema
-	}
-
-	if count != 0 {
-		version, versionErr := s.queries.ReadFormat(ctx)
-		if versionErr != nil || version != schemaVersion || count != 21 {
-			return ErrUnsupportedSchema
-		}
-	}
-
-	if _, err = s.db.ExecContext(ctx, journalSQL); err != nil {
-		return err
-	}
-
-	if count != 0 {
-		return s.queries.InterruptAttempts(ctx)
+	recovering := present[0] && (!present[1] || !present[2] || rebuildOperational || accessChanged)
+	if recovering {
+		s.logger.WarnContext(
+			ctx,
+			"storage recovery required; reconstructing with upstream work paused",
+			"event",
+			"storage_recovery_started",
+			"stage",
+			"reconstruct",
+			"code",
+			"recovery_required",
+		)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -144,31 +375,227 @@ func (s *Store) initialize(ctx context.Context) error {
 
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err = tx.ExecContext(ctx, schemaSQL); err != nil {
+	for i, exists := range present {
+		if exists {
+			continue
+		}
+
+		if _, err = tx.ExecContext(ctx, [3]string{schemaSQL, connectionsSQL, operationalSQL}[i]); err != nil {
+			return err
+		}
+
+		metadata[i] = storeMetadata{kind: storeKinds[i], version: schemaVersion, id: rand.Text()}
+		switch i {
+		case 0:
+			metadata[i].warehouse = metadata[i].id
+		case 2:
+			metadata[i].warehouse = metadata[0].id
+		}
+
+		m := metadata[i]
+		if _, err = tx.ExecContext(
+			ctx,
+			profileStatement("PutMetadata", storeSchemas[i]),
+			m.kind,
+			m.version,
+			m.id,
+			m.warehouse,
+		); err != nil {
+			return err
+		}
+	}
+
+	if rebuildOperational {
+		m := metadata[2]
+
+		result, e := tx.ExecContext(
+			ctx,
+			profileStatement("RebindMetadata", "operational"),
+			metadata[0].id,
+			m.kind,
+			m.version,
+			m.id,
+			m.warehouse,
+		)
+		if e != nil {
+			return e
+		}
+
+		n, e := result.RowsAffected()
+		if e != nil {
+			return e
+		}
+
+		if n != 1 {
+			return ErrAssociation
+		}
+
+		if _, err = tx.ExecContext(ctx, profileStatement("DiscardOldExecution", "")); err != nil {
+			return err
+		}
+	}
+
+	switch {
+	case !present[0] && present[1]:
+		if _, err = tx.ExecContext(
+			ctx,
+			profileStatement("InitializeRetainedAccessProfile", ""),
+			metadata[1].id,
+		); err != nil {
+			return err
+		}
+	case !present[0]:
+		if _, err = tx.ExecContext(ctx, profileStatement("InitializeProfile", ""), metadata[1].id); err != nil {
+			return err
+		}
+	case recovering:
+		review := 0
+		if !present[1] || accessChanged {
+			review = 1
+		}
+
+		if _, err = tx.ExecContext(
+			ctx,
+			profileStatement("RecoverProfile", ""),
+			metadata[1].id,
+			review,
+		); err != nil {
+			return err
+		}
+	}
+
+	if _, err = tx.ExecContext(ctx, profileStatement("RetainConnections", "")); err != nil {
 		return err
 	}
 
-	if err = s.queries.WithTx(tx).
-		SetFormat(ctx, schemaVersion); err != nil {
+	q := s.queries.WithTx(tx)
+	if err = q.RefreshExecution(ctx); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	if err = q.DeleteExecution(ctx); err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, profileStatement("InterruptAttempts", "")); err != nil {
+		return err
+	}
+
+	var invalid int
+	if err = tx.QueryRowContext(ctx, profileStatement("AssociationCheck", "")).Scan(&invalid); err != nil {
+		return err
+	}
+
+	if invalid != 0 {
+		return ErrAssociation
+	}
+
+	for _, schema := range storeSchemas {
+		var integrity string
+		if err = tx.QueryRowContext(ctx, profileStatement("Integrity", schema)).Scan(&integrity); err != nil {
+			return err
+		}
+
+		if integrity != "ok" {
+			return ErrCorrupt
+		}
+
+		rows, e := tx.QueryContext(ctx, profileStatement("ForeignCheck", schema))
+		if e != nil {
+			return e
+		}
+
+		invalid := rows.Next()
+		e = rows.Err()
+		_ = rows.Close()
+
+		if e != nil {
+			return e
+		}
+
+		if invalid {
+			return ErrCorrupt
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	if !present[0] && present[1] {
+		s.logger.InfoContext(
+			ctx,
+			"fresh warehouse created with retained access; account discovery requires operator resume",
+			"event",
+			"storage_warehouse_recreated",
+			"stage",
+			"reconstruct",
+			"outcome",
+			"paused",
+		)
+	}
+
+	for i, exists := range present {
+		if !exists {
+			s.logger.InfoContext(
+				ctx,
+				"store initialized",
+				"event",
+				"storage_initialized",
+				"store",
+				storeKinds[i],
+				"outcome",
+				"succeeded",
+			)
+		}
+	}
+
+	if recovering {
+		s.logger.InfoContext(
+			ctx,
+			"execution obligations reconstructed; operator review required",
+			"event",
+			"storage_recovery_completed",
+			"stage",
+			"reconstruct",
+			"outcome",
+			"paused",
+			"elapsed",
+			time.Since(started),
+		)
+	}
+
+	profile, err := s.queries.Profile(ctx)
+	if err == nil && profile.Paused != 0 {
+		s.logger.WarnContext(
+			ctx,
+			"upstream work paused; review access and resume in admin",
+			"event",
+			"storage_paused",
+			"code",
+			"operator_review_required",
+		)
+	}
+
+	return err
 }
 
-// Every physical connection receives its safety settings, including replacements
-// after a driver error. The held file's identity is rechecked before SQLite opens.
+// Every physical writer connection attaches the same owned files and establishes
+// rollback-journal safety before it can participate in a cross-store transaction.
 type connector struct {
-	path  string
-	owner *os.File
-	probe bool
+	paths  [3]string
+	owners [3]*os.File
+	probe  bool
 }
 
 func (c *connector) Driver() driver.Driver { return &modernsqlite.Driver{} }
-
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
-	if err := checkFile(c.path, c.owner); err != nil {
-		return nil, err
+	for i, owner := range c.owners {
+		if owner != nil {
+			if err := checkFile(c.paths[i], owner); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	query := "mode=rw&_txlock=immediate"
@@ -176,9 +603,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		query = "mode=ro&immutable=1"
 	}
 
-	uri := (&url.URL{Scheme: "file", Path: c.path, RawQuery: query}).String()
-
-	connection, err := c.Driver().Open(uri)
+	connection, err := c.Driver().Open((&url.URL{Scheme: "file", Path: c.paths[0], RawQuery: query}).String())
 	if err != nil {
 		return nil, err
 	}
@@ -189,10 +614,66 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		return nil, ErrUnsafeStore
 	}
 
+	fail := func(err error) (driver.Conn, error) { _ = connection.Close(); return nil, err }
+
+	if c.probe {
+		return connection, nil
+	}
+
+	for i, name := range []string{"AttachAccess", "AttachOperational"} {
+		uri := (&url.URL{Scheme: "file", Path: c.paths[i+1], RawQuery: "mode=rw"}).String()
+		if _, err = executor.ExecContext(
+			ctx,
+			profileStatement(name, ""),
+			[]driver.NamedValue{{Ordinal: 1, Value: uri}},
+		); err != nil {
+			return fail(err)
+		}
+	}
+
 	if _, err = executor.ExecContext(ctx, connectionSQL, nil); err != nil {
-		_ = connection.Close()
-		return nil, err
+		return fail(err)
+	}
+
+	querier, ok := connection.(driver.QueryerContext)
+	if !ok {
+		return fail(ErrUnsafeStore)
+	}
+
+	for _, schema := range storeSchemas {
+		rows, e := querier.QueryContext(ctx, profileStatement("Journal", schema), nil)
+		if e != nil {
+			return fail(e)
+		}
+
+		values := make([]driver.Value, 1)
+		e = rows.Next(values)
+		_ = rows.Close()
+
+		if e != nil || values[0] != "delete" {
+			return fail(ErrUnsafeStore)
+		}
+
+		if _, e = executor.ExecContext(ctx, profileStatement("Sync", schema), nil); e != nil {
+			return fail(e)
+		}
+
+		rows, e = querier.QueryContext(ctx, profileStatement("SyncCheck", schema), nil)
+		if e != nil {
+			return fail(e)
+		}
+
+		e = rows.Next(values)
+		_ = rows.Close()
+
+		if e != nil || values[0] != int64(3) {
+			return fail(ErrUnsafeStore)
+		}
 	}
 
 	return connection, nil
+}
+
+func (s *Store) progress(ctx context.Context, event, stage string) func() {
+	return logging.Progress(ctx, s.logger.With("stage", stage), event, 30*time.Second)
 }

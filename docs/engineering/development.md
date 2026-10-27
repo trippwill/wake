@@ -19,6 +19,37 @@ Use `mise run bin -- help` for application commands. The [README](../../README.m
 provides a quick setup and usage helper. Keep automation in repository tasks
 rather than app-specific wrappers.
 
+To reset development storage, stop Wake and preview the selected files:
+
+```sh
+mise run bin -- reset warehouse
+mise run bin -- reset warehouse --confirm
+mise run serve
+```
+
+`wake reset` accepts `credentials` or `warehouse`, uses the configured file paths
+and previews by default. Only `--confirm` deletes files. Credentials reset removes
+the connections store; warehouse reset removes the financial warehouse and its
+operational state. Both include SQLite sidecars and super-journals, without opening SQLite or loading
+credentials; corrupt or unsupported databases do not prevent reset. Configuration,
+external keys and browser access files are retained. Ownership of every existing
+store is acquired before any deletion; locked stores, unsafe links and protected
+files are refused.
+
+For a disposable instance, pass the same `--config /absolute/private/dev/config.toml`
+to reset and serve. The three `storage.*_path` settings and their overrides select
+the actual files. Missing files are harmless, and reset creates no directories or
+databases. `--json` reports selected and removed files on stdout; activity and errors
+go to stderr.
+
+Resetting credentials preserves financial history and pauses upstream work for
+access repair and explicit resume. Resetting the warehouse preserves connection
+settings and encrypted credentials. The fresh warehouse starts paused; resume
+runs bounded discovery, and account confirmation grants synchronization authority.
+The operational store belongs to its warehouse and is rebuilt from durable inputs
+when missing or associated with a different warehouse. A failed deletion reports
+the files already removed and returns failure; preflight refusal deletes nothing.
+
 ## Select meaningful verification
 
 Test behavior at the boundary that owns it. Use focused checks for changed code

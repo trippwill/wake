@@ -14,42 +14,62 @@ import (
 
 type Querier interface {
 	Account(ctx context.Context) (Account, error)
+	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
+	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
+	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]Record, error)
+	AdvanceActivityRevision(ctx context.Context, id string) error
+	AdvanceInstrumentRevision(ctx context.Context, id string) error
+	AdvanceRecovery(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
+	AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
 	ArtifactProcessed(ctx context.Context, id string) error
-	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
+	Attempts(ctx context.Context, artifactID string) ([]OperationalAttempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
-	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
+	CachedReference(ctx context.Context, key string) (OperationalReferenceCache, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]Candidate, error)
 	Candidates(ctx context.Context, connectionID string) ([]Candidate, error)
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
+	CompleteRecoveryGroup(ctx context.Context, arg CompleteRecoveryGroupParams) error
 	ConflictExecution(ctx context.Context, id string) error
-	Connection(ctx context.Context, id string) (Connection, error)
+	Connection(ctx context.Context, id string) (AccessConfiguration, error)
+	ConnectionAccess(ctx context.Context, id string) (int64, error)
 	Connections(ctx context.Context) ([]string, error)
+	CorrectionStatus(ctx context.Context, arg CorrectionStatusParams) error
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
 	CountTables(ctx context.Context) (int64, error)
+	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
+	Decisions(ctx context.Context, arg DecisionsParams) ([]OperatorDecision, error)
+	DeleteExecution(ctx context.Context) error
+	Descriptor(ctx context.Context, id string) (Connection, error)
 	DisableDiscovery(ctx context.Context, connectionID string) error
+	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
+	EnsureInstrumentSelection(ctx context.Context, id string) error
 	EnsureWork(ctx context.Context, arg EnsureWorkParams) error
 	EventLink(ctx context.Context, arg EventLinkParams) (string, error)
 	EventLinks(ctx context.Context, arg EventLinksParams) ([]string, error)
 	Execution(ctx context.Context, id string) (Execution, error)
-	ExecutionKnownTrades(ctx context.Context, executionID sql.NullString) ([][]byte, error)
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
 	ExecutionObservations(ctx context.Context, executionID sql.NullString) ([]ExecutionObservation, error)
 	Executions(ctx context.Context) ([]Execution, error)
+	FailRecovery(ctx context.Context, id string) error
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
+	FinishRecovery(ctx context.Context, id string) error
 	Instrument(ctx context.Context, id string) (Instrument, error)
-	InstrumentByFIGI(ctx context.Context, shareClassFigi string) (Instrument, error)
+	InstrumentByFIGI(ctx context.Context, referenceFigi string) (Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
-	InstrumentObservations(ctx context.Context, instrumentID string) ([]ExecutionObservation, error)
+	InstrumentObservations(ctx context.Context, instrumentID sql.NullString) ([]ExecutionObservation, error)
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)
+	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
 	Instruments(ctx context.Context) ([]Instrument, error)
-	InterruptAttempts(ctx context.Context) error
+	Listing(ctx context.Context, id string) (Listing, error)
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
+	MissingAccess(ctx context.Context) ([]Connection, error)
+	NextRecoveryGroup(ctx context.Context, jobID string) (string, error)
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
 	Pacing(ctx context.Context, arg PacingParams) (string, error)
@@ -57,38 +77,65 @@ type Querier interface {
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
+	Profile(ctx context.Context) (Profile, error)
+	ProjectActivity(ctx context.Context, arg ProjectActivityParams) error
+	ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error
 	PutAccount(ctx context.Context, arg PutAccountParams) error
 	PutArtifact(ctx context.Context, arg PutArtifactParams) error
 	PutCandidate(ctx context.Context, arg PutCandidateParams) error
 	PutConnection(ctx context.Context, arg PutConnectionParams) error
+	PutConversionActivity(ctx context.Context, arg PutConversionActivityParams) error
+	PutDecision(ctx context.Context, arg PutDecisionParams) error
+	PutDescriptor(ctx context.Context, arg PutDescriptorParams) error
 	PutEventLink(ctx context.Context, arg PutEventLinkParams) error
 	PutExecution(ctx context.Context, arg PutExecutionParams) error
 	PutInstrumentReferenceAttempt(ctx context.Context, arg PutInstrumentReferenceAttemptParams) error
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
+	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
 	PutListing(ctx context.Context, arg PutListingParams) error
 	PutObservation(ctx context.Context, arg PutObservationParams) error
 	PutRecord(ctx context.Context, arg PutRecordParams) error
+	PutRecovery(ctx context.Context, arg PutRecoveryParams) error
+	PutRecoveryItem(ctx context.Context, arg PutRecoveryItemParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
+	PutRelationship(ctx context.Context, arg PutRelationshipParams) error
 	PutSecret(ctx context.Context, arg PutSecretParams) error
-	ReadFormat(ctx context.Context) (string, error)
+	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	Records(ctx context.Context, arg RecordsParams) ([]Record, error)
+	RecoveryGroup(ctx context.Context, arg RecoveryGroupParams) ([]RecoveryItem, error)
+	RecoveryJob(ctx context.Context, id string) (RecoveryJob, error)
+	RecoveryJobs(ctx context.Context) ([]RecoveryJob, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)
 	ReferenceEvidence(ctx context.Context, id string) (ReferenceEvidence, error)
 	ReferenceFailure(ctx context.Context, failure string) error
-	ReferenceSetting(ctx context.Context) (ReferenceSetting, error)
+	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
+	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
+	RefreshExecution(ctx context.Context) error
+	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) error
 	ResetConnectionWork(ctx context.Context, connectionID string) error
 	ResolveInstrument(ctx context.Context, arg ResolveInstrumentParams) error
 	RestartDiscovery(ctx context.Context, arg RestartDiscoveryParams) error
+	ResumeStorage(ctx context.Context, arg ResumeStorageParams) (int64, error)
 	Retained(ctx context.Context, id string) (RetainedRow, error)
+	RetainedReferenceCandidates(ctx context.Context, instrumentID string) ([]RetainedReferenceCandidatesRow, error)
+	RetryProcessing(ctx context.Context, id string) (int64, error)
+	RetryRecovery(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
+	ReviewReference(ctx context.Context) error
+	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
+	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
-	SetFormat(ctx context.Context, version string) error
+	SeedActivityBases(ctx context.Context) error
+	SeedInstrumentSelections(ctx context.Context) error
 	SetListingFIGI(ctx context.Context, arg SetListingFIGIParams) error
+	SetObservationOutcome(ctx context.Context, arg SetObservationOutcomeParams) error
 	SetPacing(ctx context.Context, arg SetPacingParams) error
 	SetReferenceBudget(ctx context.Context, arg SetReferenceBudgetParams) error
 	SetReferenceKey(ctx context.Context, encrypted []byte) error
 	SetScheduled(ctx context.Context, arg SetScheduledParams) error
+	SetUnderlier(ctx context.Context, arg SetUnderlierParams) error
+	SourceCorrections(ctx context.Context) ([]SourceCorrection, error)
 	StartAttempt(ctx context.Context, arg StartAttemptParams) error
 	Succeeded(ctx context.Context, arg SucceededParams) ([]byte, error)
 	UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error

@@ -62,6 +62,9 @@ type Access interface {
 // Calls are sequential; a normalizer must not retain the sink after returning.
 type Claims interface {
 	PutTrade(context.Context, source.Trade) error
+	PutLifecycle(context.Context, source.Lifecycle) error
+	PutConversion(context.Context, source.Conversion) error
+	PutCorrection(context.Context, source.Correction) error
 	PutInstrument(context.Context, source.InstrumentObservation) error
 	Reject(context.Context, string, string) error
 }

@@ -14,8 +14,8 @@ buy/sell, prices, currencies, dates and times, commissions and taxes. Include FI
 ISIN and CUSIP where available, alongside IBKR references. Missing identifiers
 remain visible for resolution or review.
 
-Wake's current equity processing accepts exchange executions. Booked trades,
-options, debt, FX, order summaries and symbol summaries remain in the original
+Wake accepts equity, ETF and option exchange executions, reported option outcomes and
+independently identified stock bookings and debt executions and reported FX conversions. Order summaries and symbol summaries remain in the original
 report. The [current coverage](../product/coverage.md) owns broader selected coverage.
 
 Use execution detail and include `transactionType`, `levelOfDetail`, the source
@@ -51,5 +51,44 @@ the saved query configuration, then use the connection's repair/retry controls.
 Changing connection settings restarts the bounded source protocol while preserving
 the confirmed account and retained reports. Source financial authority stays with
 the selected account and Confirmation stream.
+
+
+Option execution terms retain the reported strike, currency, put/call, expiry and
+premium multiplier separately from the underlier. Confirmation does not establish
+an adjusted deliverable merely by reporting a multiplier; absent deliverables stay
+unknown. Instrument mapping follows the response subject in the
+[OpenFIGI mapping contract](https://www.openfigi.com/api/documentation), so an
+underlier lookup cannot select the option contract.
+
+
+Wake interprets the documented `Ex`, `A` and `Ep` codes on option bookings as
+exercise, assignment and expiration. Stock bookings retain independent identities;
+these markers alone establish no link to an option activity. The ambiguous `GEA`
+marker remains reviewable. Qualified trade IDs support rows without execution IDs.
+See the [IBKR Confirmation code reference](https://www.ibkrguides.com/reportingreference/reportguide/codestradeconfirm.htm).
+
+
+Debt executions preserve nominal quantity, exact quoted price, accrued interest and
+all reported monetary roles independently. A Confirmation trade row does not
+establish coupon, maturity or quotation basis from a symbol or amount equation;
+missing terms remain unknown. Richer explicitly supplied issue terms retain their
+own provenance. Debt reference identity uses an issue FIGI rather than requiring a
+share-class FIGI, and no listing is created without reported listing evidence.
+
+
+For a reported FX pair, buy/sell establishes sent and received currency roles.
+Quantity supplies the base amount and a reported gross amount supplies the quote
+amount when available; Wake does not calculate a missing counterpart from the
+rate, proceeds or net cash. The quoted rate retains its original orientation.
+Gross, proceeds, net cash and charges stay separate, including charges reported
+in another currency. Currency references establish no balance, lots or P&L.
+
+
+Wake interprets an explicit `Ca` with an original trade reference as cancellation,
+and an explicit `Co` with that reference and an independently identified replacement
+row as replacement. It retains uncertain code/reference combinations for review.
+The [IBKR configuration reference](https://www.ibkrguides.com/reportingreference/reportguide/trade%20confirmation%20configuration.htm)
+defines the original-trade reference; the code reference defines the markers.
+Neither a missing later row nor an amount/time match is a correction instruction.
 
 Wake rejects upstream reports whose raw bytes or decoded XML attributes contain the access token, and rejects credential-bearing decoded generation references. Accepted report bytes remain unchanged as evidence.

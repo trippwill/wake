@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-// Package logging provides component scoping and bounded warning repetition.
+// Package logging provides component scoping and bounded failure repetition.
 package logging
 
 import (
@@ -40,7 +40,7 @@ type (
 	}
 )
 
-// Coalesce emits at most one identical component/event/code warning per minute.
+// Coalesce emits at most one identical component/event/code failure per minute.
 // IDs/durations do not split the diagnostic group; suppressed counts are retained.
 func Coalesce(logger *slog.Logger) (*slog.Logger, func()) {
 	if logger == nil {
@@ -79,12 +79,13 @@ func (h *coalescer) WithGroup(name string) slog.Handler {
 }
 
 func (h *coalescer) Handle(ctx context.Context, r slog.Record) error {
-	if r.Level != slog.LevelWarn {
+	if r.Level < slog.LevelWarn {
 		return h.handler.Handle(ctx, r)
 	}
 
 	var key strings.Builder
 	key.WriteString(h.key)
+	key.WriteString(r.Level.String())
 	key.WriteString(r.Message)
 	r.Attrs(func(a slog.Attr) bool { key.WriteString(keyAttr(a)); return true })
 	h.state.mu.Lock()
@@ -116,7 +117,7 @@ func (s *warningState) flushLocked() {
 	for _, item := range s.items {
 		if item.suppressed > 0 {
 			r := item.record.Clone()
-			r.Message = "repeated warnings suppressed"
+			r.Message = "repeated diagnostics suppressed"
 			r.Time = s.now()
 			r.AddAttrs(slog.Uint64("suppressed", item.suppressed))
 			_ = item.handler.Handle(context.Background(), r)

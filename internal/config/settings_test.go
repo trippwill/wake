@@ -137,7 +137,7 @@ func TestInvalidSourcesDoNotFallBack(t *testing.T) {
 
 	roots := configureEnvironment(t, true)
 	path := filepath.Join(roots.base, "bad.toml")
-	for _, contents := range []string{"broken = [", "[unknown]\nvalue = 1\n", "[paths]\ndata_dir = 'relative'\n"} {
+	for _, contents := range []string{"broken = [", "[unknown]\nvalue = 1\n", "[storage]\nwarehouse_path = 'relative'\n"} {
 		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -190,6 +190,68 @@ func TestResolutionRejectsNonRegularConfig(t *testing.T) {
 	for _, path := range []string{roots.base, os.DevNull} {
 		if _, err := Resolve(Overrides{ConfigPath: path, ConfigPathExplicit: true}); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("non-regular config %s = %v", path, err)
+		}
+	}
+}
+
+func TestStorePathsHaveIndependentXDGDefaults(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	warehouse := filepath.Join(roots.base, "custom-data", "history.sqlite")
+	overrides := Overrides{Values: map[string]string{"warehouse-path": warehouse}}
+	assertResolvedValue(
+		t,
+		overrides,
+		"storage.connections_path",
+		filepath.Join(roots.config, "wake", "connections.db"),
+		"XDG/default",
+	)
+	assertResolvedValue(
+		t,
+		overrides,
+		"storage.operational_path",
+		filepath.Join(roots.state, "wake", "operational.db"),
+		"XDG/default",
+	)
+	custom := filepath.Join(roots.base, "private-access", "credentials.sqlite")
+	overrides.Values["connections-path"] = custom
+
+	cfg, err := Load(overrides)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Storage.ConnectionsPath != custom || cfg.Storage.WarehousePath != warehouse {
+		t.Fatal(cfg.Storage)
+	}
+
+	info, err := os.Stat(filepath.Dir(custom))
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatal("access directory not private", info, err)
+	}
+
+	if _, err := os.Stat(custom); !os.IsNotExist(err) {
+		t.Fatal("configuration opened the credential database", err)
+	}
+}
+
+func TestConnectionsDatabaseRejectsInvalidAndCollidingPaths(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	for _, value := range []string{"", "relative.db", filepath.Join(roots.data, "wake", "wake.db"), filepath.Join(roots.state, "wake", "operational.db"), filepath.Join(roots.data, "wake", "wake.db-journal"), filepath.Join(roots.state, "wake", "operational.db-mjABCDEF912")} {
+		if _, err := Resolve(
+			Overrides{Values: map[string]string{"connections-path": value}},
+		); !errors.Is(
+			err,
+			ErrInvalid,
+		) {
+			t.Fatalf("accepted credential path %q: %v", value, err)
+		}
+	}
+
+	for _, value := range []string{"", "relative.db"} {
+		t.Setenv("WAKE_CONNECTIONS_PATH", value)
+
+		if _, err := Resolve(Overrides{}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("accepted credential environment %q: %v", value, err)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,7 +73,11 @@ func TestReferenceProfilesAndDurableAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			s, err := Open(context.Background(), path)
+			s, err := Open(
+				context.Background(),
+				testProfile(path),
+				nil,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -98,6 +103,33 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 	for _, keyed := range []bool{false, true} {
 		t.Run(fmt.Sprint(keyed), func(t *testing.T) {
 			ctx := context.Background()
+
+			var diagnostics bytes.Buffer
+
+			logger := slog.New(slog.NewJSONHandler(&diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			defer func() {
+				text := diagnostics.String()
+				for _, private := range []string{"synthetic-openfigi-key", "replacement-openfigi-key", "identifier-", "Resolved ", "synthetic failure"} {
+					if strings.Contains(text, private) {
+						t.Error("private reference input leaked", private)
+					}
+				}
+
+				for _, event := range []string{"reference_finished", "reference_cache_hit"} {
+					if !strings.Contains(text, event) {
+						t.Error("missing reference event", event)
+					}
+				}
+
+				if keyed {
+					for _, code := range []string{"invalid-key", "throttled", "temporary-failure"} {
+						if !strings.Contains(text, `"code":"`+code+`"`) {
+							t.Error("missing reference failure", code)
+						}
+					}
+				}
+			}()
+
 			s, _ := testStore(t)
 			envelope := testEnvelope(t)
 			now := time.Now().UTC()
@@ -171,7 +203,14 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 			}))
 			defer server.Close()
 
-			service, err := reference.New(s, envelope, server.Client(), server.URL, func() time.Time { return now })
+			service, err := reference.New(
+				s,
+				envelope,
+				server.Client(),
+				server.URL,
+				func() time.Time { return now },
+				logger,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -320,7 +359,7 @@ func TestReferenceDuplicateJobsAndRetainedEvidence(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service, err := reference.New(s, nil, server.Client(), server.URL, func() time.Time { return now })
+	service, err := reference.New(s, nil, server.Client(), server.URL, func() time.Time { return now }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
