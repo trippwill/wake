@@ -138,7 +138,7 @@ func (value Quantity) Num() (num.Num, error)       { return derivedNumber(value.
 
 // Positive checks the exact value without a rounded conversion.
 func (value Quantity) Positive() bool {
-	return value.value != "" && value.value != "0" && value.value[0] != '-'
+	return value.value != "" && numericKey(value.value) != "0" && value.value[0] != '-'
 }
 
 // Abs preserves exact magnitude without arithmetic conversion.
@@ -168,8 +168,8 @@ func (value Price) Amount() string                               { return value.
 func (value Price) Currency() Currency                           { return value.currency }
 func (value Price) Num() (num.Num, error)                        { return derivedNumber(value.amount) }
 
-// parseExactNumber accepts finite base-ten notation only, and canonicalizes numeric
-// meaning without arithmetic or a bounded Num conversion. Input and expanded output
+// parseExactNumber expands finite base-ten notation while retaining fractional scale
+// without arithmetic or a bounded Num conversion. Input and expanded output
 // are bounded to 256 bytes and exponents to +/-128 to prevent amplification.
 func parseExactNumber(text string) (string, error) {
 	if text == "" || len(text) > 256 {
@@ -220,7 +220,7 @@ func parseExactNumber(text string) (string, error) {
 	}
 
 	integer := strings.TrimLeft(digits[:point], "0")
-	fraction := strings.TrimRight(digits[point:], "0")
+	fraction := digits[point:]
 
 	if integer == "" {
 		integer = "0"
@@ -231,7 +231,7 @@ func parseExactNumber(text string) (string, error) {
 		result += "." + fraction
 	}
 
-	if negative && result != "0" {
+	if negative && numericKey(result) != "0" {
 		result = "-" + result
 	}
 
@@ -240,6 +240,27 @@ func parseExactNumber(text string) (string, error) {
 	}
 
 	return result, nil
+}
+
+// Equal compares numeric meaning and currency without discarding retained precision.
+func (value Money) Equal(other Money) bool {
+	return value.currency == other.currency && numericKey(value.amount) == numericKey(other.amount)
+}
+
+func (value Price) Equal(other Price) bool {
+	return value.currency == other.currency && numericKey(value.amount) == numericKey(other.amount)
+}
+
+func (value Quantity) Equal(other Quantity) bool {
+	return numericKey(value.value) == numericKey(other.value)
+}
+
+func numericKey(text string) string {
+	if strings.Contains(text, ".") {
+		return strings.TrimSuffix(strings.TrimRight(text, "0"), ".")
+	}
+
+	return text
 }
 
 func derivedNumber(text string) (num.Num, error) {

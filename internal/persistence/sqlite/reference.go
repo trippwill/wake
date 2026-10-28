@@ -46,7 +46,7 @@ func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
 		return err
 	}
 
-	return s.accessUpdated(ctx, "reference_setting", tx.Commit())
+	return s.accessUpdated(ctx, "reference_setting", s.commit(ctx, tx))
 }
 
 func (s *Store) ReferenceFailure(ctx context.Context, failure string) error {
@@ -123,7 +123,7 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 		return false, time.Time{}, err
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return false, time.Time{}, err
 	}
 
@@ -164,7 +164,7 @@ func (s *Store) ReferenceCooldown(ctx context.Context, until time.Time) error {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Time) error {
@@ -202,7 +202,7 @@ func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Tim
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func (s *Store) ReferenceCached(
@@ -299,7 +299,7 @@ func (s *Store) SaveReference(
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return nil, err
 	}
 
@@ -468,5 +468,5 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		}
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }

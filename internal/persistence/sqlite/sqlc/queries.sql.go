@@ -30,13 +30,14 @@ func (q *Queries) AccessReadiness(ctx context.Context, connectionID string) (Acc
 }
 
 const account = `-- name: Account :one
-SELECT id, singleton, name, currency, connection_id, provider, stream, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
+SELECT revision, id, singleton, name, currency, connection_id, provider, stream, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
 `
 
 func (q *Queries) Account(ctx context.Context) (Account, error) {
 	row := q.db.QueryRowContext(ctx, account)
 	var i Account
 	err := row.Scan(
+		&i.Revision,
 		&i.ID,
 		&i.Singleton,
 		&i.Name,
@@ -1192,13 +1193,14 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 }
 
 const listing = `-- name: Listing :one
-SELECT id, instrument_id, venue, ticker, currency, figi FROM listings WHERE id=?
+SELECT revision, id, instrument_id, venue, ticker, currency, figi FROM listings WHERE id=?
 `
 
 func (q *Queries) Listing(ctx context.Context, id string) (Listing, error) {
 	row := q.db.QueryRowContext(ctx, listing, id)
 	var i Listing
 	err := row.Scan(
+		&i.Revision,
 		&i.ID,
 		&i.InstrumentID,
 		&i.Venue,
@@ -1210,7 +1212,7 @@ func (q *Queries) Listing(ctx context.Context, id string) (Listing, error) {
 }
 
 const listingByTerms = `-- name: ListingByTerms :one
-SELECT id, instrument_id, venue, ticker, currency, figi FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND currency=?
+SELECT revision, id, instrument_id, venue, ticker, currency, figi FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND currency=?
 `
 
 type ListingByTermsParams struct {
@@ -1229,6 +1231,7 @@ func (q *Queries) ListingByTerms(ctx context.Context, arg ListingByTermsParams) 
 	)
 	var i Listing
 	err := row.Scan(
+		&i.Revision,
 		&i.ID,
 		&i.InstrumentID,
 		&i.Venue,
@@ -1240,7 +1243,7 @@ func (q *Queries) ListingByTerms(ctx context.Context, arg ListingByTermsParams) 
 }
 
 const listings = `-- name: Listings :many
-SELECT id, instrument_id, venue, ticker, currency, figi FROM listings WHERE instrument_id=? ORDER BY rowid
+SELECT revision, id, instrument_id, venue, ticker, currency, figi FROM listings WHERE instrument_id=? ORDER BY rowid
 `
 
 func (q *Queries) Listings(ctx context.Context, instrumentID string) ([]Listing, error) {
@@ -1253,6 +1256,7 @@ func (q *Queries) Listings(ctx context.Context, instrumentID string) ([]Listing,
 	for rows.Next() {
 		var i Listing
 		if err := rows.Scan(
+			&i.Revision,
 			&i.ID,
 			&i.InstrumentID,
 			&i.Venue,

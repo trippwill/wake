@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Check generated financial socket wire models"
+#MISE wait_for=["openapi:gen"]
+set -euo pipefail
+snapshot=$(mktemp -d)
+trap 'rm -rf "$snapshot"' EXIT
+sed "s|^output:.*|output: $snapshot/openapi.gen.go|" api/openapi/oapi-codegen.yaml > "$snapshot/config.yaml"
+oapi-codegen --config "$snapshot/config.yaml" api/openapi/v1.yaml
+sed -i '1i// SPDX-FileCopyrightText: 2026 trippwill\n// SPDX-License-Identifier: MPL-2.0\n' "$snapshot/openapi.gen.go"
+diff -u internal/transport/socket/openapi.gen.go "$snapshot/openapi.gen.go"

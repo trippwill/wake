@@ -54,8 +54,51 @@ and relevant link/reference changes, not just new activity. Presentation adapter
 share application meaning without depending on one another's UI or wire types.
 
 [DESIGN.md](../../DESIGN.md) owns the visual standard. Exact CLI commands are in
-help. The retained socket currently exposes no financial resources; the release
-goal owns the later publishing boundary.
+help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the socket
+interface; [development guidance](development.md#socket-consumer-acceptance) provides
+runnable consumer checks.
+
+## Canonical publishing and continuity
+
+The private Unix socket serves finite, bounded, read-only HTTP/JSON requests from
+the daemon's OS user. It publishes accepted accounts, instruments, listings and
+activity, with warehouse-local Wake identities and resource revisions. Financial
+values retain exact decimal text, including trailing scale; absent values are
+explicitly unknown rather than zero. Numerically equal reports with different
+scale remain compatible, while the accepted selection keeps its retained text.
+Civil dates stay dates and timestamps retain their reported fractional precision.
+Compact explanations are separate reads tied to the resource revision they
+explain. Raw reports, private evidence traversal, credentials and operational
+configuration belong outside this consumer boundary.
+
+A warehouse journal retains the final canonical snapshot of each affected resource
+in the same transaction as its accepted state. Intermediate changes within that
+transaction are private; successive committed transitions remain independently
+readable. Relationship resolution, reference changes, cancellation/replacement and
+operator choices advance their owning resources, including choices that change
+authority while preserving a value. Unchanged replay and rollbacks publish nothing.
+The warehouse retains journal history without automatic pruning within its publishing
+generation. Wire and admin models stay outside persistence.
+
+Cursors are opaque, versioned and bound to the warehouse, publishing generation and
+read purpose/position. Bootstrap captures a checkpoint **before** scanning current
+resources in stable identity order, then replays changes through one fixed
+high-water mark. Pagination does not hold a server snapshot. Consumers upsert by
+resource revision so older replay cannot overwrite a newer scan result, while
+retaining every delivered transition. They save their mirror, cursor and any
+incomplete pass's high-water mark atomically. Each catch-up pass is finite even
+while new writes continue.
+
+Daemon restarts and access/operational-store recovery retain cursors when the
+warehouse remains intact. Starting a new projection rebuild rotates the publishing
+generation atomically with its durable job, invalidating older cursors. Retrying or
+resuming that job keeps its generation. A newer rebuild supersedes older jobs; only
+the latest failed job can be retried. Reads remain unavailable during rebuilding
+or a failed rebuild awaiting retry; successful completion permits a new bootstrap.
+Warehouse recreation likewise requires a new baseline. Every-transition delivery
+applies within a generation. Invalidated cursors require explicit rebootstrap;
+malformed cursors, missing resources and rebuilding have distinct errors. The
+server never substitutes a fresh cursor for a rejected one.
 
 ## Trust and recovery
 

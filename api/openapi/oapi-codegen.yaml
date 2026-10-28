@@ -1,0 +1,6 @@
+package: socket
+generate:
+  models: true
+output: internal/transport/socket/openapi.gen.go
+output-options:
+  skip-prune: true

@@ -59,7 +59,7 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	defer transport.CloseIdleConnections()
 
 	client := &http.Client{Transport: transport, Timeout: time.Second}
-	for _, path := range []string{"/v1/trades", "/v1/accounts", "/control/ingest"} {
+	for _, path := range []string{"/v1/trades", "/control/ingest"} {
 		res, e := client.Get("http://wake" + path)
 		if e != nil {
 			t.Fatal(e)

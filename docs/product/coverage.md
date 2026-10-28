@@ -76,7 +76,22 @@ gilt checks use representative evidence or clearly identified synthetic cases.
 Raw report retention alone does not establish financial coverage. Private reports
 and credentials are not repository fixtures.
 
-Financial socket publishing is outside this snapshot's coverage.
+## Canonical publishing
+
+The versioned read-only socket publishes accepted accounts, instruments, listings
+and activity, optional revision-bound explanations and resumable changes. Changes
+retain every committed transition within a publishing generation, including source
+and operator corrections, conflicts and relevant reference/link changes. Restarts
+and companion-store recovery preserve cursors with an intact warehouse; projection
+rebuild and warehouse recreation require explicit rebootstrap.
+
+The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The independent
+[consumer acceptance procedure](../engineering/development.md#socket-consumer-acceptance)
+uses a separate process and the actual private socket without SQLite access, internal
+application calls or upstream credentials. It checks pagination, exact values,
+disconnect/resume, repeat-safe mirroring, corrections and conflict raise/clear,
+daemon restart and rebuild/cursor recovery. In-process tests alone do not establish
+this boundary.
 
 ## Compatibility
 

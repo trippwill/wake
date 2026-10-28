@@ -123,6 +123,23 @@ Use command help for exact options.
 To change a forgotten browser unlock, stop Wake and rerun setup with the same
 configuration, then restart. Setup retains the credential key; keep that key safe.
 
+### Read from another application
+
+The private Unix socket publishes accepted accounts, instruments, listings and
+activity with stable identities, exact values and resumable changes. See the
+[financial API contract](api/openapi/v1.yaml) and
+[standalone consumer scenarios](docs/engineering/development.md#socket-consumer-acceptance).
+For a running instance, use its socket path and an existing client-state directory:
+
+```sh
+mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.json
+```
+
+The consumer saves a durable mirror and cursor. Repeat the command to resume, or
+use `socket-consumer:follow` to keep reading. Rebuild explicitly starts a new baseline;
+ordinary daemon restarts and companion-store recovery preserve the cursor.
+
+
 ## Contribute
 
 The Go module is `go.trippwill.dev/wake`. Start with [AGENTS.md](AGENTS.md), the

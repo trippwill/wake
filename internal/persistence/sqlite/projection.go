@@ -163,6 +163,19 @@ func projectActivity(
 		if err == nil {
 			err = enrichRootFromActivity(ctx, q, base.InstrumentID, selected.Fields().Instrument)
 		}
+
+		if err == nil && base.InstrumentID.Valid && !base.ListingID.Valid {
+			var listing string
+
+			listing, err = acceptListing(
+				ctx,
+				q,
+				base.InstrumentID.String,
+				selected.Fields().Instrument,
+				selected.Fields().Price.Currency().String(),
+			)
+			base.ListingID = sql.NullString{String: listing, Valid: listing != ""}
+		}
 	case "lifecycle":
 		initial, e := decodeLifecycle(base.Data)
 		if e != nil {

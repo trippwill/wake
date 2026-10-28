@@ -93,11 +93,11 @@ func TestFinancialValuesPreserveExactMeaning(t *testing.T) {
 	}
 
 	for _, test := range []struct{ input, exact string }{
-		{"+001.23456789012345678900", "1.234567890123456789"},
+		{"+001.23456789012345678900", "1.23456789012345678900"},
 		{"-0.0000000000001", "-0.0000000000001"},
 		{"1e-10", "0.0000000001"},
 		{"1.2e+3", "1200"},
-		{"-0.000", "0"},
+		{"-0.000", "0.000"},
 		{".5", "0.5"},
 		{"12.", "12"},
 		{"12345678901234.123456", "12345678901234.123456"},
@@ -388,5 +388,19 @@ func TestZeroDateCannotBeMarshaled(t *testing.T) {
 
 	if _, err := value.MarshalText(); !errors.Is(err, financial.ErrInvalidDate) {
 		t.Fatalf("MarshalText() error = %v, want ErrInvalidDate", err)
+	}
+}
+
+func TestPrecisionIndependentEqualityAndZero(t *testing.T) {
+	usd := parseCurrency(t, "USD")
+	a, _ := financial.NewMoney("1.2300", usd)
+	b, _ := financial.NewMoney("1.23", usd)
+	p, _ := financial.NewPrice("1.2300", usd)
+
+	q, _ := financial.NewPrice("1.23", usd)
+	zero, _ := financial.NewQuantity("0.0000")
+	missing := financial.Quantity{}
+	if !a.Equal(b) || !p.Equal(q) || zero.Positive() || zero.Equal(missing) {
+		t.Fatal("scale changed numeric meaning")
 	}
 }

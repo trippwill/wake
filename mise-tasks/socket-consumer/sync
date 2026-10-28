@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Synchronize an independent socket consumer (--socket, --state, optional --assert)"
+set -euo pipefail
+cd testdata/socket-consumer
+GOWORK=off go run . "$@"

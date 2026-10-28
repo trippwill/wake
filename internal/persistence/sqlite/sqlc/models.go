@@ -38,6 +38,7 @@ type AccessStoreMetadatum struct {
 }
 
 type Account struct {
+	Revision     int64
 	ID           string
 	Singleton    int64
 	Name         string
@@ -161,6 +162,7 @@ type InstrumentSelection struct {
 }
 
 type Listing struct {
+	Revision     int64
 	ID           string
 	InstrumentID string
 	Venue        string
@@ -237,6 +239,32 @@ type Profile struct {
 	RecoveryRevision int64
 	ResumedBy        string
 	ResumedAt        string
+}
+
+type PublishedChange struct {
+	Position int64
+	Kind     string
+	ID       string
+	Revision int64
+	Snapshot []byte
+}
+
+type PublishedResource struct {
+	Kind        string
+	ID          string
+	Revision    int64
+	Snapshot    []byte
+	Explanation []byte
+}
+
+type Publishing struct {
+	Singleton  int64
+	Generation string
+}
+
+type PublishingDirty struct {
+	Kind string
+	ID   string
 }
 
 type Record struct {

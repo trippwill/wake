@@ -1,0 +1,987 @@
+openapi: 3.0.3
+info:
+  title: Wake accepted financial model
+  version: 1.0.0
+  description: 'GET-only HTTP over the private mode-0600 Unix socket, restricted to the daemon UID. All
+    responses are finite JSON. Opaque versioned cursors bind warehouse, publishing generation and position/purpose;
+    never edit or invent them. Bootstrap: checkpoint BEFORE scanning all four collections, then replay
+    from it to one fixed through cursor. Upsert only equal/newer revisions while retaining every delivered
+    transition. Current pages order by stable ID and are not a held snapshot. Persist mirror, cursor and
+    through atomically. Changes require cursor; omit through to capture a new high-water mark, then repeat
+    that returned through until more=false. Empty final pages advance cursor to through. No pruning within
+    a generation. Restart/companion recovery retains cursors. New rebuild/recreated warehouse invalidates
+    cursors (409 cursor_invalidated); rebuild or failed/paused rebuild rejects reads (503 rebuild_in_progress).
+    Bootstrap afresh explicitly after success. Malformed/wrong-purpose/future cursors return 400 malformed_cursor;
+    never silently reset. Unknown values are explicit null, distinct from decimal zero. Unknown parameters,
+    duplicate parameters and mutation methods are rejected. Raw evidence and operational interfaces are
+    excluded.'
+paths:
+  /v1/checkpoint:
+    get:
+      operationId: checkpoint
+      parameters: []
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Checkpoint'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/changes:
+    get:
+      operationId: changes
+      parameters:
+      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/through'
+      - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangePage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/accounts:
+    get:
+      operationId: listAccounts
+      parameters:
+      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourcePage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/accounts/{id}:
+    get:
+      operationId: getAccounts
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/accounts/{id}/explanation:
+    get:
+      operationId: explainAccounts
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Explanation'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/instruments:
+    get:
+      operationId: listInstruments
+      parameters:
+      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourcePage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/instruments/{id}:
+    get:
+      operationId: getInstruments
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/instruments/{id}/explanation:
+    get:
+      operationId: explainInstruments
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Explanation'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/listings:
+    get:
+      operationId: listListings
+      parameters:
+      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourcePage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/listings/{id}:
+    get:
+      operationId: getListings
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/listings/{id}/explanation:
+    get:
+      operationId: explainListings
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Explanation'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/activity:
+    get:
+      operationId: listActivity
+      parameters:
+      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourcePage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/activity/{id}:
+    get:
+      operationId: getActivity
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/activity/{id}/explanation:
+    get:
+      operationId: explainActivity
+      parameters:
+      - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Successful finite read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Explanation'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+components:
+  schemas:
+    Money:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          type: string
+        currency:
+          type: string
+      required:
+      - amount
+      - currency
+      description: Exact validated decimal text; trailing zeros are significant source precision. No binary
+        float conversion.
+    Amount:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          type: string
+          nullable: true
+        currency:
+          type: string
+      required:
+      - amount
+      - currency
+      description: Known currency; null amount is unknown and differs from zero.
+    Quantity:
+      type: object
+      additionalProperties: false
+      properties:
+        value:
+          type: string
+        unit:
+          type: string
+      required:
+      - value
+      - unit
+    Reference:
+      type: object
+      additionalProperties: false
+      properties:
+        authority:
+          type: string
+        kind:
+          type: string
+        scope:
+          type: string
+        value:
+          type: string
+      required:
+      - authority
+      - kind
+      - scope
+      - value
+      description: Qualified reported relationship identity, never an unqualified Wake resource ID.
+    Identifier:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        value:
+          type: string
+      required:
+      - kind
+      - value
+    Charge:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+        scope:
+          type: string
+          enum:
+          - total
+          - component
+        money:
+          $ref: '#/components/schemas/Money'
+      required:
+      - role
+      - scope
+      - money
+    Relationship:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        target_id:
+          type: string
+          nullable: true
+        reported_target:
+          allOf:
+          - $ref: '#/components/schemas/Reference'
+          nullable: true
+      required:
+      - kind
+      - target_id
+      - reported_target
+      description: Explicit relationships only. Null target_id means unresolved; retain reported_target
+        when supplied. Multiple targets remain separate entries.
+    Deliverable:
+      type: object
+      additionalProperties: false
+      properties:
+        security:
+          allOf:
+          - $ref: '#/components/schemas/Reference'
+          nullable: true
+        quantity:
+          type: string
+          nullable: true
+        cash:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+      required:
+      - security
+      - quantity
+      - cash
+    Option:
+      type: object
+      additionalProperties: false
+      properties:
+        right:
+          type: string
+          nullable: true
+        expiry:
+          type: string
+          nullable: true
+        multiplier:
+          type: string
+          nullable: true
+        effective_from:
+          type: string
+          nullable: true
+        strike:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        deliverables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deliverable'
+      required:
+      - right
+      - expiry
+      - multiplier
+      - effective_from
+      - strike
+      - deliverables
+      description: Reported contract terms. Empty deliverables are unknown; a multiplier never implies
+        stock delivery.
+    Debt:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        maturity:
+          type: string
+          nullable: true
+        issue_date:
+          type: string
+          nullable: true
+        dated_date:
+          type: string
+          nullable: true
+        coupon:
+          type: string
+          nullable: true
+        payments_per_year:
+          type: integer
+          format: int64
+          nullable: true
+      required:
+      - type
+      - currency
+      - maturity
+      - issue_date
+      - dated_date
+      - coupon
+      - payments_per_year
+    Account:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        currency:
+          type: string
+          nullable: true
+      required:
+      - name
+      - currency
+    Instrument:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          nullable: true
+        ticker:
+          type: string
+          nullable: true
+        figi:
+          type: string
+          nullable: true
+        underlier_id:
+          type: string
+          nullable: true
+        family:
+          type: string
+          enum:
+          - equity
+          - fund
+          - option
+          - debt
+          - unknown
+        reference_status:
+          type: string
+        identifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Identifier'
+        option:
+          allOf:
+          - $ref: '#/components/schemas/Option'
+          nullable: true
+        debt:
+          allOf:
+          - $ref: '#/components/schemas/Debt'
+          nullable: true
+      required:
+      - name
+      - ticker
+      - figi
+      - underlier_id
+      - family
+      - reference_status
+      - identifiers
+      - option
+      - debt
+    Listing:
+      type: object
+      additionalProperties: false
+      properties:
+        instrument_id:
+          type: string
+        venue:
+          type: string
+          nullable: true
+        ticker:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        figi:
+          type: string
+          nullable: true
+      required:
+      - instrument_id
+      - venue
+      - ticker
+      - currency
+      - figi
+    Activity:
+      type: object
+      additionalProperties: false
+      properties:
+        instrument_id:
+          type: string
+          nullable: true
+        listing_id:
+          type: string
+          nullable: true
+        at:
+          type: string
+          nullable: true
+        trade_kind:
+          type: string
+          nullable: true
+        side:
+          type: string
+          nullable: true
+        position_effect:
+          type: string
+          nullable: true
+        price_basis:
+          type: string
+          nullable: true
+        settlement_date:
+          type: string
+          nullable: true
+        lifecycle_kind:
+          type: string
+          nullable: true
+        rate_base:
+          type: string
+          nullable: true
+        family:
+          type: string
+          enum:
+          - trade
+          - lifecycle
+          - conversion
+        account_id:
+          type: string
+        state:
+          type: string
+          enum:
+          - accepted
+          - cancelled
+          - replaced
+        conflict:
+          type: boolean
+        date:
+          type: string
+        order:
+          allOf:
+          - $ref: '#/components/schemas/Reference'
+          nullable: true
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/Relationship'
+        quantity:
+          allOf:
+          - $ref: '#/components/schemas/Quantity'
+          nullable: true
+        charges:
+          type: array
+          items:
+            $ref: '#/components/schemas/Charge'
+        sent:
+          allOf:
+          - $ref: '#/components/schemas/Amount'
+          nullable: true
+        received:
+          allOf:
+          - $ref: '#/components/schemas/Amount'
+          nullable: true
+        option:
+          allOf:
+          - $ref: '#/components/schemas/Option'
+          nullable: true
+        debt:
+          allOf:
+          - $ref: '#/components/schemas/Debt'
+          nullable: true
+        price:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        rate:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        gross:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        proceeds:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        net:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        net_with_billable:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+        accrued_interest:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          nullable: true
+      required:
+      - instrument_id
+      - listing_id
+      - at
+      - trade_kind
+      - side
+      - position_effect
+      - price_basis
+      - settlement_date
+      - lifecycle_kind
+      - rate_base
+      - family
+      - account_id
+      - state
+      - conflict
+      - date
+      - order
+      - relationships
+      - quantity
+      - charges
+      - sent
+      - received
+      - option
+      - debt
+      - price
+      - rate
+      - gross
+      - proceeds
+      - net
+      - net_with_billable
+      - accrued_interest
+      description: Selected trade, option outcome or reported FX conversion. Civil dates stay YYYY-MM-DD;
+        at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary
+        roles are reported, never recomputed. Trade option/debt terms describe that activity independently
+        of later reference refresh.
+    Resource:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - accounts
+          - instruments
+          - listings
+          - activity
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        account:
+          $ref: '#/components/schemas/Account'
+        instrument:
+          $ref: '#/components/schemas/Instrument'
+        listing:
+          $ref: '#/components/schemas/Listing'
+        activity:
+          $ref: '#/components/schemas/Activity'
+      required:
+      - id
+      - kind
+      - revision
+      description: Exactly one body, matching kind. Warehouse-local stable Wake identity and monotonically
+        increasing resource revision. Cancellation/replacement retains the original resource.
+    Correction:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        status:
+          type: string
+        target_ids:
+          type: array
+          items:
+            type: string
+        replacement_ids:
+          type: array
+          items:
+            type: string
+      required:
+      - kind
+      - status
+      - target_ids
+      - replacement_ids
+    Decision:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+        action:
+          type: string
+      required:
+      - id
+      - scope
+      - action
+    Explanation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        selection:
+          type: string
+        conflict:
+          type: boolean
+        corrections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Correction'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Decision'
+      required:
+      - id
+      - kind
+      - revision
+      - selection
+      - conflict
+      - corrections
+      - decisions
+      description: Compact accepted selection, active operator choices and source correction/conflict
+        state for this exact resource revision. No raw reports, private evidence traversal, credentials
+        or configuration.
+    ResourcePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        next:
+          type: string
+          nullable: true
+      required:
+      - items
+      - next
+    Checkpoint:
+      type: object
+      additionalProperties: false
+      properties:
+        cursor:
+          type: string
+      required:
+      - cursor
+    Change:
+      type: object
+      additionalProperties: false
+      properties:
+        cursor:
+          type: string
+        resource:
+          $ref: '#/components/schemas/Resource'
+      required:
+      - cursor
+      - resource
+    ChangePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Change'
+        cursor:
+          type: string
+        through:
+          type: string
+        more:
+          type: boolean
+      required:
+      - items
+      - cursor
+      - through
+      - more
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          enum:
+          - invalid_request
+          - malformed_cursor
+          - cursor_invalidated
+          - not_found
+          - rebuild_in_progress
+          - method_not_allowed
+          - internal_error
+        message:
+          type: string
+      required:
+      - code
+      - message
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        maxLength: 2048
+    through:
+      name: through
+      in: query
+      schema:
+        type: string
+        maxLength: 2048
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+  responses:
+    Error:
+      description: Structured error; 400 invalid request/cursor, 404 absent, 405 mutation, 409 invalid
+        generation, 503 rebuilding, 500 safe internal failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

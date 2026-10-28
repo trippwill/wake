@@ -310,7 +310,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func checkInstrumentRoot(ctx context.Context, q *sqlc.Queries, id string, i source.Instrument) error {
@@ -463,37 +463,36 @@ func acceptInstrument(
 		}
 	}
 
+	listing, err := acceptListing(ctx, q, root.ID, i, currency)
+
+	return root.ID, listing, err
+}
+
+func acceptListing(
+	ctx context.Context,
+	q *sqlc.Queries,
+	instrument string,
+	i source.Instrument,
+	currency string,
+) (string, error) {
 	if i.Venue() == "" || currency == "" {
-		return root.ID, "", nil
+		return "", nil
 	}
 
-	if err = q.PutListing(
-		ctx,
-		sqlc.PutListingParams{
-			ID:           rand.Text(),
-			InstrumentID: root.ID,
-			Venue:        i.Venue(),
-			Ticker:       i.Ticker(),
-			Currency:     currency,
-		},
-	); err != nil {
-		return "", "", err
+	if err := q.PutListing(ctx, sqlc.PutListingParams{
+		ID: rand.Text(), InstrumentID: instrument, Venue: i.Venue(), Ticker: i.Ticker(), Currency: currency,
+	}); err != nil {
+		return "", err
 	}
 
-	listing, err := q.ListingByTerms(
-		ctx,
-		sqlc.ListingByTermsParams{
-			InstrumentID: root.ID,
-			Venue:        i.Venue(),
-			Ticker:       i.Ticker(),
-			Currency:     currency,
-		},
-	)
+	listing, err := q.ListingByTerms(ctx, sqlc.ListingByTermsParams{
+		InstrumentID: instrument, Venue: i.Venue(), Ticker: i.Ticker(), Currency: currency,
+	})
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	return root.ID, listing.ID, nil
+	return listing.ID, nil
 }
 
 func instrumentContradiction(a, b source.Instrument) bool {

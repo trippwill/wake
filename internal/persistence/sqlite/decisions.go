@@ -152,7 +152,7 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 		}
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func observationKey(r sqlc.Record) string {

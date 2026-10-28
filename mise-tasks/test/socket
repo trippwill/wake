@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify independent consumer and real daemon/socket acceptance"
+set -euo pipefail
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+(cd testdata/socket-consumer && GOWORK=off go test -race -count=1 ./... && GOWORK=off go build -o "$workspace/consumer" .)
+WAKE_SOCKET_CONSUMER="$workspace/consumer" go test -race -count=1 -timeout=3m ./internal/daemon -run '^TestSocketConsumerAcceptance$'

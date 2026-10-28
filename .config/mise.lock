@@ -192,3 +192,7 @@ checksum = "sha256:b15f903d1649283a2ab6e8d2f0c317eaf1f9f6b3763950e7e8b7e72a43dd7
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-windows-amd64.zip"
 url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/585813793"
 provenance = "github-attestations"
+
+[[tools."go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"]]
+version = "2.8.0"
+backend = "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"

@@ -100,6 +100,8 @@ preserves reported currencies and amount roles; missing legs stay missing. Attac
 charges retain their reporting scope. A summary fee is not copied onto each fill.
 
 Keep exact reported values, units, quotation meanings, currencies and time precision.
+Retain trailing decimal scale. Numerically equal observations with different scale
+remain compatible; their accepted selection keeps its reported text.
 Missing, zero and inapplicable differ. A date is not an invented midnight instant.
 Price, gross amount, net cash, accrued interest and charges are not interchangeable.
 Calculations and rounded displays do not replace source values.

@@ -190,13 +190,21 @@ func (s *Store) StartRebuild(ctx context.Context, submission, actor string, at t
 		}
 	}
 
+	if _, err = tx.ExecContext(ctx, publishingStatement("Rotate"), rand.Text()); err != nil {
+		return "", err
+	}
+
+	if _, err = tx.ExecContext(ctx, publishingStatement("ClearJournal")); err != nil {
+		return "", err
+	}
+
 	if len(rows)+len(instruments) == 0 {
 		if err = q.FinishRecovery(ctx, submission); err != nil {
 			return "", err
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return "", err
 	}
 
@@ -279,7 +287,7 @@ func (s *Store) RunRecovery(ctx context.Context) (bool, error) {
 			return failed(err)
 		}
 
-		if err = tx.Commit(); err != nil {
+		if err = s.commit(ctx, tx); err != nil {
 			return true, err
 		}
 
@@ -352,7 +360,7 @@ func (s *Store) RunRecovery(ctx context.Context) (bool, error) {
 		return failed(e)
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return failed(err)
 	}
 

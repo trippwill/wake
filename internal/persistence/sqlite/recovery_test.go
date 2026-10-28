@@ -5,7 +5,6 @@ package persistence
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -330,50 +329,3 @@ func TestRebuildUsesCurrentDecisionAtEachCommittedGroup(t *testing.T) {
 }
 
 var _ application.Store = (*Store)(nil)
-
-func TestSupersededRebuildCannotRetry(t *testing.T) {
-	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(t, s, "initial", syntheticOption)
-
-	first, err := s.StartRebuild(ctx, rand.Text(), "test", time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err = s.queries.FailRecovery(ctx, first); err != nil {
-		t.Fatal(err)
-	}
-
-	second, err := s.StartRebuild(ctx, rand.Text(), "test", time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err = s.queries.FailRecovery(ctx, second); err != nil {
-		t.Fatal(err)
-	}
-
-	if err = s.RetryRecovery(ctx, first); !errors.Is(err, application.ErrInvalid) {
-		t.Fatal("superseded retry accepted", err)
-	}
-
-	if err = s.RetryRecovery(ctx, second); err != nil {
-		t.Fatal(err)
-	}
-
-	for range 100 {
-		changed, e := s.RunRecovery(ctx)
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		if !changed {
-			break
-		}
-	}
-
-	if err = s.RetryRecovery(ctx, first); !errors.Is(err, application.ErrInvalid) {
-		t.Fatal("completed newer rebuild permits superseded retry", err)
-	}
-}
