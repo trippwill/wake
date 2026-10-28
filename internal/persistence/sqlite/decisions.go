@@ -616,7 +616,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 	for _, root := range roots {
 		for _, scope := range []string{"instrument", "underlier"} {
 			if current := out.Values[scope]; current.Value == root.ID {
-				current.Label = root.Kind + " · " + root.Name
+				current.Label = root.Kind + " · " + root.Name + " · Wake ID " + root.ID
 				out.Values[scope] = current
 			}
 		}
@@ -626,7 +626,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			label += " (" + root.Ticker + ")"
 		}
 
-		label += " · " + root.Kind
+		label += " · " + root.Kind + " · Wake ID " + root.ID
 		if root.ReferenceFigi != "" {
 			label += " · " + root.ReferenceFigi
 		}
@@ -654,7 +654,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 			for _, l := range listings {
 				if current := out.Values["listing"]; current.Value == l.ID {
-					current.Label = root.Name + " · " + l.Venue + " · " + l.Currency
+					current.Label = root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID
 					out.Values["listing"] = current
 				}
 
@@ -663,7 +663,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 					application.CorrectionCandidate{
 						Value: l.ID,
 						Scope: "listing",
-						Label: "Listing · " + root.Name + " · " + l.Venue + " · " + l.Currency,
+						Label: "Listing · " + root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID,
 					},
 				)
 			}

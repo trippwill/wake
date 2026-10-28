@@ -125,3 +125,66 @@ func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 		})
 	}
 }
+
+func TestDuplicateInstrumentLinkLabelsRetainStableIdentity(t *testing.T) {
+	s := coverageStore(t)
+	otherOption := strings.NewReplacer("option-fill", "other-fill", "option-trade", "other-trade", `conid="200"`, `conid="201"`).
+		Replace(syntheticOption)
+	otherEquity := strings.NewReplacer(`conid="100"`, `conid="101"`, "US0000000001", "US0000000002").
+		Replace(equityRow("U1", "other-underlier", "100"))
+	coverageReport(
+		t,
+		s,
+		"duplicate-labels",
+		syntheticOption+otherOption+equityRow("U1", "underlier", "100")+otherEquity,
+	)
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	optionID, activityID := "", ""
+	for _, e := range view.Executions {
+		if e.Terms().Fields().Instrument.Kind() == "option" {
+			optionID, activityID = e.Instrument(), e.ID()
+			break
+		}
+	}
+
+	for _, test := range []struct{ kind, id, scope string }{{"activity", activityID, "instrument"}, {"instrument", optionID, "underlier"}} {
+		form, e := s.CorrectionForm(t.Context(), test.kind, test.id)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		labels := map[string]bool{}
+		count := 0
+		for _, link := range form.Links {
+			if link.Scope != test.scope {
+				continue
+			}
+
+			count++
+
+			if !strings.Contains(link.Label, link.Value) {
+				t.Errorf("%s link label omits searchable Wake ID: %q", test.scope, link.Label)
+			}
+
+			if labels[link.Label] {
+				t.Error("duplicate link labels cannot distinguish retained identities", test.scope, link.Label)
+			}
+
+			labels[link.Label] = true
+		}
+
+		if count != 2 {
+			t.Fatal("expected two same-family choices", test.scope, count)
+		}
+
+		current := form.Values[test.scope]
+		if current.Value == "" || !strings.Contains(current.Label, current.Value) {
+			t.Error("current link omits its stable identity", test.scope, current)
+		}
+	}
+}

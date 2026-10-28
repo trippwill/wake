@@ -156,3 +156,5 @@ Correction preflight accounts for active dependent listing decisions before acce
 Evidence comparisons also retain read-only option effective dates and deliverable components (identities, multiplicity, exact quantities and cash currencies), plus debt type, currency, issue and dated dates, and payment frequency. These terms remain visible independently of editable correction scopes.
 
 Read-only candidate comparison preserves qualified source account, event, order and alias references, reported relationships, trade kind and reported instrument/underlier identities with their identifier schemes and values. Canonical underlier-link decisions remain separate from the reported underlier. Reference candidates compare the accepted FIGI identity selected for the instrument family (including share-class FIGIs for equities), independently of matching names or tickers. Unknown currencies render as Unknown.
+
+Retained instrument, underlier and listing choices include their stable Wake identities in both selectable and current-value labels, so matching names or symbols remain distinguishable and searchable before a link decision is saved.
