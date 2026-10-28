@@ -13,7 +13,7 @@ import (
 )
 
 func selectionTrade(
-	t *testing.T,
+	t testing.TB,
 	kind source.InstrumentKind,
 	charges []source.Charge,
 	debt source.DebtTerms,
