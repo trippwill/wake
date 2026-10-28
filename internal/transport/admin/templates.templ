@@ -12,42 +12,47 @@ templ Login(message string) {
 templ LoginBody(message string) {
 	<div class="wake-login wake-stack">
 		<h1>Sign in to Wake</h1>
-		<p>Enter the operator unlock created by wake setup.</p>
-		if message != "" {
-			<div class="alert alert-error" role="alert">{ message }</div>
+		<p>Inspect financial history and review its supporting evidence.</p>
+		<p class="wake-help">Use the operator unlock created by wake setup.</p>
+		if message!="" {
+			<div class="wake-notice wake-error" role="alert">{ message }</div>
 		}
-		<form method="post" action="/login" class="wake-stack">
-			<label class="wake-field" for="unlock">Operator unlock<input class="input" id="unlock" name="unlock" type="password" autocomplete="current-password" required/></label>
-			<button class="btn btn-primary" type="submit">Sign in</button>
-		</form>
+		<form method="post" action="/login" class="wake-stack"><label class="wake-field" for="unlock">Operator unlock<input class="input" id="unlock" name="unlock" type="password" autocomplete="current-password" required/></label><button class="btn btn-primary" type="submit">Sign in</button></form>
 	</div>
 }
 
 templ Overview(csrf, path string, status Status, cfg config.Config) {
-	@Shell(pageTitle(path), csrf, OverviewBody(path, status, cfg))
+	@SectionShell(pageTitle(path), csrf, "System", OverviewBody(path, status, cfg))
 }
 
 templ OverviewBody(path string, status Status, cfg config.Config) {
-	<div class="wake-stack">
-		<h1>{ pageTitle(path) }</h1>
-		if path == "/configuration" {
-			<dl><dt>Warehouse database</dt><dd>{ cfg.Storage.WarehousePath }</dd><dt>Connections database</dt><dd>{ cfg.Storage.ConnectionsPath }</dd><dt>Operational database</dt><dd>{ cfg.Storage.OperationalPath }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl>
-			<p><a href="/connections">Manage IBKR connections and the OpenFIGI reference setting.</a></p>
-		} else {
+	@PageHeader(pageTitle(path), "Installation health, effective configuration and maintenance.")
+	@SystemNavigation(systemView(path))
+	if path=="/configuration" {
+		<section class="wake-card"><h2>Effective storage and runtime configuration</h2><dl><dt>Warehouse database</dt><dd>{ cfg.Storage.WarehousePath }</dd><dt>Connections database</dt><dd>{ cfg.Storage.ConnectionsPath }</dd><dt>Operational database</dt><dd>{ cfg.Storage.OperationalPath }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl><a href="/connections">Manage source and reference access</a></section>
+	} else {
+		<section class="wake-card">
+			<h2>Daemon status</h2>
 			<p role="status">Daemon running</p>
 			<dl>
 				<dt>Started (UTC)</dt>
-				<dd>{ status.StartedAt }</dd>
+				<dd>{ known(status.StartedAt) }</dd>
 				<dt>Credential protection</dt>
 				<dd>
 					if status.CredentialProtection {
-						<span>Enabled</span>
+						Enabled
 					} else {
-						<span>Unavailable · Run wake setup to provision a master key.</span>
+						Unavailable · Run wake setup to provision a master key.
 					}
 				</dd>
 			</dl>
-			<p><a href="/connections">Connect and confirm an IBKR account</a>, then <a href="/activity">inspect equity executions</a>.</p>
-		}
-	</div>
+			<p class="wake-help">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p>
+		</section>
+		<section class="wake-card"><h2>Operator workspaces</h2><div class="wake-actions"><a href="/activity">Inspect financial activity</a><a href="/connections">Inspect source synchronization</a></div></section>
+	}
+}
+
+templ ErrorPage(title, message string) {
+	@PageHeader(title, message)
+	<section class="wake-card"><h2>Choose a next step</h2><p>Return to your workspace or inspect daemon status before retrying.</p><div class="wake-actions"><a href={ templ.SafeURL(returnURL(ctx)) }>Return to previous work</a><a href="/status">Inspect daemon status</a></div></section>
 }

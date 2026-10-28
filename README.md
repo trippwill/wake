@@ -40,8 +40,8 @@ settings from `config describe`; retired acquisition settings are rejected.
 
 ### Connect and inspect
 
-Open **Connections**, enter a connection name, the saved Confirmation Query ID
-and the Flex Web Service token. See [IBKR setup](docs/providers/ibkr-flex.md) for
+Open **Connections → Add IBKR connection**, enter a connection name, the saved
+Confirmation Query ID and the Flex Web Service token. See [IBKR setup](docs/providers/ibkr-flex.md) for
 query preparation. Wake encrypts the token and performs one bounded discovery
 attempt. It shows the available accounts and any missing profile information.
 
@@ -50,27 +50,27 @@ details. Leave an unknown account currency empty. Confirmation activates one
 account and starts automatic synchronization; other discovered accounts remain
 candidates.
 
-Open **Activity** to inspect security executions, option outcomes, currency
-conversions, instruments and their reference status. Execution and instrument pages link to retained evidence when needed.
-The pages state the processing coverage; unsupported rows remain in the reports.
-Status regions refresh automatically while preserving unfinished forms.
+**Overview** shows setup steps, financial review and source work. In **Activity**,
+use **All activity**, **Needs review** or **Instruments** to inspect the records you
+need. Activity, instrument and evidence pages retain a return path to the originating
+view. Unresolved financial and identity conflicts remain distinct from ordinary
+reference gaps and source failures.
 
-Connections also provides token replacement, Query ID repair and explicit retry.
-Its optional OpenFIGI setting uses an encrypted key independently of IBKR access.
-A rejected configured key stays visible until repaired or explicitly cleared to
-select anonymous access. Reference failures leave provisional financial views
-available.
+**Connections** groups each source's **Status**, **Reports** and **Access**. Repair
+its Query ID or token beside the affected source. **Instrument reference** manages
+the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
+stays visible until repaired or explicitly cleared for anonymous access.
 
-Use **Correct accepted data** on an activity or **Correct instrument data** on an
-instrument to retain a field, link, naming or candidate-selection decision. The form
-shows its target and revision. Decision history records the authenticated session,
-time and optional rationale; supersede a scope with another decision or release it
-to return to automatic selection. Source reports remain available for inspection.
+Use **Correct accepted data** or **Correct instrument data** to correct a field/link,
+compare retained evidence or manage decisions. The editor shows the current value;
+dates, choices and links use field-specific controls, and edits receive live checks.
+Search compatible retained records when correcting a link. Comparisons lead with
+differences. Decisions retain the authenticated session, time
+and optional rationale. Release a decision to return to automatic selection.
 
-Connections provides **Retry processing report** and **Rebuild accepted views**.
-Recovery uses retained inputs and decisions; progress resumes after restart without
-resetting identities, reference caches or retry eligibility. A failed rebuild keeps
-committed progress and offers retry after the problem is repaired.
+A source's **Reports** view provides **Retry processing report**. **System →
+Maintenance** provides **Rebuild accepted views** and recovery history. Rebuild uses
+retained inputs and decisions and resumes from committed progress after restart.
 
 Each store has its own file setting under `[storage]`: `warehouse_path` for financial
 history, `connections_path` for active access and encrypted credentials, and
@@ -80,9 +80,14 @@ locations respectively. Override individual files in TOML, with `--warehouse-pat
 `WAKE_*_PATH` environment variables.
 
 If a companion store is lost, Wake recreates it and pauses upstream work. Retained
-history stays inspectable. In **Connections**, repair missing settings and tokens,
-review the OpenFIGI setting when requested, then select **Resume upstream work**.
+history stays inspectable. In **Connections → Recovery**, follow the ordered
+source-access and reference review steps, then select **Resume upstream work**.
 An ordinary restart with intact stores keeps the existing authorization.
+
+Activity search and filters select the displayed records. Enhanced tables provide
+exact sorting and pagination and retain their view through updates; native tables
+remain readable without JavaScript. Correction drafts survive validation errors,
+and changed data requires review before resubmission.
 
 The daemon writes structured operational logs to stderr, including completed work,
 failures and recovery actions. Startup always reports the admin binding and port,

@@ -470,6 +470,7 @@ func referenceCandidateKey(id string, job, record int) string {
 
 func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (application.CorrectionForm, error) {
 	out := application.CorrectionForm{Kind: kind, ID: id}
+	family := source.InstrumentKind("")
 	switch kind {
 	case "activity":
 		row, err := s.queries.Execution(ctx, id)
@@ -479,7 +480,18 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 		out.Label = observationLabel(sqlc.Record{Kind: row.Kind, Data: row.Accepted})
 		out.Revision = row.Revision
-		family := source.InstrumentKind("")
+
+		out.Values, err = comparisonValues(row.Kind, row.Accepted)
+		if err != nil {
+			return out, err
+		}
+
+		out.Values["instrument"] = application.CorrectionValue{Value: row.InstrumentID.String}
+		out.Values["listing"] = application.CorrectionValue{Value: row.ListingID.String}
+		if account, e := s.queries.Account(ctx); e == nil {
+			out.AccountName = account.Name
+		}
+
 		switch row.Kind {
 		case "trade":
 			t, e := decodeTrade(row.Accepted)
@@ -511,11 +523,17 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 		for _, r := range inputs {
 			if r.Kind == row.Kind {
+				values, err := comparisonValues(r.Kind, r.Data)
+				if err != nil {
+					return out, err
+				}
+
 				out.Candidates = append(
 					out.Candidates,
 					application.CorrectionCandidate{
-						Value: observationKey(r),
-						Label: observationLabel(r),
+						Value:  observationKey(r),
+						Label:  observationLabel(r),
+						Fields: values,
 					},
 				)
 			}
@@ -527,6 +545,13 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 		}
 
 		out.Label = row.Name + " · " + row.Kind
+
+		out.Values = map[string]application.CorrectionValue{
+			"name":               {Value: row.Name},
+			"reference_identity": {Value: row.ReferenceFigi},
+			"ticker":             {Value: row.Ticker},
+			"underlier":          {Value: row.UnderlierID.String},
+		}
 		out.Revision = row.Revision
 		out.Fields = []string{"name", "ticker"}
 		if row.Kind == string(source.Option) {
@@ -562,12 +587,17 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 				}
 
 				for k, r := range job.Data {
-					if _, _, ok := reference.Select(source.InstrumentKind(row.Kind), []reference.Record{r}); ok {
+					if _, identity, ok := reference.Select(source.InstrumentKind(row.Kind), []reference.Record{r}); ok {
 						out.Candidates = append(
 							out.Candidates,
 							application.CorrectionCandidate{
 								Value: referenceCandidateKey(c.ID, j, k),
 								Label: r.Name + " · " + r.Ticker + " · " + r.FIGI,
+								Fields: map[string]application.CorrectionValue{
+									"name":               {Value: r.Name},
+									"reference_identity": {Value: identity},
+									"ticker":             {Value: r.Ticker},
+								},
 							},
 						)
 					}
@@ -584,22 +614,56 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 	}
 
 	for _, root := range roots {
-		out.Links = append(
-			out.Links,
-			application.CorrectionCandidate{Value: root.ID, Label: root.Kind + " · " + root.Name},
-		)
-		if kind == "activity" {
+		for _, scope := range []string{"instrument", "underlier"} {
+			if current := out.Values[scope]; current.Value == root.ID {
+				current.Label = root.Kind + " · " + root.Name + " · Wake ID " + root.ID
+				out.Values[scope] = current
+			}
+		}
+
+		label := root.Name
+		if root.Ticker != "" {
+			label += " (" + root.Ticker + ")"
+		}
+
+		label += " · " + root.Kind + " · Wake ID " + root.ID
+		if root.ReferenceFigi != "" {
+			label += " · " + root.ReferenceFigi
+		}
+
+		if kind == "activity" && family != "" && root.Kind == string(family) {
+			out.Links = append(
+				out.Links,
+				application.CorrectionCandidate{Value: root.ID, Scope: "instrument", Label: label},
+			)
+		}
+
+		if kind == "instrument" && slices.Contains(out.Fields, "underlier") && root.ID != id &&
+			(root.Kind == string(source.Equity) || root.Kind == string(source.Fund)) {
+			out.Links = append(
+				out.Links,
+				application.CorrectionCandidate{Value: root.ID, Scope: "underlier", Label: label},
+			)
+		}
+
+		if kind == "activity" && root.ID == out.Values["instrument"].Value {
 			listings, e := s.queries.Listings(ctx, root.ID)
 			if e != nil {
 				return out, e
 			}
 
 			for _, l := range listings {
+				if current := out.Values["listing"]; current.Value == l.ID {
+					current.Label = root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID
+					out.Values["listing"] = current
+				}
+
 				out.Links = append(
 					out.Links,
 					application.CorrectionCandidate{
 						Value: l.ID,
-						Label: "Listing · " + root.Name + " · " + l.Venue + " · " + l.Currency,
+						Scope: "listing",
+						Label: "Listing · " + root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID,
 					},
 				)
 			}

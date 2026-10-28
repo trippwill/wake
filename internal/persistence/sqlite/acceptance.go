@@ -544,6 +544,16 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 		return out, err
 	}
 
+	out.Corrections, err = s.sourceInstructions(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	out.Context, err = s.activityContext(ctx, r)
+	if err != nil {
+		return out, err
+	}
+
 	observations, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return out, err
@@ -764,6 +774,16 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 		return out, err
 	}
 
+	out.Corrections, err = s.sourceInstructions(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	out.Context, err = s.activityContext(ctx, r)
+	if err != nil {
+		return out, err
+	}
+
 	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return out, err
@@ -917,6 +937,16 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 		return out, err
 	}
 
+	out.Corrections, err = s.sourceInstructions(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	out.Context, err = s.activityContext(ctx, r)
+	if err != nil {
+		return out, err
+	}
+
 	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return out, err
@@ -1028,4 +1058,31 @@ func processConversion(
 	o.ExecutionID = sql.NullString{String: id, Valid: true}
 
 	return q.PutObservation(ctx, o)
+}
+
+func (s *Store) activityContext(
+	ctx context.Context,
+	row sqlc.Execution,
+) (application.ActivityContext, error) {
+	out := application.ActivityContext{}
+
+	account, err := s.queries.Account(ctx)
+	if err != nil {
+		return out, err
+	}
+
+	out.AccountName = account.Name
+	if row.InstrumentID.Valid {
+		instrument, err := s.queries.Instrument(ctx, row.InstrumentID.String)
+		if err != nil {
+			return out, err
+		}
+
+		out.InstrumentName = instrument.Name
+		if out.InstrumentName == "" {
+			out.InstrumentName = instrument.Ticker
+		}
+	}
+
+	return out, nil
 }

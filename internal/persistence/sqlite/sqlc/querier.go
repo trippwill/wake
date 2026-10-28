@@ -13,6 +13,7 @@ import (
 )
 
 type Querier interface {
+	AccessReadiness(ctx context.Context, connectionID string) (AccessReadinessRow, error)
 	Account(ctx context.Context) (Account, error)
 	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
@@ -23,6 +24,7 @@ type Querier interface {
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
 	AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
+	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
 	Attempts(ctx context.Context, artifactID string) ([]OperationalAttempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
@@ -111,6 +113,7 @@ type Querier interface {
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
 	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
 	RefreshExecution(ctx context.Context) error
+	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) error
 	ResetConnectionWork(ctx context.Context, connectionID string) error

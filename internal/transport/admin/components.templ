@@ -1,0 +1,147 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"go.trippwill.dev/wake/internal/application"
+	"net/url"
+	"strconv"
+	"strings"
+)
+
+templ PageHeader(title, description string) {
+	<header class="wake-page-header">
+		<h1>{ title }</h1>
+		if description!="" {
+			<p>{ description }</p>
+		}
+	</header>
+}
+
+templ StateBadge(value string) {
+	<span class="wake-state" data-state={ stateKind(value) }>{ value }</span>
+}
+
+func stateKind(value string) string {
+	switch value {
+	case "resolved", "complete", "completed", "Processing complete":
+		return "success"
+	case "failed", "Failure", "malformed":
+		return "error"
+	case "needs review", "conflict", "ambiguous", "paused", "provisional":
+		return "warning"
+	default:
+		return "neutral"
+	}
+}
+
+templ ObservationHistory(rows []application.Observation) {
+	<section class="wake-grid" id="observation-grid" data-grid="observations" aria-label="Retained observations">
+		<section class="wake-table-scroll" aria-label="Scrollable table">
+			<table class="table">
+				<caption>Retained observations</caption><thead><tr><th scope="col">Report</th><th scope="col">Outcome</th><th scope="col">Source location</th><th scope="col">Acceptance rule / version</th></tr></thead>
+				<tbody>
+					for _,row:=range rows {
+						<tr id={ observationID(row) }>
+							<td><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+row.Artifact) + "&location=" + url.QueryEscape(row.Location)) }>Confirmation report</a></td>
+							<td>
+								@StateBadge(row.Outcome)
+							</td>
+							<td>{ row.Location }</td>
+							<td>{ row.Rule } · { row.Version }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</section>
+	</section>
+}
+
+func comparisonText(value application.CorrectionValue) string {
+	if value.Label != "" {
+		return value.Label
+	}
+	if value.Value == "" {
+		if value.Currency != "" {
+			return "Unknown " + value.Currency
+		}
+		return "Unknown"
+	}
+	return strings.TrimSpace(value.Value + " " + value.Currency + " " + value.Unit)
+}
+
+templ ComparisonRows(f application.CorrectionForm, c application.CorrectionCandidate, different bool) {
+	<section class="wake-table-scroll" aria-label="Accepted and candidate values">
+		<table class="table">
+			<caption>Accepted and candidate values</caption><thead><tr><th scope="col">Field</th><th scope="col">Accepted</th><th scope="col">Candidate</th></tr></thead>
+			<tbody>
+				for _,field:=range comparisonFields(f,c) {
+					if v,ok:=c.Fields[field];ok && (f.Values[field]!=v)==different {
+						<tr data-different={ strconv.FormatBool(different) }>
+							<th scope="row">
+								{ fieldLabel(field) }
+								if different {
+									<span class="wake-difference">Different</span>
+								}
+							</th>
+							<td>{ comparisonText(f.Values[field]) }</td>
+							<td>{ comparisonText(v) }</td>
+						</tr>
+					}
+				}
+			</tbody>
+		</table>
+	</section>
+}
+
+templ CandidateComparison(f application.CorrectionForm, c application.CorrectionCandidate) {
+	<section class="wake-comparison" data-candidate={ c.Value }>
+		<h3>Candidate comparison</h3>
+		if hasDifferences(f,c) {
+			@ComparisonRows(f, c, true)
+		} else {
+			<p>The candidate matches the currently accepted comparable fields.</p>
+		}
+		<details>
+			<summary>Show unchanged fields</summary>@ComparisonRows(f, c, false)
+		</details>
+	</section>
+}
+
+func observationID(row application.Observation) string {
+	sum := sha256.Sum256([]byte(row.Artifact + "\x00" + row.Version + "\x00" + row.Location))
+	return fmt.Sprintf("observation-%x", sum)
+}
+
+templ SubmissionFailure(csrf, path, message string, draft url.Values) {
+	@PageHeader("Unable to save", "Review the error and retry your intended change.")
+	<p class="wake-notice wake-error" role="alert" tabindex="-1" data-error-summary>{ message }</p>
+	if path=="/connections" || strings.HasSuffix(path,"/settings") || strings.HasSuffix(path,"/confirm") || strings.HasSuffix(path,"/token") || path=="/reference/key" {
+		<form method="post" action={ templ.SafeURL(path) }>
+			<input type="hidden" name="csrf" value={ csrf }/>
+			if path=="/connections" || strings.HasSuffix(path,"/settings") || strings.HasSuffix(path,"/confirm") {
+				<label for="retry-name">Name<input class="input" id="retry-name" name="name" value={ draft.Get("name") } required maxlength="256"/></label>
+			}
+			if path=="/connections" || strings.HasSuffix(path,"/settings") {
+				<label for="retry-query">Confirmation Query ID<input class="input" id="retry-query" name="query_id" value={ draft.Get("query_id") } pattern="[0-9]+" required maxlength="64"/></label>
+			}
+			if strings.HasSuffix(path,"/confirm") {
+				<label for="retry-currency">Account currency (optional)<input class="input" id="retry-currency" name="currency" value={ draft.Get("currency") } maxlength="3" pattern="[A-Z]{3}"/></label>
+				for _,key:=range []string{"artifact","authority","kind","scope","account"} {
+					<input type="hidden" name={ key } value={ draft.Get(key) }/>
+				}
+			}
+			if path=="/connections" || strings.HasSuffix(path,"/token") {
+				<label for="retry-token">Token (enter again)<input class="input" id="retry-token" name="token" type="password" required maxlength="4096" autocomplete="new-password"/></label>
+			}
+			if path=="/reference/key" {
+				<label for="retry-key">OpenFIGI key (enter again, or leave empty for anonymous access)<input class="input" id="retry-key" name="key" type="password" maxlength="4096" autocomplete="new-password"/></label>
+			}
+			<button class="btn btn-primary" type="submit">Retry saving</button>
+		</form>
+	}
+	<p><a href="/connections">Return to connections</a></p>
+}

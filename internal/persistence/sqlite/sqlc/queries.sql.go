@@ -13,6 +13,22 @@ import (
 	"database/sql"
 )
 
+const accessReadiness = `-- name: AccessReadiness :one
+SELECT EXISTS(SELECT 1 FROM access.configurations WHERE id=?1) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=?1) AS credential_stored
+`
+
+type AccessReadinessRow struct {
+	SettingsStored   bool
+	CredentialStored bool
+}
+
+func (q *Queries) AccessReadiness(ctx context.Context, connectionID string) (AccessReadinessRow, error) {
+	row := q.db.QueryRowContext(ctx, accessReadiness, connectionID)
+	var i AccessReadinessRow
+	err := row.Scan(&i.SettingsStored, &i.CredentialStored)
+	return i, err
+}
+
 const account = `-- name: Account :one
 SELECT id, singleton, name, currency, connection_id, provider, stream, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
 `
@@ -216,6 +232,40 @@ type ArtifactFailureParams struct {
 func (q *Queries) ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error {
 	_, err := q.db.ExecContext(ctx, artifactFailure, arg.ProcessingFailure, arg.ProcessingNext, arg.ID)
 	return err
+}
+
+const artifactObservations = `-- name: ArtifactObservations :many
+SELECT artifact_id, version, location, execution_id, outcome, rule FROM execution_observations WHERE artifact_id=? ORDER BY rowid
+`
+
+func (q *Queries) ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error) {
+	rows, err := q.db.QueryContext(ctx, artifactObservations, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExecutionObservation
+	for rows.Next() {
+		var i ExecutionObservation
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.ExecutionID,
+			&i.Outcome,
+			&i.Rule,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const artifactProcessed = `-- name: ArtifactProcessed :exec
@@ -2249,6 +2299,42 @@ INSERT INTO operational.execution(connection_id,stream,operation) SELECT connect
 func (q *Queries) RefreshExecution(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, refreshExecution)
 	return err
+}
+
+const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
+SELECT DISTINCT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM source_corrections c JOIN event_links e ON e.account_id=c.account_id AND (e.reference=c.target OR e.reference=c.replacement) WHERE e.execution_id=? ORDER BY c.artifact_id,c.version,c.location
+`
+
+func (q *Queries) RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error) {
+	rows, err := q.db.QueryContext(ctx, relatedSourceCorrections, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SourceCorrection
+	for rows.Next() {
+		var i SourceCorrection
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.AccountID,
+			&i.Kind,
+			&i.Target,
+			&i.Replacement,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const relationships = `-- name: Relationships :many
