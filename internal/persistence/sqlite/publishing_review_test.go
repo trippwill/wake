@@ -6,11 +6,14 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
 func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
@@ -218,5 +221,105 @@ func TestPublishingReverseLookupsUseEndpointIndexes(t *testing.T) {
 		if !strings.Contains(details, index) {
 			t.Error("activity endpoint lookup does not use endpoint index", index, details)
 		}
+	}
+}
+
+func TestNormalizationPublishingFailureReleasesConnectionAndRecordsFailure(t *testing.T) {
+	for _, failure := range []string{"query", "append"} {
+		t.Run(failure, func(t *testing.T) {
+			s := coverageStore(t)
+			coverageReport(t, s, "publishing-failure", equityRow("U1", "trade", "100"))
+
+			original, err := s.Records(t.Context(), "publishing-failure", ibkrflex.Version)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			checkpoint, err := s.PublishCheckpoint(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var before int
+			if err = s.db.QueryRow(`SELECT count(*) FROM published_changes`).Scan(&before); err != nil {
+				t.Fatal(err)
+			}
+
+			inject, repair := `ALTER TABLE publishing_dirty RENAME TO unavailable_dirty`, `ALTER TABLE unavailable_dirty RENAME TO publishing_dirty`
+			if failure == "append" {
+				inject = `CREATE TRIGGER fail_journal BEFORE INSERT ON published_changes BEGIN SELECT RAISE(ABORT,'synthetic publishing failure'); END;
+UPDATE accounts SET name='Synthetic changed account' WHERE id='account';`
+				repair = `DROP TRIGGER fail_journal`
+			}
+
+			if _, err = s.db.Exec(inject); err != nil {
+				t.Fatal(err)
+			}
+
+			registration, err := ibkrflex.Registration(ibkrflex.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			const version = "publishing-failure/1"
+			if _, err = s.Normalize(
+				t.Context(),
+				"publishing-failure",
+				version,
+				registration.Normalizer(),
+			); !errors.Is(
+				err,
+				host.ErrStorage,
+			) {
+				t.Fatal("publishing failure lost storage classification", err)
+			}
+
+			attempts, err := s.Attempts(t.Context(), "publishing-failure")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(attempts) != 2 || attempts[1].Outcome != "storage-failed" {
+				t.Error("failed publishing retained running attempt", attempts)
+			}
+
+			var records, receipts, after int
+			if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM records WHERE artifact_id='publishing-failure' AND version=?),(SELECT count(*) FROM normalization_receipts WHERE artifact_id='publishing-failure' AND version=?),(SELECT count(*) FROM published_changes)`, version, version).
+				Scan(&records, &receipts, &after); err != nil {
+				t.Fatal(err)
+			}
+
+			if records != 0 || receipts != 0 || after != before {
+				t.Fatal("partial normalization or journal retained", records, receipts, after, before)
+			}
+
+			if _, err = s.db.Exec(repair); err != nil {
+				t.Fatal(err)
+			}
+
+			unchanged, err := s.PublishCheckpoint(t.Context())
+			if err != nil || unchanged != checkpoint {
+				t.Fatal("failed transaction advanced checkpoint", unchanged, checkpoint, err)
+			}
+
+			if _, err = s.Normalize(
+				t.Context(),
+				"publishing-failure",
+				version,
+				registration.Normalizer(),
+			); err != nil {
+				t.Fatal("retry after publishing repair", err)
+			}
+
+			attempts, err = s.Attempts(t.Context(), "publishing-failure")
+			if err != nil || len(attempts) != 3 || attempts[2].Outcome != "succeeded" {
+				t.Fatal("retry failed to finish", attempts, err)
+			}
+
+			recordsAfter, err := s.Records(t.Context(), "publishing-failure", version)
+			if err != nil || len(recordsAfter) != len(original) {
+				t.Fatal("retry lost retained normalization", recordsAfter, err)
+			}
+		})
 	}
 }

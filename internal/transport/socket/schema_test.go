@@ -48,6 +48,12 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 	}
 
 	resources := []application.CanonicalResource{
+		{
+			ID:       "listing",
+			Kind:     "listings",
+			Revision: 1,
+			Listing:  &application.PublishedListing{InstrumentID: "instrument", Currency: "USD"},
+		},
 		{ID: "account", Kind: "accounts", Revision: 1, Account: &application.PublishedAccount{Name: "Synthetic"}},
 		{
 			ID:       "instrument",
@@ -75,6 +81,28 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 			},
 		},
 	}
+	bodies := map[string]any{}
+	bodyNames := map[string]string{
+		"accounts":    "account",
+		"instruments": "instrument",
+		"listings":    "listing",
+		"activity":    "activity",
+	}
+	for _, resource := range resources {
+		data, e := json.Marshal(resource)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		var fields map[string]any
+		if e = json.Unmarshal(data, &fields); e != nil {
+			t.Fatal(e)
+		}
+
+		name := bodyNames[resource.Kind]
+		bodies[name] = fields[name]
+	}
+
 	for _, resource := range resources {
 		response := httptest.NewRecorder()
 		NewHandler(
@@ -87,8 +115,43 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 			t.Fatal(response.Code, response.Body.String())
 		}
 
-		if err = document.Components.Schemas["Resource"].Value.VisitJSON(value); err != nil {
+		schema := document.Components.Schemas["Resource"].Value
+		if err = schema.VisitJSON(value); err != nil {
 			t.Errorf("actual %s response fails contract: %v", resource.Kind, err)
+		}
+
+		bodyName := map[string]string{"accounts": "account", "instruments": "instrument", "listings": "listing", "activity": "activity"}[resource.Kind]
+		fields := value.(map[string]any)
+		body := fields[bodyName]
+		delete(fields, bodyName)
+
+		if schema.VisitJSON(fields) == nil {
+			t.Errorf("%s missing body accepted", resource.Kind)
+		}
+
+		fields[bodyName] = nil
+		if schema.VisitJSON(fields) == nil {
+			t.Errorf("%s null body accepted", resource.Kind)
+		}
+
+		fields[bodyName] = body
+		for otherKind, otherBody := range map[string]string{"accounts": "account", "instruments": "instrument", "listings": "listing", "activity": "activity"} {
+			if otherKind == resource.Kind {
+				continue
+			}
+
+			fields["kind"] = otherKind
+			if schema.VisitJSON(fields) == nil {
+				t.Errorf("%s body accepted as %s", resource.Kind, otherKind)
+			}
+
+			fields["kind"] = resource.Kind
+			fields[otherBody] = bodies[otherBody]
+			if schema.VisitJSON(fields) == nil {
+				t.Errorf("%s accepted extra %s body", resource.Kind, otherBody)
+			}
+
+			delete(fields, otherBody)
 		}
 	}
 

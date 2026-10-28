@@ -740,6 +740,14 @@ components:
         roles are reported, never recomputed. Trade option/debt terms describe that activity independently
         of later reference refresh.
     Resource:
+      oneOf:
+      - $ref: '#/components/schemas/AccountResource'
+      - $ref: '#/components/schemas/InstrumentResource'
+      - $ref: '#/components/schemas/ListingResource'
+      - $ref: '#/components/schemas/ActivityResource'
+      description: Exactly one body, matching kind. Warehouse-local stable Wake identity and monotonically
+        increasing resource revision. Cancellation/replacement retains the original resource.
+    AccountResource:
       type: object
       additionalProperties: false
       properties:
@@ -747,29 +755,62 @@ components:
           type: string
         kind:
           type: string
-          enum:
-          - accounts
-          - instruments
-          - listings
-          - activity
+          enum: [accounts]
         revision:
           type: integer
           format: int64
           minimum: 1
         account:
           $ref: '#/components/schemas/Account'
+      required: [id, kind, revision, account]
+    InstrumentResource:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [instruments]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
         instrument:
           $ref: '#/components/schemas/Instrument'
+      required: [id, kind, revision, instrument]
+    ListingResource:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [listings]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
         listing:
           $ref: '#/components/schemas/Listing'
+      required: [id, kind, revision, listing]
+    ActivityResource:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [activity]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
         activity:
           $ref: '#/components/schemas/Activity'
-      required:
-      - id
-      - kind
-      - revision
-      description: Exactly one body, matching kind. Warehouse-local stable Wake identity and monotonically
-        increasing resource revision. Cancellation/replacement retains the original resource.
+      required: [id, kind, revision, activity]
     Correction:
       type: object
       additionalProperties: false

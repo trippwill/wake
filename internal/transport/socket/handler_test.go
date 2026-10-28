@@ -85,9 +85,14 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if result.Activity.Sent.Amount != nil || *result.Activity.Received.Amount != "0.0000" ||
-				result.Activity.Rate.Amount != "1.23000000000000000100" ||
-				result.Activity.At != nil {
+			activity, err := result.AsActivityResource()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if activity.Activity.Sent.Amount != nil || *activity.Activity.Received.Amount != "0.0000" ||
+				activity.Activity.Rate.Amount != "1.23000000000000000100" ||
+				activity.Activity.At != nil {
 				t.Fatal("unknown/zero/precision lost", w.Body.String())
 			}
 		}

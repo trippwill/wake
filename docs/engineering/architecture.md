@@ -69,7 +69,8 @@ scale remain compatible, while the accepted selection keeps its retained text.
 Civil dates stay dates and timestamps retain their reported fractional precision.
 Compact explanations are separate reads tied to the resource revision they
 explain. Raw reports, private evidence traversal, credentials and operational
-configuration belong outside this consumer boundary.
+configuration belong outside this consumer boundary. The response contract requires
+exactly one financial body matching the resource kind.
 
 A warehouse journal retains the final canonical snapshot of each affected resource
 in the same transaction as its accepted state. Intermediate changes within that
@@ -78,7 +79,9 @@ readable. Relationship resolution, reference changes, cancellation/replacement a
 operator choices advance their owning resources, including choices that change
 authority while preserving a value. Unchanged replay and rollbacks publish nothing.
 The warehouse retains journal history without automatic pruning within its publishing
-generation. Wire and admin models stay outside persistence.
+generation. A publishing failure rolls back its transaction before recording
+the failed attempt separately, leaving neither partial normalization nor journal
+entries. Wire and admin models stay outside persistence.
 
 Cursors are opaque, versioned and bound to the warehouse, publishing generation and
 read purpose/position. Bootstrap captures a checkpoint **before** scanning current
