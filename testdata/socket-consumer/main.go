@@ -34,6 +34,8 @@ type change struct {
 	Resource json.RawMessage `json:"resource"`
 }
 type state struct {
+	dirty     bool
+	persisted bool
 	Version   int                        `json:"version"`
 	Cursor    string                     `json:"cursor"`
 	Through   string                     `json:"through"`
@@ -144,6 +146,7 @@ func (s *state) apply(raw json.RawMessage) error {
 		}
 	}
 	s.Resources[key] = append(json.RawMessage(nil), raw...)
+	s.dirty = true
 	return nil
 }
 
@@ -199,6 +202,7 @@ func readState(path string) (state, error) {
 			return s, errors.New("invalid consumer mirror")
 		}
 	}
+	s.persisted = true
 	return s, nil
 }
 
@@ -265,10 +269,7 @@ func optional(key, value string) string {
 }
 
 func (c *client) catchup(ctx context.Context, s *state, path string) error {
-	seen := map[string]json.RawMessage{}
-	for _, entry := range s.History {
-		seen[entry.Cursor] = entry.Resource
-	}
+	var seen map[string]json.RawMessage
 	for {
 		var page struct {
 			Items   []change `json:"items"`
@@ -289,6 +290,12 @@ func (c *client) catchup(ctx context.Context, s *state, path string) error {
 			(!page.More && page.Cursor != page.Through) {
 			return errors.New("protocol: invalid change page")
 		}
+		if len(page.Items) > 0 && seen == nil {
+			seen = make(map[string]json.RawMessage, len(s.History)+len(page.Items))
+			for _, entry := range s.History {
+				seen[entry.Cursor] = entry.Resource
+			}
+		}
 		for _, entry := range page.Items {
 			if entry.Cursor == "" {
 				return errors.New("protocol: missing change cursor")
@@ -302,15 +309,23 @@ func (c *client) catchup(ctx context.Context, s *state, path string) error {
 				}
 			} else {
 				s.History = append(s.History, entry)
+				s.dirty = true
 				seen[entry.Cursor] = entry.Resource
 			}
 		}
-		s.Cursor, s.Through = page.Cursor, page.Through
+		through := page.Through
 		if !page.More {
-			s.Through = ""
+			through = ""
 		}
-		if err := save(path, *s); err != nil {
-			return err
+		if s.Cursor != page.Cursor || s.Through != through {
+			s.dirty = true
+		}
+		s.Cursor, s.Through = page.Cursor, through
+		if s.dirty || !s.persisted {
+			if err := save(path, *s); err != nil {
+				return err
+			}
+			s.dirty, s.persisted = false, true
 		}
 		if !page.More {
 			return nil
@@ -474,7 +489,7 @@ func assertions(path string, s state) error {
 	return nil
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result error) {
 	flags := flag.NewFlagSet("socket-consumer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	socket := flags.String("socket", "", "Wake Unix socket path")
@@ -489,6 +504,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if *socket == "" || *path == "" || *interval <= 0 || *limit < 1 || *limit > 500 || flags.NArg() != 0 {
 		return errors.New("--socket and --state are required; interval must be positive and page-size 1..500")
 	}
+	defer func() {
+		if *follow && ctx.Err() == context.Canceled && errors.Is(result, context.Canceled) {
+			result = nil
+		}
+	}()
 	fmt.Fprintln(stderr, "Connecting to Wake; synchronizing canonical mirror")
 	progressCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})

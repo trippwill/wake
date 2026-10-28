@@ -53,7 +53,11 @@ CREATE TRIGGER publish_relationship AFTER INSERT ON activity_relationships BEGIN
 END;
 CREATE TRIGGER publish_link AFTER INSERT ON event_links BEGIN
  INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',r.activity_id FROM activity_relationships r JOIN executions a ON a.id=r.activity_id WHERE a.account_id=NEW.account_id AND r.target=NEW.reference;
- INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',e.execution_id FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND (e.reference=c.target OR e.reference=c.replacement) WHERE c.account_id=NEW.account_id AND (c.target=NEW.reference OR c.replacement=NEW.reference);
+ INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',e.execution_id FROM (
+  SELECT target,replacement FROM source_corrections WHERE account_id=NEW.account_id AND target=NEW.reference
+  UNION
+  SELECT target,replacement FROM source_corrections WHERE account_id=NEW.account_id AND replacement=NEW.reference
+ ) c JOIN event_links e ON e.account_id=NEW.account_id AND e.reference IN (c.target,c.replacement);
 END;
 CREATE TRIGGER publish_correction_insert AFTER INSERT ON source_corrections BEGIN
  INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',execution_id FROM event_links WHERE account_id=NEW.account_id AND reference IN (NEW.target,NEW.replacement);
@@ -65,3 +69,8 @@ END;
 CREATE INDEX execution_observations_execution ON execution_observations(execution_id);
 
 CREATE INDEX instrument_selections_figi ON instrument_selections(figi);
+
+CREATE INDEX relationships_target ON activity_relationships(target,activity_id);
+CREATE INDEX corrections_target ON source_corrections(account_id,target,replacement);
+CREATE INDEX corrections_replacement ON source_corrections(account_id,replacement,target);
+CREATE INDEX event_links_execution ON event_links(execution_id,account_id,reference);

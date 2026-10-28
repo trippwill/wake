@@ -81,6 +81,7 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 type endpointCountingDB struct {
 	sqlc.DBTX
 	endpoints int
+	related   string
 }
 
 func (db *endpointCountingDB) QueryContext(
@@ -90,6 +91,10 @@ func (db *endpointCountingDB) QueryContext(
 ) (*sql.Rows, error) {
 	if strings.Contains(query, "-- name: EventLinks ") {
 		db.endpoints++
+	}
+
+	if strings.Contains(query, "-- name: RelatedSourceCorrections ") {
+		db.related = query
 	}
 
 	return db.DBTX.QueryContext(ctx, query, args...)
@@ -124,5 +129,94 @@ func TestPublishingEndpointLookupsIgnoreUnrelatedCorrections(t *testing.T) {
 
 	if counter.endpoints != 2 {
 		t.Fatal("unrelated corrections cause endpoint queries inside publishing", counter.endpoints)
+	}
+}
+
+func TestPublishingReverseLookupsUseEndpointIndexes(t *testing.T) {
+	s := coverageStore(t)
+
+	var trigger string
+	if err := s.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='trigger' AND name='publish_link'`).
+		Scan(&trigger); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body, ok := strings.Cut(trigger, " BEGIN")
+	if !ok {
+		t.Fatal("missing trigger body")
+	}
+
+	details := ""
+	for _, statement := range strings.Split(body, ";") {
+		statement = strings.TrimSpace(statement)
+		if statement == "" || statement == "END" {
+			continue
+		}
+
+		statement = strings.ReplaceAll(statement, "NEW.account_id", "'account'")
+		statement = strings.ReplaceAll(statement, "NEW.reference", "'synthetic-reference'")
+
+		rows, err := s.db.Query("EXPLAIN QUERY PLAN " + statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for rows.Next() {
+			var (
+				id, parent, unused int
+				detail             string
+			)
+			if err = rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+
+			details += detail + "\n"
+		}
+
+		if err = rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+
+		_ = rows.Close()
+	}
+
+	for _, index := range []string{"relationships_target", "corrections_target", "corrections_replacement"} {
+		if !strings.Contains(details, index) {
+			t.Error("reverse trigger does not use endpoint index", index, details)
+		}
+	}
+
+	counter := &endpointCountingDB{DBTX: s.db}
+	if _, err := sqlc.New(counter).RelatedSourceCorrections(t.Context(), "activity"); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.db.Query("EXPLAIN QUERY PLAN "+counter.related, "activity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	details = ""
+	for rows.Next() {
+		var (
+			id, parent, unused int
+			detail             string
+		)
+		if err = rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+
+		details += detail + "\n"
+	}
+
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, index := range []string{"event_links_execution", "corrections_target", "corrections_replacement"} {
+		if !strings.Contains(details, index) {
+			t.Error("activity endpoint lookup does not use endpoint index", index, details)
+		}
 	}
 }

@@ -158,36 +158,58 @@ type Account struct {
 
 // Activity Selected trade, option outcome or reported FX conversion. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
 type Activity struct {
-	AccountId       string         `json:"account_id"`
-	AccruedInterest *Money         `json:"accrued_interest"`
+	AccountId string `json:"account_id"`
+
+	// AccruedInterest Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	AccruedInterest *NullableMoney `json:"accrued_interest"`
 	At              *string        `json:"at"`
 	Charges         []Charge       `json:"charges"`
 	Conflict        bool           `json:"conflict"`
 	Date            string         `json:"date"`
-	Debt            *Debt          `json:"debt"`
+	Debt            *NullableDebt  `json:"debt"`
 	Family          ActivityFamily `json:"family"`
-	Gross           *Money         `json:"gross"`
-	InstrumentId    *string        `json:"instrument_id"`
-	LifecycleKind   *string        `json:"lifecycle_kind"`
-	ListingId       *string        `json:"listing_id"`
-	Net             *Money         `json:"net"`
-	NetWithBillable *Money         `json:"net_with_billable"`
-	Option          *Option        `json:"option"`
-	Order           *Reference     `json:"order"`
-	PositionEffect  *string        `json:"position_effect"`
-	Price           *Money         `json:"price"`
-	PriceBasis      *string        `json:"price_basis"`
-	Proceeds        *Money         `json:"proceeds"`
-	Quantity        *Quantity      `json:"quantity"`
-	Rate            *Money         `json:"rate"`
-	RateBase        *string        `json:"rate_base"`
-	Received        *Amount        `json:"received"`
-	Relationships   []Relationship `json:"relationships"`
-	Sent            *Amount        `json:"sent"`
-	SettlementDate  *string        `json:"settlement_date"`
-	Side            *string        `json:"side"`
-	State           ActivityState  `json:"state"`
-	TradeKind       *string        `json:"trade_kind"`
+
+	// Gross Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Gross         *NullableMoney `json:"gross"`
+	InstrumentId  *string        `json:"instrument_id"`
+	LifecycleKind *string        `json:"lifecycle_kind"`
+	ListingId     *string        `json:"listing_id"`
+
+	// Net Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Net *NullableMoney `json:"net"`
+
+	// NetWithBillable Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	NetWithBillable *NullableMoney `json:"net_with_billable"`
+
+	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
+	Option *NullableOption `json:"option"`
+
+	// Order Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Order          *NullableReference `json:"order"`
+	PositionEffect *string            `json:"position_effect"`
+
+	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Price      *NullableMoney `json:"price"`
+	PriceBasis *string        `json:"price_basis"`
+
+	// Proceeds Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Proceeds *NullableMoney    `json:"proceeds"`
+	Quantity *NullableQuantity `json:"quantity"`
+
+	// Rate Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Rate     *NullableMoney `json:"rate"`
+	RateBase *string        `json:"rate_base"`
+
+	// Received Known currency; null amount is unknown and differs from zero.
+	Received      *NullableAmount `json:"received"`
+	Relationships []Relationship  `json:"relationships"`
+
+	// Sent Known currency; null amount is unknown and differs from zero.
+	Sent           *NullableAmount `json:"sent"`
+	SettlementDate *string         `json:"settlement_date"`
+	Side           *string         `json:"side"`
+	State          ActivityState   `json:"state"`
+	TradeKind      *string         `json:"trade_kind"`
 }
 
 // ActivityFamily defines model for Activity.Family.
@@ -262,9 +284,12 @@ type Decision struct {
 
 // Deliverable defines model for Deliverable.
 type Deliverable struct {
-	Cash     *Money     `json:"cash"`
-	Quantity *string    `json:"quantity"`
-	Security *Reference `json:"security"`
+	// Cash Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Cash     *NullableMoney `json:"cash"`
+	Quantity *string        `json:"quantity"`
+
+	// Security Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Security *NullableReference `json:"security"`
 }
 
 // Error defines model for Error.
@@ -295,15 +320,17 @@ type Identifier struct {
 
 // Instrument defines model for Instrument.
 type Instrument struct {
-	Debt            *Debt            `json:"debt"`
-	Family          InstrumentFamily `json:"family"`
-	Figi            *string          `json:"figi"`
-	Identifiers     []Identifier     `json:"identifiers"`
-	Name            *string          `json:"name"`
-	Option          *Option          `json:"option"`
-	ReferenceStatus string           `json:"reference_status"`
-	Ticker          *string          `json:"ticker"`
-	UnderlierId     *string          `json:"underlier_id"`
+	Debt        *NullableDebt    `json:"debt"`
+	Family      InstrumentFamily `json:"family"`
+	Figi        *string          `json:"figi"`
+	Identifiers []Identifier     `json:"identifiers"`
+	Name        *string          `json:"name"`
+
+	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
+	Option          *NullableOption `json:"option"`
+	ReferenceStatus string          `json:"reference_status"`
+	Ticker          *string         `json:"ticker"`
+	UnderlierId     *string         `json:"underlier_id"`
 }
 
 // InstrumentFamily defines model for Instrument.Family.
@@ -324,6 +351,55 @@ type Money struct {
 	Currency string `json:"currency"`
 }
 
+// NullableAmount Known currency; null amount is unknown and differs from zero.
+type NullableAmount struct {
+	Amount   *string `json:"amount"`
+	Currency string  `json:"currency"`
+}
+
+// NullableDebt defines model for NullableDebt.
+type NullableDebt struct {
+	Coupon          *string `json:"coupon"`
+	Currency        *string `json:"currency"`
+	DatedDate       *string `json:"dated_date"`
+	IssueDate       *string `json:"issue_date"`
+	Maturity        *string `json:"maturity"`
+	PaymentsPerYear *int64  `json:"payments_per_year"`
+	Type            *string `json:"type"`
+}
+
+// NullableMoney Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+type NullableMoney struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+// NullableOption Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
+type NullableOption struct {
+	Deliverables  []Deliverable `json:"deliverables"`
+	EffectiveFrom *string       `json:"effective_from"`
+	Expiry        *string       `json:"expiry"`
+	Multiplier    *string       `json:"multiplier"`
+	Right         *string       `json:"right"`
+
+	// Strike Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Strike *NullableMoney `json:"strike"`
+}
+
+// NullableQuantity defines model for NullableQuantity.
+type NullableQuantity struct {
+	Unit  string `json:"unit"`
+	Value string `json:"value"`
+}
+
+// NullableReference Qualified reported relationship identity, never an unqualified Wake resource ID.
+type NullableReference struct {
+	Authority string `json:"authority"`
+	Kind      string `json:"kind"`
+	Scope     string `json:"scope"`
+	Value     string `json:"value"`
+}
+
 // Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
 type Option struct {
 	Deliverables  []Deliverable `json:"deliverables"`
@@ -331,7 +407,9 @@ type Option struct {
 	Expiry        *string       `json:"expiry"`
 	Multiplier    *string       `json:"multiplier"`
 	Right         *string       `json:"right"`
-	Strike        *Money        `json:"strike"`
+
+	// Strike Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Strike *NullableMoney `json:"strike"`
 }
 
 // Quantity defines model for Quantity.
@@ -350,9 +428,11 @@ type Reference struct {
 
 // Relationship Explicit relationships only. Null target_id means unresolved; retain reported_target when supplied. Multiple targets remain separate entries.
 type Relationship struct {
-	Kind           string     `json:"kind"`
-	ReportedTarget *Reference `json:"reported_target"`
-	TargetId       *string    `json:"target_id"`
+	Kind string `json:"kind"`
+
+	// ReportedTarget Qualified reported relationship identity, never an unqualified Wake resource ID.
+	ReportedTarget *NullableReference `json:"reported_target"`
+	TargetId       *string            `json:"target_id"`
 }
 
 // Resource Exactly one body, matching kind. Warehouse-local stable Wake identity and monotonically increasing resource revision. Cancellation/replacement retains the original resource.

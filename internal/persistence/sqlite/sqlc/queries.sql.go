@@ -2306,7 +2306,10 @@ func (q *Queries) RefreshExecution(ctx context.Context) error {
 }
 
 const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
-SELECT DISTINCT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM source_corrections c JOIN event_links e ON e.account_id=c.account_id AND (e.reference=c.target OR e.reference=c.replacement) WHERE e.execution_id=? ORDER BY c.artifact_id,c.version,c.location
+SELECT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.target=e.reference WHERE e.execution_id=?1
+UNION
+SELECT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.replacement=e.reference WHERE e.execution_id=?1
+ORDER BY artifact_id,version,location
 `
 
 func (q *Queries) RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error) {

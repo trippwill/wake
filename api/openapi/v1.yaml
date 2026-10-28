@@ -452,9 +452,7 @@ components:
           type: string
           nullable: true
         reported_target:
-          allOf:
-          - $ref: '#/components/schemas/Reference'
-          nullable: true
+          $ref: '#/components/schemas/NullableReference'
       required:
       - kind
       - target_id
@@ -466,16 +464,12 @@ components:
       additionalProperties: false
       properties:
         security:
-          allOf:
-          - $ref: '#/components/schemas/Reference'
-          nullable: true
+          $ref: '#/components/schemas/NullableReference'
         quantity:
           type: string
           nullable: true
         cash:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
       required:
       - security
       - quantity
@@ -497,9 +491,7 @@ components:
           type: string
           nullable: true
         strike:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         deliverables:
           type: array
           items:
@@ -590,13 +582,9 @@ components:
           items:
             $ref: '#/components/schemas/Identifier'
         option:
-          allOf:
-          - $ref: '#/components/schemas/Option'
-          nullable: true
+          $ref: '#/components/schemas/NullableOption'
         debt:
-          allOf:
-          - $ref: '#/components/schemas/Debt'
-          nullable: true
+          $ref: '#/components/schemas/NullableDebt'
       required:
       - name
       - ticker
@@ -683,65 +671,39 @@ components:
         date:
           type: string
         order:
-          allOf:
-          - $ref: '#/components/schemas/Reference'
-          nullable: true
+          $ref: '#/components/schemas/NullableReference'
         relationships:
           type: array
           items:
             $ref: '#/components/schemas/Relationship'
         quantity:
-          allOf:
-          - $ref: '#/components/schemas/Quantity'
-          nullable: true
+          $ref: '#/components/schemas/NullableQuantity'
         charges:
           type: array
           items:
             $ref: '#/components/schemas/Charge'
         sent:
-          allOf:
-          - $ref: '#/components/schemas/Amount'
-          nullable: true
+          $ref: '#/components/schemas/NullableAmount'
         received:
-          allOf:
-          - $ref: '#/components/schemas/Amount'
-          nullable: true
+          $ref: '#/components/schemas/NullableAmount'
         option:
-          allOf:
-          - $ref: '#/components/schemas/Option'
-          nullable: true
+          $ref: '#/components/schemas/NullableOption'
         debt:
-          allOf:
-          - $ref: '#/components/schemas/Debt'
-          nullable: true
+          $ref: '#/components/schemas/NullableDebt'
         price:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         rate:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         gross:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         proceeds:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         net:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         net_with_billable:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
         accrued_interest:
-          allOf:
-          - $ref: '#/components/schemas/Money'
-          nullable: true
+          $ref: '#/components/schemas/NullableMoney'
       required:
       - instrument_id
       - listing_id
@@ -948,6 +910,132 @@ components:
       required:
       - code
       - message
+    NullableAmount:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        amount:
+          type: string
+          nullable: true
+        currency:
+          type: string
+      required:
+      - amount
+      - currency
+      description: Known currency; null amount is unknown and differs from zero.
+    NullableDebt:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        maturity:
+          type: string
+          nullable: true
+        issue_date:
+          type: string
+          nullable: true
+        dated_date:
+          type: string
+          nullable: true
+        coupon:
+          type: string
+          nullable: true
+        payments_per_year:
+          type: integer
+          format: int64
+          nullable: true
+      required:
+      - type
+      - currency
+      - maturity
+      - issue_date
+      - dated_date
+      - coupon
+      - payments_per_year
+    NullableMoney:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        amount:
+          type: string
+        currency:
+          type: string
+      required:
+      - amount
+      - currency
+      description: Exact validated decimal text; trailing zeros are significant source precision. No binary
+        float conversion.
+    NullableOption:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        right:
+          type: string
+          nullable: true
+        expiry:
+          type: string
+          nullable: true
+        multiplier:
+          type: string
+          nullable: true
+        effective_from:
+          type: string
+          nullable: true
+        strike:
+          $ref: '#/components/schemas/NullableMoney'
+        deliverables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deliverable'
+      required:
+      - right
+      - expiry
+      - multiplier
+      - effective_from
+      - strike
+      - deliverables
+      description: Reported contract terms. Empty deliverables are unknown; a multiplier never implies
+        stock delivery.
+    NullableQuantity:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        value:
+          type: string
+        unit:
+          type: string
+      required:
+      - value
+      - unit
+    NullableReference:
+      type: object
+      nullable: true
+      additionalProperties: false
+      properties:
+        authority:
+          type: string
+        kind:
+          type: string
+        scope:
+          type: string
+        value:
+          type: string
+      required:
+      - authority
+      - kind
+      - scope
+      - value
+      description: Qualified reported relationship identity, never an unqualified Wake resource ID.
   parameters:
     limit:
       name: limit

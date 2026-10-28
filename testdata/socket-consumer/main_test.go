@@ -8,12 +8,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sample(revision int, price string) json.RawMessage {
@@ -184,5 +187,115 @@ func TestConsumerFailurePaths(t *testing.T) {
 			t.Error("malformed protocol accepted", response)
 		}
 		server.Close()
+	}
+}
+
+func TestIdleCatchupPreservesStateFileAndPersistsNewEmptyBaseline(t *testing.T) {
+	for _, mode := range []string{"idle", "new-empty", "cursor-only", "finish-pass"} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "mirror.json")
+			s := state{Version: 1, Cursor: "end", Resources: map[string]json.RawMessage{}, History: []change{}}
+			if mode == "finish-pass" {
+				s.Through = "end"
+			}
+			if mode == "cursor-only" {
+				s.Cursor = "before"
+			}
+			var before os.FileInfo
+			if mode != "new-empty" {
+				s.Resources["activity/a"] = sample(1, "1.0000")
+				s.History = []change{{"retained", sample(1, "1.0000")}}
+				if err := save(path, s); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				s, err = readState(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				before, err = os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"items":[],"cursor":"end","through":"end","more":false}`)
+			}))
+			defer server.Close()
+			c := client{http: server.Client(), base: server.URL, limit: 1}
+			if err := c.catchup(t.Context(), &s, path); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "idle" && !os.SameFile(before, after) {
+				t.Error("idle poll replaced durable mirror")
+			}
+			if (mode == "cursor-only" || mode == "finish-pass") && os.SameFile(before, after) {
+				t.Error("changed checkpoint was not persisted")
+			}
+			saved, err := readState(path)
+			if err != nil || saved.Cursor != "end" || saved.Through != "" || len(saved.Resources) != len(s.Resources) || len(saved.History) != len(s.History) {
+				t.Fatal("saved state changed", saved, err)
+			}
+		})
+	}
+}
+
+func TestFollowInterruptHelper(t *testing.T) {
+	if os.Getenv("WAKE_INTERRUPT_HELPER") == "" {
+		return
+	}
+	os.Args = []string{"socket-consumer", "--socket", os.Getenv("WAKE_INTERRUPT_SOCKET"), "--state", os.Getenv("WAKE_INTERRUPT_STATE"), "--follow"}
+	main()
+}
+
+func TestFollowInterruptDuringRequestExitsSuccessfully(t *testing.T) {
+	dir, err := os.MkdirTemp("", "wake-int-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	socket := filepath.Join(dir, "wake.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested := make(chan struct{})
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requested)
+		<-r.Context().Done()
+	}))
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestFollowInterruptHelper$")
+	command.Env = append(os.Environ(), "WAKE_INTERRUPT_HELPER=1", "WAKE_INTERRUPT_SOCKET="+socket, "WAKE_INTERRUPT_STATE="+filepath.Join(dir, "mirror.json"))
+	var output bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &output
+	if err = command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = command.Process.Kill() }()
+	select {
+	case <-requested:
+	case <-ctx.Done():
+		t.Fatal("consumer did not request checkpoint")
+	}
+	if err = command.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	if err = command.Wait(); err != nil || strings.Contains(output.String(), `"failed"`) {
+		t.Fatal("interrupt reported protocol failure", err, output.String())
 	}
 }

@@ -87,7 +87,9 @@ high-water mark. Pagination does not hold a server snapshot. Consumers upsert by
 resource revision so older replay cannot overwrite a newer scan result, while
 retaining every delivered transition. They save their mirror, cursor and any
 incomplete pass's high-water mark atomically. Each catch-up pass is finite even
-while new writes continue.
+while new writes continue. The acceptance consumer saves a new baseline and every
+changed mirror/checkpoint atomically, skips disk writes for unchanged idle polls,
+and treats an operator interrupt during follow-mode requests as a clean stop.
 
 Daemon restarts and access/operational-store recovery retain cursors when the
 warehouse remains intact. Starting a new projection rebuild rotates the publishing
@@ -111,7 +113,11 @@ trust decision rather than accidental network exposure.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
-pre-release stores fail closed with explicit recreation guidance. Privacy depends
+pre-release stores fail closed with explicit recreation guidance. The publishing
+schema adds reverse endpoint indexes for relationship/correction invalidation and
+per-activity explanation reads; its storage version advances so profiles from
+the preceding development schema cannot silently miss those indexes and triggers.
+Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries

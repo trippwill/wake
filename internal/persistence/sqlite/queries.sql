@@ -276,6 +276,9 @@ SELECT count(*) FROM access.configurations c WHERE c.id=? AND EXISTS(SELECT 1 FR
 SELECT EXISTS(SELECT 1 FROM access.configurations WHERE id=sqlc.arg(connection_id)) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=sqlc.arg(connection_id)) AS credential_stored;
 
 -- name: RelatedSourceCorrections :many
-SELECT DISTINCT c.* FROM source_corrections c JOIN event_links e ON e.account_id=c.account_id AND (e.reference=c.target OR e.reference=c.replacement) WHERE e.execution_id=? ORDER BY c.artifact_id,c.version,c.location;
+SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.target=e.reference WHERE e.execution_id=sqlc.arg(execution_id)
+UNION
+SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.replacement=e.reference WHERE e.execution_id=sqlc.arg(execution_id)
+ORDER BY artifact_id,version,location;
 -- name: ArtifactObservations :many
 SELECT * FROM execution_observations WHERE artifact_id=? ORDER BY rowid;
