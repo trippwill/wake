@@ -205,6 +205,31 @@ func TestRepeatedObservationComparisonCount(t *testing.T) {
 	}
 }
 
+func TestDistinctConflictingObservationsStopBeforeScanningHistory(t *testing.T) {
+	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{})
+	observations := make([]source.Trade, 1152)
+	for i := range observations {
+		f := base.Fields()
+		f.Net, _ = financial.NewMoney(fmt.Sprint(i+1), f.Price.Currency())
+		observations[i], _ = source.NewTrade(f)
+	}
+
+	keys := 0
+	_, conflict, err := selectObservations(
+		base,
+		observations,
+		Compatible,
+		enrichTrade,
+		func(v source.Trade) any {
+			keys++
+			return tradeComparisonKey(v)
+		},
+	)
+	if err != nil || !conflict || keys > 3 {
+		t.Fatal("conflicting history was scanned before detecting its first disagreement", keys, conflict, err)
+	}
+}
+
 func BenchmarkRepeatedObservationSelection(b *testing.B) {
 	benchmarkRepeatedObservations(b, SelectTrades)
 }

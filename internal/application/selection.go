@@ -38,16 +38,14 @@ func selectObservations[T any](
 			continue
 		}
 
-		keys = append(keys, key)
-		candidates = append(candidates, o)
-	}
-
-	for i, a := range candidates {
-		for _, b := range candidates[i+1:] {
-			if !compatible(a, b) {
+		for _, previous := range candidates[1:] {
+			if !compatible(previous, o) {
 				return base, true, nil
 			}
 		}
+
+		keys = append(keys, key)
+		candidates = append(candidates, o)
 	}
 
 	selected := base
