@@ -71,6 +71,9 @@ func registerWorkflowRoutes(
 			message = "Connection work is finishing. Wait for its progress to update, then retry."
 		case application.ErrInvalid:
 			message = "Enter an account display name and a valid currency, or leave currency unknown."
+			if r.Pattern == "POST /recovery/{id}/retry" {
+				message = "This rebuild is no longer eligible for retry. Review the latest rebuild status."
+			}
 		case application.ErrAccountLimit:
 			message = "One account is already activated. Other discovered accounts remain candidates."
 		case application.ErrStale, application.ErrAccessReview:

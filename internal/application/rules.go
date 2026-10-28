@@ -5,7 +5,6 @@ package application
 
 import (
 	"maps"
-	"slices"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
@@ -95,7 +94,7 @@ func CompatibleOption(a, b source.OptionTerms) bool {
 		return false
 	}
 
-	return len(x.Deliverables) == 0 || len(y.Deliverables) == 0 || slices.Equal(x.Deliverables, y.Deliverables)
+	return compatibleDeliverables(x.Deliverables, y.Deliverables)
 }
 
 func CompatibleLifecycle(a, b source.Lifecycle) bool {
@@ -214,4 +213,35 @@ func compatibleCharges(a, b []source.Charge) bool {
 
 func equalCharge(a, b source.Charge) bool {
 	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money() == b.Money()
+}
+
+func equalDeliverable(a, b source.Deliverable) bool { return a == b }
+
+func compatibleDeliverables(a, b []source.Deliverable) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	used := make([]bool, len(b))
+	for _, left := range a {
+		matched := false
+		for j, right := range b {
+			if !used[j] && equalDeliverable(left, right) {
+				used[j] = true
+				matched = true
+
+				break
+			}
+		}
+
+		if !matched {
+			return false
+		}
+	}
+
+	return true
 }

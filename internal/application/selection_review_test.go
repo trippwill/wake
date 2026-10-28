@@ -147,3 +147,63 @@ func TestDebtCombinedInvariantsBecomeDisagreement(t *testing.T) {
 		t.Fatal("invalid combination blocked processing or changed baseline", conflict, err)
 	}
 }
+
+func TestDeliverableOrderDoesNotCreateFinancialDisagreement(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	security, _ := source.NewReference("synthetic", "instrument", "", "underlier")
+	quantity, _ := financial.NewQuantity("12.5")
+	cash, _ := financial.NewMoney("0.75", usd)
+	shares, _ := source.NewSecurityDeliverable(security, quantity)
+	payment, _ := source.NewCashDeliverable(cash)
+	terms := func(deliverables []source.Deliverable) source.OptionTerms {
+		value, e := source.NewOptionTerms(source.OptionInput{Deliverables: deliverables})
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		return value
+	}
+	baseline := selectionTrade(t, source.Option, nil, source.DebtTerms{})
+	trade := func(deliverables []source.Deliverable) source.Trade {
+		f := baseline.Fields()
+		i := f.Instrument.Fields()
+		i.Option = terms(deliverables)
+
+		var e error
+
+		f.Instrument, e = source.NewInstrument(i)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		v, e := source.NewTrade(f)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		return v
+	}
+	first := trade([]source.Deliverable{shares, payment})
+	reversed := trade([]source.Deliverable{payment, shares})
+
+	selected, conflict, err := SelectTrades(first, []source.Trade{reversed})
+	if err != nil || conflict ||
+		!reflect.DeepEqual(
+			selected.Fields().Instrument.Option().Fields().Deliverables,
+			first.Fields().Instrument.Option().Fields().Deliverables,
+		) {
+		t.Fatal("equivalent deliverables conflicted or reordered baseline", conflict, err)
+	}
+
+	duplicated := terms([]source.Deliverable{payment, payment})
+	if CompatibleOption(first.Fields().Instrument.Option(), duplicated) {
+		t.Fatal("deliverable multiplicity was lost")
+	}
+
+	changedCash, _ := financial.NewMoney("0.50", usd)
+
+	changed, _ := source.NewCashDeliverable(changedCash)
+	if CompatibleOption(first.Fields().Instrument.Option(), terms([]source.Deliverable{shares, changed})) {
+		t.Fatal("different monetary deliverable accepted")
+	}
+}

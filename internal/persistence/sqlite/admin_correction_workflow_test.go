@@ -194,6 +194,20 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 		t.Fatal("rebuild failure not retained")
 	}
 
+	older := submission
+	submission = rand.Text()
+	request(http.MethodPost, "/recovery/rebuild", url.Values{"submission": {submission}}, http.StatusSeeOther)
+
+	if _, err = store.RunRecovery(ctx); err == nil {
+		t.Fatal("new rebuild failure not retained")
+	}
+
+	rejected := request(http.MethodPost, "/recovery/"+older+"/retry", nil, http.StatusBadRequest)
+	if !strings.Contains(rejected.Body.String(), "no longer eligible") ||
+		strings.Contains(rejected.Body.String(), "account display name") {
+		t.Fatal("ineligible rebuild returned unrelated setup guidance")
+	}
+
 	if _, err = store.db.Exec(`DROP TRIGGER fail_recovery_group`); err != nil {
 		t.Fatal(err)
 	}
