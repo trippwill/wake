@@ -125,6 +125,9 @@ the [OpenAPI contract](../../api/openapi/v1.yaml) owns exact wire semantics. The
 standalone [Go consumer](../../testdata/socket-consumer/main.go) has its own module
 and no Wake imports. It reads only the socket, retains canonical snapshots and
 transition history, and saves its mirror/cursor together in one atomic state file.
+An existing state file must contain its complete envelope and a mirror consistent
+with retained transitions. Invalid state fails closed and remains available for
+inspection; it never becomes an empty successful synchronization.
 It reports structured results on stdout, immediate/periodic progress on stderr and
 failures with a nonzero exit status. A rejected generation is explicitly reported
 before a new baseline replaces the old mirror.

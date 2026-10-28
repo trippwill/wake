@@ -299,3 +299,75 @@ func TestFollowInterruptDuringRequestExitsSuccessfully(t *testing.T) {
 		t.Fatal("interrupt reported protocol failure", err, output.String())
 	}
 }
+
+func TestPersistedStateRequiresCompleteEnvelopeAndRetainedMirror(t *testing.T) {
+	baseline := state{Version: 1, Cursor: "end", Resources: map[string]json.RawMessage{"activity/a": sample(2, "2.0000")}, History: []change{{"earlier", sample(1, "1.0000")}}}
+	for _, field := range []string{"version", "cursor", "through", "resources", "history"} {
+		for _, mode := range []string{"missing", "null"} {
+			t.Run(field+"/"+mode, func(t *testing.T) {
+				data, err := json.Marshal(baseline)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var fields map[string]json.RawMessage
+				if err = json.Unmarshal(data, &fields); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "missing" {
+					delete(fields, field)
+				} else {
+					fields[field] = json.RawMessage("null")
+				}
+				data, err = json.Marshal(fields)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(t.TempDir(), "mirror.json")
+				if err = os.WriteFile(path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				var output, progress bytes.Buffer
+				err = run(t.Context(), []string{"--socket", "/unused.sock", "--state", path}, &output, &progress)
+				if err == nil || !strings.Contains(err.Error(), "invalid consumer state") || strings.Contains(output.String(), "synchronized") {
+					t.Error("incomplete state did not fail before socket access", err, output.String())
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(after, data) {
+					t.Fatal("invalid state was replaced", err)
+				}
+			})
+		}
+	}
+	for _, mode := range []string{"missing-resource", "older-mirror", "conflicting-revision", "empty-history-cursor", "malformed-history"} {
+		t.Run(mode, func(t *testing.T) {
+			s := state{Version: 1, Cursor: "end", Resources: map[string]json.RawMessage{"activity/a": sample(2, "2.0000")}, History: []change{{"end", sample(2, "2.0000")}}}
+			switch mode {
+			case "missing-resource":
+				delete(s.Resources, "activity/a")
+			case "older-mirror":
+				s.Resources["activity/a"] = sample(1, "1.0000")
+			case "conflicting-revision":
+				s.Resources["activity/a"] = sample(2, "99.00")
+			case "empty-history-cursor":
+				s.History[0].Cursor = ""
+			case "malformed-history":
+				s.History[0].Resource = json.RawMessage(`{}`)
+			}
+			path := filepath.Join(t.TempDir(), "mirror.json")
+			if err := save(path, s); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readState(path); err == nil {
+				t.Error("inconsistent persisted state accepted")
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "valid.json")
+	if err := save(path, baseline); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := readState(path)
+	if err != nil || len(loaded.Resources) != 1 || len(loaded.History) != 1 {
+		t.Fatal("newer scan plus older replay rejected", loaded, err)
+	}
+}

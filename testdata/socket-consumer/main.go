@@ -193,13 +193,32 @@ func readState(path string) (state, error) {
 	if err != nil {
 		return s, err
 	}
-	if json.Unmarshal(data, &s) != nil || s.Version != 1 || s.Resources == nil || s.Cursor == "" {
+	var stored struct {
+		Version   *int                       `json:"version"`
+		Cursor    *string                    `json:"cursor"`
+		Through   *string                    `json:"through"`
+		Resources map[string]json.RawMessage `json:"resources"`
+		History   []change                   `json:"history"`
+	}
+	if json.Unmarshal(data, &stored) != nil || stored.Version == nil || *stored.Version != 1 || stored.Cursor == nil || *stored.Cursor == "" || stored.Through == nil || stored.Resources == nil || stored.History == nil {
 		return s, errors.New("invalid consumer state; preserve it and choose a new state path")
 	}
+	s = state{Version: *stored.Version, Cursor: *stored.Cursor, Through: *stored.Through, Resources: stored.Resources, History: stored.History}
 	for key, raw := range s.Resources {
 		r, e := metadata(raw)
 		if e != nil || key != r.Kind+"/"+r.ID {
 			return s, errors.New("invalid consumer mirror")
+		}
+	}
+	for _, entry := range s.History {
+		recorded, err := metadata(entry.Resource)
+		if err != nil || entry.Cursor == "" {
+			return s, errors.New("invalid consumer history")
+		}
+		current, ok := s.Resources[recorded.Kind+"/"+recorded.ID]
+		mirrored, err := metadata(current)
+		if !ok || err != nil || mirrored.Revision < recorded.Revision || (mirrored.Revision == recorded.Revision && !sameJSON(current, entry.Resource)) {
+			return s, errors.New("invalid consumer mirror/history consistency")
 		}
 	}
 	s.persisted = true
