@@ -146,3 +146,5 @@ does not silently change instrument or listing identity. Decisions preserve diss
 and stale forms must not overwrite decisions made after the form was read.
 
 Compatible observations contribute charge roles in a deterministic field/scope order. If combining individually valid facts exceeds a constructor bound or produces invalid debt terms, retain the durable baseline with visible disagreement and preserve all supporting observations. Conflicting shared instrument terms mark the automatic instrument selection for review without replacing its reported values.
+
+A retained automatic FIGI selection remains an identity claim while an operator override is active. Competing automatic or operator selections cannot acquire that FIGI for another root; conflicts remain visible and releasing the override can restore its retained selection.

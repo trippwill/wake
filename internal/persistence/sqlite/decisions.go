@@ -337,13 +337,13 @@ func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
 			return application.ErrInvalid
 		}
 
-		other, e := q.InstrumentByFIGI(ctx, selected)
-		if e == nil && other.ID != id {
-			return application.ErrInvalid
+		others, e := q.CompetingFIGI(ctx, sqlc.CompetingFIGIParams{CurrentID: id, Figi: selected})
+		if e != nil {
+			return e
 		}
 
-		if e != nil && !errors.Is(e, sql.ErrNoRows) {
-			return e
+		if len(others) > 0 {
+			return application.ErrInvalid
 		}
 
 		name, ticker, figi, evidence, status = r.Name, r.Ticker, selected, selectedEvidence, "selected by operator"

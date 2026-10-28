@@ -37,3 +37,5 @@ CREATE UNIQUE INDEX one_active_recovery ON recovery_jobs((1)) WHERE status IN ('
 CREATE TABLE recovery_items(job_id TEXT NOT NULL REFERENCES recovery_jobs(id), group_id TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job_id,kind,entity_id)) STRICT;
 
 CREATE INDEX execution_observations_execution ON execution_observations(execution_id);
+
+CREATE INDEX instrument_selections_figi ON instrument_selections(figi);

@@ -429,6 +429,58 @@ func (q *Queries) Checkpoint(ctx context.Context, arg CheckpointParams) (Work, e
 	return i, err
 }
 
+const competingFIGI = `-- name: CompetingFIGI :many
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
+JOIN (
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
+ UNION
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=?1
+) claims ON claims.id=instruments.id
+WHERE instruments.id<>?2 ORDER BY instruments.id
+`
+
+type CompetingFIGIParams struct {
+	Figi      string
+	CurrentID string
+}
+
+func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error) {
+	rows, err := q.db.QueryContext(ctx, competingFIGI, arg.Figi, arg.CurrentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Instrument
+	for rows.Next() {
+		var i Instrument
+		if err := rows.Scan(
+			&i.Revision,
+			&i.ID,
+			&i.SourceKey,
+			&i.Name,
+			&i.Ticker,
+			&i.Kind,
+			&i.Reported,
+			&i.ReferenceStatus,
+			&i.ReferenceFigi,
+			&i.EvidenceID,
+			&i.ReferenceNext,
+			&i.Rule,
+			&i.UnderlierID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const completeRecoveryGroup = `-- name: CompleteRecoveryGroup :exec
 UPDATE recovery_items SET complete=1 WHERE job_id=? AND group_id=?
 `
@@ -910,31 +962,6 @@ SELECT revision, id, source_key, name, ticker, kind, reported, reference_status,
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
 	row := q.db.QueryRowContext(ctx, instrument, id)
-	var i Instrument
-	err := row.Scan(
-		&i.Revision,
-		&i.ID,
-		&i.SourceKey,
-		&i.Name,
-		&i.Ticker,
-		&i.Kind,
-		&i.Reported,
-		&i.ReferenceStatus,
-		&i.ReferenceFigi,
-		&i.EvidenceID,
-		&i.ReferenceNext,
-		&i.Rule,
-		&i.UnderlierID,
-	)
-	return i, err
-}
-
-const instrumentByFIGI = `-- name: InstrumentByFIGI :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE reference_figi=?
-`
-
-func (q *Queries) InstrumentByFIGI(ctx context.Context, referenceFigi string) (Instrument, error) {
-	row := q.db.QueryRowContext(ctx, instrumentByFIGI, referenceFigi)
 	var i Instrument
 	err := row.Scan(
 		&i.Revision,

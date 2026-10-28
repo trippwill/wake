@@ -31,6 +31,7 @@ type Querier interface {
 	CandidateProfiles(ctx context.Context, connectionID string) ([]Candidate, error)
 	Candidates(ctx context.Context, connectionID string) ([]Candidate, error)
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
+	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
 	CompleteRecoveryGroup(ctx context.Context, arg CompleteRecoveryGroupParams) error
 	ConflictExecution(ctx context.Context, id string) error
 	Connection(ctx context.Context, id string) (AccessConfiguration, error)
@@ -59,7 +60,6 @@ type Querier interface {
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
 	FinishRecovery(ctx context.Context, id string) error
 	Instrument(ctx context.Context, id string) (Instrument, error)
-	InstrumentByFIGI(ctx context.Context, referenceFigi string) (Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
 	InstrumentObservations(ctx context.Context, instrumentID sql.NullString) ([]ExecutionObservation, error)
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)

@@ -115,3 +115,24 @@ func TestDiagnosticsPreservesStreamingAndQuietReads(t *testing.T) {
 		t.Fatal("routine reads logged at info")
 	}
 }
+
+type failedFlushResponse struct {
+	*httptest.ResponseRecorder
+	failure error
+}
+
+func (w failedFlushResponse) FlushError() error { return w.failure }
+
+func TestResponseControllerPreservesFlushFailure(t *testing.T) {
+	failure := errors.New("synthetic flush failure")
+	recorder := httptest.NewRecorder()
+
+	wrapped := &responseStatus{ResponseWriter: failedFlushResponse{recorder, failure}}
+	if err := http.NewResponseController(wrapped).Flush(); !errors.Is(err, failure) {
+		t.Fatal("flush failure hidden", err)
+	}
+
+	if wrapped.status != http.StatusOK || recorder.Code != http.StatusOK {
+		t.Fatal("stream status not recorded", wrapped.status, recorder.Code)
+	}
+}

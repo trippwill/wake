@@ -80,8 +80,14 @@ UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?;
 SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity needs review','native identity needs review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT * FROM instruments WHERE source_key=?;
--- name: InstrumentByFIGI :one
-SELECT * FROM instruments WHERE reference_figi=?;
+-- name: CompetingFIGI :many
+SELECT instruments.* FROM instruments
+JOIN (
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi=sqlc.arg(figi)
+ UNION
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=sqlc.arg(figi)
+) claims ON claims.id=instruments.id
+WHERE instruments.id<>sqlc.arg(current_id) ORDER BY instruments.id;
 -- name: PutInstrumentRoot :exec
 INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status) VALUES(?,?,?,?,?,?,?,'provisional');
 -- name: Instruments :many

@@ -43,12 +43,14 @@ func (w *responseStatus) Write(value []byte) (int, error) {
 	return w.ResponseWriter.Write(value)
 }
 
-func (w *responseStatus) Flush() {
+func (w *responseStatus) Flush() { _ = w.FlushError() }
+
+func (w *responseStatus) FlushError() error {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	_ = http.NewResponseController(w.ResponseWriter).Flush()
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
 func diagnostics(logger *slog.Logger, next http.Handler) http.Handler {

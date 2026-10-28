@@ -381,26 +381,26 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 			if figi != "" && figi != selectedFIGI {
 				status = "conflict"
 			} else {
-				other, e := q.InstrumentByFIGI(ctx, selectedFIGI)
-				if e != nil && !errors.Is(e, sql.ErrNoRows) {
+				others, e := q.CompetingFIGI(ctx, sqlc.CompetingFIGIParams{CurrentID: id, Figi: selectedFIGI})
+				if e != nil {
 					return e
 				}
 
-				if e == nil && other.ID != id {
+				if len(others) > 0 {
 					status = "conflict"
 
-					if e = resolveAutomaticInstrument(ctx, q,
-						sqlc.ResolveInstrumentParams{
-							ID:              other.ID,
-							Name:            other.Name,
-							Ticker:          other.Ticker,
-							ReferenceFigi:   other.ReferenceFigi,
-							EvidenceID:      other.EvidenceID,
-							ReferenceStatus: "conflict",
-							ReferenceNext:   other.ReferenceNext,
-						},
-					); e != nil {
-						return e
+					for _, other := range others {
+						if e = resolveAutomaticInstrument(
+							ctx,
+							q,
+							sqlc.ResolveInstrumentParams{
+								ID:              other.ID,
+								ReferenceStatus: "conflict",
+								ReferenceNext:   other.ReferenceNext,
+							},
+						); e != nil {
+							return e
+						}
 					}
 				} else {
 					name, figi, evidence = record.Name, selectedFIGI, result.Evidence
