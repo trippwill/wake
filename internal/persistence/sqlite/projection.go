@@ -313,7 +313,8 @@ func enrichRootFromActivity(
 	known := previous.Reported()
 	conflict := !application.CompatibleInstrument(known, i)
 	for _, observation := range observations {
-		if observation.Reference() != i.Reference() {
+		if !known.Reference().IsZero() && !observation.Reference().IsZero() &&
+			observation.Reference() != known.Reference() {
 			continue
 		}
 

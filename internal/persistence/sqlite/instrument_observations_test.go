@@ -192,3 +192,62 @@ func TestRetainedDebtObservationsExposeRootConflict(t *testing.T) {
 		t.Fatal("debt conflict or retained coupon lost", detail, err)
 	}
 }
+
+func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "base", strings.ReplaceAll(syntheticOption, ` multiplier="10"`, ""))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	base := view.Executions[0]
+	for _, multiplier := range []string{"10", "100"} {
+		f := base.Terms().Fields()
+		i := f.Instrument.Fields()
+		i.Reference = source.Reference{}
+		o := i.Option.Fields()
+
+		o.Multiplier, err = financial.NewQuantity(multiplier)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i.Option, err = source.NewOptionTerms(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f.Instrument, err = source.NewInstrument(i)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		trade, e := source.NewTrade(f)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		coverageClaims(
+			t,
+			s,
+			multiplier,
+			claimNormalizer(
+				func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+					if e := claims.PutTrade(ctx, trade); e != nil {
+						return provider.Result{}, e
+					}
+
+					return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				},
+			),
+		)
+	}
+
+	detail, err := s.InstrumentDetail(t.Context(), base.Instrument())
+	if err != nil || detail.Instrument.Status() != "conflict" ||
+		detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "10" {
+		t.Fatal("missing-reference disagreement was skipped", detail, err)
+	}
+}
