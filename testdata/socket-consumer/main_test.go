@@ -376,3 +376,54 @@ func TestPersistedStateRequiresCompleteEnvelopeAndRetainedMirror(t *testing.T) {
 		t.Fatal("newer scan plus older replay rejected", loaded, err)
 	}
 }
+
+func TestHistoricalRevisionContentCannotHideBehindNewerMirror(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		for _, conflict := range []bool{false, true} {
+			t.Run(fmt.Sprintf("retained=%v/conflict=%v", retained, conflict), func(t *testing.T) {
+				older := sample(1, "1.0000")
+				replay := older
+				if conflict {
+					replay = sample(1, "99.0000")
+				}
+				s := state{Version: 1, Cursor: "start", Resources: map[string]json.RawMessage{"activity/a": sample(3, "3.0000")}, History: []change{}}
+				if retained {
+					s.History = []change{{"first", older}}
+					s.Cursor = "first"
+				}
+				path := filepath.Join(t.TempDir(), "mirror.json")
+				if err := save(path, s); err != nil {
+					t.Fatal(err)
+				}
+				before, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprintf(w, `{"items":[{"cursor":"first","resource":%s},{"cursor":"second","resource":%s}],"cursor":"second","through":"second","more":false}`, older, replay)
+				}))
+				defer server.Close()
+				c := client{http: server.Client(), base: server.URL, limit: 2}
+				err = c.catchup(t.Context(), &s, path)
+				if (err != nil) != conflict {
+					t.Error("older replay revision consistency", conflict, err)
+				}
+				if conflict {
+					after, e := os.ReadFile(path)
+					if e != nil || !bytes.Equal(after, before) {
+						t.Error("conflicting replay replaced durable state", e)
+					}
+				}
+				s.History = []change{{"first", older}, {"second", replay}}
+				if err = save(path, s); err != nil {
+					t.Fatal(err)
+				}
+				_, err = readState(path)
+				if (err != nil) != conflict {
+					t.Error("loaded history revision consistency", conflict, err)
+				}
+			})
+		}
+	}
+}

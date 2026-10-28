@@ -127,6 +127,8 @@ and no Wake imports. It reads only the socket, retains canonical snapshots and
 transition history, and saves its mirror/cursor together in one atomic state file.
 An existing state file must contain its complete envelope and a mirror consistent
 with retained transitions. Persisted history cursors must be unique.
+Both loading and live replay reject different content for the same resource
+identity/revision, including older snapshots behind a newer mirror.
 Invalid state fails closed and remains available for
 inspection; it never becomes an empty successful synchronization.
 It reports structured results on stdout, immediate/periodic progress on stderr and

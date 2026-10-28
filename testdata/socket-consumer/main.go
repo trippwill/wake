@@ -34,6 +34,7 @@ type change struct {
 	Resource json.RawMessage `json:"resource"`
 }
 type state struct {
+	revisions map[resource]json.RawMessage
 	dirty     bool
 	persisted bool
 	Version   int                        `json:"version"`
@@ -124,8 +125,43 @@ func sameJSON(a, b []byte) bool {
 	return left.Decode(&x) == nil && right.Decode(&y) == nil && reflect.DeepEqual(x, y)
 }
 
-func (s *state) apply(raw json.RawMessage) error {
+// Resource revisions identify immutable content even when the current mirror is newer.
+func retainRevision(index map[resource]json.RawMessage, raw json.RawMessage) (resource, error) {
 	r, err := metadata(raw)
+	if err != nil {
+		return r, err
+	}
+	if previous, exists := index[r]; exists && !sameJSON(previous, raw) {
+		return r, errors.New("protocol: same revision has different content")
+	}
+	index[r] = raw
+	return r, nil
+}
+
+func (s *state) indexRevisions() error {
+	if s.revisions != nil {
+		return nil
+	}
+	index := make(map[resource]json.RawMessage, len(s.Resources)+len(s.History))
+	for _, raw := range s.Resources {
+		if _, err := retainRevision(index, raw); err != nil {
+			return err
+		}
+	}
+	for _, entry := range s.History {
+		if _, err := retainRevision(index, entry.Resource); err != nil {
+			return err
+		}
+	}
+	s.revisions = index
+	return nil
+}
+
+func (s *state) apply(raw json.RawMessage) error {
+	if err := s.indexRevisions(); err != nil {
+		return err
+	}
+	r, err := retainRevision(s.revisions, raw)
 	if err != nil {
 		return err
 	}
@@ -135,13 +171,7 @@ func (s *state) apply(raw json.RawMessage) error {
 		if err != nil {
 			return err
 		}
-		if previous.Revision > r.Revision {
-			return nil
-		}
-		if previous.Revision == r.Revision {
-			if !sameJSON(old, raw) {
-				return errors.New("protocol: same revision has different content")
-			}
+		if previous.Revision >= r.Revision {
 			return nil
 		}
 	}
@@ -226,6 +256,9 @@ func readState(path string) (state, error) {
 		if !ok || err != nil || mirrored.Revision < recorded.Revision || (mirrored.Revision == recorded.Revision && !sameJSON(current, entry.Resource)) {
 			return s, errors.New("invalid consumer mirror/history consistency")
 		}
+	}
+	if err := s.indexRevisions(); err != nil {
+		return s, fmt.Errorf("invalid consumer state: %w", err)
 	}
 	s.persisted = true
 	return s, nil
