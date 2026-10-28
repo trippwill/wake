@@ -25,7 +25,10 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			return
 		}
 
-		values[key] = application.CorrectionValue{Value: value.Amount(), Currency: value.Currency().String()}
+		values[key] = application.CorrectionValue{
+			Value:    value.Amount(),
+			Currency: comparisonCurrency(value.Currency()),
+		}
 	}
 
 	price := func(key string, value financial.Price) {
@@ -34,7 +37,32 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			return
 		}
 
-		values[key] = application.CorrectionValue{Value: value.Amount(), Currency: value.Currency().String()}
+		values[key] = application.CorrectionValue{
+			Value:    value.Amount(),
+			Currency: comparisonCurrency(value.Currency()),
+		}
+	}
+
+	metadata := func(account, event, order source.Reference, aliases []source.Reference, relationships []source.Relationship) {
+		text("reported.account", comparisonReference(account))
+		text("reported.event", comparisonReference(event))
+		text("reported.order", comparisonReference(order))
+
+		values := make([]string, 0, len(aliases))
+		for _, alias := range aliases {
+			values = append(values, comparisonReference(alias))
+		}
+
+		sort.Strings(values)
+		text("reported.event_aliases", strings.Join(values, "; "))
+
+		values = make([]string, 0, len(relationships))
+		for _, relationship := range relationships {
+			values = append(values, string(relationship.Kind())+": "+comparisonReference(relationship.Target()))
+		}
+
+		sort.Strings(values)
+		text("reported.relationships", strings.Join(values, "; "))
 	}
 	charges := func(items []source.Charge) {
 		rows := make([]string, 0, len(items))
@@ -65,6 +93,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		text("option.right", string(f.Right))
 		text("option.expiry", comparisonDate(f.Expiry))
 		text("option.effective_from", comparisonDate(f.EffectiveFrom))
+		text("option.reported_underlier", comparisonInstrument(f.Underlier))
 
 		components := make([]string, 0, len(f.Deliverables))
 		for _, component := range f.Deliverables {
@@ -83,7 +112,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			} else {
 				components = append(
 					components,
-					"cash: "+component.Cash().Amount()+" "+component.Cash().Currency().String(),
+					"cash: "+component.Cash().Amount()+" "+comparisonCurrency(component.Cash().Currency()),
 				)
 			}
 		}
@@ -99,6 +128,9 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		f := t.Fields()
+		metadata(f.Account, f.Event, f.Order, f.EventAliases, f.Relationships)
+		text("reported.trade_kind", string(f.Kind))
+		text("reported.instrument", comparisonInstrument(f.Instrument))
 		charges(f.Charges)
 		text("quantity", f.Quantity.Value())
 
@@ -133,7 +165,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			text("debt.maturity", comparisonDate(debt.Fields().Maturity))
 			terms := debt.Fields()
 			text("debt.type", string(terms.Type))
-			text("debt.currency", terms.Currency.String())
+			text("debt.currency", comparisonCurrency(terms.Currency))
 			text("debt.issue_date", comparisonDate(terms.IssueDate))
 			text("debt.dated_date", comparisonDate(terms.DatedDate))
 
@@ -151,6 +183,8 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		f := l.Fields()
+		metadata(f.Account, f.Event, f.Order, f.EventAliases, f.Relationships)
+		text("reported.instrument", comparisonInstrument(f.Instrument))
 		values["quantity"] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: "contracts"}
 		text("kind", string(f.Kind))
 		text("trade_date", f.Date.String())
@@ -163,20 +197,21 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		f := c.Fields()
+		metadata(f.Account, f.Event, f.Order, f.EventAliases, nil)
 		charges(f.Charges)
 		values["sent_amount"] = application.CorrectionValue{
 			Value:    f.Sent.Amount(),
-			Currency: f.Sent.Currency().String(),
+			Currency: comparisonCurrency(f.Sent.Currency()),
 		}
 		values["received_amount"] = application.CorrectionValue{
 			Value:    f.Received.Amount(),
-			Currency: f.Received.Currency().String(),
+			Currency: comparisonCurrency(f.Received.Currency()),
 		}
 		price("rate", f.Rate)
 
 		if f.Rate.Amount() != "" {
 			v := values["rate"]
-			v.Unit = "per " + f.RateBase.String()
+			v.Unit = "per " + comparisonCurrency(f.RateBase)
 			values["rate"] = v
 		}
 
@@ -199,4 +234,46 @@ func comparisonDate(d financial.Date) string {
 	}
 
 	return d.String()
+}
+
+func comparisonCurrency(currency financial.Currency) string {
+	if currency == (financial.Currency{}) {
+		return ""
+	}
+
+	return currency.String()
+}
+
+func comparisonReference(reference source.Reference) string {
+	if reference.IsZero() {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"authority=%q kind=%q scope=%q value=%q",
+		reference.Authority(),
+		reference.Kind(),
+		reference.Scope(),
+		reference.Value(),
+	)
+}
+
+func comparisonInstrument(instrument source.Instrument) string {
+	if instrument.Kind() == "" {
+		return ""
+	}
+
+	values := []string{fmt.Sprintf("kind=%q", instrument.Kind())}
+	if reference := comparisonReference(instrument.Reference()); reference != "" {
+		values = append(values, reference)
+	}
+
+	identifiers := make([]string, 0, len(instrument.Identifiers()))
+	for _, identifier := range instrument.Identifiers() {
+		identifiers = append(identifiers, fmt.Sprintf("%s=%q", identifier.Kind(), identifier.Value()))
+	}
+
+	sort.Strings(identifiers)
+
+	return strings.Join(append(values, identifiers...), "; ")
 }

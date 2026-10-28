@@ -547,9 +547,10 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 		out.Label = row.Name + " · " + row.Kind
 
 		out.Values = map[string]application.CorrectionValue{
-			"name":      {Value: row.Name},
-			"ticker":    {Value: row.Ticker},
-			"underlier": {Value: row.UnderlierID.String},
+			"name":               {Value: row.Name},
+			"reference_identity": {Value: row.ReferenceFigi},
+			"ticker":             {Value: row.Ticker},
+			"underlier":          {Value: row.UnderlierID.String},
 		}
 		out.Revision = row.Revision
 		out.Fields = []string{"name", "ticker"}
@@ -586,15 +587,16 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 				}
 
 				for k, r := range job.Data {
-					if _, _, ok := reference.Select(source.InstrumentKind(row.Kind), []reference.Record{r}); ok {
+					if _, identity, ok := reference.Select(source.InstrumentKind(row.Kind), []reference.Record{r}); ok {
 						out.Candidates = append(
 							out.Candidates,
 							application.CorrectionCandidate{
 								Value: referenceCandidateKey(c.ID, j, k),
 								Label: r.Name + " · " + r.Ticker + " · " + r.FIGI,
 								Fields: map[string]application.CorrectionValue{
-									"name":   {Value: r.Name},
-									"ticker": {Value: r.Ticker},
+									"name":               {Value: r.Name},
+									"reference_identity": {Value: identity},
+									"ticker":             {Value: r.Ticker},
 								},
 							},
 						)

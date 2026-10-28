@@ -2117,6 +2117,24 @@ func correctionPath(f application.CorrectionForm) string {
 }
 func fieldLabel(s string) string {
 	switch s {
+	case "reported.order":
+		return "Reported source order"
+	case "reported.event":
+		return "Reported source event"
+	case "reported.event_aliases":
+		return "Reported event aliases"
+	case "reported.account":
+		return "Reported source account"
+	case "reported.relationships":
+		return "Reported relationships"
+	case "reported.instrument":
+		return "Reported instrument identity"
+	case "reported.trade_kind":
+		return "Reported trade kind"
+	case "option.reported_underlier":
+		return "Reported option underlier"
+	case "reference_identity":
+		return "Reference identity (FIGI)"
 	case "option.effective_from":
 		return "Option terms effective from"
 	case "option.deliverables":
@@ -2225,7 +2243,7 @@ func DecisionMetadata(csrf string, f application.CorrectionForm) templ.Component
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 499, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 517, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var113)
 		if templ_7745c5c3_Err != nil {
@@ -2238,7 +2256,7 @@ func DecisionMetadata(csrf string, f application.CorrectionForm) templ.Component
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatInt(f.Revision, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 500, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 518, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var114)
 		if templ_7745c5c3_Err != nil {
@@ -2251,7 +2269,7 @@ func DecisionMetadata(csrf string, f application.CorrectionForm) templ.Component
 		var templ_7745c5c3_Var115 string
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(rand.Text())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 501, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 519, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
@@ -2301,7 +2319,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(known(f.AccountName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 507, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 525, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
 		if templ_7745c5c3_Err != nil {
@@ -2314,7 +2332,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 		var templ_7745c5c3_Var118 string
 		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.Revision, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 507, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 525, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 		if templ_7745c5c3_Err != nil {
@@ -2332,7 +2350,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var119 string
 			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(f.Message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 511, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 529, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
 			if templ_7745c5c3_Err != nil {
@@ -2365,7 +2383,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var120 templ.SafeURL
 			templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(modeURL(ctx, mode)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 519, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 537, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 			if templ_7745c5c3_Err != nil {
@@ -2378,7 +2396,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var121 string
 			templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(currentPage(correctionMode(ctx, f) == mode))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 519, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 537, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
 			if templ_7745c5c3_Err != nil {
@@ -2391,7 +2409,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var122 string
 			templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(correctionModeLabel(mode))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 519, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 537, Col: 137}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 			if templ_7745c5c3_Err != nil {
@@ -2414,7 +2432,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var123 templ.SafeURL
 			templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(correctionPath(f)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 526, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 544, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 			if templ_7745c5c3_Err != nil {
@@ -2427,7 +2445,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var124 string
 			templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.ResolveAttributeValue(origin(ctx))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 527, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 545, Col: 106}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var124)
 			if templ_7745c5c3_Err != nil {
@@ -2440,7 +2458,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var125 string
 			templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(page(ctx).Query.Get("parent"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 527, Col: 182}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 545, Col: 182}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 			if templ_7745c5c3_Err != nil {
@@ -2458,7 +2476,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var126 string
 				templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(group)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 533, Col: 30}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 551, Col: 30}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 				if templ_7745c5c3_Err != nil {
@@ -2477,7 +2495,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var127 string
 						templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.ResolveAttributeValue(field)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 536, Col: 31}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 554, Col: 31}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var127)
 						if templ_7745c5c3_Err != nil {
@@ -2500,7 +2518,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var128 string
 						templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(fieldLabel(field))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 536, Col: 105}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 554, Col: 105}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 						if templ_7745c5c3_Err != nil {
@@ -2524,7 +2542,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var129 templ.SafeURL
 			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(taskURL(ctx, correctionPath(f))))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 544, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 562, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 			if templ_7745c5c3_Err != nil {
@@ -2537,7 +2555,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var130 string
 			templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.ResolveAttributeValue(correctionPath(f) + "/check")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 544, Col: 179}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 562, Col: 179}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var130)
 			if templ_7745c5c3_Err != nil {
@@ -2568,7 +2586,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var131 string
 			templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.ResolveAttributeValue(selectedCorrectionField(ctx, f))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 546, Col: 125}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 564, Col: 125}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var131)
 			if templ_7745c5c3_Err != nil {
@@ -2601,7 +2619,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 			var templ_7745c5c3_Var132 string
 			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Draft.Rationale)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 553, Col: 223}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 571, Col: 223}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var132)
 			if templ_7745c5c3_Err != nil {
@@ -2634,7 +2652,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var133 string
 				templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.ResolveAttributeValue(field)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 565, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 583, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var133)
 				if templ_7745c5c3_Err != nil {
@@ -2665,7 +2683,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var134 string
 				templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(fieldLabel(field))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 574, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 592, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
 				if templ_7745c5c3_Err != nil {
@@ -2678,7 +2696,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var135 string
 				templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(comparisonText(f.Values[field]))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 575, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 593, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
 				if templ_7745c5c3_Err != nil {
@@ -2711,7 +2729,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var136 templ.SafeURL
 				templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(correctionPath(f)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 586, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 604, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 				if templ_7745c5c3_Err != nil {
@@ -2724,7 +2742,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var137 string
 				templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.ResolveAttributeValue(origin(ctx))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 587, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 605, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var137)
 				if templ_7745c5c3_Err != nil {
@@ -2737,7 +2755,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var138 string
 				templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.ResolveAttributeValue(page(ctx).Query.Get("parent"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 587, Col: 186}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 605, Col: 186}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var138)
 				if templ_7745c5c3_Err != nil {
@@ -2755,7 +2773,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var139 string
 					templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.Value)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 593, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 611, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var139)
 					if templ_7745c5c3_Err != nil {
@@ -2778,7 +2796,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var140 string
 					templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 593, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 611, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 					if templ_7745c5c3_Err != nil {
@@ -2806,7 +2824,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var141 templ.SafeURL
 						templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(taskURL(ctx, correctionPath(f))))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 601, Col: 81}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 619, Col: 81}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 						if templ_7745c5c3_Err != nil {
@@ -2827,7 +2845,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var142 string
 						templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.ResolveAttributeValue(candidateScope(f))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 603, Col: 114}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 621, Col: 114}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var142)
 						if templ_7745c5c3_Err != nil {
@@ -2840,7 +2858,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var143 string
 						templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.ResolveAttributeValue(candidate.Value)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 603, Col: 175}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 621, Col: 175}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var143)
 						if templ_7745c5c3_Err != nil {
@@ -2863,7 +2881,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 						var templ_7745c5c3_Var144 string
 						templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Draft.Rationale)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 604, Col: 228}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 622, Col: 228}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var144)
 						if templ_7745c5c3_Err != nil {
@@ -2919,7 +2937,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var145 string
 					templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(fieldLabel(d.Scope))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
 					if templ_7745c5c3_Err != nil {
@@ -2932,7 +2950,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var146 string
 					templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(d.Text)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
 					if templ_7745c5c3_Err != nil {
@@ -2945,7 +2963,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var147 string
 					templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(d.Currency)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
 					if templ_7745c5c3_Err != nil {
@@ -2958,7 +2976,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var148 string
 					templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(d.Rationale)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 					if templ_7745c5c3_Err != nil {
@@ -2971,7 +2989,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var149 string
 					templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(d.Actor)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 180}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 180}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 					if templ_7745c5c3_Err != nil {
@@ -2984,7 +3002,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var150 string
 					templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(d.At)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 192}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 192}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
 					if templ_7745c5c3_Err != nil {
@@ -2997,7 +3015,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var151 string
 					templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(d.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 627, Col: 204}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 645, Col: 204}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 					if templ_7745c5c3_Err != nil {
@@ -3010,7 +3028,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var152 templ.SafeURL
 					templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(taskURL(ctx, correctionPath(f))))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 628, Col: 82}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 646, Col: 82}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 					if templ_7745c5c3_Err != nil {
@@ -3023,7 +3041,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var153 string
 					templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.ResolveAttributeValue("Release " + fieldLabel(d.Scope))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 628, Col: 130}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 646, Col: 130}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var153)
 					if templ_7745c5c3_Err != nil {
@@ -3044,7 +3062,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var154 string
 					templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.ResolveAttributeValue(d.Scope)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 630, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 648, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var154)
 					if templ_7745c5c3_Err != nil {
@@ -3068,7 +3086,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var155 string
 				templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(fieldLabel(d.Scope))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 27}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 27}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
 				if templ_7745c5c3_Err != nil {
@@ -3081,7 +3099,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var156 string
 				templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(d.Action)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 				if templ_7745c5c3_Err != nil {
@@ -3094,7 +3112,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var157 string
 				templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(d.Text)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
 				if templ_7745c5c3_Err != nil {
@@ -3107,7 +3125,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var158 string
 				templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinStringErrs(d.Currency)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 72}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
 				if templ_7745c5c3_Err != nil {
@@ -3120,7 +3138,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var159 string
 				templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(d.Actor)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
 				if templ_7745c5c3_Err != nil {
@@ -3133,7 +3151,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var160 string
 				templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.JoinStringErrs(d.At)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var160))
 				if templ_7745c5c3_Err != nil {
@@ -3146,7 +3164,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 				var templ_7745c5c3_Var161 string
 				templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinStringErrs(d.Rationale)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 642, Col: 118}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 660, Col: 118}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
 				if templ_7745c5c3_Err != nil {
@@ -3164,7 +3182,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 					var templ_7745c5c3_Var162 string
 					templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(d.Supersedes)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 644, Col: 38}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 662, Col: 38}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
 					if templ_7745c5c3_Err != nil {
@@ -3192,7 +3210,7 @@ func CorrectionPage(csrf string, f application.CorrectionForm) templ.Component {
 		var templ_7745c5c3_Var163 string
 		templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.JoinStringErrs(f.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 651, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 669, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
 		if templ_7745c5c3_Err != nil {
@@ -3240,7 +3258,7 @@ func ChargesTable(rows []source.Charge) templ.Component {
 				var templ_7745c5c3_Var165 string
 				templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(c.Field())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 661, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 679, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
 				if templ_7745c5c3_Err != nil {
@@ -3253,7 +3271,7 @@ func ChargesTable(rows []source.Charge) templ.Component {
 				var templ_7745c5c3_Var166 string
 				templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(c.Scope())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 661, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 679, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 				if templ_7745c5c3_Err != nil {
@@ -3266,7 +3284,7 @@ func ChargesTable(rows []source.Charge) templ.Component {
 				var templ_7745c5c3_Var167 string
 				templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(moneyText(c.Money()))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 661, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 679, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
 				if templ_7745c5c3_Err != nil {

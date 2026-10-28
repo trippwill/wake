@@ -415,6 +415,24 @@ func correctionPath(f application.CorrectionForm) string {
 }
 func fieldLabel(s string) string {
 	switch s {
+	case "reported.order":
+		return "Reported source order"
+	case "reported.event":
+		return "Reported source event"
+	case "reported.event_aliases":
+		return "Reported event aliases"
+	case "reported.account":
+		return "Reported source account"
+	case "reported.relationships":
+		return "Reported relationships"
+	case "reported.instrument":
+		return "Reported instrument identity"
+	case "reported.trade_kind":
+		return "Reported trade kind"
+	case "option.reported_underlier":
+		return "Reported option underlier"
+	case "reference_identity":
+		return "Reference identity (FIGI)"
 	case "option.effective_from":
 		return "Option terms effective from"
 	case "option.deliverables":
