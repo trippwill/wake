@@ -127,7 +127,10 @@ func projectActivity(
 		return err
 	}
 
-	var data []byte
+	var (
+		data        []byte
+		instruments []source.Instrument
+	)
 
 	conflict := false
 	switch row.Kind {
@@ -150,6 +153,7 @@ func projectActivity(
 			}
 
 			observations = append(observations, v)
+			instruments = append(instruments, v.Fields().Instrument)
 		}
 
 		selected, disagreement, e := application.SelectTrades(initial, observations)
@@ -161,7 +165,7 @@ func projectActivity(
 
 		data, err = encodeTrade(selected)
 		if err == nil {
-			err = enrichRootFromActivity(ctx, q, base.InstrumentID, selected.Fields().Instrument)
+			err = enrichRootFromActivity(ctx, q, base.InstrumentID, selected.Fields().Instrument, instruments)
 		}
 
 		if err == nil && base.InstrumentID.Valid && !base.ListingID.Valid {
@@ -195,6 +199,7 @@ func projectActivity(
 			}
 
 			observations = append(observations, v)
+			instruments = append(instruments, v.Fields().Instrument)
 		}
 
 		selected, disagreement, e := application.SelectLifecycles(initial, observations)
@@ -206,7 +211,7 @@ func projectActivity(
 
 		data, err = encodeLifecycle(selected)
 		if err == nil {
-			err = enrichRootFromActivity(ctx, q, base.InstrumentID, selected.Fields().Instrument)
+			err = enrichRootFromActivity(ctx, q, base.InstrumentID, selected.Fields().Instrument, instruments)
 		}
 	case "conversion":
 		initial, e := decodeConversion(base.Data)
@@ -289,6 +294,7 @@ func enrichRootFromActivity(
 	q *sqlc.Queries,
 	id sql.NullString,
 	i source.Instrument,
+	observations []source.Instrument,
 ) error {
 	if !id.Valid {
 		return nil
@@ -304,7 +310,26 @@ func enrichRootFromActivity(
 		return err
 	}
 
-	if !application.CompatibleInstrument(previous.Reported(), i) {
+	known := previous.Reported()
+	conflict := !application.CompatibleInstrument(known, i)
+	for _, observation := range observations {
+		if observation.Reference() != i.Reference() {
+			continue
+		}
+
+		if !application.CompatibleInstrument(known, observation) {
+			conflict = true
+			break
+		}
+		// Accumulate only for comparison; disputed enrichment must not replace the root.
+		known, err = application.EnrichInstrument(known, observation)
+		if err != nil {
+			conflict = true
+			break
+		}
+	}
+
+	if conflict {
 		return resolveAutomaticInstrument(
 			ctx,
 			q,
