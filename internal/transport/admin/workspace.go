@@ -861,12 +861,22 @@ func correctionContext(f application.CorrectionForm) string {
 	return f.Label
 }
 
-// Attached charges are comparison-only; they are never offered as editable scopes.
+// Comparison includes retained terms independently of editable correction scopes.
 func comparisonFields(f application.CorrectionForm, c application.CorrectionCandidate) []string {
 	fields := append([]string{}, f.Fields...)
-	if _, ok := c.Fields["charges"]; ok {
-		fields = append(fields, "charges")
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		seen[field] = true
 	}
 
-	return fields
+	extra := []string{}
+	for field := range c.Fields {
+		if !seen[field] {
+			extra = append(extra, field)
+		}
+	}
+
+	sort.Strings(extra)
+
+	return append(fields, extra...)
 }

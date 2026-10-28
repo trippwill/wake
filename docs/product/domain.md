@@ -152,3 +152,5 @@ A retained automatic FIGI selection remains an identity claim while an operator 
 Reported deliverables compare component multiplicity and exact quantities/cash independently of list order. Equivalent reordered components do not establish disagreement; accepted selection preserves the durable baseline order.
 
 Correction preflight accounts for active dependent listing decisions before accepting a different instrument. Candidate comparisons include read-only attached charges with their reported role, total/component qualification, exact amount and currency, including differences that selecting the candidate would replace. Charges remain outside editable field scopes.
+
+Evidence comparisons also retain read-only option effective dates and deliverable components (identities, multiplicity, exact quantities and cash currencies), plus debt type, currency, issue and dated dates, and payment frequency. These terms remain visible independently of editable correction scopes.

@@ -139,9 +139,10 @@ func TestBrowserShell(t *testing.T) {
 		t.Fatal("theme persistence", ok, err)
 	}
 
+	navigate(`#main-navigation a[href="/status"]`)
+
 	err = chromedp.Run(
 		ctx,
-		chromedp.Click(`a[href="/status"]`),
 		chromedp.WaitVisible("h1"),
 		chromedp.Evaluate(`document.body.textContent.includes('Daemon running')`, &ok),
 	)

@@ -415,6 +415,20 @@ func correctionPath(f application.CorrectionForm) string {
 }
 func fieldLabel(s string) string {
 	switch s {
+	case "option.effective_from":
+		return "Option terms effective from"
+	case "option.deliverables":
+		return "Reported option deliverables"
+	case "debt.type":
+		return "Debt type"
+	case "debt.currency":
+		return "Debt currency"
+	case "debt.issue_date":
+		return "Debt issue date"
+	case "debt.dated_date":
+		return "Debt dated date"
+	case "debt.payments_per_year":
+		return "Debt payments per year"
 	case "charges":
 		return "Attached charges (reported; read-only)"
 	case "price":

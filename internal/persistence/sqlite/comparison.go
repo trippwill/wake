@@ -4,7 +4,9 @@
 package persistence
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.trippwill.dev/wake/financial"
@@ -57,15 +59,37 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		text("charges", value)
 	}
 	option := func(value source.OptionTerms) {
-		if value.IsZero() {
-			return
-		}
-
 		f := value.Fields()
 		price("option.strike", f.Strike)
 		text("option.multiplier", f.Multiplier.Value())
 		text("option.right", string(f.Right))
 		text("option.expiry", comparisonDate(f.Expiry))
+		text("option.effective_from", comparisonDate(f.EffectiveFrom))
+
+		components := make([]string, 0, len(f.Deliverables))
+		for _, component := range f.Deliverables {
+			if ref := component.Security(); !ref.IsZero() {
+				components = append(
+					components,
+					fmt.Sprintf(
+						"security authority=%q kind=%q scope=%q value=%q: %s units",
+						ref.Authority(),
+						ref.Kind(),
+						ref.Scope(),
+						ref.Value(),
+						component.Quantity().Value(),
+					),
+				)
+			} else {
+				components = append(
+					components,
+					"cash: "+component.Cash().Amount()+" "+component.Cash().Currency().String(),
+				)
+			}
+		}
+
+		sort.Strings(components)
+		text("option.deliverables", strings.Join(components, "; "))
 	}
 	switch kind {
 	case "trade":
@@ -99,11 +123,26 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		money("accrued_interest", f.AccruedInterest)
 		text("position_effect", string(f.PositionEffect))
 		text("quotation_basis", string(f.QuotationBasis))
-		option(f.Instrument.Option())
 
-		if debt := f.Instrument.Debt(); !debt.IsZero() {
+		if f.Instrument.Kind() == source.Option {
+			option(f.Instrument.Option())
+		}
+
+		if debt := f.Instrument.Debt(); f.Instrument.Kind() == source.Debt {
 			text("debt.coupon", debt.Fields().Coupon.Value())
 			text("debt.maturity", comparisonDate(debt.Fields().Maturity))
+			terms := debt.Fields()
+			text("debt.type", string(terms.Type))
+			text("debt.currency", terms.Currency.String())
+			text("debt.issue_date", comparisonDate(terms.IssueDate))
+			text("debt.dated_date", comparisonDate(terms.DatedDate))
+
+			payments := ""
+			if terms.PaymentsPerYear > 0 {
+				payments = strconv.Itoa(terms.PaymentsPerYear)
+			}
+
+			text("debt.payments_per_year", payments)
 		}
 	case "lifecycle":
 		l, err := decodeLifecycle(data)
