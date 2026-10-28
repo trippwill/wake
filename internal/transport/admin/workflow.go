@@ -29,6 +29,8 @@ func registerWorkflowRoutes(
 	workflow *application.Workflow,
 	stopping <-chan struct{},
 ) {
+	const invalidDetailsMessage = "Check the correction details, including the optional rationale. Text must be within the allowed length and contain no leading/trailing whitespace or control characters."
+
 	gate := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
@@ -534,6 +536,8 @@ func registerWorkflowRoutes(
 			w.Header().Set("Content-Type", "application/json")
 
 			decision, err := postedCorrection(r, kind)
+
+			invalidDetails := err != nil
 			if err == nil {
 				err = workflow.CheckCorrection(r.Context(), decision)
 			}
@@ -543,14 +547,17 @@ func registerWorkflowRoutes(
 				application.ErrStale,
 			), "Ready to save. Saving checks the current record again."
 			if err != nil {
-				message = "This value is not valid for the selected field or its financial terms."
-				if form, e := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id")); e == nil {
-					message = fieldLabel(
-						r.PostForm.Get("scope"),
-					) + ": " + correctionSpec(
-						form,
-						r.PostForm.Get("scope"),
-					).Hint
+				message = invalidDetailsMessage
+				if !invalidDetails {
+					message = "This value is not valid for the selected field or its financial terms."
+					if form, e := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id")); e == nil {
+						message = fieldLabel(
+							r.PostForm.Get("scope"),
+						) + ": " + correctionSpec(
+							form,
+							r.PostForm.Get("scope"),
+						).Hint
+					}
 				}
 
 				if stale {
@@ -572,6 +579,7 @@ func registerWorkflowRoutes(
 		})
 		gate("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			decision, err := postedCorrection(r, kind)
+			invalidDetails := err != nil
 			// Attribution comes from the authenticated session, never posted form data.
 			digest := sha256.Sum256([]byte(csrf))
 
@@ -582,7 +590,12 @@ func registerWorkflowRoutes(
 
 			if err != nil {
 				status := http.StatusBadRequest
+
 				message := "The correction is invalid for this field or link. Check its value, currency and target, then reload the correction form."
+				if invalidDetails {
+					message = invalidDetailsMessage
+				}
+
 				if err == application.ErrStale {
 					status = http.StatusConflict
 					message = "Accepted values changed while you were editing. Review the current values before saving again."

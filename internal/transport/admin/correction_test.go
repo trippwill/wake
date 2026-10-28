@@ -265,6 +265,51 @@ func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 		}
 	}
 
+	// Metadata rejection must not blame an otherwise valid financial value.
+	for _, rationale := range []string{" leading space", "trailing space ", "embedded\tcontrol", strings.Repeat("é", 600)} {
+		for _, path := range []string{"/activity/activity/correct/check", "/activity/activity/correct"} {
+			body := url.Values{
+				"csrf":       {csrf},
+				"revision":   {"8"},
+				"value":      {"12.34"},
+				"currency":   {"USD"},
+				"scope":      {"price"},
+				"action":     {"set"},
+				"submission": {"synthetic-rationale-check"},
+				"rationale":  {rationale},
+			}
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"http://127.0.0.1:8787"+path,
+				strings.NewReader(body.Encode()),
+			)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", "http://127.0.0.1:8787")
+			req.AddCookie(login.Result().Cookies()[0])
+
+			result := httptest.NewRecorder()
+			handler.ServeHTTP(result, req)
+
+			want := http.StatusBadRequest
+			if strings.HasSuffix(path, "/check") {
+				want = http.StatusOK
+			}
+
+			if result.Code != want || !strings.Contains(result.Body.String(), "including the optional rationale") ||
+				strings.Contains(result.Body.String(), "Price: Enter") {
+				t.Errorf(
+					"metadata error directs operator to wrong input: %d %s",
+					result.Code,
+					result.Body.String()[:min(250, result.Body.Len())],
+				)
+			}
+
+			if !strings.HasSuffix(path, "/check") && !strings.Contains(result.Body.String(), `value="12.34"`) {
+				t.Error("metadata rejection lost the valid financial draft")
+			}
+		}
+	}
+
 	if store.calls != 3 {
 		t.Fatal("rejected request reached correction checker", store.calls)
 	}
