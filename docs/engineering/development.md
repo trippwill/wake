@@ -63,6 +63,10 @@ but are not mandatory for every local change. CI workflows and task definitions
 own exact execution. Report checks actually run and material gaps; prior results
 are not current evidence.
 
+Generated templ, sqlc and OpenAPI output is excluded from behavior coverage.
+Check generated-source freshness and exercise the handwritten boundaries that
+produce and consume it. Coverage thresholds still apply to handwritten code.
+
 Keep source stable while generators or checks read it. SQL, public contract and templ source
 changes require their generated-output checks. Stage completed code/generated/docs
 changes and run `mise run source:check` before code delivery. Documentation-only
