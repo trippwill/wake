@@ -1,0 +1,44 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import (
+	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/host"
+	"time"
+)
+
+templ RetainedEvidence(retained host.Retained, info application.EvidenceContext) {
+	@Breadcrumbs("Supporting evidence")
+	@PageHeader("Confirmation report", known(info.ConnectionName)+" · "+retained.Provider)
+	<section class="wake-card"><h2>Acquisition context</h2><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
+	<section class="wake-card">
+		<h2>Observed financial meaning</h2>
+		if page(ctx).Query.Get("location")!="" {
+			<p>Referenced source location: <code>{ page(ctx).Query.Get("location") }</code></p>
+		}
+		if len(info.Observations)==0 {
+			<p>No financial observations are attached to this report.</p>
+		} else {
+			<ul class="wake-task-list">
+				for _,o:=range orderedEvidence(ctx, info.Observations) {
+					<li>
+						<div>
+							if page(ctx).Query.Get("location")==o.Location {
+								<p class="wake-help">Referenced observation</p>
+							}
+							<h3>{ stringTitle(o.Outcome) }</h3>
+							if o.ActivityID!="" {
+								<p><a href={ templ.SafeURL(navURL(ctx, "/activity/"+o.ActivityID)) }>Inspect related activity</a></p>
+							}
+							<details><summary>Source location and rule</summary><p>{ o.Location }</p><p>{ o.Rule } · { o.Version }</p></details>
+						</div>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+	<details class="wake-card"><summary>Retained identity and integrity</summary><dl><dt>Wake report ID</dt><dd>{ retained.ID }</dd><dt>Content hash</dt><dd>{ retained.Artifact.Hash() }</dd><dt>Format</dt><dd>{ retained.Artifact.Format() } · { retained.Artifact.MediaType() }</dd></dl></details>
+	<details class="wake-card" id="original-content"><summary>Original report content</summary><pre>{ string(retained.Artifact.Content()) }</pre></details>
+}

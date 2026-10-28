@@ -80,7 +80,7 @@ func TestAdminFailuresAreClassifiedAndPrivate(t *testing.T) {
 					t.Fatal(err, output.String())
 				}
 
-				if record["code"] != test.code || record["operation_id"] == "" {
+				if record["code"] != test.code || record["operation_id"] == "" || record["route"] == "unmatched" {
 					t.Fatal(record)
 				}
 			}

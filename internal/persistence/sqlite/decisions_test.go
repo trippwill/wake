@@ -393,3 +393,69 @@ func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 		t.Fatal("partial retained decision", form, err)
 	}
 }
+
+func TestCorrectionComparisonRetainsExactTypedValues(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "comparison", syntheticOption+syntheticDebt+syntheticFX)
+
+	view, err := s.Dashboard(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	evidence, err := s.EvidenceContext(context.Background(), "comparison")
+	if err != nil || evidence.Operation != "acquire" || len(evidence.Observations) < 3 {
+		t.Fatal("retained evidence lost context without active access", evidence, err)
+	}
+
+	for _, o := range evidence.Observations {
+		if o.Location == "" || o.Rule == "" {
+			t.Fatal("observation lost source trace", o)
+		}
+	}
+
+	for _, execution := range view.Executions {
+		form, err := s.CorrectionForm(context.Background(), "activity", execution.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if execution.Terms().Fields().SettlementDate.IsZero() && form.Values["settlement_date"].Value != "" {
+			t.Fatal("absent settlement date became reported text", form.Values["settlement_date"])
+		}
+
+		for _, value := range form.Values {
+			if strings.Contains(value.Value+value.Currency+value.Unit, "\x00") {
+				t.Fatal("invalid zero-value currency leaked into display")
+			}
+		}
+
+		if len(form.Candidates) == 0 || len(form.Candidates[0].Fields) == 0 {
+			t.Fatal("missing typed comparison")
+		}
+
+		if value := form.Values["price"]; value.Value != execution.Terms().Fields().Price.Amount() ||
+			value.Currency != execution.Terms().Fields().Price.Currency().String() {
+			t.Fatal("changed exact price", value)
+		}
+
+		if form.Values["quantity"].Unit != execution.Terms().QuantityUnit() {
+			t.Fatal("lost units")
+		}
+
+		if form.Values["instrument"].Label == "" {
+			t.Fatal("missing readable link")
+		}
+	}
+
+	for _, conversion := range view.Conversions {
+		form, err := s.CorrectionForm(context.Background(), "activity", conversion.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if form.Values["sent_amount"].Value != conversion.Terms().Fields().Sent.Amount() {
+			t.Fatal("conversion amount changed")
+		}
+	}
+}

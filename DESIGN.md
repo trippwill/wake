@@ -22,6 +22,8 @@ colors:
   warning-content: "#65501B"
   error: "#EAD9D5"
   error-content: "#713E38"
+  wake-canvas: "#EDF0F2"
+  wake-link: "#805028"
   wake-sidebar: "#C6CDD3"
   wake-field: "#EDF0F2"
   wake-muted: "#3D4650"
@@ -182,8 +184,10 @@ Assets stay local and embedded; no external font/icon service is needed.
 ## Color and appearance
 
 Use shared light/dark semantic roles rather than page-specific palettes. Steel
-anchors the workspace; Copper emphasizes primary actions sparingly. Text, links
-and keyboard focus use the foreground role. Selection has a distinct edge as
+anchors the workspace; Copper emphasizes primary actions sparingly. Body text and keyboard focus use the foreground role. Underlined links use a
+Copper text role: `#805028` in light appearance and `#E6A675` in dark appearance.
+Filled primary actions retain Copper with dark text; secondary actions use visible
+borders and distinct hover/focus states. Selection has a distinct edge as
 well as background and text emphasis. Panels, fields and chrome remain distinct
 without decorative depth. Both themes retain the same layout and density.
 
@@ -217,11 +221,22 @@ Keep navigation compact, financial context readable and identifiers secondary.
 Lead with connection maintenance before new setup; disclose lengthy forms and
 audit metadata on demand. Plain task labels take priority over internal vocabulary.
 
-Use bounded forms, restrained spacing and flat bordered regions. Keep daemon
+Use bounded forms, restrained spacing and flat bordered cards to identify tasks,
+financial summaries, comparisons and configuration sections. A light steel canvas
+(`#EDF0F2`) carries light cards; a deep steel canvas (`#2B3036`) carries dark cards
+(`#363D44`). Group related fields within each card rather than treating individual
+fields or table rows as separate cards. Keep daemon
 contact compact in the header and full work status in page content. Toolbar
 preferences remain grouped and reachable when status text wraps. On narrow screens,
 stack simple regions, provide dismissible keyboard-accessible navigation and keep
 genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
+
+Overview orients the operator and surfaces specific next actions. Activity owns
+inspection, actionable financial/identity review and instrument browsing.
+Connections owns source authority, synchronization, reports and access; System
+owns installation status, effective configuration and advanced maintenance.
+Full-page details retain breadcrumbs and a return path to their originating view.
+Applied corrections and ordinary reference gaps remain distinct from review tasks.
 
 ## Interaction and live feedback
 
@@ -238,8 +253,21 @@ changes; keep unchanged and waiting/blocked states steady.
 
 Preserve drafts, focus/caret, selections, disclosures and table position through
 live updates. Native submissions give pending feedback and prevent accidental
-duplicates. Local filters, sorting and pagination clearly state their scope.
-Enhanced grids retain a readable native fallback and exact, unrounded choices.
+duplicates. GET-based search and filters select the displayed records; enhanced
+sorting and pagination operate on that matching set and clearly state their scope.
+Use embedded htmx, its SSE extension and idiomorph for authenticated read-only
+fragment updates. Keep commands ordinary HTTP submissions. Stateful grids reconcile
+incoming rows through their adapter; active/dirty forms and selections are protected.
+Decision forms and immutable raw-evidence pages remain explicit review snapshots;
+only their contact feedback updates automatically. Do not cache financial page HTML
+in browser history storage.
+Use the pinned, embedded Tabulator distribution for substantial read-only activity
+and observation datasets. Grids retain a readable native table when JavaScript or
+enhancement is unavailable. Label local filtering/sorting scope, preserve the view
+through refreshes and provide keyboard sorting/resizing. Compare decimal text
+without browser numeric conversion, keeping currency and unit distinctions.
+Short tables and decision controls remain native; exact, unrounded choices remain
+available in every appearance.
 
 ## Evidence and decisions
 
@@ -248,7 +276,19 @@ important differences beside the choice on wide screens, then stack them on narr
 screens. Keep complete source and accepted values aligned, with explicit difference
 labels and local scrolling. Preserve all candidates and exact terms.
 
+Separate field correction, retained-evidence comparison and decision management.
+Keep the chosen field's accepted value beside its editor, compare differing fields
+first and disclose unchanged fields and technical context. Missing dates are Unknown.
+Use field-specific controls: calendar dates, exact decimals with visible units and
+currency, explicit enumerated choices, and searchable retained-record selectors
+for links. Filter link choices by compatible family and parent instrument. Preserve
+fractional seconds and timezone information when editing timestamps. Check syntax
+as the user edits and check financial constraints against the current record before
+enabling save; checks do not retain decisions or advance revisions. Keep native
+field selection and ordinary form submission usable without JavaScript.
 Require an explicit choice; disclose optional reasons and retain them after errors.
+Observation tables show source location and acceptance rule/version directly in
+their cells, with wrapping and local scrolling for long values.
 Keep evidence/history reachable and distinguish saved decisions from checks still
 in progress. Use named source/context labels before technical references.
 

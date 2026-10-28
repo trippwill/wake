@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -172,37 +173,6 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	var ok bool
 
 	origin := cfg.Admin.Origin()
-	navigationClick := func(selector string, options ...chromedp.QueryOption) chromedp.Action {
-		return chromedp.ActionFunc(func(step context.Context) error {
-			_, err := chromedp.RunResponse(step, chromedp.Click(selector, options...))
-			return err
-		})
-	}
-	// Refresh may replace the document. Evaluate each attempt in the current
-	// document instead of retaining an isolated-world polling context across it.
-	pollDocument := func(expression string, result *bool) chromedp.Action {
-		return chromedp.ActionFunc(func(step context.Context) error {
-			ticker := time.NewTicker(50 * time.Millisecond)
-			defer ticker.Stop()
-
-			for {
-				var matched bool
-				if err := chromedp.Run(step, chromedp.Evaluate(expression, &matched)); err == nil && matched {
-					if result != nil {
-						*result = true
-					}
-
-					return nil
-				}
-
-				select {
-				case <-step.Done():
-					return step.Err()
-				case <-ticker.C:
-				}
-			}
-		})
-	}
 	check := func(actions ...chromedp.Action) {
 		t.Helper()
 
@@ -216,22 +186,98 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			t.Fatal(err, location, body)
 		}
 	}
+	navigate := func(action chromedp.Action) {
+		t.Helper()
+
+		step, cancelStep := context.WithTimeout(ctx, 20*time.Second)
+		defer cancelStep()
+
+		response, navigationErr := chromedp.RunResponse(step, action)
+		if navigationErr != nil {
+			t.Fatal("navigation", navigationErr)
+		}
+
+		if response == nil || response.Status != http.StatusOK {
+			t.Fatal("navigation response")
+		}
+	}
+	capture := func(name string) {
+		t.Helper()
+
+		dir := os.Getenv("WAKE_SCREENSHOT_DIR")
+		if dir == "" {
+			return
+		}
+
+		for _, appearance := range []struct {
+			theme string
+			width int64
+		}{{"light", 1440}, {"dark", 390}} {
+			check(
+				emulation.SetDeviceMetricsOverride(appearance.width, 1000, 1, false),
+				chromedp.Evaluate(
+					`(()=>{const control=document.querySelector('[data-theme-preference]');control.value=`+strconv.Quote(
+						appearance.theme,
+					)+`;control.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+					nil,
+				),
+			)
+
+			// Capture the settled theme, including finite CSS control transitions.
+			check(chromedp.Evaluate(
+				`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))).then(()=>Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))))`,
+				nil,
+				func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
+			))
+
+			var png []byte
+			check(chromedp.FullScreenshot(&png, 90))
+			//nolint:gosec // Caller-selected synthetic screenshot directory.
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			//nolint:gosec // Caller-selected synthetic screenshot directory and fixed names.
+			if err := os.WriteFile(
+				filepath.Join(dir, "ia-"+name+"-"+appearance.theme+".png"),
+				png,
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		check(
+			emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
+			chromedp.Evaluate(
+				`(()=>{const control=document.querySelector('[data-theme-preference]');control.value='light';control.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+				nil,
+			),
+		)
+	}
+
 	check(
 		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
 		chromedp.Navigate(origin+"/login"),
 		chromedp.WaitVisible("#unlock"),
 		chromedp.SendKeys("#unlock", "synthetic-browser-unlock"),
-		navigationClick(`button[type="submit"]`),
-		chromedp.WaitVisible("#main-navigation"),
-		navigationClick(`a[href="/connections"]`),
+	)
+	navigate(chromedp.Click(`button[type="submit"]`))
+	check(chromedp.WaitVisible("#main-navigation"))
+	navigate(chromedp.Click(`a[href="/connections"]`))
+	navigate(chromedp.Click(`a[href="/connections/new"]`))
+	check(
 		chromedp.WaitVisible("#connection-name"),
 		chromedp.SendKeys("#connection-name", "Synthetic IBKR"),
 		chromedp.SendKeys("#query-id", "123"),
 		chromedp.SendKeys("#flex-token", "synthetic-token"),
-		navigationClick(`form[action="/connections"] button[type="submit"]`),
-		chromedp.WaitVisible(`form[action^="/connections/"][action$="/settings"]`),
-		chromedp.WaitVisible("#connection-name"),
 	)
+	navigate(chromedp.Click(`form[action="/connections"] button[type="submit"]`))
+	check(chromedp.WaitVisible("#workflow-progress"))
+
+	var connectionPath string
+	check(chromedp.Location(&connectionPath))
+	connectionPath = strings.Split(strings.TrimPrefix(connectionPath, origin), "?")[0]
+	check(chromedp.Navigate(origin+"/connections/new"), chromedp.WaitVisible("#connection-name"))
 
 	select {
 	case period := <-sent:
@@ -245,9 +291,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(chromedp.SendKeys("#connection-name", "Unsubmitted draft"))
 	clock.Add(10)
 	check(
-		pollDocument(`document.querySelector('a[href*="account=U-SYNTHETIC"]') !== null`, nil),
-		pollDocument(
-			`document.querySelector('#connection-name').value==='Unsubmitted draft' && document.body.textContent.includes('Unknown') && !document.body.textContent.includes('Activated account:')`,
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Evaluate(
+			`document.querySelector('#connection-name').value==='Unsubmitted draft' && document.body.dataset.liveState==='connected'`,
 			&ok,
 		),
 	)
@@ -257,10 +303,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`a[href*="account=U-SYNTHETIC"]`),
+		chromedp.Navigate(origin+connectionPath+"?view=status"),
+		chromedp.Poll(`document.querySelector('a[href*="account=U-SYNTHETIC"]') !== null`, nil),
+		chromedp.Evaluate(`document.querySelector('a[href*="account=U-SYNTHETIC"]').click()`, nil),
 		chromedp.WaitVisible("#account-name"),
 		chromedp.SendKeys("#account-name", "My confirmed account"),
-		navigationClick(`button[type="submit"]`),
+		chromedp.Click(`button[type="submit"]`),
 		chromedp.WaitVisible("#activity-rows"),
 	)
 	clock.Add(6)
@@ -276,11 +324,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(10)
 	check(
-		pollDocument(
+		chromedp.Poll(
 			`document.querySelector('a[href^="/executions/"]') !== null && document.body.textContent.includes('REFERENCE EQUITY')`,
 			nil,
 		),
-		pollDocument(
+		chromedp.Evaluate(
 			`document.body.textContent.includes('0.125') && document.body.textContent.includes('400.123456789') && document.body.textContent.includes('My confirmed account')`,
 			&ok,
 		),
@@ -290,10 +338,19 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("missing exact financial view")
 	}
 
+	capture("activity")
 	check(
-		navigationClick(`a[href^="/executions/"]`),
-		chromedp.WaitVisible("dl"),
-		pollDocument(
+		chromedp.Navigate(origin+"/activity?q=REFERENCE+EQUITY&sort=price&dir=desc&page=1"),
+		chromedp.WaitVisible(".tabulator-row"),
+	)
+
+	check(
+		chromedp.Click(
+			`//div[contains(@class,'tabulator-row') and contains(.,'REFERENCE EQUITY')]//a[starts-with(@href,'/executions/')][1]`,
+			chromedp.BySearch,
+		),
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
 			`document.body.textContent.includes('2026-10-20T13:30:00.120Z') && document.body.textContent.includes('accepted')`,
 			&ok,
 		),
@@ -304,9 +361,29 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
-		chromedp.WaitVisible("h1"),
-		pollDocument(
+		chromedp.Click(`//summary[text()='Retained observations and acceptance rules']`, chromedp.BySearch),
+		chromedp.Click(`.tabulator a[href^="/evidence/"]`),
+		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
+		chromedp.Evaluate(
+			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger')`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("retained evidence context or snapshot")
+	}
+
+	capture("evidence")
+	check(
+		chromedp.Click("[data-return]"),
+		chromedp.WaitVisible(`//h2[text()='Financial summary']`, chromedp.BySearch),
+	)
+
+	check(
+		chromedp.Click(`.wake-card a[href^="/instruments/"]:not([href*="/correct"])`),
+		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
+		chromedp.Evaluate(
 			`document.querySelector('h1').textContent==='REFERENCE EQUITY' && document.body.textContent.includes('BBG000000002')`,
 			&ok,
 		),
@@ -316,30 +393,44 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("reference inspection")
 	}
 
-	if dir := os.Getenv("WAKE_SCREENSHOT_DIR"); dir != "" {
-		var png []byte
-		check(chromedp.FullScreenshot(&png, 90))
+	capture("instrument")
+	check(
+		chromedp.Click("[data-return]"),
+		chromedp.WaitVisible(`//h2[text()='Financial summary']`, chromedp.BySearch),
+		chromedp.Click("[data-return]"),
+		chromedp.WaitVisible("#activity-search"),
+		chromedp.WaitVisible(".tabulator-row"),
+		chromedp.Evaluate(
+			`document.querySelector('#activity-search').value==='REFERENCE EQUITY' && new URL(location.href).searchParams.get('sort')==='price' && new URL(location.href).searchParams.has('selected') && window.Tabulator.findTable('.tabulator')[0].getDataCount('active')===1`,
+			&ok,
+		),
+	)
 
-		//nolint:gosec // Caller-selected synthetic screenshot directory.
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
+	if !ok {
+		t.Fatal("list filter, sort or selection lost on return")
+	}
 
-		//nolint:gosec // Caller-selected synthetic screenshot path.
-		if err := os.WriteFile(filepath.Join(dir, "m2-instrument.png"), png, 0o600); err != nil {
-			t.Fatal(err)
-		}
+	check(
+		chromedp.NavigateBack(),
+		chromedp.WaitVisible(`//h2[text()='Financial summary']`, chromedp.BySearch),
+		chromedp.NavigateForward(),
+		chromedp.WaitVisible("#activity-search"),
+		chromedp.Evaluate(`document.querySelector('#activity-search').value==='REFERENCE EQUITY'`, &ok),
+	)
+
+	if !ok {
+		t.Fatal("list context lost on browser history")
 	}
 
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		navigationClick(
-			`//tr[contains(.,"Reported option")]//a[starts-with(@href,"/executions/")][1]`,
+		chromedp.Click(
+			`//div[contains(@class,'tabulator-row') and contains(.,'Reported option')]//a[starts-with(@href,'/executions/')][1]`,
 			chromedp.BySearch,
 		),
-		chromedp.WaitVisible("dl"),
-		pollDocument(
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
 			`document.body.textContent.includes('Quantity (contracts)') && document.body.textContent.includes('100.001 USD') && document.body.textContent.includes('Premium multiplier') && document.body.textContent.includes('Unknown')`,
 			&ok,
 		),
@@ -350,11 +441,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
-		chromedp.WaitVisible("h1"),
-		navigationClick(`a[href^="/instruments/"]:not([href$="/correct"])`),
-		chromedp.WaitVisible("h1"),
-		pollDocument(`document.querySelector('h1').textContent==='REFERENCE EQUITY'`, &ok),
+		chromedp.Click(`.wake-card a[href^="/instruments/"]:not([href*="/correct"])`),
+		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
+		chromedp.Click(`//a[text()='Inspect linked underlier']`, chromedp.BySearch),
+		chromedp.WaitVisible(`//h1[text()='REFERENCE EQUITY']`, chromedp.BySearch),
+		chromedp.Evaluate(`document.querySelector('h1').textContent==='REFERENCE EQUITY'`, &ok),
 	)
 
 	if !ok {
@@ -364,13 +455,13 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		navigationClick(
-			`//tr[contains(.,"assignment")]//a[starts-with(@href,"/activity/")][1]`,
+		chromedp.Click(
+			`//div[contains(@class,"tabulator-row") and contains(.,"Assignment")]//a[starts-with(@href,"/activity/")][1]`,
 			chromedp.BySearch,
 		),
-		chromedp.WaitVisible("dl"),
-		pollDocument(
-			`document.querySelector('h1').textContent==='assignment' && document.body.textContent.includes('assignment-1') && document.body.textContent.includes('No explicit lifecycle relationship reported')`,
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
+			`document.querySelector('h1').textContent.startsWith('Assignment') && document.body.textContent.includes('assignment-1') && document.body.textContent.includes('No explicit lifecycle relationship reported')`,
 			&ok,
 		),
 	)
@@ -382,12 +473,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		navigationClick(
-			`//tr[contains(.,"Synthetic debt")]//a[starts-with(@href,"/executions/")][1]`,
+		chromedp.Click(
+			`//div[contains(@class,"tabulator-row") and contains(.,"Synthetic debt")]//a[starts-with(@href,"/executions/")][1]`,
 			chromedp.BySearch,
 		),
-		chromedp.WaitVisible("dl"),
-		pollDocument(
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
 			`document.body.textContent.includes('Quantity (nominal)')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('quotation basis unknown')&&document.body.textContent.includes('Coupon rate (reported)')`,
 			&ok,
 		),
@@ -400,13 +491,13 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		navigationClick(
-			`//tr[contains(.,"Currency conversion")]//a[starts-with(@href,"/activity/")][1]`,
+		chromedp.Click(
+			`//div[contains(@class,"tabulator-row") and contains(.,"Convert ")]//a[starts-with(@href,"/activity/")][1]`,
 			chromedp.BySearch,
 		),
-		chromedp.WaitVisible("dl"),
-		pollDocument(
-			`document.querySelector('h1').textContent==='Currency conversion'&&document.body.textContent.includes('10.123456789 EUR')&&document.body.textContent.includes('Unknown USD')&&document.body.textContent.includes('-0.25 GBP')`,
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
+			`document.querySelector('h1').textContent==='Convert EUR to USD'&&document.body.textContent.includes('10.123456789 EUR')&&document.body.textContent.includes('Unknown USD')&&document.body.textContent.includes('-0.25 GBP')`,
 			&ok,
 		),
 	)
@@ -418,8 +509,13 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		pollDocument(
-			`document.body.textContent.includes('Source corrections')&&document.body.textContent.includes('cancellation')&&document.body.textContent.includes('applied')&&document.body.textContent.includes('cancelled')&&document.querySelector('a[href^="/activity/"]')!==null`,
+		chromedp.Click(
+			`//div[contains(@class,'tabulator-row') and contains(.,'Synthetic debt')]//a[starts-with(@href,'/executions/')][1]`,
+			chromedp.BySearch,
+		),
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Evaluate(
+			`document.body.textContent.includes('Source corrections')&&document.body.textContent.includes('Cancellation')&&document.body.textContent.includes('applied')&&document.body.textContent.includes('cancelled')`,
 			&ok,
 		),
 	)
@@ -429,29 +525,42 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	var submitted string
+
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		navigationClick(
-			`//tr[contains(.,"Reported option")]//a[starts-with(@href,"/executions/")][1]`,
+		chromedp.Click(
+			`//div[contains(@class,'tabulator-row') and contains(.,'Reported option')]//a[starts-with(@href,'/executions/')][1]`,
 			chromedp.BySearch,
 		),
-		chromedp.WaitVisible("dl"),
-		navigationClick(`a[href$="/correct"]`),
+		chromedp.WaitVisible(".wake-card dl"),
+		chromedp.Click(`a[href*="/correct"]`),
 		chromedp.WaitVisible("#decision-scope"),
 		chromedp.SetValue("#decision-scope", "price"),
+		chromedp.Evaluate(
+			`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
+			nil,
+		),
 		chromedp.SetValue("#decision-value", "2.999000000000001"),
 		chromedp.SetValue("#decision-currency", "USD"),
 		chromedp.SetValue("#decision-rationale", "Browser field correction"),
 		chromedp.Evaluate(
+			`document.querySelector('#decision-value').dispatchEvent(new Event('input',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil),
+	)
+	capture("correction")
+	check(
+		chromedp.Evaluate(
 			`new URLSearchParams(new FormData(document.querySelector('form[aria-label="Correct a field or link"]'))).toString()`,
 			&submitted,
 		),
-		navigationClick(`form[aria-label="Correct a field or link"] button`),
+		chromedp.Click(`form[aria-label="Correct a field or link"] button[type="submit"]`),
 		chromedp.WaitVisible(`//li[contains(.,"Browser field correction")]`, chromedp.BySearch),
-		chromedp.WaitVisible("#decision-scope"),
-		pollDocument(
-			`document.body.textContent.includes('Active decision')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/local/')`,
+		chromedp.WaitVisible(`form[aria-label^="Release "]`),
+		chromedp.Evaluate(
+			`document.body.textContent.includes('Active decisions')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/local/')`,
 			&ok,
 		),
 	)
@@ -490,10 +599,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`form[aria-label^="Release "] button`),
-		chromedp.WaitVisible(`//li[contains(.,"release")]`, chromedp.BySearch),
-		chromedp.WaitVisible("#decision-scope"),
-		pollDocument(`!document.body.textContent.includes('Active decision')`, &ok),
+		chromedp.Click(`form[aria-label^="Release "] button`),
+		chromedp.WaitVisible(`//p[text()='No active operator decisions.']`, chromedp.BySearch),
+		chromedp.Evaluate(`document.querySelectorAll('form[aria-label^="Release "]').length===0`, &ok),
 	)
 
 	if !ok {
@@ -501,18 +609,18 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Navigate(origin+"/connections"),
-		chromedp.WaitVisible("#workflow-progress"),
-		navigationClick(`form[action^="/processing/"] button`),
-		chromedp.WaitVisible("#workflow-progress"),
+		chromedp.Navigate(origin+connectionPath+"?view=reports"),
+		chromedp.Click(`//summary[text()='Processing actions']`, chromedp.BySearch),
+		chromedp.Click(`form[action^="/processing/"] button`),
+		chromedp.WaitNotPresent("form[data-submitting]"),
+		chromedp.Navigate(origin+"/system/maintenance"),
 		chromedp.WaitVisible(`form[action="/recovery/rebuild"] button`),
-		navigationClick(`form[action="/recovery/rebuild"] button`),
-		chromedp.WaitVisible(`//section[@id='workflow-progress']//p[contains(.,'Rebuild ')]`, chromedp.BySearch),
-		pollDocument(
-			`Array.from(document.querySelectorAll('#workflow-progress p')).some(p=>p.textContent.includes('Rebuild ')&&p.textContent.includes('complete'))`,
-			nil,
+		chromedp.Click(`form[action="/recovery/rebuild"] button`),
+		chromedp.WaitVisible(
+			`//section[@id='workflow-progress']//article[contains(.,'Rebuild') and contains(.,'complete')]`,
+			chromedp.BySearch,
 		),
-		pollDocument(`document.body.textContent.includes('Processing complete')`, &ok),
+		chromedp.Evaluate(`document.body.textContent.includes('complete')`, &ok),
 	)
 
 	if !ok {
@@ -522,7 +630,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		pollDocument(
+		chromedp.Evaluate(
 			`document.querySelectorAll('tbody tr').length===5&&document.body.textContent.includes('400.123456789')&&document.body.textContent.includes('cancelled')`,
 			&ok,
 		),
@@ -549,7 +657,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible("#activity-rows"),
-		pollDocument(
+		chromedp.Evaluate(
 			`document.querySelectorAll('tbody tr').length===5&&document.body.textContent.includes('400.123456789')`,
 			&ok,
 		),
@@ -560,9 +668,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.Navigate(origin+"/connections"),
+		chromedp.Navigate(origin+"/connections/recovery"),
 		chromedp.WaitVisible("#storage-recovery-title"),
-		pollDocument(
+	)
+	capture("recovery")
+	check(
+		chromedp.Evaluate(
 			`document.body.textContent.includes('Access configuration is missing or incomplete')`,
 			&ok,
 		),
@@ -572,29 +683,44 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("missing access not visible")
 	}
 	// The resume action cannot grant authority before access and reference review.
+	check(chromedp.Evaluate(`document.querySelector('form[action="/recovery/resume"] button').disabled`, &ok))
+
+	if !ok {
+		t.Fatal("resume enabled before access prerequisites")
+	}
+
 	check(
-		navigationClick(`form[action="/recovery/resume"] button`),
-		chromedp.WaitVisible(`[role="alert"]`),
+		chromedp.Evaluate(
+			`fetch('/recovery/resume',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(document.querySelector('form[action="/recovery/resume"]')))}).then(r=>r.status)`,
+			&status,
+			func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
+		),
 	)
+
+	if status != http.StatusBadRequest {
+		t.Fatal("premature resume accepted", status)
+	}
+
 	check(
-		chromedp.Navigate(origin+"/connections"),
+		chromedp.Navigate(origin+"/connections/recovery"),
 		chromedp.WaitVisible("#storage-recovery-title"),
 		chromedp.SetValue(
 			`form[action$="/settings"] input[name="name"]`,
 			"Recovered IBKR",
 		),
 		chromedp.SetValue(`form[action$="/settings"] input[name="query_id"]`, "123"),
-		navigationClick(`form[action$="/settings"] button`),
+		chromedp.Click(`form[action$="/settings"] button`),
 		chromedp.WaitVisible(`//h2[text()="Recovered IBKR"]`, chromedp.BySearch),
 		chromedp.SetValue(
 			`input[id^="token-"]`,
 			"synthetic-token",
 		),
-		navigationClick(`form[action$="/token"] button`),
+		chromedp.Click(`form[action$="/token"] button`),
 		chromedp.WaitNotPresent(`p[id^="access-missing-"]`),
 		chromedp.SetValue("#openfigi-key", "synthetic-reference-key"),
-		navigationClick(`form[action="/reference/key"] button`),
-		chromedp.WaitNotPresent("#reference-review-required"),
+		chromedp.Click(`form[action="/reference/key"] button`),
+		chromedp.WaitVisible(`//p[text()='Reference access has been reviewed.']`, chromedp.BySearch),
+		chromedp.WaitVisible(`form[action="/recovery/resume"] button:not([disabled])`),
 	)
 
 	if reportCalls.Load() != 2 {
@@ -604,7 +730,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	keyedReference.Store(true)
 
 	check(
-		navigationClick(`form[action="/recovery/resume"] button`),
+		chromedp.Click(`form[action="/recovery/resume"] button`),
 		chromedp.WaitVisible("#workflow-progress"),
 		chromedp.WaitNotPresent("#storage-recovery-title"),
 	)
@@ -637,9 +763,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	clock.Add(86400)
 	startDaemon()
 	check(
-		chromedp.Navigate(origin+"/connections"),
+		chromedp.Navigate(origin+"/connections/recovery"),
 		chromedp.WaitVisible("#warehouse-reset-notice"),
-		pollDocument(
+		chromedp.Evaluate(
 			`document.body.textContent.includes('Recovered IBKR')&&!document.querySelector('p[id^="access-missing-"]')&&!document.body.textContent.includes('Activated account:')`,
 			&ok,
 		),
@@ -650,7 +776,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`form[action="/recovery/resume"] button`),
+		chromedp.Click(`form[action="/recovery/resume"] button`),
 		chromedp.WaitNotPresent("#storage-recovery-title"),
 	)
 
@@ -665,8 +791,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(10)
 	check(
-		pollDocument(`document.querySelector('a[href*="account=U-SYNTHETIC"]')!==null`, nil),
-		pollDocument(`!document.body.textContent.includes('Activated account:')`, &ok),
+		chromedp.Navigate(origin+connectionPath+"?view=status"),
+		chromedp.Poll(`document.querySelector('a[href*="account=U-SYNTHETIC"]')!==null`, nil),
+		chromedp.Evaluate(`!document.body.textContent.includes('Activated account:')`, &ok),
 	)
 
 	if !ok || reportCalls.Load() != callsBefore+1 {
@@ -674,10 +801,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		navigationClick(`a[href*="account=U-SYNTHETIC"]`),
+		chromedp.Evaluate(`document.querySelector('a[href*="account=U-SYNTHETIC"]').click()`, nil),
 		chromedp.WaitVisible("#account-name"),
 		chromedp.SetValue("#account-name", "Fresh confirmed account"),
-		navigationClick(`button[type="submit"]`),
+		chromedp.Click(`button[type="submit"]`),
 		chromedp.WaitVisible("#activity-rows"),
 	)
 	clock.Add(6)
@@ -690,7 +817,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(10)
 	check(
-		pollDocument(
+		chromedp.Poll(
 			`document.body.textContent.includes('Fresh confirmed account')&&document.body.textContent.includes('400.123456789')`,
 			nil,
 		),

@@ -1,0 +1,535 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import (
+	"crypto/rand"
+	"go.trippwill.dev/wake/internal/application"
+	"strconv"
+)
+
+templ Breadcrumbs(title string) {
+	<nav class="wake-breadcrumbs" aria-label="Breadcrumb">
+		<ol>
+			<li><a href={ templ.SafeURL(origin(ctx)) }>{ originLabel(ctx) }</a></li>
+			if localDestination(page(ctx).Query.Get("parent"))!="" {
+				<li><a href={ templ.SafeURL(returnURL(ctx)) }>{ parentLabel(ctx) }</a></li>
+			}
+			<li aria-current="page">{ title }</li>
+		</ol>
+	</nav>
+	<a class="wake-return" href={ templ.SafeURL(returnURL(ctx)) } data-return>Return to { parentLabel(ctx) }</a>
+}
+
+templ ActivityNavigation(view string) {
+	<nav class="wake-tabs" aria-label="Activity views">
+		<a href="/activity" aria-current={ currentPage(view == "all") }>All activity</a>
+		<a href="/activity?view=review" aria-current={ currentPage(view == "review") }>Needs review</a>
+		<a href="/activity?view=instruments" aria-current={ currentPage(view == "instruments") }>Instruments</a>
+	</nav>
+}
+
+func currentPage(active bool) string {
+	if active {
+		return "page"
+	}
+	return "false"
+}
+
+templ DashboardOverview(view application.Dashboard) {
+	@PageHeader("Overview", "Your account, current work and next useful action.")
+	if view.Storage.Paused {
+		<section class="wake-card wake-priority"><h2>Review recovered access</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
+	} else if view.Account.ID()=="" {
+		<section class="wake-card wake-priority">
+			<h2>Connect and confirm an account</h2>
+			<ol class="wake-steps"><li>Create an IBKR connection.</li><li>Wait for account discovery.</li><li>Confirm one account to start synchronization.</li></ol>
+			if len(view.Connections)==0 {
+				<a class="btn btn-primary" href="/connections/new">Add IBKR connection</a>
+			} else {
+				<a class="btn btn-primary" href="/connections">Review account discovery</a>
+			}
+		</section>
+	}
+	if view.Account.ID()!="" {
+		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.Itoa(len(activityItems(view))) } activity records · { strconv.Itoa(len(view.Instruments)) } instruments</p></div><a class="btn btn-primary" href="/activity">Inspect activity</a></div></section>
+		<div class="wake-columns">
+			<section class="wake-card">
+				<h2>Financial review</h2>
+				if len(reviews(view))==0 {
+					<p>No activity or identity conflicts are awaiting review.</p>
+				} else {
+					<p>{ strconv.Itoa(len(reviews(view))) } items need your judgment.</p>
+					<ul class="wake-task-list">
+						for _,item:=range reviews(view) {
+							<li><a href={ templ.SafeURL(navURL(ctx, item.Href)) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
+						}
+					</ul>
+				}
+				<a href="/activity?view=review">Open Needs review</a>
+			</section>
+			<section class="wake-card">
+				<h2>Source and system work</h2>
+				if repairCount(view)>0 {
+					<ul class="wake-task-list">
+						for _,item:=range repairs(view) {
+							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
+						}
+					</ul>
+				} else {
+					<p>No recorded source or system failures.</p><a href="/connections">Inspect connections</a>
+				}
+				<p class="wake-help">Reachability, acquisition and processing have separate states. Report bounds do not prove complete history.</p>
+				<a href="/activity?view=instruments&state=gaps">Inspect instrument reference gaps</a>
+			</section>
+		</div>
+	}
+	<section class="wake-card">
+		<h2>Synchronization</h2>
+		if len(view.Connections)==0 {
+			<p>No connections configured.</p>
+		} else {
+			<ul class="wake-source-summary">
+				for _,c:=range view.Connections {
+					<li>
+						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a>
+						<span>
+							if c.MissingAccess {
+								@StateBadge("Access review required")
+							} else if connectionFailure(view,c) {
+								@StateBadge("failed")
+							} else if view.Storage.Paused {
+								@StateBadge("paused")
+							} else {
+								for _,work:=range sourceWork(view,c) {
+									<span>{ operationLabel(work.Operation) }: { progressLabel(work.Progress) }</span>
+								}
+							}
+						</span>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ ConnectionsPage(csrf string, view application.Dashboard) {
+	@PageHeader("Connections", "Source access, account authority and synchronization.")
+	@ConnectionsNavigation("sources")
+	if view.Storage.Paused {
+		<section class="wake-card wake-priority"><h2>Upstream work is paused</h2><p>Review restored access before reconnecting to your sources.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
+	}
+	<section id="workflow-progress" class="wake-card">
+		<div class="wake-card-heading"><h2>Sources</h2><a class="btn" href="/connections/new">Add IBKR connection</a></div>
+		if len(view.Connections)==0 {
+			<p>No sources configured. Add a connection to discover accounts.</p>
+		}
+		for _,c:=range view.Connections {
+			<article class="wake-source-row">
+				<div>
+					<h3><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a></h3>
+					if view.Account.Connection()==c.ID {
+						<p>{ view.Account.Details().Name() } · Authorized Confirmation source</p>
+					} else {
+						<p>Account discovery</p>
+					}
+					for _,w:=range sourceWork(view,c) {
+						<p class="wake-help">{ operationLabel(w.Operation) }: { progressLabel(w.Progress) }</p>
+					}
+				</div>
+				<div class="wake-actions">
+					if c.MissingAccess {
+						<a class="btn" href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair source access</a>
+					} else {
+						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Inspect source</a>
+					}
+				</div>
+			</article>
+			if view.Account.ID()=="" {
+				@DiscoveredAccounts(c, view)
+			}
+		}
+	</section>
+}
+
+templ ConnectionsNavigation(view string) {
+	<nav class="wake-tabs" aria-label="Connection views"><a href="/connections" aria-current={ currentPage(view == "sources") }>Sources</a><a href="/connections/reference" aria-current={ currentPage(view == "reference") }>Instrument reference</a><a href="/connections/recovery" aria-current={ currentPage(view == "recovery") }>Recovery</a></nav>
+}
+
+templ ConnectionPage(csrf string, v application.Dashboard, c application.ConnectionView) {
+	@Breadcrumbs("Source")
+	@PageHeader(c.Name, "IBKR Confirmation source")
+	<nav class="wake-tabs" aria-label="Source views">
+		for _,tab:=range []string{"status","reports","access"} {
+			<a href={ templ.SafeURL(connectionURL(c.ID, tab)) } aria-current={ currentPage(activeView(ctx, "status") == tab) }>{ stringTitle(tab) }</a>
+		}
+	</nav>
+	if activeView(ctx,"status")=="access" {
+		@ConnectionAccess(csrf, c)
+	} else if activeView(ctx,"status")=="reports" {
+		@ConnectionReports(csrf, c)
+	} else {
+		<section class="wake-card" id="workflow-progress">
+			<h2>Current source state</h2>
+			if v.Account.Connection()==c.ID {
+				<p>Authorized account: <strong>{ v.Account.Details().Name() }</strong></p>
+			} else {
+				<p>Account confirmation is required before ongoing synchronization.</p>
+			}
+			if v.Storage.Paused {
+				<p class="wake-notice">Upstream work is paused. <a href="/connections/recovery">Review recovery steps</a>.</p>
+			}
+			if c.MissingAccess {
+				<p class="wake-notice">Source access is incomplete. <a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair settings and token</a>.</p>
+			}
+			<dl>
+				for _,w:=range sourceWork(v,c) {
+					<dt>{ operationLabel(w.Operation) }</dt>
+					<dd>
+						@StateBadge(progressLabel(w.Progress))
+						<span class="wake-help wake-cell-note">Next eligible: { known(w.Next) }</span>
+						if w.Failure!="" {
+							<p class="wake-error-text">{ w.Failure }</p>
+						}
+					</dd>
+				}
+			</dl>
+			if connectionFailure(v,c) && !v.Storage.Paused {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry connection</button></form>
+			}
+			<a href={ templ.SafeURL(connectionURL(c.ID, "reports")) }>Inspect processing and recent reports</a>
+		</section>
+		if v.Account.ID()=="" {
+			<section class="wake-card">
+				<h2>Choose your account</h2>@DiscoveredAccounts(c, v)
+			</section>
+		} else {
+			<details class="wake-card">
+				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
+			</details>
+		}
+	}
+}
+
+templ DiscoveredAccounts(c application.ConnectionView, v application.Dashboard) {
+	if len(c.Candidates)==0 {
+		<p>Discovery has not returned any accounts yet.</p>
+	} else {
+		<section class="wake-table-scroll" aria-label="Discovered accounts">
+			<table class="table">
+				<caption>Discovered accounts</caption><thead><tr><th scope="col">Account</th><th scope="col">Name</th><th scope="col">Currency</th><th scope="col">Authority</th></tr></thead>
+				<tbody>
+					for _,candidate:=range c.Candidates {
+						<tr>
+							<td>{ candidate.Candidate.Reference().Value() }</td>
+							<td>{ known(candidate.Candidate.Name()) }</td>
+							<td>{ known(currencyText(candidate.Candidate.Currency())) }</td>
+							<td>
+								if v.Account.ID()=="" {
+									<a href={ templ.SafeURL(confirmURL(c.ID, candidate)) }>Confirm account</a>
+								} else if v.Account.Reference()==candidate.Candidate.Reference()&&v.Account.Connection()==c.ID {
+									Activated
+								} else {
+									Candidate only
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</section>
+	}
+}
+
+templ ConnectionAccess(csrf string, c application.ConnectionView) {
+	<section class="wake-card wake-connection">
+		<h2>{ c.Name }</h2>
+		<details><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
+		<p class="wake-help">Stored settings and token do not establish that the provider is reachable.</p>
+		if c.MissingAccess {
+			<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Save the connection name and Confirmation Query ID, then replace its token.</p>
+		}
+		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }><input type="hidden" name="csrf" value={ csrf }/><p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="name" value={ c.Name } maxlength="256" required/></p><p><label for={ "query-" + c.ID }>Confirmation Query ID</label><input class="input" id={ "query-" + c.ID } name="query_id" value={ c.Query } pattern="[0-9]+" maxlength="64" required/></p><button class="btn" type="submit">Save connection settings and retry</button></form>
+		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/token") }><input type="hidden" name="csrf" value={ csrf }/><p><label for={ "token-" + c.ID }>Replacement token</label><input class="input" id={ "token-" + c.ID } name="token" type="password" autocomplete="new-password" required maxlength="4096"/></p><button class="btn" type="submit">Replace token and retry</button></form>
+	</section>
+}
+
+templ ConnectionSetup(csrf string) {
+	@Breadcrumbs("Add source")
+	@PageHeader("Add IBKR connection", "Discover accounts before granting synchronization authority.")
+	<section class="wake-card"><h2>Connection access</h2><form method="post" action="/connections"><input type="hidden" name="csrf" value={ csrf }/><p><label for="connection-name">Connection name</label><input class="input" id="connection-name" name="name" required maxlength="256"/></p><p><label for="query-id">Confirmation Query ID</label><input class="input" id="query-id" name="query_id" inputmode="numeric" pattern="[0-9]+" required maxlength="64"/></p><p><label for="flex-token">Flex Web Service token</label><input class="input" id="flex-token" name="token" type="password" autocomplete="new-password" required maxlength="4096"/></p><button class="btn btn-primary" type="submit">Create connection and discover accounts</button></form></section>
+}
+
+templ ReferenceSettings(csrf string, view application.Dashboard) {
+	<section class="wake-card" id="reference-setting">
+		<h2>Instrument reference access</h2>
+		<p>OpenFIGI mapping works anonymously. An optional key increases the shared request allowance.</p>
+		if view.ReferenceKey {
+			<p>
+				@StateBadge("Key stored")
+			</p>
+		} else {
+			<p>Anonymous access</p>
+		}
+		if view.ReferenceFailure!="" {
+			<p class="wake-notice">{ view.ReferenceFailure }</p>
+		}
+		<form method="post" action="/reference/key"><input type="hidden" name="csrf" value={ csrf }/><p><label for="openfigi-key">OpenFIGI key (leave empty to select anonymous access)</label><input class="input" id="openfigi-key" name="key" type="password" autocomplete="new-password" maxlength="4096"/></p><button class="btn" type="submit">Save reference setting and retry</button></form>
+	</section>
+}
+
+templ RecoveryPage(csrf string, view application.Dashboard) {
+	@PageHeader("Review recovered access", "Retained financial history stays inspectable while upstream work is paused.")
+	@ConnectionsNavigation("recovery")
+	if !view.Storage.Paused {
+		<section class="wake-card"><h2>Access review complete</h2><p>Upstream work is not paused for storage recovery.</p><a href="/connections">Inspect connections</a></section>
+	} else {
+		<section class="wake-card wake-priority" id="storage-recovery-title">
+			<h2>1. Restore source access</h2>
+			if view.Storage.WarehouseReset {
+				<p id="warehouse-reset-notice">Financial history was reset. Settings and credentials were retained; account discovery and confirmation are required again after resume.</p>
+			}
+			for _,c:=range view.Connections {
+				<p><strong>{ c.Name }</strong> · Settings: { readiness(c.SettingsStored) } · Token: { readiness(c.CredentialStored) }</p>
+			}
+		</section>
+		for _,c:=range view.Connections {
+			if c.MissingAccess {
+				@ConnectionAccess(csrf, c)
+			}
+		}
+		<section class="wake-card">
+			<h2>2. Review reference access</h2>
+			if view.Storage.ReferenceReview {
+				<p id="reference-review-required">Save the OpenFIGI setting, including an explicit anonymous selection if appropriate.</p>
+			} else {
+				<p>Reference access has been reviewed.</p>
+			}
+		</section>
+		if view.Storage.ReferenceReview {
+			@ReferenceSettings(csrf, view)
+		}
+		<section class="wake-card">
+			<h2>3. Resume upstream work</h2>
+			<p>Resume grants permission to contact configured sources. It does not confirm a newly discovered account.</p>
+			if !recoveryReady(view) {
+				<p class="wake-notice">Complete the source and reference steps above before resuming.</p>
+			}
+			<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
+		</section>
+	}
+	<a href="/system/maintenance">Inspect rebuild history and maintenance</a>
+}
+
+templ ConnectionReports(csrf string, c application.ConnectionView) {
+	<section class="wake-card">
+		<h2>Recent reports</h2>
+		<p class="wake-help">Up to 10 recent acquisitions. Requested and returned bounds have distinct meanings; neither proves complete history.</p>
+		if len(c.Processing)==0 {
+			<p>No acquired financial reports yet.</p>
+		}
+		for _,p:=range c.Processing {
+			<article class="wake-report-row">
+				<div class="wake-card-heading">
+					<h3><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Confirmation report</a></h3>
+					if p.Complete {
+						@StateBadge("Processing complete")
+					} else {
+						@StateBadge("Processing pending")
+					}
+				</div>
+				<dl><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.TradeClaims,10) } trades · { strconv.FormatInt(p.LifecycleClaims,10) } option outcomes · { strconv.FormatInt(p.ConversionClaims,10) } conversions</dd></dl>
+				if p.NeedsReview>0 {
+					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Inspect report observations</a>.</p>
+				}
+				if p.Failure!="" {
+					<p class="wake-notice">{ p.Failure }</p>
+					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
+				}
+				<details><summary>Report identity and excluded rows</summary><p>{ p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
+				if p.Failure=="" {
+					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
+				}
+			</article>
+		}
+	</section>
+}
+
+templ MaintenancePage(csrf string, view application.Dashboard) {
+	@PageHeader("Maintenance", "Rebuild derived views from retained evidence and decisions.")
+	@SystemNavigation("maintenance")
+	<section class="wake-card" id="maintenance"><h2>Rebuild accepted views</h2><p>Original evidence and retained decisions stay intact. Rebuild resumes from committed progress after restart.</p><form method="post" action="/recovery/rebuild"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="submission" value={ rand.Text() }/><button class="btn" type="submit">Rebuild accepted views</button></form></section>
+	<section class="wake-card" id="workflow-progress">
+		<h2>Recovery history</h2>
+		if len(view.Recovery)==0 {
+			<p>No rebuilds recorded.</p>
+		}
+		for index,j:=range view.Recovery {
+			<article class="wake-report-row">
+				<h3>
+					Rebuild
+					@StateBadge(j.Status)
+				</h3>
+				<p>{ strconv.FormatInt(j.Completed,10) } / { strconv.FormatInt(j.Total,10) } entities</p>
+				<p class="wake-help">Started { j.Created }</p>
+				if j.Failure!="" {
+					<p class="wake-notice">{ j.Failure }</p>
+				}
+				if index==0 && j.Status=="failed" {
+					<form method="post" action={ templ.SafeURL("/recovery/" + j.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry rebuild</button></form>
+				}
+				<details><summary>Rebuild identity</summary><p>{ j.ID }</p></details>
+			</article>
+		}
+	</section>
+}
+
+templ ActivityPage(view application.Dashboard) {
+	@PageHeader("Activity", "Inspect financial history and resolve questions from retained evidence.")
+	@ActivityNavigation(activeView(ctx, "all"))
+	if view.Account.ID()=="" {
+		<section class="wake-card"><h2>Confirm an account to begin</h2><a class="btn btn-primary" href="/connections">Review source setup</a></section>
+	}
+	if activeView(ctx,"all")=="review" {
+		@ReviewQueue(view)
+	} else if activeView(ctx,"all")=="instruments" {
+		@InstrumentsView(view)
+	} else {
+		@ActivityRows(view)
+	}
+}
+
+templ ReviewQueue(view application.Dashboard) {
+	<section class="wake-card">
+		<h2>Needs review</h2>
+		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
+		if len(reviews(view))==0 {
+			<p>No activity or identity conflicts are awaiting review.</p>
+		} else {
+			<ul class="wake-task-list">
+				for _,r:=range reviews(view) {
+					<li><div><span class="wake-help">{ r.Kind }</span><h3><a href={ templ.SafeURL(navURL(ctx, r.Href)) }>{ r.Label }</a></h3><p>{ r.Reason }</p></div><a class="btn" href={ templ.SafeURL(navURL(ctx, r.Href)) }>Review</a></li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ ActivityRows(view application.Dashboard) {
+	<section class="wake-card" id="activity-rows">
+		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div><span class="wake-help" role="status">{ resultCount(len(filteredActivity(ctx,view)),len(activityItems(view))) }</span></div>
+		@ListFilters(false)
+		<section class="wake-grid" id="activity-grid" data-grid="activity" aria-label="Financial activity">
+			<section class="wake-table-scroll" aria-label="Financial activity table">
+				<table class="table">
+					<caption>Recorded financial activity</caption><thead><tr><th scope="col" data-field="label">Activity</th><th scope="col" data-field="date">Date</th><th scope="col" data-field="quantity" data-sort="decimal">Quantity / currency roles</th><th scope="col" data-field="price" data-sort="decimal">Price / rate</th><th scope="col" data-field="state">Activity state</th><th scope="col" data-field="reference">Reference identity</th></tr></thead>
+					<tbody>
+						for _,r:=range filteredActivity(ctx,view) {
+							<tr id={ "activity-" + r.ID }>
+								<td><a href={ templ.SafeURL(navURL(ctx, r.Href)) } data-record={ r.ID }>{ r.Label }</a><span class="wake-help wake-cell-note">{ stringTitle(r.Kind) }</span></td>
+								<td>{ r.Date }</td>
+								<td data-sort-value={ r.Quantity }>{ r.Quantity }</td>
+								<td data-sort-value={ r.Price + " " + r.Basis }>{ r.Price }<span class="wake-help wake-cell-note">{ r.Basis }</span></td>
+								<td>
+									@StateBadge(r.State)
+								</td>
+								<td>
+									if r.InstrumentID!="" {
+										<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+r.InstrumentID)) }>{ r.Reference }</a>
+									} else {
+										Not applicable
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		</section>
+		if len(filteredActivity(ctx,view))==0 {
+			<p>No activity matches these filters.</p>
+		}
+	</section>
+}
+
+templ InstrumentsView(view application.Dashboard) {
+	<section class="wake-card">
+		<div class="wake-card-heading"><h2>Instruments</h2><span class="wake-help" role="status">{ resultCount(len(filteredInstruments(ctx,view)),len(view.Instruments)) }</span></div>
+		@ListFilters(true)
+		<section class="wake-grid" id="instruments-grid" data-grid="instruments" aria-label="Instruments">
+			<section class="wake-table-scroll" aria-label="Instrument table">
+				<table class="table">
+					<caption>Financial instruments</caption><thead><tr><th scope="col" data-field="name">Instrument</th><th scope="col" data-field="kind">Kind</th><th scope="col" data-field="ticker">Reported symbol</th><th scope="col" data-field="state">Reference identity</th></tr></thead>
+					<tbody>
+						for _,i:=range filteredInstruments(ctx,view) {
+							<tr id={ "instrument-" + i.ID() }>
+								<td><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+i.ID())) } data-record={ i.ID() }>{ known(i.Name()) }</a></td>
+								<td>{ i.Kind() }</td>
+								<td>{ known(i.Ticker()) }</td>
+								<td>
+									@StateBadge(i.Status())
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		</section>
+		if len(filteredInstruments(ctx,view))==0 {
+			<p>No instruments match these filters.</p>
+		}
+	</section>
+}
+
+templ ListFilters(instruments bool) {
+	<form class="wake-filters" method="get" action="/activity" hx-get="/activity" hx-target="#workspace-content" hx-select="#workspace-content" hx-swap="morph:outerHTML" hx-trigger="submit, change" data-list-filters>
+		if instruments {
+			<input type="hidden" name="view" value="instruments"/>
+		}
+		<input type="hidden" name="sort" value={ page(ctx).Query.Get("sort") }/>
+		<input type="hidden" name="dir" value={ page(ctx).Query.Get("dir") }/>
+		<p><label for="activity-search">Search</label><input class="input" id="activity-search" name="q" type="search" value={ page(ctx).Query.Get("q") } placeholder="Instrument, date or value"/></p>
+		<p>
+			<label for="activity-kind">Kind</label>
+			<select class="select" id="activity-kind" name="kind">
+				<option value="">All kinds</option>
+				if instruments {
+					for _,v:=range []string{"equity","fund","option","debt"} {
+						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ stringTitle(v) }</option>
+					}
+				} else {
+					for _,v:=range []string{"trade","option outcome","conversion"} {
+						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ stringTitle(v) }</option>
+					}
+				}
+			</select>
+		</p>
+		<p>
+			<label for="activity-state">State</label>
+			<select class="select" id="activity-state" name="state">
+				<option value="">All states</option>
+				if instruments {
+					for _,v:=range []string{"resolved","review","gaps"} {
+						<option value={ v } selected?={ page(ctx).Query.Get("state")==v }>{ stringTitle(v) }</option>
+					}
+				} else {
+					for _,v:=range []string{"accepted","needs review","cancelled","superseded"} {
+						<option value={ v } selected?={ page(ctx).Query.Get("state")==v }>{ stringTitle(v) }</option>
+					}
+				}
+			</select>
+		</p>
+		<button class="btn" type="submit">Apply filters</button><a href={ templ.SafeURL(resetListURL(instruments)) }>Reset filters</a>
+	</form>
+}
+
+templ ReferencePage(csrf string, view application.Dashboard) {
+	@PageHeader("Instrument reference", "OpenFIGI access is separate from your financial source.")
+	@ConnectionsNavigation("reference")
+	@ReferenceSettings(csrf, view)
+}
+
+templ SystemNavigation(view string) {
+	<nav class="wake-tabs" aria-label="System views"><a href="/status" aria-current={ currentPage(view == "status") }>Status</a><a href="/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a><a href="/system/maintenance" aria-current={ currentPage(view == "maintenance") }>Maintenance</a></nav>
+}

@@ -127,7 +127,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		http.StatusSeeOther,
 	)
 	cookie = login.Result().Cookies()[0]
-	page := request(http.MethodGet, "/connections", nil, http.StatusOK).Body.String()
+	page := request(http.MethodGet, "/connections/new", nil, http.StatusOK).Body.String()
 
 	_, rest, found := strings.Cut(page, `name="csrf" value="`)
 	if !found {
@@ -222,7 +222,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(view, err)
 	}
 
-	for _, path = range []string{"/connections", "/workflow/progress", "/activity", "/activity/rows", "/executions/" + view.Executions[0].ID(), "/instruments/" + view.Instruments[0].ID(), "/evidence/" + candidate.Artifact} {
+	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/executions/" + view.Executions[0].ID(), "/instruments/" + view.Instruments[0].ID(), "/evidence/" + candidate.Artifact} {
 		request(http.MethodGet, path, nil, http.StatusOK)
 	}
 
@@ -236,7 +236,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, path = range []string{"/connections", "/workflow/progress", "/activity", "/activity/rows", "/connections/" + id + "/confirm"} {
+	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/connections/" + id + "/confirm"} {
 		request(http.MethodGet, path, nil, http.StatusServiceUnavailable)
 	}
 }

@@ -1,0 +1,62 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import "go.trippwill.dev/wake/internal/application"
+
+templ CorrectionEditor(f application.CorrectionForm, field string) {
+	@CorrectionControl(f, field, correctionSpec(f, field), correctionEditValue(f, field))
+}
+
+templ CorrectionControl(f application.CorrectionForm, field string, c correctionControl, value application.CorrectionValue) {
+	<section data-decision-editor data-control={ c.Kind } data-optional={ boolText(!c.Required) }>
+		<p id="decision-current" class="wake-current-value"><span class="wake-help">Currently accepted</span><br/><span data-current-value>{ comparisonText(f.Values[field]) }</span></p>
+		if c.Kind=="link" {
+			<p data-link-search hidden><label for="decision-link-search">Find a retained record</label><input class="input" id="decision-link-search" type="search" autocomplete="off" placeholder="Name, symbol or reference"/></p>
+		}
+		<div class="wake-correction-value">
+			<p>
+				<label for="decision-value">{ c.Label }</label>
+				if c.Kind=="link" || c.Kind=="choice" {
+					<select class="select" id="decision-value" name="value" required?={ c.Required } size={ choiceSize(c.Kind) } aria-describedby="decision-help decision-feedback">
+						<option value="" selected?={ value.Value=="" }>
+							if c.Required {
+								{ "Choose " + c.Label }
+							} else if c.Kind=="link" {
+								{ "No linked " + c.Label }
+							} else {
+								Unknown
+							}
+						</option>
+						for _,choice:=range c.Choices {
+							<option value={ choice.Value } selected?={ value.Value==choice.Value }>{ choice.Label }</option>
+						}
+						if value.Value!="" && !correctionHasChoice(c,value.Value) {
+							<option value={ value.Value } selected>Unavailable value: { value.Value }</option>
+						}
+					</select>
+				} else {
+					<input class="input" id="decision-value" name="value" type={ correctionInputType(c, value.Value) } value={ value.Value } required?={ c.Required } maxlength={ limitText(c.Limit) } pattern={ c.Pattern } inputmode={ correctionInputMode(c.Kind) } aria-describedby="decision-help decision-feedback"/>
+				}
+				if c.Unit!="" {
+					<span class="wake-help">{ c.Unit }</span>
+				}
+			</p>
+			if c.Monetary {
+				<p data-currency-field><label for="decision-currency">Currency</label><input class="input" id="decision-currency" name="currency" value={ value.Currency } maxlength="3" pattern="[A-Z]{3}" required?={ c.Required } list="decision-currencies" aria-describedby="decision-help decision-feedback"/><datalist id="decision-currencies"><option value="USD"></option><option value="EUR"></option><option value="GBP"></option><option value="JPY"></option><option value="CHF"></option><option value="CAD"></option><option value="AUD"></option></datalist></p>
+			}
+		</div>
+		if c.Kind=="timestamp" {
+			<div class="wake-timestamp" data-timestamp-fields hidden>
+				<p><label for="decision-date">Date</label><input class="input" id="decision-date" type="date" min="0001-01-01" max="9999-12-31"/></p>
+				<p><label for="decision-time">Time</label><input class="input" id="decision-time" type="text" placeholder="13:30:00.120" pattern={ correctionTimePattern }/></p>
+				<p><label for="decision-zone">UTC offset</label><input class="input" id="decision-zone" type="text" placeholder="Z or +01:00" pattern={ correctionZonePattern }/></p>
+			</div>
+		}
+		if c.Kind=="link" {
+			<p class="wake-help" data-link-selection aria-live="polite"></p>
+		}
+		<p id="decision-help" class="wake-help">{ c.Hint }</p>
+	</section>
+}

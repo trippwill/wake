@@ -8,82 +8,95 @@ templ Shell(title string, csrf string, content templ.Component) {
 }
 
 templ SectionShell(title string, csrf string, section string, content templ.Component) {
-	<!DOCTYPE html>
-	<html lang="en" data-theme="wake-light">
-		<head>
-			<meta charset="utf-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<meta name="wake-csrf-token" content={ csrf }/>
-			<title>{ title } · Wake</title>
-			<meta name="theme-color" content="#b0b6bc"/>
-			<script src="/assets/theme.js"></script>
-			<link rel="icon" href="/assets/brand/favicon.ico" sizes="16x16 32x32 48x48"/>
-			<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml" sizes="any"/>
-			<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" sizes="180x180"/>
-			<link rel="stylesheet" href="/assets/vendor/daisyui-5.5.14/daisyui.css"/>
-			<link rel="stylesheet" href="/assets/app.css"/>
-			<script defer src="/assets/app.js"></script>
-		</head>
-		<body data-live-state="connected">
-			<a class="wake-skip" href="#main-content">Skip to content</a>
-			<div class="wake-app">
-				<aside class="wake-sidebar" data-navigation>
-					<div class="wake-brand-row">
-						<a class="wake-brand" href="/">
-							<img class="wake-logo-light" src="/assets/brand/wake-logo.svg" width="143" height="45" alt="Wake"/>
-							<img class="wake-logo-dark" src="/assets/brand/wake-logo-reversed.svg" width="143" height="45" alt="Wake"/>
-							<span>Financial evidence</span>
-						</a>
-						if csrf!="" {
-							<button class="btn btn-sm wake-menu-toggle" type="button" aria-expanded="true" aria-controls="main-navigation" hidden>Menu</button>
-						}
-					</div>
-					if csrf!="" {
-						<nav aria-label="Main navigation" class="wake-nav" id="main-navigation">
-							<ul class="menu">
-								<li class="menu-title">Workspace</li>
-								<li>
-									@SidebarLink("Overview", "/", "overview", section == "Overview")
-								</li>
-								<li>
-									@SidebarLink("Connections", "/connections", "configuration", section == "Connections")
-								</li>
-								<li>
-									@SidebarLink("Activity", "/activity", "overview", section == "Activity")
-								</li>
-								<li>
-									@SidebarLink("Daemon status", "/status", "overview", section == "Daemon status")
-								</li>
-								<li class="menu-title">Settings</li>
-								<li>
-									@SidebarLink("Configuration", "/configuration", "configuration", section == "Configuration")
-								</li>
-							</ul>
-						</nav>
-					}
-				</aside>
-				<div class="wake-workspace">
-					<header
-						class="wake-toolbar"
-					>
-						if csrf!="" {
-							<div class="wake-contact">
-								<span class="wake-contact-indicator" aria-hidden="true"></span>
-								<div class="wake-contact-details">
-									<button class="wake-contact-trigger" type="button" aria-describedby="status-contact-detail"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></button>
-									<span id="status-contact-detail" class="wake-contact-tooltip" role="tooltip">Administrative shell is available. Reload to check current status.</span>
-								</div>
-							</div>
-						}
-						<div class="wake-toolbar-preferences">
-							@ThemeControl()
+	if page(ctx).Fragment {
+		@WorkspaceContent(csrf, content)
+	} else {
+		<!DOCTYPE html>
+		<html lang="en" data-theme="wake-light">
+			<head>
+				<meta charset="utf-8"/>
+				<meta name="viewport" content="width=device-width, initial-scale=1"/>
+				<meta name="wake-csrf-token" content={ csrf }/>
+				<title>{ title } · Wake</title>
+				<meta name="htmx-config" content={ `{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true,"historyCacheSize":0,"timeout":8000}` }/>
+				<meta name="theme-color" content="#b0b6bc"/>
+				<script src="/assets/theme.js"></script>
+				<link rel="icon" href="/assets/brand/favicon.ico" sizes="16x16 32x32 48x48"/>
+				<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml" sizes="any"/>
+				<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" sizes="180x180"/>
+				<link rel="stylesheet" href="/assets/vendor/daisyui-5.5.14/daisyui.css"/>
+				<link rel="stylesheet" href="/assets/vendor/tabulator-6.3.1/tabulator.min.css"/>
+				<link rel="stylesheet" href="/assets/app.css"/>
+				<script defer src="/assets/vendor/htmx-2.0.11/htmx.min.js"></script>
+				<script defer src="/assets/vendor/htmx-sse-2.2.4/sse.min.js"></script>
+				<script defer src="/assets/vendor/idiomorph-0.7.4/idiomorph-ext.min.js"></script>
+				<script defer src="/assets/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+				<script defer src="/assets/app.js"></script>
+			</head>
+			<body data-live-state="connected" hx-ext="sse,morph" { streamAttributes(csrf)... } hx-history="false">
+				<a class="wake-skip" href="#main-content">Skip to content</a>
+				<div class="wake-app">
+					<aside class="wake-sidebar" data-navigation>
+						<div class="wake-brand-row">
+							<a class="wake-brand" href="/">
+								<img class="wake-logo-light" src="/assets/brand/wake-logo.svg" width="143" height="45" alt="Wake"/>
+								<img class="wake-logo-dark" src="/assets/brand/wake-logo-reversed.svg" width="143" height="45" alt="Wake"/>
+								<span>Financial evidence</span>
+							</a>
+							if csrf!="" {
+								<button class="btn btn-sm wake-menu-toggle" type="button" aria-expanded="true" aria-controls="main-navigation" hidden>Menu</button>
+							}
 						</div>
-					</header>
-					<main class="wake-main" id="main-content" tabindex="-1">
-						@content
-					</main>
+						if csrf!="" {
+							<nav aria-label="Main navigation" class="wake-nav" id="main-navigation">
+								<ul class="menu">
+									<li class="menu-title">Workspace</li>
+									<li>
+										@SidebarLink("Overview", "/", "overview", section == "Overview")
+									</li>
+									<li>
+										@SidebarLink("Activity", "/activity", "overview", section == "Activity")
+									</li>
+									<li>
+										@SidebarLink("Connections", "/connections", "configuration", section == "Connections")
+									</li>
+									<li class="menu-title">Administration</li>
+									<li>
+										@SidebarLink("System", "/status", "configuration", section == "System" || section == "Daemon status" || section == "Configuration")
+									</li>
+								</ul>
+							</nav>
+						}
+					</aside>
+					<div class="wake-workspace">
+						<header
+							class="wake-toolbar"
+						>
+							if csrf!="" {
+								<div class="wake-contact">
+									<span class="wake-contact-indicator" aria-hidden="true"></span>
+									<div class="wake-contact-details">
+										<button class="wake-contact-trigger" type="button" aria-describedby="status-contact-detail"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></button>
+										<span id="status-contact-detail" class="wake-contact-tooltip" role="tooltip">Authenticated contact is available. Financial freshness is shown in page content.</span>
+									</div>
+								</div>
+							}
+							<div class="wake-toolbar-preferences">
+								@ThemeControl()
+							</div>
+						</header>
+						<main class="wake-main" id="main-content" tabindex="-1">
+							@WorkspaceContent(csrf, content)
+						</main>
+					</div>
 				</div>
-			</div>
-		</body>
-	</html>
+			</body>
+		</html>
+	}
+}
+
+templ WorkspaceContent(csrf string, content templ.Component) {
+	<div id="workspace-content" { workspaceAttributes(ctx,csrf)... }>
+		@content
+	</div>
 }

@@ -8,12 +8,12 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/source"
-	"net/url"
 	"strconv"
 )
 
 func known(text string) string {
 	if text == "" {
+
 		return "Unknown"
 	}
 	return text
@@ -21,6 +21,7 @@ func known(text string) string {
 
 func operationLabel(operation string) string {
 	if operation == "discover" {
+
 		return "Account discovery"
 	}
 	return "Confirmation synchronization"
@@ -43,6 +44,7 @@ func progressLabel(code string) string {
 		return "Waiting to retry source work"
 	}
 }
+
 func currencyText(c financial.Currency) string {
 	if c == (financial.Currency{}) {
 		return ""
@@ -51,339 +53,151 @@ func currencyText(c financial.Currency) string {
 }
 func instrumentLabel(view application.Dashboard, id string) string {
 	for _, i := range view.Instruments {
+
 		if i.ID() == id {
-			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + i.Status()
+
+			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + i.Status()
 		}
 	}
+
 	return id
 }
 
-templ WorkflowError(message string) {
-	<h1>Unable to save</h1>
-	<p role="alert">{ message }</p>
-	<p><a href="/connections">Return to connections</a></p>
-}
-
-templ ConnectionsPage(csrf string, view application.Dashboard) {
-	<h1>Connections</h1>
-	<p>Create an IBKR connection to discover accounts. Confirm one account before automatic synchronization starts.</p>
-	<section id="workflow-progress" data-refresh="/workflow/progress" aria-live="polite">
-		@WorkflowProgress(view)
-	</section>
-	if view.Storage.Paused {
-		<section aria-labelledby="storage-recovery-title">
-			<h2 id="storage-recovery-title">Review recovered access</h2>
-			if view.Storage.WarehouseReset {
-				<p id="warehouse-reset-notice">Financial history was reset. Connection settings and credentials were retained. Resume to discover accounts again, then confirm one account before synchronization starts.</p>
-			} else {
-				<p>Upstream synchronization and reference lookups are paused after storage recovery. Retained history remains available. Review each connection, repair missing settings and tokens, then resume.</p>
-			}
-			if view.Storage.ReferenceReview {
-				<p id="reference-review-required" role="status">Save the OpenFIGI setting below, including an explicit anonymous selection if appropriate.</p>
-			}
-			<form method="post" action="/recovery/resume">
-				<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/>
-				<button class="btn" type="submit">Resume upstream work</button>
-			</form>
-		</section>
-	}
-	<section aria-labelledby="recovery-title">
-		<h2 id="recovery-title">Processing recovery</h2>
-		<p>Retry a retained report without downloading it again, or rebuild accepted views from retained evidence and decisions. Rebuild resumes from committed progress after restart.</p>
-		<form method="post" action="/recovery/rebuild">
-			<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="submission" value={ rand.Text() }/>
-			<button class="btn" type="submit">Rebuild accepted views</button>
-		</form>
-		for _,connection:=range view.Connections {
-			for _,p:=range connection.Processing {
-				<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }>
-					<input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report { p.Artifact }</button>
-				</form>
-			}
-		}
-		for _,job:=range view.Recovery {
-			if job.Status=="failed" {
-				<form method="post" action={ templ.SafeURL("/recovery/" + job.ID + "/retry") }>
-					<input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry rebuild { job.ID }</button>
-				</form>
-			}
-		}
-	</section>
-	<section aria-labelledby="new-connection-title">
-		<h2 id="new-connection-title">Add IBKR connection</h2>
-		<form method="post" action="/connections">
-			<input type="hidden" name="csrf" value={ csrf }/>
-			<p><label for="connection-name">Connection name</label><input class="input" id="connection-name" name="name" required maxlength="256"/></p>
-			<p><label for="query-id">Confirmation Query ID</label><input class="input" id="query-id" name="query_id" inputmode="numeric" pattern="[0-9]+" required maxlength="64"/></p>
-			<p><label for="flex-token">Flex Web Service token</label><input class="input" id="flex-token" name="token" type="password" autocomplete="new-password" required maxlength="4096"/></p>
-			<button class="btn" type="submit">Create connection and discover accounts</button>
-		</form>
-	</section>
-	for _,connection:=range view.Connections {
-		<section aria-label={ "Repair " + connection.Name }>
-			<h2>{ connection.Name }</h2>
-			if connection.MissingAccess {
-				<p id={ "access-missing-" + connection.ID } role="status">Access configuration is missing or incomplete. Save the connection name and Confirmation Query ID, then replace its token.</p>
-			}
-			<form method="post" action={ templ.SafeURL("/connections/" + connection.ID + "/settings") }>
-				<input type="hidden" name="csrf" value={ csrf }/>
-				<p><label for={ "name-" + connection.ID }>Connection name</label><input class="input" id={ "name-" + connection.ID } name="name" value={ connection.Name } maxlength="256" required/></p>
-				<p><label for={ "query-" + connection.ID }>Confirmation Query ID</label><input class="input" id={ "query-" + connection.ID } name="query_id" value={ connection.Query } pattern="[0-9]+" maxlength="64" required/></p>
-				<button class="btn" type="submit">Save connection settings and retry</button>
-			</form>
-			<form method="post" action={ templ.SafeURL("/connections/" + connection.ID + "/token") }>
-				<input type="hidden" name="csrf" value={ csrf }/>
-				<label for={ "token-" + connection.ID }>Replacement token</label><input class="input" id={ "token-" + connection.ID } type="password" name="token" autocomplete="new-password" required maxlength="4096"/>
-				<button class="btn" type="submit">Replace token and retry</button>
-			</form>
-			<form method="post" action={ templ.SafeURL("/connections/" + connection.ID + "/retry") }>
-				<input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry connection</button>
-			</form>
-		</section>
-	}
-	<section aria-labelledby="reference-title">
-		<h2 id="reference-title">Instrument reference</h2>
-		<p>OpenFIGI mapping works anonymously. An optional key increases the shared request allowance.</p>
-		<form method="post" action="/reference/key">
-			<input type="hidden" name="csrf" value={ csrf }/>
-			<label for="openfigi-key">OpenFIGI key (leave empty to select anonymous access)</label><input class="input" id="openfigi-key" type="password" name="key" autocomplete="new-password" maxlength="4096"/>
-			<button class="btn" type="submit">Save reference setting and retry</button>
+templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
+	@Breadcrumbs("Confirm account")
+	@PageHeader("Confirm account", "Review the discovered account before granting automatic synchronization.")
+	<p>Source account { candidate.Candidate.Reference().Value() }. Confirmation activates this account and starts automatic Confirmation synchronization. Missing profile fields remain unknown.</p>
+	<section class="wake-card">
+		<h2>Account authority</h2>
+		<form method="post" action={ templ.SafeURL("/connections/" + id + "/confirm") }>
+			<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="artifact" value={ candidate.Artifact }/>
+			<input type="hidden" name="authority" value={ candidate.Candidate.Reference().Authority() }/><input type="hidden" name="kind" value={ candidate.Candidate.Reference().Kind() }/><input type="hidden" name="scope" value={ candidate.Candidate.Reference().Scope() }/><input type="hidden" name="account" value={ candidate.Candidate.Reference().Value() }/>
+			<p><label for="account-name">Account display name</label><input class="input" id="account-name" name="name" value={ candidate.Candidate.Name() } required maxlength="256"/></p>
+			<p><label for="account-currency">Account currency (optional)</label><input class="input" id="account-currency" name="currency" value={ currencyText(candidate.Candidate.Currency()) } pattern="[A-Z]{3}" maxlength="3"/></p>
+			<button class="btn btn-primary" type="submit">Confirm and start synchronization</button>
 		</form>
 	</section>
 }
 
-templ WorkflowProgress(view application.Dashboard) {
-	if view.Storage.Paused {
-		<p role="status">Upstream work is paused after storage recovery. <a href="/connections#storage-recovery-title">Review access and resume</a></p>
-	}
-	<h2>Recovery progress</h2>
-	for _,job:=range view.Recovery {
-		<p>Rebuild { job.ID }: { job.Status } · { strconv.FormatInt(job.Completed,10) } / { strconv.FormatInt(job.Total,10) } entities · Started { job.Created }</p>
-		if job.Failure!="" {
-			<p role="status">{ job.Failure } <a href={ templ.SafeURL("/connections?recovery=" + job.ID + "#recovery-title") }>Reload recovery controls</a></p>
+templ ExecutionPage(d application.ExecutionDetail) {
+	@Breadcrumbs("Activity detail")
+	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String())
+	<section class="wake-card">
+		<div class="wake-card-heading">
+			<h2>Financial summary</h2>
+			<div class="wake-actions">
+				@StateBadge(d.Execution.Status())
+				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Execution.ID()+"/correct")) }>Correct accepted data</a>
+			</div>
+		</div>
+		<dl><dt>Side</dt><dd>{ string(d.Execution.Terms().Fields().Side) }</dd><dt>{ "Quantity ("+d.Execution.Terms().QuantityUnit()+")" }</dt><dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd><dt>{ "Price ("+d.Execution.Terms().PriceBasis()+")" }</dt><dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd><dt>Trade date</dt><dd>{ d.Execution.Terms().Fields().TradeDate.String() }</dd><dt>Execution time (reported precision)</dt><dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd></dl>
+		<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Execution.Instrument())) }>Inspect instrument</a>
+	</section>
+	<section class="wake-card">
+		<h2>Monetary terms</h2>
+		<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd></dl>
+		<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+		if len(d.Execution.Terms().Fields().Charges)>0 {
+			<section class="wake-table-scroll" aria-label="Attached charges">
+				<table class="table">
+					<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Qualification</th><th scope="col">Amount</th></tr></thead>
+					<tbody>
+						for _,c:=range d.Execution.Terms().Fields().Charges {
+							<tr><td>{ c.Field() }</td><td>{ c.Scope() }</td><td>{ moneyText(c.Money()) }</td></tr>
+						}
+					</tbody>
+				</table>
+			</section>
 		}
+	</section>
+	if !d.Execution.Terms().Fields().Instrument.Option().IsZero() || !d.Execution.Terms().Fields().Instrument.Debt().IsZero() {
+		<section class="wake-card">
+			<h2>Contract terms</h2>@OptionFacts(d.Execution.Terms().Fields().Instrument.Option())
+			@DebtFacts(d.Execution.Terms().Fields().Instrument.Debt())
+		</section>
 	}
-	<h2>Synchronization progress</h2>
-	<p>Returned report bounds do not establish complete history. Unavailable history remains pending for automatic retry.</p>
-	if view.Account.ID()!="" {
-		<p>Activated account: <strong>{ view.Account.Details().Name() }</strong> · Currency: { known(view.Account.Details().Currency()) }</p>
-	}
-	if len(view.Connections)==0 {
-		<p>No connections configured.</p>
-	}
-	for _,connection:=range view.Connections {
-		<h3>{ connection.Name }</h3>
-		for _,work:=range connection.Work {
-			<p>{ operationLabel(work.Operation) }: { progressLabel(work.Progress) } · Next eligible: { known(work.Next) }</p>
-			if work.Failure!="" {
-				<p role="status">{ work.Failure }. Check the Confirmation query and token, then retry this connection.</p>
-			}
-		}
-		if len(connection.Candidates)>0 {
-			<table class="table">
-				<caption>Discovered accounts</caption><thead><tr><th scope="col">Source account</th><th scope="col">Reported name</th><th scope="col">Account currency</th><th scope="col">Action</th></tr></thead>
-				<tbody>
-					for _,candidate:=range connection.Candidates {
-						<tr>
-							<td>{ candidate.Candidate.Reference().Value() }</td>
-							<td>{ known(candidate.Candidate.Name()) }</td>
-							<td>{ known(currencyText(candidate.Candidate.Currency())) }</td>
-							<td>
-								if view.Account.ID()=="" {
-									<a href={ templ.SafeURL("/connections/" + connection.ID + "/confirm?artifact=" + url.QueryEscape(candidate.Artifact) + "&account=" + url.QueryEscape(candidate.Candidate.Reference().Value())) }>Confirm account</a>
-								} else if view.Account.Reference()==candidate.Candidate.Reference()&&view.Account.Connection()==connection.ID {
-									Activated
-								} else {
-									Candidate only
-								}
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		}
-		for _,processing:=range connection.Processing {
+	<details class="wake-card">
+		<summary>Relationships and source context</summary>@RelationshipLinks(d.Relationships)
+		<dl><dt>Reported order membership</dt><dd>{ referenceText(d.Execution.Terms().Fields().Order) }</dd><dt>Opening/closing</dt><dd>{ known(string(d.Execution.Terms().Fields().PositionEffect)) }</dd><dt>Source event</dt><dd>{ referenceText(d.Execution.Terms().Fields().Event) }</dd><dt>Wake execution identity</dt><dd>{ d.Execution.ID() }</dd></dl>
+	</details>
+	<section class="wake-card">
+		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
+		<details>
+			<summary>Retained observations and acceptance rules</summary>@ObservationHistory(d.Observations)
+		</details>
+	</section>
+}
+
+templ InstrumentPage(d application.InstrumentDetail) {
+	@Breadcrumbs("Instrument")
+	@PageHeader(known(d.Instrument.Name()), d.Instrument.Kind()+" · "+known(d.Instrument.Ticker()))
+	<section class="wake-card">
+		<div class="wake-card-heading">
+			<h2>Instrument identity</h2>
+			<div class="wake-actions">
+				@StateBadge(d.Instrument.Status())
+				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Instrument.ID()+"/correct")) }>Correct instrument data</a>
+			</div>
+		</div>
+		<dl><dt>Reference FIGI</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd></dl>
+		if d.Instrument.Kind()=="option" {
 			<p>
-				Report <a href={ templ.SafeURL("/evidence/" + processing.Artifact) }>{ processing.Artifact }</a>:
-				if processing.Complete {
-					Processing complete
+				Underlier:
+				if d.Underlier!="" {
+					<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Underlier)) }>Inspect linked underlier</a>
 				} else {
-					Processing pending
-				}
-				<span>· { strconv.FormatInt(processing.TradeClaims,10) } source trade claims · { strconv.FormatInt(processing.LifecycleClaims,10) } option outcomes · { strconv.FormatInt(processing.ConversionClaims,10) } conversions · { strconv.FormatInt(processing.ExcludedRows,10) } excluded rows · { strconv.FormatInt(processing.NeedsReview,10) } claims need identity review</span>
-				<span>· Requested: { known(processing.RequestedFrom) } to { known(processing.RequestedTo) } · Returned: { known(processing.ReportedFrom) } to { known(processing.ReportedTo) }</span>
-				if processing.Failure!="" {
-					· { processing.Failure }
+					Unknown
 				}
 			</p>
 		}
-	}
-	if view.ReferenceKey {
-		<p>OpenFIGI: configured key.</p>
-	} else {
-		<p>OpenFIGI: anonymous access.</p>
-	}
-	if view.ReferenceFailure!="" {
-		<p role="status">{ view.ReferenceFailure }</p>
-	}
-}
-
-templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
-	<h1>Confirm account</h1>
-	<p>Source account { candidate.Candidate.Reference().Value() }. Confirmation activates this account and starts automatic Confirmation synchronization. Missing profile fields remain unknown.</p>
-	<form method="post" action={ templ.SafeURL("/connections/" + id + "/confirm") }>
-		<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="artifact" value={ candidate.Artifact }/>
-		<input type="hidden" name="authority" value={ candidate.Candidate.Reference().Authority() }/><input type="hidden" name="kind" value={ candidate.Candidate.Reference().Kind() }/><input type="hidden" name="scope" value={ candidate.Candidate.Reference().Scope() }/><input type="hidden" name="account" value={ candidate.Candidate.Reference().Value() }/>
-		<p><label for="account-name">Account display name</label><input class="input" id="account-name" name="name" value={ candidate.Candidate.Name() } required maxlength="256"/></p>
-		<p><label for="account-currency">Account currency (optional)</label><input class="input" id="account-currency" name="currency" value={ currencyText(candidate.Candidate.Currency()) } pattern="[A-Z]{3}" maxlength="3"/></p>
-		<button class="btn" type="submit">Confirm and start synchronization</button>
-	</form>
-}
-
-templ Coverage() {
-	<p>Processing coverage: equity, ETF and option executions, reported option outcomes and stock bookings, plus debt executions. Reported FX conversions retain explicit currency roles. Summaries remain in original evidence.</p>
-}
-
-templ ActivityPage(view application.Dashboard) {
-	<h1>Activity</h1>@Coverage()
-	<section id="activity-rows" data-refresh="/activity/rows" aria-live="polite">
-		@ActivityRows(view)
 	</section>
-}
-
-templ ActivityRows(view application.Dashboard) {
-	@CorrectionReviews(view.Corrections)
-	if view.Account.ID()=="" {
-		<p><a href="/connections">Connect and confirm an account</a> to start synchronization.</p>
-	} else {
-		<p>Account: { view.Account.Details().Name() }</p>
+	if !d.Instrument.Reported().Option().IsZero() || !d.Instrument.Reported().Debt().IsZero() {
+		<section class="wake-card">
+			<h2>Contract terms</h2>@OptionFacts(d.Instrument.Reported().Option())
+			@DebtFacts(d.Instrument.Reported().Debt())
+		</section>
 	}
-	if len(view.Executions)==0 {
-		<p>No accepted executions yet.</p>
+	if len(d.Listings)>0 {
+		<section class="wake-card">
+			<h2>Listings</h2>
+			<section class="wake-table-scroll" aria-label="Listings">
+				<table class="table">
+					<caption>Instrument listings</caption><thead><tr><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">Reference FIGI</th></tr></thead>
+					<tbody>
+						for _,l:=range d.Listings {
+							<tr><td>{ known(l.Venue()) }</td><td>{ known(l.Ticker()) }</td><td>{ l.Currency() }</td><td>{ known(l.FIGI()) }</td></tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		</section>
 	}
-	<table class="table">
-		<caption>Security executions</caption><thead><tr><th scope="col">Trade date</th><th scope="col">Instrument</th><th scope="col">Side</th><th scope="col">Quantity</th><th scope="col">Price</th><th scope="col">Status</th></tr></thead>
-		<tbody>
-			for _,execution:=range view.Executions {
-				<tr><td><a href={ templ.SafeURL("/executions/" + execution.ID()) }>{ execution.Terms().Fields().TradeDate.String() }</a></td><td><a href={ templ.SafeURL("/instruments/" + execution.Instrument()) }>{ instrumentLabel(view,execution.Instrument()) }</a></td><td>{ string(execution.Terms().Fields().Side) }</td><td>{ execution.Terms().Fields().Quantity.Value() }</td><td>{ execution.Terms().Fields().Price.Amount() } { execution.Terms().Fields().Price.Currency().String() }</td><td>{ execution.Status() }</td></tr>
-			}
-			for _,l:=range view.Lifecycles {
-				<tr><td><a href={ templ.SafeURL("/activity/" + l.ID()) }>{ l.Terms().Fields().Date.String() }</a></td><td><a href={ templ.SafeURL("/instruments/" + l.Instrument()) }>{ instrumentLabel(view,l.Instrument()) }</a></td><td>{ string(l.Terms().Fields().Kind) }</td><td>{ l.Terms().Fields().Quantity.Value() } contracts</td><td>Not applicable</td><td>{ l.Status() }</td></tr>
-			}
-			for _,c:=range view.Conversions {
-				<tr><td><a href={ templ.SafeURL("/activity/" + c.ID()) }>{ c.Terms().Fields().Date.String() }</a></td><td>{ c.Terms().Fields().Sent.Currency().String() } → { c.Terms().Fields().Received.Currency().String() }</td><td>Currency conversion</td><td>{ currencyAmountText(c.Terms().Fields().Sent) } sent · { currencyAmountText(c.Terms().Fields().Received) } received</td><td>{ priceText(c.Terms().Fields().Rate) }</td><td>{ c.Status() }</td></tr>
-			}
-		</tbody>
-	</table>
-}
-
-templ ExecutionPage(detail application.ExecutionDetail) {
-	<h1>{ string(detail.Execution.Terms().Fields().Kind) }</h1>
-	<p><a href={ templ.SafeURL("/activity/" + detail.Execution.ID() + "/correct") }>Correct accepted data</a></p>
-	<p>{ detail.Execution.Status() } · <a href={ templ.SafeURL("/instruments/" + detail.Execution.Instrument()) }>Inspect instrument</a></p>
-	<dl>
-		<dt>Wake execution</dt>
-		<dd>{ detail.Execution.ID() }</dd>
-		<dt>Reported order membership</dt>
-		<dd>{ referenceText(detail.Execution.Terms().Fields().Order) }</dd>
-		<dt>Side</dt>
-		<dd>{ string(detail.Execution.Terms().Fields().Side) }</dd>
-		<dt>{ "Quantity (" + detail.Execution.Terms().QuantityUnit() + ")" }</dt>
-		<dd>{ detail.Execution.Terms().Fields().Quantity.Value() }</dd>
-		<dt>{ "Price (" + detail.Execution.Terms().PriceBasis() + ")" }</dt>
-		<dd>{ detail.Execution.Terms().Fields().Price.Amount() } { detail.Execution.Terms().Fields().Price.Currency().String() }</dd>
-		<dt>Trade date</dt>
-		<dd>{ detail.Execution.Terms().Fields().TradeDate.String() }</dd>
-		<dt>Execution time (reported precision)</dt>
-		<dd>{ known(detail.Execution.Terms().Fields().ExecutedAt.String()) }</dd>
-		<dt>Reported settlement date</dt>
-		<dd>
-			if detail.Execution.Terms().Fields().SettlementDate.IsZero() {
-				Unknown
-			} else {
-				{ detail.Execution.Terms().Fields().SettlementDate.String() }
-			}
-		</dd>
-		<dt>Opening/closing</dt>
-		<dd>{ known(string(detail.Execution.Terms().Fields().PositionEffect)) }</dd>
-		<dt>Gross amount</dt>
-		<dd>{ moneyText(detail.Execution.Terms().Fields().Gross) }</dd>
-		<dt>Proceeds</dt>
-		<dd>{ moneyText(detail.Execution.Terms().Fields().Proceeds) }</dd>
-		<dt>Net cash</dt>
-		<dd>{ moneyText(detail.Execution.Terms().Fields().Net) }</dd>
-		<dt>Source event</dt>
-		<dd>{ detail.Execution.Terms().Fields().Event.Kind() } { detail.Execution.Terms().Fields().Event.Value() }</dd>
-	</dl>
-	@RelationshipLinks(detail.Relationships)
-	@OptionFacts(detail.Execution.Terms().Fields().Instrument.Option())
-	@DebtFacts(detail.Execution.Terms().Fields().Instrument.Debt())
-	<dl><dt>Accrued interest</dt><dd>{ moneyText(detail.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(detail.Execution.Terms().Fields().NetWithBillable) }</dd></dl>
-	<table class="table">
-		<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Qualification</th><th scope="col">Amount</th><th scope="col">Currency</th></tr></thead>
-		<tbody>
-			for _,charge:=range detail.Execution.Terms().Fields().Charges {
-				<tr><td>{ charge.Field() }</td><td>{ charge.Scope() }</td><td>{ charge.Money().Amount() }</td><td>{ charge.Money().Currency().String() }</td></tr>
-			}
-		</tbody>
-	</table>
-	<details>
-		<summary>Evidence and acceptance rules</summary>
-		<ul>
-			for _,observation:=range detail.Observations {
-				<li>{ observation.Outcome } · { observation.Rule } · { observation.Version } · { observation.Location } · <a href={ templ.SafeURL("/evidence/" + observation.Artifact) }>Original report</a></li>
-			}
-		</ul>
-	</details>
-}
-
-templ InstrumentPage(detail application.InstrumentDetail) {
-	<h1>{ known(detail.Instrument.Name()) }</h1>
-	<p><a href={ templ.SafeURL("/instruments/" + detail.Instrument.ID() + "/correct") }>Correct instrument data</a></p>
-	<p>{ detail.Instrument.Kind() } · { detail.Instrument.Status() }</p>
-	<dl><dt>Wake instrument</dt><dd>{ detail.Instrument.ID() }</dd><dt>Reference FIGI</dt><dd>{ known(detail.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(detail.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(detail.Instrument.Reported().Ticker()) }</dd></dl>
-	@OptionFacts(detail.Instrument.Reported().Option())
-	@DebtFacts(detail.Instrument.Reported().Debt())
-	if detail.Instrument.Kind()=="option" {
-		<p>
-			Underlier:
-			if detail.Underlier!="" {
-				<a href={ templ.SafeURL("/instruments/" + detail.Underlier) }>Inspect linked underlier</a>
-			} else {
-				Unknown
-			}
-		</p>
-	}
-	<table class="table">
-		<caption>Listings</caption><thead><tr><th scope="col">Wake listing</th><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">FIGI</th></tr></thead>
-		<tbody>
-			for _,listing:=range detail.Listings {
-				<tr><td>{ listing.ID() }</td><td>{ known(listing.Venue()) }</td><td>{ known(listing.Ticker()) }</td><td>{ listing.Currency() }</td><td>{ known(listing.FIGI()) }</td></tr>
-			}
-		</tbody>
-	</table>
-	<details>
+	<details class="wake-card">
 		<summary>Reported references and reference evidence</summary>
-		<p>Instrument linking rule: { detail.Instrument.Rule() }</p>
+		<p>Instrument linking rule: { d.Instrument.Rule() }</p>
 		<ul>
-			<li>{ detail.Instrument.Reported().Reference().Authority() } { detail.Instrument.Reported().Reference().Kind() } { detail.Instrument.Reported().Reference().Value() }</li>
-			for _,id:=range detail.Instrument.Reported().Identifiers() {
+			<li>{ d.Instrument.Reported().Reference().Authority() } { d.Instrument.Reported().Reference().Kind() } { d.Instrument.Reported().Reference().Value() }</li>
+			for _,id:=range d.Instrument.Reported().Identifiers() {
 				<li>{ string(id.Kind()) }: { id.Value() } ({ id.Field() })</li>
 			}
-			for _,attempt:=range detail.References {
-				<li>{ attempt.Status } · { attempt.Rule } · { attempt.Retrieved } · <a href={ templ.SafeURL("/reference-evidence/" + attempt.Evidence) }>Mapping evidence</a></li>
-			}
-			for _,observation:=range detail.Observations {
-				<li>{ observation.Outcome } · { observation.Rule } · <a href={ templ.SafeURL("/evidence/" + observation.Artifact) }>Source report</a></li>
+			for _,attempt:=range d.References {
+				<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL(navURL(ctx, "/reference-evidence/"+attempt.Evidence)) }>OpenFIGI mapping evidence</a></li>
 			}
 		</ul>
+		<p>Wake instrument identity: { d.Instrument.ID() }</p>
 	</details>
+	if len(d.Observations)>0 {
+		<section class="wake-card">
+			<h2>Supporting observations</h2>@ObservationHistory(d.Observations)
+		</section>
+	}
 }
 
 templ EvidencePage(id, context, body string) {
-	<h1>Retained evidence</h1>
-	<p>{ id } · { context }</p>
-	<pre>{ body }</pre>
+	@Breadcrumbs("Reference evidence")
+	@PageHeader("Reference evidence", id)
+	<section class="wake-card"><h2>Retained reference lookup</h2><p>{ context }</p><a href="#original-content">Inspect retained request and response</a></section>
+	<details class="wake-card" id="original-content"><summary>Original request and response</summary><pre>{ body }</pre></details>
 }
 
 templ OptionFacts(terms source.OptionTerms) {
@@ -423,18 +237,21 @@ templ OptionFacts(terms source.OptionTerms) {
 
 func dateText(d financial.Date) string {
 	if d.IsZero() {
+
 		return "Unknown"
 	}
 	return d.String()
 }
 func priceText(p financial.Price) string {
 	if p.Amount() == "" {
+
 		return "Unknown"
 	}
 	return p.Amount() + " " + p.Currency().String()
 }
 func moneyText(m financial.Money) string {
 	if m.Amount() == "" {
+
 		return "Unknown"
 	}
 	return m.Amount() + " " + m.Currency().String()
@@ -442,6 +259,7 @@ func moneyText(m financial.Money) string {
 
 func referenceText(r source.Reference) string {
 	if r.IsZero() {
+
 		return "Unknown"
 	}
 	return r.Authority() + " " + r.Kind() + " [" + r.Scope() + "] " + r.Value()
@@ -457,7 +275,7 @@ templ RelationshipLinks(links []application.Relationship) {
 			<li>
 				{ link.Kind } · { link.Target }
 				if link.TargetID!="" {
-					<a href={ templ.SafeURL("/activity/" + link.TargetID) }>Inspect related activity</a>
+					<a href={ templ.SafeURL(navURL(ctx, "/activity/"+link.TargetID)) }>Inspect related activity</a>
 				} else {
 					<span>Endpoint unresolved</span>
 				}
@@ -467,33 +285,31 @@ templ RelationshipLinks(links []application.Relationship) {
 }
 
 templ LifecyclePage(d application.LifecycleDetail) {
-	<h1>{ string(d.Lifecycle.Terms().Fields().Kind) }</h1>
-	<p><a href={ templ.SafeURL("/activity/" + d.Lifecycle.ID() + "/correct") }>Correct accepted data</a></p>
-	<p>{ d.Lifecycle.Status() } · <a href={ templ.SafeURL("/instruments/" + d.Lifecycle.Instrument()) }>Inspect option contract</a></p>
-	<dl>
-		<dt>Wake activity</dt>
-		<dd>{ d.Lifecycle.ID() }</dd>
-		<dt>Quantity (contracts)</dt>
-		<dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd>
-		<dt>Reported date</dt>
-		<dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd>
-		<dt>Reported time</dt>
-		<dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd>
-		<dt>Source event</dt>
-		<dd>{ referenceText(d.Lifecycle.Terms().Fields().Event) }</dd>
-		<dt>Reported order membership</dt>
-		<dd>{ referenceText(d.Lifecycle.Terms().Fields().Order) }</dd>
-	</dl>
-	@OptionFacts(d.Lifecycle.Terms().Fields().Instrument.Option())
-	@RelationshipLinks(d.Relationships)
-	<details>
-		<summary>Evidence and rules</summary>
-		<ul>
-			for _,o:=range d.Observations {
-				<li>{ o.Outcome } · { o.Rule } · <a href={ templ.SafeURL("/evidence/" + o.Artifact) }>Original report</a></li>
-			}
-		</ul>
-	</details>
+	@Breadcrumbs("Option outcome")
+	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String())
+	<section class="wake-card">
+		<div class="wake-card-heading">
+			<h2>Reported option outcome</h2>
+			<div class="wake-actions">
+				@StateBadge(d.Lifecycle.Status())
+				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Lifecycle.ID()+"/correct")) }>Correct accepted data</a>
+			</div>
+		</div>
+		<dl><dt>Quantity (contracts)</dt><dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd><dt>Reported date</dt><dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd><dt>Reported time</dt><dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd></dl><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Lifecycle.Instrument())) }>Inspect option contract</a>
+	</section>
+	<section class="wake-card">
+		<h2>Contract terms</h2>@OptionFacts(d.Lifecycle.Terms().Fields().Instrument.Option())
+	</section>
+	<section class="wake-card">
+		@RelationshipLinks(d.Relationships)
+	</section>
+	<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Lifecycle.ID() }</dd></dl></details>
+	<section class="wake-card">
+		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
+		<details>
+			<summary>Retained observations and rules</summary>@ObservationHistory(d.Observations)
+		</details>
+	</section>
 }
 
 templ DebtFacts(terms source.DebtTerms) {
@@ -528,51 +344,46 @@ func currencyAmountText(a source.CurrencyAmount) string {
 }
 
 templ ConversionPage(d application.ConversionDetail) {
-	<h1>Currency conversion</h1>
-	<p><a href={ templ.SafeURL("/activity/" + d.Conversion.ID() + "/correct") }>Correct accepted data</a></p>
-	<p>{ d.Conversion.Status() }</p>
-	<dl>
-		<dt>Wake activity</dt>
-		<dd>{ d.Conversion.ID() }</dd>
-		<dt>Sent</dt>
-		<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Sent) }</dd>
-		<dt>Received</dt>
-		<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Received) }</dd>
-		<dt>Quoted rate</dt>
-		<dd>{ priceText(d.Conversion.Terms().Fields().Rate) } per { currencyText(d.Conversion.Terms().Fields().RateBase) }</dd>
-		<dt>Reported date</dt>
-		<dd>{ d.Conversion.Terms().Fields().Date.String() }</dd>
-		<dt>Reported time</dt>
-		<dd>{ known(d.Conversion.Terms().Fields().At.String()) }</dd>
-		<dt>Gross</dt>
-		<dd>{ moneyText(d.Conversion.Terms().Fields().Gross) }</dd>
-		<dt>Proceeds</dt>
-		<dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd>
-		<dt>Net cash</dt>
-		<dd>{ moneyText(d.Conversion.Terms().Fields().Net) }</dd>
-		<dt>Net cash with billable</dt>
-		<dd>{ moneyText(d.Conversion.Terms().Fields().NetWithBillable) }</dd>
-		<dt>Source event</dt>
-		<dd>{ referenceText(d.Conversion.Terms().Fields().Event) }</dd>
-		<dt>Reported order membership</dt>
-		<dd>{ referenceText(d.Conversion.Terms().Fields().Order) }</dd>
-	</dl>
-	<table class="table">
-		<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Scope</th><th scope="col">Amount</th></tr></thead>
-		<tbody>
-			for _,c:=range d.Conversion.Terms().Fields().Charges {
-				<tr><td>{ c.Field() }</td><td>{ c.Scope() }</td><td>{ moneyText(c.Money()) }</td></tr>
-			}
-		</tbody>
-	</table>
-	<details>
-		<summary>Evidence and rules</summary>
-		<ul>
-			for _,o:=range d.Observations {
-				<li>{ o.Outcome } · { o.Rule } · <a href={ templ.SafeURL("/evidence/" + o.Artifact) }>Original report</a></li>
-			}
-		</ul>
-	</details>
+	@Breadcrumbs("Currency conversion")
+	@PageHeader("Convert "+currencyText(d.Conversion.Terms().Fields().Sent.Currency())+" to "+currencyText(d.Conversion.Terms().Fields().Received.Currency()), d.Context.AccountName+" · "+d.Conversion.Terms().Fields().Date.String())
+	<section class="wake-card">
+		<div class="wake-card-heading">
+			<h2>Currency roles</h2>
+			<div class="wake-actions">
+				@StateBadge(d.Conversion.Status())
+				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Conversion.ID()+"/correct")) }>Correct accepted data</a>
+			</div>
+		</div>
+		<dl>
+			<dt>Sent</dt>
+			<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Sent) }</dd>
+			<dt>Received</dt>
+			<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Received) }</dd>
+			<dt>Quoted rate</dt>
+			<dd>
+				{ priceText(d.Conversion.Terms().Fields().Rate) }
+				if d.Conversion.Terms().Fields().Rate.Amount()!="" {
+					per { currencyText(d.Conversion.Terms().Fields().RateBase) }
+				}
+			</dd>
+			<dt>Reported date</dt>
+			<dd>{ d.Conversion.Terms().Fields().Date.String() }</dd>
+			<dt>Reported time</dt>
+			<dd>{ known(d.Conversion.Terms().Fields().At.String()) }</dd>
+		</dl>
+	</section>
+	<section class="wake-card">
+		<h2>Monetary terms</h2>
+		<dl><dt>Net cash</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Net) }</dd></dl>@ChargesTable(d.Conversion.Terms().Fields().Charges)
+		<details><summary>Additional monetary roles</summary><dl><dt>Gross</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Gross) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetWithBillable) }</dd></dl></details>
+	</section>
+	<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Conversion.ID() }</dd></dl></details>
+	<section class="wake-card">
+		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
+		<details>
+			<summary>Retained observations and rules</summary>@ObservationHistory(d.Observations)
+		</details>
+	</section>
 }
 
 templ CorrectionReviews(rows []application.CorrectionReview) {
@@ -581,14 +392,14 @@ templ CorrectionReviews(rows []application.CorrectionReview) {
 		<ul>
 			for _,r:=range rows {
 				<li>
-					{ r.Kind } · { r.Status } · { r.Target }
+					{ stringTitle(r.Kind) } · { r.Status }<details><summary>Reported source references</summary><p>{ r.Target }</p></details>
 					for _,id:=range r.TargetIDs {
-						<a href={ templ.SafeURL("/activity/" + id) }>Original activity</a>
+						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+id)) }>Original activity</a>
 					}
 					for _,id:=range r.ReplacementIDs {
-						<a href={ templ.SafeURL("/activity/" + id) }>Replacement activity</a>
+						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+id)) }>Replacement activity</a>
 					}
-					<a href={ templ.SafeURL("/evidence/" + r.Artifact) }>Source instruction</a>
+					<a href={ templ.SafeURL(navURL(ctx, "/evidence/"+r.Artifact)) }>Source instruction</a>
 				</li>
 			}
 		</ul>
@@ -597,22 +408,43 @@ templ CorrectionReviews(rows []application.CorrectionReview) {
 
 func correctionPath(f application.CorrectionForm) string {
 	if f.Kind == "instrument" {
+
 		return "/instruments/" + f.ID + "/correct"
 	}
 	return "/activity/" + f.ID + "/correct"
 }
 func fieldLabel(s string) string {
 	switch s {
+	case "price":
+		return "Price"
+	case "quantity":
+		return "Quantity"
+	case "side":
+		return "Buy or sell"
+	case "gross":
+		return "Gross amount"
+	case "net":
+		return "Net cash"
+	case "proceeds":
+		return "Proceeds"
+	case "rate":
+		return "Quoted rate"
+	case "name":
+		return "Name"
+	case "ticker":
+		return "Reported symbol"
+	case "kind":
+		return "Reported outcome"
 	case "observation":
 		return "Accepted fields from a reported observation"
 	case "reference":
 		return "Instrument reference candidate"
 	case "underlier":
-		return "Linked underlier (Wake instrument ID)"
+		return "Linked underlier"
 	case "instrument":
-		return "Linked instrument (Wake ID)"
+		return "Linked instrument"
 	case "listing":
-		return "Linked listing (Wake ID, or empty)"
+		return "Linked listing (optional)"
 	case "option.strike":
 		return "Option strike"
 	case "option.multiplier":
@@ -653,81 +485,167 @@ templ DecisionMetadata(csrf string, f application.CorrectionForm) {
 	<input type="hidden" name="submission" value={ rand.Text() }/>
 }
 
-templ CorrectionError(message, path string) {
-	<h1>Correction not saved</h1>
-	<p role="alert">{ message }</p><a href={ templ.SafeURL(path) }>Reload and review correction</a>
-}
-
 templ CorrectionPage(csrf string, f application.CorrectionForm) {
-	<h1>Correct accepted data</h1>
-	<p>Target: <strong>{ f.Label }</strong> · Wake identity { f.ID } · Revision { strconv.FormatInt(f.Revision,10) }</p>
-	<p>A decision controls its selected fields or link until superseded or released. Source evidence and other decisions remain visible.</p>
-	<form method="post" action={ templ.SafeURL(correctionPath(f)) } aria-label="Correct a field or link">
-		@DecisionMetadata(csrf, f)
-		<input type="hidden" name="action" value="set"/>
-		<p>
-			<label for="decision-scope">Scope</label>
-			<select id="decision-scope" name="scope">
-				for _,field:=range f.Fields {
-					<option value={ field }>{ fieldLabel(field) }</option>
-				}
-			</select>
-		</p>
-		<p><label for="decision-value">Accepted value or Wake link ID</label><input class="input" id="decision-value" name="value" maxlength="2048"/></p>
-		<p><label for="decision-currency">Currency for a monetary value or price</label><input class="input" id="decision-currency" name="currency" maxlength="3" pattern="[A-Z]{3}"/></p>
-		<p>Use exact decimal text, YYYY-MM-DD dates, or an RFC 3339 timestamp with its reported precision. Quantities must be positive. Option right is put or call; direction is buy or sell. Opening/closing values are opening, closing or mixed. Debt quotation basis is per 100 nominal or per nominal unit. Outcomes are exercise, assignment or expiration.</p>
-		<p><label for="decision-rationale">Rationale (optional)</label><input class="input" id="decision-rationale" name="rationale" maxlength="1024"/></p>
-		<button class="btn" type="submit">Retain correction for this scope</button>
-	</form>
-	if len(f.Candidates)>0 {
-		<h2>Select retained evidence</h2>
-		<form method="post" action={ templ.SafeURL(correctionPath(f)) } aria-label="Select retained evidence">
-			@DecisionMetadata(csrf, f)
-			<input type="hidden" name="action" value="set"/>
-			if f.Kind=="instrument" {
-				<input type="hidden" name="scope" value="reference"/>
-				<p>Select one compatible instrument reference candidate.</p>
-			} else {
-				<input type="hidden" name="scope" value="observation"/>
-				<p>Select accepted financial fields from a retained observation. Instrument and listing links are separate scopes.</p>
+	@Breadcrumbs("Review / correct")
+	@PageHeader("Correct accepted data", correctionContext(f))
+	<p class="wake-help">{ known(f.AccountName) } · Revision { strconv.FormatInt(f.Revision,10) }</p>
+	if f.Message!="" {
+		<div class="wake-notice wake-error" role="alert" tabindex="-1" data-error-summary>
+			<h2>Correction not saved</h2>
+			<p>{ f.Message }</p>
+			if f.Stale {
+				<p>Current values are shown below. Review them before saving your draft again.</p>
 			}
-			<label for="decision-candidate">Retained candidate</label>
-			<select id="decision-candidate" name="value">
-				for _,c:=range f.Candidates {
-					<option value={ c.Value }>{ c.Label }</option>
-				}
-			</select>
-			<label for="candidate-rationale">Rationale (optional)</label><input class="input" id="candidate-rationale" name="rationale" maxlength="1024"/>
-			<button class="btn" type="submit">Retain candidate selection</button>
-		</form>
+		</div>
 	}
-	if len(f.Links)>0 {
-		<details>
-			<summary>Available Wake links</summary>
+	<nav class="wake-tabs" aria-label="Review intent">
+		for _,mode:=range []string{"field","evidence","decisions"} {
+			<a href={ templ.SafeURL(modeURL(ctx, mode)) } aria-current={ currentPage(correctionMode(ctx, f) == mode) }>{ correctionModeLabel(mode) }</a>
+		}
+	</nav>
+	if correctionMode(ctx,f)=="field" {
+		<section class="wake-card">
+			<h2>Correct a field or link</h2>
+			<p class="wake-help">Your correction remains active until you replace or release it. Original evidence stays intact.</p>
+			<form method="get" action={ templ.SafeURL(correctionPath(f)) } data-field-picker>
+				<input type="hidden" name="mode" value="field"/><input type="hidden" name="origin" value={ origin(ctx) }/><input type="hidden" name="parent" value={ page(ctx).Query.Get("parent") }/>
+				<p>
+					<label for="decision-scope">What do you want to correct?</label>
+					<select class="select" id="decision-scope" name="field" required>
+						<option value="">Choose a field or link</option>
+						for _,group:=range []string{"Financial terms","Dates and time","Contract terms","Identity and links"} {
+							<optgroup label={ group }>
+								for _,field:=range f.Fields {
+									if fieldGroup(field)==group {
+										<option value={ field } selected?={ selectedCorrectionField(ctx,f)==field }>{ fieldLabel(field) }</option>
+									}
+								}
+							</optgroup>
+						}
+					</select>
+				</p><button class="btn" type="submit" data-field-apply>Edit selected field</button>
+			</form>
+			<form method="post" action={ templ.SafeURL(taskURL(ctx, correctionPath(f))) } aria-label="Correct a field or link" data-correction data-check-url={ correctionPath(f) + "/check" } hidden?={ selectedCorrectionField(ctx,f)=="" }>
+				@DecisionMetadata(csrf, f)
+				<input type="hidden" name="action" value="set"/><input type="hidden" name="scope" value={ selectedCorrectionField(ctx, f) }/>
+				<div data-editor-host>
+					if selectedCorrectionField(ctx,f)!="" {
+						@CorrectionEditor(f, selectedCorrectionField(ctx, f))
+					}
+				</div>
+				<p id="decision-feedback" class="wake-help" role="status" aria-live="polite"></p>
+				<details open?={ f.Draft.Rationale!="" }><summary>Add a reason (optional)</summary><label for="decision-rationale">Rationale</label><input class="input" id="decision-rationale" name="rationale" value={ f.Draft.Rationale } maxlength="1024"/></details>
+				<button class="btn" type="button" data-check-again hidden>Retry validation</button>
+				<a href="/login" data-correction-signin hidden>Sign in again</a>
+				<button class="btn btn-primary" type="submit">
+					if f.Stale {
+						Save reviewed correction
+					} else {
+						Save correction
+					}
+				</button>
+			</form>
+			for _,field:=range f.Fields {
+				<template data-field-template={ field }>
+					@CorrectionEditor(f, field)
+				</template>
+			}
+		</section>
+		<details class="wake-card">
+			<summary>All currently accepted fields</summary>
+			<dl>
+				for _,field:=range f.Fields {
+					<dt>{ fieldLabel(field) }</dt>
+					<dd>{ comparisonText(f.Values[field]) }</dd>
+				}
+			</dl>
+		</details>
+	} else if correctionMode(ctx,f)=="evidence" {
+		<section class="wake-card">
+			<h2>Select retained evidence</h2>
+			<p>Compare a source candidate before choosing it. Separate link decisions remain in force.</p>
+			if len(f.Candidates)==0 {
+				<p>No retained candidates are available for this item.</p>
+			} else {
+				<form method="get" action={ templ.SafeURL(correctionPath(f)) } aria-label="Compare retained evidence" data-candidate-compare>
+					<input type="hidden" name="mode" value="evidence"/><input type="hidden" name="origin" value={ origin(ctx) }/><input type="hidden" name="parent" value={ page(ctx).Query.Get("parent") }/>
+					<p>
+						<label for="decision-candidate">Retained candidate</label>
+						<select class="select" id="decision-candidate" name="candidate" required>
+							<option value="">Choose a retained candidate</option>
+							for _,c:=range f.Candidates {
+								<option value={ c.Value } selected?={ selectedCandidate(ctx,f)==c.Value }>{ c.Label }</option>
+							}
+						</select>
+					</p><button class="btn" type="submit">Compare candidate</button>
+				</form>
+				for _,candidate:=range f.Candidates {
+					if candidate.Value==selectedCandidate(ctx,f) {
+						@CandidateComparison(f, candidate)
+						<form method="post" action={ templ.SafeURL(taskURL(ctx, correctionPath(f))) } aria-label="Select retained evidence">
+							@DecisionMetadata(csrf, f)
+							<input type="hidden" name="action" value="set"/><input type="hidden" name="scope" value={ candidateScope(f) }/><input type="hidden" name="value" value={ candidate.Value }/>
+							<details open?={ f.Draft.Rationale!="" }><summary>Add a reason (optional)</summary><label for="candidate-rationale">Rationale</label><input class="input" id="candidate-rationale" name="rationale" value={ f.Draft.Rationale } maxlength="1024"/></details>
+							<button class="btn btn-primary" type="submit">
+								if f.Stale {
+									Save reviewed correction
+								} else {
+									Save candidate selection
+								}
+							</button>
+						</form>
+					}
+				}
+			}
+		</section>
+	} else {
+		<section class="wake-card">
+			<h2>Active decisions</h2>
+			if activeDecisions(f)==0 {
+				<p>No active operator decisions.</p>
+			}
+			<ul class="wake-task-list">
+				for _,d:=range f.Decisions {
+					if d.Active {
+						<li>
+							<div><h3>{ fieldLabel(d.Scope) }</h3><p>{ d.Text } { d.Currency }</p><p class="wake-help">{ d.Rationale }</p><details><summary>Attribution and identity</summary><p>{ d.Actor } · { d.At } · { d.ID }</p></details></div>
+							<form method="post" action={ templ.SafeURL(taskURL(ctx, correctionPath(f))) } aria-label={ "Release " + fieldLabel(d.Scope) }>
+								@DecisionMetadata(csrf, f)
+								<input type="hidden" name="action" value="release"/><input type="hidden" name="scope" value={ d.Scope }/><button class="btn" type="submit">Release decision</button>
+							</form>
+						</li>
+					}
+				}
+			</ul>
+		</section>
+		<details class="wake-card">
+			<summary>Decision history</summary>
 			<ul>
-				for _,link:=range f.Links {
-					<li>{ link.Label } · { link.Value }</li>
+				for _,d:=range f.Decisions {
+					<li>
+						{ fieldLabel(d.Scope) } · { d.Action } · { d.Text } { d.Currency } · { d.Actor } · { d.At } · { d.Rationale }
+						if d.Supersedes!="" {
+							<span>Supersedes { d.Supersedes }</span>
+						}
+					</li>
 				}
 			</ul>
 		</details>
 	}
-	<h2>Decision history</h2>
-	<ul>
-		for _,d:=range f.Decisions {
-			<li>
-				{ fieldLabel(d.Scope) } · { d.Action } · { d.Text } { d.Currency } · { d.Actor } · { d.At } · { d.Rationale }
-				if d.Supersedes!="" {
-					<span>Supersedes { d.Supersedes }</span>
-				}
-				if d.Active {
-					<strong>Active decision</strong>
-					<form method="post" action={ templ.SafeURL(correctionPath(f)) } aria-label={ "Release " + fieldLabel(d.Scope) }>
-						@DecisionMetadata(csrf, f)
-						<input type="hidden" name="action" value="release"/><input type="hidden" name="scope" value={ d.Scope }/>
-						<button class="btn" type="submit">Release decision</button>
-					</form>
-				}
-			</li>
-		}
-	</ul>
+	<details class="wake-card wake-audit"><summary>Identity and decision policy</summary><p>Wake identity { f.ID }. Decisions control their selected scope until superseded or released. Original evidence stays intact.</p></details>
+}
+
+templ ChargesTable(rows []source.Charge) {
+	if len(rows)>0 {
+		<section class="wake-table-scroll" aria-label="Attached charges">
+			<table class="table">
+				<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Qualification</th><th scope="col">Amount</th></tr></thead>
+				<tbody>
+					for _,c:=range rows {
+						<tr><td>{ c.Field() }</td><td>{ c.Scope() }</td><td>{ moneyText(c.Money()) }</td></tr>
+					}
+				</tbody>
+			</table>
+		</section>
+	}
 }

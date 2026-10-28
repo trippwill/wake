@@ -34,11 +34,12 @@ type (
 		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo                      string
 	}
 	ConnectionView struct {
-		ID, Name, Query, Provider string
-		MissingAccess             bool
-		Candidates                []Candidate
-		Work                      []WorkStatus
-		Processing                []ProcessingStatus
+		ID, Name, Query, Provider        string
+		MissingAccess                    bool
+		SettingsStored, CredentialStored bool
+		Candidates                       []Candidate
+		Work                             []WorkStatus
+		Processing                       []ProcessingStatus
 	}
 	Dashboard struct {
 		Storage          StorageStatus
@@ -67,9 +68,11 @@ type (
 		ConversionDetail(context.Context, string) (ConversionDetail, error)
 		InstrumentDetail(context.Context, string) (InstrumentDetail, error)
 		Retained(context.Context, string) (host.Retained, error)
+		EvidenceContext(context.Context, string) (EvidenceContext, error)
 		ReferenceEvidence(context.Context, string) (ReferenceEvidence, error)
 		CorrectionForm(context.Context, string, string) (CorrectionForm, error)
 		SaveDecision(context.Context, Decision, string, time.Time) error
+		CheckCorrection(context.Context, Decision) error
 		RetryProcessing(context.Context, string) error
 		StartRebuild(context.Context, string, string, time.Time) (string, error)
 		RunRecovery(context.Context) (bool, error)
@@ -535,4 +538,21 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 	}
 
 	return err
+}
+
+func (w *Workflow) EvidenceContext(ctx context.Context, id string) (EvidenceContext, error) {
+	return w.store.EvidenceContext(ctx, id)
+}
+
+type (
+	EvidenceObservation struct{ ActivityID, Location, Outcome, Rule, Version string }
+	EvidenceContext     struct {
+		ConnectionName, Operation, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
+		Observations                                                                    []EvidenceObservation
+	}
+)
+
+// CheckCorrection checks an edit without retaining a decision or scheduling work.
+func (w *Workflow) CheckCorrection(ctx context.Context, d Decision) error {
+	return w.store.CheckCorrection(ctx, d)
 }

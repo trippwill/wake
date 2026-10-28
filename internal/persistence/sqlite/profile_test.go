@@ -133,6 +133,20 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 					t.Fatal(view, err)
 				}
 
+				for _, connection := range view.Connections {
+					lostAccess := false
+					for _, i := range lost {
+						if i == 1 {
+							lostAccess = true
+						}
+					}
+
+					if connection.SettingsStored == lostAccess || connection.CredentialStored == lostAccess ||
+						connection.MissingAccess != lostAccess {
+						t.Fatal("incorrect recovery prerequisites", connection)
+					}
+				}
+
 				after, err := recovered.Checkpoint(ctx, key)
 				if err != nil || after.Revision != before.Revision || after.Next != before.Next ||
 					after.State.Version() != before.State.Version() ||

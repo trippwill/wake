@@ -90,3 +90,5 @@ for trust and recovery boundaries and [development](../engineering/development.m
 for verification and reset procedures. No version tag is implied by this coverage.
 
 Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.
+
+Correction reconciliation currently builds pairwise adjacency for ambiguous multi-endpoint corrections and traverses replacement paths from each starting node. Large endpoint sets or long correction chains can require quadratic memory or work inside the writer transaction, delaying other writes. Scale benchmarking and a more efficient graph implementation are not yet provided.

@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -32,7 +34,12 @@ func registerWorkflowRoutes(
 			csrf, ok := auth.session(r)
 			if !ok {
 				rejection(r, "session_required")
-				http.Redirect(w, r, "/login", http.StatusSeeOther)
+
+				if r.Header.Get("HX-Request") == "true" {
+					http.Error(w, "authentication required", http.StatusUnauthorized)
+				} else {
+					http.Redirect(w, r, "/login", http.StatusSeeOther)
+				}
 
 				return
 			}
@@ -88,35 +95,85 @@ func registerWorkflowRoutes(
 			message = "Credential protection is unavailable or the credential is invalid. Configure a master key with wake setup and retry."
 		}
 
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		_ = SectionShell("Unable to save", csrf, "Connections", WorkflowError(message)).Render(r.Context(), w)
+		_ = SectionShell(
+			"Unable to save",
+			csrf,
+			"Connections",
+			SubmissionFailure(csrf, r.URL.Path, message, r.PostForm),
+		).Render(r.Context(), w)
 	}
 	gate("GET /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		view, err := workflow.Dashboard(r.Context())
 		if err != nil {
-			http.Error(w, "workflow unavailable", http.StatusServiceUnavailable)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusServiceUnavailable,
+				"Temporarily unavailable",
+				"workflow unavailable. Retry or inspect daemon status.",
+			)
+
 			return
 		}
 
 		templ.Handler(SectionShell("Connections", csrf, "Connections", ConnectionsPage(csrf, view))).
 			ServeHTTP(w, r)
 	})
-	gate("GET /workflow/progress", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		view, err := workflow.Dashboard(r.Context())
-		if err != nil {
-			http.Error(w, "progress unavailable", http.StatusServiceUnavailable)
-			return
-		}
-
-		templ.Handler(WorkflowProgress(view)).ServeHTTP(w, r)
+	gate("GET /connections/new", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		templ.Handler(SectionShell("Add IBKR connection", csrf, "Connections", ConnectionSetup(csrf))).
+			ServeHTTP(w, r)
 	})
+
+	for _, route := range []string{"/connections/reference", "/connections/recovery", "/system/maintenance", "/connections/{id}"} {
+		gate("GET "+route, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			view, err := workflow.Dashboard(r.Context())
+			if err != nil {
+				http.Error(w, "source information unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
+			var (
+				content templ.Component
+				title   string
+			)
+
+			section := "Connections"
+			switch r.URL.Path {
+			case "/connections/reference":
+				title = "Instrument reference"
+				content = ReferencePage(csrf, view)
+			case "/connections/recovery":
+				title = "Recovery"
+				content = RecoveryPage(csrf, view)
+			case "/system/maintenance":
+				title = "Maintenance"
+				section = "System"
+				content = MaintenancePage(csrf, view)
+			default:
+				c, ok := connectionByID(view, r.PathValue("id"))
+				if !ok {
+					http.NotFound(w, r)
+					return
+				}
+
+				title = c.Name
+				content = ConnectionPage(csrf, view, c)
+			}
+
+			templ.Handler(SectionShell(title, csrf, section, content)).ServeHTTP(w, r)
+		})
+	}
+
 	gate("POST /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		token := credential.NewSecret([]byte(r.PostForm.Get("token")))
 		defer token.Clear()
 
 		r.PostForm.Del("token")
 
-		_, err := workflow.CreateConnection(
+		connectionID, err := workflow.CreateConnection(
 			r.Context(),
 			r.PostForm.Get("name"),
 			r.PostForm.Get("query_id"),
@@ -127,7 +184,8 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		//nolint:gosec // connectionURL fixes the local prefix and escapes the ID as one path segment.
+		http.Redirect(w, r, connectionURL(connectionID, "status"), http.StatusSeeOther)
 	})
 	gate("POST /connections/{id}/settings", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if err := workflow.UpdateConnection(
@@ -140,7 +198,12 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		destination := connectionURL(r.PathValue("id"), "access")
+		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+			destination = "/connections/recovery"
+		}
+		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
+		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 
 	gate("POST /connections/{id}/token", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -154,7 +217,12 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		destination := connectionURL(r.PathValue("id"), "access")
+		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+			destination = "/connections/recovery"
+		}
+		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
+		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 	gate("POST /connections/{id}/retry", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if err := workflow.Retry(r.Context(), r.PathValue("id")); err != nil {
@@ -162,12 +230,21 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		//nolint:gosec // connectionURL fixes the local prefix and escapes the ID as one path segment.
+		http.Redirect(w, r, connectionURL(r.PathValue("id"), "status"), http.StatusSeeOther)
 	})
 	gate("GET /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		view, err := workflow.Dashboard(r.Context())
 		if err != nil {
-			http.Error(w, "accounts unavailable", http.StatusServiceUnavailable)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusServiceUnavailable,
+				"Temporarily unavailable",
+				"accounts unavailable. Retry or inspect daemon status.",
+			)
+
 			return
 		}
 
@@ -187,7 +264,14 @@ func registerWorkflowRoutes(
 			}
 		}
 
-		http.NotFound(w, r)
+		servePageError(
+			w,
+			r,
+			csrf,
+			http.StatusNotFound,
+			"Item unavailable",
+			"This item is unavailable. Return to its workspace to inspect current records.",
+		)
 	})
 	gate("POST /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		details, err := application.NewAccountDetails(r.PostForm.Get("name"), r.PostForm.Get("currency"))
@@ -231,78 +315,142 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		destination := "/connections/reference"
+		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+			destination = "/connections/recovery"
+		}
+
+		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 	gate("GET /activity", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		view, err := workflow.Dashboard(r.Context())
 		if err != nil {
-			http.Error(w, "activity unavailable", http.StatusServiceUnavailable)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusServiceUnavailable,
+				"Temporarily unavailable",
+				"activity unavailable. Retry or inspect daemon status.",
+			)
+
 			return
 		}
 
 		templ.Handler(SectionShell("Activity", csrf, "Activity", ActivityPage(view))).ServeHTTP(w, r)
 	})
-	gate("GET /activity/rows", func(w http.ResponseWriter, r *http.Request, _ string) {
-		view, err := workflow.Dashboard(r.Context())
-		if err != nil {
-			http.Error(w, "activity unavailable", http.StatusServiceUnavailable)
-			return
-		}
-
-		templ.Handler(ActivityRows(view)).ServeHTTP(w, r)
-	})
 	gate("GET /executions/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
-			http.NotFound(w, r)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusNotFound,
+				"Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.",
+			)
+
 			return
 		}
 
-		templ.Handler(SectionShell("Execution", csrf, "Activity", ExecutionPage(detail))).ServeHTTP(w, r)
+		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+known(detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail))).
+			ServeHTTP(w, r)
 	})
 
 	gate("GET /activity/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell("Activity", csrf, "Activity", ExecutionPage(d))).ServeHTTP(w, r)
+			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d))).
+				ServeHTTP(w, r)
+
 			return
 		}
 
 		if d, err := workflow.ConversionDetail(r.Context(), r.PathValue("id")); err == nil {
 			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d))).ServeHTTP(w, r)
+
 			return
 		}
 
 		d, err := workflow.LifecycleDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
-			http.NotFound(w, r)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusNotFound,
+				"Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.",
+			)
+
 			return
 		}
 
-		templ.Handler(SectionShell("Option outcome", csrf, "Activity", LifecyclePage(d))).ServeHTTP(w, r)
+		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+known(d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d))).
+			ServeHTTP(w, r)
 	})
 	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.InstrumentDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
-			http.NotFound(w, r)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusNotFound,
+				"Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.",
+			)
+
 			return
 		}
 
-		templ.Handler(SectionShell("Instrument", csrf, "Activity", InstrumentPage(detail))).ServeHTTP(w, r)
+		templ.Handler(SectionShell(known(detail.Instrument.Name()), csrf, "Activity", InstrumentPage(detail))).
+			ServeHTTP(w, r)
 	})
 	gate("GET /evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		evidence, err := workflow.Evidence(r.Context(), r.PathValue("id"))
 		if err != nil {
-			http.NotFound(w, r)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusNotFound,
+				"Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.",
+			)
+
 			return
 		}
 
-		templ.Handler(SectionShell("Original evidence", csrf, "Activity", EvidencePage(evidence.ID, evidence.Artifact.Hash(), string(evidence.Artifact.Content())))).
+		metadata, err := workflow.EvidenceContext(r.Context(), r.PathValue("id"))
+		if err != nil {
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusServiceUnavailable,
+				"Evidence temporarily unavailable",
+				"Retained evidence context could not be read. Retry this page.",
+			)
+
+			return
+		}
+
+		templ.Handler(SectionShell("Confirmation report", csrf, "Activity", RetainedEvidence(evidence, metadata))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /reference-evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		evidence, err := workflow.ReferenceEvidence(r.Context(), r.PathValue("id"))
 		if err != nil {
-			http.NotFound(w, r)
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusNotFound,
+				"Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.",
+			)
+
 			return
 		}
 
@@ -316,7 +464,12 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		destination := "/connections"
+		if retained, e := workflow.Evidence(r.Context(), r.PathValue("id")); e == nil {
+			destination = connectionURL(retained.Connection, "reports")
+		}
+
+		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 	gate("POST /recovery/resume", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		revision, err := strconv.ParseInt(r.PostForm.Get("revision"), 10, 64)
@@ -342,7 +495,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		http.Redirect(w, r, "/system/maintenance", http.StatusSeeOther)
 	})
 	gate("POST /recovery/{id}/retry", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if err := workflow.RetryRecovery(r.Context(), r.PathValue("id")); err != nil {
@@ -350,7 +503,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
+		http.Redirect(w, r, "/system/maintenance", http.StatusSeeOther)
 	})
 
 	for _, kind := range []string{"activity", "instrument"} {
@@ -362,33 +515,63 @@ func registerWorkflowRoutes(
 		gate("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			form, err := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id"))
 			if err != nil {
-				http.NotFound(w, r)
+				servePageError(
+					w,
+					r,
+					csrf,
+					http.StatusNotFound,
+					"Item unavailable",
+					"This item is unavailable. Return to its workspace to inspect current records.",
+				)
+
 				return
 			}
 
 			templ.Handler(SectionShell("Correct accepted data", csrf, "Activity", CorrectionPage(csrf, form))).
 				ServeHTTP(w, r)
 		})
-		gate("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
-			revision, err := strconv.ParseInt(r.PostForm.Get("revision"), 10, 64)
-			if err != nil {
-				http.Error(w, "invalid revision", http.StatusBadRequest)
-				return
+		gate("POST "+path+"/check", func(w http.ResponseWriter, r *http.Request, _ string) {
+			w.Header().Set("Content-Type", "application/json")
+
+			decision, err := postedCorrection(r, kind)
+			if err == nil {
+				err = workflow.CheckCorrection(r.Context(), decision)
 			}
 
-			decision, err := application.NewDecision(
-				application.DecisionInput{
-					TargetKind:       kind,
-					TargetID:         r.PathValue("id"),
-					Scope:            r.PostForm.Get("scope"),
-					Text:             r.PostForm.Get("value"),
-					Currency:         r.PostForm.Get("currency"),
-					Action:           r.PostForm.Get("action"),
-					Submission:       r.PostForm.Get("submission"),
-					Rationale:        r.PostForm.Get("rationale"),
-					ExpectedRevision: revision,
-				},
-			)
+			valid, stale, message := err == nil, errors.Is(
+				err,
+				application.ErrStale,
+			), "Ready to save. Saving checks the current record again."
+			if err != nil {
+				message = "This value is not valid for the selected field or its financial terms."
+				if form, e := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id")); e == nil {
+					message = fieldLabel(
+						r.PostForm.Get("scope"),
+					) + ": " + correctionSpec(
+						form,
+						r.PostForm.Get("scope"),
+					).Hint
+				}
+
+				if stale {
+					message = "Accepted values changed. Review the updated record before saving."
+				}
+
+				if !stale && !errors.Is(err, application.ErrInvalid) {
+					w.WriteHeader(http.StatusServiceUnavailable)
+
+					message = "Validation is unavailable. Retry before saving."
+				}
+			}
+
+			_ = json.NewEncoder(w).Encode(struct {
+				Valid   bool   `json:"valid"`
+				Stale   bool   `json:"stale"`
+				Message string `json:"message"`
+			}{valid, stale, message})
+		})
+		gate("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			decision, err := postedCorrection(r, kind)
 			// Attribution comes from the authenticated session, never posted form data.
 			digest := sha256.Sum256([]byte(csrf))
 
@@ -402,15 +585,40 @@ func registerWorkflowRoutes(
 				message := "The correction is invalid for this field or link. Check its value, currency and target, then reload the correction form."
 				if err == application.ErrStale {
 					status = http.StatusConflict
-					message = err.Error()
+					message = "Accepted values changed while you were editing. Review the current values before saving again."
 				}
 
+				form, loadErr := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id"))
+				if loadErr != nil {
+					servePageError(
+						w,
+						r,
+						csrf,
+						http.StatusServiceUnavailable,
+						"Temporarily unavailable",
+						"correction unavailable. Retry or inspect daemon status.",
+					)
+
+					return
+				}
+
+				form.Draft = application.CorrectionDraft{
+					Scope:     r.PostForm.Get("scope"),
+					Value:     r.PostForm.Get("value"),
+					Currency:  r.PostForm.Get("currency"),
+					Rationale: r.PostForm.Get("rationale"),
+					Action:    r.PostForm.Get("action"),
+				}
+				form.Message = message
+				form.Stale = status == http.StatusConflict
+
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(status)
 				_ = SectionShell(
 					"Correction not saved",
 					csrf,
 					"Activity",
-					CorrectionError(message, r.URL.Path),
+					CorrectionPage(csrf, form),
 				).Render(r.Context(), w)
 
 				return
@@ -422,7 +630,11 @@ func registerWorkflowRoutes(
 			}
 
 			//nolint:gosec // Fixed local route plus one escaped entity ID; cannot redirect to another origin.
-			http.Redirect(w, r, destination, http.StatusSeeOther)
+			target, _ := url.Parse(taskURL(r.Context(), destination))
+			query := target.Query()
+			query.Set("mode", "decisions")
+			target.RawQuery = query.Encode()
+			http.Redirect(w, r, target.String(), http.StatusSeeOther)
 		})
 	}
 

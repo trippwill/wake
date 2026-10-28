@@ -53,11 +53,22 @@ type (
 		ID, Scope, Text, Currency, Action, Actor, At, Rationale, Supersedes string
 		Active                                                              bool
 	}
-	CorrectionCandidate struct{ Value, Label string }
-	CorrectionForm      struct {
+	CorrectionValue     struct{ Value, Currency, Unit, Label string }
+	CorrectionCandidate struct {
+		Value, Label, Scope string
+		Fields              map[string]CorrectionValue
+	}
+	CorrectionDraft struct{ Scope, Value, Currency, Rationale, Action string }
+
+	CorrectionForm struct {
 		Links           []CorrectionCandidate
 		Kind, ID, Label string
 		Revision        int64
+		Values          map[string]CorrectionValue
+		AccountName     string
+		Draft           CorrectionDraft
+		Message         string
+		Stale           bool
 		Fields          []string
 		Candidates      []CorrectionCandidate
 		Decisions       []DecisionRecord

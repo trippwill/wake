@@ -323,7 +323,10 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 
 		view := application.ConnectionView{ID: id, Name: name, Query: query, Provider: c.Provider}
 		if name == "" {
-			view.Name = "Retained connection " + id
+			view.Name = "Retained IBKR connection"
+			if out.Account.Connection() == id {
+				view.Name = "Source for " + out.Account.Details().Name()
+			}
 		}
 
 		access, accessErr := s.queries.ConnectionAccess(ctx, id)
@@ -332,6 +335,14 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 		}
 
 		view.MissingAccess = access == 0
+
+		readiness, e := s.queries.AccessReadiness(ctx, id)
+		if e != nil {
+			return out, e
+		}
+
+		view.SettingsStored = readiness.SettingsStored
+		view.CredentialStored = readiness.CredentialStored
 
 		rows, e := s.queries.CandidateProfiles(ctx, id)
 		if e != nil {

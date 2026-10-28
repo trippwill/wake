@@ -8,6 +8,7 @@ package admin
 import (
 	"context"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -76,6 +77,19 @@ func TestBrowserShell(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 30*time.Second)
 	defer deadline()
 
+	navigate := func(selector string) {
+		t.Helper()
+
+		response, navigationErr := chromedp.RunResponse(ctx, chromedp.Click(selector))
+		if navigationErr != nil {
+			t.Fatal("navigation", selector, navigationErr)
+		}
+
+		if response == nil || response.Status != http.StatusOK {
+			t.Fatal("navigation response", selector)
+		}
+	}
+
 	var ok bool
 
 	err = chromedp.Run(
@@ -84,13 +98,10 @@ func TestBrowserShell(t *testing.T) {
 		chromedp.Navigate(origin+"/login"),
 		chromedp.WaitVisible("#unlock"),
 		chromedp.SendKeys("#unlock", "synthetic-browser-unlock"),
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("button[type=\"submit\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		chromedp.Click(`button[type="submit"]`),
 		chromedp.WaitVisible("#main-navigation"),
-		chromedp.Poll(
-			`document.querySelectorAll('#main-navigation a').length === 5 && !document.querySelector('a[href="/trades"]')`,
+		chromedp.Evaluate(
+			`document.querySelectorAll('#main-navigation a').length === 4 && !document.querySelector('a[href="/trades"]')`,
 			&ok,
 		),
 	)
@@ -98,15 +109,14 @@ func TestBrowserShell(t *testing.T) {
 		t.Fatal("sign-in/navigation", ok, err)
 	}
 
+	navigate(`#main-navigation a[href="/status"]`)
+	navigate(`.wake-tabs a[href="/configuration"]`)
+
 	err = chromedp.Run(
 		ctx,
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("a[href=\"/configuration\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
 		chromedp.WaitVisible("h1"),
-		chromedp.Poll(
-			`document.querySelector('h1').textContent==='Configuration' && document.body.textContent.includes('Manage IBKR connections')`,
+		chromedp.Evaluate(
+			`document.querySelector('h1').textContent==='Configuration' && document.body.textContent.includes('Manage source and reference access')`,
 			&ok,
 		),
 	)
@@ -123,7 +133,7 @@ func TestBrowserShell(t *testing.T) {
 		),
 		chromedp.Reload(),
 		chromedp.WaitVisible("h1"),
-		chromedp.Poll(`document.documentElement.dataset.theme === 'wake-dark'`, &ok),
+		chromedp.Evaluate(`document.documentElement.dataset.theme === 'wake-dark'`, &ok),
 	)
 	if err != nil || !ok {
 		t.Fatal("theme persistence", ok, err)
@@ -131,12 +141,9 @@ func TestBrowserShell(t *testing.T) {
 
 	err = chromedp.Run(
 		ctx,
-		chromedp.Poll(
-			`(()=>{const e=document.querySelector("a[href=\"/status\"]");if(!e)return false;e.click();return true;})()`,
-			nil,
-		),
+		chromedp.Click(`a[href="/status"]`),
 		chromedp.WaitVisible("h1"),
-		chromedp.Poll(`document.body.textContent.includes('Daemon running')`, &ok),
+		chromedp.Evaluate(`document.body.textContent.includes('Daemon running')`, &ok),
 	)
 	if err != nil || !ok {
 		t.Fatal("status", ok, err)

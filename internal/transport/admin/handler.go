@@ -56,11 +56,35 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		registerWorkflowRoutes(mux, auth, deps.Workflow, deps.Stopping)
 	}
 
+	mux.HandleFunc("GET /status/contact", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := auth.session(r); !ok {
+			rejection(r, "session_required")
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+
+			return
+		}
+
+		if deps.Queries != nil {
+			if _, err := deps.Queries.Status(r.Context()); err != nil {
+				http.Error(w, "status unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("Daemon connected"))
+	})
+
 	for _, path := range []string{"/{$}", "/configuration", "/status"} {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
 			if !ok {
 				rejection(r, "session_required")
+
+				if r.Header.Get("HX-Request") == "true" {
+					http.Error(w, "authentication required", http.StatusUnauthorized)
+					return
+				}
 
 				if auth.mode == "local" {
 					http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -77,9 +101,37 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 				status, statusErr = deps.Queries.Status(r.Context())
 				if statusErr != nil {
-					http.Error(w, "status unavailable", http.StatusServiceUnavailable)
+					servePageError(
+						w,
+						r,
+						csrf,
+						http.StatusServiceUnavailable,
+						"Temporarily unavailable",
+						"status unavailable. Retry or inspect daemon status.",
+					)
+
 					return
 				}
+			}
+
+			if r.URL.Path == "/" && deps.Workflow != nil {
+				view, err := deps.Workflow.Dashboard(r.Context())
+				if err != nil {
+					servePageError(
+						w,
+						r,
+						csrf,
+						http.StatusServiceUnavailable,
+						"Temporarily unavailable",
+						"overview unavailable. Retry or inspect daemon status.",
+					)
+
+					return
+				}
+
+				templ.Handler(SectionShell("Overview", csrf, "Overview", DashboardOverview(view))).ServeHTTP(w, r)
+
+				return
 			}
 
 			templ.Handler(Overview(csrf, r.URL.Path, status, deps.Config)).ServeHTTP(w, r)
@@ -103,6 +155,9 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			return
 		}
 
+		w.Header().Set("Vary", "HX-Request")
+
+		*r = *pageRequest(r)
 		mux.ServeHTTP(w, r)
 	})), nil
 }
