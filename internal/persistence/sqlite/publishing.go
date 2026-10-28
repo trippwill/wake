@@ -483,7 +483,7 @@ func canonicalSnapshot(
 			)
 		}
 
-		corrections, err := q.SourceCorrections(ctx)
+		corrections, err := q.RelatedSourceCorrections(ctx, id)
 		if err != nil {
 			return out, why, err
 		}
@@ -568,10 +568,7 @@ func canonicalSnapshot(
 			return out, why, err
 		}
 
-		active := map[string]sqlc.OperatorDecision{}
-		for _, d := range decisions {
-			active[d.Scope] = d
-		}
+		active := activeDecisions(decisions)
 
 		for _, d := range active {
 			why.Decisions = append(

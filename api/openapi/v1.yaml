@@ -43,7 +43,7 @@ paths:
     get:
       operationId: changes
       parameters:
-      - $ref: '#/components/parameters/cursor'
+      - $ref: '#/components/parameters/changeCursor'
       - $ref: '#/components/parameters/through'
       - $ref: '#/components/parameters/limit'
       responses:
@@ -962,6 +962,15 @@ components:
       in: query
       schema:
         type: string
+        maxLength: 2048
+    changeCursor:
+      name: cursor
+      in: query
+      required: true
+      description: Checkpoint or continuation cursor for the change journal.
+      schema:
+        type: string
+        minLength: 1
         maxLength: 2048
     through:
       name: through

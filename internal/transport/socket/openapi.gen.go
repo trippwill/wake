@@ -377,6 +377,9 @@ type ResourcePage struct {
 	Next  *string    `json:"next"`
 }
 
+// ChangeCursor defines model for changeCursor.
+type ChangeCursor = string
+
 // Cursor defines model for cursor.
 type Cursor = string
 
@@ -403,9 +406,10 @@ type ListActivityParams struct {
 
 // ChangesParams defines parameters for Changes.
 type ChangesParams struct {
-	Cursor  *Cursor  `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Through *Through `form:"through,omitempty" json:"through,omitempty"`
-	Limit   *Limit   `form:"limit,omitempty" json:"limit,omitempty"`
+	// Cursor Checkpoint or continuation cursor for the change journal.
+	Cursor  ChangeCursor `form:"cursor" json:"cursor"`
+	Through *Through     `form:"through,omitempty" json:"through,omitempty"`
+	Limit   *Limit       `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListInstrumentsParams defines parameters for ListInstruments.

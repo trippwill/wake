@@ -127,3 +127,47 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		}
 	}
 }
+
+type cursorCountingReads struct {
+	reads
+	calls int
+}
+
+func (r *cursorCountingReads) Changes(
+	ctx context.Context,
+	cursor, through string,
+	limit int,
+) (application.ChangePage, error) {
+	r.calls++
+	return r.reads.Changes(ctx, cursor, through, limit)
+}
+
+func TestChangesRequireCursorWhileInitialCollectionsDoNot(t *testing.T) {
+	backend := &cursorCountingReads{
+		reads: reads{
+			item: application.CanonicalResource{
+				ID:       "account",
+				Kind:     "accounts",
+				Revision: 1,
+				Account:  &application.PublishedAccount{Name: "Synthetic account"},
+			},
+		},
+	}
+
+	handler := NewHandler(backend, nil)
+	for _, test := range []struct {
+		path string
+		want int
+	}{{"/v1/changes", 400}, {"/v1/changes?cursor=", 400}, {"/v1/accounts", 200}, {"/v1/changes?cursor=opaque", 200}} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+
+		if response.Code != test.want {
+			t.Error(test.path, response.Code, response.Body.String())
+		}
+	}
+
+	if backend.calls != 1 {
+		t.Fatal("missing cursor reached changes reader", backend.calls)
+	}
+}

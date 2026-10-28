@@ -109,6 +109,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cursor, err = h.reads.PublishCheckpoint(r.Context())
 		response = Checkpoint{Cursor: cursor}
 	case "changes":
+		if query.Get("cursor") == "" {
+			h.failure(w, MalformedCursor, http.StatusBadRequest)
+			return
+		}
+
 		var page application.ChangePage
 
 		page, err = h.reads.Changes(r.Context(), query.Get("cursor"), query.Get("through"), limit)

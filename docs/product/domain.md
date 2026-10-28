@@ -160,3 +160,5 @@ Evidence comparisons also retain read-only option effective dates and deliverabl
 Read-only candidate comparison preserves qualified source account, event, order and alias references, reported relationships, trade kind and reported instrument/underlier identities with their identifier schemes and values. Canonical underlier-link decisions remain separate from the reported underlier. Reference candidates compare the accepted FIGI identity selected for the instrument family (including share-class FIGIs for equities), independently of matching names or tickers. Unknown currencies render as Unknown.
 
 Retained instrument, underlier and listing choices include their stable Wake identities in both selectable and current-value labels, so matching names or symbols remain distinguishable and searchable before a link decision is saved.
+
+Published active-decision explanations contain only currently applied overrides. Releasing a scope returns its authority to automatic selection and removes it from the active explanation; the full decision and release history remains retained.
