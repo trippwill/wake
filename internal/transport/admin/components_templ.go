@@ -304,7 +304,7 @@ func ComparisonRows(f application.CorrectionForm, c application.CorrectionCandid
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		for _, field := range f.Fields {
+		for _, field := range comparisonFields(f, c) {
 			if v, ok := c.Fields[field]; ok && (f.Values[field] != v) == different {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<tr data-different=\"")
 				if templ_7745c5c3_Err != nil {

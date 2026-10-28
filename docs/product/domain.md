@@ -150,3 +150,5 @@ Compatible observations contribute charge roles in a deterministic field/scope o
 A retained automatic FIGI selection remains an identity claim while an operator override is active. Competing automatic or operator selections cannot acquire that FIGI for another root; conflicts remain visible and releasing the override can restore its retained selection.
 
 Reported deliverables compare component multiplicity and exact quantities/cash independently of list order. Equivalent reordered components do not establish disagreement; accepted selection preserves the durable baseline order.
+
+Correction preflight accounts for active dependent listing decisions before accepting a different instrument. Candidate comparisons include read-only attached charges with their reported role, total/component qualification, exact amount and currency, including differences that selecting the candidate would replace. Charges remain outside editable field scopes.

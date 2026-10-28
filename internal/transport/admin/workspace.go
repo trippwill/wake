@@ -231,7 +231,7 @@ func fieldGroup(field string) string {
 }
 
 func hasDifferences(f application.CorrectionForm, c application.CorrectionCandidate) bool {
-	for _, field := range f.Fields {
+	for _, field := range comparisonFields(f, c) {
 		if v, ok := c.Fields[field]; ok && f.Values[field] != v {
 			return true
 		}
@@ -859,4 +859,14 @@ func correctionContext(f application.CorrectionForm) string {
 	}
 
 	return f.Label
+}
+
+// Attached charges are comparison-only; they are never offered as editable scopes.
+func comparisonFields(f application.CorrectionForm, c application.CorrectionCandidate) []string {
+	fields := append([]string{}, f.Fields...)
+	if _, ok := c.Fields["charges"]; ok {
+		fields = append(fields, "charges")
+	}
+
+	return fields
 }

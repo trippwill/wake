@@ -78,7 +78,7 @@ templ ComparisonRows(f application.CorrectionForm, c application.CorrectionCandi
 		<table class="table">
 			<caption>Accepted and candidate values</caption><thead><tr><th scope="col">Field</th><th scope="col">Accepted</th><th scope="col">Candidate</th></tr></thead>
 			<tbody>
-				for _,field:=range f.Fields {
+				for _,field:=range comparisonFields(f,c) {
 					if v,ok:=c.Fields[field];ok && (f.Values[field]!=v)==different {
 						<tr data-different={ strconv.FormatBool(different) }>
 							<th scope="row">

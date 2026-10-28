@@ -415,6 +415,8 @@ func correctionPath(f application.CorrectionForm) string {
 }
 func fieldLabel(s string) string {
 	switch s {
+	case "charges":
+		return "Attached charges (reported; read-only)"
 	case "price":
 		return "Price"
 	case "quantity":

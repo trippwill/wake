@@ -35,6 +35,21 @@ func (s *Store) CheckCorrection(ctx context.Context, decision application.Decisi
 
 		for _, link := range form.Links {
 			if link.Scope == f.Scope && link.Value == f.Text {
+				if f.TargetKind == "activity" && f.Scope == "instrument" {
+					for _, active := range form.Decisions {
+						if active.Active && active.Scope == "listing" && active.Text != "" {
+							listing, e := s.queries.Listing(ctx, active.Text)
+							if e != nil {
+								return e
+							}
+
+							if listing.InstrumentID != f.Text {
+								return application.ErrInvalid
+							}
+						}
+					}
+				}
+
 				return nil
 			}
 		}

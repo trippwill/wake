@@ -4,6 +4,9 @@
 package persistence
 
 import (
+	"sort"
+	"strings"
+
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/source"
@@ -22,6 +25,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		values[key] = application.CorrectionValue{Value: value.Amount(), Currency: value.Currency().String()}
 	}
+
 	price := func(key string, value financial.Price) {
 		if value.Amount() == "" {
 			values[key] = application.CorrectionValue{}
@@ -29,6 +33,28 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		values[key] = application.CorrectionValue{Value: value.Amount(), Currency: value.Currency().String()}
+	}
+	charges := func(items []source.Charge) {
+		rows := make([]string, 0, len(items))
+		for _, charge := range items {
+			rows = append(
+				rows,
+				charge.Field()+" ("+charge.Scope()+"): "+charge.Money().
+					Amount()+
+					" "+charge.Money().
+					Currency().
+					String(),
+			)
+		}
+
+		sort.Strings(rows)
+
+		value := strings.Join(rows, "; ")
+		if value == "" {
+			value = "None reported"
+		}
+
+		text("charges", value)
 	}
 	option := func(value source.OptionTerms) {
 		if value.IsZero() {
@@ -49,6 +75,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		f := t.Fields()
+		charges(f.Charges)
 		text("quantity", f.Quantity.Value())
 
 		v := values["quantity"]
@@ -97,6 +124,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 
 		f := c.Fields()
+		charges(f.Charges)
 		values["sent_amount"] = application.CorrectionValue{
 			Value:    f.Sent.Amount(),
 			Currency: f.Sent.Currency().String(),
