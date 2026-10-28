@@ -24,12 +24,11 @@ import (
 func insertReferenceInstrument(t *testing.T, s *Store, id, identifier string) {
 	t.Helper()
 
-	reported := []byte(
-		fmt.Sprintf(
-			`{"Reference":["test","contract","","%s"],"Kind":"equity","Ticker":"SYN","Name":"Source label","Identifiers":[{"Kind":"isin","Value":"%s","Field":"isin"}]}`,
-			id,
-			identifier,
-		),
+	reported := fmt.Appendf(
+		nil,
+		`{"Reference":["test","contract","","%s"],"Kind":"equity","Ticker":"SYN","Name":"Source label","Identifiers":[{"Kind":"isin","Value":"%s","Field":"isin"}]}`,
+		id,
+		identifier,
 	)
 	if err := s.queries.PutInstrumentRoot(
 		context.Background(),

@@ -18,7 +18,7 @@ import (
 func TestProviderAndApplicationBoundaries(t *testing.T) {
 	root := filepath.Join("..", "..")
 	sql := regexp.MustCompile(`(?i)^\s*(select|insert\s+into|update|delete\s+from|create\s+table|pragma)\s`)
-	for _, tree := range []string{"financial", "source", "provider", "cmd", "internal", "testdata/external-provider", "providers"} {
+	for _, tree := range []string{"financial", "source", "provider", "cmd", "internal", "testdata/external-provider", "testdata/socket-consumer", "providers"} {
 		err := filepath.WalkDir(filepath.Join(root, tree), func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -65,6 +65,11 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 						value != "go.trippwill.dev/wake/provider" {
 						t.Errorf("%s imports non-contract Wake package %s", rel, value)
 					}
+				}
+
+				if tree == "testdata/socket-consumer" &&
+					(strings.Contains(value, "go.trippwill.dev/wake") || value == "database/sql" || strings.Contains(value, "sqlite")) {
+					t.Errorf("independent consumer depends on private data or Wake packages: %s", value)
 				}
 
 				if strings.HasPrefix(rel, "internal/transport/") &&

@@ -50,7 +50,7 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
@@ -96,7 +96,7 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func accountValue(row sqlc.Account) (application.Account, error) {
@@ -227,7 +227,7 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return application.Account{}, err
 	}
 
@@ -602,7 +602,7 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 		return application.ErrAccessReview
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return err
 	}
 

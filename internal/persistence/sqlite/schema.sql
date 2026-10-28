@@ -12,10 +12,10 @@ CREATE TABLE records(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version
 CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT NULL, next TEXT NOT NULL, PRIMARY KEY(provider,policy,scope)) STRICT;
 
 CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
-CREATE TABLE accounts(id TEXT PRIMARY KEY NOT NULL, singleton INTEGER NOT NULL UNIQUE CHECK(singleton=1), name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), provider TEXT NOT NULL, stream TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/1') STRICT;
+CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, singleton INTEGER NOT NULL UNIQUE CHECK(singleton=1), name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), provider TEXT NOT NULL, stream TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/1') STRICT;
 CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1', underlier_id TEXT REFERENCES instruments(id)) STRICT;
 CREATE UNIQUE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
-CREATE TABLE listings(id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '', UNIQUE(instrument_id,venue,ticker,currency)) STRICT;
+CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '', UNIQUE(instrument_id,venue,ticker,currency)) STRICT;
 CREATE TABLE executions(revision INTEGER NOT NULL DEFAULT 1,kind TEXT NOT NULL DEFAULT 'trade', id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), instrument_id TEXT REFERENCES instruments(id), listing_id TEXT REFERENCES listings(id), accepted BLOB NOT NULL, status TEXT NOT NULL, rule TEXT NOT NULL) STRICT;
 CREATE TABLE event_links(account_id TEXT NOT NULL REFERENCES accounts(id), reference TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), PRIMARY KEY(account_id,reference,execution_id)) STRICT;
 CREATE TABLE execution_observations(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, execution_id TEXT REFERENCES executions(id), outcome TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(artifact_id,version,location)) STRICT;
@@ -36,6 +36,41 @@ CREATE TABLE recovery_jobs(id TEXT PRIMARY KEY, status TEXT NOT NULL, completed 
 CREATE UNIQUE INDEX one_active_recovery ON recovery_jobs((1)) WHERE status IN ('queued','running');
 CREATE TABLE recovery_items(job_id TEXT NOT NULL REFERENCES recovery_jobs(id), group_id TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job_id,kind,entity_id)) STRICT;
 
+CREATE TABLE publishing(singleton INTEGER PRIMARY KEY CHECK(singleton=1), generation TEXT NOT NULL) STRICT;
+CREATE TABLE publishing_dirty(kind TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(kind,id)) STRICT;
+CREATE TABLE published_resources(kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, snapshot BLOB NOT NULL, explanation BLOB NOT NULL, PRIMARY KEY(kind,id)) STRICT;
+CREATE TABLE published_changes(position INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, snapshot BLOB NOT NULL) STRICT;
+CREATE TRIGGER publish_accounts_insert AFTER INSERT ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
+CREATE TRIGGER publish_accounts_update AFTER UPDATE ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
+CREATE TRIGGER publish_instruments_insert AFTER INSERT ON instruments BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('instruments',NEW.id); END;
+CREATE TRIGGER publish_instruments_update AFTER UPDATE ON instruments BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('instruments',NEW.id); END;
+CREATE TRIGGER publish_listings_insert AFTER INSERT ON listings BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('listings',NEW.id); END;
+CREATE TRIGGER publish_listings_update AFTER UPDATE ON listings BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('listings',NEW.id); END;
+CREATE TRIGGER publish_executions_insert AFTER INSERT ON executions BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('activity',NEW.id); END;
+CREATE TRIGGER publish_executions_update AFTER UPDATE ON executions BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('activity',NEW.id); END;
+CREATE TRIGGER publish_relationship AFTER INSERT ON activity_relationships BEGIN
+ INSERT OR IGNORE INTO publishing_dirty VALUES('activity',NEW.activity_id);
+END;
+CREATE TRIGGER publish_link AFTER INSERT ON event_links BEGIN
+ INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',r.activity_id FROM activity_relationships r JOIN executions a ON a.id=r.activity_id WHERE a.account_id=NEW.account_id AND r.target=NEW.reference;
+ INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',e.execution_id FROM (
+  SELECT target,replacement FROM source_corrections WHERE account_id=NEW.account_id AND target=NEW.reference
+  UNION
+  SELECT target,replacement FROM source_corrections WHERE account_id=NEW.account_id AND replacement=NEW.reference
+ ) c JOIN event_links e ON e.account_id=NEW.account_id AND e.reference IN (c.target,c.replacement);
+END;
+CREATE TRIGGER publish_correction_insert AFTER INSERT ON source_corrections BEGIN
+ INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',execution_id FROM event_links WHERE account_id=NEW.account_id AND reference IN (NEW.target,NEW.replacement);
+END;
+CREATE TRIGGER publish_correction_update AFTER UPDATE ON source_corrections BEGIN
+ INSERT OR IGNORE INTO publishing_dirty SELECT 'activity',execution_id FROM event_links WHERE account_id=NEW.account_id AND reference IN (NEW.target,NEW.replacement);
+END;
+
 CREATE INDEX execution_observations_execution ON execution_observations(execution_id);
 
 CREATE INDEX instrument_selections_figi ON instrument_selections(figi);
+
+CREATE INDEX relationships_target ON activity_relationships(target,activity_id);
+CREATE INDEX corrections_target ON source_corrections(account_id,target,replacement);
+CREATE INDEX corrections_replacement ON source_corrections(account_id,replacement,target);
+CREATE INDEX event_links_execution ON event_links(execution_id,account_id,reference);

@@ -33,7 +33,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching stores or explicitly recreate companions"
-	schemaVersion              = "wake-m4-2"
+	schemaVersion              = "wake-m7-2"
 )
 
 // Profile selects the warehouse, connections file and operational storage.
@@ -518,7 +518,7 @@ func (s *Store) initialize(
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return err
 	}
 

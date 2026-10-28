@@ -41,6 +41,7 @@ jobs:
       - run: mise run source:check
       - run: "mise run check ::: build"
       - run: mise run test:provider
+      - run: mise run test:socket
 
   behavior:
     runs-on: ubuntu-latest

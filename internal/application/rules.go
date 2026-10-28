@@ -24,8 +24,8 @@ func Compatible(a, b source.Trade) bool {
 		x.Kind != y.Kind ||
 		x.Account != y.Account ||
 		x.Side != y.Side ||
-		x.Quantity != y.Quantity ||
-		x.Price != y.Price ||
+		!x.Quantity.Equal(y.Quantity) ||
+		!x.Price.Equal(y.Price) ||
 		x.TradeDate != y.TradeDate ||
 		x.Instrument.Kind() != y.Instrument.Kind() ||
 		!CompatibleInstrument(x.Instrument, y.Instrument) {
@@ -55,7 +55,7 @@ func Compatible(a, b source.Trade) bool {
 	}
 
 	for _, pair := range [][2]financial.Money{{x.Gross, y.Gross}, {x.Net, y.Net}, {x.Proceeds, y.Proceeds}, {x.AccruedInterest, y.AccruedInterest}, {x.NetWithBillable, y.NetWithBillable}} {
-		if pair[0].Amount() != "" && pair[1].Amount() != "" && pair[0] != pair[1] {
+		if pair[0].Amount() != "" && pair[1].Amount() != "" && !pair[0].Equal(pair[1]) {
 			return false
 		}
 	}
@@ -77,11 +77,11 @@ func CompatibleOption(a, b source.OptionTerms) bool {
 		return false
 	}
 
-	if x.Strike.Amount() != "" && y.Strike.Amount() != "" && x.Strike != y.Strike {
+	if x.Strike.Amount() != "" && y.Strike.Amount() != "" && !x.Strike.Equal(y.Strike) {
 		return false
 	}
 
-	if x.Multiplier.Value() != "" && y.Multiplier.Value() != "" && x.Multiplier != y.Multiplier {
+	if x.Multiplier.Value() != "" && y.Multiplier.Value() != "" && !x.Multiplier.Equal(y.Multiplier) {
 		return false
 	}
 
@@ -100,7 +100,7 @@ func CompatibleOption(a, b source.OptionTerms) bool {
 func CompatibleLifecycle(a, b source.Lifecycle) bool {
 	x, y := a.Fields(), b.Fields()
 
-	return x.Account == y.Account && x.Kind == y.Kind && x.Quantity == y.Quantity && x.Date == y.Date &&
+	return x.Account == y.Account && x.Kind == y.Kind && x.Quantity.Equal(y.Quantity) && x.Date == y.Date &&
 		CompatibleInstrument(
 			x.Instrument,
 			y.Instrument,
@@ -113,7 +113,7 @@ func CompatibleDebt(a, b source.DebtTerms) bool {
 
 	compatible := (x.Type == "" || y.Type == "" || x.Type == y.Type) &&
 		(x.Currency == (financial.Currency{}) || y.Currency == (financial.Currency{}) || x.Currency == y.Currency) &&
-		(x.Coupon.Value() == "" || y.Coupon.Value() == "" || x.Coupon == y.Coupon) &&
+		(x.Coupon.Value() == "" || y.Coupon.Value() == "" || x.Coupon.Equal(y.Coupon)) &&
 		(x.Maturity.IsZero() || y.Maturity.IsZero() || x.Maturity == y.Maturity) &&
 		(x.IssueDate.IsZero() || y.IssueDate.IsZero() || x.IssueDate == y.IssueDate) &&
 		(x.DatedDate.IsZero() || y.DatedDate.IsZero() || x.DatedDate == y.DatedDate) &&
@@ -136,15 +136,15 @@ func CompatibleConversion(a, b source.Conversion) bool {
 		return false
 	}
 
-	if x.Sent.Amount() != "" && y.Sent.Amount() != "" && x.Sent.Amount() != y.Sent.Amount() {
+	if x.Sent.Amount() != "" && y.Sent.Amount() != "" && !equalAmount(x.Sent, y.Sent) {
 		return false
 	}
 
-	if x.Received.Amount() != "" && y.Received.Amount() != "" && x.Received.Amount() != y.Received.Amount() {
+	if x.Received.Amount() != "" && y.Received.Amount() != "" && !equalAmount(x.Received, y.Received) {
 		return false
 	}
 
-	if x.Rate.Amount() != "" && y.Rate.Amount() != "" && (x.Rate != y.Rate || x.RateBase != y.RateBase) {
+	if x.Rate.Amount() != "" && y.Rate.Amount() != "" && (!x.Rate.Equal(y.Rate) || x.RateBase != y.RateBase) {
 		return false
 	}
 
@@ -153,7 +153,7 @@ func CompatibleConversion(a, b source.Conversion) bool {
 	}
 
 	for _, p := range [][2]financial.Money{{x.Gross, y.Gross}, {x.Proceeds, y.Proceeds}, {x.Net, y.Net}, {x.NetWithBillable, y.NetWithBillable}} {
-		if p[0].Amount() != "" && p[1].Amount() != "" && p[0] != p[1] {
+		if p[0].Amount() != "" && p[1].Amount() != "" && !p[0].Equal(p[1]) {
 			return false
 		}
 	}
@@ -199,6 +199,21 @@ func CompatibleInstrumentKind(a, b source.InstrumentKind) bool {
 		(b == source.UnknownInstrument && (a == source.Equity || a == source.Fund))
 }
 
+func equalAmount(a, b source.CurrencyAmount) bool {
+	x, _ := financial.NewQuantity(a.Amount())
+	y, _ := financial.NewQuantity(b.Amount())
+
+	return a.Currency() == b.Currency() && x.Equal(y)
+}
+
+func equalCharge(a, b source.Charge) bool {
+	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money().Equal(b.Money())
+}
+
+func equalDeliverable(a, b source.Deliverable) bool {
+	return a.Security() == b.Security() && a.Quantity().Equal(b.Quantity()) && a.Cash().Equal(b.Cash())
+}
+
 func compatibleCharges(a, b []source.Charge) bool {
 	for _, left := range a {
 		for _, right := range b {
@@ -210,12 +225,6 @@ func compatibleCharges(a, b []source.Charge) bool {
 
 	return true
 }
-
-func equalCharge(a, b source.Charge) bool {
-	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money() == b.Money()
-}
-
-func equalDeliverable(a, b source.Deliverable) bool { return a == b }
 
 func compatibleDeliverables(a, b []source.Deliverable) bool {
 	if len(a) == 0 || len(b) == 0 {

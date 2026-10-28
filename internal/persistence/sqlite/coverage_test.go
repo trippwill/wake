@@ -190,6 +190,17 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 		t.Fatal("unresolved endpoint", d, err)
 	}
 
+	checkpoint, err := s.PublishCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publishedBefore, err := s.Resource(ctx, "activity", id)
+	if err != nil || len(publishedBefore.Activity.Relationships) != 1 ||
+		publishedBefore.Activity.Relationships[0].TargetID != nil {
+		t.Fatal("unresolved public endpoint", err)
+	}
+
 	booking := strings.ReplaceAll(
 		equityRow("U1", "booking", "100"),
 		`transactionType="ExchTrade"`,
@@ -198,6 +209,24 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 	booking = strings.Replace(booking, `code="O"`, `code="Ex"`, 1)
 	coverageReport(t, s, "bookings", booking)
 	coverageClaims(t, s, "repeat-exercise", n)
+
+	publishedAfter, err := s.Resource(ctx, "activity", id)
+	if err != nil || publishedAfter.Revision <= publishedBefore.Revision ||
+		publishedAfter.Activity.Relationships[0].TargetID == nil {
+		t.Fatal("late endpoint did not advance public owner", err)
+	}
+
+	journal := publishedChanges(t, s, checkpoint)
+	changedOwner := 0
+	for _, entry := range journal.Items {
+		if entry.Resource.ID == id {
+			changedOwner++
+		}
+	}
+
+	if changedOwner != 1 {
+		t.Fatal("link transition missing or replay published", changedOwner)
+	}
 
 	d, err = s.LifecycleDetail(ctx, id)
 	if err != nil || d.Relationships[0].TargetID == "" || len(d.Observations) != 2 {
@@ -375,7 +404,16 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 				t.Fatal("replacement identity changed")
 			}
 
+			checkpoint, err := s.PublishCheckpoint(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			coverageReport(t, s, "repeat", instruction)
+
+			if len(publishedChanges(t, s, checkpoint).Items) != 0 {
+				t.Fatal("repeated replacement/cancellation published")
+			}
 
 			d, err := s.ExecutionDetail(ctx, original.ID())
 			if err != nil || d.Execution.ID() != original.ID() || d.Execution.Status() != want {

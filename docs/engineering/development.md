@@ -63,6 +63,10 @@ but are not mandatory for every local change. CI workflows and task definitions
 own exact execution. Report checks actually run and material gaps; prior results
 are not current evidence.
 
+Generated templ, sqlc and OpenAPI output is excluded from behavior coverage.
+Check generated-source freshness and exercise the handwritten boundaries that
+produce and consume it. Coverage thresholds still apply to handwritten code.
+
 Keep source stable while generators or checks read it. SQL, public contract and templ source
 changes require their generated-output checks. Stage completed code/generated/docs
 changes and run `mise run source:check` before code delivery. Documentation-only
@@ -113,6 +117,73 @@ not a specification, task list or acceptance gate. Keep commands grounded in hel
 and source; avoid inventing screen labels or implementation details. Coverage and
 limitations belong in the coverage document. Remove obsolete documents and repair
 inbound links.
+
+## Socket consumer acceptance
+
+[Current coverage](../product/coverage.md) owns acceptance;
+the [OpenAPI contract](../../api/openapi/v1.yaml) owns exact wire semantics. The
+standalone [Go consumer](../../testdata/socket-consumer/main.go) has its own module
+and no Wake imports. It reads only the socket, retains canonical snapshots and
+transition history, and saves its mirror/cursor together in one atomic state file.
+An existing state file must contain its complete envelope and a mirror consistent
+with retained transitions. Persisted history cursors must be unique.
+Both loading and live replay reject different content for the same resource
+identity/revision, including older snapshots behind a newer mirror.
+Invalid state fails closed and remains available for
+inspection; it never becomes an empty successful synchronization.
+It reports structured results on stdout, immediate/periodic progress on stderr and
+failures with a nonzero exit status. A rejected generation is explicitly reported
+before a new baseline replaces the old mirror.
+
+Run the automated synthetic proof:
+
+```sh
+mise install
+mise run test:socket
+```
+
+This task runs consumer behavior/race checks, builds the independent binary and
+runs it against a separate daemon process over the actual private Unix socket.
+Controlled providers and disposable stores exercise the Confirmation fixture,
+pagination, exact values, disconnect/restart, source correction conflict raise/clear,
+two successive operator corrections, duplicate synchronization, daemon restart,
+interrupted rebuild with a new baseline, companion recovery and follow-mode
+progress/interruption. It is part of `mise run ci`. Persistence and handler tests
+cover transactional rollback, unchanged replay, source corrections/conflicts, late
+relationship resolution, fixed high-water reads, rebuild failure/retry and structured
+read-only errors. Consumer checks cover interrupted responses, malformed protocol,
+failed persistence and fixture assertions.
+
+For a manual review, start a disposable configured Wake instance with synthetic
+history, then use its actual socket path and an existing directory for client state:
+
+```sh
+mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.json --page-size 2
+mise run socket-consumer:follow -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.json
+```
+
+Stop the consumer, use **Correct accepted data** in the admin console to change an
+existing price twice, then restart it with the same state path. Its retained
+`history` contains both committed snapshots while `resources` contains the newest
+revision. Repeat synchronization to verify no duplicated resources or transitions.
+Restart the daemon with intact stores and repeat to verify the cursor survives.
+Use **System → Maintenance → Rebuild accepted views**, then synchronize after
+completion: the consumer reports rebootstrap and replaces the baseline. A failed
+rebuild keeps reads unavailable until **Retry rebuild** succeeds. To exercise source
+corrections/conflict raise/clear and late relationships, run the controlled processing
+scenarios in `mise run test`; do not modify SQLite in a manual consumer review.
+
+Fixture assertions are an array of `{kind, path, equals, matches}` entries. Dot paths
+select fields in canonical snapshots; exact decimal expectations are JSON strings,
+and `null` differs from zero. Add `--assert /absolute/path/assertions.json` to a sync
+or follow command. Assertion runs also verify individual resource lookups and
+separate explanation revisions. The supplied
+[Confirmation assertions](../../testdata/socket-consumer/fixtures/confirmations.json)
+match the synthetic account used by `test:socket`. Stop the daemon to check visible
+transport failure; select a state path below a missing/unwritable directory to check
+persistence failure; change an expected value to check assertion failure. Preserve
+an existing state file when testing failures. The consumer never contacts upstream
+providers and does not extend the production operator CLI.
 
 The provider proof uses disposable Go workspace files to compile an unrelated
 module and run it through the actual private host and SQLite store. Run

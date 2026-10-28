@@ -1,0 +1,9 @@
+[
+  {"kind":"accounts","path":"account.name","equals":"Socket acceptance account","matches":1},
+  {"kind":"activity","path":"activity.family","equals":"lifecycle","matches":3},
+  {"kind":"activity","path":"activity.family","equals":"conversion","matches":2},
+  {"kind":"activity","path":"activity.quantity.value","equals":"0.125000000000","matches":2},
+  {"kind":"activity","path":"activity.gross.amount","equals":"50.015432098625000000000","matches":2},
+  {"kind":"activity","path":"activity.price.amount","equals":"1.25000000","matches":1},
+  {"kind":"activity","path":"activity.trade_kind","equals":"stock-booking","matches":2}
+]

@@ -4,6 +4,7 @@ idiomatic_version_file_enable_tools = ["go", "golangci-lint"]
 
 [tools]
 biome = "2.5.15"
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "v2.8.0"
 "aqua:sqlc-dev/sqlc" = "1.31.1"
 "aqua:a-h/templ" = "0.3.1020"
 "go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
@@ -19,11 +20,11 @@ postinstall = { task = "go:modules" }
 
 [tasks.ci]
 description = "Run continuous integration tasks"
-depends = ["check", "build", "test:coverage", "test:race", "test:browser", "test:provider"]
+depends = ["check", "build", "test:coverage", "test:race", "test:browser", "test:provider", "test:socket"]
 
 [tasks.'ci:pr']
 description = "Run PR checks with full behavior, focused races and browser smoke"
-depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke", "test:provider"]
+depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke", "test:provider", "test:socket"]
 
 [tasks.validate]
 description = "Generate, fix, and validate sources for local development"
@@ -39,8 +40,8 @@ run = ["go mod download", "go mod verify"]
 
 [tasks.check]
 description = "Run static checks"
-depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check"]
-wait_for = ["sqlc:gen", "templ:gen"]
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "openapi:check"]
+wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 
 [tasks.'source:check']
 description = "Generate and format sources, then verify no tracked source changes"
@@ -49,7 +50,7 @@ run = "git diff --exit-code"
 
 [tasks.build]
 description = "Build all Go packages"
-wait_for = ["sqlc:gen", "templ:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 run = "CGO_ENABLED=0 go build ./..."
 
 [tasks.clean]
@@ -71,7 +72,7 @@ run = "go run ./cmd/wake -- "
 
 [tasks.gen]
 description = "Generate code for all tools"
-depends = ["sqlc:gen", "templ:gen"]
+depends = ["sqlc:gen", "templ:gen", "openapi:gen"]
 
 [tasks.fix]
 description = "Fix lint issues and format all Go files"
@@ -114,7 +115,7 @@ run = "golangci-lint run --fix"
 
 [tasks.'lint:fmt']
 description = "Format all Go files"
-wait_for = ["sqlc:gen", "templ:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 run = "golangci-lint fmt"
 
 [tasks.'lint:headers']
@@ -123,7 +124,7 @@ run = "golangci-lint run --fix --enable-only=goheader"
 
 [tasks.'vuln:check']
 description = "Scan dependencies for known vulnerabilities"
-wait_for = ["sqlc:gen", "templ:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 run = "govulncheck ./..."
 
 [tasks.'codecov:validate']
@@ -150,4 +151,4 @@ depends = ["test:provider"]
 
 [tasks.'provider:fmt']
 description = "Format external fixture and host proof modules"
-run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go"
+run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go testdata/socket-consumer/*.go"

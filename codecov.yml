@@ -2,6 +2,7 @@
 ignore:
   - "**/*_templ.go"
   - "internal/persistence/sqlite/sqlc/**"
+  - "internal/transport/socket/openapi.gen.go"
 coverage:
   status:
     project:

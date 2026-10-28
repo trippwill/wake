@@ -54,8 +54,56 @@ and relevant link/reference changes, not just new activity. Presentation adapter
 share application meaning without depending on one another's UI or wire types.
 
 [DESIGN.md](../../DESIGN.md) owns the visual standard. Exact CLI commands are in
-help. The retained socket currently exposes no financial resources; the release
-goal owns the later publishing boundary.
+help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the socket
+interface; [development guidance](development.md#socket-consumer-acceptance) provides
+runnable consumer checks.
+
+## Canonical publishing and continuity
+
+The private Unix socket serves finite, bounded, read-only HTTP/JSON requests from
+the daemon's OS user. It publishes accepted accounts, instruments, listings and
+activity, with warehouse-local Wake identities and resource revisions. Financial
+values retain exact decimal text, including trailing scale; absent values are
+explicitly unknown rather than zero. Numerically equal reports with different
+scale remain compatible, while the accepted selection keeps its retained text.
+Civil dates stay dates and timestamps retain their reported fractional precision.
+Compact explanations are separate reads tied to the resource revision they
+explain. Raw reports, private evidence traversal, credentials and operational
+configuration belong outside this consumer boundary. The response contract requires
+exactly one financial body matching the resource kind.
+
+A warehouse journal retains the final canonical snapshot of each affected resource
+in the same transaction as its accepted state. Intermediate changes within that
+transaction are private; successive committed transitions remain independently
+readable. Relationship resolution, reference changes, cancellation/replacement and
+operator choices advance their owning resources, including choices that change
+authority while preserving a value. Unchanged replay and rollbacks publish nothing.
+The warehouse retains journal history without automatic pruning within its publishing
+generation. A publishing failure rolls back its transaction before recording
+the failed attempt separately, leaving neither partial normalization nor journal
+entries. Wire and admin models stay outside persistence.
+
+Cursors are opaque, versioned and bound to the warehouse, publishing generation and
+read purpose/position. Bootstrap captures a checkpoint **before** scanning current
+resources in stable identity order, then replays changes through one fixed
+high-water mark. Pagination does not hold a server snapshot. Consumers upsert by
+resource revision so older replay cannot overwrite a newer scan result, while
+retaining every delivered transition. They save their mirror, cursor and any
+incomplete pass's high-water mark atomically. Each catch-up pass is finite even
+while new writes continue. The acceptance consumer saves a new baseline and every
+changed mirror/checkpoint atomically, skips disk writes for unchanged idle polls,
+and treats an operator interrupt during follow-mode requests as a clean stop.
+
+Daemon restarts and access/operational-store recovery retain cursors when the
+warehouse remains intact. Starting a new projection rebuild rotates the publishing
+generation atomically with its durable job, invalidating older cursors. Retrying or
+resuming that job keeps its generation. A newer rebuild supersedes older jobs; only
+the latest failed job can be retried. Reads remain unavailable during rebuilding
+or a failed rebuild awaiting retry; successful completion permits a new bootstrap.
+Warehouse recreation likewise requires a new baseline. Every-transition delivery
+applies within a generation. Invalidated cursors require explicit rebootstrap;
+malformed cursors, missing resources and rebuilding have distinct errors. The
+server never substitutes a fresh cursor for a rejected one.
 
 ## Trust and recovery
 
@@ -68,7 +116,11 @@ trust decision rather than accidental network exposure.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
-pre-release stores fail closed with explicit recreation guidance. Privacy depends
+pre-release stores fail closed with explicit recreation guidance. The publishing
+schema adds reverse endpoint indexes for relationship/correction invalidation and
+per-activity explanation reads; its storage version advances so profiles from
+the preceding development schema cannot silently miss those indexes and triggers.
+Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
@@ -216,3 +268,5 @@ committed progress, and recovery controls stay outside refreshed status regions.
 Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.
 
 Restoring lost access settings invalidates opaque source continuations while preserving retained pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier enrichment continues beneath an operator link override, so releasing the decision restores the source-established link.
+
+Change-journal reads require a checkpoint or continuation cursor. Collection cursors remain optional for initial resource scans. Publishing resolves source-correction endpoints only for corrections related to the activity being published, within the same transaction.

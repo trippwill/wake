@@ -24,6 +24,7 @@ import (
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	socketapi "go.trippwill.dev/wake/internal/transport/socket"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -184,12 +185,9 @@ func run(
 	workContext, cancelWork := context.WithCancel(ctx)
 
 	var background sync.WaitGroup
-	background.Add(1)
-	go func() {
-		defer background.Done()
-
+	background.Go(func() {
 		workflow.Run(workContext, nil)
-	}()
+	})
 
 	defer func() { cancelWork(); background.Wait() }()
 
@@ -210,7 +208,7 @@ func run(
 		return err
 	}
 
-	server := newHTTPServer(requests.handler(http.NewServeMux()), logger)
+	server := newHTTPServer(requests.handler(socketapi.NewHandler(store, logger)), logger)
 	server.BaseContext = func(net.Listener) context.Context { return requestsContext }
 	servers := []*http.Server{server}
 	listeners := []net.Listener{
@@ -332,14 +330,11 @@ func shutdownHTTPServers(servers ...*http.Server) {
 
 	var wg sync.WaitGroup
 	for _, s := range servers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			if err := s.Shutdown(ctx); err != nil {
 				_ = s.Close()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

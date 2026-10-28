@@ -54,7 +54,7 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 		}
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 func (s *Store) Connection(ctx context.Context, id string) (host.Connection, error) {
@@ -125,7 +125,7 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		}
 	}
 
-	return s.accessUpdated(ctx, "connection_settings", tx.Commit())
+	return s.accessUpdated(ctx, "connection_settings", s.commit(ctx, tx))
 }
 
 func (s *Store) Secret(ctx context.Context, id, key string) ([]byte, error) {
@@ -351,7 +351,7 @@ func (s *Store) Accept(
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return "", err
 	}
 
@@ -459,7 +459,7 @@ func (s *Store) Reserve(
 		return provider.Reservation{}, err
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
 		return provider.Reservation{}, err
 	}
 
@@ -501,7 +501,7 @@ func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.T
 		return err
 	}
 
-	return tx.Commit()
+	return s.commit(ctx, tx)
 }
 
 var _ host.Store = (*Store)(nil)

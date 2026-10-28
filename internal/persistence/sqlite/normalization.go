@@ -123,8 +123,11 @@ func (s *Store) Normalize(
 		return provider.Result{}, host.ErrStorage
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commit(ctx, tx); err != nil {
+		_ = tx.Rollback()
+
 		s.failedAttempt(ctx, attempt, "storage-failed")
+
 		return provider.Result{}, host.ErrStorage
 	}
 
