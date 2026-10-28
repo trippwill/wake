@@ -35,6 +35,13 @@ func (c Charge) Field() string          { return c.field }
 func (c Charge) Scope() string          { return c.scope }
 func (c Charge) Money() financial.Money { return c.money }
 
+type TradeKind string
+
+const (
+	ExchangeExecution TradeKind = "execution"
+	StockBooking      TradeKind = "stock-booking"
+)
+
 type Side string
 
 const (
@@ -42,32 +49,56 @@ const (
 	Sell Side = "sell"
 )
 
-// TradeInput is one reported equity execution. Native event identity and time
+// TradeInput is one reported security execution. Native event identity and time
 // can be absent; location, account, exact terms and civil trade date cannot.
 type TradeInput struct {
-	Location       string
-	Account        Reference
-	Instrument     Instrument
-	Event          Reference
-	EventAliases   []Reference
-	Order          Reference
-	PositionEffect PositionEffect
-	Charges        []Charge
-	Proceeds       financial.Money
-	Side           Side
-	Quantity       financial.Quantity
-	Price          financial.Price
-	TradeDate      financial.Date
-	ExecutedAt     financial.Timestamp
-	SettlementDate financial.Date
-	Gross          financial.Money
-	Net            financial.Money
+	QuotationBasis                   QuotationBasis
+	AccruedInterest, NetWithBillable financial.Money
+	Location                         string
+	Kind                             TradeKind
+	Relationships                    []Relationship
+	Account                          Reference
+	Instrument                       Instrument
+	Event                            Reference
+	EventAliases                     []Reference
+	Order                            Reference
+	PositionEffect                   PositionEffect
+	Charges                          []Charge
+	Proceeds                         financial.Money
+	Side                             Side
+	Quantity                         financial.Quantity
+	Price                            financial.Price
+	TradeDate                        financial.Date
+	ExecutedAt                       financial.Timestamp
+	SettlementDate                   financial.Date
+	Gross                            financial.Money
+	Net                              financial.Money
 }
 type Trade struct{ input TradeInput }
 
 func NewTrade(input TradeInput) (Trade, error) {
+	switch input.QuotationBasis {
+	case UnknownQuotation, Per100Nominal, PerNominalUnit:
+	default:
+		return Trade{}, ErrInvalidTrade
+	}
+
+	if input.Instrument.Kind() != Debt && input.QuotationBasis != "" {
+		return Trade{}, ErrInvalidTrade
+	}
+
+	if input.Kind == "" {
+		input.Kind = ExchangeExecution
+	}
+
+	if (input.Kind != ExchangeExecution && input.Kind != StockBooking) ||
+		(input.Kind == StockBooking && input.Instrument.Kind() != Equity && input.Instrument.Kind() != Fund) ||
+		!validRelationships(input.Relationships) {
+		return Trade{}, ErrInvalidTrade
+	}
+
 	if !validText(input.Location, 1024) || input.Account.IsZero() ||
-		(input.Instrument.Kind() != Equity && input.Instrument.Kind() != Fund) ||
+		(input.Instrument.Kind() != Equity && input.Instrument.Kind() != Fund && input.Instrument.Kind() != Option && input.Instrument.Kind() != Debt) ||
 		(input.Side != Buy && input.Side != Sell) ||
 		!input.Quantity.Positive() ||
 		input.Price.Amount() == "" ||
@@ -99,6 +130,7 @@ func NewTrade(input TradeInput) (Trade, error) {
 
 	input.EventAliases = slices.Clone(input.EventAliases)
 	input.Charges = slices.Clone(input.Charges)
+	input.Relationships = slices.Clone(input.Relationships)
 
 	return Trade{input}, nil
 }
@@ -107,6 +139,35 @@ func (t Trade) Fields() TradeInput {
 	f := t.input
 	f.EventAliases = slices.Clone(f.EventAliases)
 	f.Charges = slices.Clone(f.Charges)
+	f.Relationships = slices.Clone(f.Relationships)
 
 	return f
+}
+
+func (t Trade) QuantityUnit() string {
+	if t.input.Instrument.Kind() == Option {
+		return "contracts"
+	}
+
+	if t.input.Instrument.Kind() == Debt {
+		return "nominal"
+	}
+
+	return "shares"
+}
+
+func (t Trade) PriceBasis() string {
+	if t.input.Instrument.Kind() == Option {
+		return "premium per underlying unit"
+	}
+
+	if t.input.Instrument.Kind() == Debt {
+		if t.input.QuotationBasis == "" {
+			return "quotation basis unknown"
+		}
+
+		return string(t.input.QuotationBasis)
+	}
+
+	return "per share"
 }

@@ -9,10 +9,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/provider"
 )
 
@@ -45,6 +47,7 @@ type (
 	}
 	// Store is the host's transactional persistence capability, never passed to providers.
 	Store interface {
+		UpstreamAllowed(context.Context) error
 		Configure(context.Context, Connection, map[string][]byte) error
 		Reconfigure(context.Context, Connection) error
 		Retry(context.Context, WorkKey) error
@@ -70,6 +73,7 @@ type (
 )
 
 type Host struct {
+	logger        *slog.Logger
 	store         Store
 	envelope      *credential.Envelope
 	registrations map[string]provider.Registration
@@ -87,6 +91,7 @@ func New(
 	ctx context.Context,
 	store Store,
 	envelope *credential.Envelope,
+	logger *slog.Logger,
 	now func() time.Time,
 	registrations ...provider.Registration,
 ) (*Host, error) {
@@ -100,6 +105,7 @@ func New(
 
 	runtime, cancel := context.WithCancel(ctx)
 	h := &Host{
+		logger:        logging.Component(logger, "provider"),
 		store:         store,
 		envelope:      envelope,
 		registrations: map[string]provider.Registration{},
@@ -361,12 +367,45 @@ func (h *Host) Discover(ctx context.Context, id, stream string) (string, error) 
 	return h.step(ctx, id, stream, true)
 }
 
-func (h *Host) step(ctx context.Context, id, stream string, discover bool) (string, error) {
+func (h *Host) step(
+	ctx context.Context,
+	id, stream string,
+	discover bool,
+) (artifactID string, resultErr error) {
+	operation := "acquire"
+	if discover {
+		operation = "discover"
+	}
+
+	ctx, finishLog := logging.Start(ctx, h.logger, operation, "connection_id", id)
+
+	var next time.Time
+
+	outcome := "completed"
+	retryCode := ""
+	candidateCount := 0
+	defer func() {
+		attrs := []any{"artifact_id", artifactID, "outcome", outcome, "candidates", candidateCount}
+		if retryCode != "" {
+			attrs = append(attrs, "code", retryCode)
+		}
+
+		if !next.IsZero() {
+			attrs = append(attrs, "next_eligible_at", next.UTC())
+		}
+
+		finishLog(resultErr, attrs...)
+	}()
+
 	work, finish, err := h.admit(ctx, id)
 	if err != nil {
 		return "", err
 	}
 	defer finish()
+
+	if err = h.store.UpstreamAllowed(work); err != nil {
+		return "", err
+	}
 
 	c, err := h.store.Connection(work, id)
 	if err != nil {
@@ -393,11 +432,6 @@ func (h *Host) step(ctx context.Context, id, stream string, discover bool) (stri
 		return "", provider.ErrUnavailable
 	}
 
-	operation := "acquire"
-	if discover {
-		operation = "discover"
-	}
-
 	key := WorkKey{id, stream, operation}
 
 	checkpoint, err := h.store.Checkpoint(work, key)
@@ -407,6 +441,7 @@ func (h *Host) step(ctx context.Context, id, stream string, discover bool) (stri
 
 	now := h.now().UTC()
 	if checkpoint.Next.After(now) {
+		next = checkpoint.Next
 		return "", provider.ErrTemporary
 	}
 
@@ -461,6 +496,36 @@ func (h *Host) step(ctx context.Context, id, stream string, discover bool) (stri
 		return "", ErrStorage
 	}
 
+	next = step.NextEligibleAt()
+	candidateCount = len(candidates)
+
+	if artifact == "" {
+		outcome = "continued"
+	}
+
+	if step.FailureCode() != "" {
+		outcome, retryCode = "retry_scheduled", "upstream_retry"
+		switch step.FailureCode() {
+		case "network-failure":
+			retryCode = "network_failure"
+		case "http-429", "ibkr-1018":
+			retryCode = "throttled"
+		}
+	}
+
+	if checkpoint.Failure != "" && step.FailureCode() == "" {
+		h.logger.InfoContext(
+			ctx,
+			"source work recovered",
+			"event",
+			"source_recovered",
+			"operation_id",
+			logging.ID(ctx),
+			"connection_id",
+			id,
+		)
+	}
+
 	return artifact, nil
 }
 
@@ -468,7 +533,44 @@ func (h *Host) fail(ctx context.Context, key WorkKey, err error) {
 	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
-	_ = h.store.Fail(detached, key, err.Error())
+	if failure := h.store.Fail(detached, key, err.Error()); failure != nil {
+		h.logger.ErrorContext(
+			detached,
+			"could not retain source failure",
+			"event",
+			"source_failure_not_saved",
+			"operation_id",
+			logging.ID(ctx),
+			"code",
+			"storage_failed",
+		)
+
+		return
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+
+	if checkpoint, failure := h.store.Checkpoint(detached, key); failure == nil {
+		attrs := []any{
+			"event",
+			"source_deferred",
+			"operation_id",
+			logging.ID(ctx),
+			"operation",
+			key.Operation,
+			"connection_id",
+			key.Connection,
+			"code",
+			logging.Code(err),
+		}
+		if !checkpoint.Next.IsZero() {
+			attrs = append(attrs, "next_eligible_at", checkpoint.Next.UTC())
+		}
+
+		h.logger.WarnContext(detached, "source failure retained", attrs...)
+	}
 }
 
 func safeError(err error) error {
@@ -481,7 +583,24 @@ func safeError(err error) error {
 	return provider.ErrInvalid
 }
 
-func (h *Host) Normalize(ctx context.Context, id, version string) (provider.Result, error) {
+func (h *Host) Normalize(ctx context.Context, id, version string) (result provider.Result, resultErr error) {
+	ctx, finishLog := logging.Start(ctx, h.logger, "normalize", "artifact_id", id)
+	defer func() {
+		finishLog(
+			resultErr,
+			"rows",
+			result.Rows(),
+			"trades",
+			result.Trades(),
+			"instruments",
+			result.Instruments(),
+			"rejected",
+			result.Rejected(),
+			"ignored",
+			result.Ignored(),
+		)
+	}()
+
 	work, finish, err := h.admit(ctx, "artifact:"+id)
 	if err != nil {
 		return provider.Result{}, err
@@ -641,6 +760,19 @@ func (a *access) ReservePacing(
 		return provider.Reservation{}, a.storageFailure(err)
 	}
 
+	a.host.logger.DebugContext(
+		ctx,
+		"provider pacing reserved",
+		"event",
+		"provider_pacing",
+		"operation_id",
+		logging.ID(a.ctx),
+		"granted",
+		result.Granted(),
+		"next_eligible_at",
+		result.NextEligibleAt(),
+	)
+
 	return result, nil
 }
 
@@ -664,6 +796,17 @@ func (a *access) DelayPacing(
 		return a.storageFailure(err)
 	}
 
+	a.host.logger.DebugContext(
+		ctx,
+		"provider cooldown retained",
+		"event",
+		"provider_cooldown",
+		"operation_id",
+		logging.ID(a.ctx),
+		"next_eligible_at",
+		until.UTC(),
+	)
+
 	return nil
 }
 
@@ -674,4 +817,58 @@ func (a *access) storageFailure(err error) error {
 	a.failure = err
 
 	return ErrStorage
+}
+
+// CheckAccess checks required local settings and protected credentials without upstream calls.
+func (h *Host) CheckAccess(ctx context.Context, id string) error {
+	c, err := h.store.Connection(ctx, id)
+	if err != nil {
+		return ErrStorage
+	}
+
+	r, ok := h.registrations[c.Provider]
+	if !ok {
+		return provider.ErrUnavailable
+	}
+
+	if _, err = r.PrepareSettings(c.Settings); err != nil {
+		return provider.ErrInvalid
+	}
+
+	for _, field := range r.Descriptor().Fields() {
+		if !field.Required() {
+			continue
+		}
+
+		if field.Kind() == provider.TextField {
+			if value, ok := c.Settings.Get(field.Key()); !ok || value == "" {
+				return provider.ErrInvalid
+			}
+
+			continue
+		}
+
+		if h.envelope == nil {
+			return provider.ErrUnauthorized
+		}
+
+		payload, e := h.store.Secret(ctx, id, field.Key())
+		if e != nil {
+			return provider.ErrUnauthorized
+		}
+
+		encrypted, e := credential.ParseEncryptedSecret(payload)
+		if e != nil {
+			return provider.ErrUnauthorized
+		}
+
+		secret, e := h.envelope.Decrypt(encrypted, secretAAD(c, field.Key()))
+		if e != nil {
+			return provider.ErrUnauthorized
+		}
+
+		secret.Clear()
+	}
+
+	return nil
 }

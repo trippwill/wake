@@ -38,7 +38,7 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		flag = 1
 	}
 
-	if err = q.SetScheduled(
+	if err = setScheduled(q,
 		ctx,
 		sqlc.SetScheduledParams{
 			ConnectionID: key.Connection,
@@ -84,7 +84,7 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 		return err
 	}
 
-	if err = q.SetScheduled(
+	if err = setScheduled(q,
 		ctx,
 		sqlc.SetScheduledParams{
 			ConnectionID: key.Connection,
@@ -216,14 +216,14 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if err = q.SetScheduled(
+	if err = setScheduled(q,
 		ctx,
 		sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
 	); err != nil {
 		return application.Account{}, err
 	}
 
-	if err = q.DisableDiscovery(ctx, id); err != nil {
+	if err = disableDiscovery(q, ctx, id); err != nil {
 		return application.Account{}, err
 	}
 
@@ -266,6 +266,38 @@ func (s *Store) ProcessingFailure(ctx context.Context, id string, next time.Time
 func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 	out := application.Dashboard{}
 
+	profile, profileErr := s.queries.Profile(ctx)
+	if profileErr != nil {
+		return out, profileErr
+	}
+
+	out.Storage = application.StorageStatus{
+		Paused:          profile.Paused != 0,
+		ReferenceReview: profile.ReferenceReview != 0,
+		WarehouseReset:  profile.WarehouseReset != 0,
+		Revision:        profile.RecoveryRevision,
+	}
+
+	jobs, recoveryErr := s.queries.RecoveryJobs(ctx)
+	if recoveryErr != nil {
+		return out, recoveryErr
+	}
+
+	for _, j := range jobs {
+		out.Recovery = append(
+			out.Recovery,
+			application.RecoveryJob{
+				ID:        j.ID,
+				Status:    j.Status,
+				Failure:   j.Failure,
+				Actor:     j.Actor,
+				Created:   j.Created,
+				Completed: j.Completed,
+				Total:     j.Total,
+			},
+		)
+	}
+
 	account, err := s.queries.Account(ctx)
 	if err == nil {
 		out.Account, err = accountValue(account)
@@ -288,7 +320,18 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 
 		name, _ := c.Settings.Get("name")
 		query, _ := c.Settings.Get("query_id")
-		view := application.ConnectionView{ID: id, Name: name, Query: query}
+
+		view := application.ConnectionView{ID: id, Name: name, Query: query, Provider: c.Provider}
+		if name == "" {
+			view.Name = "Retained connection " + id
+		}
+
+		access, accessErr := s.queries.ConnectionAccess(ctx, id)
+		if accessErr != nil {
+			return out, accessErr
+		}
+
+		view.MissingAccess = access == 0
 
 		rows, e := s.queries.CandidateProfiles(ctx, id)
 		if e != nil {
@@ -353,19 +396,61 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 			view.Processing = append(
 				view.Processing,
 				application.ProcessingStatus{
-					Artifact:      r.ID,
-					Complete:      r.Processed == 1,
-					RequestedFrom: r.RequestedFrom,
-					RequestedTo:   r.RequestedTo,
-					ReportedFrom:  r.ReportedFrom,
-					ReportedTo:    r.ReportedTo,
-					Failure:       r.ProcessingFailure,
-					TradeClaims:   r.TradeClaims, ExcludedRows: r.ExcludedRows, NeedsReview: r.NeedsReview,
+					Artifact:         r.ID,
+					Complete:         r.Processed == 1,
+					RequestedFrom:    r.RequestedFrom,
+					RequestedTo:      r.RequestedTo,
+					ReportedFrom:     r.ReportedFrom,
+					ReportedTo:       r.ReportedTo,
+					Failure:          r.ProcessingFailure,
+					TradeClaims:      r.TradeClaims,
+					LifecycleClaims:  r.LifecycleClaims,
+					ConversionClaims: r.ConversionClaims,
+					ExcludedRows:     r.ExcludedRows,
+					NeedsReview:      r.NeedsReview,
 				},
 			)
 		}
 
 		out.Connections = append(out.Connections, view)
+	}
+
+	corrections, err := s.queries.SourceCorrections(ctx)
+	if err != nil {
+		return out, err
+	}
+
+	for _, r := range corrections {
+		targets, e := s.queries.EventLinks(
+			ctx,
+			sqlc.EventLinksParams{AccountID: r.AccountID, Reference: r.Target},
+		)
+		if e != nil {
+			return out, e
+		}
+
+		replacements, e := s.queries.EventLinks(
+			ctx,
+			sqlc.EventLinksParams{AccountID: r.AccountID, Reference: r.Replacement},
+		)
+		if e != nil {
+			return out, e
+		}
+
+		out.Corrections = append(
+			out.Corrections,
+			application.CorrectionReview{
+				Artifact:       r.ArtifactID,
+				Version:        r.Version,
+				Location:       r.Location,
+				Kind:           r.Kind,
+				Target:         r.Target,
+				Replacement:    r.Replacement,
+				Status:         r.Status,
+				TargetIDs:      targets,
+				ReplacementIDs: replacements,
+			},
+		)
 	}
 
 	executions, err := s.queries.Executions(ctx)
@@ -374,6 +459,28 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 	}
 
 	for _, r := range executions {
+		if r.Kind == "conversion" {
+			c, e := conversionValue(r)
+			if e != nil {
+				return out, e
+			}
+
+			out.Conversions = append(out.Conversions, c)
+
+			continue
+		}
+
+		if r.Kind == "lifecycle" {
+			l, e := lifecycleValue(r)
+			if e != nil {
+				return out, e
+			}
+
+			out.Lifecycles = append(out.Lifecycles, l)
+
+			continue
+		}
+
 		e, err := executionValue(r)
 		if err != nil {
 			return out, err
@@ -405,4 +512,112 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 	}
 
 	return out, nil
+}
+
+func setScheduled(q *sqlc.Queries, ctx context.Context, p sqlc.SetScheduledParams) error {
+	if err := q.SetScheduled(ctx, p); err != nil {
+		return err
+	}
+
+	if err := q.RefreshExecution(ctx); err != nil {
+		return err
+	}
+
+	return q.DeleteExecution(ctx)
+}
+
+func disableDiscovery(q *sqlc.Queries, ctx context.Context, id string) error {
+	if err := q.DisableDiscovery(ctx, id); err != nil {
+		return err
+	}
+
+	return q.DeleteExecution(ctx)
+}
+
+func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string, now time.Time) error {
+	if actor == "" {
+		return application.ErrInvalid
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	profile, err := q.Profile(ctx)
+	if err != nil {
+		return err
+	}
+
+	if profile.RecoveryRevision != revision {
+		return application.ErrStale
+	}
+
+	if profile.Paused == 0 {
+		return nil
+	}
+
+	if profile.ReferenceReview != 0 {
+		return application.ErrAccessReview
+	}
+
+	rows, err := q.ResumeStorage(
+		ctx,
+		sqlc.ResumeStorageParams{
+			ResumedBy:        actor,
+			ResumedAt:        now.UTC().Format(time.RFC3339Nano),
+			RecoveryRevision: revision,
+		},
+	)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"storage resume failed",
+			"event",
+			"storage_resume_failed",
+			"code",
+			storageCode(err),
+			"outcome",
+			"failed",
+		)
+
+		return err
+	}
+
+	if rows != 1 {
+		return application.ErrAccessReview
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(
+		ctx,
+		"upstream work resumed after operator review",
+		"event",
+		"storage_resumed",
+		"outcome",
+		"succeeded",
+		"revision",
+		revision,
+	)
+
+	return nil
+}
+
+func (s *Store) UpstreamAllowed(ctx context.Context) error {
+	p, err := s.queries.Profile(ctx)
+	if err != nil {
+		return err
+	}
+
+	if p.Paused != 0 {
+		return provider.ErrUnavailable
+	}
+
+	return nil
 }

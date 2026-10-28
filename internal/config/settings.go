@@ -36,18 +36,25 @@ type Setting struct {
 func Settings() []Setting {
 	settings := []Setting{
 		{
-			Key:         "paths.data_dir",
-			Flag:        "data-dir",
+			Key:         "storage.warehouse_path",
+			Flag:        "warehouse-path",
 			Type:        "string",
-			Default:     "${XDG_DATA_HOME:-$HOME/.local/share}/wake",
-			Description: "Absolute path to persistent Wake data",
+			Default:     "${XDG_DATA_HOME:-$HOME/.local/share}/wake/wake.db",
+			Description: "Absolute path to the financial warehouse database",
 		},
 		{
-			Key:         "paths.state_dir",
-			Flag:        "state-dir",
+			Key:         "storage.connections_path",
+			Flag:        "connections-path",
 			Type:        "string",
-			Default:     "${XDG_STATE_HOME:-$HOME/.local/state}/wake",
-			Description: "Absolute path to recoverable Wake operational state",
+			Default:     "${XDG_CONFIG_HOME:-$HOME/.config}/wake/connections.db",
+			Description: "Absolute path to the active connection and encrypted credential database",
+		},
+		{
+			Key:         "storage.operational_path",
+			Flag:        "operational-path",
+			Type:        "string",
+			Default:     "${XDG_STATE_HOME:-$HOME/.local/state}/wake/operational.db",
+			Description: "Absolute path to the recoverable execution database",
 		},
 		{
 			Key:         "paths.runtime_dir",
@@ -266,7 +273,7 @@ func resolve(overrides Overrides, runtimeRequired bool) (Resolution, error) {
 				table[parts[1]] = value
 
 				authority := "default"
-				if strings.HasPrefix(setting.Key, "paths.") {
+				if strings.HasPrefix(setting.Key, "paths.") || strings.HasPrefix(setting.Key, "storage.") {
 					authority = "XDG/default"
 				}
 
@@ -393,8 +400,10 @@ func settingDefaults() (map[string]string, string, error) {
 		defaults[setting.Flag] = setting.Default
 	}
 
-	defaults["data-dir"] = filepath.Join(data, "wake")
-	defaults["state-dir"] = filepath.Join(state, "wake")
+	defaults["warehouse-path"] = filepath.Join(data, "wake", "wake.db")
+
+	defaults["connections-path"] = filepath.Join(dir, "connections.db")
+	defaults["operational-path"] = filepath.Join(state, "wake", "operational.db")
 	defaults["runtime-dir"] = ""
 	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
 		if err := requireAbsolute("XDG_RUNTIME_DIR", runtime); err != nil {
@@ -408,11 +417,7 @@ func settingDefaults() (map[string]string, string, error) {
 }
 
 func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, error) {
-	if err := requireAbsolute("data directory", file.Paths.DataDir); err != nil {
-		return Config{}, err
-	}
-
-	if err := requireAbsolute("state directory", file.Paths.StateDir); err != nil {
+	if err := checkStorage(file.Storage); err != nil {
 		return Config{}, err
 	}
 
@@ -441,12 +446,8 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 	}
 
 	return Config{
-		Paths: Paths{
-			ConfigDir:  dir,
-			DataDir:    file.Paths.DataDir,
-			StateDir:   file.Paths.StateDir,
-			RuntimeDir: file.Paths.RuntimeDir,
-		},
+		Paths:       Paths{ConfigDir: dir, RuntimeDir: file.Paths.RuntimeDir},
+		Storage:     file.Storage,
 		Log:         Log{Level: level},
 		Credentials: Credentials{MasterKeyPath: file.Credentials.MasterKeyPath},
 		Admin:       admin,
@@ -474,4 +475,31 @@ func readConfigSnapshot(path string) ([]byte, error) {
 	}
 
 	return io.ReadAll(file)
+}
+
+func checkStorage(storage Storage) error {
+	paths := []string{storage.WarehousePath, storage.ConnectionsPath, storage.OperationalPath}
+	for i, path := range paths {
+		if err := requireAbsolute("database file", path); err != nil {
+			return err
+		}
+
+		if filepath.Clean(path) != path {
+			return fmt.Errorf("%w: database paths must be clean", ErrInvalid)
+		}
+
+		for _, other := range paths[:i] {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
+				if path == other+suffix || other == path+suffix {
+					return fmt.Errorf("%w: database paths overlap another store or its sidecars", ErrInvalid)
+				}
+			}
+
+			if strings.HasPrefix(path, other+"-mj") || strings.HasPrefix(other, path+"-mj") {
+				return fmt.Errorf("%w: database paths overlap a journal namespace", ErrInvalid)
+			}
+		}
+	}
+
+	return nil
 }

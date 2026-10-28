@@ -6,8 +6,10 @@ package persistence
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,7 +52,11 @@ func testStore(t *testing.T) (*Store, string) {
 
 	path := filepath.Join(dir, "wake.db")
 
-	s, err := Open(context.Background(), path)
+	s, err := Open(
+		context.Background(),
+		testProfile(path),
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +87,46 @@ func testEnvelope(t *testing.T) *credential.Envelope {
 
 func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	ctx := context.Background()
+
+	var diagnostics bytes.Buffer
+
+	logger := slog.New(slog.NewJSONHandler(&diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	defer func() {
+		text := diagnostics.String()
+		for _, private := range []string{"synthetic-private-token", "replacement-token", "not-numeric", "Repaired configuration", "401.000000001", "0.000000000123", "US0000000001", "REFERENCE EQUITY", "My account"} {
+			if strings.Contains(text, private) {
+				t.Error("private workflow input leaked", private)
+			}
+		}
+
+		decoder := json.NewDecoder(strings.NewReader(text))
+		seen := map[string]bool{}
+		normalization := map[string]string{}
+		for decoder.More() {
+			var entry map[string]any
+			if err := decoder.Decode(&entry); err != nil {
+				t.Fatal(err)
+			}
+
+			event, _ := entry["event"].(string)
+			seen[event] = true
+			if event == "normalize_finished" && entry["outcome"] == "completed" {
+				normalization[entry["artifact_id"].(string)] = entry["operation_id"].(string)
+			}
+
+			if event == "process_finished" &&
+				normalization[entry["artifact_id"].(string)] != entry["operation_id"] {
+				t.Error("processing lost normalization correlation")
+			}
+		}
+
+		for _, event := range []string{"discover_finished", "acquire_finished", "normalize_finished", "process_finished", "reference_finished", "account_confirm_finished", "processing_deferred", "connection_access_repair_finished"} {
+			if !seen[event] {
+				t.Error("missing workflow diagnostic", event)
+			}
+		}
+	}()
+
 	s, path := testStore(t)
 	envelope := testEnvelope(t)
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
@@ -140,7 +186,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, s, envelope, func() time.Time { return now }, registration)
+	h, err := host.New(ctx, s, envelope, logger, func() time.Time { return now }, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +197,13 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		envelope,
 		server.Client(),
 		server.URL+"/mapping",
-		func() time.Time { return now },
+		func() time.Time { return now }, logger,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(s, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil)
+	workflow := application.New(s, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, logger)
 
 	token := credential.NewSecret([]byte("synthetic-private-token"))
 	defer token.Clear()
@@ -231,6 +277,10 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		details,
 	); err == nil {
 		t.Fatal("confirmation storage fault ignored")
+	}
+
+	if strings.Contains(diagnostics.String(), `"event":"account_confirm_finished","outcome":"completed"`) {
+		t.Fatal("logged rolled-back confirmation as completed")
 	}
 
 	view, err = s.Dashboard(ctx)
@@ -475,7 +525,11 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal("plaintext token at rest", err)
 	}
 
-	reopened, err := Open(ctx, path)
+	reopened, err := Open(
+		ctx,
+		testProfile(path),
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,5 +539,44 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	view, err = reopened.Dashboard(ctx)
 	if err != nil || view.Account.ID() != account.ID() || len(view.Executions) != 4 {
 		t.Fatal("restart lost projection/authority", err)
+	}
+}
+
+func testProfile(warehouse string) Profile {
+	return Profile{
+		WarehousePath:   warehouse,
+		ConnectionsPath: filepath.Join(filepath.Dir(warehouse), "connections.db"),
+		OperationalPath: filepath.Join(filepath.Dir(warehouse), "operational.db"),
+	}
+}
+
+func TestIdleWorkflowDoesNotLog(t *testing.T) {
+	ctx := context.Background()
+	s, _ := testStore(t)
+
+	var output bytes.Buffer
+
+	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	h, err := host.New(ctx, s, nil, logger, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	refs, err := reference.New(s, nil, nil, "", nil, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workflow := application.New(s, h, refs, "", "", "", nil, logger)
+	for range 100 {
+		if err := workflow.RunOnce(ctx, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if output.Len() != 0 {
+		t.Fatal("idle polling produced logs", output.String())
 	}
 }

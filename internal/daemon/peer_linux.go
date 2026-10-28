@@ -4,13 +4,18 @@
 package daemon
 
 import (
+	"context"
+	"log/slog"
 	"net"
 	"os"
 	"syscall"
 )
 
 // sameUIDListener rejects a Unix peer before it can reach HTTP dispatch.
-type sameUIDListener struct{ net.Listener }
+type sameUIDListener struct {
+	net.Listener
+	logger *slog.Logger
+}
 
 func (listener sameUIDListener) Accept() (net.Conn, error) {
 	for {
@@ -22,6 +27,18 @@ func (listener sameUIDListener) Accept() (net.Conn, error) {
 		unixConnection, ok := connection.(*net.UnixConn)
 		if !ok || peerUID(unixConnection) != os.Geteuid() {
 			_ = connection.Close()
+
+			if listener.logger != nil {
+				listener.logger.WarnContext(
+					context.Background(),
+					"socket peer rejected",
+					"event",
+					"socket_peer_rejected",
+					"code",
+					"peer_not_authorized",
+				)
+			}
+
 			continue
 		}
 

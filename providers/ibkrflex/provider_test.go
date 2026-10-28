@@ -57,9 +57,10 @@ func (a *testAccess) DelayPacing(_ context.Context, _ string, _ provider.PacingS
 }
 
 type testClaims struct {
-	trades   []source.Trade
-	rejected []string
-	failure  error
+	trades     []source.Trade
+	lifecycles []source.Lifecycle
+	rejected   []string
+	failure    error
 }
 
 func (c *testClaims) PutTrade(_ context.Context, t source.Trade) error {
@@ -115,12 +116,12 @@ func TestConfirmationCoverageAndExactTerms(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		expected := 3
+		expected := 12
 		if file == "overlap.xml" {
-			expected = 2
+			expected = 7
 		}
 
-		if len(claims.trades) != expected || result.Rejected() == 0 {
+		if len(claims.trades) != expected || result.Conversions() != 2 || result.Lifecycles() != 3 {
 			t.Fatal("coverage", file, result.Counts())
 		}
 
@@ -128,8 +129,7 @@ func TestConfirmationCoverageAndExactTerms(t *testing.T) {
 			fields := trade.Fields()
 			if fields.Quantity.Value() == "" || fields.Price.Amount() == "" ||
 				fields.Account.Authority() != "ibkr" ||
-				fields.Event.Kind() != "execution-id" ||
-				fields.EventAliases[0].Kind() != "trade-id" {
+				(fields.Event.Kind() != "execution-id" && fields.Event.Kind() != "trade-id") {
 				t.Fatal("lost qualified terms", fields)
 			}
 		}
@@ -326,3 +326,17 @@ func TestCatchupAndUnavailableRanges(t *testing.T) {
 		}
 	}
 }
+
+func (c *testClaims) PutLifecycle(_ context.Context, l source.Lifecycle) error {
+	if c.failure != nil {
+		return c.failure
+	}
+
+	c.lifecycles = append(c.lifecycles, l)
+
+	return nil
+}
+
+func (c *testClaims) PutConversion(_ context.Context, v source.Conversion) error { return c.failure }
+
+func (c *testClaims) PutCorrection(context.Context, source.Correction) error { return c.failure }

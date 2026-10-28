@@ -44,6 +44,7 @@ func TestRenderFrontend(t *testing.T) {
 	for name, component := range map[string]templ.Component{
 		"connections": ConnectionsPage("synthetic-csrf", application.Dashboard{}),
 		"activity":    ActivityPage(application.Dashboard{}),
+		"correction":  CorrectionPage("synthetic-csrf", application.CorrectionForm{Kind: "activity", ID: "synthetic", Label: "Synthetic activity", Revision: 1, Fields: []string{"price", "quantity"}, Candidates: []application.CorrectionCandidate{{Value: "synthetic-candidate", Label: "Synthetic retained observation"}}, Decisions: []application.DecisionRecord{{Scope: "price", Text: "1.25", Currency: "USD", Active: true}}}),
 	} {
 		//nolint:gosec // Fixed page names in the caller-selected synthetic output directory.
 		output, e := os.Create(filepath.Join(dir, name+".html"))

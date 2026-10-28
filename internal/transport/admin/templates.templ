@@ -31,7 +31,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 	<div class="wake-stack">
 		<h1>{ pageTitle(path) }</h1>
 		if path == "/configuration" {
-			<dl><dt>Data directory</dt><dd>{ cfg.Paths.DataDir }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl>
+			<dl><dt>Warehouse database</dt><dd>{ cfg.Storage.WarehousePath }</dd><dt>Connections database</dt><dd>{ cfg.Storage.ConnectionsPath }</dd><dt>Operational database</dt><dd>{ cfg.Storage.OperationalPath }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl>
 			<p><a href="/connections">Manage IBKR connections and the OpenFIGI reference setting.</a></p>
 		} else {
 			<p role="status">Daemon running</p>

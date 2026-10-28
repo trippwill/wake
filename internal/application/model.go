@@ -18,9 +18,11 @@ type Error string
 func (e Error) Error() string { return string(e) }
 
 const (
-	ErrInvalid      Error = "invalid account details"
-	ErrAccountLimit Error = "one account is already activated"
-	ErrCandidate    Error = "account was not discovered through this connection"
+	ErrInvalid       Error = "invalid account details"
+	ErrAccountLimit  Error = "one account is already activated"
+	ErrRecoveryGroup Error = "a related activity group exceeds the bounded rebuild limit; review its links before rebuilding"
+	ErrAccessReview  Error = "repair missing connection access and review the reference setting before resuming upstream work"
+	ErrCandidate     Error = "account was not discovered through this connection"
 )
 
 type AccountDetails struct {
@@ -95,19 +97,21 @@ type Instrument struct {
 	id, name, ticker, kind, status, figi, evidence string
 	rule                                           string
 	reported                                       source.Instrument
+	revision                                       int64
 }
 
 func NewInstrument(
 	id, name, ticker, kind, status, figi, evidence string,
 	reported source.Instrument,
-	rule string,
+	rule string, revision int64,
 ) (Instrument, error) {
-	if rule == "" || id == "" || reported.Kind() == "" ||
-		(kind != string(source.Equity) && kind != string(source.Fund)) {
+	if revision < 1 || rule == "" || id == "" || reported.Kind() == "" ||
+		(kind != string(source.Equity) && kind != string(source.Fund) && kind != string(source.Option) && kind != string(source.Debt) && kind != string(source.UnknownInstrument)) {
 		return Instrument{}, ErrInvalid
 	}
 
 	return Instrument{
+		revision: revision,
 		id:       id,
 		name:     name,
 		ticker:   ticker,
@@ -152,13 +156,14 @@ func (l Listing) FIGI() string       { return l.figi }
 type Execution struct {
 	id, account, instrument, listing, status, rule string
 	terms                                          source.Trade
+	revision                                       int64
 }
 
 func NewExecution(
 	id, account, instrument, listing, status, rule string,
-	terms source.Trade,
+	terms source.Trade, revision int64,
 ) (Execution, error) {
-	if id == "" || account == "" || instrument == "" || listing == "" || rule == "" {
+	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" {
 		return Execution{}, ErrInvalid
 	}
 
@@ -166,7 +171,7 @@ func NewExecution(
 		return Execution{}, err
 	}
 
-	return Execution{id, account, instrument, listing, status, rule, terms}, nil
+	return Execution{id, account, instrument, listing, status, rule, terms, revision}, nil
 }
 func (e Execution) ID() string          { return e.id }
 func (e Execution) Account() string     { return e.account }
@@ -179,15 +184,100 @@ func (e Execution) Terms() source.Trade { return e.terms }
 type (
 	Observation     struct{ Artifact, Version, Location, Outcome, Rule string }
 	ExecutionDetail struct {
-		Execution    Execution
-		Observations []Observation
+		Execution     Execution
+		Relationships []Relationship
+		Observations  []Observation
 	}
 	ReferenceAttempt struct{ Evidence, Status, Retrieved, Rule string }
 	InstrumentDetail struct {
 		Instrument   Instrument
+		Underlier    string
 		Listings     []Listing
 		References   []ReferenceAttempt
 		Observations []Observation
 	}
 	ReferenceEvidence struct{ Retrieved, Request, Response string }
 )
+
+// Lifecycle retains a reported outcome independently of any stock booking.
+type Lifecycle struct {
+	id, account, instrument, status, rule string
+	terms                                 source.Lifecycle
+	revision                              int64
+}
+
+func NewLifecycle(
+	id, account, instrument, status, rule string,
+	terms source.Lifecycle,
+	revision int64,
+) (Lifecycle, error) {
+	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" {
+		return Lifecycle{}, ErrInvalid
+	}
+
+	if _, err := source.NewLifecycle(terms.Fields()); err != nil {
+		return Lifecycle{}, err
+	}
+
+	return Lifecycle{id, account, instrument, status, rule, terms, revision}, nil
+}
+func (l Lifecycle) ID() string              { return l.id }
+func (l Lifecycle) Account() string         { return l.account }
+func (l Lifecycle) Instrument() string      { return l.instrument }
+func (l Lifecycle) Status() string          { return l.status }
+func (l Lifecycle) Terms() source.Lifecycle { return l.terms }
+
+type (
+	Relationship    struct{ Kind, Target, TargetID string }
+	LifecycleDetail struct {
+		Lifecycle     Lifecycle
+		Observations  []Observation
+		Relationships []Relationship
+	}
+)
+
+type Conversion struct {
+	id, account, status, rule string
+	terms                     source.Conversion
+	revision                  int64
+}
+
+func NewConversion(
+	id, account, status, rule string,
+	terms source.Conversion,
+	revision int64,
+) (Conversion, error) {
+	if revision < 1 || id == "" || account == "" || rule == "" {
+		return Conversion{}, ErrInvalid
+	}
+
+	if _, err := source.NewConversion(terms.Fields()); err != nil {
+		return Conversion{}, err
+	}
+
+	return Conversion{id, account, status, rule, terms, revision}, nil
+}
+func (c Conversion) ID() string               { return c.id }
+func (c Conversion) Account() string          { return c.account }
+func (c Conversion) Status() string           { return c.status }
+func (c Conversion) Terms() source.Conversion { return c.terms }
+
+type ConversionDetail struct {
+	Conversion   Conversion
+	Observations []Observation
+}
+
+func (i Instrument) Revision() int64 { return i.revision }
+func (e Execution) Revision() int64  { return e.revision }
+func (l Lifecycle) Revision() int64  { return l.revision }
+func (c Conversion) Revision() int64 { return c.revision }
+
+type CorrectionReview struct {
+	Artifact, Version, Location, Kind, Target, Replacement, Status string
+	TargetIDs, ReplacementIDs                                      []string
+}
+
+type RecoveryJob struct {
+	ID, Status, Failure, Actor, Created string
+	Completed, Total                    int64
+}

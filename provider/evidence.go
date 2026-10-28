@@ -48,14 +48,14 @@ func (a Artifact) Hash() string {
 // Counts names each outcome so adding a supported claim kind cannot shift
 // positional arguments in a provider's report accounting.
 type Counts struct {
-	Rows, Trades, Instruments, Rejected, Ignored uint64
+	Rows, Trades, Lifecycles, Conversions, Corrections, Instruments, Rejected, Ignored uint64
 }
 
 type Result struct{ counts Counts }
 
 func NewResult(counts Counts) (Result, error) {
 	remaining := counts.Rows
-	for _, n := range []uint64{counts.Trades, counts.Instruments, counts.Rejected, counts.Ignored} {
+	for _, n := range []uint64{counts.Trades, counts.Lifecycles, counts.Conversions, counts.Corrections, counts.Instruments, counts.Rejected, counts.Ignored} {
 		if n > remaining {
 			return Result{}, ErrInvalid
 		}
@@ -76,3 +76,9 @@ func (r Result) Rejected() uint64    { return r.counts.Rejected }
 func (r Result) Ignored() uint64     { return r.counts.Ignored }
 
 func (r Result) Counts() Counts { return r.counts }
+
+func (r Result) Lifecycles() uint64 { return r.counts.Lifecycles }
+
+func (r Result) Conversions() uint64 { return r.counts.Conversions }
+
+func (r Result) Corrections() uint64 { return r.counts.Corrections }

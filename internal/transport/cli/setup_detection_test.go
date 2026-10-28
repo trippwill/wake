@@ -33,8 +33,8 @@ func setupDaemonFixture(t *testing.T) (config.Config, string, []byte) {
 	path := filepath.Join(cfg.Paths.ConfigDir, "config.toml")
 	content := fmt.Appendf(
 		nil,
-		"[paths]\ndata_dir=%q\nruntime_dir=%q\n",
-		cfg.Paths.DataDir,
+		"[storage]\nwarehouse_path=%q\nconnections_path=%q\noperational_path=%q\n[paths]\nruntime_dir=%q\n",
+		cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath,
 		cfg.Paths.RuntimeDir,
 	)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
@@ -109,7 +109,7 @@ func TestSetupDetectsRunningDaemonBeforeSettingsPrompts(t *testing.T) {
 	stop()
 
 	if err := checkSetupStopped(
-		config.SetupGuidance{DataDir: cfg.Paths.DataDir, RuntimeDir: cfg.Paths.RuntimeDir},
+		config.SetupGuidance{Storage: cfg.Storage, RuntimeDir: cfg.Paths.RuntimeDir},
 	); err != nil {
 		t.Fatal("stopped daemon still detected", err)
 	}
@@ -118,10 +118,12 @@ func TestSetupDetectsRunningDaemonBeforeSettingsPrompts(t *testing.T) {
 func TestSetupDetectsEnvironmentLaunchPathsWithoutPersistingThem(t *testing.T) {
 	cfg, path, original := setupDaemonFixture(t)
 	_, _ = startShellDaemon(t, cfg)
-	t.Setenv("WAKE_DATA_DIR", cfg.Paths.DataDir)
+	t.Setenv("WAKE_WAREHOUSE_PATH", cfg.Storage.WarehousePath)
 	t.Setenv("WAKE_RUNTIME_DIR", cfg.Paths.RuntimeDir)
 
-	guide := config.SetupGuidance{DataDir: filepath.Join(t.TempDir(), "new-data")}
+	guide := config.SetupGuidance{
+		Storage: config.Storage{WarehousePath: filepath.Join(t.TempDir(), "new-data", "history.sqlite")},
+	}
 	if err := checkSetupStopped(guide); err == nil || !strings.Contains(err.Error(), "Wake is running") {
 		t.Fatal("environment-selected running daemon not detected", err)
 	}
@@ -135,9 +137,11 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 			cfg, path, originalConfig := setupDaemonFixture(t)
 			proposed := cfg
 			if stage == "proposed" {
-				proposed.Paths.DataDir = filepath.Join(t.TempDir(), "new-data")
+				proposed.Storage.WarehousePath = filepath.Join(t.TempDir(), "new-data", "history.sqlite")
+
+				proposed.Storage.ConnectionsPath = filepath.Join(t.TempDir(), "new-access", "credentials.sqlite")
 				proposed.Paths.RuntimeDir = filepath.Join(t.TempDir(), "new-runtime")
-				proposed.Paths.StateDir = filepath.Join(t.TempDir(), "new-state")
+				proposed.Storage.OperationalPath = filepath.Join(t.TempDir(), "new-state", "execution.sqlite")
 				if err := config.Prepare(proposed); err != nil {
 					t.Fatal(err)
 				}
@@ -167,13 +171,13 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 				}
 			}()
 
-			inputs := []string{"", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
+			inputs := []string{"", "", "", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
 			if stage == "paths" || stage == "proposed" {
-				inputs = inputs[:3]
+				inputs = inputs[:5]
 			}
 
 			if stage == "proposed" {
-				inputs[0], inputs[1] = proposed.Paths.DataDir, proposed.Paths.RuntimeDir
+				inputs[0], inputs[1], inputs[2], inputs[3] = proposed.Storage.WarehousePath, proposed.Storage.ConnectionsPath, proposed.Storage.OperationalPath, proposed.Paths.RuntimeDir
 			}
 
 			for index, value := range inputs {
@@ -183,7 +187,7 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 					t.Fatal("setup prompt missing")
 				}
 
-				if (stage == "paths" && index == 0) || (stage == "unlock" && index == 5) {
+				if (stage == "paths" && index == 0) || (stage == "unlock" && index == 7) {
 					_, _ = startShellDaemon(t, cfg)
 				}
 
@@ -208,4 +212,34 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 			assertSetupNotProvisioned(t, cfg, path, originalConfig)
 		})
 	}
+}
+
+func TestSetupDetectsIndependentlyConfiguredConnectionsDatabase(t *testing.T) {
+	cfg, path, original := setupDaemonFixture(t)
+	cfg.Storage.ConnectionsPath = filepath.Join(t.TempDir(), "access", "credentials.sqlite")
+	if err := config.Prepare(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	stop, _ := startShellDaemon(t, cfg)
+	defer stop()
+
+	guide := config.SetupGuidance{
+		Storage: config.Storage{
+			WarehousePath:   filepath.Join(t.TempDir(), "unrelated-data", "history.sqlite"),
+			ConnectionsPath: cfg.Storage.ConnectionsPath,
+		},
+	}
+	if err := checkSetupStopped(guide); err == nil || !strings.Contains(err.Error(), "Wake is running") {
+		t.Fatal("configured credential store ownership ignored", err)
+	}
+
+	guide.Storage.ConnectionsPath = ""
+	t.Setenv("WAKE_CONNECTIONS_PATH", cfg.Storage.ConnectionsPath)
+
+	if err := checkSetupStopped(guide); err == nil || !strings.Contains(err.Error(), "Wake is running") {
+		t.Fatal("environment credential store ownership ignored", err)
+	}
+
+	assertSetupNotProvisioned(t, cfg, path, original)
 }

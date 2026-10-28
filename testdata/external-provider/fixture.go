@@ -141,3 +141,100 @@ func (Provider) Normalize(ctx context.Context, artifact provider.Artifact, sink 
 var _ provider.Acquirer = Provider{}
 var _ provider.Normalizer = Provider{}
 var _ provider.Discoverer = Provider{}
+
+// Option is a provider-neutral adjusted contract, not an IBKR field claim.
+func Option() (source.Trade, error) {
+	c, _ := financial.ParseCurrency("USD")
+	strike, _ := financial.NewPrice("123.4500000000000000001", c)
+	multiplier, _ := financial.NewQuantity("10")
+	quantity, _ := financial.NewQuantity("12.5")
+	cash, _ := financial.NewMoney("0.75", c)
+	ref, _ := source.NewReference("fixture-broker", "instrument", "", "equity-1")
+	u, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity, Name: "Underlier"})
+	security, _ := source.NewSecurityDeliverable(ref, quantity)
+	money, _ := source.NewCashDeliverable(cash)
+	effective, _ := financial.ParseDate("2026-10-01")
+	expiry, _ := financial.ParseDate("2026-11-20")
+	terms, err := source.NewOptionTerms(source.OptionInput{Underlier: u, Right: source.Call, Strike: strike, Multiplier: multiplier, EffectiveFrom: effective, Expiry: expiry, Deliverables: []source.Deliverable{security, money}})
+	if err != nil {
+		return source.Trade{}, err
+	}
+	contract, _ := source.NewReference("fixture-broker", "contract", "", "option-1")
+	i, err := source.NewInstrument(source.InstrumentInput{Reference: contract, Kind: source.Option, Name: "Adjusted option", Option: terms})
+	if err != nil {
+		return source.Trade{}, err
+	}
+	a, _ := source.NewReference("fixture-broker", "account", "", "account-1")
+	e, _ := source.NewReference("fixture-broker", "trade", "account-1", "option-1")
+	price, _ := financial.NewPrice("1.0000000000000000000001", c)
+	date, _ := financial.ParseDate("2026-10-23")
+	return source.NewTrade(source.TradeInput{Location: "option:1", Account: a, Event: e, Instrument: i, Side: source.Buy, Quantity: multiplier, Price: price, TradeDate: date})
+}
+
+func Lifecycle() (source.Lifecycle, error) {
+	t, err := Option()
+	if err != nil {
+		return source.Lifecycle{}, err
+	}
+	f := t.Fields()
+	target, _ := source.NewReference("fixture-broker", "trade", "account-1", "booking-1")
+	link, _ := source.NewRelationship(source.StockBookingLink, target)
+	return source.NewLifecycle(source.LifecycleInput{Location: "lifecycle:1", Account: f.Account, Event: f.Event, Instrument: f.Instrument, Kind: source.Exercise, Quantity: f.Quantity, Date: f.TradeDate, Relationships: []source.Relationship{link}})
+}
+
+// Debt carries synthetic terms not supplied by Confirmation trade rows.
+func Debt(kind source.DebtType) (source.Trade, error) {
+	t, err := Option()
+	if err != nil {
+		return source.Trade{}, err
+	}
+	f := t.Fields()
+	code := "USD"
+	if kind == source.ConventionalGilt {
+		code = "GBP"
+	}
+	c, _ := financial.ParseCurrency(code)
+	maturity, _ := financial.ParseDate("2036-10-20")
+	issue, _ := financial.ParseDate("2026-10-20")
+	coupon, _ := financial.NewQuantity("4.125000000000001")
+	terms, err := source.NewDebtTerms(source.DebtInput{Type: kind, Currency: c, Maturity: maturity, IssueDate: issue, Coupon: coupon, PaymentsPerYear: 2})
+	if err != nil {
+		return source.Trade{}, err
+	}
+	ref, _ := source.NewReference("fixture-broker", "issue", "", string(kind))
+	f.Instrument, err = source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Debt, Name: "Synthetic debt issue", Debt: terms})
+	if err != nil {
+		return source.Trade{}, err
+	}
+	f.Price, _ = financial.NewPrice("99.123456789", c)
+	f.AccruedInterest, _ = financial.NewMoney("-12.345", c)
+	f.QuotationBasis = source.Per100Nominal
+	return source.NewTrade(f)
+}
+
+func Conversion() (source.Conversion, error) {
+	t, err := Option()
+	if err != nil {
+		return source.Conversion{}, err
+	}
+	f := t.Fields()
+	eur, _ := financial.ParseCurrency("EUR")
+	usd, _ := financial.ParseCurrency("USD")
+	gbp, _ := financial.ParseCurrency("GBP")
+	sent, _ := source.NewCurrencyAmount(eur, "10.1234567890000000001")
+	received, _ := source.NewCurrencyAmount(usd, "")
+	rate, _ := financial.NewPrice("1.2345678901", usd)
+	money, _ := financial.NewMoney("-0.25", gbp)
+	charge, _ := source.NewCharge("commission", "total", money)
+	return source.NewConversion(source.ConversionInput{Location: "fx:1", Account: f.Account, Event: f.Event, Date: f.TradeDate, Sent: sent, Received: received, RateBase: eur, Rate: rate, Charges: []source.Charge{charge}})
+}
+
+func Correction() (source.Correction, error) {
+	t, err := Option()
+	if err != nil {
+		return source.Correction{}, err
+	}
+	f := t.Fields()
+	target, _ := source.NewReference("fixture-broker", "trade", "account-1", "original")
+	return source.NewCorrection(source.CorrectionInput{Location: "correction:1", Account: f.Account, Target: target, Replacement: f.Event, Kind: source.Replacement})
+}

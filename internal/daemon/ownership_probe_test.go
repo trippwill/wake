@@ -17,11 +17,8 @@ import (
 
 func TestCheckStoppedDoesNotCreateOrChangeFiles(t *testing.T) {
 	root := resetPrivateDir(t)
-	paths := config.Paths{
-		DataDir:    filepath.Join(root, "new-data"),
-		RuntimeDir: filepath.Join(root, "new-runtime"),
-	}
-	for _, target := range []config.Paths{paths, {DataDir: paths.DataDir}} {
+	paths := probeConfig(filepath.Join(root, "new-data", "wake.db"), filepath.Join(root, "new-runtime"))
+	for _, target := range []config.Config{paths, probeConfig(paths.Storage.WarehousePath, "")} {
 		if err := CheckStopped(target); err != nil {
 			t.Fatal(err)
 		}
@@ -32,7 +29,7 @@ func TestCheckStoppedDoesNotCreateOrChangeFiles(t *testing.T) {
 		t.Fatal("probe created paths", entries, err)
 	}
 
-	paths = config.Paths{DataDir: root, RuntimeDir: resetPrivateDir(t)}
+	paths = probeConfig(filepath.Join(root, "wake.db"), resetPrivateDir(t))
 	database := filepath.Join(root, "wake.db")
 	content := []byte("not SQLite; detection must not open a store")
 	if err := os.WriteFile(database, content, 0o600); err != nil {
@@ -59,32 +56,27 @@ func TestCheckStoppedDoesNotCreateOrChangeFiles(t *testing.T) {
 		t.Fatal("probe changed database inode", err)
 	}
 
-	entries, err = os.ReadDir(paths.RuntimeDir)
+	entries, err = os.ReadDir(paths.Paths.RuntimeDir)
 	if err != nil || len(entries) != 0 {
 		t.Fatal("probe created runtime artifacts", entries, err)
 	}
 }
 
 func TestCheckStoppedDetectsOwnersAndReleasesProbes(t *testing.T) {
-	paths := config.Paths{DataDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)}
+	paths := probeConfig(filepath.Join(resetPrivateDir(t), "wake.db"), resetPrivateDir(t))
 
-	owner, err := acquireOwnership(filepath.Join(paths.DataDir, "wake.db"), paths.RuntimeDir)
+	owner, err := acquireOwnership(paths.Storage.WarehousePath, paths.Paths.RuntimeDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer owner.close()
 
 	alias := resetPrivateDir(t)
-	if err := os.Link(filepath.Join(paths.DataDir, "wake.db"), filepath.Join(alias, "wake.db")); err != nil {
+	if err := os.Link(paths.Storage.WarehousePath, filepath.Join(alias, "wake.db")); err != nil {
 		t.Fatal(err)
 	}
 
-	for _, target := range []config.Paths{
-		paths,
-		{DataDir: paths.DataDir},
-		{DataDir: alias, RuntimeDir: resetPrivateDir(t)},
-		{DataDir: resetPrivateDir(t), RuntimeDir: paths.RuntimeDir},
-	} {
+	for _, target := range []config.Config{paths, probeConfig(paths.Storage.WarehousePath, ""), probeConfig(filepath.Join(alias, "wake.db"), resetPrivateDir(t)), probeConfig(filepath.Join(resetPrivateDir(t), "wake.db"), paths.Paths.RuntimeDir)} {
 		if err := CheckStopped(target); !errors.Is(err, ErrAlreadyOwned) {
 			t.Fatal("occupied paths accepted", target, err)
 		}
@@ -100,7 +92,7 @@ func TestCheckStoppedDetectsOwnersAndReleasesProbes(t *testing.T) {
 		t.Fatal("released owner still detected", err)
 	}
 
-	owner, err = acquireOwnership(filepath.Join(paths.DataDir, "wake.db"), paths.RuntimeDir)
+	owner, err = acquireOwnership(paths.Storage.WarehousePath, paths.Paths.RuntimeDir)
 	if err != nil {
 		t.Fatal("probe retained a lock", err)
 	}
@@ -109,8 +101,8 @@ func TestCheckStoppedDetectsOwnersAndReleasesProbes(t *testing.T) {
 }
 
 func TestCheckStoppedDetectsActiveSocketAndRetainsStaleSocket(t *testing.T) {
-	paths := config.Paths{DataDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)}
-	socket := filepath.Join(paths.RuntimeDir, "wake.sock")
+	paths := probeConfig(filepath.Join(resetPrivateDir(t), "wake.db"), resetPrivateDir(t))
+	socket := filepath.Join(paths.Paths.RuntimeDir, "wake.sock")
 
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 	if err != nil {
@@ -141,21 +133,24 @@ func TestCheckStoppedDetectsActiveSocketAndRetainsStaleSocket(t *testing.T) {
 func TestCheckStoppedRejectsUnsafePaths(t *testing.T) {
 	for _, kind := range []string{"relative-data", "relative-runtime", "public-directory", "symlink", "fifo", "public-file", "non-socket"} {
 		t.Run(kind, func(t *testing.T) {
-			paths := config.Paths{DataDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)}
-			database := filepath.Join(paths.DataDir, "wake.db")
+			paths := probeConfig(filepath.Join(resetPrivateDir(t), "wake.db"), resetPrivateDir(t))
+			database := paths.Storage.WarehousePath
 			switch kind {
 			case "relative-data":
-				paths.DataDir = ""
+				paths.Storage.WarehousePath = "relative"
 			case "relative-runtime":
-				paths.RuntimeDir = "relative"
+				paths.Paths.RuntimeDir = "relative"
 			case "public-directory":
 				// #nosec G302 -- Deliberately insecure directory must be rejected.
 				//nolint:gosec // Private test directory or synthetic database.
-				if err := os.Chmod(paths.DataDir, 0o755); err != nil {
+				if err := os.Chmod(filepath.Dir(paths.Storage.WarehousePath), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			case "symlink":
-				if err := os.Symlink(filepath.Join(paths.DataDir, "missing"), database); err != nil {
+				if err := os.Symlink(
+					filepath.Join(filepath.Dir(paths.Storage.WarehousePath), "missing"),
+					database,
+				); err != nil {
 					t.Fatal(err)
 				}
 			case "fifo":
@@ -173,7 +168,7 @@ func TestCheckStoppedRejectsUnsafePaths(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "non-socket":
-				if err := os.WriteFile(filepath.Join(paths.RuntimeDir, "wake.sock"), nil, 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(paths.Paths.RuntimeDir, "wake.sock"), nil, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -194,4 +189,11 @@ func resetPrivateDir(t *testing.T) string {
 	}
 
 	return p
+}
+
+func probeConfig(warehouse, runtime string) config.Config {
+	return config.Config{
+		Storage: config.Storage{WarehousePath: warehouse},
+		Paths:   config.Paths{RuntimeDir: runtime},
+	}
 }

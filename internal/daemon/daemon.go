@@ -7,6 +7,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/logging"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
@@ -54,7 +56,39 @@ func run(
 	options sourceOptions,
 	progress ...func(string),
 ) (result error) {
+	logger, flushLogs := logging.Coalesce(logger)
+	defer flushLogs()
+
+	stage := "starting"
+	started := false
+	defer func() {
+		if result != nil {
+			logger.ErrorContext(
+				context.Background(),
+				"daemon failed",
+				"event",
+				"daemon_failed",
+				"stage",
+				stage,
+				"code",
+				logging.Code(result),
+			)
+		}
+
+		if started {
+			logger.InfoContext(
+				context.Background(),
+				"daemon stopped",
+				"event",
+				"daemon_stopped",
+				"outcome",
+				"joined",
+			)
+		}
+	}()
+
 	phase := func(value string) {
+		stage = value
 		for _, report := range progress {
 			report(value)
 		}
@@ -79,7 +113,15 @@ func run(
 
 	phase("opening private storage")
 
-	store, err := persistence.Open(ctx, filepath.Join(cfg.Paths.DataDir, "wake.db"))
+	store, err := persistence.Open(
+		ctx,
+		persistence.Profile{
+			WarehousePath:   cfg.Storage.WarehousePath,
+			OperationalPath: cfg.Storage.OperationalPath,
+			ConnectionsPath: cfg.Storage.ConnectionsPath,
+		},
+		logger,
+	)
 	if err != nil {
 		return err
 	}
@@ -112,7 +154,7 @@ func run(
 		return err
 	}
 
-	providerHost, err := host.New(ctx, store, envelope, options.Now, registration)
+	providerHost, err := host.New(ctx, store, envelope, logger, options.Now, registration)
 	if err != nil {
 		return err
 	}
@@ -123,7 +165,7 @@ func run(
 		envelope,
 		options.ReferenceClient,
 		options.ReferenceURL,
-		options.Now,
+		options.Now, logger,
 	)
 	if err != nil {
 		return err
@@ -136,7 +178,7 @@ func run(
 		registration.Descriptor().ID(),
 		ibkrflex.Confirmations,
 		ibkrflex.Version,
-		options.Now,
+		options.Now, logger,
 	)
 
 	workContext, cancelWork := context.WithCancel(ctx)
@@ -146,14 +188,7 @@ func run(
 	go func() {
 		defer background.Done()
 
-		workflow.Run(workContext, func() {
-			logger.ErrorContext(
-				workContext,
-				"durable workflow work failed; retrying retained work",
-				"event",
-				"workflow_retry",
-			)
-		})
+		workflow.Run(workContext, nil)
 	}()
 
 	defer func() { cancelWork(); background.Wait() }()
@@ -175,16 +210,23 @@ func run(
 		return err
 	}
 
-	server := newHTTPServer(requests.handler(http.NewServeMux()))
+	server := newHTTPServer(requests.handler(http.NewServeMux()), logger)
 	server.BaseContext = func(net.Listener) context.Context { return requestsContext }
 	servers := []*http.Server{server}
-	listeners := []net.Listener{sameUIDListener{listener}}
+	listeners := []net.Listener{
+		sameUIDListener{Listener: listener, logger: logging.Component(logger, "socket")},
+	}
+	logger.DebugContext(ctx, "private socket listening", "event", "socket_listening")
 
 	auth, enabled, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.AuthMode, cfg.Admin.Origin())
 	if err != nil {
 		return err
 	}
 
+	var (
+		adminBind string
+		adminPort string
+	)
 	if enabled {
 		defer auth.Close()
 
@@ -197,6 +239,7 @@ func run(
 				Config:   cfg,
 				Workflow: workflow,
 				Stopping: stopping,
+				Logger:   logger,
 			},
 		)
 		if e != nil {
@@ -205,12 +248,28 @@ func run(
 
 		adminListener, e := net.Listen("tcp", cfg.Admin.Address())
 		if e != nil {
+			bind, port, _ := net.SplitHostPort(cfg.Admin.Address())
+			logger.ErrorContext(
+				ctx,
+				"admin listener failed",
+				"event",
+				"admin_bind_failed",
+				"code",
+				"listen_failed",
+				"admin_bind",
+				bind,
+				"admin_port",
+				port,
+			)
+
 			return e
 		}
 
+		adminBind, adminPort, _ = net.SplitHostPort(adminListener.Addr().String())
+
 		defer func() { _ = adminListener.Close() }()
 
-		adminServer := newHTTPServer(requests.handler(handler))
+		adminServer := newHTTPServer(requests.handler(handler), logger)
 		adminServer.BaseContext = server.BaseContext
 		servers = append(servers, adminServer)
 		listeners = append(listeners, adminListener)
@@ -230,13 +289,30 @@ func run(
 		}(s, listeners[i])
 	}
 
-	logger.InfoContext(ctx, "daemon ready", "event", "daemon_started")
+	started = true
+
+	logger.InfoContext(
+		ctx,
+		"daemon ready",
+		"event",
+		"daemon_started",
+		"admin_enabled",
+		enabled,
+		"admin_bind",
+		adminBind,
+		"admin_port",
+		adminPort,
+	)
 	phase("ready")
+
+	stage = "serving"
 
 	select {
 	case <-ctx.Done():
 	case err = <-failures:
 		result = err
+
+		logger.ErrorContext(ctx, "HTTP server failed", "event", "server_failed", "code", "serve_failed")
 	}
 
 	phase("joining shutdown")
@@ -245,7 +321,6 @@ func run(
 	cancelRequests()
 	requests.stop()
 	serving.Wait()
-	logger.InfoContext(context.Background(), "daemon stopped", "event", "daemon_stopped")
 
 	return result
 }
@@ -270,13 +345,22 @@ func shutdownHTTPServers(servers ...*http.Server) {
 	wg.Wait()
 }
 
-func newHTTPServer(handler http.Handler) *http.Server {
+func newHTTPServer(handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
 		Handler:           boundedReads(handler),
+		ErrorLog:          log.New(serverDiagnostics{logging.Component(logger, "http")}, "", 0),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    8 << 10,
 	}
+}
+
+// net/http diagnostics can contain panic values, addresses and request details.
+type serverDiagnostics struct{ logger *slog.Logger }
+
+func (w serverDiagnostics) Write(value []byte) (int, error) {
+	w.logger.Error("HTTP server diagnostic", "event", "http_server_failure", "code", "http_transport_failed")
+	return len(value), nil
 }

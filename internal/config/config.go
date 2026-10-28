@@ -37,11 +37,13 @@ const (
 )
 
 // Paths contains the resolved paths used by the Wake process.
-type Paths struct {
-	ConfigDir  string
-	DataDir    string
-	StateDir   string
-	RuntimeDir string
+type Paths struct{ ConfigDir, RuntimeDir string }
+
+// Storage contains independently resolved database file locations.
+type Storage struct {
+	WarehousePath   string `toml:"warehouse_path"`
+	ConnectionsPath string `toml:"connections_path"`
+	OperationalPath string `toml:"operational_path"`
 }
 
 // Log contains structured logging configuration.
@@ -80,6 +82,7 @@ func (value Admin) Origin() string {
 // Config is the fully resolved and validated process configuration.
 type Config struct {
 	Paths       Paths
+	Storage     Storage
 	Log         Log
 	Credentials Credentials
 	Admin       Admin
@@ -94,14 +97,13 @@ type Overrides struct {
 
 type fileConfig struct {
 	Paths       filePaths       `toml:"paths"`
+	Storage     Storage         `toml:"storage"`
 	Log         fileLog         `toml:"log"`
 	Credentials fileCredentials `toml:"credentials"`
 	Admin       fileAdmin       `toml:"admin"`
 }
 
 type filePaths struct {
-	DataDir    string `toml:"data_dir"`
-	StateDir   string `toml:"state_dir"`
 	RuntimeDir string `toml:"runtime_dir"`
 }
 
@@ -135,7 +137,7 @@ func Load(overrides Overrides) (Config, error) {
 
 // Prepare creates and checks directories only for an operation that needs them.
 func Prepare(cfg Config) error {
-	for _, path := range []string{cfg.Paths.ConfigDir, cfg.Paths.DataDir, cfg.Paths.StateDir, cfg.Paths.RuntimeDir} {
+	for _, path := range []string{cfg.Paths.ConfigDir, filepath.Dir(cfg.Storage.WarehousePath), filepath.Dir(cfg.Storage.ConnectionsPath), filepath.Dir(cfg.Storage.OperationalPath), cfg.Paths.RuntimeDir} {
 		if err := ensurePrivateDir(path); err != nil {
 			return err
 		}
@@ -201,8 +203,9 @@ func validateFileConfig(cfg fileConfig) error {
 		name string
 		path string
 	}{
-		{name: "data directory", path: cfg.Paths.DataDir},
-		{name: "state directory", path: cfg.Paths.StateDir},
+		{name: "warehouse database", path: cfg.Storage.WarehousePath},
+		{name: "connections database", path: cfg.Storage.ConnectionsPath},
+		{name: "operational database", path: cfg.Storage.OperationalPath},
 		{name: "runtime directory", path: cfg.Paths.RuntimeDir},
 		{name: "master key path", path: cfg.Credentials.MasterKeyPath},
 	} {

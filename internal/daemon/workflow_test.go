@@ -56,17 +56,25 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := persistence.Open(context.Background(), filepath.Join(cfg.Paths.DataDir, "wake.db"))
+	store, err := persistence.Open(
+		context.Background(),
+		persistence.Profile{
+			WarehousePath:   cfg.Storage.WarehousePath,
+			OperationalPath: cfg.Storage.OperationalPath,
+			ConnectionsPath: cfg.Storage.ConnectionsPath,
+		},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(context.Background(), store, envelope, nil, registration)
+	h, err := host.New(context.Background(), store, envelope, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, nil, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil)
+	workflow := application.New(store, h, nil, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, nil)
 
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()
@@ -115,7 +123,15 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		t.Fatal("upstream request remained alive")
 	}
 
-	store, err = persistence.Open(context.Background(), filepath.Join(cfg.Paths.DataDir, "wake.db"))
+	store, err = persistence.Open(
+		context.Background(),
+		persistence.Profile{
+			WarehousePath:   cfg.Storage.WarehousePath,
+			OperationalPath: cfg.Storage.OperationalPath,
+			ConnectionsPath: cfg.Storage.ConnectionsPath,
+		},
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

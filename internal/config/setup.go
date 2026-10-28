@@ -123,9 +123,12 @@ func (s LocalSetup) Save() error {
 			values["paths"] = paths
 		}
 
-		paths["data_dir"] = s.launch.DataDir
-		paths["state_dir"] = s.launch.StateDir
 		paths["runtime_dir"] = s.launch.RuntimeDir
+		values["storage"] = map[string]any{
+			"warehouse_path":   s.launch.Storage.WarehousePath,
+			"connections_path": s.launch.Storage.ConnectionsPath,
+			"operational_path": s.launch.Storage.OperationalPath,
+		}
 
 		admin, ok := values["admin"].(map[string]any)
 		if !ok {
@@ -192,8 +195,9 @@ func readSetupFile(path string) ([]byte, bool, error) {
 
 // SetupGuidance carries the small set of settings presented during local setup.
 type SetupGuidance struct {
-	DataDir, StateDir, RuntimeDir string
-	AdminPort                     uint16
+	Storage    Storage
+	RuntimeDir string
+	AdminPort  uint16
 }
 
 // Guidance reads existing TOML and XDG defaults, excluding WAKE_* launch overrides.
@@ -208,15 +212,20 @@ func (s LocalSetup) Guidance() (SetupGuidance, error) {
 		return SetupGuidance{}, err
 	}
 
-	data, state, runtime := file.Paths.DataDir, file.Paths.StateDir, file.Paths.RuntimeDir
-	if data == "" {
-		data = defaults["data-dir"]
+	storage := file.Storage
+	if storage.WarehousePath == "" {
+		storage.WarehousePath = defaults["warehouse-path"]
 	}
 
-	if state == "" {
-		state = defaults["state-dir"]
+	if storage.ConnectionsPath == "" {
+		storage.ConnectionsPath = defaults["connections-path"]
 	}
 
+	if storage.OperationalPath == "" {
+		storage.OperationalPath = defaults["operational-path"]
+	}
+
+	runtime := file.Paths.RuntimeDir
 	if runtime == "" {
 		runtime = defaults["runtime-dir"]
 	}
@@ -226,12 +235,12 @@ func (s LocalSetup) Guidance() (SetupGuidance, error) {
 		return SetupGuidance{}, err
 	}
 
-	return SetupGuidance{DataDir: data, StateDir: state, RuntimeDir: runtime, AdminPort: admin.Port}, nil
+	return SetupGuidance{Storage: storage, RuntimeDir: runtime, AdminPort: admin.Port}, nil
 }
 
 // WithLaunchSettings validates a proposed update before any provisioning writes.
-func (s LocalSetup) WithLaunchSettings(data, runtime string, port uint16) (LocalSetup, error) {
-	if err := requireAbsolute("data directory", data); err != nil {
+func (s LocalSetup) WithLaunchSettings(storage Storage, runtime string, port uint16) (LocalSetup, error) {
+	if err := checkStorage(storage); err != nil {
 		return s, err
 	}
 
@@ -244,18 +253,12 @@ func (s LocalSetup) WithLaunchSettings(data, runtime string, port uint16) (Local
 		return s, err
 	}
 
-	file.Paths.DataDir, file.Paths.RuntimeDir = data, runtime
 	file.Admin.Port = &port
 	if _, err := resolveAdmin(file.Admin); err != nil {
 		return s, err
 	}
 
-	guide, err := s.Guidance()
-	if err != nil {
-		return s, err
-	}
-
-	s.launch = &SetupGuidance{DataDir: data, StateDir: guide.StateDir, RuntimeDir: runtime, AdminPort: port}
+	s.launch = &SetupGuidance{Storage: storage, RuntimeDir: runtime, AdminPort: port}
 
 	return s, nil
 }

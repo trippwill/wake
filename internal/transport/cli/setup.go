@@ -101,9 +101,17 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 
 	activity.Pause()
 
-	data, err := promptSetting(ctx, c, "data-dir", guide.DataDir)
-	if err != nil {
-		return failure("read setup settings: %v", err)
+	storage := guide.Storage
+	for _, item := range []struct {
+		flag  string
+		value *string
+	}{{"warehouse-path", &storage.WarehousePath}, {"connections-path", &storage.ConnectionsPath}, {"operational-path", &storage.OperationalPath}} {
+		value, err := promptSetting(ctx, c, item.flag, *item.value)
+		if err != nil {
+			return failure("read setup settings: %v", err)
+		}
+
+		*item.value = value
 	}
 
 	runtime, err := promptSetting(ctx, c, "runtime-dir", guide.RuntimeDir)
@@ -121,12 +129,12 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 		return failure("admin port must be between 1 and 65535")
 	}
 
-	setup, err = setup.WithLaunchSettings(data, runtime, uint16(port))
+	setup, err = setup.WithLaunchSettings(storage, runtime, uint16(port))
 	if err != nil {
 		return failure("configure local setup: %v", err)
 	}
 
-	proposed := config.SetupGuidance{DataDir: data, StateDir: guide.StateDir, RuntimeDir: runtime}
+	proposed := config.SetupGuidance{Storage: storage, RuntimeDir: runtime}
 
 	activity.Phase("checking for running Wake at proposed paths")
 
@@ -138,14 +146,15 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 
 	if c.Bool("json") {
 		_ = json.NewEncoder(c.ErrWriter).
-			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "data_dir": data, "state_dir": guide.StateDir, "runtime_dir": runtime, "admin_port": port, "overwrite": setup.ConfigExists()})
+			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "operational_path": storage.OperationalPath, "runtime_dir": runtime, "admin_port": port, "overwrite": setup.ConfigExists()})
 	} else {
 		writef(
 			c.ErrWriter,
-			"Save configuration to %s\n  data: %s\n  state: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n",
+			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  operational: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n",
 			setup.ConfigPath,
-			data,
-			guide.StateDir,
+			storage.WarehousePath,
+			storage.ConnectionsPath,
+			storage.OperationalPath,
 			runtime,
 			port,
 		)
@@ -209,12 +218,12 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 }
 
 func checkSetupStopped(guides ...config.SetupGuidance) error {
-	checked := make(map[config.Paths]bool)
+	checked := make(map[config.Config]bool)
 	for _, guide := range guides {
-		configured := config.Paths{DataDir: guide.DataDir, StateDir: guide.StateDir, RuntimeDir: guide.RuntimeDir}
+		configured := config.Config{Paths: config.Paths{RuntimeDir: guide.RuntimeDir}, Storage: guide.Storage}
 		launch := configured
 		for _, setting := range config.Settings() {
-			if setting.Flag != "data-dir" && setting.Flag != "state-dir" && setting.Flag != "runtime-dir" {
+			if setting.Flag != "runtime-dir" && !strings.HasPrefix(setting.Key, "storage.") {
 				continue
 			}
 
@@ -228,16 +237,18 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 			}
 
 			switch setting.Flag {
-			case "data-dir":
-				launch.DataDir = value
-			case "state-dir":
-				launch.StateDir = value
+			case "warehouse-path":
+				launch.Storage.WarehousePath = value
+			case "connections-path":
+				launch.Storage.ConnectionsPath = value
+			case "operational-path":
+				launch.Storage.OperationalPath = value
 			default:
-				launch.RuntimeDir = value
+				launch.Paths.RuntimeDir = value
 			}
 		}
 
-		for _, paths := range []config.Paths{configured, launch} {
+		for _, paths := range []config.Config{configured, launch} {
 			if checked[paths] {
 				continue
 			}
@@ -245,16 +256,16 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 			if err := daemon.CheckStopped(paths); err != nil {
 				if errors.Is(err, daemon.ErrAlreadyOwned) {
 					return failure(
-						"Wake is running or its paths are in use (data: %s; runtime: %s); stop it and rerun setup",
-						paths.DataDir,
-						paths.RuntimeDir,
+						"Wake is running or its paths are in use (warehouse: %s; runtime: %s); stop it and rerun setup",
+						paths.Storage.WarehousePath,
+						paths.Paths.RuntimeDir,
 					)
 				}
 
 				return failure(
-					"cannot check running Wake at data %s and runtime %s: %v",
-					paths.DataDir,
-					paths.RuntimeDir,
+					"cannot check running Wake at warehouse %s and runtime %s: %v",
+					paths.Storage.WarehousePath,
+					paths.Paths.RuntimeDir,
 					err,
 				)
 			}

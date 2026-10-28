@@ -80,12 +80,16 @@ func TestBrowserShell(t *testing.T) {
 
 	err = chromedp.Run(
 		ctx,
+		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
 		chromedp.Navigate(origin+"/login"),
 		chromedp.WaitVisible("#unlock"),
 		chromedp.SendKeys("#unlock", "synthetic-browser-unlock"),
-		chromedp.Click(`button[type="submit"]`),
+		chromedp.Poll(
+			`(()=>{const e=document.querySelector("button[type=\"submit\"]");if(!e)return false;e.click();return true;})()`,
+			nil,
+		),
 		chromedp.WaitVisible("#main-navigation"),
-		chromedp.Evaluate(
+		chromedp.Poll(
 			`document.querySelectorAll('#main-navigation a').length === 5 && !document.querySelector('a[href="/trades"]')`,
 			&ok,
 		),
@@ -96,9 +100,12 @@ func TestBrowserShell(t *testing.T) {
 
 	err = chromedp.Run(
 		ctx,
-		chromedp.Click(`a[href="/configuration"]`),
+		chromedp.Poll(
+			`(()=>{const e=document.querySelector("a[href=\"/configuration\"]");if(!e)return false;e.click();return true;})()`,
+			nil,
+		),
 		chromedp.WaitVisible("h1"),
-		chromedp.Evaluate(
+		chromedp.Poll(
 			`document.querySelector('h1').textContent==='Configuration' && document.body.textContent.includes('Manage IBKR connections')`,
 			&ok,
 		),
@@ -116,7 +123,7 @@ func TestBrowserShell(t *testing.T) {
 		),
 		chromedp.Reload(),
 		chromedp.WaitVisible("h1"),
-		chromedp.Evaluate(`document.documentElement.dataset.theme === 'wake-dark'`, &ok),
+		chromedp.Poll(`document.documentElement.dataset.theme === 'wake-dark'`, &ok),
 	)
 	if err != nil || !ok {
 		t.Fatal("theme persistence", ok, err)
@@ -124,9 +131,12 @@ func TestBrowserShell(t *testing.T) {
 
 	err = chromedp.Run(
 		ctx,
-		chromedp.Click(`a[href="/status"]`),
+		chromedp.Poll(
+			`(()=>{const e=document.querySelector("a[href=\"/status\"]");if(!e)return false;e.click();return true;})()`,
+			nil,
+		),
 		chromedp.WaitVisible("h1"),
-		chromedp.Evaluate(`document.body.textContent.includes('Daemon running')`, &ok),
+		chromedp.Poll(`document.body.textContent.includes('Daemon running')`, &ok),
 	)
 	if err != nil || !ok {
 		t.Fatal("status", ok, err)

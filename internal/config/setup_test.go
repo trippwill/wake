@@ -20,16 +20,17 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 	}
 
 	path := filepath.Join(dir, "config.toml")
-	original := "[paths]\nstate_dir='" + filepath.Join(
+	original := "[storage]\noperational_path='" + filepath.Join(
 		roots.base,
-		"chosen-state",
-	) + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\n"
+		"chosen-state/execution.sqlite",
+	) + "'\nconnections_path='" + filepath.Join(roots.base, "access", "credentials.sqlite") + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\n"
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("WAKE_DATA_DIR", "/not-persisted")
-	t.Setenv("WAKE_STATE_DIR", "/not-persisted-state")
+	t.Setenv("WAKE_WAREHOUSE_PATH", "/not-persisted")
+	t.Setenv("WAKE_OPERATIONAL_PATH", "/not-persisted-state")
+	t.Setenv("WAKE_CONNECTIONS_PATH", "/not-persisted-access")
 	t.Setenv("WAKE_ADMIN_PORT", "9999")
 	t.Setenv("WAKE_LOG_LEVEL", "error")
 
@@ -43,12 +44,16 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 		t.Fatal(err)
 	}
 
-	if guide.DataDir != filepath.Join(roots.data, "wake") || guide.AdminPort != 8799 {
+	if guide.Storage.WarehousePath != filepath.Join(roots.data, "wake", "wake.db") || guide.AdminPort != 8799 {
 		t.Fatalf("guide baked in launch overrides: %#v", guide)
 	}
 
 	setup, err = setup.WithLaunchSettings(
-		filepath.Join(roots.base, "chosen-data"),
+		Storage{
+			WarehousePath:   filepath.Join(roots.base, "chosen-data", "history.sqlite"),
+			ConnectionsPath: guide.Storage.ConnectionsPath,
+			OperationalPath: guide.Storage.OperationalPath,
+		},
 		filepath.Join(roots.base, "chosen-runtime"),
 		8790,
 	)
@@ -70,7 +75,9 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 		t.Fatal(err)
 	}
 
-	if decoded.Paths.StateDir != filepath.Join(roots.base, "chosen-state") || decoded.Log.Level != "debug" ||
+	if decoded.Storage.ConnectionsPath != filepath.Join(roots.base, "access", "credentials.sqlite") ||
+		decoded.Storage.OperationalPath != filepath.Join(roots.base, "chosen-state/execution.sqlite") ||
+		decoded.Log.Level != "debug" ||
 		*decoded.Admin.Port != 8790 ||
 		strings.Contains(string(content), "not-persisted") {
 		t.Fatalf("guided save lost settings: %s", content)
@@ -217,8 +224,15 @@ func TestSetupCreatesAlternativeConfigurationWithoutChangingDefault(t *testing.T
 		t.Fatal(err)
 	}
 
+	guide, err := setup.Guidance()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	guide.Storage.WarehousePath = filepath.Join(roots.base, "warehouse.db")
+
 	setup, err = setup.WithLaunchSettings(
-		filepath.Join(roots.base, "warehouse"),
+		guide.Storage,
 		filepath.Join(roots.base, "runtime"),
 		8790,
 	)
@@ -231,7 +245,7 @@ func TestSetupCreatesAlternativeConfigurationWithoutChangingDefault(t *testing.T
 	}
 
 	resolved, err := Resolve(Overrides{ConfigPath: path, ConfigPathExplicit: true})
-	if err != nil || resolved.Config.Paths.DataDir != filepath.Join(roots.base, "warehouse") {
+	if err != nil || resolved.Config.Storage.WarehousePath != filepath.Join(roots.base, "warehouse.db") {
 		t.Fatal("new destination did not resolve", err)
 	}
 	// #nosec G304 -- Synthetic default config selected by this test.

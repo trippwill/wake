@@ -112,6 +112,17 @@ func (s *Store) Normalize(
 		return provider.Result{}, host.ErrStorage
 	}
 
+	if err = sink.q.SaveNormalizationReceipt(
+		ctx,
+		sqlc.SaveNormalizationReceiptParams{ArtifactID: id, Version: version, Counts: data},
+	); err != nil {
+		_ = tx.Rollback()
+
+		s.failedAttempt(ctx, attempt, "storage-failed")
+
+		return provider.Result{}, host.ErrStorage
+	}
+
 	if err = tx.Commit(); err != nil {
 		s.failedAttempt(ctx, attempt, "storage-failed")
 		return provider.Result{}, host.ErrStorage
@@ -266,6 +277,9 @@ func (c *claims) Reject(ctx context.Context, location, reason string) error {
 type Record struct {
 	Location, Kind, Reason string
 	Trade                  source.Trade
+	Lifecycle              source.Lifecycle
+	Conversion             source.Conversion
+	Correction             source.Correction
 	Instrument             source.InstrumentObservation
 }
 
@@ -282,6 +296,21 @@ func (s *Store) Records(ctx context.Context, id, version string) ([]Record, erro
 		case "trade":
 			record.Trade, err = decodeTrade(row.Data)
 			if err == nil && record.Trade.Fields().Location != row.Location {
+				err = ErrCorrupt
+			}
+		case "correction":
+			record.Correction, err = decodeCorrection(row.Data)
+			if err == nil && record.Correction.Fields().Location != row.Location {
+				err = ErrCorrupt
+			}
+		case "conversion":
+			record.Conversion, err = decodeConversion(row.Data)
+			if err == nil && record.Conversion.Fields().Location != row.Location {
+				err = ErrCorrupt
+			}
+		case "lifecycle":
+			record.Lifecycle, err = decodeLifecycle(row.Data)
+			if err == nil && record.Lifecycle.Fields().Location != row.Location {
 				err = ErrCorrupt
 			}
 		case "instrument":
@@ -315,4 +344,67 @@ func (s *Store) Records(ctx context.Context, id, version string) ([]Record, erro
 	}
 
 	return out, nil
+}
+
+func (c *claims) PutLifecycle(ctx context.Context, l source.Lifecycle) error {
+	if _, err := source.NewLifecycle(l.Fields()); err != nil {
+		c.failed = provider.ErrInvalid
+		return c.failed
+	}
+
+	data, err := encodeLifecycle(l)
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	if err = c.put(ctx, l.Fields().Location, "lifecycle", data); err != nil {
+		return err
+	}
+
+	c.counts.Lifecycles++
+
+	return nil
+}
+
+func (c *claims) PutConversion(ctx context.Context, v source.Conversion) error {
+	if _, err := source.NewConversion(v.Fields()); err != nil {
+		c.failed = provider.ErrInvalid
+		return c.failed
+	}
+
+	data, err := encodeConversion(v)
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	if err = c.put(ctx, v.Fields().Location, "conversion", data); err != nil {
+		return err
+	}
+
+	c.counts.Conversions++
+
+	return nil
+}
+
+func (c *claims) PutCorrection(ctx context.Context, v source.Correction) error {
+	if _, err := source.NewCorrection(v.Fields()); err != nil {
+		c.failed = provider.ErrInvalid
+		return c.failed
+	}
+
+	data, err := encodeCorrection(v)
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	if err = c.put(ctx, v.Fields().Location, "correction", data); err != nil {
+		return err
+	}
+
+	c.counts.Corrections++
+
+	return nil
 }

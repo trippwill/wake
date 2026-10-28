@@ -112,7 +112,7 @@ func TestSetupThroughTerminal(t *testing.T) {
 				confirmation = "n"
 			}
 
-			inputs := []string{"", filepath.Join(t.TempDir(), "runtime"), "", confirmation}
+			inputs := []string{"", "", "", filepath.Join(t.TempDir(), "runtime"), "", confirmation}
 			if confirmation == "y" {
 				inputs = append(inputs, test.first, test.second)
 			}

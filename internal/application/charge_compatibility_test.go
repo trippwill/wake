@@ -63,3 +63,47 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 		})
 	}
 }
+
+func TestConversionChargeRolesAllowEnrichment(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	gbp, _ := financial.ParseCurrency("GBP")
+	account, _ := source.NewReference("synthetic", "account", "", "one")
+	sent, _ := source.NewCurrencyAmount(usd, "1")
+	received, _ := source.NewCurrencyAmount(gbp, "")
+	date, _ := financial.ParseDate("2026-10-20")
+	totalMoney, _ := financial.NewMoney("-1", usd)
+	componentMoney, _ := financial.NewMoney("-0.25", gbp)
+	changedMoney, _ := financial.NewMoney("-2", usd)
+	total, _ := source.NewCharge("commission", "total", totalMoney)
+	component, _ := source.NewCharge("brokerFee", "component", componentMoney)
+	changed, _ := source.NewCharge("commission", "total", changedMoney)
+	makeConversion := func(charges []source.Charge) source.Conversion {
+		value, err := source.NewConversion(
+			source.ConversionInput{
+				Location: "synthetic",
+				Account:  account,
+				Date:     date,
+				Sent:     sent,
+				Received: received,
+				Charges:  charges,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+
+	first := makeConversion([]source.Charge{total})
+	enriched := makeConversion([]source.Charge{component, total})
+	reordered := makeConversion([]source.Charge{total, component})
+	if !CompatibleConversion(first, enriched) || !CompatibleConversion(enriched, first) ||
+		!CompatibleConversion(enriched, reordered) {
+		t.Fatal("compatible reported FX charges became conflicts")
+	}
+
+	if CompatibleConversion(first, makeConversion([]source.Charge{changed})) {
+		t.Fatal("conflicting FX charge accepted")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,11 +17,12 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
 
-const Rule = "openfigi-share-class-link/1"
+const Rule = "openfigi-family-link/2"
 
 type Job struct {
 	IDType  string `json:"idType"`
@@ -31,12 +33,14 @@ func (j Job) Key() string { b, _ := json.Marshal(j); return string(b) }
 
 type (
 	Record struct {
-		FIGI       string `json:"figi"`
-		Name       string `json:"name"`
-		Ticker     string `json:"ticker"`
-		ShareClass string `json:"shareClassFIGI"`
-		Exchange   string `json:"exchCode"`
-		Market     string `json:"marketSector"`
+		FIGI          string `json:"figi"`
+		Name          string `json:"name"`
+		Ticker        string `json:"ticker"`
+		ShareClass    string `json:"shareClassFIGI"`
+		Exchange      string `json:"exchCode"`
+		Market        string `json:"marketSector"`
+		SecurityType  string `json:"securityType"`
+		SecurityType2 string `json:"securityType2"`
 	}
 	Result struct {
 		Status, Evidence string
@@ -68,6 +72,7 @@ type (
 )
 
 type Service struct {
+	logger   *slog.Logger
 	store    Store
 	envelope *credential.Envelope
 	client   *http.Client
@@ -82,6 +87,7 @@ func New(
 	client *http.Client,
 	endpoint string,
 	now func() time.Time,
+	logger *slog.Logger,
 ) (*Service, error) {
 	if endpoint == "" {
 		endpoint = "https://api.openfigi.com/v3/mapping"
@@ -105,7 +111,14 @@ func New(
 		now = time.Now
 	}
 
-	return &Service{store: store, envelope: envelope, client: &copyClient, url: endpoint, now: now}, nil
+	return &Service{
+		logger:   logging.Component(logger, "reference"),
+		store:    store,
+		envelope: envelope,
+		client:   &copyClient,
+		url:      endpoint,
+		now:      now,
+	}, nil
 }
 
 var keyAAD = []byte("wake/openfigi/key/1")
@@ -174,7 +187,7 @@ func job(p Pending) (Job, bool) {
 
 // RunOnce serializes shared admission and suppresses duplicate jobs before HTTP.
 // Its boolean reports committed work, for refresh notifications.
-func (s *Service) RunOnce(ctx context.Context) (bool, error) {
+func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -194,29 +207,63 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
+	ctx, finishLog := logging.Start(ctx, s.logger, "reference")
+	cacheHits, provisional, applied, batchSize := 0, 0, 0, 0
+	outcomes := map[string]int{}
+	defer func() {
+		outcome := "completed"
+		if !didChange && resultErr == nil {
+			outcome = "deferred"
+		}
+
+		finishLog(
+			resultErr,
+			"outcome", outcome,
+			"cache_hits",
+			cacheHits,
+			"provisional",
+			provisional,
+			"applied",
+			applied,
+			"jobs",
+			batchSize,
+			"results",
+			outcomes,
+		)
+	}()
+
+	accessFailure := func() (bool, error) {
+		err := s.store.ReferenceFailure(ctx, "configured OpenFIGI key cannot be decrypted; replace the key")
+		if err == nil {
+			s.logger.WarnContext(
+				ctx,
+				"reference access requires repair",
+				"event",
+				"reference_access_required",
+				"operation_id",
+				logging.ID(ctx),
+				"code",
+				"access_required",
+			)
+		}
+
+		return false, err
+	}
+
 	var secret []byte
 	if len(payload) > 0 {
 		if s.envelope == nil {
-			return false, s.store.ReferenceFailure(
-				ctx,
-				"configured OpenFIGI key cannot be decrypted; replace the key",
-			)
+			return accessFailure()
 		}
 
 		encrypted, e := credential.ParseEncryptedSecret(payload)
 		if e != nil {
-			return false, s.store.ReferenceFailure(
-				ctx,
-				"configured OpenFIGI key cannot be decrypted; replace the key",
-			)
+			return accessFailure()
 		}
 
 		value, e := s.envelope.Decrypt(encrypted, keyAAD)
 		if e != nil {
-			return false, s.store.ReferenceFailure(
-				ctx,
-				"configured OpenFIGI key cannot be decrypted; replace the key",
-			)
+			return accessFailure()
 		}
 		defer value.Clear()
 
@@ -247,6 +294,8 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 			}
 
 			changed = true
+			provisional++
+			applied++
 
 			continue
 		}
@@ -262,6 +311,17 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 			}
 
 			changed = true
+			cacheHits++
+			applied++
+
+			s.logger.DebugContext(
+				ctx,
+				"reference cache applied",
+				"event",
+				"reference_cache_hit",
+				"operation_id",
+				logging.ID(ctx),
+			)
 
 			continue
 		}
@@ -287,8 +347,21 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	if !admitted {
+		s.logger.DebugContext(
+			ctx,
+			"reference admission deferred",
+			"event",
+			"reference_deferred",
+			"operation_id",
+			logging.ID(ctx),
+			"next_eligible_at",
+			next.UTC(),
+		)
+
 		return changed, nil
 	}
+
+	batchSize = len(jobs)
 
 	requestBytes, err := json.Marshal(jobs)
 	if err != nil {
@@ -337,7 +410,7 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 				if json.Unmarshal(body, &decoded) == nil && len(decoded) == len(jobs) {
 					for i, r := range decoded {
 						switch {
-						case len(r.Data) == 1 && r.Data[0].ShareClass != "" && r.Data[0].Name != "" && r.Data[0].Market == "Equity":
+						case len(r.Data) == 1 && r.Data[0].FIGI != "" && r.Data[0].Name != "":
 							results[i] = Result{Status: "resolved", Records: r.Data, Next: now.Add(7 * 24 * time.Hour)}
 						case len(r.Data) > 0:
 							results[i] = Result{Status: "ambiguous", Records: r.Data, Next: now.Add(7 * 24 * time.Hour)}
@@ -421,14 +494,92 @@ func (s *Service) RunOnce(ctx context.Context) (bool, error) {
 	}
 
 	for i, j := range jobs {
+		switch results[i].Status {
+		case "resolved", "ambiguous", "no-match", "provisional":
+			outcomes[results[i].Status]++
+		case "throttled", "invalid-key", "temporary-failure":
+			outcomes[results[i].Status]++
+			s.logger.WarnContext(
+				ctx,
+				"reference lookup requires attention",
+				"event",
+				"reference_attention",
+				"operation_id",
+				logging.ID(ctx),
+				"code",
+				results[i].Status,
+				"next_eligible_at",
+				results[i].Next.UTC(),
+			)
+		default:
+			outcomes["other"]++
+		}
+
 		for _, id := range owners[j.Key()] {
 			if err = s.store.ApplyReference(ctx, id, results[i]); err != nil {
 				return changed, err
 			}
 
 			changed = true
+			applied++
 		}
 	}
 
 	return changed, nil
+}
+
+// Select identifies the reference subject before accepting a name or identity.
+// An equity root result cannot identify an option on that equity.
+func Select(kind source.InstrumentKind, records []Record) (Record, string, bool) {
+	if len(records) != 1 {
+		return Record{}, "", false
+	}
+
+	r := records[0]
+	option := r.SecurityType2 == "Option" || r.SecurityType == "Equity Option"
+	switch kind {
+	case source.Option:
+		return r, r.FIGI, option && r.Market == "Equity" && r.FIGI != "" && r.Name != ""
+	case source.Debt:
+		return r, r.FIGI, (r.Market == "Govt" || r.Market == "Corp" || r.Market == "M-Mkt") && r.FIGI != "" &&
+			r.Name != ""
+	case source.Equity, source.Fund, source.UnknownInstrument:
+		return r, r.ShareClass, !option && r.Market == "Equity" && r.ShareClass != "" && r.Name != ""
+	}
+
+	return Record{}, "", false
+}
+
+// CheckAccess verifies configured protection without making a reference request.
+func (s *Service) CheckAccess(ctx context.Context) error {
+	payload, failure, err := s.store.ReferenceKey(ctx)
+	if err != nil {
+		return err
+	}
+
+	if failure != "" {
+		return provider.ErrUnauthorized
+	}
+
+	if len(payload) == 0 {
+		return nil
+	}
+
+	if s.envelope == nil {
+		return provider.ErrUnauthorized
+	}
+
+	encrypted, err := credential.ParseEncryptedSecret(payload)
+	if err != nil {
+		return provider.ErrUnauthorized
+	}
+
+	key, err := s.envelope.Decrypt(encrypted, keyAAD)
+	if err != nil {
+		return provider.ErrUnauthorized
+	}
+
+	key.Clear()
+
+	return nil
 }

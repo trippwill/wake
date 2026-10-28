@@ -106,7 +106,7 @@ Calculations and rounded displays do not replace source values.
 
 Charges are compared by their reported field and total/component scope. Reordering
 or omitting a charge role does not establish disagreement. Different monetary
-values or currencies for the same reported role remain conflicting evidence. Repeated observations also compare retained known facts, including identifiers when a native reference is absent; an initially unknown fact cannot hide later disagreement.
+values or currencies for the same reported role remain conflicting evidence.
 
 Establish identity through explicit corroboration before combining fields. Weighted
 confidence cannot outweigh a strong contradiction. Repeated observations must not duplicate
@@ -128,3 +128,25 @@ to consumers even without a new trade. Stable identities and reproducible views
 support restart and recovery. Rebuilding a view is different from reconstructing
 missing financial history, and explicit warehouse disposal is different from
 reinterpreting retained evidence.
+
+
+A source cancellation marks its identified activity cancelled without deleting it.
+An explicitly identified replacement with a distinct source event receives a new
+Wake identity and a link to its superseded activity. Missing targets remain pending;
+competing instructions, ambiguous identities and cycles require review. Supported
+instructions never acquire authority from arrival order. A retained baseline anchors
+selection; mutually compatible observations may fill absent optional values. When
+those optional claims compete, the baseline remains visible with disagreement.
+
+
+An active operator decision controls only its selected fields or link. Superseding
+or releasing a decision appends attributable history; release returns that scope
+to the retained automatic selection. Selecting financial fields from an observation
+does not silently change instrument or listing identity. Decisions preserve dissent,
+and stale forms must not overwrite decisions made after the form was read.
+
+Compatible observations contribute charge roles in a deterministic field/scope order. If combining individually valid facts exceeds a constructor bound or produces invalid debt terms, retain the durable baseline with visible disagreement and preserve all supporting observations. Conflicting shared instrument terms mark the automatic instrument selection for review without replacing its reported values.
+
+A retained automatic FIGI selection remains an identity claim while an operator override is active. Competing automatic or operator selections cannot acquire that FIGI for another root; conflicts remain visible and releasing the override can restore its retained selection.
+
+Reported deliverables compare component multiplicity and exact quantities/cash independently of list order. Equivalent reordered components do not establish disagreement; accepted selection preserves the durable baseline order.

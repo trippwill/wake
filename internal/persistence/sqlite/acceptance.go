@@ -23,7 +23,15 @@ func executionValue(r sqlc.Execution) (application.Execution, error) {
 		return application.Execution{}, ErrCorrupt
 	}
 
-	return application.NewExecution(r.ID, r.AccountID, r.InstrumentID, r.ListingID, r.Status, r.Rule, t)
+	return application.NewExecution(
+		r.ID,
+		r.AccountID,
+		r.InstrumentID.String,
+		r.ListingID.String,
+		r.Status,
+		r.Rule,
+		t, r.Revision,
+	)
 }
 
 func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
@@ -43,9 +51,9 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 		r.Ticker,
 		r.Kind,
 		r.ReferenceStatus,
-		r.ShareClassFigi,
+		r.ReferenceFigi,
 		r.EvidenceID,
-		i, r.Rule,
+		i, r.Rule, r.Revision,
 	)
 }
 
@@ -82,6 +90,66 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	}
 
 	for _, record := range records {
+		if record.Kind == "correction" {
+			f := record.Correction.Fields()
+			if account.Connection() == retained.Connection && account.Provider() == retained.Provider &&
+				account.Stream() == retained.Stream &&
+				account.Reference() == f.Account {
+				if err = q.PutSourceCorrection(
+					ctx,
+					sqlc.PutSourceCorrectionParams{
+						ArtifactID:  id,
+						Version:     version,
+						Location:    f.Location,
+						AccountID:   account.ID(),
+						Kind:        string(f.Kind),
+						Target:      referenceKey(f.Target),
+						Replacement: referenceKey(f.Replacement),
+					},
+				); err != nil {
+					return err
+				}
+			}
+
+			continue
+		}
+
+		if record.Kind == "conversion" {
+			if err = processConversion(
+				ctx,
+				q,
+				account,
+				retained.Connection,
+				retained.Provider,
+				retained.Stream,
+				id,
+				version,
+				record.Conversion,
+			); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if record.Kind == "lifecycle" {
+			if err = processLifecycle(
+				ctx,
+				q,
+				account,
+				retained.Connection,
+				retained.Provider,
+				retained.Stream,
+				id,
+				version,
+				record.Lifecycle,
+			); err != nil {
+				return err
+			}
+
+			continue
+		}
+
 		if record.Kind != "trade" {
 			continue
 		}
@@ -134,39 +202,30 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						return e
 					}
 
+					if old.Kind != "trade" {
+						observation.Outcome = "conflicting activity kind; needs review"
+						observation.ExecutionID = sql.NullString{String: execution, Valid: true}
+						if e = q.PutObservation(ctx, observation); e != nil {
+							return e
+						}
+
+						continue
+					}
+
 					accepted, e := decodeTrade(old.Accepted)
 					if e != nil {
 						return e
 					}
 
 					if accepted.Fields().Instrument.Reference() == f.Instrument.Reference() {
-						if e = checkInstrumentRoot(ctx, q, old.InstrumentID, f.Instrument); e != nil {
+						if e = checkInstrumentRoot(ctx, q, old.InstrumentID.String, f.Instrument); e != nil {
 							return e
 						}
-					}
-
-					known, e := q.ExecutionKnownTrades(ctx, sql.NullString{String: execution, Valid: true})
-					if e != nil {
-						return e
-					}
-
-					compatible := application.Compatible(accepted, t)
-					for _, data := range known {
-						prior, decodeErr := decodeTrade(data)
-						if decodeErr != nil {
-							return decodeErr
-						}
-
-						compatible = application.Compatible(prior, t) && compatible
 					}
 
 					observation.Outcome = "corroborating observation"
-					if !compatible {
+					if !application.Compatible(accepted, t) {
 						observation.Outcome = "conflicting terms; needs review"
-
-						if e = q.ConflictExecution(ctx, execution); e != nil {
-							return e
-						}
 					}
 				} else {
 					instrument, listing, e := acceptInstrument(
@@ -192,8 +251,8 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						sqlc.PutExecutionParams{
 							ID:           execution,
 							AccountID:    account.ID(),
-							InstrumentID: instrument,
-							ListingID:    listing,
+							InstrumentID: sql.NullString{String: instrument, Valid: true},
+							ListingID:    sql.NullString{String: listing, Valid: listing != ""},
 							Accepted:     data,
 							Rule:         application.RepeatRule,
 						},
@@ -228,6 +287,12 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					}
 				}
 
+				if observation.Outcome != "conflicting terms; needs review" {
+					if e = putRelationships(ctx, q, execution, f.Relationships); e != nil {
+						return e
+					}
+				}
+
 				observation.ExecutionID = sql.NullString{String: execution, Valid: true}
 			}
 		}
@@ -235,6 +300,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		if e = q.PutObservation(ctx, observation); e != nil {
 			return e
 		}
+	}
+
+	if err = projectAll(ctx, q); err != nil {
+		return err
 	}
 
 	if err = q.ArtifactProcessed(ctx, id); err != nil {
@@ -259,13 +328,12 @@ func checkInstrumentRoot(ctx context.Context, q *sqlc.Queries, id string, i sour
 		return nil
 	}
 
-	return q.ResolveInstrument(
-		ctx,
+	return resolveAutomaticInstrument(ctx, q,
 		sqlc.ResolveInstrumentParams{
 			ID:              root.ID,
 			Name:            root.Name,
 			Ticker:          root.Ticker,
-			ShareClassFigi:  root.ShareClassFigi,
+			ReferenceFigi:   root.ReferenceFigi,
 			EvidenceID:      root.EvidenceID,
 			ReferenceStatus: "conflict",
 			ReferenceNext:   root.ReferenceNext,
@@ -318,13 +386,12 @@ func acceptInstrument(
 		}
 
 		if instrumentContradiction(previous.Reported(), i) {
-			if e = q.ResolveInstrument(
-				ctx,
+			if e = resolveAutomaticInstrument(ctx, q,
 				sqlc.ResolveInstrumentParams{
 					ID:              root.ID,
 					Name:            root.Name,
 					Ticker:          root.Ticker,
-					ShareClassFigi:  root.ShareClassFigi,
+					ReferenceFigi:   root.ReferenceFigi,
 					EvidenceID:      root.EvidenceID,
 					ReferenceStatus: "conflict",
 					ReferenceNext:   root.ReferenceNext,
@@ -332,7 +399,72 @@ func acceptInstrument(
 			); e != nil {
 				return "", "", e
 			}
+		} else {
+			f := previous.Reported().Fields()
+			changed := false
+			if f.Kind == source.UnknownInstrument && i.Kind() != source.UnknownInstrument {
+				f.Kind = i.Kind()
+				changed = true
+			}
+
+			if len(f.Identifiers) == 0 && len(i.Identifiers()) > 0 {
+				f.Identifiers = i.Identifiers()
+				changed = true
+			}
+
+			if f.Name == "" && i.Name() != "" {
+				f.Name = i.Name()
+				changed = true
+			}
+
+			if f.Ticker == "" && i.Ticker() != "" {
+				f.Ticker = i.Ticker()
+				changed = true
+			}
+
+			if changed {
+				enriched, e := source.NewInstrument(f)
+				if e != nil {
+					return "", "", e
+				}
+
+				data, e := json.Marshal(instrumentWire(enriched))
+				if e != nil {
+					return "", "", e
+				}
+
+				if e = enrichAutomaticInstrument(
+					ctx,
+					q,
+					sqlc.EnrichInstrumentParams{
+						ID:       root.ID,
+						Reported: data,
+						Name:     i.Name(),
+						Ticker:   i.Ticker(),
+						Kind:     string(f.Kind),
+					},
+				); e != nil {
+					return "", "", e
+				}
+			}
 		}
+	}
+
+	if u := i.Option().Fields().Underlier; u.Kind() != "" && !root.UnderlierID.Valid {
+		underlier, _, e := acceptInstrument(ctx, q, artifact, location+"/underlier", u, "")
+		if e != nil {
+			return "", "", e
+		}
+
+		if e = setAutomaticUnderlier(ctx, q,
+			sqlc.SetUnderlierParams{ID: root.ID, UnderlierID: sql.NullString{String: underlier, Valid: true}},
+		); e != nil {
+			return "", "", e
+		}
+	}
+
+	if i.Venue() == "" || currency == "" {
+		return root.ID, "", nil
 	}
 
 	if err = q.PutListing(
@@ -365,7 +497,7 @@ func acceptInstrument(
 }
 
 func instrumentContradiction(a, b source.Instrument) bool {
-	if a.Kind() != b.Kind() {
+	if !application.CompatibleInstrumentKind(a.Kind(), b.Kind()) {
 		return true
 	}
 
@@ -430,7 +562,9 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 		)
 	}
 
-	return out, nil
+	out.Relationships, err = relationships(ctx, s.queries, id)
+
+	return out, err
 }
 
 func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.InstrumentDetail, error) {
@@ -440,6 +574,8 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 	if err != nil {
 		return out, err
 	}
+
+	out.Underlier = r.UnderlierID.String
 
 	out.Instrument, err = instrumentValue(r)
 	if err != nil {
@@ -477,7 +613,7 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 		)
 	}
 
-	observations, err := s.queries.InstrumentObservations(ctx, id)
+	observations, err := s.queries.InstrumentObservations(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return out, err
 	}
@@ -508,15 +644,25 @@ func matchExecution(
 	t source.Trade,
 ) (string, bool, error) {
 	f := t.Fields()
+	return matchReferences(ctx, q, account, f.Event, f.EventAliases)
+}
+
+func matchReferences(
+	ctx context.Context,
+	q *sqlc.Queries,
+	account string,
+	event source.Reference,
+	aliases []source.Reference,
+) (string, bool, error) {
 	matches := map[string]bool{}
-	for index, ref := range append([]source.Reference{f.Event}, f.EventAliases...) {
+	for index, ref := range append([]source.Reference{event}, aliases...) {
 		ids, err := q.EventLinks(ctx, sqlc.EventLinksParams{AccountID: account, Reference: referenceKey(ref)})
 		if err != nil {
 			return "", false, err
 		}
 
 		for _, id := range ids {
-			if index > 0 && f.Event.Kind() == "execution-id" {
+			if index > 0 && event.Kind() == "execution-id" {
 				links, err := q.ExecutionLinks(ctx, id)
 				if err != nil {
 					return "", false, err
@@ -534,7 +680,7 @@ func matchExecution(
 						return "", false, err
 					}
 
-					if r.Kind() == "execution-id" && r != f.Event {
+					if r.Kind() == "execution-id" && r != event {
 						different = true
 					}
 				}
@@ -547,7 +693,7 @@ func matchExecution(
 			matches[id] = true
 		}
 
-		if index == 0 && len(matches) == 1 && f.Event.Kind() == "execution-id" {
+		if index == 0 && len(matches) == 1 && event.Kind() == "execution-id" {
 			for id := range matches {
 				return id, false, nil
 			}
@@ -563,4 +709,323 @@ func matchExecution(
 	}
 
 	return "", false, nil
+}
+
+func putRelationships(ctx context.Context, q *sqlc.Queries, id string, links []source.Relationship) error {
+	for _, r := range links {
+		if err := q.PutRelationship(
+			ctx,
+			sqlc.PutRelationshipParams{ActivityID: id, Kind: string(r.Kind()), Target: referenceKey(r.Target())},
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func relationships(ctx context.Context, q *sqlc.Queries, id string) ([]application.Relationship, error) {
+	rows, err := q.Relationships(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	out := []application.Relationship{}
+	for _, r := range rows {
+		out = append(out, application.Relationship{Kind: r.Kind, Target: r.Target, TargetID: r.TargetID})
+	}
+
+	return out, nil
+}
+
+func lifecycleValue(r sqlc.Execution) (application.Lifecycle, error) {
+	l, err := decodeLifecycle(r.Accepted)
+	if err != nil {
+		return application.Lifecycle{}, ErrCorrupt
+	}
+
+	return application.NewLifecycle(r.ID, r.AccountID, r.InstrumentID.String, r.Status, r.Rule, l, r.Revision)
+}
+
+func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.LifecycleDetail, error) {
+	out := application.LifecycleDetail{}
+
+	r, err := s.queries.Execution(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	if r.Kind != "lifecycle" {
+		return out, application.ErrInvalid
+	}
+
+	out.Lifecycle, err = lifecycleValue(r)
+	if err != nil {
+		return out, err
+	}
+
+	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
+	if err != nil {
+		return out, err
+	}
+
+	for _, r := range rows {
+		out.Observations = append(
+			out.Observations,
+			application.Observation{
+				Artifact: r.ArtifactID,
+				Version:  r.Version,
+				Location: r.Location,
+				Outcome:  r.Outcome,
+				Rule:     r.Rule,
+			},
+		)
+	}
+
+	out.Relationships, err = relationships(ctx, s.queries, id)
+
+	return out, err
+}
+
+func processLifecycle(
+	ctx context.Context,
+	q *sqlc.Queries,
+	account application.Account,
+	connection, provider, stream, artifact, version string,
+	l source.Lifecycle,
+) error {
+	f := l.Fields()
+
+	n, err := q.ObservationExists(
+		ctx,
+		sqlc.ObservationExistsParams{ArtifactID: artifact, Version: version, Location: f.Location},
+	)
+	if err != nil || n > 0 {
+		return err
+	}
+
+	o := sqlc.PutObservationParams{
+		ArtifactID: artifact,
+		Version:    version,
+		Location:   f.Location,
+		Rule:       application.AuthorityRule,
+		Outcome:    "unselected account or source",
+	}
+	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
+		account.Reference() != f.Account {
+		return q.PutObservation(ctx, o)
+	}
+
+	o.Rule = application.RepeatRule
+	if f.Event.IsZero() {
+		o.Outcome = "identity needs review"
+		return q.PutObservation(ctx, o)
+	}
+
+	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases)
+	if err != nil {
+		return err
+	}
+
+	if ambiguous {
+		o.Outcome = "native identity needs review"
+		return q.PutObservation(ctx, o)
+	}
+
+	if id == "" {
+		instrument, _, e := acceptInstrument(ctx, q, artifact, f.Location, f.Instrument, "")
+		if e != nil {
+			return e
+		}
+
+		data, e := encodeLifecycle(l)
+		if e != nil {
+			return e
+		}
+
+		id = rand.Text()
+		if e = q.PutLifecycleActivity(
+			ctx,
+			sqlc.PutLifecycleActivityParams{
+				ID:           id,
+				AccountID:    account.ID(),
+				InstrumentID: sql.NullString{String: instrument, Valid: true},
+				Accepted:     data,
+				Rule:         application.RepeatRule,
+			},
+		); e != nil {
+			return e
+		}
+
+		o.Outcome = "accepted " + string(f.Kind)
+	} else {
+		row, e := q.Execution(ctx, id)
+		if e != nil {
+			return e
+		}
+
+		o.Outcome = "corroborating observation"
+		old, e := decodeLifecycle(row.Accepted)
+		if row.Kind != "lifecycle" || e != nil || !application.CompatibleLifecycle(old, l) {
+			o.Outcome = "conflicting terms; needs review"
+		}
+	}
+
+	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
+		if err = q.PutEventLink(
+			ctx,
+			sqlc.PutEventLinkParams{AccountID: account.ID(), Reference: referenceKey(r), ExecutionID: id},
+		); err != nil {
+			return err
+		}
+	}
+
+	if o.Outcome != "conflicting terms; needs review" {
+		if err = putRelationships(ctx, q, id, f.Relationships); err != nil {
+			return err
+		}
+	}
+
+	o.ExecutionID = sql.NullString{String: id, Valid: true}
+
+	return q.PutObservation(ctx, o)
+}
+
+func conversionValue(r sqlc.Execution) (application.Conversion, error) {
+	v, err := decodeConversion(r.Accepted)
+	if err != nil {
+		return application.Conversion{}, ErrCorrupt
+	}
+
+	return application.NewConversion(r.ID, r.AccountID, r.Status, r.Rule, v, r.Revision)
+}
+
+func (s *Store) ConversionDetail(ctx context.Context, id string) (application.ConversionDetail, error) {
+	out := application.ConversionDetail{}
+
+	r, err := s.queries.Execution(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	if r.Kind != "conversion" {
+		return out, application.ErrInvalid
+	}
+
+	out.Conversion, err = conversionValue(r)
+	if err != nil {
+		return out, err
+	}
+
+	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
+	if err != nil {
+		return out, err
+	}
+
+	for _, r := range rows {
+		out.Observations = append(
+			out.Observations,
+			application.Observation{
+				Artifact: r.ArtifactID,
+				Version:  r.Version,
+				Location: r.Location,
+				Outcome:  r.Outcome,
+				Rule:     r.Rule,
+			},
+		)
+	}
+
+	return out, nil
+}
+
+func processConversion(
+	ctx context.Context,
+	q *sqlc.Queries,
+	account application.Account,
+	connection, provider, stream, artifact, version string,
+	c source.Conversion,
+) error {
+	f := c.Fields()
+
+	n, err := q.ObservationExists(
+		ctx,
+		sqlc.ObservationExistsParams{ArtifactID: artifact, Version: version, Location: f.Location},
+	)
+	if err != nil || n > 0 {
+		return err
+	}
+
+	o := sqlc.PutObservationParams{
+		ArtifactID: artifact,
+		Version:    version,
+		Location:   f.Location,
+		Rule:       application.AuthorityRule,
+		Outcome:    "unselected account or source",
+	}
+	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
+		account.Reference() != f.Account {
+		return q.PutObservation(ctx, o)
+	}
+
+	o.Rule = application.RepeatRule
+	if f.Event.IsZero() {
+		o.Outcome = "identity needs review"
+		return q.PutObservation(ctx, o)
+	}
+
+	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases)
+	if err != nil {
+		return err
+	}
+
+	if ambiguous {
+		o.Outcome = "native identity needs review"
+		return q.PutObservation(ctx, o)
+	}
+
+	if id == "" {
+		data, e := encodeConversion(c)
+		if e != nil {
+			return e
+		}
+
+		id = rand.Text()
+		if e = q.PutConversionActivity(
+			ctx,
+			sqlc.PutConversionActivityParams{
+				ID:        id,
+				AccountID: account.ID(),
+				Accepted:  data,
+				Rule:      application.RepeatRule,
+			},
+		); e != nil {
+			return e
+		}
+
+		o.Outcome = "accepted conversion"
+	} else {
+		row, e := q.Execution(ctx, id)
+		if e != nil {
+			return e
+		}
+
+		o.Outcome = "corroborating observation"
+		old, e := decodeConversion(row.Accepted)
+		if row.Kind != "conversion" || e != nil || !application.CompatibleConversion(old, c) {
+			o.Outcome = "conflicting terms; needs review"
+		}
+	}
+
+	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
+		if err = q.PutEventLink(
+			ctx,
+			sqlc.PutEventLinkParams{AccountID: account.ID(), Reference: referenceKey(r), ExecutionID: id},
+		); err != nil {
+			return err
+		}
+	}
+
+	o.ExecutionID = sql.NullString{String: id, Valid: true}
+
+	return q.PutObservation(ctx, o)
 }

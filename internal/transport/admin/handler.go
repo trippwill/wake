@@ -8,6 +8,7 @@ import (
 	"context"
 	"embed"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -28,6 +29,7 @@ type (
 		Status(context.Context) (Status, error)
 	}
 	Dependencies struct {
+		Logger   *slog.Logger
 		Queries  Queries
 		Config   config.Config
 		Workflow *application.Workflow
@@ -58,6 +60,8 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
 			if !ok {
+				rejection(r, "session_required")
+
 				if auth.mode == "local" {
 					http.Redirect(w, r, "/login", http.StatusSeeOther)
 				} else {
@@ -82,21 +86,25 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		})
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return diagnostics(deps.Logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setSecurityHeaders(w.Header())
 
 		if !auth.correctHost(r) {
+			rejection(r, "invalid_host")
 			http.Error(w, "invalid host", http.StatusBadRequest)
+
 			return
 		}
 
 		if !auth.proxyAuthorized(r) {
+			rejection(r, "proxy_auth_required")
 			http.Error(w, "proxy authentication required", http.StatusUnauthorized)
+
 			return
 		}
 
 		mux.ServeHTTP(w, r)
-	}), nil
+	})), nil
 }
 
 func setSecurityHeaders(headers http.Header) {

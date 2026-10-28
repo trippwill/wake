@@ -6,6 +6,7 @@ package persistence
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -38,8 +39,14 @@ func claimFile(path string) (*os.File, error) {
 		return nil, err
 	}
 
-	for _, suffix := range []string{"-journal", "-wal", "-shm"} {
-		info, statErr := os.Lstat(path + suffix)
+	sidecars, err := storeSidecars(path)
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+
+	for _, sidecar := range sidecars {
+		info, statErr := os.Lstat(sidecar)
 		if os.IsNotExist(statErr) {
 			continue
 		}
@@ -72,4 +79,24 @@ func checkFile(path string, owner *os.File) error {
 	}
 
 	return nil
+}
+
+// Attached transactions can leave a super-journal alongside the warehouse.
+func storeSidecars(path string) ([]string, error) {
+	files := []string{path + "-journal", path + "-wal", path + "-shm"}
+
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+
+	prefix := filepath.Base(path) + "-mj"
+	for _, entry := range entries {
+		suffix, ok := strings.CutPrefix(entry.Name(), prefix)
+		if ok && len(suffix) == 9 && suffix[6] == '9' && strings.Trim(suffix, "0123456789ABCDEFabcdef") == "" {
+			files = append(files, filepath.Join(filepath.Dir(path), entry.Name()))
+		}
+	}
+
+	return files, nil
 }

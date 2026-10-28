@@ -2,3 +2,6 @@
 -- SPDX-License-Identifier: MPL-2.0
 
 CREATE TABLE sqlite_schema (type TEXT NOT NULL, name TEXT NOT NULL);
+
+ATTACH DATABASE ':memory:' AS access;
+ATTACH DATABASE ':memory:' AS operational;

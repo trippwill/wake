@@ -14,18 +14,21 @@ import (
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 type fixtureHost struct {
-	path, id string
-	store    *persistence.Store
-	host     *host.Host
-	envelope *credential.Envelope
-	now      time.Time
+	diagnostics bytes.Buffer
+	path, id    string
+	store       *persistence.Store
+	host        *host.Host
+	envelope    *credential.Envelope
+	now         time.Time
 }
 
 func newFixture(t *testing.T, r provider.Registration) *fixtureHost {
@@ -76,11 +79,11 @@ func registration(t *testing.T) provider.Registration {
 func (f *fixtureHost) open(t *testing.T, r provider.Registration) {
 	t.Helper()
 	var err error
-	f.store, err = persistence.Open(context.Background(), f.path)
+	f.store, err = persistence.Open(context.Background(), persistence.Profile{WarehousePath: f.path, ConnectionsPath: filepath.Join(filepath.Dir(f.path), "connections.db"), OperationalPath: filepath.Join(filepath.Dir(f.path), "operational.db")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.host, err = host.New(context.Background(), f.store, f.envelope, func() time.Time { return f.now }, r)
+	f.host, err = host.New(context.Background(), f.store, f.envelope, slog.New(slog.NewJSONHandler(&f.diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug})), func() time.Time { return f.now }, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +95,9 @@ func (f *fixtureHost) sql(t *testing.T, text string, args ...any) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
+	if _, err = db.Exec("ATTACH DATABASE ? AS operational", filepath.Join(filepath.Dir(f.path), "operational.db")); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec(text, args...); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +217,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal("restart lost records", err)
 	}
 	f.host.Close()
-	h, err := host.New(ctx, f.store, nil, nil)
+	h, err := host.New(ctx, f.store, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,6 +326,12 @@ func TestNormalizationRollbackRejectAccountingAndStorageFailure(t *testing.T) {
 			_, err = f.host.Normalize(context.Background(), id, "broken-v1")
 			if err == nil {
 				t.Fatal("normalization unexpectedly committed")
+			}
+			if strings.Contains(f.diagnostics.String(), "secret-bearing") || strings.Contains(f.diagnostics.String(), "synthetic-token") {
+				t.Fatal("private provider material leaked")
+			}
+			if !strings.Contains(f.diagnostics.String(), `"event":"normalize_finished","outcome":"failed"`) {
+				t.Fatal("normalization failure missing", f.diagnostics.String())
 			}
 			if kind == "unavailable" && !errors.Is(err, provider.ErrUnavailable) {
 				t.Fatal("unavailable interpreter became malformed input", err)
@@ -504,7 +516,7 @@ func TestInterruptedAttemptRecoveryAndCredentialFreeNormalization(t *testing.T) 
 		t.Fatal("interrupted attempt not recovered", attempts, err)
 	}
 	f.host.Close()
-	f.host, err = host.New(context.Background(), f.store, nil, nil, registration(t))
+	f.host, err = host.New(context.Background(), f.store, nil, nil, nil, registration(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,5 +568,267 @@ func TestPacingStorageFailureCannotBeAcknowledged(t *testing.T) {
 	}
 	if cp := f.checkpoint(t, "acquire"); cp.Revision != 0 || cp.Failure != host.ErrStorage.Error() {
 		t.Fatal("pacing failure advanced continuation", cp)
+	}
+}
+
+func TestAdjustedOptionExternalClaimRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	base := registration(t)
+	n := normalizeFunc(func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+		trade, err := fixture.Option()
+		if err != nil {
+			return provider.Result{}, err
+		}
+		if err = c.PutTrade(ctx, trade); err != nil {
+			return provider.Result{}, err
+		}
+		return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+	})
+	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.host.Normalize(ctx, id, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := f.store.Records(ctx, id, "v1")
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	terms := records[0].Trade.Fields().Instrument.Option().Fields()
+	if terms.Strike.Amount() != "123.4500000000000000001" || terms.Multiplier.Value() != "10" || len(terms.Deliverables) != 2 || terms.Deliverables[0].Quantity().Value() != "12.5" || terms.Deliverables[1].Cash().Amount() != "0.75" || terms.EffectiveFrom.String() != "2026-10-01" {
+		t.Fatal("adjusted terms lost", terms)
+	}
+}
+func TestLifecycleExternalClaimRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	base := registration(t)
+	n := normalizeFunc(func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+		trade, err := fixture.Lifecycle()
+		if err != nil {
+			return provider.Result{}, err
+		}
+		if err = c.PutLifecycle(ctx, trade); err != nil {
+			return provider.Result{}, err
+		}
+		return provider.NewResult(provider.Counts{Rows: 1, Lifecycles: 1})
+	})
+	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.host.Normalize(ctx, id, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := f.store.Records(ctx, id, "v1")
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	if records[0].Lifecycle.Fields().Kind != source.Exercise || len(records[0].Lifecycle.Fields().Relationships) != 1 {
+		t.Fatal("lifecycle terms lost")
+	}
+}
+func TestDebtExternalClaimRoundTrip(t *testing.T) {
+	for _, kind := range []source.DebtType{source.TreasuryNote, source.TreasuryBond, source.ConventionalGilt} {
+		t.Run(string(kind), func(t *testing.T) {
+			ctx := context.Background()
+			base := registration(t)
+			n := normalizeFunc(func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+				trade, err := fixture.Debt(kind)
+				if err != nil {
+					return provider.Result{}, err
+				}
+				if err = c.PutTrade(ctx, trade); err != nil {
+					return provider.Result{}, err
+				}
+				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+			})
+			r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := newFixture(t, r)
+			id, err := f.host.Acquire(ctx, f.id, "confirmations")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.host.Normalize(ctx, id, "v1"); err != nil {
+				t.Fatal(err)
+			}
+			records, err := f.store.Records(ctx, id, "v1")
+			if err != nil || len(records) != 1 {
+				t.Fatal(records, err)
+			}
+			terms := records[0].Trade.Fields()
+			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || terms.QuotationBasis != source.Per100Nominal || terms.AccruedInterest.Amount() != "-12.345" {
+				t.Fatal("debt terms lost", terms)
+			}
+		})
+	}
+}
+func TestConversionExternalClaimRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	base := registration(t)
+	n := normalizeFunc(func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+		trade, err := fixture.Conversion()
+		if err != nil {
+			return provider.Result{}, err
+		}
+		if err = c.PutConversion(ctx, trade); err != nil {
+			return provider.Result{}, err
+		}
+		return provider.NewResult(provider.Counts{Rows: 1, Conversions: 1})
+	})
+	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.host.Normalize(ctx, id, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := f.store.Records(ctx, id, "v1")
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	terms := records[0].Conversion.Fields()
+	if terms.Sent.Amount() != "10.1234567890000000001" || terms.Received.Amount() != "" || terms.Charges[0].Money().Currency().String() != "GBP" {
+		t.Fatal("conversion roles lost", terms)
+	}
+}
+func TestCorrectionExternalClaimRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	base := registration(t)
+	n := normalizeFunc(func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+		trade, err := fixture.Correction()
+		if err != nil {
+			return provider.Result{}, err
+		}
+		if err = c.PutCorrection(ctx, trade); err != nil {
+			return provider.Result{}, err
+		}
+		return provider.NewResult(provider.Counts{Rows: 1, Corrections: 1})
+	})
+	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.host.Normalize(ctx, id, "v1"); err != nil {
+		t.Fatal(err)
+	}
+	records, err := f.store.Records(ctx, id, "v1")
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	terms := records[0].Correction.Fields()
+	if terms.Kind != source.Replacement || terms.Target.Value() != "original" || terms.Replacement.Value() != "option-1" {
+		t.Fatal("correction references lost", terms)
+	}
+}
+
+func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing.T) {
+	ctx := context.Background()
+	r := registration(t)
+	f := newFixture(t, r)
+	artifact, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil || artifact == "" {
+		t.Fatal(artifact, err)
+	}
+	result, err := f.host.Normalize(ctx, artifact, "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.host.Close()
+	if err = f.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"connections.db", "operational.db"} {
+		if err = os.Remove(filepath.Join(filepath.Dir(f.path), name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.open(t, r)
+	f.host.Close()
+	f.host, err = host.New(ctx, f.store, nil, nil, nil, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := f.host.Normalize(ctx, artifact, "v1")
+	if err != nil || replay.Counts() != result.Counts() {
+		t.Fatal("lost successful receipt", replay, err)
+	}
+	if attempts, err := f.store.Attempts(ctx, artifact); err != nil || len(attempts) != 0 {
+		t.Fatal("replay reran normalization", attempts, err)
+	}
+	if records, err := f.store.Records(ctx, artifact, "v1"); err != nil || len(records) != 3 {
+		t.Fatal("lost retained claims", records, err)
+	}
+	if _, err = f.host.Acquire(ctx, f.id, "confirmations"); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("recovery restored source authority", err)
+	}
+}
+
+func TestNormalizationReceiptFailureRollsBackClaims(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, registration(t))
+	artifact, err := f.host.Acquire(ctx, f.id, "confirmations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.sql(t, `CREATE TRIGGER reject_receipt BEFORE INSERT ON normalization_receipts BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END`)
+	if _, err = f.host.Normalize(ctx, artifact, "v1"); !errors.Is(err, host.ErrStorage) {
+		t.Fatal("receipt failure acknowledged", err)
+	}
+	if records, err := f.store.Records(ctx, artifact, "v1"); err != nil || len(records) != 0 {
+		t.Fatal("claims escaped rollback", records, err)
+	}
+	if attempts, err := f.store.Attempts(ctx, artifact); err != nil || len(attempts) != 1 || attempts[0].Outcome != "storage-failed" {
+		t.Fatal("missing failed attempt", attempts, err)
+	}
+	f.sql(t, `DROP TRIGGER reject_receipt`)
+	if _, err = f.host.Normalize(ctx, artifact, "v1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommittedRetryIsNotReportedAsAcquisitionSuccess(t *testing.T) {
+	base := registration(t)
+	acquire := acquireFunc(func(_ context.Context, request provider.Request, _ provider.Access) (provider.Step, error) {
+		return provider.NewRetryStep(provider.State{}, request.Now.Add(time.Minute), "private-provider-value")
+	})
+	r, err := provider.NewRegistration(base.Descriptor(), base.Version(), acquire, base.Normalizer(), base.Discoverer(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	if _, err = f.host.Acquire(context.Background(), f.id, "confirmations"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := f.store.Checkpoint(context.Background(), host.WorkKey{Connection: f.id, Stream: "confirmations", Operation: "acquire"})
+	if err != nil || checkpoint.Revision != 1 || checkpoint.Failure != "private-provider-value" {
+		t.Fatal("retry was not retained", checkpoint, err)
+	}
+	text := f.diagnostics.String()
+	if !strings.Contains(text, `"outcome":"retry_scheduled"`) || !strings.Contains(text, `"code":"upstream_retry"`) || strings.Contains(text, "private-provider-value") || !strings.Contains(text, `"next_eligible_at"`) {
+		t.Fatal(text)
 	}
 }

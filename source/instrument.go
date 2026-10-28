@@ -11,6 +11,8 @@ const (
 	UnknownInstrument InstrumentKind = "unknown"
 	Equity            InstrumentKind = "equity"
 	Fund              InstrumentKind = "fund"
+	Option            InstrumentKind = "option"
+	Debt              InstrumentKind = "debt"
 )
 
 // InstrumentInput carries reported labels and identifiers, never accepted Wake
@@ -22,13 +24,15 @@ type InstrumentInput struct {
 	Name        string
 	Venue       string
 	Identifiers []Identifier
+	Option      OptionTerms
+	Debt        DebtTerms
 }
 
 type Instrument struct{ input InstrumentInput }
 
 func NewInstrument(input InstrumentInput) (Instrument, error) {
 	switch input.Kind {
-	case UnknownInstrument, Equity, Fund:
+	case UnknownInstrument, Equity, Fund, Option, Debt:
 	default:
 		return Instrument{}, ErrInvalidInstrument
 	}
@@ -49,6 +53,10 @@ func NewInstrument(input InstrumentInput) (Instrument, error) {
 		}
 	}
 
+	if (input.Kind != Option && !input.Option.IsZero()) || (input.Kind != Debt && !input.Debt.IsZero()) {
+		return Instrument{}, ErrInvalidInstrument
+	}
+
 	input.Identifiers = slices.Clone(input.Identifiers)
 
 	return Instrument{input: input}, nil
@@ -60,3 +68,14 @@ func (i Instrument) Ticker() string            { return i.input.Ticker }
 func (i Instrument) Name() string              { return i.input.Name }
 func (i Instrument) Venue() string             { return i.input.Venue }
 func (i Instrument) Identifiers() []Identifier { return slices.Clone(i.input.Identifiers) }
+
+func (i Instrument) Option() OptionTerms { return i.input.Option }
+
+func (i Instrument) Fields() InstrumentInput {
+	f := i.input
+	f.Identifiers = slices.Clone(f.Identifiers)
+
+	return f
+}
+
+func (i Instrument) Debt() DebtTerms { return i.input.Debt }

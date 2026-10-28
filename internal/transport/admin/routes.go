@@ -26,12 +26,15 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 		}
 
 		if !auth.sameOrigin(r) {
+			rejection(r, "invalid_origin")
 			http.Error(w, "invalid origin", http.StatusForbidden)
+
 			return
 		}
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
 		if err := r.ParseForm(); err != nil || !auth.verifyUnlock(r.PostForm.Get("unlock")) {
+			rejection(r, "login_rejected")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = Login("invalid credentials").Render(r.Context(), w)
@@ -40,7 +43,9 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 		}
 
 		if _, err := auth.issue(w); err != nil {
+			rejection(r, "session_issue_failed")
 			http.Error(w, "session error", http.StatusInternalServerError)
+
 			return
 		}
 

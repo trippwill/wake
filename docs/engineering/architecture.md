@@ -73,10 +73,57 @@ on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
 
-The private single-file store has an explicit development format. Unsupported
-formats fail closed before writable recovery, schema or journal changes. Startup
-never converts or deletes a database; recreation is an explicit operator action.
-Master keys remain operator-provisioned through setup.
+One daemon owns a three-store profile: a financial warehouse, active connections
+and credentials, and reconstructable operational execution state. Each store has an independent
+file setting, with XDG defaults for financial data, active configuration and
+operational state. The warehouse
+retains historical source descriptors independently of current access, and owns
+evidence, financial identity, decisions and durable recovery inputs. Acknowledged
+checkpoints, coverage, completed-work receipts and pacing/retry restrictions survive
+loss of execution state. Reference cache entries are disposable; their supporting
+evidence remains retained.
+
+One attached SQLite writer uses DELETE rollback journals and EXTRA synchronization
+for cross-store atomicity. Financial references remain within the warehouse;
+cross-store relationships are checked within the shared transaction. Every store
+has an explicit development format. The warehouse owns its identity; the operational
+store records which warehouse it belongs to. Credentials remain independent of
+warehouse identity. Ownership,
+format and association checks precede writable recovery. Unsupported formats fail
+closed; startup never converts or deletes them. Recreation is an explicit operator
+action, and master keys remain operator-provisioned through setup. Offline CLI
+reset exposes credentials and warehouse choices, previews the selected files and
+requires explicit confirmation for deletion. Warehouse reset also clears its
+operational state; credentials reset preserves financial data. It checks filesystem
+ownership without opening SQLite or reading keys.
+
+A supported warehouse remains useful for inspecting retained history without source
+credentials. A supported operational store associated with a different warehouse
+is cleared and rebound to the selected warehouse without changing financial identity.
+Missing companions are recreated and execution obligations reconstructed
+from durable inputs; this pauses acquisition and reference access until authenticated
+operator review, any required access repair and explicit resume. An intact restart
+retains its existing authority and scheduling. Recreating companions cannot shorten
+retained retry restrictions or discard acknowledged progress. A fresh warehouse
+can reuse retained connection settings and encrypted credentials, starting paused
+until explicit resume and bounded discovery. Account confirmation is required
+before financial synchronization.
+
+Operational diagnostics use structured, component-scoped events and configured log
+levels across acquisition, normalization, financial processing, reference work,
+operator actions, recovery and transport/process lifetime. Opaque operation IDs
+correlate stages; durations, classified outcomes and retained retry timing explain
+progress. Info summarizes completed work and required operator action; debug adds
+stage, validation, pacing and cache detail. Idle polling is silent, repeated failures
+are bounded with suppressed counts, and long work reports progress every 30 seconds.
+Success follows the owning commit; the stopped event follows joined work and cleanup.
+
+Startup always reports whether admin is enabled and, when listening, the actual
+bind address and port, including at warn/error log levels. Diagnostics exclude
+credential/configuration payloads, financial values, source identifiers, operator
+rationale, raw request data and raw upstream errors at every level. Admin failures
+use fixed classifications and registered route patterns; ordinary reads and SSE
+traffic stay out of info logs.
 
 Providers use public `financial`, `source` and `provider` packages. Registration is
 explicit and starts no work. Source references remain qualified claims, with no
@@ -110,17 +157,27 @@ work during shutdown. Requested windows and reported coverage remain distinct.
 Financial acceptance applies named/versioned authority, observation-matching and
 instrument-linking rules transactionally. Native references corroborate Wake-owned
 identities; separate fills remain separate. Matching observations add provenance.
-Conflicting terms retain the accepted values and expose review status. Source
-summaries, bookings and unsupported families stay in evidence without contributing
-equity executions.
+Conflicting terms retain the accepted values and expose review status. Option
+contracts retain their own identity, a separate underlier link and the
+reported terms used by each historical execution. Listings remain absent where
+evidence supplies no listing venue. Explicit lifecycle relationships retain
+unresolved qualified endpoints; they resolve
+when the endpoint is accepted, without timing or amount matching. Reported stock
+bookings retain identities separate from option outcomes. Source summaries and
+unsupported activity stay
+in evidence without becoming accepted executions.
 
 The reference service maps identifiers using only their type and value; source
 currency and venue do not constrain identity lookup. It batches jobs under a shared
-durable budget. Cache reuse and retained selection evidence have separate lifetimes: successful lookups
+durable budget. Cache reuse and retained selection evidence have separate
+lifetimes: successful lookups
 are reusable for seven days and successful no-match results for six hours, while
 the evidence supporting accepted selections remains retained. Transient failures
 are not negative results. Configured key failures require repair or explicit
-selection of anonymous access. An unambiguous reference can enrich an existing
+selection of anonymous access. Reference selection distinguishes equity share
+classes from option contracts; an
+underlier result never identifies its option. An unambiguous reference can enrich
+an existing
 identity; unifying distinct existing roots requires review rather than a silent
 merge. Financial processing remains useful with provisional reference identity.
 
@@ -128,4 +185,34 @@ Administrative commands use authenticated HTTP forms. Committed work triggers
 SSE refresh hints; fallback polling reads the same status regions. Editable forms
 remain outside those regions, and refreshes preserve focused controls.
 
+Activity identity allocations and baseline selections remain retained independently
+of accepted-value projection updates. The projector applies the same typed
+compatibility and enrichment rules to retained observations during processing and
+recovery. Source corrections are evaluated across connected relationship groups;
+ambiguous endpoints, competing replacements and cycles prevent partial application.
+Accepted value, link and conflict-status changes advance entity revisions; an
+unchanged replay does not. Cancellation and supersession retain original activity
+and its evidence, while replacement activity retains its own identity.
+
+Authenticated correction commands retain session-derived attribution, timestamp,
+scope and optional rationale. A submission token makes retries repeat-safe and an
+expected entity revision prevents stale writes. Decision history appends supersession
+and release rather than mutating previous decisions. The projector reapplies active
+decisions over automatic selections; automatic reference selections are retained
+separately so refresh and release preserve the correct authority. Reference candidate
+selection is restricted to the affected instrument's identifier-mapping job within
+a retained batch, and link decisions validate the target family and listing root.
+
+Processing retry reuses retained reports and successful normalization records.
+Projection rebuild persists a job and its entity/explicit-relationship groups,
+committing one bounded group at a time from current retained inputs and decisions.
+An interruption resumes after committed progress; failure rolls back the current
+group and leaves other views at their last commit. A related group that exceeds
+the bounded work limit is rejected visibly before rebuilding begins. Source and
+reference access, credentials, identity allocations, reference evidence/cache,
+budgets and retry eligibility are independent of rebuild. Refresh hints follow
+committed progress, and recovery controls stay outside refreshed status regions.
+
 Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.
+
+Restoring lost access settings invalidates opaque source continuations while preserving retained pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier enrichment continues beneath an operator link override, so releasing the decision restores the source-established link.
