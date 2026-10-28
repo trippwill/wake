@@ -338,7 +338,7 @@ func TestPersistedStateRequiresCompleteEnvelopeAndRetainedMirror(t *testing.T) {
 			})
 		}
 	}
-	for _, mode := range []string{"missing-resource", "older-mirror", "conflicting-revision", "empty-history-cursor", "malformed-history"} {
+	for _, mode := range []string{"missing-resource", "older-mirror", "conflicting-revision", "empty-history-cursor", "malformed-history", "conflicting-cursor", "repeated-cursor"} {
 		t.Run(mode, func(t *testing.T) {
 			s := state{Version: 1, Cursor: "end", Resources: map[string]json.RawMessage{"activity/a": sample(2, "2.0000")}, History: []change{{"end", sample(2, "2.0000")}}}
 			switch mode {
@@ -352,6 +352,11 @@ func TestPersistedStateRequiresCompleteEnvelopeAndRetainedMirror(t *testing.T) {
 				s.History[0].Cursor = ""
 			case "malformed-history":
 				s.History[0].Resource = json.RawMessage(`{}`)
+			case "repeated-cursor":
+				s.History = append(s.History, s.History[0])
+			case "conflicting-cursor":
+				s.Resources["activity/a"] = sample(3, "3.0000")
+				s.History = []change{{"same", sample(1, "1.0000")}, {"same", sample(2, "2.0000")}}
 			}
 			path := filepath.Join(t.TempDir(), "mirror.json")
 			if err := save(path, s); err != nil {

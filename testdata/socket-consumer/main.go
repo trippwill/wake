@@ -210,11 +210,17 @@ func readState(path string) (state, error) {
 			return s, errors.New("invalid consumer mirror")
 		}
 	}
+	// Replay has already deduplicated persisted history.
+	seen := map[string]bool{}
 	for _, entry := range s.History {
 		recorded, err := metadata(entry.Resource)
 		if err != nil || entry.Cursor == "" {
 			return s, errors.New("invalid consumer history")
 		}
+		if seen[entry.Cursor] {
+			return s, errors.New("invalid consumer history: repeated change cursor")
+		}
+		seen[entry.Cursor] = true
 		current, ok := s.Resources[recorded.Kind+"/"+recorded.ID]
 		mirrored, err := metadata(current)
 		if !ok || err != nil || mirrored.Revision < recorded.Revision || (mirrored.Revision == recorded.Revision && !sameJSON(current, entry.Resource)) {
