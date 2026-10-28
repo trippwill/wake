@@ -114,6 +114,14 @@ Keep administrative authority separate from read access. The local deployment
 assumes a trusted OS user and private storage; wider access requires an explicit
 trust decision rather than accidental network exposure.
 
+In admin proxy mode, the reverse proxy owns upstream user authentication and
+supplies Wake's guard on every request. Wake checks the configured public host
+before establishing a signed browser session through a safe request. The session
+does not replace the proxy guard; commands additionally require the public origin
+and the session's CSRF token. HTTPS at the public origin protects the secure cookie.
+The proxy must replace client-supplied guard headers, and its upstream connection
+must remain private. This browser gate is separate from financial socket access.
+
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
 pre-release stores fail closed with explicit recreation guidance. The publishing

@@ -155,6 +155,21 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			return
 		}
 
+		if auth.mode == "proxy" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			if _, ok := auth.session(r); !ok {
+				if _, err := auth.issue(w); err != nil {
+					rejection(r, "session_issue_failed")
+					http.Error(w, "session error", http.StatusInternalServerError)
+
+					return
+				}
+				//nolint:gosec // The configured origin fixes the destination, even for paths beginning with //.
+				http.Redirect(w, r, auth.origin.String()+r.URL.RequestURI(), http.StatusSeeOther)
+
+				return
+			}
+		}
+
 		w.Header().Set("Vary", "HX-Request")
 
 		*r = *pageRequest(r)
