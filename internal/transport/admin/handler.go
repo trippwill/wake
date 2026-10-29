@@ -173,6 +173,10 @@ func documentNavigation(r *http.Request) bool {
 		return false
 	}
 
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		return false
+	}
+
 	mode := r.Header.Get("Sec-Fetch-Mode")
 
 	return mode == "navigate" || (mode == "" && strings.Contains(r.Header.Get("Accept"), "text/html"))

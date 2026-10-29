@@ -235,6 +235,25 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 		t.Fatal("valid session was not reused", w.Code)
 	}
 
+	for _, path := range []string{"/assets/vendor/README.md", "/assets/app.js"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, mode := range []string{"", "navigate"} {
+				r := httptest.NewRequest(method, origin+path, nil)
+				r.Header.Set("X-Wake-Proxy-Authorization", guard)
+				r.Header.Set("Accept", "text/html")
+				r.Header.Set("Sec-Fetch-Mode", mode)
+
+				w = httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+
+				if w.Code != http.StatusOK || w.Header().Get("Cache-Control") == "no-store" ||
+					len(w.Result().Cookies()) != 0 {
+					t.Fatal("asset navigation established a cacheable session", path, method, mode, w.Code, w.Header())
+				}
+			}
+		}
+	}
+
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
 		w = request(method, "/processing/report/retry", guard, nil)
 		if len(w.Result().Cookies()) != 0 || w.Code == http.StatusOK {

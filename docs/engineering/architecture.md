@@ -117,9 +117,9 @@ trust decision rather than accidental network exposure.
 In admin proxy mode, the reverse proxy owns upstream user authentication and
 supplies Wake's guard on every request. Wake checks the configured public host
 before establishing a signed browser session during document navigation. It serves
-that document with the new session; background requests cannot rotate its CSRF
-token underneath an existing form. The session
-does not replace the proxy guard; commands additionally require the public origin
+that document with the new session; static assets do not establish sessions, and
+background requests cannot rotate its CSRF token underneath an existing form. The
+session does not replace the proxy guard; commands additionally require the public origin
 and the session's CSRF token. HTTPS at the public origin protects the secure cookie.
 The proxy must replace client-supplied guard headers, and its upstream connection
 must remain private. This browser gate is separate from financial socket access.
