@@ -155,11 +155,31 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			return
 		}
 
+		if auth.mode == "proxy" && documentNavigation(r) && r.URL.Path != "/login" {
+			if _, ok := auth.session(r); !ok {
+				r = auth.establishSession(w, r)
+			}
+		}
+
 		w.Header().Set("Vary", "HX-Request")
 
 		*r = *pageRequest(r)
 		mux.ServeHTTP(w, r)
 	})), nil
+}
+
+func documentNavigation(r *http.Request) bool {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.Header.Get("HX-Request") == "true" {
+		return false
+	}
+
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		return false
+	}
+
+	mode := r.Header.Get("Sec-Fetch-Mode")
+
+	return mode == "navigate" || (mode == "" && strings.Contains(r.Header.Get("Accept"), "text/html"))
 }
 
 func setSecurityHeaders(headers http.Header) {

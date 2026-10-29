@@ -12,7 +12,7 @@ import (
 func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		if auth.mode != "local" {
-			http.NotFound(w, r)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 
@@ -42,12 +42,7 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 			return
 		}
 
-		if _, err := auth.issue(w); err != nil {
-			rejection(r, "session_issue_failed")
-			http.Error(w, "session error", http.StatusInternalServerError)
-
-			return
-		}
+		auth.issue(w)
 
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
