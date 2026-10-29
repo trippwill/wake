@@ -218,7 +218,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					}
 
 					if accepted.Fields().Instrument.Reference() == f.Instrument.Reference() {
-						if e = checkInstrumentRoot(ctx, q, old.InstrumentID.String, f.Instrument); e != nil {
+						if e = checkInstrumentRoot(ctx, q, old, f.Instrument); e != nil {
 							return e
 						}
 					}
@@ -313,7 +313,22 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	return s.commit(ctx, tx)
 }
 
-func checkInstrumentRoot(ctx context.Context, q *sqlc.Queries, id string, i source.Instrument) error {
+func checkInstrumentRoot(
+	ctx context.Context,
+	q *sqlc.Queries,
+	execution sqlc.Execution,
+	i source.Instrument,
+) error {
+	id := execution.InstrumentID.String
+
+	base, err := q.ActivityBase(ctx, execution.ID)
+	if err == nil {
+		// Source claims belong to the original root, even after an operator relink.
+		id = base.InstrumentID.String
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	// A repeated row in the initial artifact precedes creation of its base.
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
 		return err
