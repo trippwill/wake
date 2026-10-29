@@ -4,6 +4,7 @@ package application
 
 import (
 	"cmp"
+	"reflect"
 	"slices"
 
 	"go.trippwill.dev/wake/financial"
@@ -17,8 +18,12 @@ func selectObservations[T any](
 	observations []T,
 	compatible func(T, T) bool,
 	enrich func(T, T) (T, error),
+	comparisonKey func(T) any,
 ) (T, bool, error) {
 	candidates := []T{base}
+
+	keys := []any{comparisonKey(base)}
+	accepted := make([]T, 0, len(observations))
 	conflict := false
 	for _, o := range observations {
 		if !compatible(base, o) {
@@ -26,21 +31,28 @@ func selectObservations[T any](
 			continue
 		}
 
-		candidates = append(candidates, o)
-	}
+		accepted = append(accepted, o)
 
-	for i, a := range candidates {
-		for _, b := range candidates[i+1:] {
-			if !compatible(a, b) {
+		key := comparisonKey(o)
+		if slices.ContainsFunc(keys, func(existing any) bool { return reflect.DeepEqual(existing, key) }) {
+			continue
+		}
+
+		for _, previous := range candidates[1:] {
+			if !compatible(previous, o) {
 				return base, true, nil
 			}
 		}
+
+		keys = append(keys, key)
+		candidates = append(candidates, o)
 	}
 
 	selected := base
 
 	var err error
-	for _, o := range candidates[1:] {
+	// Preserve the original enrichment order, including repeated observations.
+	for _, o := range accepted {
 		selected, err = enrich(selected, o)
 		if err != nil {
 			return base, true, nil
@@ -51,21 +63,48 @@ func selectObservations[T any](
 }
 
 func SelectTrades(base source.Trade, observations []source.Trade) (source.Trade, bool, error) {
-	return selectObservations(base, observations, Compatible, enrichTrade)
+	return selectObservations(base, observations, Compatible, enrichTrade, tradeComparisonKey)
+}
+
+func tradeComparisonKey(v source.Trade) any {
+	f := v.Fields()
+	f.Location = ""
+
+	return f
+}
+
+func lifecycleComparisonKey(v source.Lifecycle) any {
+	f := v.Fields()
+	f.Location = ""
+
+	return f
+}
+
+func conversionComparisonKey(v source.Conversion) any {
+	f := v.Fields()
+	f.Location = ""
+
+	return f
 }
 
 func SelectLifecycles(
 	base source.Lifecycle,
 	observations []source.Lifecycle,
 ) (source.Lifecycle, bool, error) {
-	return selectObservations(base, observations, CompatibleLifecycle, enrichLifecycle)
+	return selectObservations(base, observations, CompatibleLifecycle, enrichLifecycle, lifecycleComparisonKey)
 }
 
 func SelectConversions(
 	base source.Conversion,
 	observations []source.Conversion,
 ) (source.Conversion, bool, error) {
-	return selectObservations(base, observations, CompatibleConversion, enrichConversion)
+	return selectObservations(
+		base,
+		observations,
+		CompatibleConversion,
+		enrichConversion,
+		conversionComparisonKey,
+	)
 }
 
 func EnrichInstrument(a, b source.Instrument) (source.Instrument, error) {
