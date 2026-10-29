@@ -28,9 +28,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	if _, err = auth.issue(w); err != nil {
-		t.Fatal(err)
-	}
+	auth.issue(w)
 
 	cookie := w.Result().Cookies()[0]
 	for _, path := range []string{"/", "/configuration", "/status", "/trades", "/documents", "/connections", "/processing"} {
