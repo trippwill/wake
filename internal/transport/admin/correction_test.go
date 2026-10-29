@@ -52,10 +52,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 	login := httptest.NewRecorder()
 
-	csrf, err := auth.issue(login)
-	if err != nil {
-		t.Fatal(err)
-	}
+	csrf := auth.issue(login)
 
 	workflow := application.New(staleCorrectionStore{}, nil, nil, "", "", "", nil, nil)
 
@@ -202,10 +199,7 @@ func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 
 	login := httptest.NewRecorder()
 
-	csrf, err := auth.issue(login)
-	if err != nil {
-		t.Fatal(err)
-	}
+	csrf := auth.issue(login)
 
 	store := &correctionCheckStore{}
 

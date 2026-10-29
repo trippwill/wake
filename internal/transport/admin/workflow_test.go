@@ -32,10 +32,7 @@ func TestWorkflowCommandsRequireSessionOriginAndCSRF(t *testing.T) {
 
 	login := httptest.NewRecorder()
 
-	csrf, err := auth.issue(login)
-	if err != nil {
-		t.Fatal(err)
-	}
+	csrf := auth.issue(login)
 
 	cookie := login.Result().Cookies()[0]
 	for _, path := range []string{"/connections", "/connections/id/settings", "/connections/id/token", "/connections/id/retry", "/connections/id/confirm", "/reference/key", "/activity/id/correct", "/instruments/id/correct", "/processing/id/retry", "/recovery/rebuild", "/recovery/id/retry"} {

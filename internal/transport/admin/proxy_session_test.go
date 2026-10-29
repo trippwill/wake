@@ -35,7 +35,12 @@ func (*proxySessionStore) Retained(context.Context, string) (host.Retained, erro
 	return host.Retained{Connection: "synthetic"}, nil
 }
 
-func TestProxySessionThroughHTTPReverseProxy(t *testing.T) {
+func (*proxySessionStore) Dashboard(context.Context) (application.Dashboard, error) {
+	return application.Dashboard{}, nil
+}
+
+func newProxySessionServer(t *testing.T) (*httptest.Server, *authenticator, *proxySessionStore) {
+	t.Helper()
 	dir := t.TempDir()
 
 	guard, err := SetProxyGuard(dir)
@@ -51,18 +56,20 @@ func TestProxySessionThroughHTTPReverseProxy(t *testing.T) {
 	if err != nil || !enabled {
 		t.Fatal(enabled, err)
 	}
-	defer auth.Close()
+
+	t.Cleanup(auth.Close)
 
 	store := new(proxySessionStore)
 	workflow := application.New(store, nil, nil, "", "", "", nil, nil)
+	stopping := make(chan struct{})
 
-	handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
+	handler, err := NewHandler(auth, Dependencies{Workflow: workflow, Stopping: stopping})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	upstream := httptest.NewServer(handler)
-	defer upstream.Close()
+	t.Cleanup(upstream.Close)
 
 	upstreamURL, err := url.Parse(upstream.URL)
 	if err != nil {
@@ -76,16 +83,34 @@ func TestProxySessionThroughHTTPReverseProxy(t *testing.T) {
 	}
 
 	proxy.StartTLS()
-	defer proxy.Close()
+	t.Cleanup(func() { close(stopping); proxy.Close() })
 
+	return proxy, auth, store
+}
+
+func TestProxySessionThroughHTTPReverseProxy(t *testing.T) {
+	proxy, _, store := newProxySessionServer(t)
+	origin := proxy.URL
 	client := proxy.Client()
 
-	client.Jar, err = cookiejar.New(nil)
+	jar, err := cookiejar.New(nil)
+	client.Jar = jar
+
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	response, err := client.Get(proxy.URL + "/connections/new")
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxy.URL+"/connections/new", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request.Header.Set("Sec-Fetch-Mode", "navigate")
+	request.Header.Set("Sec-Fetch-Site", "cross-site")
+
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,6 +196,7 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 	request := func(method, path, supplied string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, origin+path, nil)
 		r.Header.Set("X-Wake-Proxy-Authorization", supplied)
+		r.Header.Set("Accept", "text/html")
 
 		if cookie != nil {
 			r.AddCookie(cookie)
@@ -184,8 +210,8 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 
 	issued := request(http.MethodGet, "/configuration?tab=one", guard, nil)
 	cookies := issued.Result().Cookies()
-	if issued.Code != http.StatusSeeOther || len(cookies) != 1 ||
-		issued.Header().Get("Location") != origin+"/configuration?tab=one" {
+	if issued.Code != http.StatusOK || len(cookies) != 1 ||
+		issued.Header().Get("Location") != "" {
 		t.Fatal("proxy did not establish session", issued.Code, cookies, issued.Header())
 	}
 
@@ -225,20 +251,39 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 	}
 
 	w = request(http.MethodGet, "/configuration", guard, bad)
-	if w.Code != http.StatusSeeOther || len(w.Result().Cookies()) != 1 {
+	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 1 {
 		t.Fatal("tampered session not replaced", w.Code)
 	}
 
 	now = now.Add(auth.lifetime + time.Second)
 
-	w = request(http.MethodGet, "/configuration", guard, cookie)
-	if w.Code != http.StatusSeeOther || len(w.Result().Cookies()) != 1 {
-		t.Fatal("expired session not replaced", w.Code)
+	for _, mode := range []string{"", "cors", "no-cors", "navigate"} {
+		r := httptest.NewRequest(http.MethodGet, origin+"/status/contact", nil)
+		r.Header.Set("X-Wake-Proxy-Authorization", guard)
+		r.Header.Set("Sec-Fetch-Mode", mode)
+
+		if mode == "navigate" {
+			r.Header.Set("HX-Request", "true")
+		}
+
+		r.AddCookie(cookie)
+
+		w = httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+
+		if w.Code != http.StatusUnauthorized || len(w.Result().Cookies()) != 0 {
+			t.Fatal("background request rotated the session", mode, w.Code)
+		}
 	}
 
-	w = request(http.MethodGet, "//other.invalid/path", guard, nil)
-	if w.Header().Get("Location") != origin+"//other.invalid/path" {
-		t.Fatal("redirect escaped public origin", w.Header())
+	w = request(http.MethodGet, "/login", guard, cookie)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" || len(w.Result().Cookies()) != 0 {
+		t.Fatal("proxy recovery path", w.Code, w.Header())
+	}
+
+	w = request(http.MethodGet, "/configuration", guard, cookie)
+	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 1 {
+		t.Fatal("expired session not replaced", w.Code)
 	}
 
 	r := httptest.NewRequest(http.MethodGet, "https://other.invalid/", nil)

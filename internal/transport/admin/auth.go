@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -23,6 +24,12 @@ import (
 
 	"golang.org/x/crypto/argon2"
 )
+
+type issuedSessionKey struct{}
+
+func (a *authenticator) establishSession(w http.ResponseWriter, r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), issuedSessionKey{}, a.issue(w)))
+}
 
 const (
 	sessionCookie     = "wake_admin_session"
@@ -253,11 +260,10 @@ func (a *authenticator) proxyAuthorized(r *http.Request) bool {
 	return subtle.ConstantTimeCompare(supplied, a.proxyGuard) == 1
 }
 
-func (a *authenticator) issue(w http.ResponseWriter) (string, error) {
+func (a *authenticator) issue(w http.ResponseWriter) string {
 	csrf := make([]byte, keySize)
-	if _, err := rand.Read(csrf); err != nil {
-		return "", err
-	}
+	// crypto/rand.Read fills the buffer or terminates the process.
+	_, _ = rand.Read(csrf)
 	defer clear(csrf)
 
 	expires := a.now().Add(a.lifetime).Unix()
@@ -278,10 +284,14 @@ func (a *authenticator) issue(w http.ResponseWriter) (string, error) {
 			MaxAge:   int(a.lifetime.Seconds()),
 		})
 
-	return base64.RawURLEncoding.EncodeToString(csrf), nil
+	return base64.RawURLEncoding.EncodeToString(csrf)
 }
 
 func (a *authenticator) session(r *http.Request) (string, bool) {
+	if csrf, ok := r.Context().Value(issuedSessionKey{}).(string); ok {
+		return csrf, true
+	}
+
 	cookie, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return "", false

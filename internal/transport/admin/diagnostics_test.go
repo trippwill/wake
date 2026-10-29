@@ -30,9 +30,7 @@ func TestAdminFailuresAreClassifiedAndPrivate(t *testing.T) {
 	defer auth.Close()
 
 	login := httptest.NewRecorder()
-	if _, err = auth.issue(login); err != nil {
-		t.Fatal(err)
-	}
+	auth.issue(login)
 
 	cookie := login.Result().Cookies()[0]
 	for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug} {

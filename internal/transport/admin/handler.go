@@ -155,18 +155,9 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			return
 		}
 
-		if auth.mode == "proxy" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if auth.mode == "proxy" && documentNavigation(r) && r.URL.Path != "/login" {
 			if _, ok := auth.session(r); !ok {
-				if _, err := auth.issue(w); err != nil {
-					rejection(r, "session_issue_failed")
-					http.Error(w, "session error", http.StatusInternalServerError)
-
-					return
-				}
-				//nolint:gosec // The configured origin fixes the destination, even for paths beginning with //.
-				http.Redirect(w, r, auth.origin.String()+r.URL.RequestURI(), http.StatusSeeOther)
-
-				return
+				r = auth.establishSession(w, r)
 			}
 		}
 
@@ -175,6 +166,16 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		*r = *pageRequest(r)
 		mux.ServeHTTP(w, r)
 	})), nil
+}
+
+func documentNavigation(r *http.Request) bool {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.Header.Get("HX-Request") == "true" {
+		return false
+	}
+
+	mode := r.Header.Get("Sec-Fetch-Mode")
+
+	return mode == "navigate" || (mode == "" && strings.Contains(r.Header.Get("Accept"), "text/html"))
 }
 
 func setSecurityHeaders(headers http.Header) {

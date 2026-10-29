@@ -124,9 +124,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 	defer auth.Close()
 
 	session := httptest.NewRecorder()
-	if _, err = auth.issue(session); err != nil {
-		t.Fatal(err)
-	}
+	auth.issue(session)
 
 	view := application.Dashboard{
 		Connections: []application.ConnectionView{
