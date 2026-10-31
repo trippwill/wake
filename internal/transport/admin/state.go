@@ -53,3 +53,12 @@ func observationStatus(outcome application.ObservationOutcome) string {
 		return string(outcome)
 	}
 }
+
+func instrumentStatus(instrument application.Instrument) string {
+	label := string(instrument.Status())
+	if instrument.Authority() == application.OperatorSelection {
+		label += "; operator decision"
+	}
+
+	return label
+}

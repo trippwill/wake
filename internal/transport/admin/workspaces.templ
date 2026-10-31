@@ -468,7 +468,7 @@ templ InstrumentsView(view application.Dashboard) {
 								<td>{ i.Kind() }</td>
 								<td>{ known(i.Ticker()) }</td>
 								<td>
-									@StateBadge(string(i.Status()))
+									@InstrumentBadge(i)
 								</td>
 							</tr>
 						}

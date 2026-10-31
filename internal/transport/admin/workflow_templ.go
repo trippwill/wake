@@ -65,7 +65,7 @@ func instrumentLabel(view application.Dashboard, id string) string {
 
 		if i.ID() == id {
 
-			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + string(i.Status())
+			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + instrumentStatus(i)
 		}
 	}
 
@@ -669,7 +669,7 @@ func InstrumentPage(d application.InstrumentDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = StateBadge(string(d.Instrument.Status())).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = InstrumentBadge(d.Instrument).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

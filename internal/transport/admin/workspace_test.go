@@ -231,3 +231,53 @@ func TestActivitySearchMatchesRenderedFinancialState(t *testing.T) {
 		t.Fatal("structured filter ignored lifecycle", got)
 	}
 }
+
+func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
+	reported, err := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Name: "Synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	instrument, err := application.NewInstrument(
+		"one",
+		"Synthetic",
+		"SYN",
+		"equity",
+		"resolved",
+		"",
+		"",
+		reported,
+		"rule",
+		1,
+		application.OperatorSelection,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := application.Dashboard{Instruments: []application.Instrument{instrument}}
+	if got := instrumentLabel(view, "one"); !strings.Contains(got, "operator decision") {
+		t.Fatal(got)
+	}
+
+	if got := instrumentState(view, "one"); got != "resolved; operator decision" {
+		t.Fatal(got)
+	}
+
+	request := pageRequest(
+		httptest.NewRequest(http.MethodGet, "/activity?view=instruments&q=operator+decision&state=resolved", nil),
+	)
+	if got := filteredInstruments(request.Context(), view); len(got) != 1 {
+		t.Fatal("operator label search or structured status filter omitted instrument", got)
+	}
+
+	var rendered strings.Builder
+	if err = InstrumentBadge(instrument).Render(context.Background(), &rendered); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := rendered.String(); !strings.Contains(got, "operator decision") ||
+		!strings.Contains(got, `data-state="success"`) {
+		t.Fatal(got)
+	}
+}

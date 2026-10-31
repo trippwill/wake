@@ -447,7 +447,7 @@ func instrumentName(v application.Dashboard, id string) string {
 func instrumentState(v application.Dashboard, id string) string {
 	for _, i := range v.Instruments {
 		if i.ID() == id {
-			return string(i.Status())
+			return instrumentStatus(i)
 		}
 	}
 
@@ -625,7 +625,7 @@ func filteredInstruments(ctx context.Context, v application.Dashboard) []applica
 		}
 
 		if !strings.Contains(
-			strings.ToLower(i.Name()+" "+i.Ticker()+" "+i.Kind()+" "+string(i.Status())),
+			strings.ToLower(i.Name()+" "+i.Ticker()+" "+i.Kind()+" "+instrumentStatus(i)),
 			strings.ToLower(q.Get("q")),
 		) {
 			continue

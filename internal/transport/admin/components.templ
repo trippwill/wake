@@ -25,6 +25,10 @@ templ StateBadge(value string) {
 	<span class="wake-state" data-state={ stateKind(value) }>{ value }</span>
 }
 
+templ InstrumentBadge(instrument application.Instrument) {
+	<span class="wake-state" data-state={ stateKind(string(instrument.Status())) }>{ instrumentStatus(instrument) }</span>
+}
+
 templ ActivityBadge(state application.ActivityState) {
 	<span class="wake-state" data-state={ activityBadgeKind(state) }>{ activityStatus(state) }</span>
 }
