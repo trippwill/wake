@@ -246,9 +246,22 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		}
 
 		if scope == application.ActivityScope || scope == application.ReviewScope {
-			options.LabelSearch = strings.ReplaceAll(strings.ReplaceAll(search, " · ", " "), " → ", " ")
-			if pair, ok := strings.CutPrefix(options.LabelSearch, "convert "); ok {
-				options.LabelSearch = string(application.ConversionActivity) + " " + pair
+			options.LabelSearch = search
+			if pair, ok := strings.CutPrefix(search, "convert "); ok {
+				options.LabelSearch = string(
+					application.ConversionActivity,
+				) + " " + strings.Replace(
+					pair,
+					" → ",
+					" ",
+					1,
+				)
+			}
+
+			for _, action := range []string{"assignment", "exercise", "expiration"} {
+				if name, ok := strings.CutPrefix(search, action+" · "); ok {
+					options.LabelSearch = action + " " + name
+				}
 			}
 
 			for _, action := range []string{"buy", "sell", "assignment", "exercise", "expiration"} {

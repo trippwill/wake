@@ -389,4 +389,41 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Release") {
 		t.Fatal("retained decision unavailable for release", response.Code, response.Body.String())
 	}
+	// Display separators inside provider-owned names must survive label searches.
+	separatorName := "Zebra · A → B"
+	separatorRow := strings.Replace(equityRow("U1", "separator", "10"), "Synthetic equity", separatorName, 1)
+	coverageReport(t, s, "separator-trade", separatorRow)
+	coverageReport(
+		t,
+		s,
+		"separator-trade-dispute",
+		strings.Replace(separatorRow, `price="10"`, `price="11"`, 1),
+	)
+	separatorLifecycle := strings.ReplaceAll(
+		strings.Replace(lifecycle, "Synthetic option", separatorName, 1),
+		`conid="200"`,
+		`conid="201"`,
+	)
+	separatorLifecycle = strings.ReplaceAll(
+		strings.ReplaceAll(separatorLifecycle, "outcome-fill", "separator-outcome-fill"),
+		"outcome-trade",
+		"separator-outcome-trade",
+	)
+	coverageReport(t, s, "separator-lifecycle", separatorLifecycle)
+	coverageReport(
+		t,
+		s,
+		"separator-lifecycle-dispute",
+		strings.Replace(separatorLifecycle, `quantity="2"`, `quantity="3"`, 1),
+	)
+
+	for _, label := range []string{"Buy " + separatorName, "Assignment · " + separatorName} {
+		for _, endpoint := range []string{"/activity?", "/activity?view=review&"} {
+			response := request(http.MethodGet, endpoint+"q="+url.QueryEscape(label), nil, false)
+			if response.Code != http.StatusOK ||
+				!strings.Contains(html.UnescapeString(response.Body.String()), ">"+label+"<") {
+				t.Fatal("search changed punctuation inside an instrument name", endpoint, label, response.Code)
+			}
+		}
+	}
 }
