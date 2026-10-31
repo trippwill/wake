@@ -157,7 +157,7 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 				<p><label for="retry-name">Connection name</label><input class="input" id="retry-name" name="connection_name" value={ draft.Get("connection_name") } required maxlength="256"/></p>
 				for _,field:=range descriptor.Fields() {
 					if field.Kind()==provider.TextField {
-						<p><label for={ "retry-setting-" + field.Key() }>{ field.Label() }</label><input class="input" id={ "retry-setting-" + field.Key() } name={ "setting." + field.Key() } value={ draft.Get("setting." + field.Key()) } required?={ field.Required() } maxlength="4096"/></p>
+						<p><label for={ providerFieldID("retry", descriptor.ID(), field) }>{ field.Label() }</label><input class="input" id={ providerFieldID("retry", descriptor.ID(), field) } name={ "setting." + field.Key() } value={ draft.Get("setting." + field.Key()) } required?={ field.Required() } maxlength="4096"/></p>
 					}
 				}
 			}
@@ -173,7 +173,7 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 			if operation==submissionCreate || operation==submissionSecret {
 				for _,field:=range descriptor.Fields() {
 					if field.Kind()==provider.SecretField && (operation==submissionCreate || draft.Get("secret_key")==field.Key()) {
-						<p><label for={ "retry-secret-" + field.Key() }>{ field.Label()+" (enter again)" }</label><input class="input" id={ "retry-secret-" + field.Key() } name={ "secret." + field.Key() } type="password" required?={ field.Required() } maxlength="4096" autocomplete="new-password"/></p>
+						<p><label for={ providerFieldID("retry", descriptor.ID(), field) }>{ field.Label()+" (enter again)" }</label><input class="input" id={ providerFieldID("retry", descriptor.ID(), field) } name={ "secret." + field.Key() } type="password" required?={ field.Required() } maxlength="4096" autocomplete="new-password"/></p>
 					}
 				}
 			}

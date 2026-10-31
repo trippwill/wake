@@ -822,3 +822,10 @@ func formSubmission(pattern string) submissionKind {
 		return submissionNone
 	}
 }
+
+// providerFieldID separates the form scope, owner and field into unambiguous
+// parts. Opaque IDs remain stable across refreshes for focus and label targets.
+func providerFieldID(scope, owner string, field provider.Field) string {
+	sum := sha256.Sum256([]byte(scope + "\x00" + owner + "\x00" + string(field.Kind()) + "\x00" + field.Key()))
+	return "provider-field-" + hex.EncodeToString(sum[:])
+}

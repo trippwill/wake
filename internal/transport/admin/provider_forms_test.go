@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -261,5 +262,55 @@ func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
 				t.Fatal("credential retry lost source key", body)
 			}
 		})
+	}
+}
+
+func TestProviderFormsHaveDistinctInputAndLabelIdentities(t *testing.T) {
+	registrations := []provider.Registration{}
+	for _, entry := range []struct{ id, text, secret string }{{"regional", "document-token", "document-secret"}, {"regional-document", "token", "secret"}, {"secret-regional", "document-secret", "other"}} {
+		text, _ := provider.NewField(entry.text, "Text setting", provider.TextField, true)
+		secret, _ := provider.NewField(entry.secret, "Credential", provider.SecretField, true)
+		stream, _ := provider.NewStream("records", "synthetic")
+
+		descriptor, err := provider.NewDescriptor(
+			entry.id,
+			"Synthetic "+entry.id,
+			[]provider.Stream{stream},
+			[]provider.Field{text, secret},
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		registration, err := provider.NewRegistration(descriptor, "v1", formProvider{}, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		registrations = append(registrations, registration)
+	}
+
+	var output strings.Builder
+	if err := ConnectionSetup("csrf", registrations).Render(t.Context(), &output); err != nil {
+		t.Fatal(err)
+	}
+
+	body := output.String()
+	ids := map[string]int{}
+	for _, match := range regexp.MustCompile(`\bid="([^"]+)"`).FindAllStringSubmatch(body, -1) {
+		ids[match[1]]++
+	}
+
+	for id, count := range ids {
+		if count != 1 {
+			t.Errorf("duplicate DOM identity %s: %d", id, count)
+		}
+	}
+
+	for _, match := range regexp.MustCompile(`\bfor="([^"]+)"`).FindAllStringSubmatch(body, -1) {
+		if ids[match[1]] != 1 {
+			t.Errorf("label does not target exactly one input: %s", match[1])
+		}
 	}
 }

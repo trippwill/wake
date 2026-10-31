@@ -268,8 +268,8 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.WaitVisible("#connection-name-ibkr-flex"),
 		chromedp.SendKeys("#connection-name-ibkr-flex", "Synthetic IBKR"),
-		chromedp.SendKeys("#new-ibkr-flex-query_id", "123"),
-		chromedp.SendKeys("#new-secret-ibkr-flex-token", "synthetic-token"),
+		chromedp.SendKeys(`form[action="/connections"] input[name="setting.query_id"]`, "123"),
+		chromedp.SendKeys(`form[action="/connections"] input[name="secret.token"]`, "synthetic-token"),
 	)
 	navigate(chromedp.Click(`form[action="/connections"] button[type="submit"]`))
 	check(chromedp.WaitVisible("#workflow-progress"))

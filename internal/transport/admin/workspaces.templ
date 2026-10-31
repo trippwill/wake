@@ -247,10 +247,10 @@ templ DiscoveredAccounts(c application.ConnectionView, v application.Dashboard) 
 	}
 }
 
-templ ProviderSettings(descriptor provider.Descriptor, settings provider.Settings, prefix string) {
+templ ProviderSettings(descriptor provider.Descriptor, settings provider.Settings, scope, owner string) {
 	for _,field:=range descriptor.Fields() {
 		if field.Kind()==provider.TextField {
-			<p><label for={ prefix + "-" + field.Key() }>{ field.Label() }</label><input class="input" id={ prefix + "-" + field.Key() } name={ "setting." + field.Key() } value={ settingValue(settings, field.Key()) } required?={ field.Required() } maxlength="4096"/></p>
+			<p><label for={ providerFieldID(scope, owner, field) }>{ field.Label() }</label><input class="input" id={ providerFieldID(scope, owner, field) } name={ "setting." + field.Key() } value={ settingValue(settings, field.Key()) } required?={ field.Required() } maxlength="4096"/></p>
 		}
 	}
 }
@@ -266,14 +266,14 @@ templ ConnectionAccess(csrf string, c application.ConnectionView) {
 		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }>
 			<input type="hidden" name="csrf" value={ csrf }/>
 			<p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="connection_name" value={ c.Name } maxlength="256" required/></p>
-			@ProviderSettings(c.Descriptor, c.Settings, "settings-"+c.ID)
+			@ProviderSettings(c.Descriptor, c.Settings, "update", c.ID)
 			<button class="btn" type="submit">Save connection settings and retry</button>
 		</form>
 		for _,field:=range c.Descriptor.Fields() {
 			if field.Kind()==provider.SecretField {
 				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets") }>
 					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="secret_key" value={ field.Key() }/>
-					<p><label for={ "secret-" + c.ID + "-" + field.Key() }>{ "Replacement "+field.Label() }</label><input class="input" id={ "secret-" + c.ID + "-" + field.Key() } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
+					<p><label for={ providerFieldID("update", c.ID, field) }>{ "Replacement "+field.Label() }</label><input class="input" id={ providerFieldID("update", c.ID, field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
 					<button class="btn" type="submit">Replace credential and retry</button>
 				</form>
 			}
@@ -293,10 +293,10 @@ templ ConnectionSetup(csrf string, registrations []provider.Registration) {
 			<form method="post" action="/connections">
 				<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="provider" value={ registration.Descriptor().ID() }/>
 				<p><label for={ "connection-name-" + registration.Descriptor().ID() }>Connection name</label><input class="input" id={ "connection-name-" + registration.Descriptor().ID() } name="connection_name" required maxlength="256"/></p>
-				@ProviderSettings(registration.Descriptor(), provider.Settings{}, "new-"+registration.Descriptor().ID())
+				@ProviderSettings(registration.Descriptor(), provider.Settings{}, "create", registration.Descriptor().ID())
 				for _,field:=range registration.Descriptor().Fields() {
 					if field.Kind()==provider.SecretField {
-						<p><label for={ "new-secret-" + registration.Descriptor().ID() + "-" + field.Key() }>{ field.Label() }</label><input class="input" id={ "new-secret-" + registration.Descriptor().ID() + "-" + field.Key() } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required?={ field.Required() } maxlength="4096"/></p>
+						<p><label for={ providerFieldID("create", registration.Descriptor().ID(), field) }>{ field.Label() }</label><input class="input" id={ providerFieldID("create", registration.Descriptor().ID(), field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required?={ field.Required() } maxlength="4096"/></p>
 					}
 				}
 				<button class="btn btn-primary" type="submit">Create connection</button>
