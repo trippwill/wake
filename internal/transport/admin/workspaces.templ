@@ -387,7 +387,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 						@StateBadge("Processing pending")
 					}
 				</div>
-				<dl><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.TradeClaims,10) } trades · { strconv.FormatInt(p.LifecycleClaims,10) } option outcomes · { strconv.FormatInt(p.ConversionClaims,10) } conversions</dd></dl>
+				<dl><dt>Acquired</dt><dd>{ p.Retrieved }</dd><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.TradeClaims,10) } trades · { strconv.FormatInt(p.LifecycleClaims,10) } option outcomes · { strconv.FormatInt(p.ConversionClaims,10) } conversions</dd></dl>
 				if p.NeedsReview>0 {
 					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Inspect report observations</a>.</p>
 				}
@@ -395,7 +395,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 					<p class="wake-notice">{ p.Failure }</p>
 					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
 				}
-				<details><summary>Report identity and excluded rows</summary><p>{ p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
+				<details><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
 				if c.CanNormalize && p.Failure=="" {
 					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}

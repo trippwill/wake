@@ -72,6 +72,34 @@ func (s *Store) EvidenceContext(ctx context.Context, id string) (application.Evi
 		return out, err
 	}
 
+	out.ReceiptCount, err = s.queries.CountAcquisitionReceipts(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	receipts, err := s.queries.RecentAcquisitionReceipts(ctx, id)
+	if err != nil {
+		return out, err
+	}
+
+	for _, r := range receipts {
+		out.Receipts = append(
+			out.Receipts,
+			application.AcquisitionReceipt{
+				ID:            r.ID,
+				Operation:     r.Operation,
+				Retrieved:     r.Retrieved,
+				Hash:          r.Hash,
+				Policy:        r.Policy,
+				RequestedFrom: r.RequestedFrom,
+				RequestedTo:   r.RequestedTo,
+				ReportedFrom:  r.ReportedFrom,
+				ReportedTo:    r.ReportedTo,
+				Equivalent:    r.Hash != row.Hash,
+			},
+		)
+	}
+
 	out.ConnectionName = connection.Name
 
 	rows, err := s.queries.ArtifactObservations(ctx, id)

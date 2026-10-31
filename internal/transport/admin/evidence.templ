@@ -6,13 +6,29 @@ package admin
 import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
+	"strconv"
 	"time"
 )
 
 templ RetainedEvidence(retained host.Retained, info application.EvidenceContext) {
 	@Breadcrumbs("Supporting evidence")
 	@PageHeader("Source report", known(info.ConnectionName)+" · "+retained.Provider)
-	<section class="wake-card"><h2>Acquisition context</h2><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
+	<section class="wake-card">
+		<h2>Acquisition receipts</h2>
+		<p>{ strconv.FormatInt(info.ReceiptCount,10) } acquisitions reference this retained body. The latest 50 receipts are shown. Each receipt preserves the acquired digest and coverage; equivalent report-window variants reuse the retained body below.</p>
+		<ul class="wake-task-list">
+			for _,r:=range info.Receipts {
+				<li>
+					<dl><dt>Acquired</dt><dd>{ r.Retrieved }</dd><dt>Purpose</dt><dd>{ operationLabel(r.Operation) }</dd><dt>Requested</dt><dd>{ known(r.RequestedFrom) } to { known(r.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(r.ReportedFrom) } to { known(r.ReportedTo) }</dd></dl>
+					if r.Equivalent {
+						<p>Equivalent report reused the retained body. Its acquired bytes are represented by this digest and comparison policy.</p>
+					}
+					<details><summary>Receipt identity and comparison</summary><p>{ r.ID }</p><p>Acquired SHA-256 { r.Hash }</p><p>{ r.Policy }</p></details>
+				</li>
+			}
+		</ul>
+	</section>
+	<section class="wake-card"><h2>Acquisition context</h2><p>First retained body. Each subsequent acquisition has its own receipt above.</p><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
 	<section class="wake-card">
 		<h2>Observed financial meaning</h2>
 		if page(ctx).Query.Get("location")!="" {

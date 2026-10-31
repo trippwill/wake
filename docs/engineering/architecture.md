@@ -33,6 +33,13 @@ source-claim shapes and their proofs belong in code and contract tests.
 ## Evidence before conclusions
 
 Preserve immutable evidence and qualified claims independently of accepted views.
+Acquisition receipts, distinct report bodies and standardized source claims have
+separate identities. Each receipt preserves actual coverage and byte digest even
+when a provider's explicit versioned policy reuses a body for a report-window-only
+change. Claim comparison uses the retained pre-correction meaning, excluding only
+structural location and retaining appearance multiplicity. Known claims attach
+provenance before reconciliation and skip financial recalculation and publication.
+Changed non-equivalent bytes remain evidence even when all their claims are known.
 Named/versioned rules and operator decisions explain conclusions through links.
 Activity lifecycle, review reasons and selection authority are independent typed
 facts. Persist and publish them without encoding state in combined display phrases.

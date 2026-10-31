@@ -6,7 +6,9 @@ package persistence
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -52,7 +54,14 @@ func (s *Store) Normalize(
 
 	defer func() { _ = tx.Rollback() }()
 
-	sink := &claims{q: s.queries.WithTx(tx), artifact: id, version: version}
+	sink := &claims{
+		q:           s.queries.WithTx(tx),
+		artifact:    id,
+		version:     version,
+		connection:  retained.Connection,
+		stream:      retained.Stream,
+		occurrences: map[string]int64{},
+	}
 
 	result, normalizeErr := n.Normalize(ctx, retained.Artifact, sink)
 	if normalizeErr == nil {
@@ -172,10 +181,12 @@ func (s *Store) Attempts(ctx context.Context, id string) ([]Attempt, error) {
 }
 
 type claims struct {
-	q                 *sqlc.Queries
-	artifact, version string
-	counts            provider.Counts
-	failed            error
+	q                  *sqlc.Queries
+	artifact, version  string
+	connection, stream string
+	occurrences        map[string]int64
+	counts             provider.Counts
+	failed             error
 }
 
 func (c *claims) put(ctx context.Context, location, kind string, data []byte) error {
@@ -188,14 +199,46 @@ func (c *claims) put(ctx context.Context, location, kind string, data []byte) er
 		return c.failed
 	}
 
-	if err := c.q.PutRecord(
+	canonical, err := claimData(kind, data, "")
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	keyData, err := claimKeyData(kind, canonical)
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	contextKey, _ := json.Marshal([]string{c.connection, c.stream, c.version, kind})
+	sum := sha256.Sum256(append(contextKey, keyData...))
+
+	claim := hex.EncodeToString(sum[:])
+	if err = c.q.PutSourceClaim(
+		ctx,
+		sqlc.PutSourceClaimParams{
+			ID:           claim,
+			ConnectionID: c.connection,
+			Stream:       c.stream,
+			Version:      c.version,
+			Kind:         kind,
+			Data:         canonical,
+		},
+	); err != nil {
+		c.failed = host.ErrStorage
+		return c.failed
+	}
+
+	c.occurrences[claim]++
+	if err = c.q.PutRecord(
 		ctx,
 		sqlc.PutRecordParams{
 			ArtifactID: c.artifact,
 			Version:    c.version,
 			Location:   location,
-			Kind:       kind,
-			Data:       data,
+			ClaimID:    claim,
+			Ordinal:    c.occurrences[claim],
 		},
 	); err != nil {
 		c.failed = host.ErrStorage
@@ -279,6 +322,8 @@ func (c *claims) Reject(ctx context.Context, location, reason string) error {
 // financial account, accepted instrument or accepted trade.
 type Record struct {
 	Location, Kind, Reason string
+	ClaimID                string
+	Ordinal                int64
 	Trade                  source.Trade
 	Lifecycle              source.Lifecycle
 	Conversion             source.Conversion
@@ -287,14 +332,14 @@ type Record struct {
 }
 
 func (s *Store) Records(ctx context.Context, id, version string) ([]Record, error) {
-	rows, err := s.queries.Records(ctx, sqlc.RecordsParams{ArtifactID: id, Version: version})
+	rows, err := recordValues(ctx, s.queries, id, version)
 	if err != nil {
 		return nil, err
 	}
 
 	out := make([]Record, 0, len(rows))
 	for _, row := range rows {
-		record := Record{Location: row.Location, Kind: row.Kind}
+		record := Record{Location: row.Location, Kind: row.Kind, ClaimID: row.ClaimID, Ordinal: row.Ordinal}
 		switch row.Kind {
 		case "trade":
 			record.Trade, err = decodeTrade(row.Data)

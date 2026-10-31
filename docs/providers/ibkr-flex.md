@@ -92,3 +92,13 @@ defines the original-trade reference; the code reference defines the markers.
 Neither a missing later row nor an amount/time match is a correction instruction.
 
 Wake rejects upstream reports whose raw bytes or decoded XML attributes contain the access token, and rejects credential-bearing decoded generation references. Accepted report bytes remain unchanged as evidence.
+
+## Repeated reports
+
+Every completed fetch records its actual digest, retrieval time and requested and
+returned bounds. The provider's report comparison excludes only the attribute
+values `fromDate` and `toDate` on report-level `FlexStatement` elements. All other
+bytes, including generated timestamps, whitespace and row dates, remain part of
+the comparison. Report-window-only repeats reuse the retained body without
+repeating normalization. Receipts identify that reuse; the evidence page displays
+the retained original body rather than reconstructing discarded window variants.

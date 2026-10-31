@@ -26,9 +26,9 @@ INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrie
 -- name: Retained :one
 SELECT artifacts.*,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?;
 -- name: PutCandidate :exec
-INSERT INTO candidates(artifact_id,authority,kind,scope,value,name,currency) VALUES(?,?,?,?,?,?,?);
+INSERT INTO candidates(receipt_id,artifact_id,authority,kind,scope,value,name,currency) VALUES(?,?,?,?,?,?,?,?);
 -- name: Candidates :many
-SELECT candidates.* FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value;
+SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value;
 -- name: StartAttempt :exec
 INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'');
 -- name: FinishAttempt :exec
@@ -38,9 +38,9 @@ SELECT counts FROM normalization_receipts WHERE artifact_id=? AND version=?;
 -- name: Attempts :many
 SELECT * FROM main.attempts WHERE artifact_id=? ORDER BY rowid;
 -- name: PutRecord :exec
-INSERT INTO records(artifact_id,version,location,kind,data) VALUES(?,?,?,?,?);
+INSERT INTO records(artifact_id,version,location,claim_id,ordinal) VALUES(?,?,?,?,?);
 -- name: Records :many
-SELECT * FROM records WHERE artifact_id=? AND version=? ORDER BY location;
+SELECT * FROM record_values WHERE artifact_id=? AND version=? ORDER BY location;
 -- name: Pacing :one
 SELECT next FROM pacing WHERE provider=? AND policy=? AND scope=?;
 -- name: SetPacing :exec
@@ -65,19 +65,25 @@ UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
 -- name: Account :one
 SELECT * FROM accounts LIMIT 1;
 -- name: CandidateExists :one
-SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND operation='discover';
+SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover');
 -- name: PutAccount :exec
 INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?);
 -- name: CandidateProfiles :many
-SELECT candidates.* FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value;
+SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value;
 -- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ArtifactProcessed :exec
 UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?;
 -- name: ArtifactFailure :exec
 UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?;
 -- name: ProcessingStatuses :many
-SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10;
+SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='trade') AS trade_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows,
+ (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
+FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT * FROM instruments WHERE source_key=?;
 -- name: CompetingFIGI :many
@@ -181,7 +187,7 @@ INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT id,
 -- name: ActivityBase :one
 SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
-SELECT records.* FROM execution_observations o JOIN records USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
+SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
 -- name: ProjectActivity :exec
 UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
 -- name: PutSourceCorrection :exec
@@ -223,7 +229,7 @@ UPDATE instruments SET reference_next=? WHERE id=?;
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING;
 
 -- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND operation='acquire' AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream);
+UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream);
 -- name: RecoveryJobs :many
 SELECT * FROM recovery_jobs ORDER BY rowid DESC LIMIT 10;
 -- name: RecoveryJob :one
@@ -286,3 +292,33 @@ SELECT key FROM access.credentials WHERE connection_id=? ORDER BY key;
 
 -- name: ArtifactProvider :one
 SELECT connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?;
+
+-- name: ReportComparison :one
+SELECT artifact_id FROM report_comparisons WHERE connection_id=? AND stream=? AND format=? AND media_type=? AND policy=? AND digest=?;
+-- name: PutReportComparison :exec
+INSERT INTO report_comparisons(connection_id,stream,format,media_type,policy,digest,artifact_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING;
+-- name: PutAcquisitionReceipt :exec
+INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?);
+-- name: AcquisitionReceipts :many
+SELECT * FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid;
+-- name: PutSourceClaim :exec
+INSERT INTO source_claims(id,connection_id,stream,version,kind,data) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING;
+-- name: ClaimProcessing :one
+SELECT artifact_id,version,location FROM claim_processing WHERE claim_id=? AND ordinal=?;
+-- name: PutClaimProcessing :exec
+INSERT INTO claim_processing(claim_id,ordinal,artifact_id,version,location) VALUES(?,?,?,?,?);
+-- name: CopyClaimObservation :exec
+INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) SELECT sqlc.arg(artifact_id),sqlc.arg(version),sqlc.arg(location),execution_id,outcome,rule FROM execution_observations prior WHERE prior.artifact_id=sqlc.arg(previous_artifact) AND prior.version=sqlc.arg(previous_version) AND prior.location=sqlc.arg(previous_location) ON CONFLICT DO NOTHING;
+-- name: CopyClaimCorrection :exec
+INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement,status) SELECT sqlc.arg(artifact_id),sqlc.arg(version),sqlc.arg(location),account_id,kind,target,replacement,status FROM source_corrections prior WHERE prior.artifact_id=sqlc.arg(previous_artifact) AND prior.version=sqlc.arg(previous_version) AND prior.location=sqlc.arg(previous_location) ON CONFLICT DO NOTHING;
+
+-- name: ProcessingComplete :one
+SELECT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=sqlc.arg(version)) AS complete FROM artifacts WHERE artifacts.id=sqlc.arg(artifact_id);
+
+-- name: RecentAcquisitionReceipts :many
+SELECT * FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50;
+-- name: CountAcquisitionReceipts :one
+SELECT count(*) FROM acquisition_receipts WHERE artifact_id=?;
+
+-- name: SaveProcessingReceipt :exec
+INSERT INTO processing_receipts(artifact_id,version) VALUES(?,?) ON CONFLICT DO NOTHING;
