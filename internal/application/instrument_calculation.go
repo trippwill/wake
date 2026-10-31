@@ -117,8 +117,8 @@ func ReconcileInstrument(
 	known := base
 	conflict := false
 	for _, observation := range observations {
-		if !known.Reference().IsZero() && !observation.Reference().IsZero() &&
-			observation.Reference() != known.Reference() {
+		if known.Kind() == "" {
+			known = observation
 			continue
 		}
 
@@ -141,4 +141,33 @@ func ReconcileInstrument(
 	}
 
 	return known, false, nil
+}
+
+// RootCalculation reconciles shared reported terms independently of activity edits.
+// Underlier identity survives disagreements in the parent's contract terms.
+type RootCalculation struct {
+	Reported, Underlier source.Instrument
+	Conflict            bool
+}
+
+func CalculateRoot(base source.Instrument, claims []source.Instrument) (RootCalculation, error) {
+	reported, conflict, err := ReconcileInstrument(base, claims)
+	if err != nil {
+		return RootCalculation{}, err
+	}
+
+	underliers := make([]source.Instrument, 0, len(claims))
+	for _, claim := range claims {
+		if u := claim.Option().Fields().Underlier; u.Kind() != "" {
+			underliers = append(underliers, u)
+		}
+	}
+
+	underlier, underlierConflict, err := ReconcileInstrument(base.Option().Fields().Underlier, underliers)
+
+	return RootCalculation{
+		Reported:  reported,
+		Underlier: underlier,
+		Conflict:  conflict || underlierConflict,
+	}, err
 }

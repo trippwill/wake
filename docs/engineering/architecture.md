@@ -48,7 +48,10 @@ scheduling depends on the classifications.
 Shared instrument enrichment compares all retained claims for the original root
 against one pre-write baseline and persists that root once per processing batch.
 Competing enrichments retain that baseline for review; execution IDs do not select
-financial terms.
+financial terms. Indexed source-occurrence bindings include nested underliers,
+which are reconciled even when they have no activity of their own. Underlier
+identity is calculated independently of disagreements in parent contract terms.
+Activity correction preflight/save does not re-enrich shared source roots.
 
 Financial calculation consumes one consistent retained input set: source claims,
 identity bindings, selected references, active decisions and an explicit implemented
@@ -165,6 +168,10 @@ Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
+
+Warehouse and encrypted access formats are checked independently. An unsupported
+warehouse still fails closed with recreation instructions; an unchanged encrypted
+access seed remains reusable when only the warehouse format changes.
 
 One daemon owns two SQLite files: a warehouse containing financial evidence and
 operational state, and an independent access store containing current connection

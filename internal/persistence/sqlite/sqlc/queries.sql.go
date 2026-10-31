@@ -280,6 +280,49 @@ func (q *Queries) ArtifactFailure(ctx context.Context, arg ArtifactFailureParams
 	return err
 }
 
+const artifactInstrumentClaims = `-- name: ArtifactInstrumentClaims :many
+SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind IN ('trade','lifecycle') ORDER BY o.rowid
+`
+
+type ArtifactInstrumentClaimsRow struct {
+	Kind         string
+	Data         []byte
+	Location     string
+	ClaimID      string
+	Ordinal      int64
+	InstrumentID sql.NullString
+}
+
+func (q *Queries) ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error) {
+	rows, err := q.db.QueryContext(ctx, artifactInstrumentClaims, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ArtifactInstrumentClaimsRow
+	for rows.Next() {
+		var i ArtifactInstrumentClaimsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Data,
+			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.InstrumentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const artifactObservations = `-- name: ArtifactObservations :many
 SELECT artifact_id, version, location, execution_id, outcome, rule FROM execution_observations WHERE artifact_id=? ORDER BY rowid
 `
@@ -332,6 +375,33 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 	var provider string
 	err := row.Scan(&provider)
 	return provider, err
+}
+
+const artifactRootIDs = `-- name: ArtifactRootIDs :many
+SELECT DISTINCT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=? ORDER BY i.instrument_id
+`
+
+func (q *Queries) ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, artifactRootIDs, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var instrument_id string
+		if err := rows.Scan(&instrument_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instrument_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const attempts = `-- name: Attempts :many
@@ -408,7 +478,7 @@ func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCac
 }
 
 const calculationInputs = `-- name: CalculationInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM claim_processing p JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? ORDER BY o.rowid
 `
 
 func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
@@ -2227,6 +2297,27 @@ func (q *Queries) PutExecution(ctx context.Context, arg PutExecutionParams) erro
 	return err
 }
 
+const putInstrumentClaim = `-- name: PutInstrumentClaim :exec
+INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) VALUES(?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutInstrumentClaimParams struct {
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Role         string
+}
+
+func (q *Queries) PutInstrumentClaim(ctx context.Context, arg PutInstrumentClaimParams) error {
+	_, err := q.db.ExecContext(ctx, putInstrumentClaim,
+		arg.InstrumentID,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.Role,
+	)
+	return err
+}
+
 const putInstrumentReferenceAttempt = `-- name: PutInstrumentReferenceAttempt :exec
 INSERT INTO instrument_reference_attempts(instrument_id,evidence_id,status,rule) VALUES(?,?,?,?) ON CONFLICT DO NOTHING
 `
@@ -3098,26 +3189,30 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 }
 
 const rootCalculationInputs = `-- name: RootCalculationInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM activity_bases b JOIN execution_observations o ON o.execution_id=b.activity_id JOIN claim_processing p ON p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location WHERE b.instrument_id=? AND record_values.kind IN ('trade','lifecycle') ORDER BY o.rowid
+SELECT c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
 `
 
-func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID sql.NullString) ([]RecordValue, error) {
+type RootCalculationInputsRow struct {
+	Kind     string
+	Data     []byte
+	Location string
+	Role     string
+}
+
+func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error) {
 	rows, err := q.db.QueryContext(ctx, rootCalculationInputs, instrumentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []RecordValue
+	var items []RootCalculationInputsRow
 	for rows.Next() {
-		var i RecordValue
+		var i RootCalculationInputsRow
 		if err := rows.Scan(
-			&i.ArtifactID,
-			&i.Version,
-			&i.Location,
-			&i.ClaimID,
-			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
+			&i.Location,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}

@@ -285,7 +285,12 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						continue
 					}
 
-					accepted, e := decodeTrade(old.Accepted)
+					data, e := retainedActivityData(ctx, q, old)
+					if e != nil {
+						return e
+					}
+
+					accepted, e := decodeTrade(data)
 					if e != nil {
 						return e
 					}
@@ -909,7 +914,13 @@ func processLifecycle(
 		}
 
 		o.Outcome = "corroborated"
-		old, e := decodeLifecycle(row.Accepted)
+
+		data, e := retainedActivityData(ctx, q, row)
+		if e != nil {
+			return e
+		}
+
+		old, e := decodeLifecycle(data)
 		if row.Kind != "lifecycle" || e != nil || !application.CompatibleLifecycle(old, l) {
 			o.Outcome = "terms-conflict"
 		}
@@ -1074,7 +1085,13 @@ func processConversion(
 		}
 
 		o.Outcome = "corroborated"
-		old, e := decodeConversion(row.Accepted)
+
+		data, e := retainedActivityData(ctx, q, row)
+		if e != nil {
+			return e
+		}
+
+		old, e := decodeConversion(data)
 		if row.Kind != "conversion" || e != nil || !application.CompatibleConversion(old, c) {
 			o.Outcome = "terms-conflict"
 		}
@@ -1132,4 +1149,15 @@ func boolInt(value bool) int64 {
 	}
 
 	return 0
+}
+
+// Source corroboration compares retained source terms before operator choices.
+// Initial duplicate rows may precede creation of their durable activity base.
+func retainedActivityData(ctx context.Context, q *sqlc.Queries, row sqlc.Execution) ([]byte, error) {
+	base, err := q.ActivityBase(ctx, row.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return row.Accepted, nil
+	}
+
+	return base.Data, err
 }

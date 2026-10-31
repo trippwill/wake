@@ -86,3 +86,7 @@ CREATE INDEX event_links_execution ON event_links(execution_id,account_id,refere
 CREATE TABLE attempts(id TEXT PRIMARY KEY NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, outcome TEXT NOT NULL, counts BLOB NOT NULL) STRICT;
 CREATE INDEX attempts_artifact ON attempts(artifact_id,version,outcome);
 CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;
+
+CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('activity','underlier')),PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
+CREATE INDEX instrument_claim_occurrence ON instrument_claims(claim_id,ordinal);
+CREATE INDEX observation_execution ON execution_observations(execution_id,artifact_id,version,location);

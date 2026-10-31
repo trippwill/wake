@@ -344,3 +344,49 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 		})
 	}
 }
+
+func TestNewCompatibleClaimCorroboratesSourceBeforeOperatorChoices(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	baseline := strings.Replace(equityRow("U1", "fill", "10"), ` netCash="-0.000000049324000000123"`, "", 1)
+	coverageReport(t, s, "source-baseline", baseline)
+
+	view, err := s.Dashboard(ctx)
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	id := view.Executions[0].ID()
+	retainDecision(t, s, "activity", id, "price", "12", "USD", "set")
+	coverageReport(
+		t,
+		s,
+		"new-compatible-source",
+		strings.Replace(baseline, "/>", ` netCash="-100.000000000001"/>`, 1),
+	)
+
+	detail, err := s.ExecutionDetail(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if detail.Execution.State().NeedsReview() || detail.Execution.Terms().Fields().Price.Amount() != "12" ||
+		detail.Execution.Terms().Fields().Net.Amount() != "-100.000000000001" {
+		t.Fatal("source enrichment and operator choice diverged", detail)
+	}
+
+	found := false
+	for _, observation := range detail.Observations {
+		if observation.Artifact == "new-compatible-source" {
+			found = true
+
+			if observation.Outcome != application.ObservationCorroborated {
+				t.Fatal("source compared against operator terms", observation)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("new source appearance missing")
+	}
+}

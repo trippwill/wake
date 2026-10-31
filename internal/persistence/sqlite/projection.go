@@ -105,21 +105,16 @@ func correctionStatesFor(
 func persistRootEnrichment(
 	ctx context.Context,
 	q *sqlc.Queries,
-	id sql.NullString,
-	enriched source.Instrument,
-	conflict bool,
+	id string,
+	result application.RootCalculation,
 ) error {
-	if !id.Valid {
-		return nil
-	}
-
-	root, err := q.Instrument(ctx, id.String)
+	root, err := q.Instrument(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	if conflict {
-		return resolveAutomaticInstrument(
+	if result.Conflict {
+		if err = resolveAutomaticInstrument(
 			ctx,
 			q,
 			sqlc.ResolveInstrumentParams{
@@ -127,25 +122,27 @@ func persistRootEnrichment(
 				ReferenceStatus: "conflict",
 				ReferenceNext:   root.ReferenceNext,
 			},
-		)
-	}
-
-	data, err := json.Marshal(instrumentWire(enriched))
-	if err != nil {
-		return err
-	}
-
-	if !bytes.Equal(data, root.Reported) {
-		if err = enrichAutomaticInstrument(ctx, q,
-			sqlc.EnrichInstrumentParams{
-				ID:       root.ID,
-				Reported: data,
-				Kind:     string(enriched.Kind()),
-				Name:     enriched.Name(),
-				Ticker:   enriched.Ticker(),
-			},
 		); err != nil {
 			return err
+		}
+	} else {
+		data, err := json.Marshal(instrumentWire(result.Reported))
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(data, root.Reported) {
+			if err = enrichAutomaticInstrument(ctx, q,
+				sqlc.EnrichInstrumentParams{
+					ID:       root.ID,
+					Reported: data,
+					Kind:     string(result.Reported.Kind()),
+					Name:     result.Reported.Name(),
+					Ticker:   result.Reported.Ticker(),
+				},
+			); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -159,7 +156,7 @@ func persistRootEnrichment(
 	}
 
 	if !selection.UnderlierID.Valid {
-		if u := enriched.Option().Fields().Underlier; u.Kind() != "" {
+		if u := result.Underlier; u.Kind() != "" {
 			underlier, _, e := acceptInstrument(ctx, q, "retained", root.ID+"/underlier", u, "")
 			if e != nil {
 				return e

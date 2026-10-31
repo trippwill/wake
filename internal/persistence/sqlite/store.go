@@ -33,7 +33,8 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-simplification-4"
+	schemaVersion              = "wake-simplification-5"
+	accessSchemaVersion        = "wake-simplification-4"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
@@ -84,8 +85,9 @@ type Store struct {
 type storeMetadata struct{ kind, version, id string }
 
 var (
-	storeKinds   = [2]string{"warehouse", "connections"}
-	storeSchemas = [2]string{"main", "access"}
+	storeKinds    = [2]string{"warehouse", "connections"}
+	storeSchemas  = [2]string{"main", "access"}
+	storeVersions = [2]string{schemaVersion, accessSchemaVersion}
 )
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *Store, resultErr error) {
@@ -208,7 +210,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 				Scan(&m.kind, &m.version, &m.id)
 			expected := strings.Count([2]string{schemaSQL, connectionsSQL}[i], "CREATE TABLE")
 			if err == nil &&
-				(m.kind != storeKinds[i] || m.version != schemaVersion || m.id == "" || count != expected) {
+				(m.kind != storeKinds[i] || m.version != storeVersions[i] || m.id == "" || count != expected) {
 				err = ErrUnsupportedSchema
 			}
 
@@ -377,7 +379,7 @@ func (s *Store) initialize(
 			return err
 		}
 
-		metadata[i] = storeMetadata{kind: storeKinds[i], version: schemaVersion, id: rand.Text()}
+		metadata[i] = storeMetadata{kind: storeKinds[i], version: storeVersions[i], id: rand.Text()}
 
 		m := metadata[i]
 		if _, err = tx.ExecContext(

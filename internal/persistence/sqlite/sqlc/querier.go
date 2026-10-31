@@ -25,9 +25,11 @@ type Querier interface {
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
 	AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
+	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
 	ArtifactProvider(ctx context.Context, id string) (string, error)
+	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
@@ -102,6 +104,7 @@ type Querier interface {
 	PutDescriptor(ctx context.Context, arg PutDescriptorParams) error
 	PutEventLink(ctx context.Context, arg PutEventLinkParams) error
 	PutExecution(ctx context.Context, arg PutExecutionParams) error
+	PutInstrumentClaim(ctx context.Context, arg PutInstrumentClaimParams) error
 	PutInstrumentReferenceAttempt(ctx context.Context, arg PutInstrumentReferenceAttemptParams) error
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
 	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
@@ -140,7 +143,7 @@ type Querier interface {
 	RetryRecovery(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
-	RootCalculationInputs(ctx context.Context, instrumentID sql.NullString) ([]RecordValue, error)
+	RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error)
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error

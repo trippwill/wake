@@ -87,8 +87,6 @@ type (
 type ActivityCalculationInput struct {
 	Rule               FinancialRule
 	Baseline           ActivityTerms
-	Root               source.Instrument
-	RootClaims         []source.Instrument
 	Claims             []ActivityClaim
 	ObservationChoices map[string]ActivityTerms
 	Binding            ActivityBinding
@@ -107,10 +105,7 @@ type ActivityCalculation struct {
 	Binding          ActivityBinding
 	State            ActivityState
 	Explanation      CalculationExplanation
-	Instruments      []source.Instrument
 	AutomaticListing bool
-	Root             source.Instrument
-	RootConflict     bool
 }
 
 // CalculateActivity is the common financial path for processing, prospective
@@ -132,23 +127,6 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 		Binding:          in.Binding,
 		Explanation:      CalculationExplanation{Rule: in.Rule, ConflictingClaims: conflict},
 		AutomaticListing: true,
-	}
-	for _, claim := range in.Claims {
-		if claim.Terms.Kind() == in.Baseline.Kind() && claim.Terms.Kind() != ConversionActivity {
-			out.Instruments = append(out.Instruments, claim.Terms.Instrument())
-		}
-	}
-
-	if in.Baseline.Kind() != ConversionActivity {
-		rootClaims := in.RootClaims
-		if rootClaims == nil {
-			rootClaims = append([]source.Instrument{selected.Instrument()}, out.Instruments...)
-		}
-
-		out.Root, out.RootConflict, err = ReconcileInstrument(in.Root, rootClaims)
-		if err != nil {
-			return ActivityCalculation{}, err
-		}
 	}
 
 	decisions := slices.Clone(in.Decisions)
