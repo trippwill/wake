@@ -47,7 +47,7 @@ SELECT (SELECT count(*) FROM admin_activity) AS total,count(*) AS matched FROM a
  OR ?5=1 AND ((kind<>'conversion' AND instrument_name='') OR kind='trade' AND (quantity IS NULL OR price IS NULL) OR kind='conversion' AND (price IS NULL OR json_extract(snapshot,'$.activity.sent.amount') IS NULL OR json_extract(snapshot,'$.activity.received.amount') IS NULL OR coalesce(json_extract(snapshot,'$.activity.sent.currency'),'')='' OR coalesce(json_extract(snapshot,'$.activity.received.currency'),'')='' OR json_extract(snapshot,'$.activity.rate_base') IS NULL))
  OR ?6=1 AND (kind='lifecycle' OR json_extract(snapshot,'$.activity.instrument_id') IS NULL)
  OR ?7<>'' AND instrument_name='' AND coalesce(json_extract(snapshot,'$.activity.side'),json_extract(snapshot,'$.activity.lifecycle_kind'))=?7
- OR EXISTS(SELECT 1 FROM json_each(?8) match WHERE kind='conversion' AND ((json_extract(match.value,'$.unknown')=1 AND json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.amount') IS NULL AND wake_contains(coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.currency'),''),json_extract(match.value,'$.search'))=1) OR (coalesce(json_extract(match.value,'$.unknown'),0)=0 AND wake_contains(coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.currency'),''),json_extract(match.value,'$.search'))=1 AND json_type(snapshot,'$.activity.' || json_extract(match.value,'$.role'))='object')))
+ OR kind='conversion' AND json_extract(?8,'$.pair_separator')<>'' AND (wake_contains(json_extract(?8,'$.label_prefix') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?8,'$.unknown')) || json_extract(?8,'$.pair_separator') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?8,'$.unknown')),?3)=1 OR wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.sent.amount'),json_extract(?8,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?8,'$.unknown')) || ' ' || json_extract(?8,'$.sent') || json_extract(?8,'$.amount_separator') || coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.received.amount'),json_extract(?8,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?8,'$.unknown')) || ' ' || json_extract(?8,'$.received'),?3)=1)
  OR EXISTS(SELECT 1 FROM json_each(?9) match WHERE match.value=admin_activity.kind)
  OR EXISTS(SELECT 1 FROM json_each(?10) match WHERE json_extract(match.value,'$.lifecycle')=status AND json_extract(match.value,'$.review')=review_reasons AND json_extract(match.value,'$.authority')=selection_authority)
  OR EXISTS(SELECT 1 FROM json_each(?11) match WHERE json_extract(match.value,'$.status')=reference_status AND json_extract(match.value,'$.authority')=reference_authority))
@@ -61,7 +61,7 @@ type AdminActivityCountParams struct {
 	MissingValues           interface{}
 	InapplicableValues      interface{}
 	MissingInstrumentAction interface{}
-	AmountMatches           interface{}
+	ConversionText          interface{}
 	KindMatches             interface{}
 	StateMatches            interface{}
 	ReferenceMatches        interface{}
@@ -83,7 +83,7 @@ func (q *Queries) AdminActivityCount(ctx context.Context, arg AdminActivityCount
 		arg.MissingValues,
 		arg.InapplicableValues,
 		arg.MissingInstrumentAction,
-		arg.AmountMatches,
+		arg.ConversionText,
 		arg.KindMatches,
 		arg.StateMatches,
 		arg.ReferenceMatches,
@@ -101,7 +101,7 @@ SELECT snapshot,status,review_reasons,selection_authority,instrument_name,refere
  OR ?5=1 AND ((kind<>'conversion' AND instrument_name='') OR kind='trade' AND (quantity IS NULL OR price IS NULL) OR kind='conversion' AND (price IS NULL OR json_extract(snapshot,'$.activity.sent.amount') IS NULL OR json_extract(snapshot,'$.activity.received.amount') IS NULL OR coalesce(json_extract(snapshot,'$.activity.sent.currency'),'')='' OR coalesce(json_extract(snapshot,'$.activity.received.currency'),'')='' OR json_extract(snapshot,'$.activity.rate_base') IS NULL))
  OR ?6=1 AND (kind='lifecycle' OR json_extract(snapshot,'$.activity.instrument_id') IS NULL)
  OR ?7<>'' AND instrument_name='' AND coalesce(json_extract(snapshot,'$.activity.side'),json_extract(snapshot,'$.activity.lifecycle_kind'))=?7
- OR EXISTS(SELECT 1 FROM json_each(?8) match WHERE kind='conversion' AND ((json_extract(match.value,'$.unknown')=1 AND json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.amount') IS NULL AND wake_contains(coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.currency'),''),json_extract(match.value,'$.search'))=1) OR (coalesce(json_extract(match.value,'$.unknown'),0)=0 AND wake_contains(coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.' || json_extract(match.value,'$.role') || '.currency'),''),json_extract(match.value,'$.search'))=1 AND json_type(snapshot,'$.activity.' || json_extract(match.value,'$.role'))='object')))
+ OR kind='conversion' AND json_extract(?8,'$.pair_separator')<>'' AND (wake_contains(json_extract(?8,'$.label_prefix') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?8,'$.unknown')) || json_extract(?8,'$.pair_separator') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?8,'$.unknown')),?3)=1 OR wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.sent.amount'),json_extract(?8,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?8,'$.unknown')) || ' ' || json_extract(?8,'$.sent') || json_extract(?8,'$.amount_separator') || coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.received.amount'),json_extract(?8,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?8,'$.unknown')) || ' ' || json_extract(?8,'$.received'),?3)=1)
  OR EXISTS(SELECT 1 FROM json_each(?9) match WHERE match.value=admin_activity.kind)
  OR EXISTS(SELECT 1 FROM json_each(?10) match WHERE json_extract(match.value,'$.lifecycle')=status AND json_extract(match.value,'$.review')=review_reasons AND json_extract(match.value,'$.authority')=selection_authority)
  OR EXISTS(SELECT 1 FROM json_each(?11) match WHERE json_extract(match.value,'$.status')=reference_status AND json_extract(match.value,'$.authority')=reference_authority))
@@ -127,7 +127,7 @@ type AdminActivityRowsParams struct {
 	MissingValues           interface{}
 	InapplicableValues      interface{}
 	MissingInstrumentAction interface{}
-	AmountMatches           interface{}
+	ConversionText          interface{}
 	KindMatches             interface{}
 	StateMatches            interface{}
 	ReferenceMatches        interface{}
@@ -156,7 +156,7 @@ func (q *Queries) AdminActivityRows(ctx context.Context, arg AdminActivityRowsPa
 		arg.MissingValues,
 		arg.InapplicableValues,
 		arg.MissingInstrumentAction,
-		arg.AmountMatches,
+		arg.ConversionText,
 		arg.KindMatches,
 		arg.StateMatches,
 		arg.ReferenceMatches,
@@ -436,12 +436,13 @@ func (q *Queries) AdminReferenceStatus(ctx context.Context) (AdminReferenceStatu
 }
 
 const adminReviewCount = `-- name: AdminReviewCount :one
-SELECT (SELECT count(*) FROM admin_review) AS total,count(*) AS matched FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count))
+SELECT (SELECT count(*) FROM admin_review) AS total,count(*) AS matched FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR kind='activity' AND json_extract(activity,'$.family')='conversion' AND json_extract(?3,'$.pair_separator')<>'' AND wake_contains(json_extract(?3,'$.label_prefix') || coalesce(nullif(json_extract(activity,'$.sent.currency'),''),json_extract(?3,'$.unknown')) || json_extract(?3,'$.pair_separator') || coalesce(nullif(json_extract(activity,'$.received.currency'),''),json_extract(?3,'$.unknown')),?1)=1 OR ?4=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?5<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?5 OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?7) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count))
 `
 
 type AdminReviewCountParams struct {
 	Search                  interface{}
 	LabelSearch             interface{}
+	ConversionText          interface{}
 	MissingValues           interface{}
 	MissingInstrumentAction interface{}
 	KindMatches             interface{}
@@ -457,6 +458,7 @@ func (q *Queries) AdminReviewCount(ctx context.Context, arg AdminReviewCountPara
 	row := q.db.QueryRowContext(ctx, adminReviewCount,
 		arg.Search,
 		arg.LabelSearch,
+		arg.ConversionText,
 		arg.MissingValues,
 		arg.MissingInstrumentAction,
 		arg.KindMatches,
@@ -468,12 +470,13 @@ func (q *Queries) AdminReviewCount(ctx context.Context, arg AdminReviewCountPara
 }
 
 const adminReviewRows = `-- name: AdminReviewRows :many
-SELECT CAST(kind AS TEXT) AS kind,CAST(id AS TEXT) AS id,CAST(name AS TEXT) AS name,CAST(artifact AS TEXT) AS artifact,CAST(location AS TEXT) AS location,CAST(status AS TEXT) AS status,CAST(claim_count AS INTEGER) AS claim_count,CAST(activity AS TEXT) AS activity FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count)) ORDER BY kind,id LIMIT ?8 OFFSET ?7
+SELECT CAST(kind AS TEXT) AS kind,CAST(id AS TEXT) AS id,CAST(name AS TEXT) AS name,CAST(artifact AS TEXT) AS artifact,CAST(location AS TEXT) AS location,CAST(status AS TEXT) AS status,CAST(claim_count AS INTEGER) AS claim_count,CAST(activity AS TEXT) AS activity FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR kind='activity' AND json_extract(activity,'$.family')='conversion' AND json_extract(?3,'$.pair_separator')<>'' AND wake_contains(json_extract(?3,'$.label_prefix') || coalesce(nullif(json_extract(activity,'$.sent.currency'),''),json_extract(?3,'$.unknown')) || json_extract(?3,'$.pair_separator') || coalesce(nullif(json_extract(activity,'$.received.currency'),''),json_extract(?3,'$.unknown')),?1)=1 OR ?4=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?5<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?5 OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?7) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count)) ORDER BY kind,id LIMIT ?9 OFFSET ?8
 `
 
 type AdminReviewRowsParams struct {
 	Search                  interface{}
 	LabelSearch             interface{}
+	ConversionText          interface{}
 	MissingValues           interface{}
 	MissingInstrumentAction interface{}
 	KindMatches             interface{}
@@ -497,6 +500,7 @@ func (q *Queries) AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams
 	rows, err := q.db.QueryContext(ctx, adminReviewRows,
 		arg.Search,
 		arg.LabelSearch,
+		arg.ConversionText,
 		arg.MissingValues,
 		arg.MissingInstrumentAction,
 		arg.KindMatches,

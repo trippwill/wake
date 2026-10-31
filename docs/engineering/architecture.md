@@ -102,7 +102,9 @@ Reference ordering includes selection authority before the stable identity tie.
 Review rendering and search share category/reason definitions; status/count
 constraints are passed as typed review matches before pagination.
 Missing-value and applicability searches use structured matches supplied by
-presentation; database predicates never depend on the displayed placeholder words.
+presentation. Conversion-cell wording is also supplied by presentation for exact
+substring matching across amount roles and currency pairs. This is search formatting;
+storage never interprets these words as state or financial policy.
 Recovery pages read bounded source-access metadata, expose continuation links and
 check readiness across every retained connection in one consistent access snapshot
 before offering resume. Resume uses the same complete metadata query; it does not

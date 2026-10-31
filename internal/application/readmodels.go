@@ -19,7 +19,7 @@ type ListOptions struct {
 	KindMatches                          []ActivityKind
 	StateMatches                         []ActivityState
 	ReferenceMatches                     []ReferenceMatch
-	AmountMatches                        []AmountMatch
+	ConversionText                       ConversionText
 	DisplayMatches                       DisplayMatches
 	ReviewMatches                        []ReviewMatch
 }
@@ -35,10 +35,15 @@ type (
 		InapplicableValues      bool
 		MissingInstrumentAction string
 	}
-	AmountMatch struct {
-		Unknown bool   `json:"unknown"`
-		Role    string `json:"role"`
-		Search  string `json:"search"`
+	// ConversionText is presentation-owned wording for searchable conversion cells.
+	// Storage combines it with exact typed values; it never derives policy from it.
+	ConversionText struct {
+		Unknown         string `json:"unknown"`
+		LabelPrefix     string `json:"label_prefix"`
+		PairSeparator   string `json:"pair_separator"`
+		AmountSeparator string `json:"amount_separator"`
+		Sent            string `json:"sent"`
+		Received        string `json:"received"`
 	}
 	ReferenceMatch struct {
 		Status    ReferenceStatus
@@ -131,8 +136,8 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		}
 	}
 
-	for _, match := range options.AmountMatches {
-		if match.Role != "sent" && match.Role != "received" || len(match.Search) > 256 {
+	for _, text := range []string{options.ConversionText.LabelPrefix, options.ConversionText.Unknown, options.ConversionText.PairSeparator, options.ConversionText.AmountSeparator, options.ConversionText.Sent, options.ConversionText.Received} {
+		if len(text) > 64 {
 			return ListQuery{}, ErrInvalid
 		}
 	}
@@ -158,7 +163,6 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	options.ReviewMatches = slices.Clone(options.ReviewMatches)
-	options.AmountMatches = slices.Clone(options.AmountMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
 	options.LabelSearch = strings.ToLower(options.LabelSearch)
@@ -171,7 +175,6 @@ func (q ListQuery) Scope() ListScope { return q.scope }
 func (q ListQuery) Options() ListOptions {
 	out := q.options
 	out.ReviewMatches = slices.Clone(out.ReviewMatches)
-	out.AmountMatches = slices.Clone(out.AmountMatches)
 	out.KindMatches = slices.Clone(out.KindMatches)
 	out.StateMatches = slices.Clone(out.StateMatches)
 	out.ReferenceMatches = slices.Clone(out.ReferenceMatches)

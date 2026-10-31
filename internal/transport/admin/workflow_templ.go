@@ -24,7 +24,7 @@ import (
 func known(text string) string {
 	if text == "" {
 
-		return "Unknown"
+		return unknownValue
 	}
 	return text
 }
@@ -1262,21 +1262,21 @@ func OptionFacts(terms source.OptionTerms) templ.Component {
 func dateText(d financial.Date) string {
 	if d.IsZero() {
 
-		return "Unknown"
+		return unknownValue
 	}
 	return d.String()
 }
 func priceText(p financial.Price) string {
 	if p.Amount() == "" {
 
-		return "Unknown"
+		return unknownValue
 	}
 	return p.Amount() + " " + p.Currency().String()
 }
 func moneyText(m financial.Money) string {
 	if m.Amount() == "" {
 
-		return "Unknown"
+		return unknownValue
 	}
 	return m.Amount() + " " + m.Currency().String()
 }
@@ -1284,7 +1284,7 @@ func moneyText(m financial.Money) string {
 func referenceText(r source.Reference) string {
 	if r.IsZero() {
 
-		return "Unknown"
+		return unknownValue
 	}
 	return r.Authority() + " " + r.Kind() + " [" + r.Scope() + "] " + r.Value()
 }

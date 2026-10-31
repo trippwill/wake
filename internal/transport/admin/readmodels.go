@@ -11,7 +11,30 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 )
 
-const notApplicableValue = "Not applicable"
+const (
+	notApplicableValue        = "Not applicable"
+	unknownValue              = "Unknown"
+	conversionPairSeparator   = " → "
+	conversionLabelPrefix     = "Convert "
+	conversionAmountSeparator = " · "
+	conversionSent            = "sent"
+	conversionReceived        = "received"
+)
+
+func conversionSearchText() application.ConversionText {
+	return application.ConversionText{
+		Unknown:         unknownValue,
+		LabelPrefix:     conversionLabelPrefix,
+		PairSeparator:   conversionPairSeparator,
+		AmountSeparator: conversionAmountSeparator,
+		Sent:            conversionSent,
+		Received:        conversionReceived,
+	}
+}
+
+func conversionQuantity(sent, received string) string {
+	return sent + " " + conversionSent + conversionAmountSeparator + received + " " + conversionReceived
+}
 
 type (
 	sourceView struct {
@@ -92,7 +115,7 @@ func referenceLabel(status application.ReferenceStatus, authority application.Se
 
 func publishedMoney(v *application.PublishedMoney) string {
 	if v == nil {
-		return "Unknown"
+		return unknownValue
 	}
 
 	return v.Amount + " " + v.Currency
@@ -100,7 +123,7 @@ func publishedMoney(v *application.PublishedMoney) string {
 
 func publishedAmount(v *application.PublishedAmount) string {
 	if v == nil {
-		return "Unknown"
+		return unknownValue
 	}
 
 	return known(text(v.Amount)) + " " + known(v.Currency)
@@ -143,7 +166,7 @@ func activityList(v application.ActivityList) activityView {
 			}
 		case "conversion":
 			row.Label = activityLabel(a, name)
-			row.Quantity = publishedAmount(a.Sent) + " sent · " + publishedAmount(a.Received) + " received"
+			row.Quantity = conversionQuantity(publishedAmount(a.Sent), publishedAmount(a.Received))
 			row.Price = publishedMoney(a.Rate)
 			if a.Rate != nil {
 				row.Basis = "per " + known(text(a.RateBase))
@@ -247,17 +270,6 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 
 		if scope == application.ActivityScope || scope == application.ReviewScope {
 			options.LabelSearch = search
-			if pair, ok := strings.CutPrefix(search, "convert "); ok {
-				options.LabelSearch = string(
-					application.ConversionActivity,
-				) + " " + strings.Replace(
-					pair,
-					" → ",
-					" ",
-					1,
-				)
-			}
-
 			for _, action := range []string{"assignment", "exercise", "expiration"} {
 				if name, ok := strings.CutPrefix(search, action+" · "); ok {
 					options.LabelSearch = action + " " + name
@@ -270,29 +282,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 				}
 			}
 
-			for _, role := range []string{"sent", "received"} {
-				if strings.Contains(role, search) {
-					options.AmountMatches = append(options.AmountMatches, application.AmountMatch{Role: role})
-				} else if before, ok := strings.CutSuffix(search, " "+role); ok {
-					options.AmountMatches = append(
-						options.AmountMatches,
-						amountSearch(role, before),
-					)
-				}
-			}
-
-			if currency, ok := strings.CutPrefix(
-				search,
-				strings.ToLower(known(""))+" ",
-			); ok && !strings.HasSuffix(search, " sent") &&
-				!strings.HasSuffix(search, " received") {
-				for _, role := range []string{"sent", "received"} {
-					options.AmountMatches = append(
-						options.AmountMatches,
-						application.AmountMatch{Role: role, Unknown: true, Search: currency},
-					)
-				}
-			}
+			options.ConversionText = conversionSearchText()
 
 			for kind, label := range map[application.ActivityKind]string{application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
 				if strings.Contains(strings.ToLower(label), search) ||
@@ -362,7 +352,7 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 	case "lifecycle":
 		return stringTitle(text(a.LifecycleKind)) + " · " + name
 	case "conversion":
-		sent, received := "Unknown", "Unknown"
+		sent, received := unknownValue, unknownValue
 		if a.Sent != nil {
 			sent = known(a.Sent.Currency)
 		}
@@ -371,23 +361,10 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 			received = known(a.Received.Currency)
 		}
 
-		return "Convert " + sent + " → " + received
+		return conversionLabelPrefix + sent + conversionPairSeparator + received
 	}
 
 	return name
-}
-
-func amountSearch(role, search string) application.AmountMatch {
-	missing := strings.ToLower(known(""))
-	if search == missing {
-		return application.AmountMatch{Role: role, Unknown: true}
-	}
-
-	if currency, ok := strings.CutPrefix(search, missing+" "); ok {
-		return application.AmountMatch{Role: role, Unknown: true, Search: currency}
-	}
-
-	return application.AmountMatch{Role: role, Search: search}
 }
 
 func reviewText(r application.ReviewEntry) (string, string) {

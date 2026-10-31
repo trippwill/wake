@@ -497,19 +497,31 @@ func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		search, role, amount string
-		want                 int64
+		search string
+		want   int64
 	}{
-		{"shares", "", "", 2},
-		{"0.000000000123 shares", "", "", 2},
-		{"sent", "sent", "", 1},
-		{"100.123456789 EUR sent", "sent", "100.123456789 EUR", 1},
-		{"received", "received", "", 1},
-		{"USD received", "received", "USD", 1},
+		{"shares", 2},
+		{"0.000000000123 shares", 2},
+		{"sent", 1},
+		{"100.123456789 EUR sent", 1},
+		{"received", 1},
+		{"USD received", 1},
+		{"EUR → USD", 1},
+		{"100.123456789 EUR sent · Unknown USD received", 1},
+		{"sent · Unknown USD", 1},
+		{"EUR sent · Unknown EUR", 0},
 	} {
-		options := application.ListOptions{Search: test.search}
-		if test.role != "" {
-			options.AmountMatches = []application.AmountMatch{{Role: test.role, Search: test.amount}}
+		options := application.ListOptions{
+			Search:   test.search,
+			PageSize: 1,
+			ConversionText: application.ConversionText{
+				Unknown:         "Unknown",
+				LabelPrefix:     "Convert ",
+				PairSeparator:   " → ",
+				AmountSeparator: " · ",
+				Sent:            "sent",
+				Received:        "received",
+			},
 		}
 
 		query, _ = application.NewListQuery(options, application.ActivityScope)

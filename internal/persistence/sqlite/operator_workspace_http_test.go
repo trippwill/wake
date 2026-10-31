@@ -165,6 +165,23 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 
 	cookie = login.Result().Cookies()[0]
 
+	for _, search := range []string{"EUR → USD", "100.123456789 EUR sent · Unknown USD received", "EUR sent · Unknown USD"} {
+		t.Run("conversion-cell/"+search, func(t *testing.T) {
+			response := request(http.MethodGet, "/activity?q="+url.QueryEscape(search), nil, false)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "1 of 4 results") {
+				t.Fatal("displayed conversion text did not match one row", search, response.Code)
+			}
+		})
+	}
+
+	t.Run("conversion-pair-review", func(t *testing.T) {
+		response := request(http.MethodGet, "/activity?view=review&q="+url.QueryEscape("EUR → USD"), nil, false)
+		if response.Code != http.StatusOK ||
+			!strings.Contains(html.UnescapeString(response.Body.String()), ">Convert EUR → USD<") {
+			t.Fatal("displayed currency pair did not match review row", response.Code)
+		}
+	})
+
 	optionID := ""
 	for _, e := range view.Executions {
 		if e.Terms().Fields().Instrument.Kind() == "option" {
@@ -205,6 +222,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?q=Buy+Synthetic+option", "Buy Synthetic option"},
 		{"/activity?q=Assignment+%C2%B7+Synthetic+option", "Assignment"},
 		{"/activity?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
+		{"/activity?q=" + url.QueryEscape("EUR sent · Unknown EUR"), "0 of 4 results"},
 		{"/activity?view=review&q=Buy+Synthetic+option", "Buy Synthetic option"},
 		{"/activity?view=review&q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=sent", "Convert EUR"},
