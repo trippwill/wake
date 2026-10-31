@@ -748,3 +748,96 @@ func TestFullActivityLabelSearchUsesCanonicalComponents(t *testing.T) {
 		t.Fatal("full displayed review label is not searchable", review.Matched, err)
 	}
 }
+
+func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
+	s := coverageStore(t)
+	lifecycle := strings.Replace(
+		strings.Replace(
+			syntheticOption,
+			`transactionType="ExchTrade"`,
+			`transactionType="BookTrade" code="A"`,
+			1,
+		),
+		"option-fill",
+		"missing-outcome",
+		1,
+	)
+	coverageReport(t, s, "missing-values", syntheticFX+lifecycle)
+
+	for _, test := range []struct {
+		matches application.DisplayMatches
+		search  string
+		want    int64
+	}{
+		{application.DisplayMatches{MissingValues: true}, "unknown", 1},
+		{application.DisplayMatches{InapplicableValues: true}, "not applicable", 2},
+	} {
+		t.Run(test.search, func(t *testing.T) {
+			query, _ := application.NewListQuery(
+				application.ListOptions{Search: test.search, DisplayMatches: test.matches, PageSize: 1},
+				application.ActivityScope,
+			)
+			page, err := s.ActivityList(t.Context(), query)
+			if err != nil || page.Matched != test.want || len(page.Items) != 1 {
+				t.Fatal("missing-value count/row filters differ", page.PageInfo, len(page.Items), err)
+			}
+		})
+	}
+
+	// A known instrument identity can legitimately have neither reported label.
+	instrumentRef, _ := source.NewReference("synthetic", "security", "", "unnamed")
+
+	instrument, err := source.NewInstrument(
+		source.InstrumentInput{Reference: instrumentRef, Kind: source.Equity},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	coverageReport(t, s, "known-trade", equityRow("U1", "known-trade", "10"))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	input := view.Executions[0].Terms().Fields()
+	input.Location = "unnamed-fill"
+	input.Event, _ = source.NewReference("synthetic", "event", "account", "unnamed-fill")
+	input.EventAliases = nil
+	input.Instrument = instrument
+
+	trade, err := source.NewTrade(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"unnamed-fill",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+				if e := claims.PutTrade(ctx, trade); e != nil {
+					return provider.Result{}, e
+				}
+
+				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+			},
+		),
+	)
+
+	query, _ := application.NewListQuery(
+		application.ListOptions{
+			Search:         "buy unknown",
+			LabelSearch:    "buy unknown",
+			DisplayMatches: application.DisplayMatches{MissingInstrumentAction: "buy"},
+		},
+		application.ActivityScope,
+	)
+
+	page, err := s.ActivityList(t.Context(), query)
+	if err != nil || page.Matched != 1 || page.Items[0].InstrumentName != "" {
+		t.Fatal("unknown instrument label phrase not searchable", page.Matched, err)
+	}
+}

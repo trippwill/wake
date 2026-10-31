@@ -504,7 +504,7 @@ templ ActivityRows(view activityView) {
 									if r.InstrumentID!="" {
 										<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+r.InstrumentID)) }>{ r.Reference }</a>
 									} else {
-										Not applicable
+										{ notApplicableValue }
 									}
 								</td>
 							</tr>

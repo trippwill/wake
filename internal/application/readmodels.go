@@ -20,11 +20,18 @@ type ListOptions struct {
 	StateMatches                         []ActivityState
 	ReferenceMatches                     []ReferenceMatch
 	AmountMatches                        []AmountMatch
+	DisplayMatches                       DisplayMatches
 }
 type (
+	DisplayMatches struct {
+		MissingValues           bool
+		InapplicableValues      bool
+		MissingInstrumentAction string
+	}
 	AmountMatch struct {
-		Role   string `json:"role"`
-		Search string `json:"search"`
+		Unknown bool   `json:"unknown"`
+		Role    string `json:"role"`
+		Search  string `json:"search"`
 	}
 	ReferenceMatch struct {
 		Status    ReferenceStatus
@@ -121,6 +128,13 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		if match.Role != "sent" && match.Role != "received" || len(match.Search) > 256 {
 			return ListQuery{}, ErrInvalid
 		}
+	}
+
+	if !slices.Contains(
+		[]string{"", "buy", "sell", "assignment", "exercise", "expiration"},
+		options.DisplayMatches.MissingInstrumentAction,
+	) {
+		return ListQuery{}, ErrInvalid
 	}
 
 	options.AmountMatches = slices.Clone(options.AmountMatches)

@@ -11,6 +11,8 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 )
 
+const notApplicableValue = "Not applicable"
+
 type (
 	sourceView struct {
 		application.Prerequisites
@@ -135,7 +137,7 @@ func activityList(v application.ActivityList) activityView {
 			row.Basis = text(a.PriceBasis)
 		case "lifecycle":
 			row.Label = activityLabel(a, name)
-			row.Price = "Not applicable"
+			row.Price = notApplicableValue
 			if a.Quantity != nil {
 				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
 			}
@@ -234,10 +236,28 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 
 	search := strings.ToLower(options.Search)
 	if search != "" {
+		if scope == application.ActivityScope || scope == application.InstrumentScope ||
+			scope == application.ReviewScope {
+			options.DisplayMatches.MissingValues = strings.Contains(strings.ToLower(known("")), search)
+		}
+
+		if scope == application.ActivityScope {
+			options.DisplayMatches.InapplicableValues = strings.Contains(
+				strings.ToLower(notApplicableValue),
+				search,
+			)
+		}
+
 		if scope == application.ActivityScope || scope == application.ReviewScope {
 			options.LabelSearch = strings.ReplaceAll(strings.ReplaceAll(search, " · ", " "), " → ", " ")
 			if pair, ok := strings.CutPrefix(options.LabelSearch, "convert "); ok {
 				options.LabelSearch = string(application.ConversionActivity) + " " + pair
+			}
+
+			for _, action := range []string{"buy", "sell", "assignment", "exercise", "expiration"} {
+				if options.LabelSearch == action+" "+strings.ToLower(known("")) {
+					options.DisplayMatches.MissingInstrumentAction = action
+				}
 			}
 
 			for _, role := range []string{"sent", "received"} {
@@ -246,7 +266,20 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 				} else if before, ok := strings.CutSuffix(search, " "+role); ok {
 					options.AmountMatches = append(
 						options.AmountMatches,
-						application.AmountMatch{Role: role, Search: before},
+						amountSearch(role, before),
+					)
+				}
+			}
+
+			if currency, ok := strings.CutPrefix(
+				search,
+				strings.ToLower(known(""))+" ",
+			); ok && !strings.HasSuffix(search, " sent") &&
+				!strings.HasSuffix(search, " received") {
+				for _, role := range []string{"sent", "received"} {
+					options.AmountMatches = append(
+						options.AmountMatches,
+						application.AmountMatch{Role: role, Unknown: true, Search: currency},
 					)
 				}
 			}
@@ -332,4 +365,17 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 	}
 
 	return name
+}
+
+func amountSearch(role, search string) application.AmountMatch {
+	missing := strings.ToLower(known(""))
+	if search == missing {
+		return application.AmountMatch{Role: role, Unknown: true}
+	}
+
+	if currency, ok := strings.CutPrefix(search, missing+" "); ok {
+		return application.AmountMatch{Role: role, Unknown: true, Search: currency}
+	}
+
+	return application.AmountMatch{Role: role, Search: search}
 }
