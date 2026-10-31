@@ -173,6 +173,10 @@ func polishObservations() templ.Component {
 			return err
 		}
 
+		if err := AcceptedDetailScope().Render(ctx, w); err != nil {
+			return err
+		}
+
 		return ObservationHistory("instrument", "synthetic-instrument").Render(ctx, w)
 	})
 }
@@ -204,13 +208,31 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 		)
 	}
 
+	query, err := listQuery(r.Context(), application.ObservationScope)
+	if err != nil {
+		gridJSON(w, nil, err)
+		return
+	}
+
+	options := query.Options()
+	if options.Direction == "desc" && options.Sort == "location" {
+		slices.Reverse(rows)
+	}
+
+	start := min(int(query.Offset()), len(rows))
+	end := min(start+options.PageSize, len(rows))
+
+	if owner, err := gridPageRequest(r, "observations"); err == nil {
+		r = owner
+	}
+
 	gridJSON(
 		w,
 		observationGrid(
 			r.Context(),
 			application.ObservationList{
-				Items:    rows,
-				PageInfo: application.PageInfo{Page: 1, PageSize: 50, Total: 2, Matched: 2},
+				Items:    rows[start:end],
+				PageInfo: application.PageInfo{Page: options.Page, PageSize: options.PageSize, Total: 2, Matched: 2},
 			},
 		),
 		nil,
@@ -333,7 +355,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					{Operation: "discover", Progress: "waiting", Next: "2026-10-26T12:00:00Z"},
 				},
 				Processing: []application.ProcessingStatus{
-					{Artifact: "synthetic-report", TradeClaims: 70, Complete: true},
+					{Artifact: "synthetic-report", Receipt: "synthetic-receipt", TradeClaims: 70, Complete: true},
 				},
 			},
 		},
@@ -457,7 +479,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 
 		if strings.HasPrefix(r.URL.Path, "/test/") || r.URL.Path == "/" ||
-			r.URL.Path == "/activity/synthetic-activity/correct" {
+			r.URL.Path == "/activity/synthetic-activity/correct" || r.URL.Path == "/instruments/synthetic-instrument" {
 			csrf, ok := auth.session(r)
 			if !ok {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -470,7 +492,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			switch r.URL.Path {
 			case "/test/grid":
 				component = polishGrid()
-			case "/test/observations":
+			case "/test/observations", "/instruments/synthetic-instrument":
 				component = polishObservations()
 			case "/test/correction", "/activity/synthetic-activity/correct":
 				snapshot := page(r.Context())
@@ -707,6 +729,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	extra.Store(false)
 	holdRefresh.Store(true)
 	check(
+		chromedp.Focus(`.tabulator-col[tabulator-field="label"]`),
 		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
 	)
 
@@ -770,6 +793,59 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		),
 	)
 	expired.Store(false)
+
+	check(
+		chromedp.Navigate(
+			origin+"/instruments/synthetic-instrument?observations_q=synthetic&observations_sort=location&observations_dir=asc",
+		),
+		chromedp.WaitVisible(".tabulator-row"),
+	)
+	check(
+		chromedp.Evaluate(
+			`window.observationGrid=window.Tabulator.findTable('.tabulator')[0];window.observationGrid.setPageSize(1).then(()=>window.observationGrid.setPage(2))`,
+			nil,
+		),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('observations_page')==='2' && document.querySelectorAll('.tabulator-row').length===1`,
+			nil,
+		),
+	)
+	assert(
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.pathname==='/instruments/synthetic-instrument'&&parent.searchParams.get('observations_page')==='2'&&parent.searchParams.get('observations_dir')==='asc'})()`,
+		"evidence link retained the previous observation page",
+	)
+	check(
+		chromedp.Evaluate(`window.observationGrid.setSort('location','desc')`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('observations_dir')==='desc' && new URL(location.href).searchParams.get('observations_page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	assert(
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.searchParams.get('observations_page')==='1'&&parent.searchParams.get('observations_dir')==='desc'})()`,
+		"evidence link retained the previous observation order",
+	)
+	check(chromedp.Click(`[data-refresh-accepted]`), chromedp.WaitVisible(`.tabulator-row`))
+	assert(
+		`new URL(location.href).searchParams.get('observations_q')==='synthetic'&&new URL(location.href).searchParams.get('observations_dir')==='desc'&&document.querySelector('#observation-search').value==='synthetic'`,
+		"accepted-detail refresh discarded current observation state",
+	)
+
+	check(
+		chromedp.Navigate(origin+"/test/reports"),
+		chromedp.WaitVisible(`[data-disclosure="receipt-synthetic-receipt"]`),
+	)
+	check(
+		chromedp.Evaluate(
+			`document.querySelector('[data-disclosure="receipt-synthetic-receipt"]').open=true;document.querySelector('.wake-brand').focus();document.getSelection().removeAllRanges();document.querySelector('#workspace-content').dataset.probe='pending';window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+			nil,
+		),
+		chromedp.Poll(`!document.querySelector('#workspace-content').hasAttribute('data-probe')`, nil),
+	)
+	assert(
+		`document.querySelector('[data-disclosure="receipt-synthetic-receipt"]').open`,
+		"live region replacement closed a retained receipt disclosure",
+	)
 
 	for _, theme := range []string{"light", "dark"} {
 		for _, width := range []int64{1440, 390} {

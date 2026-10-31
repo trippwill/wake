@@ -197,8 +197,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			t.Fatal("navigation", navigationErr)
 		}
 
-		if response == nil || response.Status != http.StatusOK {
-			t.Fatal("navigation response")
+		if response == nil {
+			t.Fatal("navigation response missing")
+		}
+
+		if response.Status != http.StatusOK {
+			t.Fatal("navigation response", response.Status, response.URL)
 		}
 	}
 	capture := func(name string) {

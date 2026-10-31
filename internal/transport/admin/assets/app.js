@@ -468,6 +468,11 @@
             }
             target.searchParams.set("page", String(parameters.page || 1));
             target.searchParams.set("size", String(parameters.size || 50));
+            for (const key of ["sort", "dir", "page"])
+              current.searchParams.set(
+                gridParameter(region, key),
+                target.searchParams.get(key),
+              );
             target.searchParams.set(
               "origin",
               current.searchParams.get("origin") ||
@@ -507,11 +512,6 @@
               if (sequence !== state.sequence)
                 throw new Error("Superseded table request");
               status.textContent = `${result.last_row} of ${result.total} results`;
-              for (const key of ["sort", "dir", "page"])
-                current.searchParams.set(
-                  gridParameter(region, key),
-                  target.searchParams.get(key),
-                );
               history.replaceState(null, "", current);
               return result;
             } catch (error) {
@@ -556,13 +556,13 @@
                 : "none",
             );
           }
-          if (state.focus?.field)
+          if (state.focus?.field && document.activeElement === document.body)
             element
               .querySelector(
                 `.tabulator-col[tabulator-field="${CSS.escape(state.focus.field)}"]`,
               )
               ?.focus();
-          if (state.focus?.record) {
+          if (state.focus?.record && document.activeElement === document.body) {
             const row = element.querySelector(
               `[data-record="${CSS.escape(state.focus.record)}"]`,
             );
@@ -729,12 +729,28 @@
         region.contains(selection.anchorNode))
     );
   };
+  let disclosures = new Map();
   document.addEventListener("htmx:beforeSwap", (event) => {
-    if (
-      event.detail.requestConfig?.elt?.id === "workspace-content" &&
-      (protectedContent() || document.querySelector("[data-grid]"))
-    )
+    if (event.detail.requestConfig?.elt?.id !== "workspace-content") return;
+    if (protectedContent() || document.querySelector("[data-grid]")) {
       event.detail.shouldSwap = false;
+      return;
+    }
+    disclosures = new Map(
+      [
+        ...document.querySelectorAll(
+          "#workspace-content details[data-disclosure]",
+        ),
+      ].map((element) => [element.dataset.disclosure, element.open]),
+    );
+  });
+  document.addEventListener("htmx:afterSwap", () => {
+    for (const element of document.querySelectorAll(
+      "#workspace-content details[data-disclosure]",
+    ))
+      if (disclosures.has(element.dataset.disclosure))
+        element.open = disclosures.get(element.dataset.disclosure);
+    disclosures.clear();
   });
   document.addEventListener("htmx:afterSettle", () => {
     refreshGrids();

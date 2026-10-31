@@ -218,7 +218,7 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 				@ListPagination(v.PageInfo)
 			</section>
 		} else if c.CanDiscover {
-			<details class="wake-card">
+			<details class="wake-card" data-disclosure={ "accounts-" + c.ID }>
 				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
 				@ListPagination(v.PageInfo)
 			</details>
@@ -267,7 +267,7 @@ templ ProviderSettings(descriptor provider.Descriptor, settings provider.Setting
 templ ConnectionAccess(csrf string, c application.ConnectionView) {
 	<section class="wake-card wake-connection">
 		<h2>{ c.Name }</h2>
-		<details><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
+		<details data-disclosure={ "identity-" + c.ID }><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
 		<p class="wake-help">Stored settings and credentials do not establish that the provider is reachable.</p>
 		if c.MissingAccess {
 			<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Review the source settings and required credentials.</p>
@@ -404,9 +404,9 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 					<p class="wake-notice">{ p.Failure }</p>
 					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
 				}
-				<details><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
+				<details data-disclosure={ "receipt-" + p.Receipt }><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
 				if c.CanNormalize && p.Failure=="" {
-					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
+					<details data-disclosure={ "processing-" + p.Receipt }><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}
 			</article>
 		}

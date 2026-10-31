@@ -161,3 +161,53 @@ func TestUnderlierObservationPageUsesOriginalClaimBinding(t *testing.T) {
 		t.Fatal("underlier source appearance is not inspectable", rows)
 	}
 }
+
+func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
+	store := coverageStore(t)
+
+	row := equityRow("U1", "out-of-order", "100")
+	stamps := []string{
+		"2026-10-31T12:00:00.000000002Z",
+		"2026-10-31T12:00:00Z",
+		"2026-10-31T07:00:00.000000001-05:00",
+	}
+	ids := make([]string, len(stamps))
+	for i, stamp := range stamps {
+		ids[i] = acquireClaimReport(t, store, singleClaimBody(fmt.Sprintf("<!-- body%d -->", i)+row), false)
+		if _, err := store.db.ExecContext(
+			t.Context(),
+			"UPDATE artifacts SET retrieved=? WHERE id=?",
+			stamp,
+			ids[i],
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	view, err := store.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	for _, direction := range []string{"asc", "desc"} {
+		expected := []string{ids[1], ids[2], ids[0]}
+		if direction == "desc" {
+			expected = []string{ids[0], ids[2], ids[1]}
+		}
+
+		for i, want := range expected {
+			query, err := application.NewListQuery(
+				application.ListOptions{Sort: "report", Direction: direction, Page: i + 1, PageSize: 1},
+				application.ObservationScope,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			page, err := store.ObservationList(t.Context(), "activity", view.Executions[0].ID(), query)
+			if err != nil || len(page.Items) != 1 || page.Items[0].Artifact != want {
+				t.Fatal("timestamp order follows processing instead of exact acquisition", direction, i, page, err)
+			}
+		}
+	}
+}
