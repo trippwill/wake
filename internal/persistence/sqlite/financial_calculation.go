@@ -49,18 +49,9 @@ func loadActivityCalculation(
 		Listing:    base.ListingID.String,
 	}
 
-	inputs, err := materializeRecords(q.CalculationInputs(ctx, sql.NullString{String: row.ID, Valid: true}))
+	in.Claims, err = retainedActivityClaims(ctx, q, row.ID)
 	if err != nil {
 		return in, err
-	}
-
-	for _, input := range inputs {
-		value, e := decodeActivityTerms(input.Kind, input.Data)
-		if e != nil {
-			return in, e
-		}
-
-		in.Claims = append(in.Claims, application.ActivityClaim{Key: observationKey(input), Terms: value})
 	}
 
 	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
@@ -437,4 +428,27 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 	}
 
 	return nil
+}
+
+func retainedActivityClaims(
+	ctx context.Context,
+	q *sqlc.Queries,
+	id string,
+) ([]application.ActivityClaim, error) {
+	inputs, err := materializeRecords(q.CalculationInputs(ctx, sql.NullString{String: id, Valid: true}))
+	if err != nil {
+		return nil, err
+	}
+
+	claims := make([]application.ActivityClaim, 0, len(inputs))
+	for _, input := range inputs {
+		terms, e := decodeActivityTerms(input.Kind, input.Data)
+		if e != nil {
+			return nil, e
+		}
+
+		claims = append(claims, application.ActivityClaim{Key: observationKey(input), Terms: terms})
+	}
+
+	return claims, nil
 }

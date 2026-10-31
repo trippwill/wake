@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"fmt"
@@ -12,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
@@ -388,5 +392,79 @@ func TestNewCompatibleClaimCorroboratesSourceBeforeOperatorChoices(t *testing.T)
 
 	if !found {
 		t.Fatal("new source appearance missing")
+	}
+}
+
+func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	baseline := strings.Replace(equityRow("U1", "fill", "10"), ` netCash="-0.000000049324000000123"`, "", 1)
+	coverageReport(t, s, "unknown-net", baseline)
+
+	view, err := s.Dashboard(ctx)
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	id := view.Executions[0].ID()
+	net := func(value string) string { return strings.Replace(baseline, "/>", ` netCash="`+value+`"/>`, 1) }
+	coverageReport(t, s, "known-net", net("-100"))
+	retainDecision(t, s, "activity", id, "price", "12", "USD", "set")
+
+	fields := view.Executions[0].Terms().Fields()
+	currency, _ := financial.ParseCurrency("USD")
+	fields.Net, _ = financial.NewMoney("-200", currency)
+	fields.Location = "conflicting-net"
+	target, _ := source.NewReference("synthetic", "event", "account", "related")
+	relationship, _ := source.NewRelationship(source.LifecycleLink, target)
+	fields.Relationships = []source.Relationship{relationship}
+
+	claim, err := source.NewTrade(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"conflicting-net",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+				if e := claims.PutTrade(ctx, claim); e != nil {
+					return provider.Result{}, e
+				}
+
+				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+			},
+		),
+	)
+
+	detail, err := s.ExecutionDetail(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !detail.Execution.State().NeedsReview() || detail.Execution.Terms().Fields().Net.Amount() != "" ||
+		detail.Execution.Terms().Fields().Price.Amount() != "12" {
+		t.Fatal("disputed enrichment did not retain source anchor and independent operator choice", detail)
+	}
+
+	found := false
+	for _, observation := range detail.Observations {
+		if observation.Artifact == "conflicting-net" {
+			found = true
+
+			if observation.Outcome != application.ObservationTermsConflict {
+				t.Fatal("competing enrichment classified as corroboration", observation)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("new claim appearance missing")
+	}
+
+	if len(detail.Relationships) != 0 {
+		t.Fatal("disputed source relationships bypassed admission guard", detail.Relationships)
 	}
 }

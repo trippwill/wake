@@ -285,15 +285,12 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						continue
 					}
 
-					data, e := retainedActivityData(ctx, q, old)
+					automatic, e := automaticActivityTerms(ctx, q, old)
 					if e != nil {
 						return e
 					}
 
-					accepted, e := decodeTrade(data)
-					if e != nil {
-						return e
-					}
+					accepted := automatic.Trade()
 
 					if accepted.Fields().Instrument.Reference() == f.Instrument.Reference() {
 						if e = checkInstrumentRoot(ctx, q, old, f.Instrument); e != nil {
@@ -915,12 +912,12 @@ func processLifecycle(
 
 		o.Outcome = "corroborated"
 
-		data, e := retainedActivityData(ctx, q, row)
+		automatic, e := automaticActivityTerms(ctx, q, row)
 		if e != nil {
 			return e
 		}
 
-		old, e := decodeLifecycle(data)
+		old := automatic.Lifecycle()
 		if row.Kind != "lifecycle" || e != nil || !application.CompatibleLifecycle(old, l) {
 			o.Outcome = "terms-conflict"
 		}
@@ -1086,12 +1083,12 @@ func processConversion(
 
 		o.Outcome = "corroborated"
 
-		data, e := retainedActivityData(ctx, q, row)
+		automatic, e := automaticActivityTerms(ctx, q, row)
 		if e != nil {
 			return e
 		}
 
-		old, e := decodeConversion(data)
+		old := automatic.Conversion()
 		if row.Kind != "conversion" || e != nil || !application.CompatibleConversion(old, c) {
 			o.Outcome = "terms-conflict"
 		}
@@ -1151,13 +1148,40 @@ func boolInt(value bool) int64 {
 	return 0
 }
 
-// Source corroboration compares retained source terms before operator choices.
-// Initial duplicate rows may precede creation of their durable activity base.
-func retainedActivityData(ctx context.Context, q *sqlc.Queries, row sqlc.Execution) ([]byte, error) {
+// Source corroboration compares the automatic selection before this claim. The
+// incoming observation is not inserted yet, and operator decisions are excluded.
+func automaticActivityTerms(
+	ctx context.Context,
+	q *sqlc.Queries,
+	row sqlc.Execution,
+) (application.ActivityTerms, error) {
 	base, err := q.ActivityBase(ctx, row.ID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return row.Accepted, nil
+		base.Data = row.Accepted
+	} else if err != nil {
+		return application.ActivityTerms{}, err
 	}
 
-	return base.Data, err
+	baseline, err := decodeActivityTerms(row.Kind, base.Data)
+	if err != nil {
+		return application.ActivityTerms{}, err
+	}
+
+	claims, err := retainedActivityClaims(ctx, q, row.ID)
+	if err != nil {
+		return application.ActivityTerms{}, err
+	}
+
+	result, err := application.CalculateActivity(
+		application.ActivityCalculationInput{
+			Rule:     application.RetainedClaimsRule,
+			Baseline: baseline,
+			Claims:   claims,
+		},
+	)
+	if err != nil {
+		return application.ActivityTerms{}, err
+	}
+
+	return result.Automatic, nil
 }
