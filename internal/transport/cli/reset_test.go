@@ -340,7 +340,7 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 func TestResetRefusesRunningDaemon(t *testing.T) {
 	_, path, _ := setupDaemonFixture(t)
 
-	resolved, err := config.Resolve(config.Overrides{ConfigPath: path, ConfigPathExplicit: true})
+	resolved, err := launchForTest(path, false)
 	if err != nil {
 		t.Fatal(err)
 	}

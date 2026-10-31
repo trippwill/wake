@@ -4,8 +4,6 @@
 package config
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,8 +13,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/BurntSushi/toml"
-	altsrc "github.com/urfave/cli-altsrc/v3"
 	"github.com/urfave/cli/v3"
 )
 
@@ -110,15 +106,9 @@ func Flags() []cli.Flag {
 func (s Setting) flag(value string, sources cli.ValueSourceChain) cli.Flag {
 	usage := s.Description + " (TOML: " + s.Key + "; env: " + s.Environment + ")"
 	switch s.Type {
-	case "bool":
-		parsed, _ := strconv.ParseBool(value)
-		return &cli.BoolFlag{Name: s.Flag, Usage: usage, Value: parsed, Sources: sources}
 	case "uint16":
 		parsed, _ := strconv.ParseUint(value, 10, 16)
 		return &cli.Uint16Flag{Name: s.Flag, Usage: usage, Value: uint16(parsed), Sources: sources}
-	case "int64":
-		parsed, _ := strconv.ParseInt(value, 10, 64)
-		return &cli.Int64Flag{Name: s.Flag, Usage: usage, Value: parsed, Sources: sources}
 	default:
 		return &cli.StringFlag{Name: s.Flag, Usage: usage, Value: value, Sources: sources}
 	}
@@ -162,43 +152,34 @@ func SelectConfigPath(path string, explicit bool) (string, string, error) {
 	return path, source, nil
 }
 
-// Resolve performs strict flag > environment > TOML > default resolution without writes.
-func Resolve(overrides Overrides) (Resolution, error) {
-	return resolve(overrides, true)
+// Resolve resolves launch settings on the actual parsed command without writes.
+// Explicit flags win over environment, a strictly validated TOML snapshot and defaults.
+func Resolve(command *cli.Command) (Resolution, error) {
+	return resolve(command, true)
 }
 
 // ResolveReadOnly resolves inspection paths without requiring a daemon runtime directory.
-func ResolveReadOnly(overrides Overrides) (Resolution, error) {
-	return resolve(overrides, false)
+func ResolveReadOnly(command *cli.Command) (Resolution, error) {
+	return resolve(command, false)
 }
 
-func resolve(overrides Overrides, runtimeRequired bool) (Resolution, error) {
+func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	var out Resolution
 
-	path, source, err := SelectConfigPath(overrides.ConfigPath, overrides.ConfigPathExplicit)
+	path, source, err := SelectConfigPath(command.String("config"), command.IsSet("config"))
 	if err != nil {
 		return out, err
 	}
 
 	out.ConfigPath, out.ConfigSource = path, source
-	// Read and validate once before altsrc, whose lookup intentionally treats read errors as absent.
 	content, err := readConfigSnapshot(path)
-	exists := err == nil
 	if err != nil && (source != "default" || !errors.Is(err, os.ErrNotExist)) {
 		return out, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
 	}
 
-	if exists {
-		if _, err := decodeFileConfig(content); err != nil {
-			return out, err
-		}
-	}
-
-	tree := map[string]any{}
-
-	metadata, err := toml.Decode(string(content), &tree)
+	file, metadata, err := decodeFileConfigSnapshot(content)
 	if err != nil {
-		return out, fmt.Errorf("%w: malformed TOML", ErrInvalid)
+		return out, err
 	}
 
 	defaults, dir, err := settingDefaults()
@@ -206,170 +187,141 @@ func resolve(overrides Overrides, runtimeRequired bool) (Resolution, error) {
 		return out, err
 	}
 
-	var sourceErr error
-
-	flags := []cli.Flag{}
+	fileValues := fileSettingValues(file)
+	selected := map[any]any{}
+	fallback := map[any]any{}
 	for _, setting := range Settings() {
-		if value, explicit := overrides.Values[setting.Flag]; explicit {
-			if err := checkSettingInput(setting, value); err != nil {
-				return out, err
-			}
-		} else if value, present := os.LookupEnv(setting.Environment); present {
-			if err := checkSettingInput(setting, value); err != nil {
-				return out, fmt.Errorf("%w: %s", err, setting.Environment)
-			}
+		if metadata.IsDefined(strings.Split(setting.Key, ".")...) {
+			value := fileValues[setting.Flag]
+
+			selected[setting.Flag] = value
 		}
 
-		chain := cli.EnvVars(setting.Environment)
-		if exists {
-			valueSource := altsrc.NewValueSource(func(current []byte, target any) error {
-				if !bytes.Equal(current, content) {
-					sourceErr = fmt.Errorf("%w: configuration changed during resolution", ErrInvalid)
-					return sourceErr
-				}
-
-				return toml.Unmarshal(current, target)
-			}, "toml", setting.Key, altsrc.StringSourcer(path))
-			chain.Append(
-				cli.NewValueSourceChain(
-					&checkedSource{
-						ValueSource: valueSource,
-						defined:     metadata.IsDefined(strings.Split(setting.Key, ".")...),
-						err:         &sourceErr,
-					},
-				),
-			)
-		}
-
-		flags = append(flags, setting.flag(defaults[setting.Flag], chain))
+		fallback[setting.Flag] = defaults[setting.Flag]
 	}
 
-	effective := map[string]any{}
-	command := &cli.Command{
-		Name:            "settings",
-		Flags:           flags,
-		HideHelp:        true,
-		HideHelpCommand: true,
-		Writer:          io.Discard,
-		ErrWriter:       io.Discard,
-		Action: func(_ context.Context, c *cli.Command) error {
-			for _, setting := range Settings() {
-				value := c.Value(setting.Flag)
+	tomlSource := cli.NewMapSource("validated TOML: "+path, selected)
+	defaultSource := cli.NewMapSource("defaults", fallback)
+	for _, setting := range Settings() {
+		explicit := command.IsSet(setting.Flag)
+		authority := "default"
+		if strings.HasPrefix(setting.Key, "paths.") || strings.HasPrefix(setting.Key, "storage.") {
+			authority = "XDG/default"
+		}
 
-				parts := strings.Split(setting.Key, ".")
-				table, ok := effective[parts[0]].(map[string]any)
-				if !ok {
-					table = map[string]any{}
-					effective[parts[0]] = table
-				}
+		if _, found := selected[setting.Flag]; found {
+			authority = "toml:" + path
+		}
 
-				table[parts[1]] = value
-
-				authority := "default"
-				if strings.HasPrefix(setting.Key, "paths.") || strings.HasPrefix(setting.Key, "storage.") {
-					authority = "XDG/default"
-				}
-
-				if metadata.IsDefined(parts...) {
-					authority = "toml:" + path
-				}
-
-				if _, ok := os.LookupEnv(setting.Environment); ok {
-					authority = "environment:" + setting.Environment
-				}
-
-				if _, ok := overrides.Values[setting.Flag]; ok {
-					authority = "flag"
-				}
-
-				out.Values = append(out.Values, Value{setting.Key, value, authority})
+		if value, found := os.LookupEnv(setting.Environment); found && !explicit {
+			// cli skips empty numeric sources. Reject an explicitly empty number instead.
+			if setting.Type == "uint16" && value == "" {
+				return out, fmt.Errorf("%w: %s requires uint16", ErrInvalid, setting.Environment)
 			}
 
-			return nil
+			authority = "environment:" + setting.Environment
+		}
+
+		if explicit {
+			authority = "flag"
+		}
+
+		sources := cli.EnvVars(setting.Environment)
+		sources.Append(
+			cli.NewValueSourceChain(
+				cli.NewMapValueSource(setting.Flag, tomlSource),
+				cli.NewMapValueSource(setting.Flag, defaultSource),
+			),
+		)
+
+		var flag cli.Flag
+		for _, candidate := range command.Flags {
+			if candidate.Names()[0] == setting.Flag {
+				flag = candidate
+				break
+			}
+		}
+
+		switch value := flag.(type) {
+		case *cli.StringFlag:
+			value.Sources = sources
+		case *cli.Uint16Flag:
+			value.Sources = sources
+		default:
+			return out, fmt.Errorf("%w: missing native setting flag %s", ErrInvalid, setting.Flag)
+		}
+
+		if err := flag.PostParse(); err != nil {
+			return out, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+
+		out.Values = append(out.Values, Value{setting.Key, command.Value(setting.Flag), authority})
+	}
+
+	port := command.Uint16("admin-port")
+	file = fileConfig{
+		Storage: Storage{
+			WarehousePath:   command.String("warehouse-path"),
+			ConnectionsPath: command.String("connections-path"),
+		},
+		Paths:       filePaths{RuntimeDir: command.String("runtime-dir")},
+		Log:         fileLog{Level: command.String("log-level")},
+		Credentials: fileCredentials{MasterKeyPath: command.String("master-key-path")},
+		Admin: fileAdmin{
+			Port:         &port,
+			AuthMode:     command.String("admin-auth-mode"),
+			PublicOrigin: command.String("admin-public-origin"),
 		},
 	}
-
-	args := []string{"settings"}
-	for _, setting := range Settings() {
-		if value, ok := overrides.Values[setting.Flag]; ok {
-			args = append(args, "--"+setting.Flag+"="+value)
-		}
-	}
-
-	for name := range overrides.Values {
-		found := false
-		for _, setting := range Settings() {
-			if setting.Flag == name {
-				found = true
-			}
-		}
-
-		if !found {
-			return out, fmt.Errorf("%w: unknown setting %s", ErrInvalid, name)
-		}
-	}
-
-	if err := command.Run(context.Background(), args); err != nil {
-		return out, fmt.Errorf("%w: %v", ErrInvalid, err)
-	}
-
-	if sourceErr != nil {
-		return out, sourceErr
-	}
-
-	if exists {
-		current, err := readConfigSnapshot(path)
-		if err != nil || !bytes.Equal(current, content) {
-			return out, fmt.Errorf("%w: configuration changed or became unreadable during resolution", ErrInvalid)
-		}
-	}
-
-	var encoded bytes.Buffer
-	if err := toml.NewEncoder(&encoded).Encode(effective); err != nil {
-		return out, err
-	}
-
-	file, err := decodeFileConfig(encoded.Bytes())
-	if err != nil {
-		return out, err
-	}
-
 	out.Config, err = resolvedConfig(file, dir, runtimeRequired)
 
 	return out, err
 }
 
-func checkSettingInput(setting Setting, value string) error {
-	var err error
-	switch setting.Type {
-	case "bool":
-		_, err = strconv.ParseBool(value)
-	case "uint16":
-		_, err = strconv.ParseUint(value, 10, 16)
-	case "int64":
-		_, err = strconv.ParseInt(value, 10, 64)
+func fileSettingValues(file fileConfig) map[string]any {
+	var port uint16
+	if file.Admin.Port != nil {
+		port = *file.Admin.Port
 	}
 
-	if err != nil {
-		return fmt.Errorf("%w: --%s requires %s", ErrInvalid, setting.Flag, setting.Type)
+	return map[string]any{
+		"warehouse-path": file.Storage.WarehousePath, "connections-path": file.Storage.ConnectionsPath,
+		"runtime-dir": file.Paths.RuntimeDir, "log-level": file.Log.Level,
+		"master-key-path": file.Credentials.MasterKeyPath, "admin-port": port,
+		"admin-auth-mode": file.Admin.AuthMode, "admin-public-origin": file.Admin.PublicOrigin,
+	}
+}
+
+// Validate selected file values before applying any higher-priority source.
+func checkFileSetting(setting Setting, value any) error {
+	text := fmt.Sprint(value)
+	switch setting.Flag {
+	case "warehouse-path", "connections-path":
+		return checkDatabasePath(text)
+	case "runtime-dir":
+		return requireAbsolute(setting.Key, text)
+	case "master-key-path":
+		if text != "" {
+			return requireAbsolute(setting.Key, text)
+		}
+	case "log-level":
+		_, err := parseLogLevel(text)
+		return err
+	case "admin-port":
+		if port, ok := value.(uint16); !ok || port == 0 {
+			return fmt.Errorf("%w: admin port must be between 1 and 65535", ErrInvalid)
+		}
+	case "admin-auth-mode":
+		if text != "local" && text != "proxy" {
+			return fmt.Errorf("%w: unsupported admin auth mode %q", ErrInvalid, text)
+		}
+	case "admin-public-origin":
+		if text != "" {
+			return validateAdminOrigin(text, true)
+		}
 	}
 
 	return nil
-}
-
-type checkedSource struct {
-	cli.ValueSource
-	defined bool
-	err     *error
-}
-
-func (s *checkedSource) Lookup() (string, bool) {
-	value, found := s.ValueSource.Lookup()
-	if s.defined && !found {
-		*s.err = fmt.Errorf("%w: cannot resolve TOML value", ErrInvalid)
-	}
-
-	return value, found
 }
 
 func settingDefaults() (map[string]string, string, error) {
@@ -404,6 +356,12 @@ func settingDefaults() (map[string]string, string, error) {
 }
 
 func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, error) {
+	if key := file.Credentials.MasterKeyPath; key != "" {
+		if err := requireAbsolute("master key path", key); err != nil {
+			return Config{}, err
+		}
+	}
+
 	if err := checkStorage(file.Storage); err != nil {
 		return Config{}, err
 	}
@@ -464,15 +422,23 @@ func readConfigSnapshot(path string) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
+func checkDatabasePath(path string) error {
+	if err := requireAbsolute("database file", path); err != nil {
+		return err
+	}
+
+	if filepath.Clean(path) != path {
+		return fmt.Errorf("%w: database paths must be clean", ErrInvalid)
+	}
+
+	return nil
+}
+
 func checkStorage(storage Storage) error {
 	paths := []string{storage.WarehousePath, storage.ConnectionsPath}
 	for i, path := range paths {
-		if err := requireAbsolute("database file", path); err != nil {
+		if err := checkDatabasePath(path); err != nil {
 			return err
-		}
-
-		if filepath.Clean(path) != path {
-			return fmt.Errorf("%w: database paths must be clean", ErrInvalid)
 		}
 
 		for _, other := range paths[:i] {

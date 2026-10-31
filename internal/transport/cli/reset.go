@@ -25,7 +25,7 @@ func performReset(ctx context.Context, c *cli.Command) error {
 	activity := newActivity(c.ErrWriter, c.Bool("json"), "reset", "resolving configured database files")
 	defer activity.Stop()
 
-	resolved, err := config.ResolveReadOnly(explicitSettings(c))
+	resolved, err := config.ResolveReadOnly(c)
 	if err != nil {
 		return failure("configure reset: %v", err)
 	}
