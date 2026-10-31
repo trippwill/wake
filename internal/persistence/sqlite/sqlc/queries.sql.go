@@ -11,6 +11,7 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const accessReadiness = `-- name: AccessReadiness :one
@@ -278,6 +279,17 @@ UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE 
 func (q *Queries) ArtifactProcessed(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, artifactProcessed, id)
 	return err
+}
+
+const artifactProvider = `-- name: ArtifactProvider :one
+SELECT connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?
+`
+
+func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, artifactProvider, id)
+	var provider string
+	err := row.Scan(&provider)
+	return provider, err
 }
 
 const attempts = `-- name: Attempts :many
@@ -1425,22 +1437,43 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 }
 
 const pendingArtifacts = `-- name: PendingArtifacts :many
-SELECT artifacts.id FROM artifacts JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE artifacts.operation='acquire' AND artifacts.processed=0 AND (processing_next='' OR julianday(processing_next)<=julianday(?)) ORDER BY artifacts.rowid LIMIT 20
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
 `
 
-func (q *Queries) PendingArtifacts(ctx context.Context, julianday interface{}) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, pendingArtifacts, julianday)
+type PendingArtifactsParams struct {
+	Now       interface{}
+	Providers []string
+}
+
+type PendingArtifactsRow struct {
+	ID       string
+	Provider string
+}
+
+func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error) {
+	query := pendingArtifacts
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Now)
+	if len(arg.Providers) > 0 {
+		for _, v := range arg.Providers {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:providers*/?", strings.Repeat(",?", len(arg.Providers))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:providers*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []PendingArtifactsRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i PendingArtifactsRow
+		if err := rows.Scan(&i.ID, &i.Provider); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

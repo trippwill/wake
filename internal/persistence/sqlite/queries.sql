@@ -71,7 +71,7 @@ INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,au
 -- name: CandidateProfiles :many
 SELECT candidates.* FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value;
 -- name: PendingArtifacts :many
-SELECT artifacts.id FROM artifacts JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE artifacts.operation='acquire' AND artifacts.processed=0 AND (processing_next='' OR julianday(processing_next)<=julianday(?)) ORDER BY artifacts.rowid LIMIT 20;
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ArtifactProcessed :exec
 UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?;
 -- name: ArtifactFailure :exec
@@ -287,3 +287,6 @@ SELECT * FROM execution_observations WHERE artifact_id=? ORDER BY rowid;
 UPDATE connections SET name=? WHERE id=?;
 -- name: CredentialKeys :many
 SELECT key FROM access.credentials WHERE connection_id=? ORDER BY key;
+
+-- name: ArtifactProvider :one
+SELECT connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?;

@@ -152,7 +152,7 @@ func TestSubmissionFailureRetainsPublicFieldsWithoutSecrets(t *testing.T) {
 		"verified-session-csrf",
 		"/connections",
 		"Access needs repair",
-		draft, descriptor,
+		draft, descriptor, submissionCreate,
 	).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}

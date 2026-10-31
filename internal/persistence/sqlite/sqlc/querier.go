@@ -26,6 +26,7 @@ type Querier interface {
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
 	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
+	ArtifactProvider(ctx context.Context, id string) (string, error)
 	Attempts(ctx context.Context, artifactID string) ([]OperationalAttempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (OperationalReferenceCache, error)
@@ -76,7 +77,7 @@ type Querier interface {
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
 	Pacing(ctx context.Context, arg PacingParams) (string, error)
-	PendingArtifacts(ctx context.Context, julianday interface{}) ([]string, error)
+	PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error)
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)

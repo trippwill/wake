@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/provider"
-	"net/url"
 	"strconv"
 )
 
@@ -272,8 +271,8 @@ templ ConnectionAccess(csrf string, c application.ConnectionView) {
 		</form>
 		for _,field:=range c.Descriptor.Fields() {
 			if field.Kind()==provider.SecretField {
-				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets/" + url.PathEscape(field.Key())) }>
-					<input type="hidden" name="csrf" value={ csrf }/>
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets") }>
+					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="secret_key" value={ field.Key() }/>
 					<p><label for={ "secret-" + c.ID + "-" + field.Key() }>{ "Replacement "+field.Label() }</label><input class="input" id={ "secret-" + c.ID + "-" + field.Key() } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
 					<button class="btn" type="submit">Replace credential and retry</button>
 				</form>
@@ -378,7 +377,11 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 			<article class="wake-report-row">
 				<div class="wake-card-heading">
 					<h3><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Source report</a></h3>
-					if p.Complete {
+					if c.Descriptor.ID()=="" {
+						<p>Provider unavailable. Evidence is retained.</p>
+					} else if !c.CanNormalize {
+						<p>Evidence retained. This source does not provide normalization.</p>
+					} else if p.Complete {
 						@StateBadge("Processing complete")
 					} else {
 						@StateBadge("Processing pending")
@@ -388,12 +391,12 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 				if p.NeedsReview>0 {
 					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Inspect report observations</a>.</p>
 				}
-				if p.Failure!="" {
+				if c.CanNormalize && p.Failure!="" {
 					<p class="wake-notice">{ p.Failure }</p>
 					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
 				}
 				<details><summary>Report identity and excluded rows</summary><p>{ p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
-				if p.Failure=="" {
+				if c.CanNormalize && p.Failure=="" {
 					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}
 			</article>

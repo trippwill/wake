@@ -70,7 +70,7 @@ type (
 			[]provider.Candidate,
 			provider.Progress,
 		) (string, error)
-		Retained(context.Context, string) (Retained, error)
+		ArtifactProvider(context.Context, string) (string, error)
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
 		Reserve(context.Context, string, string, string, time.Time, time.Duration) (provider.Reservation, error)
 		Delay(context.Context, string, string, string, time.Time) error
@@ -615,12 +615,12 @@ func (h *Host) Normalize(ctx context.Context, id, version string) (result provid
 	}
 	defer finish()
 
-	retained, err := h.store.Retained(work, id)
+	providerID, err := h.store.ArtifactProvider(work, id)
 	if err != nil {
 		return provider.Result{}, err
 	}
 
-	r, ok := h.registrations[retained.Provider]
+	r, ok := h.registrations[providerID]
 	if !ok || r.Version() != version || r.Normalizer() == nil {
 		return provider.Result{}, provider.ErrUnavailable
 	}

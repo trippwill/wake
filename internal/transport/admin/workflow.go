@@ -57,7 +57,7 @@ func registerWorkflowRoutes(
 
 				limit := int64(16 << 10)
 				switch r.Pattern {
-				case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets/{key}":
+				case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets":
 					// The SDK admits 64 fields of up to 4096 bytes, plus field names,
 					// host metadata and at most three URL-encoded bytes per input byte.
 					limit = 1 << 20
@@ -114,7 +114,14 @@ func registerWorkflowRoutes(
 			"Unable to save",
 			csrf,
 			"Connections",
-			SubmissionFailure(csrf, r.URL.EscapedPath(), message, r.PostForm, requestDescriptor(r, workflow)),
+			SubmissionFailure(
+				csrf,
+				r.URL.EscapedPath(),
+				message,
+				r.PostForm,
+				requestDescriptor(r, workflow),
+				formSubmission(r.Pattern),
+			),
 		).Render(r.Context(), w)
 	}
 	gate("GET /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -230,7 +237,7 @@ func registerWorkflowRoutes(
 		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 
-	gate("POST /connections/{id}/secrets/{key}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	gate("POST /connections/{id}/secrets", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		descriptor := requestDescriptor(r, workflow)
 
 		secrets := formSecrets(r, descriptor)
@@ -239,8 +246,8 @@ func registerWorkflowRoutes(
 		if err := workflow.ReplaceSecret(
 			r.Context(),
 			r.PathValue("id"),
-			r.PathValue("key"),
-			secrets[r.PathValue("key")],
+			r.PostForm.Get("secret_key"),
+			secrets[r.PostForm.Get("secret_key")],
 		); err != nil {
 			failure(w, r, csrf, err)
 			return
@@ -785,5 +792,33 @@ func formSecrets(r *http.Request, descriptor provider.Descriptor) map[string]*cr
 func clearSecrets(secrets map[string]*credential.Secret) {
 	for _, secret := range secrets {
 		secret.Clear()
+	}
+}
+
+type submissionKind uint8
+
+const (
+	submissionNone submissionKind = iota
+	submissionCreate
+	submissionSettings
+	submissionConfirm
+	submissionSecret
+	submissionReference
+)
+
+func formSubmission(pattern string) submissionKind {
+	switch pattern {
+	case "POST /connections":
+		return submissionCreate
+	case "POST /connections/{id}/settings":
+		return submissionSettings
+	case "POST /connections/{id}/confirm":
+		return submissionConfirm
+	case "POST /connections/{id}/secrets":
+		return submissionSecret
+	case "POST /reference/key":
+		return submissionReference
+	default:
+		return submissionNone
 	}
 }

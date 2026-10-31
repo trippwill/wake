@@ -163,3 +163,103 @@ func TestConnectionPostAcceptsValidSDKFieldSizes(t *testing.T) {
 		t.Fatal("connection request budget became unbounded", rejected.Code)
 	}
 }
+
+func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
+	for _, key := range []string{".", "..", "settings", "confirm", "api/secret"} {
+		t.Run(key, func(t *testing.T) {
+			field, err := provider.NewField(key, "Source credential", provider.SecretField, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			stream, _ := provider.NewStream("records", "synthetic")
+
+			descriptor, err := provider.NewDescriptor(
+				"synthetic",
+				"Synthetic",
+				[]provider.Stream{stream},
+				[]provider.Field{field},
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			registration, err := provider.NewRegistration(descriptor, "v1", formProvider{}, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			store := &formStore{connection: host.Connection{ID: "one", Provider: "synthetic", Name: "Synthetic"}}
+
+			h, err := host.New(t.Context(), store, nil, nil, nil, registration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer h.Close()
+
+			workflow := application.New(nil, h, nil, nil, nil)
+
+			var access strings.Builder
+			if err = ConnectionAccess(
+				"csrf",
+				application.ConnectionView{ID: "one", Name: "Synthetic", Descriptor: descriptor},
+			).Render(t.Context(), &access); err != nil {
+				t.Fatal(err)
+			}
+
+			if body := access.String(); !strings.Contains(body, `action="/connections/one/secrets"`) ||
+				!strings.Contains(body, `name="secret_key" value="`+key+`"`) {
+				t.Fatal("credential key changed the action path", body)
+			}
+
+			dir := t.TempDir()
+			if err = SetUnlock(dir, []byte("synthetic-retry-unlock")); err != nil {
+				t.Fatal(err)
+			}
+
+			auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer auth.Close()
+
+			login := httptest.NewRecorder()
+			csrf := auth.issue(login)
+
+			handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			values := url.Values{"csrf": {csrf}, "secret_key": {key}, "secret." + key: {"must-not-survive-draft"}}
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"http://127.0.0.1:8787/connections/one/secrets",
+				strings.NewReader(values.Encode()),
+			)
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Origin", "http://127.0.0.1:8787")
+			request.AddCookie(login.Result().Cookies()[0])
+
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			body := response.Body.String()
+			if response.Code != http.StatusBadRequest {
+				t.Fatal("missing protection key did not exercise credential retry", response.Code)
+			}
+
+			for _, forbidden := range []string{`name="connection_name"`, `name="name"`, `name="currency"`, "must-not-survive-draft"} {
+				if strings.Contains(body, forbidden) {
+					t.Fatal("credential retry included unrelated or secret fields", forbidden)
+				}
+			}
+
+			if !strings.Contains(body, `name="secret_key" value="`+key+`"`) ||
+				!strings.Contains(body, `name="secret.`+key+`"`) {
+				t.Fatal("credential retry lost source key", body)
+			}
+		})
+	}
+}

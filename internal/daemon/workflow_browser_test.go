@@ -715,7 +715,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			`input[name="secret.token"]`,
 			"synthetic-token",
 		),
-		chromedp.Click(`form[action$="/secrets/token"] button`),
+		chromedp.Click(`form[action$="/secrets"] button`),
 		chromedp.WaitNotPresent(`p[id^="access-missing-"]`),
 		chromedp.SetValue("#openfigi-key", "synthetic-reference-key"),
 		chromedp.Click(`form[action="/reference/key"] button`),

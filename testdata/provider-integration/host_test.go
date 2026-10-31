@@ -931,3 +931,103 @@ func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T
 		t.Fatal("discovery required an acquirer", scheduled, err)
 	}
 }
+
+func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *testing.T) {
+	base := registration(t)
+	r, err := provider.NewRegistration(base.Descriptor(), base.Version(), base.Acquirer(), nil, base.Discoverer(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	workflow := application.New(f.store, f.host, nil, nil, nil)
+	artifact, err := f.host.Discover(t.Context(), f.id, "statements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := view.Connections[0].Candidates[0]
+	details, _ := application.NewAccountDetails("Acquisition only", "")
+	if _, err = workflow.Confirm(t.Context(), f.id, artifact, candidate.Candidate.Reference(), details); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(2 * time.Second)
+	for range 2 {
+		if err = workflow.RunOnce(t.Context(), f.now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err = workflow.Dashboard(t.Context())
+	if err != nil || len(view.Connections[0].Processing) != 1 {
+		t.Fatal(view, err)
+	}
+	status := view.Connections[0].Processing[0]
+	if status.Failure != "" || status.Complete || view.Connections[0].CanNormalize {
+		t.Fatal("absent optional normalizer became processing failure", status)
+	}
+	attempts, err := f.store.Attempts(t.Context(), status.Artifact)
+	if err != nil || len(attempts) != 0 {
+		t.Fatal("raw acquisition enqueued normalization", attempts, err)
+	}
+	if retained, err := f.store.Retained(t.Context(), status.Artifact); err != nil || retained.Artifact.IsZero() {
+		t.Fatal("raw evidence lost", err)
+	}
+}
+
+type workflowReadProof struct {
+	*persistence.Store
+	retainedReads int
+}
+
+func (s *workflowReadProof) Retained(ctx context.Context, id string) (host.Retained, error) {
+	s.retainedReads++
+	return s.Store.Retained(ctx, id)
+}
+
+func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing.T) {
+	base := registration(t)
+	f := newFixture(t, base)
+	document, err := fixture.RegisterDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.host.Close()
+	f.host, err = host.New(t.Context(), f.store, f.envelope, nil, func() time.Time { return f.now }, base, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := &workflowReadProof{Store: f.store}
+	workflow := application.New(reads, f.host, nil, nil, nil)
+	discovery, err := f.host.Discover(t.Context(), f.id, "statements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := view.Connections[0].Candidates[0]
+	details, _ := application.NewAccountDetails("Metadata processing proof", "")
+	if _, err = workflow.Confirm(t.Context(), f.id, discovery, candidate.Candidate.Reference(), details); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(2 * time.Second)
+	artifact, err := f.host.Acquire(t.Context(), f.id, "statements")
+	if err != nil || artifact == "" {
+		t.Fatal(artifact, err)
+	}
+	// A nonempty, elapsed retry bound also proves multi-provider SQL parameters
+	// remain ordered correctly when the enabled normalizer list has two entries.
+	if err = f.store.ProcessingFailure(t.Context(), artifact, f.now.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err = workflow.RunOnce(t.Context(), f.now); err != nil {
+		t.Fatal(err)
+	}
+	view, err = workflow.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 || reads.retainedReads != 0 {
+		t.Fatal("orchestration decoded full evidence for metadata", view, reads.retainedReads, err)
+	}
+}

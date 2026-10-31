@@ -35,7 +35,7 @@ func TestWorkflowCommandsRequireSessionOriginAndCSRF(t *testing.T) {
 	csrf := auth.issue(login)
 
 	cookie := login.Result().Cookies()[0]
-	for _, path := range []string{"/connections", "/connections/id/settings", "/connections/id/secrets/token", "/connections/id/retry", "/connections/id/confirm", "/reference/key", "/activity/id/correct", "/instruments/id/correct", "/processing/id/retry", "/recovery/rebuild", "/recovery/id/retry"} {
+	for _, path := range []string{"/connections", "/connections/id/settings", "/connections/id/secrets", "/connections/id/retry", "/connections/id/confirm", "/reference/key", "/activity/id/correct", "/instruments/id/correct", "/processing/id/retry", "/recovery/rebuild", "/recovery/id/retry"} {
 		for _, test := range []struct {
 			name, origin, csrf string
 			authenticated      bool

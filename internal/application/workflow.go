@@ -23,7 +23,8 @@ type (
 		Paused, ReferenceReview, WarehouseReset bool
 		Revision                                int64
 	}
-	Candidate struct {
+	PendingArtifact struct{ ID, Provider string }
+	Candidate       struct {
 		Artifact  string
 		Candidate provider.Candidate
 	}
@@ -38,16 +39,16 @@ type (
 		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo                      string
 	}
 	ConnectionView struct {
-		ID, Name, Provider               string
-		Settings                         provider.Settings
-		Descriptor                       provider.Descriptor
-		CredentialKeys                   []string
-		CanDiscover, CanAcquire          bool
-		MissingAccess                    bool
-		SettingsStored, CredentialStored bool
-		Candidates                       []Candidate
-		Work                             []WorkStatus
-		Processing                       []ProcessingStatus
+		ID, Name, Provider                    string
+		Settings                              provider.Settings
+		Descriptor                            provider.Descriptor
+		CredentialKeys                        []string
+		CanDiscover, CanAcquire, CanNormalize bool
+		MissingAccess                         bool
+		SettingsStored, CredentialStored      bool
+		Candidates                            []Candidate
+		Work                                  []WorkStatus
+		Processing                            []ProcessingStatus
 	}
 	Dashboard struct {
 		Storage          StorageStatus
@@ -68,7 +69,7 @@ type (
 		Confirm(context.Context, string, string, source.Reference, AccountDetails, bool) (Account, error)
 		Dashboard(context.Context) (Dashboard, error)
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
-		PendingArtifacts(context.Context, time.Time) ([]string, error)
+		PendingArtifacts(context.Context, time.Time, []string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
 		ProcessingFailure(context.Context, string, time.Time) error
 		ExecutionDetail(context.Context, string) (ExecutionDetail, error)
@@ -354,7 +355,9 @@ func (w *Workflow) Dashboard(ctx context.Context) (Dashboard, error) {
 		connection.Descriptor = registration.Descriptor()
 
 		connection.CanAcquire = registration.Acquirer() != nil
+
 		connection.CanDiscover = registration.Discoverer() != nil
+		connection.CanNormalize = registration.Normalizer() != nil
 		connection.CredentialStored = true
 		for _, field := range connection.Descriptor.Fields() {
 			if field.Kind() == provider.SecretField && field.Required() &&
@@ -464,26 +467,32 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	artifacts, err := w.store.PendingArtifacts(ctx, now)
+	providers := []string{}
+	for _, registration := range w.Providers() {
+		if registration.Normalizer() != nil {
+			providers = append(providers, registration.Descriptor().ID())
+		}
+	}
+
+	artifacts, err := w.store.PendingArtifacts(ctx, now, providers)
 	if err != nil {
 		return err
 	}
 
-	for _, id := range artifacts {
+	for _, artifact := range artifacts {
+		id := artifact.ID
 		work := logging.Correlate(ctx)
-		retained, retainedErr := w.store.Retained(work, id)
-
-		err = retainedErr
-		if err == nil {
-			registration, ok := w.Provider(retained.Provider)
-			if !ok || registration.Normalizer() == nil {
-				err = provider.ErrUnavailable
-			} else {
-				if _, err = w.host.Normalize(work, id, registration.Version()); err == nil {
-					processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
-					err = w.store.Process(processContext, id, registration.Version())
-					finish(err)
-				}
+		registration, ok := w.Provider(artifact.Provider)
+		switch {
+		case !ok:
+			err = provider.ErrUnavailable
+		case registration.Normalizer() == nil:
+			continue
+		default:
+			if _, err = w.host.Normalize(work, id, registration.Version()); err == nil {
+				processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
+				err = w.store.Process(processContext, id, registration.Version())
+				finish(err)
 			}
 		}
 

@@ -199,7 +199,9 @@ are independent capabilities; orchestration selects each artifact's registered
 interpreter rather than a global source/version. Common forms use provider field
 metadata. Connection display names belong to the host, while provider settings,
 credentials, continuation documents and native diagnostic codes belong to the source.
-Providers translate protocol progress and retry causes into shared typed outcomes;
+Providers without a normalization capability retain acquired evidence without
+entering interpretation retries. Providers translate protocol progress and retry
+causes into shared typed outcomes;
 the core never infers their meaning from a native code or reference kind.
 Normalization-only providers can interpret explicitly supplied bounded evidence
 without acquisition credentials or scheduled upstream work. Supply grants no

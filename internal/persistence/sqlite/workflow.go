@@ -251,8 +251,29 @@ func (s *Store) PendingWork(ctx context.Context, now time.Time) ([]host.WorkKey,
 	return out, nil
 }
 
-func (s *Store) PendingArtifacts(ctx context.Context, now time.Time) ([]string, error) {
-	return s.queries.PendingArtifacts(ctx, now.UTC().Format(time.RFC3339Nano))
+func (s *Store) PendingArtifacts(
+	ctx context.Context,
+	now time.Time,
+	providers []string,
+) ([]application.PendingArtifact, error) {
+	if len(providers) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.queries.PendingArtifacts(
+		ctx,
+		sqlc.PendingArtifactsParams{Now: now.UTC().Format(time.RFC3339Nano), Providers: providers},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]application.PendingArtifact, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, application.PendingArtifact{ID: row.ID, Provider: row.Provider})
+	}
+
+	return out, nil
 }
 
 func (s *Store) ProcessingFailure(ctx context.Context, id string, next time.Time) error {

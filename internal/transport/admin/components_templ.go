@@ -632,7 +632,7 @@ func observationID(row application.Observation) string {
 	return fmt.Sprintf("observation-%x", sum)
 }
 
-func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor provider.Descriptor) templ.Component {
+func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor provider.Descriptor, operation submissionKind) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -674,7 +674,7 @@ func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if path == "/connections" || strings.HasSuffix(path, "/settings") || strings.HasSuffix(path, "/confirm") || strings.Contains(path, "/secrets/") || path == "/reference/key" {
+		if operation != submissionNone {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -705,7 +705,7 @@ func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if strings.HasSuffix(path, "/confirm") {
+			if operation == submissionConfirm {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<label for=\"retry-name\">Name<input class=\"input\" id=\"retry-name\" name=\"name\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -724,7 +724,7 @@ func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor 
 					return templ_7745c5c3_Err
 				}
 			}
-			if path == "/connections" || strings.HasSuffix(path, "/settings") {
+			if operation == submissionCreate || operation == submissionSettings {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<input type=\"hidden\" name=\"provider\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -839,7 +839,7 @@ func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor 
 					}
 				}
 			}
-			if strings.HasSuffix(path, "/confirm") {
+			if operation == submissionConfirm {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<label for=\"retry-currency\">Account currency (optional)<input class=\"input\" id=\"retry-currency\" name=\"currency\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -890,90 +890,109 @@ func SubmissionFailure(csrf, path, message string, draft url.Values, descriptor 
 					}
 				}
 			}
-			if path == "/connections" || strings.Contains(path, "/secrets/") {
+			if operation == submissionSecret {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<input type=\"hidden\" name=\"secret_key\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var44 string
+				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(draft.Get("secret_key"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 171, Col: 74}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if operation == submissionCreate || operation == submissionSecret {
 				for _, field := range descriptor.Fields() {
-					if field.Kind() == provider.SecretField && (path == "/connections" || strings.HasSuffix(path, "/secrets/"+url.PathEscape(field.Key()))) {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<p><label for=\"")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						var templ_7745c5c3_Var44 string
-						templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue("retry-secret-" + field.Key())
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 173, Col: 51}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\">")
+					if field.Kind() == provider.SecretField && (operation == submissionCreate || draft.Get("secret_key") == field.Key()) {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<p><label for=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var45 string
-						templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(field.Label() + " (enter again)")
+						templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue("retry-secret-" + field.Key())
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 173, Col: 86}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 176, Col: 51}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</label><input class=\"input\" id=\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var46 string
-						templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue("retry-secret-" + field.Key())
+						templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(field.Label() + " (enter again)")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 173, Col: 151}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 176, Col: 86}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" name=\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</label><input class=\"input\" id=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var47 string
-						templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("secret." + field.Key())
+						templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("retry-secret-" + field.Key())
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 173, Col: 184}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 176, Col: 151}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" type=\"password\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\" name=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var48 string
+						templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue("secret." + field.Key())
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 176, Col: 184}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" type=\"password\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						if field.Required() {
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, " required")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, " required")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, " maxlength=\"4096\" autocomplete=\"new-password\"></p>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " maxlength=\"4096\" autocomplete=\"new-password\"></p>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 				}
 			}
-			if path == "/reference/key" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<label for=\"retry-key\">OpenFIGI key (enter again, or leave empty for anonymous access)<input class=\"input\" id=\"retry-key\" name=\"key\" type=\"password\" maxlength=\"4096\" autocomplete=\"new-password\"></label> ")
+			if operation == submissionReference {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<label for=\"retry-key\">OpenFIGI key (enter again, or leave empty for anonymous access)<input class=\"input\" id=\"retry-key\" name=\"key\" type=\"password\" maxlength=\"4096\" autocomplete=\"new-password\"></label> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<button class=\"btn btn-primary\" type=\"submit\">Retry saving</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<button class=\"btn btn-primary\" type=\"submit\">Retry saving</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<p><a href=\"/connections\">Return to connections</a></p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<p><a href=\"/connections\">Return to connections</a></p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

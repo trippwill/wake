@@ -557,3 +557,7 @@ func (s *Store) accessUpdated(ctx context.Context, kind string, err error) error
 
 	return nil
 }
+
+func (s *Store) ArtifactProvider(ctx context.Context, id string) (string, error) {
+	return s.queries.ArtifactProvider(ctx, id)
+}

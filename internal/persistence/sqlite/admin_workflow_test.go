@@ -180,8 +180,8 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	)
 	request(
 		http.MethodPost,
-		"/connections/"+id+"/secrets/token",
-		url.Values{"secret.token": {"synthetic-token"}},
+		"/connections/"+id+"/secrets",
+		url.Values{"secret_key": {"token"}, "secret.token": {"synthetic-token"}},
 		http.StatusSeeOther,
 	)
 	request(http.MethodPost, "/connections/"+id+"/retry", nil, http.StatusSeeOther)
