@@ -56,7 +56,7 @@ func instrumentLabel(view application.Dashboard, id string) string {
 
 		if i.ID() == id {
 
-			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + i.Status()
+			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + string(i.Status())
 		}
 	}
 
@@ -86,7 +86,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 		<div class="wake-card-heading">
 			<h2>Financial summary</h2>
 			<div class="wake-actions">
-				@StateBadge(d.Execution.Status())
+				@ActivityBadge(d.Execution.State())
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Execution.ID()+"/correct")) }>Correct accepted data</a>
 			</div>
 		</div>
@@ -135,7 +135,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 		<div class="wake-card-heading">
 			<h2>Instrument identity</h2>
 			<div class="wake-actions">
-				@StateBadge(d.Instrument.Status())
+				@StateBadge(string(d.Instrument.Status()))
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Instrument.ID()+"/correct")) }>Correct instrument data</a>
 			</div>
 		</div>
@@ -291,7 +291,7 @@ templ LifecyclePage(d application.LifecycleDetail) {
 		<div class="wake-card-heading">
 			<h2>Reported option outcome</h2>
 			<div class="wake-actions">
-				@StateBadge(d.Lifecycle.Status())
+				@ActivityBadge(d.Lifecycle.State())
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Lifecycle.ID()+"/correct")) }>Correct accepted data</a>
 			</div>
 		</div>
@@ -350,7 +350,7 @@ templ ConversionPage(d application.ConversionDetail) {
 		<div class="wake-card-heading">
 			<h2>Currency roles</h2>
 			<div class="wake-actions">
-				@StateBadge(d.Conversion.Status())
+				@ActivityBadge(d.Conversion.State())
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Conversion.ID()+"/correct")) }>Correct accepted data</a>
 			</div>
 		</div>
@@ -392,7 +392,7 @@ templ CorrectionReviews(rows []application.CorrectionReview) {
 		<ul>
 			for _,r:=range rows {
 				<li>
-					{ stringTitle(r.Kind) } · { r.Status }<details><summary>Reported source references</summary><p>{ r.Target }</p></details>
+					{ stringTitle(r.Kind) } · { correctionStatus(r.Status) }<details><summary>Reported source references</summary><p>{ r.Target }</p></details>
 					for _,id:=range r.TargetIDs {
 						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+id)) }>Original activity</a>
 					}

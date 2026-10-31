@@ -80,7 +80,7 @@ func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 		{Artifact: "applied", Status: "applied", Kind: "cancellation"},
 		{
 			Artifact: "unresolved",
-			Status:   "endpoint unresolved; needs review",
+			Status:   "unresolved",
 			Kind:     "replacement",
 			Location: "row-one",
 		},
@@ -92,13 +92,13 @@ func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 	}
 
 	for _, state := range []string{"provisional", "no-match", "accepted", "cancelled", "superseded", ""} {
-		if reviewState(state) {
+		if application.ReferenceStatus(state).NeedsReview() {
 			t.Error("non-review state counted", state)
 		}
 	}
 
-	for _, state := range []string{"conflict", "ambiguous", "needs review"} {
-		if !reviewState(state) {
+	for _, state := range []string{"conflict", "ambiguous"} {
+		if !application.ReferenceStatus(state).NeedsReview() {
 			t.Error("review state omitted", state)
 		}
 	}

@@ -102,9 +102,9 @@ func polishObservations(changed bool) templ.Component {
 			return err
 		}
 
-		outcome := "accepted execution"
+		outcome := "accepted"
 		if changed {
-			outcome = "needs review"
+			outcome = "terms-conflict"
 		}
 
 		return ObservationHistory([]application.Observation{
@@ -115,7 +115,7 @@ func polishObservations(changed bool) templ.Component {
 					"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
 					4,
 				) + "/TradeConfirm[1]",
-				Outcome: "accepted execution",
+				Outcome: "accepted",
 				Rule:    "qualified-activity-observations/2",
 			},
 			{
@@ -125,7 +125,7 @@ func polishObservations(changed bool) templ.Component {
 					"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
 					4,
 				) + "/TradeConfirm[2]",
-				Outcome: outcome,
+				Outcome: application.ObservationOutcome(outcome),
 				Rule:    "qualified-activity-observations/2",
 			},
 		}).Render(ctx, w)

@@ -73,6 +73,28 @@ changes and run `mise run source:check` before code delivery. Documentation-only
 changes check links, ownership, preservation of intent and diffs; do not run
 unrelated generators or application suites.
 
+## Changes affecting retained data
+
+For changes to normalization, identity/link selection, reconciliation or financial
+rules, state whether previously processed history remains valid. If existing
+results can change, identify the affected inputs and include an explicit update
+procedure with the change. Recalculate from retained claims when sufficient;
+reinterpret retained original reports when their normalized meaning changes.
+An unchanged fresh report must not suppress work required by changed rules or
+interpretation. Do not present affected results as current until that work succeeds.
+
+Preserve immutable evidence, stable financial identities, operator decisions and
+their authority, exact values and time precision. Refetching reports or resetting
+the warehouse is not a substitute for updating retained history. Do not rely on
+an operator remembering to run a generic maintenance action.
+
+Verify the update against already processed synthetic history with no new source
+claims. Check that the new interpretation or rule takes effect, active decisions
+remain applied, and published values/explanations advance when their meaning
+changes. Cover failure and repeat execution so an interrupted update cannot expose
+partial results or duplicate financial activity. Record why no historical update
+is needed when a change leaves retained results valid.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL
@@ -84,6 +106,12 @@ Handwritten production SQL belongs in external SQL sources; Go owns orchestratio
 and mappings. Package sentinel errors are typed constants, checked with `errors.Is`.
 Use deliberate published provider contracts and narrow consumer-owned internal
 interfaces. Source and contract tests define signatures, layouts and behaviors.
+
+Never encode semantic state in concatenated display phrases or recover it by
+searching, splitting or comparing rendered wording. This applies throughout the
+repository, including persisted failures used by scheduling. Use typed states,
+reasons and machine codes; presentation owns labels. Protocol tokens and actual
+text search remain ordinary text operations.
 
 ## Browser and frontend verification
 

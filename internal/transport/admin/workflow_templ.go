@@ -65,7 +65,7 @@ func instrumentLabel(view application.Dashboard, id string) string {
 
 		if i.ID() == id {
 
-			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + i.Status()
+			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + string(i.Status())
 		}
 	}
 
@@ -272,7 +272,7 @@ func ExecutionPage(d application.ExecutionDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = StateBadge(d.Execution.Status()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ActivityBadge(d.Execution.State()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -669,7 +669,7 @@ func InstrumentPage(d application.InstrumentDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = StateBadge(d.Instrument.Status()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = StateBadge(string(d.Instrument.Status())).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1435,7 +1435,7 @@ func LifecyclePage(d application.LifecycleDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = StateBadge(d.Lifecycle.Status()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ActivityBadge(d.Lifecycle.State()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1749,7 +1749,7 @@ func ConversionPage(d application.ConversionDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = StateBadge(d.Conversion.Status()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ActivityBadge(d.Conversion.State()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2018,9 +2018,9 @@ func CorrectionReviews(rows []application.CorrectionReview) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var107 string
-				templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(r.Status)
+				templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.JoinStringErrs(correctionStatus(r.Status))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 395, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 395, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var107))
 				if templ_7745c5c3_Err != nil {
@@ -2033,7 +2033,7 @@ func CorrectionReviews(rows []application.CorrectionReview) templ.Component {
 				var templ_7745c5c3_Var108 string
 				templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(r.Target)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 395, Col: 111}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 395, Col: 129}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 				if templ_7745c5c3_Err != nil {

@@ -18,9 +18,9 @@ SELECT * FROM work WHERE connection_id=? AND stream=? AND operation=?;
 -- name: ObserveWork :exec
 UPDATE work SET observed=?,observed_completed=?,observed_total=? WHERE connection_id=? AND stream=? AND operation=?;
 -- name: FailWork :exec
-UPDATE work SET failure=? WHERE connection_id=? AND stream=? AND operation=?;
+UPDATE work SET failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=?;
 -- name: AdvanceWork :execrows
-UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?;
+UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?;
 -- name: PutArtifact :exec
 INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);
 -- name: Retained :one
@@ -53,11 +53,11 @@ SELECT id FROM connections ORDER BY rowid;
 -- name: SetScheduled :exec
 INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
 -- name: RetryWork :exec
-UPDATE work SET revision=revision+1,failure='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
+UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
 -- name: RestartDiscovery :exec
-UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
+UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
 -- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure NOT IN ('source access not authorized','invalid provider contract value','source capability unavailable','malformed source evidence','source resource limit exceeded') ORDER BY work.rowid LIMIT 20;
+SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
 SELECT * FROM work WHERE connection_id=? ORDER BY operation;
 -- name: DisableDiscovery :exec
@@ -77,7 +77,7 @@ UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE 
 -- name: ArtifactFailure :exec
 UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?;
 -- name: ProcessingStatuses :many
-SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity needs review','native identity needs review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10;
+SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT * FROM instruments WHERE source_key=?;
 -- name: CompetingFIGI :many
@@ -117,7 +117,7 @@ SELECT count(*) FROM execution_observations WHERE artifact_id=? AND version=? AN
 -- name: ExecutionObservations :many
 SELECT * FROM execution_observations WHERE execution_id=? ORDER BY rowid;
 -- name: ConflictExecution :exec
-UPDATE executions SET status='needs review' WHERE id=?;
+UPDATE executions SET review_reasons=review_reasons|1 WHERE id=?;
 -- name: ReferenceSetting :one
 SELECT * FROM access.reference_settings WHERE singleton=1;
 -- name: SetReferenceKey :exec
@@ -155,7 +155,7 @@ SELECT reference FROM event_links WHERE execution_id=?;
 -- name: UpdateConnection :exec
 INSERT INTO access.configurations(id,provider,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings WHERE configurations.provider=excluded.provider;
 -- name: ResetConnectionWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',observed='',acknowledged='' WHERE connection_id=?;
+UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?;
 
 -- name: InstrumentObservations :many
 SELECT execution_observations.* FROM execution_observations JOIN executions ON executions.id=execution_id WHERE executions.instrument_id=? ORDER BY execution_observations.rowid DESC LIMIT 100;
@@ -183,7 +183,7 @@ SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
 SELECT records.* FROM execution_observations o JOIN records USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
 -- name: ProjectActivity :exec
-UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
+UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
 -- name: PutSourceCorrection :exec
 INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: SourceCorrections :many
@@ -210,7 +210,7 @@ SELECT * FROM instrument_selections WHERE instrument_id=?;
 -- name: SaveInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT(instrument_id) DO UPDATE SET name=excluded.name,ticker=excluded.ticker,figi=excluded.figi,evidence=excluded.evidence,status=excluded.status,underlier_id=excluded.underlier_id;
 -- name: ProjectInstrument :exec
-UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(figi),evidence_id=sqlc.arg(evidence),reference_status=sqlc.arg(status),underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(figi) OR reference_status<>sqlc.arg(status) OR underlier_id IS NOT sqlc.narg(underlier_id));
+UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(figi),evidence_id=sqlc.arg(evidence),reference_status=sqlc.arg(status),selection_authority=sqlc.arg(selection_authority),underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(figi) OR reference_status<>sqlc.arg(status) OR selection_authority<>sqlc.arg(selection_authority) OR underlier_id IS NOT sqlc.narg(underlier_id));
 -- name: Listing :one
 SELECT * FROM listings WHERE id=?;
 -- name: RetainedReferenceCandidates :many

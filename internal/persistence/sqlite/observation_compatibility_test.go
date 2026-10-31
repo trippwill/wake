@@ -92,13 +92,9 @@ func TestConflictsAcrossIncompleteObservations(t *testing.T) {
 					t.Fatal(v, err)
 				}
 
-				want := "accepted"
-				if i == len(tc.rows)-1 {
-					want = "needs review"
-				}
-
-				if v.Executions[0].Status() != want {
-					t.Fatalf("observation %d: got %s want %s", i, v.Executions[0].Status(), want)
+				wantReview := i == len(tc.rows)-1
+				if got := v.Executions[0].State().NeedsReview(); got != wantReview {
+					t.Fatalf("observation %d: review=%v want %v", i, got, wantReview)
 				}
 			}
 			// The original accepted values and every dissenting report remain retained.

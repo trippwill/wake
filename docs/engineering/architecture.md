@@ -34,6 +34,10 @@ source-claim shapes and their proofs belong in code and contract tests.
 
 Preserve immutable evidence and qualified claims independently of accepted views.
 Named/versioned rules and operator decisions explain conclusions through links.
+Activity lifecycle, review reasons and selection authority are independent typed
+facts. Persist and publish them without encoding state in combined display phrases.
+Source failures retain machine classifications separately from diagnostic wording;
+scheduling depends on the classifications.
 Reference acquisition happens outside deterministic rule evaluation. Cache eviction
 cannot erase evidence supporting an accepted result, and a refresh cannot silently
 overwrite an operator correction.

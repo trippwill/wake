@@ -43,7 +43,7 @@ func (s *Store) sourceInstructions(ctx context.Context, id string) ([]applicatio
 				Kind:           r.Kind,
 				Target:         r.Target,
 				Replacement:    r.Replacement,
-				Status:         r.Status,
+				Status:         application.CorrectionStatus(r.Status),
 				TargetIDs:      targets,
 				ReplacementIDs: replacements,
 			},
