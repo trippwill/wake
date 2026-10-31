@@ -127,7 +127,6 @@ func (s LocalSetup) Save() error {
 		values["storage"] = map[string]any{
 			"warehouse_path":   s.launch.Storage.WarehousePath,
 			"connections_path": s.launch.Storage.ConnectionsPath,
-			"operational_path": s.launch.Storage.OperationalPath,
 		}
 
 		admin, ok := values["admin"].(map[string]any)
@@ -219,10 +218,6 @@ func (s LocalSetup) Guidance() (SetupGuidance, error) {
 
 	if storage.ConnectionsPath == "" {
 		storage.ConnectionsPath = defaults["connections-path"]
-	}
-
-	if storage.OperationalPath == "" {
-		storage.OperationalPath = defaults["operational-path"]
 	}
 
 	runtime := file.Paths.RuntimeDir

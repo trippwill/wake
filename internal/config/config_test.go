@@ -22,7 +22,6 @@ func TestLoadDefaults(t *testing.T) {
 	assertPath(t, cfg.Paths.ConfigDir, filepath.Join(roots.config, "wake"))
 	assertPath(t, cfg.Storage.WarehousePath, filepath.Join(roots.data, "wake", "wake.db"))
 	assertPath(t, cfg.Storage.ConnectionsPath, filepath.Join(roots.config, "wake", "connections.db"))
-	assertPath(t, cfg.Storage.OperationalPath, filepath.Join(roots.state, "wake", "operational.db"))
 	assertPath(t, cfg.Paths.RuntimeDir, filepath.Join(roots.runtime, "wake"))
 
 	if cfg.Log.Level != slog.LevelInfo {
@@ -34,7 +33,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("Admin = %#v, address = %q, origin = %q", cfg.Admin, cfg.Admin.Address(), cfg.Admin.Origin())
 	}
 
-	for _, path := range []string{cfg.Paths.ConfigDir, filepath.Dir(cfg.Storage.WarehousePath), filepath.Dir(cfg.Storage.ConnectionsPath), filepath.Dir(cfg.Storage.OperationalPath), cfg.Paths.RuntimeDir} {
+	for _, path := range []string{cfg.Paths.ConfigDir, filepath.Dir(cfg.Storage.WarehousePath), filepath.Dir(cfg.Storage.ConnectionsPath), cfg.Paths.RuntimeDir} {
 		info, statErr := os.Stat(path)
 		if statErr != nil {
 			t.Errorf("Stat(%q) error = %v", path, statErr)
@@ -106,7 +105,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 			name:     "relative runtime directory",
 			contents: "[paths]\nruntime_dir = \"relative\"\n",
 		},
-		{name: "relative operational database", contents: "[storage]\noperational_path = \"relative\"\n"},
+		{name: "removed operational setting", contents: "[storage]\noperational_path = \"relative\"\n"},
 		{name: "unsupported log level", contents: "[log]\nlevel = \"verbose\"\n"},
 		{name: "invalid resume backfills", contents: "[sync]\nresume_backfills = \"false\"\n"},
 		{name: "relative master key", contents: "[credentials]\nmaster_key_path = \"master.key\"\n"},
@@ -218,7 +217,6 @@ func TestLoadUsesHomeFallbacks(t *testing.T) {
 		cfg.Storage.WarehousePath,
 		filepath.Join(home, ".local", "share", "wake", "wake.db"),
 	)
-	assertPath(t, cfg.Storage.OperationalPath, filepath.Join(home, ".local", "state", "wake", "operational.db"))
 	assertPath(t, cfg.Storage.ConnectionsPath, filepath.Join(home, ".config", "wake", "connections.db"))
 	assertPath(t, cfg.Paths.RuntimeDir, runtimeDir)
 }

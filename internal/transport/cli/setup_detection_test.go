@@ -33,8 +33,8 @@ func setupDaemonFixture(t *testing.T) (config.Config, string, []byte) {
 	path := filepath.Join(cfg.Paths.ConfigDir, "config.toml")
 	content := fmt.Appendf(
 		nil,
-		"[storage]\nwarehouse_path=%q\nconnections_path=%q\noperational_path=%q\n[paths]\nruntime_dir=%q\n",
-		cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath,
+		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n",
+		cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath,
 		cfg.Paths.RuntimeDir,
 	)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
@@ -141,7 +141,6 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 
 				proposed.Storage.ConnectionsPath = filepath.Join(t.TempDir(), "new-access", "credentials.sqlite")
 				proposed.Paths.RuntimeDir = filepath.Join(t.TempDir(), "new-runtime")
-				proposed.Storage.OperationalPath = filepath.Join(t.TempDir(), "new-state", "execution.sqlite")
 				if err := config.Prepare(proposed); err != nil {
 					t.Fatal(err)
 				}
@@ -171,13 +170,13 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 				}
 			}()
 
-			inputs := []string{"", "", "", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
+			inputs := []string{"", "", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
 			if stage == "paths" || stage == "proposed" {
-				inputs = inputs[:5]
+				inputs = inputs[:4]
 			}
 
 			if stage == "proposed" {
-				inputs[0], inputs[1], inputs[2], inputs[3] = proposed.Storage.WarehousePath, proposed.Storage.ConnectionsPath, proposed.Storage.OperationalPath, proposed.Paths.RuntimeDir
+				inputs[0], inputs[1], inputs[2] = proposed.Storage.WarehousePath, proposed.Storage.ConnectionsPath, proposed.Paths.RuntimeDir
 			}
 
 			for index, value := range inputs {
@@ -187,7 +186,7 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 					t.Fatal("setup prompt missing")
 				}
 
-				if (stage == "paths" && index == 0) || (stage == "unlock" && index == 7) {
+				if (stage == "paths" && index == 0) || (stage == "unlock" && index == 6) {
 					_, _ = startShellDaemon(t, cfg)
 				}
 

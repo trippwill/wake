@@ -1,7 +1,7 @@
 version: "2"
 sql:
   - engine: sqlite
-    schema: [internal/persistence/sqlite/catalog.sql, internal/persistence/sqlite/schema.sql, internal/persistence/sqlite/connections_schema.sql, internal/persistence/sqlite/operational_schema.sql]
+    schema: [internal/persistence/sqlite/catalog.sql, internal/persistence/sqlite/schema.sql, internal/persistence/sqlite/connections_schema.sql]
     queries: internal/persistence/sqlite/queries.sql
     gen:
       go:

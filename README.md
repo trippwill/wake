@@ -72,14 +72,13 @@ A source's **Reports** view provides **Retry processing report**. **System →
 Maintenance** provides **Rebuild accepted views** and recovery history. Rebuild uses
 retained inputs and decisions and resumes from committed progress after restart.
 
-Each store has its own file setting under `[storage]`: `warehouse_path` for financial
-history, `connections_path` for active access and encrypted credentials, and
-`operational_path` for execution state. Defaults use the XDG data, config and state
-locations respectively. Override individual files in TOML, with `--warehouse-path`,
-`--connections-path` or `--operational-path` on `serve`, or through the corresponding
-`WAKE_*_PATH` environment variables.
+The two `[storage]` file settings are `warehouse_path` for financial history and
+operational state, and `connections_path` for active access and encrypted credentials.
+Defaults use the XDG data and config locations respectively. Override files in
+TOML, with `--warehouse-path` or `--connections-path` on `serve`, or through the
+corresponding `WAKE_*_PATH` environment variables.
 
-If a companion store is lost, Wake recreates it and pauses upstream work. Retained
+If the access store is lost, Wake recreates it and pauses upstream work. Retained
 history stays inspectable. In **Connections → Recovery**, follow the ordered
 source-access and reference review steps, then select **Resume upstream work**.
 An ordinary restart with intact stores keeps the existing authorization.

@@ -31,11 +31,10 @@ type AccessReferenceSetting struct {
 }
 
 type AccessStoreMetadatum struct {
-	Singleton   int64
-	Kind        string
-	Version     string
-	ID          string
-	WarehouseID string
+	Singleton int64
+	Kind      string
+	Version   string
+	ID        string
 }
 
 type Account struct {
@@ -85,6 +84,14 @@ type Artifact struct {
 	RequestedTo       string
 	ReportedFrom      string
 	ReportedTo        string
+}
+
+type Attempt struct {
+	ID         string
+	ArtifactID string
+	Version    string
+	Outcome    string
+	Counts     []byte
 }
 
 type Candidate struct {
@@ -183,36 +190,6 @@ type NormalizationReceipt struct {
 	Counts     []byte
 }
 
-type OperationalAttempt struct {
-	ID         string
-	ArtifactID string
-	Version    string
-	Outcome    string
-	Counts     []byte
-}
-
-type OperationalExecution struct {
-	ConnectionID string
-	Stream       string
-	Operation    string
-}
-
-type OperationalReferenceCache struct {
-	Key        string
-	Status     string
-	Records    []byte
-	Expires    string
-	EvidenceID string
-}
-
-type OperationalStoreMetadatum struct {
-	Singleton   int64
-	Kind        string
-	Version     string
-	ID          string
-	WarehouseID string
-}
-
 type OperatorDecision struct {
 	ID         string
 	TargetKind string
@@ -306,6 +283,14 @@ type ReferenceBudget struct {
 	Cooldown    string
 }
 
+type ReferenceCache struct {
+	Key        string
+	Status     string
+	Records    []byte
+	Expires    string
+	EvidenceID string
+}
+
 type ReferenceEvidence struct {
 	ID         string
 	Retrieved  string
@@ -339,11 +324,10 @@ type SqliteSchema struct {
 }
 
 type StoreMetadatum struct {
-	Singleton   int64
-	Kind        string
-	Version     string
-	ID          string
-	WarehouseID string
+	Singleton int64
+	Kind      string
+	Version   string
+	ID        string
 }
 
 type Work struct {

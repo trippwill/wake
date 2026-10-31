@@ -118,7 +118,6 @@ func run(
 		ctx,
 		persistence.Profile{
 			WarehousePath:   cfg.Storage.WarehousePath,
-			OperationalPath: cfg.Storage.OperationalPath,
 			ConnectionsPath: cfg.Storage.ConnectionsPath,
 		},
 		logger,

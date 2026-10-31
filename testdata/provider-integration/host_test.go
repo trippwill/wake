@@ -80,7 +80,7 @@ func registration(t *testing.T) provider.Registration {
 func (f *fixtureHost) open(t *testing.T, r provider.Registration) {
 	t.Helper()
 	var err error
-	f.store, err = persistence.Open(context.Background(), persistence.Profile{WarehousePath: f.path, ConnectionsPath: filepath.Join(filepath.Dir(f.path), "connections.db"), OperationalPath: filepath.Join(filepath.Dir(f.path), "operational.db")}, nil)
+	f.store, err = persistence.Open(context.Background(), persistence.Profile{WarehousePath: f.path, ConnectionsPath: filepath.Join(filepath.Dir(f.path), "connections.db")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestCorrectionExternalClaimRoundTrip(t *testing.T) {
 	}
 }
 
-func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing.T) {
+func TestNormalizationReceiptSurvivesAccessLossWithoutCredentials(t *testing.T) {
 	ctx := context.Background()
 	r := registration(t)
 	f := newFixture(t, r)
@@ -762,7 +762,7 @@ func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing
 	if err = f.store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"connections.db", "operational.db"} {
+	for _, name := range []string{"connections.db"} {
 		if err = os.Remove(filepath.Join(filepath.Dir(f.path), name)); err != nil {
 			t.Fatal(err)
 		}
@@ -777,7 +777,7 @@ func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing
 	if err != nil || replay.Counts() != result.Counts() {
 		t.Fatal("lost successful receipt", replay, err)
 	}
-	if attempts, err := f.store.Attempts(ctx, artifact); err != nil || len(attempts) != 0 {
+	if attempts, err := f.store.Attempts(ctx, artifact); err != nil || len(attempts) != 1 || attempts[0].Outcome != "succeeded" {
 		t.Fatal("replay reran normalization", attempts, err)
 	}
 	if records, err := f.store.Records(ctx, artifact, "v1"); err != nil || len(records) != 3 {
@@ -1029,5 +1029,88 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 	view, err = workflow.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 || reads.retainedReads != 0 {
 		t.Fatal("orchestration decoded full evidence for metadata", view, reads.retainedReads, err)
+	}
+}
+
+//nolint:gosec // Copy only encrypted synthetic fixtures into private disposable profiles.
+func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
+	registration := registration(t)
+	seed := newFixture(t, registration)
+	seed.host.Close()
+	if err := seed.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	seedPath := filepath.Join(filepath.Dir(seed.path), "connections.db")
+	original, err := os.ReadFile(seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(original, []byte("synthetic-token")) {
+		t.Fatal("access seed retained plaintext credential")
+	}
+	hosts := []*host.Host{}
+	warehouseIDs := map[string]bool{}
+	for range 2 {
+		dir := t.TempDir()
+		if err = os.Chmod(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		access := filepath.Join(dir, "connections.db")
+		if err = os.WriteFile(access, original, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		profile := persistence.Profile{WarehousePath: filepath.Join(dir, "history.sqlite"), ConnectionsPath: access}
+		store, err := persistence.Open(t.Context(), profile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := host.New(t.Context(), store, seed.envelope, nil, func() time.Time { return seed.now }, registration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			h.Close()
+			if err := store.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+		workflow := application.New(store, h, nil, nil, nil)
+		view, err := workflow.Dashboard(t.Context())
+		if err != nil || !view.Storage.Paused || !view.Storage.WarehouseReset || len(view.Connections) != 1 || view.Connections[0].MissingAccess {
+			t.Fatal("copied seed lost access or resumed without review", view, err)
+		}
+		if err = h.CheckAccess(t.Context(), seed.id); err != nil {
+			t.Fatal("copied protected credentials unusable", err)
+		}
+		if err = workflow.ResumeStorage(t.Context(), view.Storage.Revision, "synthetic-test"); err != nil {
+			t.Fatal(err)
+		}
+		db, err := sql.Open("sqlite", profile.WarehousePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var identity string
+		err = db.QueryRow("SELECT id FROM store_metadata").Scan(&identity)
+		_ = db.Close()
+		if err != nil || identity == "" || warehouseIDs[identity] {
+			t.Fatal("copied seed reused warehouse identity", identity, err)
+		}
+		warehouseIDs[identity] = true
+		hosts = append(hosts, h)
+	}
+	replacement := credential.NewSecret([]byte("synthetic-seed-replacement"))
+	defer replacement.Clear()
+	if err = hosts[0].ReplaceSecret(t.Context(), seed.id, "api_secret", replacement); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = hosts[0].Acquire(t.Context(), seed.id, "statements"); !errors.Is(err, provider.ErrUnauthorized) {
+		t.Fatal("changed clone credential was not isolated", err)
+	}
+	if id, err := hosts[1].Acquire(t.Context(), seed.id, "statements"); err != nil || id == "" {
+		t.Fatal("one clone changed another clone's credential/work", id, err)
+	}
+	after, err := os.ReadFile(seedPath)
+	if err != nil || !bytes.Equal(original, after) {
+		t.Fatal("disposable writers modified reusable encrypted seed", err)
 	}
 }

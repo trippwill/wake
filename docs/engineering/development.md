@@ -37,7 +37,7 @@ store is acquired before any deletion; locked stores, unsafe links and protected
 files are refused.
 
 For a disposable instance, pass the same `--config /absolute/private/dev/config.toml`
-to reset and serve. The three `storage.*_path` settings and their overrides select
+to reset and serve. The two `storage.*_path` settings and their overrides select
 the actual files. Missing files are harmless, and reset creates no directories or
 databases. `--json` reports selected and removed files on stdout; activity and errors
 go to stderr.
@@ -46,9 +46,15 @@ Resetting credentials preserves financial history and pauses upstream work for
 access repair and explicit resume. Resetting the warehouse preserves connection
 settings and encrypted credentials. The fresh warehouse starts paused; resume
 runs bounded discovery, and account confirmation grants synchronization authority.
-The operational store belongs to its warehouse and is rebuilt from durable inputs
-when missing or associated with a different warehouse. A failed deletion reports
+Operational state shares the warehouse file and lifetime. A failed deletion reports
 the files already removed and returns failure; preflight refusal deletes nothing.
+
+For credential-bearing test seeds, stop the seed writer before copying its encrypted
+access file. Give every run its own private copy and warehouse; never point concurrent
+profiles at the seed or a shared access file. Provision the protection key separately.
+Tests and agents can then reuse protected credentials without receiving their plaintext,
+and a warehouse reset preserves the test profile's access copy. Use synthetic keys and
+credentials for ordinary automated verification.
 
 ## Select meaningful verification
 

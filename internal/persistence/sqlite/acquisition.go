@@ -335,7 +335,7 @@ func (s *Store) Accept(
 	}
 
 	if k.Operation == "discover" && id != "" && step.State().IsZero() {
-		if err = setScheduled(q,
+		if err = q.SetScheduled(
 			ctx,
 			sqlc.SetScheduledParams{
 				ConnectionID: k.Connection,

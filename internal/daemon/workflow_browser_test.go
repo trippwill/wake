@@ -646,7 +646,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	// Recover from losing both companions using only normal authenticated forms.
 	stopCurrent()
 
-	for _, path := range []string{cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath} {
+	for _, path := range []string{cfg.Storage.ConnectionsPath} {
 		if err := os.Remove(path); err != nil {
 			t.Fatal(err)
 		}

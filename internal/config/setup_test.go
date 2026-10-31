@@ -20,16 +20,16 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 	}
 
 	path := filepath.Join(dir, "config.toml")
-	original := "[storage]\noperational_path='" + filepath.Join(
+	original := "[storage]\nconnections_path='" + filepath.Join(
 		roots.base,
-		"chosen-state/execution.sqlite",
-	) + "'\nconnections_path='" + filepath.Join(roots.base, "access", "credentials.sqlite") + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\n"
+		"access",
+		"credentials.sqlite",
+	) + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\n"
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("WAKE_WAREHOUSE_PATH", "/not-persisted")
-	t.Setenv("WAKE_OPERATIONAL_PATH", "/not-persisted-state")
 	t.Setenv("WAKE_CONNECTIONS_PATH", "/not-persisted-access")
 	t.Setenv("WAKE_ADMIN_PORT", "9999")
 	t.Setenv("WAKE_LOG_LEVEL", "error")
@@ -52,7 +52,6 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 		Storage{
 			WarehousePath:   filepath.Join(roots.base, "chosen-data", "history.sqlite"),
 			ConnectionsPath: guide.Storage.ConnectionsPath,
-			OperationalPath: guide.Storage.OperationalPath,
 		},
 		filepath.Join(roots.base, "chosen-runtime"),
 		8790,
@@ -76,7 +75,6 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 	}
 
 	if decoded.Storage.ConnectionsPath != filepath.Join(roots.base, "access", "credentials.sqlite") ||
-		decoded.Storage.OperationalPath != filepath.Join(roots.base, "chosen-state/execution.sqlite") ||
 		decoded.Log.Level != "debug" ||
 		*decoded.Admin.Port != 8790 ||
 		strings.Contains(string(content), "not-persisted") {
