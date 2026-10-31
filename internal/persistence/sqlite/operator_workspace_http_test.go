@@ -39,6 +39,13 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		strings.ReplaceAll(syntheticOption, `quantity="2"`, `quantity="3"`),
 	)
 
+	coverageReport(
+		t,
+		s,
+		"operator-conversion-conflict",
+		strings.Replace(syntheticFX, `netCash="123.25"`, `netCash="124.25"`, 1),
+	)
+
 	view, err := s.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 2 || len(view.Lifecycles) != 1 || len(view.Conversions) != 1 {
 		t.Fatal(view, err)
@@ -144,6 +151,12 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?kind=trade&state=review", "Synthetic option"},
 		{"/activity?kind=conversion", "EUR"},
 		{"/activity?q=Convert", "Convert EUR"},
+		{"/activity?q=Conversion", "Convert EUR"},
+		{"/activity?q=Buy+Synthetic+option", "Buy Synthetic option"},
+		{"/activity?q=Assignment+%C2%B7+Synthetic+option", "Assignment"},
+		{"/activity?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
+		{"/activity?view=review&q=Buy+Synthetic+option", "Buy Synthetic option"},
+		{"/activity?view=review&q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=sent", "Convert EUR"},
 		{"/activity?q=100.123456789+EUR+sent", "Convert EUR"},
 		{"/activity?q=USD+received", "Convert EUR"},

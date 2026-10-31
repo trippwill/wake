@@ -122,6 +122,7 @@ type AdminReview struct {
 	ClaimCount int64
 	Activity   string
 	SearchText string
+	LabelKey   string
 }
 
 type Artifact struct {

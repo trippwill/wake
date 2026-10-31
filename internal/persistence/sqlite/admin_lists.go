@@ -114,6 +114,7 @@ func (s *Store) ActivityList(
 			ctx,
 			sqlc.AdminActivityCountParams{
 				KindFilter:       options.Kind,
+				LabelSearch:      options.LabelSearch,
 				StateFilter:      options.State,
 				Search:           options.Search,
 				StateMatches:     states,
@@ -132,6 +133,7 @@ func (s *Store) ActivityList(
 			ctx,
 			sqlc.AdminActivityRowsParams{
 				KindFilter:       options.Kind,
+				LabelSearch:      options.LabelSearch,
 				StateFilter:      options.State,
 				Search:           options.Search,
 				StateMatches:     states,

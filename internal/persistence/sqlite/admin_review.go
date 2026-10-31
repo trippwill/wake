@@ -27,7 +27,11 @@ func reviewList(
 
 	counts, err := q.AdminReviewCount(
 		ctx,
-		sqlc.AdminReviewCountParams{Search: options.Search, KindMatches: string(kinds)},
+		sqlc.AdminReviewCountParams{
+			Search:      options.Search,
+			LabelSearch: options.LabelSearch,
+			KindMatches: string(kinds),
+		},
 	)
 	if err != nil {
 		return out, err
@@ -39,6 +43,7 @@ func reviewList(
 		ctx,
 		sqlc.AdminReviewRowsParams{
 			Search:      options.Search,
+			LabelSearch: options.LabelSearch,
 			KindMatches: string(kinds),
 			PageSize:    int64(options.PageSize),
 			PageOffset:  query.Offset(),

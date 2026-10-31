@@ -235,6 +235,11 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	search := strings.ToLower(options.Search)
 	if search != "" {
 		if scope == application.ActivityScope || scope == application.ReviewScope {
+			options.LabelSearch = strings.ReplaceAll(strings.ReplaceAll(search, " · ", " "), " → ", " ")
+			if pair, ok := strings.CutPrefix(options.LabelSearch, "convert "); ok {
+				options.LabelSearch = string(application.ConversionActivity) + " " + pair
+			}
+
 			for _, role := range []string{"sent", "received"} {
 				if strings.Contains(role, search) {
 					options.AmountMatches = append(options.AmountMatches, application.AmountMatch{Role: role})
@@ -247,7 +252,8 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 			}
 
 			for kind, label := range map[application.ActivityKind]string{application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
-				if strings.Contains(strings.ToLower(label), search) {
+				if strings.Contains(strings.ToLower(label), search) ||
+					strings.Contains(strings.ToLower(activityKindLabel(string(kind))), search) {
 					options.KindMatches = append(options.KindMatches, kind)
 				}
 			}

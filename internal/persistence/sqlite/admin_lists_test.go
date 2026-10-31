@@ -667,3 +667,84 @@ func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
 		t.Fatal("known ticker lost from review label", review, err)
 	}
 }
+
+func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
+	s := coverageStore(t)
+	first := equityRow("U1", "reference-a", "10")
+	second := strings.Replace(equityRow("U1", "reference-b", "10"), `conid="100"`, `conid="101"`, 1)
+	coverageReport(t, s, "reference-order", first+second)
+
+	query, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
+
+	before, err := s.ActivityList(t.Context(), query)
+	if err != nil || len(before.Items) != 2 {
+		t.Fatal(before, err)
+	}
+
+	selected := before.Items[0]
+	retainDecision(
+		t,
+		s,
+		"instrument",
+		*selected.Resource.Activity.InstrumentID,
+		"name",
+		selected.InstrumentName,
+		"",
+		"set",
+	)
+
+	for _, direction := range []string{"asc", "desc"} {
+		query, _ = application.NewListQuery(
+			application.ListOptions{Sort: "reference", Direction: direction, PageSize: 1},
+			application.ActivityScope,
+		)
+
+		page, err := s.ActivityList(t.Context(), query)
+		if err != nil || len(page.Items) != 1 {
+			t.Fatal(page, err)
+		}
+
+		expected := application.AutomaticSelection
+		if direction == "desc" {
+			expected = application.OperatorSelection
+		}
+
+		if page.Items[0].Reference.Authority != expected {
+			t.Fatal("reference ordering ignored visible authority", direction, page.Items[0].Reference)
+		}
+
+		query, _ = application.NewListQuery(
+			application.ListOptions{Sort: "state", Direction: direction, PageSize: 1},
+			application.InstrumentScope,
+		)
+		instruments, err := s.InstrumentList(t.Context(), query)
+		if err != nil || len(instruments.Items) != 1 || instruments.Items[0].Authority != expected {
+			t.Fatal("instrument reference ordering ignored authority", direction, instruments, err)
+		}
+	}
+}
+
+func TestFullActivityLabelSearchUsesCanonicalComponents(t *testing.T) {
+	s := coverageStore(t)
+	row := strings.Replace(equityRow("U1", "phrase", "10"), "Synthetic equity", "Zebra", 1)
+	coverageReport(t, s, "phrase", row)
+
+	query, _ := application.NewListQuery(
+		application.ListOptions{Search: "buy zebra"},
+		application.ActivityScope,
+	)
+
+	page, err := s.ActivityList(t.Context(), query)
+	if err != nil || page.Matched != 1 {
+		t.Fatal("full displayed activity label is not searchable", page.Matched, err)
+	}
+
+	coverageReport(t, s, "phrase-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
+
+	query, _ = application.NewListQuery(application.ListOptions{Search: "buy zebra"}, application.ReviewScope)
+
+	review, err := s.ReviewList(t.Context(), query)
+	if err != nil || review.Matched != 1 {
+		t.Fatal("full displayed review label is not searchable", review.Matched, err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 
 type ListOptions struct {
 	Search, Kind, State, Sort, Direction string
+	LabelSearch                          string
 	Page, PageSize                       int
 	KindMatches                          []ActivityKind
 	StateMatches                         []ActivityState
@@ -55,7 +56,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if options.Page < 1 || options.PageSize < 1 || options.PageSize > 200 ||
 		options.Page > math.MaxInt/options.PageSize ||
-		len(options.Search) > 256 {
+		len(options.Search) > 256 || len(options.LabelSearch) > 256 {
 		return ListQuery{}, ErrInvalid
 	}
 
@@ -125,6 +126,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	options.AmountMatches = slices.Clone(options.AmountMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
+	options.LabelSearch = strings.ToLower(options.LabelSearch)
 	options.StateMatches = slices.Clone(options.StateMatches)
 	options.ReferenceMatches = slices.Clone(options.ReferenceMatches)
 

@@ -96,7 +96,9 @@ identity tie-breakers. Exact decimal ordering uses the registered numeric collat
 unknown values sort last independently of direction and currency/unit groups remain
 explicit. Each read model is materialized in one consistent read transaction,
 released before rendering or client I/O. Presentation owns label wording and may
-supply structured label matches to search; SQL does not infer state from those words.
+supply structured label matches and normalize display separators for phrase search
+over canonical label components; SQL does not infer state from those words.
+Reference ordering includes selection authority before the stable identity tie.
 Recovery pages read bounded source-access metadata, expose continuation links and
 check readiness across every retained connection in one consistent access snapshot
 before offering resume. Resume uses the same complete metadata query; it does not
