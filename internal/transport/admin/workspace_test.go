@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/source"
 )
 
 func TestNavigationContextStaysLocalAndBounded(t *testing.T) {
@@ -174,5 +176,51 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatal("fragment expiry redirected into login", w.Code)
+	}
+}
+
+func TestActivitySearchMatchesRenderedFinancialState(t *testing.T) {
+	account, _ := source.NewReference("synthetic", "account", "", "one")
+	instrument, err := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Name: "Synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quantity, _ := financial.ParseQuantity("10")
+	currency, _ := financial.ParseCurrency("USD")
+	price, _ := financial.ParsePrice("1.00", currency)
+	date, _ := financial.ParseDate("2026-10-20")
+	trade, err := source.NewTrade(
+		source.TradeInput{
+			Location:   "row",
+			Account:    account,
+			Instrument: instrument,
+			Side:       source.Buy,
+			Quantity:   quantity,
+			Price:      price,
+			TradeDate:  date,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := application.NewActivityState(
+		application.Accepted,
+		application.ConflictingClaims,
+		application.OperatorSelection,
+	)
+	execution, err := application.NewExecution("one", "account", "instrument", "", "rule", state, trade, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := application.Dashboard{Executions: []application.Execution{execution}}
+	for _, query := range []string{"q=needs+review", "q=operator+decision", "state=review", "state=accepted"} {
+		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?"+query, nil))
+		if got := filteredActivity(request.Context(), view); len(got) != 1 {
+			t.Errorf("%s omitted rendered activity: %v", query, got)
+		}
+	}
+	request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?state=cancelled", nil))
+	if got := filteredActivity(request.Context(), view); len(got) != 0 {
+		t.Fatal("structured filter ignored lifecycle", got)
 	}
 }

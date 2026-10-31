@@ -567,7 +567,9 @@ func filteredActivity(ctx context.Context, v application.Dashboard) []activityIt
 		}
 
 		if !strings.Contains(
-			strings.ToLower(r.Label+" "+r.Date+" "+r.Quantity+" "+r.Price+" "+r.State+" "+r.Reference),
+			strings.ToLower(
+				r.Label+" "+r.Date+" "+r.Quantity+" "+r.Price+" "+activityStatus(r.FinancialState)+" "+r.Reference,
+			),
 			strings.ToLower(q.Get("q")),
 		) {
 			continue
