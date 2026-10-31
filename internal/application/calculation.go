@@ -195,7 +195,7 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 			}
 
 			out.Binding.Instrument = d.Text
-			out.AutomaticListing = false
+			out.AutomaticListing = d.Text == in.Binding.Instrument
 			if out.Binding.Listing != "" && in.Links.Listings[out.Binding.Listing] != d.Text {
 				out.Binding.Listing = ""
 			}

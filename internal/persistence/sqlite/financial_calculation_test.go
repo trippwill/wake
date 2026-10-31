@@ -244,3 +244,46 @@ func TestCalculationUsesDistinctClaimsAndCanSelectAnyRetainedAppearance(t *testi
 		t.Fatal("selection erased dispute or authority", detail, err)
 	}
 }
+
+func TestSelectingBoundInstrumentPreservesEnrichedListing(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	reported := equityRow("U1", "enriched-listing", "100")
+	coverageReport(t, s, "without-venue", strings.Replace(reported, ` listingExchange="NASDAQ"`, "", 1))
+
+	view, err := s.Dashboard(ctx)
+	if err != nil || len(view.Executions) != 1 || view.Executions[0].Listing() != "" {
+		t.Fatal(view, err)
+	}
+
+	id := view.Executions[0].ID()
+
+	coverageReport(t, s, "with-venue", reported)
+
+	detail, err := s.ExecutionDetail(ctx, id)
+	if err != nil || detail.Execution.Listing() == "" {
+		t.Fatal("compatible venue did not enrich listing", detail, err)
+	}
+
+	listing := detail.Execution.Listing()
+	retainDecision(t, s, "activity", id, "instrument", detail.Execution.Instrument(), "", "set")
+
+	detail, err = s.ExecutionDetail(ctx, id)
+	if err != nil || detail.Execution.Listing() != listing {
+		t.Fatal("reselecting bound instrument erased enriched listing", detail, err)
+	}
+
+	retainDecision(t, s, "activity", id, "listing", "", "", "set")
+
+	detail, err = s.ExecutionDetail(ctx, id)
+	if err != nil || detail.Execution.Listing() != "" {
+		t.Fatal("explicit listing clear was ignored", detail, err)
+	}
+
+	retainDecision(t, s, "activity", id, "listing", "", "", "release")
+
+	detail, err = s.ExecutionDetail(ctx, id)
+	if err != nil || detail.Execution.Listing() != listing {
+		t.Fatal("releasing listing choice did not restore automatic enrichment", detail, err)
+	}
+}
