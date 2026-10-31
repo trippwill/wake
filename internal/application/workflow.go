@@ -172,6 +172,25 @@ func (w *Workflow) Provider(id string) (provider.Registration, bool) {
 	return w.host.Registration(id)
 }
 
+// ConnectionDescriptor reads provider metadata without decoding financial history.
+func (w *Workflow) ConnectionDescriptor(ctx context.Context, id string) (provider.Descriptor, error) {
+	if w.host == nil {
+		return provider.Descriptor{}, provider.ErrUnavailable
+	}
+
+	connection, err := w.host.Connection(ctx, id)
+	if err != nil {
+		return provider.Descriptor{}, err
+	}
+
+	registration, ok := w.Provider(connection.Provider)
+	if !ok {
+		return provider.Descriptor{}, provider.ErrUnavailable
+	}
+
+	return registration.Descriptor(), nil
+}
+
 func (w *Workflow) CreateConnection(
 	ctx context.Context,
 	name, providerID string,

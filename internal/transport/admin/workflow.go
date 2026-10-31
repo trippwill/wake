@@ -55,7 +55,15 @@ func registerWorkflowRoutes(
 					return
 				}
 
-				r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+				limit := int64(16 << 10)
+				switch r.Pattern {
+				case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets/{key}":
+					// The SDK admits 64 fields of up to 4096 bytes, plus field names,
+					// host metadata and at most three URL-encoded bytes per input byte.
+					limit = 1 << 20
+				}
+
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
 				if r.ParseForm() != nil {
 					rejection(r, "invalid_form")
 					http.Error(w, "invalid form", http.StatusBadRequest)
@@ -723,11 +731,8 @@ func settingValue(settings provider.Settings, key string) string {
 func requestDescriptor(r *http.Request, workflow *application.Workflow) provider.Descriptor {
 	id := r.PostForm.Get("provider")
 	if connection := r.PathValue("id"); connection != "" {
-		if view, err := workflow.Dashboard(r.Context()); err == nil {
-			if c, ok := connectionByID(view, connection); ok {
-				id = c.Provider
-			}
-		}
+		descriptor, _ := workflow.ConnectionDescriptor(r.Context(), connection)
+		return descriptor
 	}
 
 	registration, ok := workflow.Provider(id)
