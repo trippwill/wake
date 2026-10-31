@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: sqlite
     schema: [internal/persistence/sqlite/catalog.sql, internal/persistence/sqlite/schema.sql, internal/persistence/sqlite/connections_schema.sql]
-    queries: internal/persistence/sqlite/queries.sql
+    queries: [internal/persistence/sqlite/queries.sql, internal/persistence/sqlite/admin_queries.sql]
     gen:
       go:
         package: sqlc

@@ -220,7 +220,15 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	advance()
 	advance()
 
-	dashboard, err := workflow.Dashboard(ctx)
+	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
+
+	sourceDetail, err := workflow.SourceDetail(ctx, connection, query)
+	dashboard := struct {
+		Connections []application.ConnectionView
+		Executions  []application.Execution
+		Lifecycles  []application.Lifecycle
+		Conversions []application.Conversion
+	}{Connections: []application.ConnectionView{sourceDetail.Connection}}
 	if err != nil || len(dashboard.Connections[0].Candidates) != 1 {
 		t.Fatal("discovery", err)
 	}
@@ -245,7 +253,35 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	advance()
 	advance()
 
-	dashboard, err = workflow.Dashboard(ctx)
+	activityQuery, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
+
+	activities, err := workflow.ActivityList(ctx, activityQuery)
+	for _, item := range activities.Items {
+		switch item.Resource.Activity.Family {
+		case "trade":
+			detail, e := workflow.ExecutionDetail(ctx, item.Resource.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+
+			dashboard.Executions = append(dashboard.Executions, detail.Execution)
+		case "lifecycle":
+			detail, e := workflow.LifecycleDetail(ctx, item.Resource.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+
+			dashboard.Lifecycles = append(dashboard.Lifecycles, detail.Lifecycle)
+		case "conversion":
+			detail, e := workflow.ConversionDetail(ctx, item.Resource.ID)
+			if e != nil {
+				t.Fatal(e)
+			}
+
+			dashboard.Conversions = append(dashboard.Conversions, detail.Conversion)
+		}
+	}
+
 	if err != nil || len(dashboard.Executions) != 12 || len(dashboard.Lifecycles) != 3 ||
 		len(dashboard.Conversions) != 2 {
 		t.Fatal(

@@ -109,7 +109,13 @@ access but establishes new financial identities. See
 [architecture](../engineering/architecture.md) for trust and recovery boundaries and [development](../engineering/development.md)
 for verification and reset procedures. No version tag is implied by this coverage.
 
-Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.
+Admin activity, instrument and review lists use server filtering and stable ordering,
+with 50 rows per page by default. Numeric ordering preserves exact decimal values,
+keeps currency/unit roles distinct and places unknown values last. Status and setup
+prerequisites use focused metadata reads; source detail loads one connection and a
+bounded account-candidate page. Result counts and page links preserve intentional
+URL filters. These bounds limit response memory; filtered counts and sorting still
+require SQLite to inspect the matching history.
 
 Processing, correction preflight, saved decisions and releases share deterministic
 financial calculations. Synthetic proofs cover exact decimal and timestamp

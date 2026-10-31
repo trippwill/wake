@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
-	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/source"
 )
@@ -53,65 +53,41 @@ func TestNavigationContextStaysLocalAndBounded(t *testing.T) {
 	}
 }
 
-func TestExactDisplayOrderingRetainsCurrencyAndUnits(t *testing.T) {
-	for _, test := range []struct {
-		a, b string
-		want int
-	}{
-		{"9007199254740992.9999999999999 USD", "9007199254740993.0000000000001 USD", -1},
-		{"-1.000000000000001 shares", "-1 shares", -1},
-		{"0.00000 EUR", "-0 EUR", 0},
-		{"100 EUR", "1 USD", -1},
-		{"1 USD per share", "1 USD per nominal unit", 1},
-	} {
-		got := decimalOrder(test.a, test.b)
-		if got < 0 {
-			got = -1
-		} else if got > 0 {
-			got = 1
-		}
-
-		if got != test.want {
-			t.Errorf("%s / %s: %d", test.a, test.b, got)
+func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
+	for _, state := range []application.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
+		if state.NeedsReview() {
+			t.Fatal(state)
 		}
 	}
-}
 
-func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
-	v := application.Dashboard{Corrections: []application.CorrectionReview{
-		{Artifact: "applied", Status: "applied", Kind: "cancellation"},
-		{
-			Artifact: "unresolved",
-			Status:   "unresolved",
-			Kind:     "replacement",
-			Location: "row-one",
+	for _, state := range []application.ReferenceStatus{"conflict", "ambiguous"} {
+		if !state.NeedsReview() {
+			t.Fatal(state)
+		}
+	}
+
+	items := reviewItems(
+		application.ReviewList{
+			Items: []application.ReviewEntry{
+				{
+					Kind:     application.ReviewInstruction,
+					Artifact: "unresolved",
+					Location: "row-one",
+					Name:     "replacement",
+					Status:   application.CorrectionUnresolved,
+				},
+			},
 		},
-	}}
-
-	items := reviews(v)
+	)
 	if len(items) != 1 || !strings.HasPrefix(items[0].Href, "/evidence/unresolved") {
 		t.Fatal(items)
-	}
-
-	for _, state := range []string{"provisional", "no-match", "accepted", "cancelled", "superseded", ""} {
-		if application.ReferenceStatus(state).NeedsReview() {
-			t.Error("non-review state counted", state)
-		}
-	}
-
-	for _, state := range []string{"conflict", "ambiguous"} {
-		if !application.ReferenceStatus(state).NeedsReview() {
-			t.Error("review state omitted", state)
-		}
 	}
 }
 
 type workspaceStore struct {
 	application.Store
-	view application.Dashboard
+	view fixtureView
 }
-
-func (s workspaceStore) Dashboard(context.Context) (application.Dashboard, error) { return s.view, nil }
 
 func TestWorkspaceRoutesAndFragments(t *testing.T) {
 	dir := t.TempDir()
@@ -128,7 +104,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 	session := httptest.NewRecorder()
 	auth.issue(session)
 
-	view := application.Dashboard{
+	view := fixtureView{
 		Connections: []application.ConnectionView{
 			{ID: "one", Name: "Synthetic source", SettingsStored: true, CredentialStored: true},
 		},
@@ -180,55 +156,18 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 }
 
 func TestActivitySearchMatchesRenderedFinancialState(t *testing.T) {
-	account, _ := source.NewReference("synthetic", "account", "", "one")
-
-	instrument, err := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Name: "Synthetic"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	quantity, _ := financial.ParseQuantity("10")
-	currency, _ := financial.ParseCurrency("USD")
-	price, _ := financial.ParsePrice("1.00", currency)
-	date, _ := financial.ParseDate("2026-10-20")
-
-	trade, err := source.NewTrade(
-		source.TradeInput{
-			Location:   "row",
-			Account:    account,
-			Instrument: instrument,
-			Side:       source.Buy,
-			Quantity:   quantity,
-			Price:      price,
-			TradeDate:  date,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	state, _ := application.NewActivityState(
 		application.Accepted,
 		application.ConflictingClaims,
 		application.OperatorSelection,
 	)
+	for _, search := range []string{"needs review", "operator decision"} {
+		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?q="+url.QueryEscape(search), nil))
 
-	execution, err := application.NewExecution("one", "account", "instrument", "", "rule", state, trade, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	view := application.Dashboard{Executions: []application.Execution{execution}}
-	for _, query := range []string{"q=needs+review", "q=operator+decision", "state=review", "state=accepted"} {
-		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?"+query, nil))
-		if got := filteredActivity(request.Context(), view); len(got) != 1 {
-			t.Errorf("%s omitted rendered activity: %v", query, got)
+		query, err := listQuery(request.Context(), application.ActivityScope)
+		if err != nil || !slices.Contains(query.Options().StateMatches, state) {
+			t.Fatal("rendered label did not produce typed query", query, err)
 		}
-	}
-
-	request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?state=cancelled", nil))
-	if got := filteredActivity(request.Context(), view); len(got) != 0 {
-		t.Fatal("structured filter ignored lifecycle", got)
 	}
 }
 
@@ -255,20 +194,24 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	view := application.Dashboard{Instruments: []application.Instrument{instrument}}
-	if got := instrumentLabel(view, "one"); !strings.Contains(got, "operator decision") {
-		t.Fatal(got)
-	}
-
-	if got := instrumentState(view, "one"); got != "resolved; operator decision" {
+	if got := referenceLabel(
+		instrument.Status(),
+		instrument.Authority(),
+	); got != "resolved; operator decision" {
 		t.Fatal(got)
 	}
 
 	request := pageRequest(
 		httptest.NewRequest(http.MethodGet, "/activity?view=instruments&q=operator+decision&state=resolved", nil),
 	)
-	if got := filteredInstruments(request.Context(), view); len(got) != 1 {
-		t.Fatal("operator label search or structured status filter omitted instrument", got)
+
+	query, queryErr := listQuery(request.Context(), application.InstrumentScope)
+	if queryErr != nil ||
+		!slices.Contains(
+			query.Options().ReferenceMatches,
+			application.ReferenceMatch{Status: "resolved", Authority: application.OperatorSelection},
+		) {
+		t.Fatal(query, queryErr)
 	}
 
 	var rendered strings.Builder
@@ -279,5 +222,78 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 	if got := rendered.String(); !strings.Contains(got, "operator decision") ||
 		!strings.Contains(got, `data-state="success"`) {
 		t.Fatal(got)
+	}
+}
+
+func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testing.T) {
+	side, lifecycle := "buy", "assignment"
+	for _, test := range []struct {
+		activity application.PublishedActivity
+		want     string
+	}{
+		{application.PublishedActivity{Family: "trade", Side: &side}, "Buy Zebra"},
+		{application.PublishedActivity{Family: "lifecycle", LifecycleKind: &lifecycle}, "Assignment · Zebra"},
+		{application.PublishedActivity{Family: "conversion", Sent: &application.PublishedAmount{Currency: "EUR"}, Received: &application.PublishedAmount{Currency: "USD"}}, "Convert EUR → USD"},
+	} {
+		rows := reviewItems(
+			application.ReviewList{
+				Items: []application.ReviewEntry{
+					{Kind: application.ReviewActivity, Name: "Zebra", Activity: &test.activity},
+				},
+			},
+		)
+		if len(rows) != 1 || rows[0].Label != test.want {
+			t.Fatal(rows, test.want)
+		}
+	}
+
+	for _, info := range []application.PageInfo{{Total: 2, Matched: 0, Page: 1, PageSize: 50}, {Total: 2, Matched: 2, Page: 9, PageSize: 50}} {
+		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?view=review&q=unmatched", nil))
+
+		var out strings.Builder
+		if err := ReviewQueue(activityView{PageInfo: info}).Render(request.Context(), &out); err != nil {
+			t.Fatal(err)
+		}
+
+		if strings.Contains(out.String(), "No activity or identity conflicts are awaiting review") ||
+			!strings.Contains(out.String(), "No review items match") {
+			t.Fatal(out.String())
+		}
+	}
+}
+
+func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
+	for _, test := range []struct {
+		search     string
+		kind       application.ReviewKind
+		status     application.CorrectionStatus
+		countKnown bool
+		count      int64
+	}{
+		{"Identity", application.ReviewInstrument, "", false, 0},
+		{"unresolved", application.ReviewInstruction, application.CorrectionUnresolved, false, 0},
+		{"needs review", application.ReviewInstruction, application.CorrectionNeedsReview, false, 0},
+		{"Source claims", application.ReviewIdentity, "", false, 0},
+		{"3 source claims", application.ReviewIdentity, "", true, 3},
+		{"Reported values", application.ReviewActivity, "", false, 0},
+	} {
+		request := pageRequest(
+			httptest.NewRequest(http.MethodGet, "/activity?view=review&q="+url.QueryEscape(test.search), nil),
+		)
+
+		query, err := listQuery(request.Context(), application.ReviewScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expected := application.ReviewMatch{
+			Kind:       test.kind,
+			Status:     test.status,
+			CountKnown: test.countKnown,
+			Count:      test.count,
+		}
+		if !slices.Contains(query.Options().ReviewMatches, expected) {
+			t.Fatal("rendered review search lost typed predicate", test.search, query.Options().ReviewMatches)
+		}
 	}
 }

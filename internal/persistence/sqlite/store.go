@@ -21,7 +21,6 @@ import (
 
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	modernsqlite "modernc.org/sqlite"
 )
 
 type Error string
@@ -33,7 +32,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-simplification-5"
+	schemaVersion              = "wake-simplification-6"
 	accessSchemaVersion        = "wake-simplification-4"
 )
 
@@ -92,6 +91,10 @@ var (
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *Store, resultErr error) {
 	started := time.Now()
+
+	if err := registerCollations(); err != nil {
+		return nil, err
+	}
 
 	logger = logging.Component(logger, "storage")
 	logger.InfoContext(ctx, "validating storage profile", "event", "storage_opening", "stage", "preflight")
@@ -537,7 +540,7 @@ type connector struct {
 	probe  bool
 }
 
-func (c *connector) Driver() driver.Driver { return &modernsqlite.Driver{} }
+func (c *connector) Driver() driver.Driver { return sqliteDriver }
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	for i, owner := range c.owners {
 		if owner != nil {

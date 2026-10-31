@@ -90,3 +90,30 @@ CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL
 CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('activity','underlier')),PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
 CREATE INDEX instrument_claim_occurrence ON instrument_claims(claim_id,ordinal);
 CREATE INDEX observation_execution ON execution_observations(execution_id,artifact_id,version,location);
+
+
+CREATE VIEW admin_activity AS SELECT p.id,p.snapshot,e.kind,e.status,e.review_reasons,e.selection_authority,
+ CAST(coalesce(nullif(i.name,''),i.ticker,'') AS TEXT) AS instrument_name,
+ CAST(coalesce(i.reference_status,'') AS TEXT) AS reference_status,
+ CAST(coalesce(i.selection_authority,'automatic') AS TEXT) AS reference_authority,
+ CAST(json_extract(p.snapshot,'$.activity.date') AS TEXT) AS event_date,
+ CAST(coalesce(json_extract(p.snapshot,'$.activity.quantity.value'),json_extract(p.snapshot,'$.activity.sent.amount')) AS TEXT) AS quantity,
+ CAST(coalesce(json_extract(p.snapshot,'$.activity.quantity.unit'),json_extract(p.snapshot,'$.activity.sent.currency'),'') AS TEXT) AS quantity_unit,
+ CAST(coalesce(json_extract(p.snapshot,'$.activity.price.amount'),json_extract(p.snapshot,'$.activity.rate.amount')) AS TEXT) AS price,
+ CAST(coalesce(json_extract(p.snapshot,'$.activity.price.currency'),json_extract(p.snapshot,'$.activity.rate.currency'),'') || '/' || coalesce(json_extract(p.snapshot,'$.activity.price_basis'),json_extract(p.snapshot,'$.activity.rate_base'),'') AS TEXT) AS price_unit,
+ CAST(lower(CASE WHEN e.kind='conversion' THEN e.kind || ' ' || coalesce(json_extract(p.snapshot,'$.activity.sent.currency'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.received.currency'),'') ELSE coalesce(json_extract(p.snapshot,'$.activity.side'),json_extract(p.snapshot,'$.activity.lifecycle_kind'),'') || ' ' || coalesce(nullif(i.name,''),i.ticker,'') END) AS TEXT) AS label_sort,
+ CAST(lower(coalesce(nullif(i.name,''),i.ticker,'') || ' ' || coalesce(i.ticker,'') || ' ' || e.kind || ' ' || e.id || ' ' || coalesce(json_extract(p.snapshot,'$.activity.date'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.at'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.side'),json_extract(p.snapshot,'$.activity.lifecycle_kind'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.quantity.value'),json_extract(p.snapshot,'$.activity.sent.amount'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.quantity.unit'),json_extract(p.snapshot,'$.activity.sent.currency'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.price.amount'),json_extract(p.snapshot,'$.activity.rate.amount'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.price.currency'),json_extract(p.snapshot,'$.activity.rate.currency'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.sent.currency'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.received.currency'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.received.amount'),'') || ' ' || coalesce(json_extract(p.snapshot,'$.activity.received.currency'),'')) AS TEXT) AS search_text
+ FROM published_resources p JOIN executions e ON e.id=p.id LEFT JOIN instruments i ON i.id=e.instrument_id WHERE p.kind='activity';
+CREATE VIEW admin_instruments AS SELECT p.id,p.snapshot,i.name,i.ticker,i.kind,i.reference_status,i.selection_authority,lower(i.name || ' ' || i.ticker || ' ' || i.kind || ' ' || i.id) AS search_text FROM published_resources p JOIN instruments i ON i.id=p.id WHERE p.kind='instruments';
+CREATE INDEX activity_state ON executions(status,review_reasons,selection_authority,id);
+CREATE INDEX observation_identity_review ON execution_observations(artifact_id,outcome);
+CREATE INDEX activity_base_instrument ON activity_bases(instrument_id);
+CREATE VIEW admin_review AS
+ SELECT 'activity' AS kind,a.id,a.instrument_name AS name,'' AS artifact,'' AS location,'' AS status,1 AS claim_count,CAST(json_extract(a.snapshot,'$.activity') AS TEXT) AS activity,a.search_text AS search_text,a.label_sort AS label_key FROM admin_activity a WHERE a.review_reasons<>0
+ UNION ALL SELECT 'instrument',i.id,i.name,'','','',1,'',i.search_text,'' FROM admin_instruments i WHERE i.reference_status IN ('ambiguous','conflict')
+ UNION ALL SELECT 'instruction',c.artifact_id || '/' || c.version || '/' || c.location,c.kind,c.artifact_id,c.location,c.status,1,'',c.kind,'' FROM source_corrections c JOIN records r ON r.artifact_id=c.artifact_id AND r.version=c.version AND r.location=c.location JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE c.status IN ('unresolved','review') AND NOT EXISTS(SELECT 1 FROM event_links l WHERE l.account_id=c.account_id AND (l.reference=c.target OR l.reference=c.replacement))
+ UNION ALL SELECT 'identity',o.artifact_id,'Unresolved source identity',o.artifact_id,'','',count(*),'','Unresolved source identity','' FROM execution_observations o JOIN records r ON r.artifact_id=o.artifact_id AND r.version=o.version AND r.location=o.location JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE o.execution_id IS NULL AND o.outcome IN ('identity-review','native-review') GROUP BY o.artifact_id;
+
+CREATE INDEX artifacts_connection ON artifacts(connection_id);
+CREATE INDEX candidate_artifact ON candidates(artifact_id,authority,kind,scope,value,receipt_id);
+CREATE INDEX source_instruction_review ON source_corrections(status,artifact_id,version,location);

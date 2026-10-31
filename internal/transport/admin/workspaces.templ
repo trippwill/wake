@@ -38,7 +38,7 @@ func currentPage(active bool) string {
 	return "false"
 }
 
-templ DashboardOverview(view application.Dashboard) {
+templ DashboardOverview(view overviewView) {
 	@PageHeader("Overview", "Your account, current work and next useful action.")
 	if view.Storage.Paused {
 		<section class="wake-card wake-priority"><h2>Review recovered access</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
@@ -54,16 +54,16 @@ templ DashboardOverview(view application.Dashboard) {
 		</section>
 	}
 	if view.Account.ID()!="" {
-		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.Itoa(len(activityItems(view))) } activity records · { strconv.Itoa(len(view.Instruments)) } instruments</p></div><a class="btn btn-primary" href="/activity">Inspect activity</a></div></section>
+		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p></div><a class="btn btn-primary" href="/activity">Inspect activity</a></div></section>
 		<div class="wake-columns">
 			<section class="wake-card">
 				<h2>Financial review</h2>
-				if len(reviews(view))==0 {
+				if len(view.Reviews)==0 {
 					<p>No activity or identity conflicts are awaiting review.</p>
 				} else {
-					<p>{ strconv.Itoa(len(reviews(view))) } items need your judgment.</p>
+					<p>{ strconv.FormatInt(view.ReviewPage.Matched,10) } items need your judgment.</p>
 					<ul class="wake-task-list">
-						for _,item:=range reviews(view) {
+						for _,item:=range view.Reviews {
 							<li><a href={ templ.SafeURL(navURL(ctx, item.Href)) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
 						}
 					</ul>
@@ -72,14 +72,14 @@ templ DashboardOverview(view application.Dashboard) {
 			</section>
 			<section class="wake-card">
 				<h2>Source and system work</h2>
-				if repairCount(view)>0 {
+				if repairCount(view.sourceView)>0 {
 					<ul class="wake-task-list">
-						for _,item:=range repairs(view) {
+						for _,item:=range repairs(view.sourceView) {
 							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
 						}
 					</ul>
 				} else {
-					<p>No recorded source or system failures.</p><a href="/connections">Inspect connections</a>
+					<p>No recorded source or system failures in the displayed connections.</p><a href="/connections">Inspect connections</a>
 				}
 				<p class="wake-help">Reachability, acquisition and processing have separate states. Report bounds do not prove complete history.</p>
 				<a href="/activity?view=instruments&state=gaps">Inspect instrument reference gaps</a>
@@ -98,12 +98,12 @@ templ DashboardOverview(view application.Dashboard) {
 						<span>
 							if c.MissingAccess {
 								@StateBadge("Access review required")
-							} else if connectionFailure(view,c) {
+							} else if connectionFailure(view.sourceView,c) {
 								@StateBadge("failed")
 							} else if view.Storage.Paused {
 								@StateBadge("paused")
 							} else {
-								for _,work:=range sourceWork(view,c) {
+								for _,work:=range sourceWork(view.sourceView,c) {
 									<span>{ operationLabel(work.Operation) }: { progressLabel(work.Progress) }</span>
 								}
 							}
@@ -112,10 +112,13 @@ templ DashboardOverview(view application.Dashboard) {
 				}
 			</ul>
 		}
+		if view.MoreConnections {
+			<p>Showing the first 50 connections. <a href="/connections">Inspect all connections</a>.</p>
+		}
 	</section>
 }
 
-templ ConnectionsPage(csrf string, view application.Dashboard) {
+templ ConnectionsPage(csrf string, view sourceView) {
 	@PageHeader("Connections", "Source access, account authority and synchronization.")
 	@ConnectionsNavigation("sources")
 	if view.Storage.Paused {
@@ -132,8 +135,12 @@ templ ConnectionsPage(csrf string, view application.Dashboard) {
 					<h3><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a></h3>
 					if view.Account.Connection()==c.ID {
 						<p>{ view.Account.Details().Name() } · Authorized source</p>
-					} else {
+					} else if c.CanDiscover {
 						<p>Account discovery</p>
+					} else if c.CanAcquire {
+						<p>Evidence acquisition</p>
+					} else {
+						<p>Supplied evidence</p>
 					}
 					for _,w:=range sourceWork(view,c) {
 						<p class="wake-help">{ operationLabel(w.Operation) }: { progressLabel(w.Progress) }</p>
@@ -147,10 +154,11 @@ templ ConnectionsPage(csrf string, view application.Dashboard) {
 					}
 				</div>
 			</article>
-			if view.Account.ID()=="" {
-				@DiscoveredAccounts(c, view)
+			if view.Account.ID()=="" && c.CanDiscover {
+				<p><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Review discovered accounts</a></p>
 			}
 		}
+		@ListPagination(view.PageInfo)
 	</section>
 }
 
@@ -158,7 +166,7 @@ templ ConnectionsNavigation(view string) {
 	<nav class="wake-tabs" aria-label="Connection views"><a href="/connections" aria-current={ currentPage(view == "sources") }>Sources</a><a href="/connections/reference" aria-current={ currentPage(view == "reference") }>Instrument reference</a><a href="/connections/recovery" aria-current={ currentPage(view == "recovery") }>Recovery</a></nav>
 }
 
-templ ConnectionPage(csrf string, v application.Dashboard, c application.ConnectionView) {
+templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 	@Breadcrumbs("Source")
 	@PageHeader(c.Name, c.Descriptor.Name())
 	<nav class="wake-tabs" aria-label="Source views">
@@ -208,16 +216,18 @@ templ ConnectionPage(csrf string, v application.Dashboard, c application.Connect
 		if c.CanDiscover && v.Account.ID()=="" {
 			<section class="wake-card">
 				<h2>Choose your account</h2>@DiscoveredAccounts(c, v)
+				@ListPagination(v.PageInfo)
 			</section>
 		} else if c.CanDiscover {
 			<details class="wake-card">
 				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
+				@ListPagination(v.PageInfo)
 			</details>
 		}
 	}
 }
 
-templ DiscoveredAccounts(c application.ConnectionView, v application.Dashboard) {
+templ DiscoveredAccounts(c application.ConnectionView, v sourceView) {
 	if len(c.Candidates)==0 {
 		<p>Discovery has not returned any accounts yet.</p>
 	} else {
@@ -305,7 +315,7 @@ templ ConnectionSetup(csrf string, registrations []provider.Registration) {
 	}
 }
 
-templ ReferenceSettings(csrf string, view application.Dashboard) {
+templ ReferenceSettings(csrf string, view sourceView) {
 	<section class="wake-card" id="reference-setting">
 		<h2>Instrument reference access</h2>
 		<p>OpenFIGI mapping works anonymously. An optional key increases the shared request allowance.</p>
@@ -323,7 +333,7 @@ templ ReferenceSettings(csrf string, view application.Dashboard) {
 	</section>
 }
 
-templ RecoveryPage(csrf string, view application.Dashboard) {
+templ RecoveryPage(csrf string, view sourceView) {
 	@PageHeader("Review recovered access", "Retained financial history stays inspectable while upstream work is paused.")
 	@ConnectionsNavigation("recovery")
 	if !view.Storage.Paused {
@@ -335,12 +345,13 @@ templ RecoveryPage(csrf string, view application.Dashboard) {
 				<p id="warehouse-reset-notice">Financial history was reset. Settings and credentials were retained; account discovery and confirmation are required again after resume.</p>
 			}
 			for _,c:=range view.Connections {
-				<p><strong>{ c.Name }</strong> · Settings: { readiness(c.SettingsStored) } · Token: { readiness(c.CredentialStored) }</p>
+				<p><strong>{ c.Name }</strong> · Settings: { readiness(c.SettingsStored) } · Credentials: { readiness(c.CredentialStored) }</p>
 			}
+			@ListPagination(view.PageInfo)
 		</section>
 		for _,c:=range view.Connections {
 			if c.MissingAccess {
-				@ConnectionAccess(csrf, c)
+				<section class="wake-card" id={ "recovery-source-" + c.ID }><h2>{ c.Name }</h2><p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete.</p><a class="btn" id={ "repair-source-" + c.ID } data-repair-source href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair source access</a></section>
 			}
 		}
 		<section class="wake-card">
@@ -358,7 +369,7 @@ templ RecoveryPage(csrf string, view application.Dashboard) {
 			<h2>3. Resume upstream work</h2>
 			<p>Resume grants permission to contact configured sources. It does not confirm a newly discovered account.</p>
 			if !recoveryReady(view) {
-				<p class="wake-notice">Complete the source and reference steps above before resuming.</p>
+				<p class="wake-notice">Complete the source and reference steps before resuming. Check every page of source access.</p>
 			}
 			<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
 		</section>
@@ -404,7 +415,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 	</section>
 }
 
-templ MaintenancePage(csrf string, view application.Dashboard) {
+templ MaintenancePage(csrf string, view sourceView) {
 	@PageHeader("Maintenance", "Rebuild derived views from retained evidence and decisions.")
 	@SystemNavigation("maintenance")
 	<section class="wake-card" id="maintenance"><h2>Rebuild accepted views</h2><p>Original evidence and retained decisions stay intact. Rebuild resumes from committed progress after restart.</p><form method="post" action="/recovery/rebuild"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="submission" value={ rand.Text() }/><button class="btn" type="submit">Rebuild accepted views</button></form></section>
@@ -433,10 +444,10 @@ templ MaintenancePage(csrf string, view application.Dashboard) {
 	</section>
 }
 
-templ ActivityPage(view application.Dashboard) {
+templ ActivityPage(view activityView) {
 	@PageHeader("Activity", "Inspect financial history and resolve questions from retained evidence.")
 	@ActivityNavigation(activeView(ctx, "all"))
-	if view.Account.ID()=="" {
+	if view.Account.ID()=="" && activeView(ctx,"all")=="all" {
 		<section class="wake-card"><h2>Confirm an account to begin</h2><a class="btn btn-primary" href="/connections">Review source setup</a></section>
 	}
 	if activeView(ctx,"all")=="review" {
@@ -448,34 +459,41 @@ templ ActivityPage(view application.Dashboard) {
 	}
 }
 
-templ ReviewQueue(view application.Dashboard) {
+templ ReviewQueue(view activityView) {
 	<section class="wake-card">
 		<h2>Needs review</h2>
 		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
-		if len(reviews(view))==0 {
-			<p>No activity or identity conflicts are awaiting review.</p>
+		<form class="wake-filters" method="get" action="/activity"><input type="hidden" name="view" value="review"/><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
+		if len(view.Reviews)==0 {
+			if view.Total==0 {
+				<p>No activity or identity conflicts are awaiting review.</p>
+			} else {
+				<p>No review items match this result page. Change the search or return to the first page.</p>
+				<a href="/activity?view=review">View all review items</a>
+			}
 		} else {
 			<ul class="wake-task-list">
-				for _,r:=range reviews(view) {
+				for _,r:=range view.Reviews {
 					<li><div><span class="wake-help">{ r.Kind }</span><h3><a href={ templ.SafeURL(navURL(ctx, r.Href)) }>{ r.Label }</a></h3><p>{ r.Reason }</p></div><a class="btn" href={ templ.SafeURL(navURL(ctx, r.Href)) }>Review</a></li>
 				}
 			</ul>
 		}
+		@ListPagination(view.PageInfo)
 	</section>
 }
 
-templ ActivityRows(view application.Dashboard) {
+templ ActivityRows(view activityView) {
 	<section class="wake-card" id="activity-rows">
-		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div><span class="wake-help" role="status">{ resultCount(len(filteredActivity(ctx,view)),len(activityItems(view))) }</span></div>
+		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
 		@ListFilters(false)
-		<section class="wake-grid" id="activity-grid" data-grid="activity" aria-label="Financial activity">
+		<section class="wake-grid" id="activity-grid" data-grid="activity" data-server-list aria-label="Financial activity">
 			<section class="wake-table-scroll" aria-label="Financial activity table">
 				<table class="table">
 					<caption>Recorded financial activity</caption><thead><tr><th scope="col" data-field="label">Activity</th><th scope="col" data-field="date">Date</th><th scope="col" data-field="quantity" data-sort="decimal">Quantity / currency roles</th><th scope="col" data-field="price" data-sort="decimal">Price / rate</th><th scope="col" data-field="state">Activity state</th><th scope="col" data-field="reference">Reference identity</th></tr></thead>
 					<tbody>
-						for _,r:=range filteredActivity(ctx,view) {
+						for _,r:=range view.Items {
 							<tr id={ "activity-" + r.ID }>
-								<td><a href={ templ.SafeURL(navURL(ctx, r.Href)) } data-record={ r.ID }>{ r.Label }</a><span class="wake-help wake-cell-note">{ stringTitle(r.Kind) }</span></td>
+								<td><a href={ templ.SafeURL(navURL(ctx, r.Href)) } data-record={ r.ID }>{ r.Label }</a><span class="wake-help wake-cell-note">{ activityKindLabel(r.Kind) }</span></td>
 								<td>{ r.Date }</td>
 								<td data-sort-value={ r.Quantity }>{ r.Quantity }</td>
 								<td data-sort-value={ r.Price + " " + r.Basis }>{ r.Price }<span class="wake-help wake-cell-note">{ r.Basis }</span></td>
@@ -486,7 +504,7 @@ templ ActivityRows(view application.Dashboard) {
 									if r.InstrumentID!="" {
 										<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+r.InstrumentID)) }>{ r.Reference }</a>
 									} else {
-										Not applicable
+										{ notApplicableValue }
 									}
 								</td>
 							</tr>
@@ -495,28 +513,29 @@ templ ActivityRows(view application.Dashboard) {
 				</table>
 			</section>
 		</section>
-		if len(filteredActivity(ctx,view))==0 {
+		if len(view.Items)==0 {
 			<p>No activity matches these filters.</p>
 		}
+		@ListPagination(view.PageInfo)
 	</section>
 }
 
-templ InstrumentsView(view application.Dashboard) {
+templ InstrumentsView(view activityView) {
 	<section class="wake-card">
-		<div class="wake-card-heading"><h2>Instruments</h2><span class="wake-help" role="status">{ resultCount(len(filteredInstruments(ctx,view)),len(view.Instruments)) }</span></div>
+		<div class="wake-card-heading"><h2>Instruments</h2><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
 		@ListFilters(true)
-		<section class="wake-grid" id="instruments-grid" data-grid="instruments" aria-label="Instruments">
+		<section class="wake-grid" id="instruments-grid" data-grid="instruments" data-server-list aria-label="Instruments">
 			<section class="wake-table-scroll" aria-label="Instrument table">
 				<table class="table">
 					<caption>Financial instruments</caption><thead><tr><th scope="col" data-field="name">Instrument</th><th scope="col" data-field="kind">Kind</th><th scope="col" data-field="ticker">Reported symbol</th><th scope="col" data-field="state">Reference identity</th></tr></thead>
 					<tbody>
-						for _,i:=range filteredInstruments(ctx,view) {
-							<tr id={ "instrument-" + i.ID() }>
-								<td><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+i.ID())) } data-record={ i.ID() }>{ known(i.Name()) }</a></td>
-								<td>{ i.Kind() }</td>
-								<td>{ known(i.Ticker()) }</td>
+						for _,i:=range view.Instruments {
+							<tr id={ "instrument-" + i.ID }>
+								<td><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+i.ID)) } data-record={ i.ID }>{ known(i.Name) }</a></td>
+								<td>{ i.Kind }</td>
+								<td>{ known(i.Ticker) }</td>
 								<td>
-									@InstrumentBadge(i)
+									@ReferenceBadge(i.Status, i.Authority)
 								</td>
 							</tr>
 						}
@@ -524,9 +543,10 @@ templ InstrumentsView(view application.Dashboard) {
 				</table>
 			</section>
 		</section>
-		if len(filteredInstruments(ctx,view))==0 {
+		if len(view.Instruments)==0 {
 			<p>No instruments match these filters.</p>
 		}
+		@ListPagination(view.PageInfo)
 	</section>
 }
 
@@ -544,11 +564,11 @@ templ ListFilters(instruments bool) {
 				<option value="">All kinds</option>
 				if instruments {
 					for _,v:=range []string{"equity","fund","option","debt"} {
-						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ stringTitle(v) }</option>
+						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ activityKindLabel(v) }</option>
 					}
 				} else {
-					for _,v:=range []string{"trade","option outcome","conversion"} {
-						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ stringTitle(v) }</option>
+					for _,v:=range []string{"trade","lifecycle","conversion"} {
+						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ activityKindLabel(v) }</option>
 					}
 				}
 			</select>
@@ -572,7 +592,7 @@ templ ListFilters(instruments bool) {
 	</form>
 }
 
-templ ReferencePage(csrf string, view application.Dashboard) {
+templ ReferencePage(csrf string, view sourceView) {
 	@PageHeader("Instrument reference", "OpenFIGI access is separate from your financial source.")
 	@ConnectionsNavigation("reference")
 	@ReferenceSettings(csrf, view)
@@ -580,4 +600,22 @@ templ ReferencePage(csrf string, view application.Dashboard) {
 
 templ SystemNavigation(view string) {
 	<nav class="wake-tabs" aria-label="System views"><a href="/status" aria-current={ currentPage(view == "status") }>Status</a><a href="/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a><a href="/system/maintenance" aria-current={ currentPage(view == "maintenance") }>Maintenance</a></nav>
+}
+
+templ ListPagination(info application.PageInfo) {
+	if info.PageSize>0 && (info.Page>1 || pageHasNext(info)) {
+		<nav class="wake-actions" aria-label="Result pages">
+			if info.Page>1 {
+				<a href={ templ.SafeURL(pageURL(ctx, info.Page-1)) }>Previous page</a>
+			}
+			<span role="status">Page { strconv.Itoa(info.Page) }</span>
+			if pageHasNext(info) {
+				<a href={ templ.SafeURL(pageURL(ctx, info.Page+1)) }>Next page</a>
+			}
+		</nav>
+	}
+}
+
+templ ReferenceBadge(status application.ReferenceStatus, authority application.SelectionAuthority) {
+	<span class="badge" data-state={ referenceTone(status) }>{ referenceLabel(status,authority) }</span>
 }

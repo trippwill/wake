@@ -82,6 +82,49 @@ type ActivityRelationship struct {
 	Target     string
 }
 
+type AdminActivity struct {
+	ID                 string
+	Snapshot           []byte
+	Kind               string
+	Status             string
+	ReviewReasons      int64
+	SelectionAuthority string
+	InstrumentName     string
+	ReferenceStatus    string
+	ReferenceAuthority string
+	EventDate          string
+	Quantity           string
+	QuantityUnit       string
+	Price              string
+	PriceUnit          string
+	LabelSort          string
+	SearchText         string
+}
+
+type AdminInstrument struct {
+	ID                 string
+	Snapshot           []byte
+	Name               string
+	Ticker             string
+	Kind               string
+	ReferenceStatus    string
+	SelectionAuthority string
+	SearchText         string
+}
+
+type AdminReview struct {
+	Kind       string
+	ID         string
+	Name       string
+	Artifact   string
+	Location   string
+	Status     string
+	ClaimCount int64
+	Activity   string
+	SearchText string
+	LabelKey   string
+}
+
 type Artifact struct {
 	ID                string
 	ConnectionID      string

@@ -51,24 +51,11 @@ type (
 		Work                                  []WorkStatus
 		Processing                            []ProcessingStatus
 	}
-	Dashboard struct {
-		Storage          StorageStatus
-		Connections      []ConnectionView
-		Account          Account
-		Executions       []Execution
-		Lifecycles       []Lifecycle
-		Conversions      []Conversion
-		Corrections      []CorrectionReview
-		Recovery         []RecoveryJob
-		Instruments      []Instrument
-		ReferenceKey     bool
-		ReferenceFailure string
-	}
 	Store interface {
 		ResumeStorage(context.Context, int64, string, time.Time) error
 		Schedule(context.Context, host.WorkKey, bool) error
 		Confirm(context.Context, string, string, source.Reference, AccountDetails, bool) (Account, error)
-		Dashboard(context.Context) (Dashboard, error)
+		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
 		PendingArtifacts(context.Context, time.Time, []string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
@@ -273,7 +260,7 @@ func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 		return provider.ErrUnavailable
 	}
 
-	view, err := w.store.Dashboard(ctx)
+	view, err := w.store.Prerequisites(ctx)
 	if err != nil {
 		return err
 	}
@@ -339,38 +326,118 @@ func (w *Workflow) SetReferenceKey(ctx context.Context, key *credential.Secret) 
 	return err
 }
 
-func (w *Workflow) Dashboard(ctx context.Context) (Dashboard, error) {
-	view, err := w.store.Dashboard(ctx)
+func (w *Workflow) decorateConnections(connections []ConnectionView) {
+	for index := range connections {
+		w.decorateConnection(&connections[index])
+	}
+}
+
+func (w *Workflow) decorateConnection(connection *ConnectionView) {
+	registration, ok := w.Provider(connection.Provider)
+	if !ok {
+		return
+	}
+
+	connection.Descriptor = registration.Descriptor()
+
+	connection.CanAcquire = registration.Acquirer() != nil
+
+	connection.CanDiscover = registration.Discoverer() != nil
+	connection.CanNormalize = registration.Normalizer() != nil
+	connection.CredentialStored = true
+	for _, field := range connection.Descriptor.Fields() {
+		if field.Kind() == provider.SecretField && field.Required() &&
+			!slices.Contains(connection.CredentialKeys, field.Key()) {
+			connection.CredentialStored = false
+		}
+	}
+
+	connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+}
+
+func (w *Workflow) Prerequisites(ctx context.Context) (Prerequisites, error) {
+	return w.store.Prerequisites(ctx)
+}
+
+func (w *Workflow) SourcePage(ctx context.Context, query ListQuery) (SourcePage, error) {
+	view, err := w.store.SourcePage(ctx, query)
+	if err == nil {
+		w.decorateConnections(view.Connections)
+	}
+
+	return view, err
+}
+
+// Recovery returns a bounded repair page and checks access across every source.
+func (w *Workflow) Recovery(ctx context.Context, query ListQuery) (SourcePage, bool, error) {
+	view, err := w.store.SourceAccessPage(ctx, query)
 	if err != nil {
-		return view, err
+		return view, false, err
 	}
 
-	for index := range view.Connections {
-		connection := &view.Connections[index]
+	w.decorateConnections(view.Connections)
 
-		registration, ok := w.Provider(connection.Provider)
-		if !ok {
-			continue
-		}
-
-		connection.Descriptor = registration.Descriptor()
-
-		connection.CanAcquire = registration.Acquirer() != nil
-
-		connection.CanDiscover = registration.Discoverer() != nil
-		connection.CanNormalize = registration.Normalizer() != nil
-		connection.CredentialStored = true
-		for _, field := range connection.Descriptor.Fields() {
-			if field.Kind() == provider.SecretField && field.Required() &&
-				!slices.Contains(connection.CredentialKeys, field.Key()) {
-				connection.CredentialStored = false
-			}
-		}
-
-		connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+	access, e := w.store.SourceAccess(ctx)
+	if e != nil {
+		return view, false, e
 	}
 
-	return view, nil
+	w.decorateConnections(access.Connections)
+
+	for _, connection := range access.Connections {
+		if connection.MissingAccess {
+			return view, false, nil
+		}
+	}
+
+	return view, true, nil
+}
+
+func (w *Workflow) SourceDetail(ctx context.Context, id string, query ListQuery) (SourceDetail, error) {
+	view, err := w.store.SourceDetail(ctx, id, query)
+	if err == nil {
+		w.decorateConnection(&view.Connection)
+	}
+
+	return view, err
+}
+
+func (w *Workflow) SystemStatus(ctx context.Context) (SystemStatus, error) {
+	view, err := w.store.SystemStatus(ctx)
+	if err == nil {
+		w.decorateConnections(view.Connections)
+	}
+
+	return view, err
+}
+
+func (w *Workflow) Overview(ctx context.Context) (OverviewView, error) {
+	view, err := w.store.Overview(ctx)
+	if err == nil {
+		w.decorateConnections(view.Status.Connections)
+	}
+
+	return view, err
+}
+
+func (w *Workflow) ActivityList(ctx context.Context, query ListQuery) (ActivityList, error) {
+	return w.store.ActivityList(ctx, query)
+}
+
+func (w *Workflow) InstrumentList(ctx context.Context, query ListQuery) (InstrumentList, error) {
+	return w.store.InstrumentList(ctx, query)
+}
+
+func (w *Workflow) ReviewList(ctx context.Context, query ListQuery) (ReviewList, error) {
+	return w.store.ReviewList(ctx, query)
+}
+
+func (w *Workflow) SourceCandidate(
+	ctx context.Context,
+	id, artifact string,
+	ref source.Reference,
+) (Candidate, error) {
+	return w.store.SourceCandidate(ctx, id, artifact, ref)
 }
 
 func (w *Workflow) ExecutionDetail(ctx context.Context, id string) (ExecutionDetail, error) {
@@ -618,7 +685,7 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 	ctx, finishLog := logging.Start(ctx, w.logger, "storage_resume")
 	defer func() { finishLog(resultErr) }()
 
-	view, err := w.Dashboard(ctx)
+	view, err := w.store.SourceAccess(ctx)
 	if err != nil {
 		return err
 	}
@@ -631,7 +698,10 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 		return ErrAccessReview
 	}
 
-	for _, connection := range view.Connections {
+	connections := view.Connections
+	w.decorateConnections(connections)
+
+	for _, connection := range connections {
 		if connection.MissingAccess {
 			return ErrAccessReview
 		}
@@ -648,7 +718,7 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 	}
 
 	if view.Storage.WarehouseReset {
-		for _, connection := range view.Connections {
+		for _, connection := range connections {
 			registration, ok := w.Provider(connection.Provider)
 			if !ok || registration.Discoverer() == nil {
 				continue

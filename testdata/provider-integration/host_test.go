@@ -862,7 +862,7 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 	if count := f.count(t, "scheduled"); count != 0 {
 		t.Fatal("normalizer scheduled upstream work", count)
 	}
-	view, err := workflow.Dashboard(t.Context())
+	view, err := inspectProvider(t, workflow)
 	if err != nil || len(view.Connections) != 1 || view.Connections[0].MissingAccess || view.Connections[0].CanAcquire || view.Connections[0].CanDiscover {
 		t.Fatal("normalizer-only capability/readiness mismatch", view, err)
 	}
@@ -909,7 +909,7 @@ func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := workflow.Dashboard(t.Context())
+	view, err := inspectProvider(t, workflow)
 	if err != nil || len(view.Connections) != 1 || len(view.Connections[0].Candidates) != 1 {
 		t.Fatal(view, err)
 	}
@@ -944,7 +944,7 @@ func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := workflow.Dashboard(t.Context())
+	view, err := inspectProvider(t, workflow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -959,7 +959,7 @@ func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *
 			t.Fatal(err)
 		}
 	}
-	view, err = workflow.Dashboard(t.Context())
+	view, err = inspectProvider(t, workflow)
 	if err != nil || len(view.Connections[0].Processing) != 1 {
 		t.Fatal(view, err)
 	}
@@ -1004,7 +1004,7 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := workflow.Dashboard(t.Context())
+	view, err := inspectProvider(t, workflow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1026,8 +1026,10 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 	if err = workflow.RunOnce(t.Context(), f.now); err != nil {
 		t.Fatal(err)
 	}
-	view, err = workflow.Dashboard(t.Context())
-	if err != nil || len(view.Executions) != 1 || reads.retainedReads != 0 {
+	view, err = inspectProvider(t, workflow)
+	query, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
+	activities, readErr := workflow.ActivityList(t.Context(), query)
+	if err != nil || readErr != nil || activities.Total != 1 || reads.retainedReads != 0 {
 		t.Fatal("orchestration decoded full evidence for metadata", view, reads.retainedReads, err)
 	}
 }
@@ -1075,7 +1077,7 @@ func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
 			}
 		})
 		workflow := application.New(store, h, nil, nil, nil)
-		view, err := workflow.Dashboard(t.Context())
+		view, err := inspectProvider(t, workflow)
 		if err != nil || !view.Storage.Paused || !view.Storage.WarehouseReset || len(view.Connections) != 1 || view.Connections[0].MissingAccess {
 			t.Fatal("copied seed lost access or resumed without review", view, err)
 		}
@@ -1113,4 +1115,21 @@ func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
 	if err != nil || !bytes.Equal(original, after) {
 		t.Fatal("disposable writers modified reusable encrypted seed", err)
 	}
+}
+
+func inspectProvider(t *testing.T, w *application.Workflow) (application.SourcePage, error) {
+	t.Helper()
+	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
+	page, err := w.SourcePage(t.Context(), query)
+	if err != nil {
+		return page, err
+	}
+	for index, connection := range page.Connections {
+		detail, e := w.SourceDetail(t.Context(), connection.ID, query)
+		if e != nil {
+			return page, e
+		}
+		page.Connections[index] = detail.Connection
+	}
+	return page, nil
 }
