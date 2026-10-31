@@ -13,10 +13,11 @@ import (
 // Artifact holds a bounded immutable response. Host admission can impose a lower
 // resource limit. Context (provider, stream, authority) comes from the host request.
 type Artifact struct {
-	format    string
-	mediaType string
-	retrieved time.Time
-	content   []byte
+	format                                string
+	mediaType                             string
+	retrieved                             time.Time
+	content                               []byte
+	equivalenceVersion, equivalenceDigest string
 }
 
 func NewArtifact(format, mediaType string, retrieved time.Time, content []byte) (Artifact, error) {
@@ -43,6 +44,31 @@ func (a Artifact) IsZero() bool           { return a.format == "" }
 func (a Artifact) Hash() string {
 	sum := sha256.Sum256(a.content)
 	return hex.EncodeToString(sum[:])
+}
+
+// WithEquivalence declares a provider-owned report comparison policy. The version
+// identifies exactly which source fields the policy excludes. Hash always remains
+// the digest of the actual acquired bytes.
+func (a Artifact) WithEquivalence(version, digest string) (Artifact, error) {
+	if a.IsZero() || version == "exact-bytes/1" || !validKey(version) || len(digest) != sha256.Size*2 {
+		return Artifact{}, ErrInvalid
+	}
+
+	if _, err := hex.DecodeString(digest); err != nil {
+		return Artifact{}, ErrInvalid
+	}
+
+	a.equivalenceVersion, a.equivalenceDigest = version, digest
+
+	return a, nil
+}
+
+func (a Artifact) Equivalence() (string, string) {
+	if a.equivalenceVersion == "" {
+		return "exact-bytes/1", a.Hash()
+	}
+
+	return a.equivalenceVersion, a.equivalenceDigest
 }
 
 // Counts names each outcome so adding a supported claim kind cannot shift

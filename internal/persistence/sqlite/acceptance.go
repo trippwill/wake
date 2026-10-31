@@ -65,6 +65,18 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 // Process accepts only the designated account/provider/stream. Accepted terms and
 // every matching or dissenting observation commit with the artifact completion.
 func (s *Store) Process(ctx context.Context, id, version string) error {
+	complete, err := s.queries.ProcessingComplete(
+		ctx,
+		sqlc.ProcessingCompleteParams{ArtifactID: id, Version: version},
+	)
+	if err != nil {
+		return err
+	}
+
+	if complete {
+		return s.queries.ArtifactProcessed(ctx, id)
+	}
+
 	records, err := s.Records(ctx, id, version)
 	if err != nil {
 		return err
@@ -94,7 +106,63 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		return err
 	}
 
+	changed := false
 	for _, record := range records {
+		previous, knownErr := q.ClaimProcessing(
+			ctx,
+			sqlc.ClaimProcessingParams{ClaimID: record.ClaimID, Ordinal: record.Ordinal},
+		)
+		if knownErr == nil {
+			if err = q.CopyClaimObservation(
+				ctx,
+				sqlc.CopyClaimObservationParams{
+					ArtifactID:       id,
+					Version:          version,
+					Location:         record.Location,
+					PreviousArtifact: previous.ArtifactID,
+					PreviousVersion:  previous.Version,
+					PreviousLocation: previous.Location,
+				},
+			); err != nil {
+				return err
+			}
+
+			if err = q.CopyClaimCorrection(
+				ctx,
+				sqlc.CopyClaimCorrectionParams{
+					ArtifactID:       id,
+					Version:          version,
+					Location:         record.Location,
+					PreviousArtifact: previous.ArtifactID,
+					PreviousVersion:  previous.Version,
+					PreviousLocation: previous.Location,
+				},
+			); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if !errors.Is(knownErr, sql.ErrNoRows) {
+			return knownErr
+		}
+
+		if err = q.PutClaimProcessing(
+			ctx,
+			sqlc.PutClaimProcessingParams{
+				ClaimID:    record.ClaimID,
+				Ordinal:    record.Ordinal,
+				ArtifactID: id,
+				Version:    version,
+				Location:   record.Location,
+			},
+		); err != nil {
+			return err
+		}
+
+		changed = changed || record.Kind != "rejected" && record.Kind != "instrument"
+
 		if record.Kind == "correction" {
 			f := record.Correction.Fields()
 			if account.Connection() == retained.Connection && account.Provider() == retained.Provider &&
@@ -309,7 +377,16 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		}
 	}
 
-	if err = projectAll(ctx, q); err != nil {
+	if changed {
+		if err = projectAll(ctx, q); err != nil {
+			return err
+		}
+	}
+
+	if err = q.SaveProcessingReceipt(
+		ctx,
+		sqlc.SaveProcessingReceiptParams{ArtifactID: id, Version: version},
+	); err != nil {
 		return err
 	}
 

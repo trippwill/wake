@@ -54,6 +54,21 @@ type Account struct {
 	Rule         string
 }
 
+type AcquisitionReceipt struct {
+	Sequence      int64
+	ID            string
+	ArtifactID    string
+	Operation     string
+	Retrieved     string
+	Hash          string
+	Policy        string
+	Digest        string
+	RequestedFrom string
+	RequestedTo   string
+	ReportedFrom  string
+	ReportedTo    string
+}
+
 type ActivityBasis struct {
 	ActivityID   string
 	Data         []byte
@@ -95,6 +110,7 @@ type Attempt struct {
 }
 
 type Candidate struct {
+	ReceiptID  string
 	ArtifactID string
 	Authority  string
 	Kind       string
@@ -102,6 +118,14 @@ type Candidate struct {
 	Value      string
 	Name       string
 	Currency   string
+}
+
+type ClaimProcessing struct {
+	ClaimID    string
+	Ordinal    int64
+	ArtifactID string
+	Version    string
+	Location   string
 }
 
 type Connection struct {
@@ -213,6 +237,11 @@ type Pacing struct {
 	Next     string
 }
 
+type ProcessingReceipt struct {
+	ArtifactID string
+	Version    string
+}
+
 type Profile struct {
 	Singleton        int64
 	AccessID         string
@@ -254,6 +283,16 @@ type Record struct {
 	ArtifactID string
 	Version    string
 	Location   string
+	ClaimID    string
+	Ordinal    int64
+}
+
+type RecordValue struct {
+	ArtifactID string
+	Version    string
+	Location   string
+	ClaimID    string
+	Ordinal    int64
 	Kind       string
 	Data       []byte
 }
@@ -300,11 +339,30 @@ type ReferenceEvidence struct {
 	Headers    []byte
 }
 
+type ReportComparison struct {
+	ConnectionID string
+	Stream       string
+	Format       string
+	MediaType    string
+	Policy       string
+	Digest       string
+	ArtifactID   string
+}
+
 type Scheduled struct {
 	ConnectionID string
 	Stream       string
 	Operation    string
 	Enabled      int64
+}
+
+type SourceClaim struct {
+	ID           string
+	ConnectionID string
+	Stream       string
+	Version      string
+	Kind         string
+	Data         []byte
 }
 
 type SourceCorrection struct {

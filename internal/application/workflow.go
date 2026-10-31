@@ -34,6 +34,7 @@ type (
 	}
 	ProcessingStatus struct {
 		Artifact, Failure                                                         string
+		Receipt, Retrieved, Hash, ComparisonPolicy                                string
 		TradeClaims, LifecycleClaims, ConversionClaims, ExcludedRows, NeedsReview int64
 		Complete                                                                  bool
 		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo                      string
@@ -678,10 +679,16 @@ func (w *Workflow) EvidenceContext(ctx context.Context, id string) (EvidenceCont
 }
 
 type (
+	AcquisitionReceipt struct {
+		ID, Operation, Retrieved, Hash, Policy, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
+		Equivalent                                                                                   bool
+	}
 	EvidenceObservation struct{ ActivityID, Location, Outcome, Rule, Version string }
 	EvidenceContext     struct {
 		ConnectionName, Operation, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
 		Observations                                                                    []EvidenceObservation
+		Receipts                                                                        []AcquisitionReceipt
+		ReceiptCount                                                                    int64
 	}
 )
 

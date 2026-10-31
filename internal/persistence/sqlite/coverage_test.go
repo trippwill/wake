@@ -63,6 +63,8 @@ func coverageReport(t *testing.T, s *Store, id, rows string) {
 		t.Fatal(err)
 	}
 
+	recordTestReceipt(t, s, id)
+
 	if _, err = s.Normalize(ctx, id, ibkrflex.Version, r.Normalizer()); err != nil {
 		t.Fatal(err)
 	}
@@ -486,6 +488,8 @@ func TestSyntheticConfirmationSequenceAcceptsActivityByKind(t *testing.T) {
 		); err != nil {
 			t.Fatal(err)
 		}
+
+		recordTestReceipt(t, s, id)
 
 		r, err := ibkrflex.Registration(ibkrflex.Options{})
 		if err != nil {

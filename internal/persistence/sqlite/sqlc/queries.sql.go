@@ -56,6 +56,46 @@ func (q *Queries) Account(ctx context.Context) (Account, error) {
 	return i, err
 }
 
+const acquisitionReceipts = `-- name: AcquisitionReceipts :many
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
+`
+
+func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
+	rows, err := q.db.QueryContext(ctx, acquisitionReceipts, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AcquisitionReceipt
+	for rows.Next() {
+		var i AcquisitionReceipt
+		if err := rows.Scan(
+			&i.Sequence,
+			&i.ID,
+			&i.ArtifactID,
+			&i.Operation,
+			&i.Retrieved,
+			&i.Hash,
+			&i.Policy,
+			&i.Digest,
+			&i.RequestedFrom,
+			&i.RequestedTo,
+			&i.ReportedFrom,
+			&i.ReportedTo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const activeRecovery = `-- name: ActiveRecovery :one
 SELECT id, status, completed, total, failure, actor, created FROM recovery_jobs WHERE status IN ('queued','running') LIMIT 1
 `
@@ -92,22 +132,24 @@ func (q *Queries) ActivityBase(ctx context.Context, activityID string) (Activity
 }
 
 const activityInputs = `-- name: ActivityInputs :many
-SELECT records.artifact_id, records.version, records.location, records.kind, records.data FROM execution_observations o JOIN records USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid
 `
 
-func (q *Queries) ActivityInputs(ctx context.Context, executionID sql.NullString) ([]Record, error) {
+func (q *Queries) ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
 	rows, err := q.db.QueryContext(ctx, activityInputs, executionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Record
+	var items []RecordValue
 	for rows.Next() {
-		var i Record
+		var i RecordValue
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Version,
 			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
 		); err != nil {
@@ -366,7 +408,7 @@ func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCac
 }
 
 const candidateExists = `-- name: CandidateExists :one
-SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND operation='discover'
+SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover')
 `
 
 type CandidateExistsParams struct {
@@ -393,18 +435,32 @@ func (q *Queries) CandidateExists(ctx context.Context, arg CandidateExistsParams
 }
 
 const candidateProfiles = `-- name: CandidateProfiles :many
-SELECT candidates.artifact_id, candidates.authority, candidates.kind, candidates.scope, candidates.value, candidates.name, candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value
+SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
+ SELECT candidates.receipt_id, candidates.artifact_id, candidates.authority, candidates.kind, candidates.scope, candidates.value, candidates.name, candidates.currency,receipt.sequence AS appearance,row_number() OVER (PARTITION BY candidates.authority,candidates.kind,candidates.scope,candidates.value ORDER BY receipt.sequence DESC) AS ranking
+ FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id JOIN acquisition_receipts receipt ON receipt.id=candidates.receipt_id
+ WHERE artifacts.connection_id=? AND receipt.operation='discover'
+) WHERE ranking=1 ORDER BY appearance DESC,authority,kind,scope,value
 `
 
-func (q *Queries) CandidateProfiles(ctx context.Context, connectionID string) ([]Candidate, error) {
+type CandidateProfilesRow struct {
+	ArtifactID string
+	Authority  string
+	Kind       string
+	Scope      string
+	Value      string
+	Name       string
+	Currency   string
+}
+
+func (q *Queries) CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error) {
 	rows, err := q.db.QueryContext(ctx, candidateProfiles, connectionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Candidate
+	var items []CandidateProfilesRow
 	for rows.Next() {
-		var i Candidate
+		var i CandidateProfilesRow
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Authority,
@@ -428,18 +484,28 @@ func (q *Queries) CandidateProfiles(ctx context.Context, connectionID string) ([
 }
 
 const candidates = `-- name: Candidates :many
-SELECT candidates.artifact_id, candidates.authority, candidates.kind, candidates.scope, candidates.value, candidates.name, candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value
+SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value
 `
 
-func (q *Queries) Candidates(ctx context.Context, connectionID string) ([]Candidate, error) {
+type CandidatesRow struct {
+	ArtifactID string
+	Authority  string
+	Kind       string
+	Scope      string
+	Value      string
+	Name       string
+	Currency   string
+}
+
+func (q *Queries) Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, candidates, connectionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Candidate
+	var items []CandidatesRow
 	for rows.Next() {
-		var i Candidate
+		var i CandidatesRow
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Authority,
@@ -492,6 +558,28 @@ func (q *Queries) Checkpoint(ctx context.Context, arg CheckpointParams) (Work, e
 		&i.Failure,
 		&i.FailureCode,
 	)
+	return i, err
+}
+
+const claimProcessing = `-- name: ClaimProcessing :one
+SELECT artifact_id,version,location FROM claim_processing WHERE claim_id=? AND ordinal=?
+`
+
+type ClaimProcessingParams struct {
+	ClaimID string
+	Ordinal int64
+}
+
+type ClaimProcessingRow struct {
+	ArtifactID string
+	Version    string
+	Location   string
+}
+
+func (q *Queries) ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error) {
+	row := q.db.QueryRowContext(ctx, claimProcessing, arg.ClaimID, arg.Ordinal)
+	var i ClaimProcessingRow
+	err := row.Scan(&i.ArtifactID, &i.Version, &i.Location)
 	return i, err
 }
 
@@ -625,6 +713,56 @@ func (q *Queries) Connections(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const copyClaimCorrection = `-- name: CopyClaimCorrection :exec
+INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement,status) SELECT ?1,?2,?3,account_id,kind,target,replacement,status FROM source_corrections prior WHERE prior.artifact_id=?4 AND prior.version=?5 AND prior.location=?6 ON CONFLICT DO NOTHING
+`
+
+type CopyClaimCorrectionParams struct {
+	ArtifactID       string
+	Version          string
+	Location         string
+	PreviousArtifact string
+	PreviousVersion  string
+	PreviousLocation string
+}
+
+func (q *Queries) CopyClaimCorrection(ctx context.Context, arg CopyClaimCorrectionParams) error {
+	_, err := q.db.ExecContext(ctx, copyClaimCorrection,
+		arg.ArtifactID,
+		arg.Version,
+		arg.Location,
+		arg.PreviousArtifact,
+		arg.PreviousVersion,
+		arg.PreviousLocation,
+	)
+	return err
+}
+
+const copyClaimObservation = `-- name: CopyClaimObservation :exec
+INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) SELECT ?1,?2,?3,execution_id,outcome,rule FROM execution_observations prior WHERE prior.artifact_id=?4 AND prior.version=?5 AND prior.location=?6 ON CONFLICT DO NOTHING
+`
+
+type CopyClaimObservationParams struct {
+	ArtifactID       string
+	Version          string
+	Location         string
+	PreviousArtifact string
+	PreviousVersion  string
+	PreviousLocation string
+}
+
+func (q *Queries) CopyClaimObservation(ctx context.Context, arg CopyClaimObservationParams) error {
+	_, err := q.db.ExecContext(ctx, copyClaimObservation,
+		arg.ArtifactID,
+		arg.Version,
+		arg.Location,
+		arg.PreviousArtifact,
+		arg.PreviousVersion,
+		arg.PreviousLocation,
+	)
+	return err
+}
+
 const correctionStatus = `-- name: CorrectionStatus :exec
 UPDATE source_corrections SET status=? WHERE artifact_id=? AND version=? AND location=?
 `
@@ -644,6 +782,17 @@ func (q *Queries) CorrectionStatus(ctx context.Context, arg CorrectionStatusPara
 		arg.Location,
 	)
 	return err
+}
+
+const countAcquisitionReceipts = `-- name: CountAcquisitionReceipts :one
+SELECT count(*) FROM acquisition_receipts WHERE artifact_id=?
+`
+
+func (q *Queries) CountAcquisitionReceipts(ctx context.Context, artifactID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAcquisitionReceipts, artifactID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countTables = `-- name: CountTables :one
@@ -1428,7 +1577,7 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 }
 
 const pendingArtifacts = `-- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
 `
 
 type PendingArtifactsParams struct {
@@ -1550,12 +1699,38 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 	return items, nil
 }
 
+const processingComplete = `-- name: ProcessingComplete :one
+SELECT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=?1) AS complete FROM artifacts WHERE artifacts.id=?2
+`
+
+type ProcessingCompleteParams struct {
+	Version    string
+	ArtifactID string
+}
+
+func (q *Queries) ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, processingComplete, arg.Version, arg.ArtifactID)
+	var complete bool
+	err := row.Scan(&complete)
+	return complete, err
+}
+
 const processingStatuses = `-- name: ProcessingStatuses :many
-SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10
+SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='trade') AS trade_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims,
+ (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows,
+ (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
+FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
 `
 
 type ProcessingStatusesRow struct {
 	ID                string
+	ReceiptID         string
+	Retrieved         string
+	Hash              string
+	Policy            string
 	Processed         int64
 	ProcessingFailure string
 	RequestedFrom     string
@@ -1580,6 +1755,10 @@ func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) (
 		var i ProcessingStatusesRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.ReceiptID,
+			&i.Retrieved,
+			&i.Hash,
+			&i.Policy,
 			&i.Processed,
 			&i.ProcessingFailure,
 			&i.RequestedFrom,
@@ -1718,6 +1897,41 @@ func (q *Queries) PutAccount(ctx context.Context, arg PutAccountParams) error {
 	return err
 }
 
+const putAcquisitionReceipt = `-- name: PutAcquisitionReceipt :exec
+INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+`
+
+type PutAcquisitionReceiptParams struct {
+	ID            string
+	ArtifactID    string
+	Operation     string
+	Retrieved     string
+	Hash          string
+	Policy        string
+	Digest        string
+	RequestedFrom string
+	RequestedTo   string
+	ReportedFrom  string
+	ReportedTo    string
+}
+
+func (q *Queries) PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionReceiptParams) error {
+	_, err := q.db.ExecContext(ctx, putAcquisitionReceipt,
+		arg.ID,
+		arg.ArtifactID,
+		arg.Operation,
+		arg.Retrieved,
+		arg.Hash,
+		arg.Policy,
+		arg.Digest,
+		arg.RequestedFrom,
+		arg.RequestedTo,
+		arg.ReportedFrom,
+		arg.ReportedTo,
+	)
+	return err
+}
+
 const putArtifact = `-- name: PutArtifact :exec
 INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
@@ -1758,10 +1972,11 @@ func (q *Queries) PutArtifact(ctx context.Context, arg PutArtifactParams) error 
 }
 
 const putCandidate = `-- name: PutCandidate :exec
-INSERT INTO candidates(artifact_id,authority,kind,scope,value,name,currency) VALUES(?,?,?,?,?,?,?)
+INSERT INTO candidates(receipt_id,artifact_id,authority,kind,scope,value,name,currency) VALUES(?,?,?,?,?,?,?,?)
 `
 
 type PutCandidateParams struct {
+	ReceiptID  string
 	ArtifactID string
 	Authority  string
 	Kind       string
@@ -1773,6 +1988,7 @@ type PutCandidateParams struct {
 
 func (q *Queries) PutCandidate(ctx context.Context, arg PutCandidateParams) error {
 	_, err := q.db.ExecContext(ctx, putCandidate,
+		arg.ReceiptID,
 		arg.ArtifactID,
 		arg.Authority,
 		arg.Kind,
@@ -1780,6 +1996,29 @@ func (q *Queries) PutCandidate(ctx context.Context, arg PutCandidateParams) erro
 		arg.Value,
 		arg.Name,
 		arg.Currency,
+	)
+	return err
+}
+
+const putClaimProcessing = `-- name: PutClaimProcessing :exec
+INSERT INTO claim_processing(claim_id,ordinal,artifact_id,version,location) VALUES(?,?,?,?,?)
+`
+
+type PutClaimProcessingParams struct {
+	ClaimID    string
+	Ordinal    int64
+	ArtifactID string
+	Version    string
+	Location   string
+}
+
+func (q *Queries) PutClaimProcessing(ctx context.Context, arg PutClaimProcessingParams) error {
+	_, err := q.db.ExecContext(ctx, putClaimProcessing,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.ArtifactID,
+		arg.Version,
+		arg.Location,
 	)
 	return err
 }
@@ -2046,15 +2285,15 @@ func (q *Queries) PutObservation(ctx context.Context, arg PutObservationParams) 
 }
 
 const putRecord = `-- name: PutRecord :exec
-INSERT INTO records(artifact_id,version,location,kind,data) VALUES(?,?,?,?,?)
+INSERT INTO records(artifact_id,version,location,claim_id,ordinal) VALUES(?,?,?,?,?)
 `
 
 type PutRecordParams struct {
 	ArtifactID string
 	Version    string
 	Location   string
-	Kind       string
-	Data       []byte
+	ClaimID    string
+	Ordinal    int64
 }
 
 func (q *Queries) PutRecord(ctx context.Context, arg PutRecordParams) error {
@@ -2062,8 +2301,8 @@ func (q *Queries) PutRecord(ctx context.Context, arg PutRecordParams) error {
 		arg.ArtifactID,
 		arg.Version,
 		arg.Location,
-		arg.Kind,
-		arg.Data,
+		arg.ClaimID,
+		arg.Ordinal,
 	)
 	return err
 }
@@ -2150,6 +2389,33 @@ func (q *Queries) PutRelationship(ctx context.Context, arg PutRelationshipParams
 	return err
 }
 
+const putReportComparison = `-- name: PutReportComparison :exec
+INSERT INTO report_comparisons(connection_id,stream,format,media_type,policy,digest,artifact_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutReportComparisonParams struct {
+	ConnectionID string
+	Stream       string
+	Format       string
+	MediaType    string
+	Policy       string
+	Digest       string
+	ArtifactID   string
+}
+
+func (q *Queries) PutReportComparison(ctx context.Context, arg PutReportComparisonParams) error {
+	_, err := q.db.ExecContext(ctx, putReportComparison,
+		arg.ConnectionID,
+		arg.Stream,
+		arg.Format,
+		arg.MediaType,
+		arg.Policy,
+		arg.Digest,
+		arg.ArtifactID,
+	)
+	return err
+}
+
 const putSecret = `-- name: PutSecret :exec
 INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?)
 `
@@ -2162,6 +2428,31 @@ type PutSecretParams struct {
 
 func (q *Queries) PutSecret(ctx context.Context, arg PutSecretParams) error {
 	_, err := q.db.ExecContext(ctx, putSecret, arg.ConnectionID, arg.Key, arg.Encrypted)
+	return err
+}
+
+const putSourceClaim = `-- name: PutSourceClaim :exec
+INSERT INTO source_claims(id,connection_id,stream,version,kind,data) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutSourceClaimParams struct {
+	ID           string
+	ConnectionID string
+	Stream       string
+	Version      string
+	Kind         string
+	Data         []byte
+}
+
+func (q *Queries) PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error {
+	_, err := q.db.ExecContext(ctx, putSourceClaim,
+		arg.ID,
+		arg.ConnectionID,
+		arg.Stream,
+		arg.Version,
+		arg.Kind,
+		arg.Data,
+	)
 	return err
 }
 
@@ -2192,8 +2483,48 @@ func (q *Queries) PutSourceCorrection(ctx context.Context, arg PutSourceCorrecti
 	return err
 }
 
+const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
+`
+
+func (q *Queries) RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
+	rows, err := q.db.QueryContext(ctx, recentAcquisitionReceipts, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AcquisitionReceipt
+	for rows.Next() {
+		var i AcquisitionReceipt
+		if err := rows.Scan(
+			&i.Sequence,
+			&i.ID,
+			&i.ArtifactID,
+			&i.Operation,
+			&i.Retrieved,
+			&i.Hash,
+			&i.Policy,
+			&i.Digest,
+			&i.RequestedFrom,
+			&i.RequestedTo,
+			&i.ReportedFrom,
+			&i.ReportedTo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const records = `-- name: Records :many
-SELECT artifact_id, version, location, kind, data FROM records WHERE artifact_id=? AND version=? ORDER BY location
+SELECT artifact_id, version, location, claim_id, ordinal, kind, data FROM record_values WHERE artifact_id=? AND version=? ORDER BY location
 `
 
 type RecordsParams struct {
@@ -2201,19 +2532,21 @@ type RecordsParams struct {
 	Version    string
 }
 
-func (q *Queries) Records(ctx context.Context, arg RecordsParams) ([]Record, error) {
+func (q *Queries) Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error) {
 	rows, err := q.db.QueryContext(ctx, records, arg.ArtifactID, arg.Version)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Record
+	var items []RecordValue
 	for rows.Next() {
-		var i Record
+		var i RecordValue
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Version,
 			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
 		); err != nil {
@@ -2477,6 +2810,33 @@ func (q *Queries) ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) er
 	return err
 }
 
+const reportComparison = `-- name: ReportComparison :one
+SELECT artifact_id FROM report_comparisons WHERE connection_id=? AND stream=? AND format=? AND media_type=? AND policy=? AND digest=?
+`
+
+type ReportComparisonParams struct {
+	ConnectionID string
+	Stream       string
+	Format       string
+	MediaType    string
+	Policy       string
+	Digest       string
+}
+
+func (q *Queries) ReportComparison(ctx context.Context, arg ReportComparisonParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, reportComparison,
+		arg.ConnectionID,
+		arg.Stream,
+		arg.Format,
+		arg.MediaType,
+		arg.Policy,
+		arg.Digest,
+	)
+	var artifact_id string
+	err := row.Scan(&artifact_id)
+	return artifact_id, err
+}
+
 const resetConnectionWork = `-- name: ResetConnectionWork :exec
 UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?
 `
@@ -2628,7 +2988,7 @@ func (q *Queries) RetainedReferenceCandidates(ctx context.Context, instrumentID 
 }
 
 const retryProcessing = `-- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND operation='acquire' AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream)
+UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream)
 `
 
 func (q *Queries) RetryProcessing(ctx context.Context, id string) (int64, error) {
@@ -2714,6 +3074,20 @@ type SaveNormalizationReceiptParams struct {
 
 func (q *Queries) SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error {
 	_, err := q.db.ExecContext(ctx, saveNormalizationReceipt, arg.ArtifactID, arg.Version, arg.Counts)
+	return err
+}
+
+const saveProcessingReceipt = `-- name: SaveProcessingReceipt :exec
+INSERT INTO processing_receipts(artifact_id,version) VALUES(?,?) ON CONFLICT DO NOTHING
+`
+
+type SaveProcessingReceiptParams struct {
+	ArtifactID string
+	Version    string
+}
+
+func (q *Queries) SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error {
+	_, err := q.db.ExecContext(ctx, saveProcessingReceipt, arg.ArtifactID, arg.Version)
 	return err
 }
 

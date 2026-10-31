@@ -76,6 +76,19 @@ its context. A source record locates reported content within that artifact.
 Normalization expresses its financial meaning as a source claim; it does not
 make that claim an accepted Wake conclusion.
 
+Each successful acquisition records a receipt with its retrieval time, requested
+and returned coverage, and actual byte digest. Receipts can reference the same
+retained report body. Exact duplicates reuse bytes; a provider may explicitly
+version a comparison policy that ignores only report-window fields. Other byte
+changes retain a new body even when their financial claims are already known.
+
+A standardized source claim is independent of its structural report location and
+of later corrections or reference enrichment. Preserve each appearance and duplicate
+row multiplicity. Known claims add provenance without recalculating accepted state;
+an operator's corrected value is never the baseline for recognizing a repeated
+source claim. Exact values, time precision, qualified identity and unknowns remain
+part of that source comparison.
+
 Linking establishes identity and relationships. Reconciliation selects an accepted
 view while preserving dissent. An operator decision records who chose what, why
 when supplied, and the decision's scope. Corrections add information rather than

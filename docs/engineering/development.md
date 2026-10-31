@@ -243,6 +243,15 @@ fractional scale. They do not guess grouping, locale, missing values or financia
 roles. A provider must explicitly interpret its own source syntax before calling
 them; keep unknown amounts unknown and preserve original bytes and source locations.
 
+Artifacts compare exact bytes by default. A provider can attach an optional
+versioned equivalence fingerprint to exclude explicitly identified report-window
+fields. Preserve every other byte in that policy and prove it with mutation tests;
+never use accepted or corrected values to recognize source claims. Acquisition
+receipts preserve actual byte digests and requested/returned bounds even when a
+body is reused. Standardized claim identity excludes structural location while
+retaining exact values, qualified references, time precision, unknowns and duplicate
+multiplicity. Keep source claim comparison before corrections and enrichment.
+
 Translate source protocol statuses to public progress phases and retry reasons.
 Native diagnostic codes remain provider-owned identifiers; shared scheduling and
 presentation do not interpret them. Qualify a reported event as distinct only when
