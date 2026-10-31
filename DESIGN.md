@@ -253,8 +253,9 @@ changes; keep unchanged and waiting/blocked states steady.
 
 Preserve drafts, focus/caret, selections, disclosures and table position through
 live updates. Native submissions give pending feedback and prevent accidental
-duplicates. GET-based search and filters select the displayed records; enhanced
-sorting and pagination operate on that matching set and clearly state their scope.
+duplicates. Financial history search, filtering, sorting and pagination operate on the complete
+matching warehouse set, with 50 rows per page by default. Bound other evidence
+views explicitly and clearly label any local interaction scope.
 Use embedded htmx, its SSE extension and idiomorph for authenticated read-only
 fragment updates. Keep commands ordinary HTTP submissions. Stateful grids reconcile
 incoming rows through their adapter; active/dirty forms and selections are protected.

@@ -35,8 +35,8 @@ func (*proxySessionStore) Retained(context.Context, string) (host.Retained, erro
 	return host.Retained{Connection: "synthetic"}, nil
 }
 
-func (*proxySessionStore) Dashboard(context.Context) (application.Dashboard, error) {
-	return application.Dashboard{}, nil
+func (*proxySessionStore) Overview(context.Context) (application.OverviewView, error) {
+	return application.OverviewView{}, nil
 }
 
 func newProxySessionServer(t *testing.T) (*httptest.Server, *authenticator, *proxySessionStore) {
@@ -319,4 +319,8 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 	if w.Code != http.StatusBadRequest || len(w.Result().Cookies()) != 0 {
 		t.Fatal("wrong host established session", w.Code)
 	}
+}
+
+func (*proxySessionStore) SystemStatus(context.Context) (application.SystemStatus, error) {
+	return application.SystemStatus{}, nil
 }

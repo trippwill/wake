@@ -16,10 +16,10 @@ func TestMaintenanceRetryOnlyLatestRebuild(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			var output bytes.Buffer
 
-			view := application.Dashboard{
+			view := fixtureView{
 				Recovery: []application.RecoveryJob{{ID: "latest", Status: status}, {ID: "older", Status: "failed"}},
 			}
-			if err := MaintenancePage("csrf", view).Render(t.Context(), &output); err != nil {
+			if err := MaintenancePage("csrf", fixtureSource(view)).Render(t.Context(), &output); err != nil {
 				t.Fatal(err)
 			}
 

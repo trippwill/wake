@@ -347,7 +347,9 @@
     const value = {
       layout: table.getColumnLayout(),
       sort,
-      page: table.getPage(),
+      page: region.hasAttribute("data-server-list")
+        ? Number(new URL(location.href).searchParams.get("page") || 1)
+        : table.getPage(),
       x: holder?.scrollLeft || 0,
       y: holder?.scrollTop || 0,
     };
@@ -356,7 +358,10 @@
     } catch {
       /* Per-tab storage is optional. */
     }
-    if (location.pathname === "/activity") {
+    if (
+      location.pathname === "/activity" &&
+      !region.hasAttribute("data-server-list")
+    ) {
       const url = new URL(location.href);
       url.searchParams.set("page", String(value.page || 1));
       if (sort.length) {
@@ -397,6 +402,33 @@
         !region.getClientRects().length
       )
         continue;
+      const serverList = region.hasAttribute("data-server-list");
+      const serverOrder = (params) => ({
+        field:
+          params.get("sort") ||
+          (region.dataset.grid === "activity" ? "date" : "name"),
+        direction:
+          params.get("dir") ||
+          (region.dataset.grid === "activity" ? "desc" : "asc"),
+      });
+      const serverSort = (field) => {
+        const url = new URL(location.href);
+        const current = serverOrder(url.searchParams);
+        const direction =
+          current.field === field && current.direction === "asc"
+            ? "desc"
+            : "asc";
+        url.searchParams.set("sort", field);
+        url.searchParams.set("dir", direction);
+        url.searchParams.set("page", "1");
+        try {
+          sessionStorage.setItem(
+            "wake.grid.heading",
+            `${region.dataset.grid}|${field}`,
+          );
+        } catch {}
+        location.assign(url);
+      };
       const source = region.querySelector("table");
       if (!source?.tBodies[0]?.rows.length) continue;
       const controls = document.createElement("div");
@@ -421,8 +453,9 @@
       const helpTitle = document.createElement("summary");
       helpTitle.textContent = "Table controls";
       help.className = "wake-help";
-      help.textContent =
-        "Sorting and filtering apply to loaded rows. Enter sorts a focused heading; Alt + arrow keys resize it. 50 rows per page.";
+      help.textContent = serverList
+        ? "Sorting, filtering and paging apply to the whole warehouse. Enter sorts a focused heading; Alt + arrow keys resize it. 50 rows per page."
+        : "Sorting and filtering apply to loaded rows. Enter sorts a focused heading; Alt + arrow keys resize it. 50 rows per page.";
       help.prepend(helpTitle);
       const element = document.createElement("div");
       element.setAttribute("aria-label", region.getAttribute("aria-label"));
@@ -447,6 +480,10 @@
           (header, index) => ({
             title: header.textContent,
             field: `c${index}`,
+            headerSort: !serverList,
+            headerClick: serverList
+              ? () => serverSort(header.dataset.field)
+              : undefined,
             minWidth: 130,
             headerWordWrap: true,
             variableHeight: true,
@@ -475,7 +512,7 @@
           index: "id",
           layout: "fitColumns",
           maxHeight: "32rem",
-          pagination: true,
+          pagination: !serverList,
           paginationMode: "local",
           paginationSize: 50,
           renderVertical: "basic",
@@ -504,9 +541,12 @@
           if (stored) {
             if (Array.isArray(stored.layout))
               table.setColumnLayout(stored.layout);
-            if (requestedIndex < 0 && Array.isArray(stored.sort))
+            if (!serverList && requestedIndex < 0 && Array.isArray(stored.sort))
               table.setSort(stored.sort);
-            table.setPage(Math.min(stored.page || 1, table.getPageMax()) || 1);
+            if (!serverList)
+              table.setPage(
+                Math.min(stored.page || 1, table.getPageMax()) || 1,
+              );
             requestAnimationFrame(() => {
               const holder = element.querySelector(".tabulator-tableholder");
               if (holder) {
@@ -515,15 +555,45 @@
               }
             });
           }
-          if (requestedIndex >= 0)
+          if (!serverList && requestedIndex >= 0)
             table.setSort(
               `c${requestedIndex}`,
               query.get("dir") === "asc" ? "asc" : "desc",
             );
           const requestedPage = Number(query.get("page"));
-          if (requestedPage > 0)
+          if (!serverList && requestedPage > 0)
             table.setPage(Math.min(requestedPage, table.getPageMax()) || 1);
           update();
+          if (serverList) {
+            for (const heading of element.querySelectorAll(".tabulator-col")) {
+              const index = Number(
+                heading.getAttribute("tabulator-field")?.slice(1),
+              );
+              const field =
+                source.querySelectorAll("thead th")[index]?.dataset.field;
+              heading.setAttribute(
+                "aria-sort",
+                (query.get("sort") ||
+                  (region.dataset.grid === "activity" ? "date" : "name")) ===
+                  field
+                  ? (query.get("dir") ||
+                      (region.dataset.grid === "activity" ? "desc" : "asc")) ===
+                    "asc"
+                    ? "ascending"
+                    : "descending"
+                  : "none",
+              );
+              try {
+                if (
+                  sessionStorage.getItem("wake.grid.heading") ===
+                  `${region.dataset.grid}|${field}`
+                ) {
+                  heading.focus({ preventScroll: true });
+                  sessionStorage.removeItem("wake.grid.heading");
+                }
+              } catch {}
+            }
+          }
           requestAnimationFrame(() => {
             const selected = new URL(location.href).searchParams.get(
               "selected",
@@ -554,8 +624,14 @@
         reset.addEventListener("click", () => {
           input.value = "";
           table.clearFilter();
-          table.clearSort();
+          if (!serverList) table.clearSort();
           if (originalLayout) table.setColumnLayout(originalLayout);
+          if (serverList) {
+            const url = new URL(location.href);
+            for (const key of ["sort", "dir", "page"])
+              url.searchParams.delete(key);
+            location.assign(url);
+          }
         });
         element.addEventListener("keydown", (event) => {
           const header = event.target.closest(".tabulator-col");
@@ -587,7 +663,7 @@
           const holder = element.querySelector(".tabulator-tableholder");
           const x = holder?.scrollLeft || 0,
             y = holder?.scrollTop || 0,
-            page = table.getPage();
+            page = serverList ? 1 : table.getPage();
           state.data = rows(incoming);
           state.html = incoming.outerHTML;
           source.replaceChildren(
@@ -595,7 +671,8 @@
           );
           try {
             await table.replaceData(state.data);
-            await table.setPage(Math.min(page, table.getPageMax()) || 1);
+            if (!serverList)
+              await table.setPage(Math.min(page, table.getPageMax()) || 1);
             if (holder) {
               holder.scrollLeft = x;
               holder.scrollTop = y;

@@ -115,7 +115,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			}
 
 			if r.URL.Path == "/" && deps.Workflow != nil {
-				view, err := deps.Workflow.Dashboard(r.Context())
+				view, err := deps.Workflow.Overview(r.Context())
 				if err != nil {
 					servePageError(
 						w,
@@ -129,7 +129,8 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 					return
 				}
 
-				templ.Handler(SectionShell("Overview", csrf, "Overview", DashboardOverview(view))).ServeHTTP(w, r)
+				templ.Handler(SectionShell("Overview", csrf, "Overview", DashboardOverview(overview(view)))).
+					ServeHTTP(w, r)
 
 				return
 			}

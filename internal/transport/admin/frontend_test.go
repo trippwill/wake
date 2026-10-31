@@ -55,17 +55,17 @@ func TestRenderFrontend(t *testing.T) {
 		SettingsStored:   true,
 		CredentialStored: true,
 	}
-	view := application.Dashboard{Connections: []application.ConnectionView{source}}
+	view := fixtureView{Connections: []application.ConnectionView{source}}
 	for name, component := range map[string]templ.Component{
-		"connections":    ConnectionsPage("synthetic-csrf", application.Dashboard{}),
-		"activity":       ActivityPage(application.Dashboard{}),
-		"source":         ConnectionPage("synthetic-csrf", view, source),
+		"connections":    ConnectionsPage("synthetic-csrf", sourceView{}),
+		"activity":       ActivityPage(activityView{}),
+		"source":         ConnectionPage("synthetic-csrf", fixtureSource(view), source),
 		"source-access":  ConnectionAccess("synthetic-csrf", source),
 		"source-reports": ConnectionReports("synthetic-csrf", source),
 		"source-new":     ConnectionSetup("synthetic-csrf", []provider.Registration{registration}),
-		"reference":      ReferencePage("synthetic-csrf", view),
-		"recovery":       RecoveryPage("synthetic-csrf", view),
-		"maintenance":    MaintenancePage("synthetic-csrf", view),
+		"reference":      ReferencePage("synthetic-csrf", fixtureSource(view)),
+		"recovery":       RecoveryPage("synthetic-csrf", fixtureSource(view)),
+		"maintenance":    MaintenancePage("synthetic-csrf", fixtureSource(view)),
 		"error":          ErrorPage("Temporarily unavailable", "Retry the current operation."),
 		"correction":     CorrectionPage("synthetic-csrf", application.CorrectionForm{Kind: "activity", ID: "synthetic", Label: "Synthetic activity", Revision: 1, Fields: []string{"price", "quantity"}, Candidates: []application.CorrectionCandidate{{Value: "synthetic-candidate", Label: "Synthetic retained observation"}}, Decisions: []application.DecisionRecord{{Scope: "price", Text: "1.25", Currency: "USD", Active: true}}}),
 	} {
