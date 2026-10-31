@@ -87,7 +87,7 @@ var correctionPolicies = []FieldPolicy{
 	{
 		"option.strike",
 		MoneyCorrection,
-		true,
+		false,
 		NonnegativeDecimal,
 		256,
 		tradeFields | lifecycleFields,
