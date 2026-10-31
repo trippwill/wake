@@ -165,7 +165,11 @@ conflicting content for a retained resource revision. Exact decimals remain text
 
 The consumer commits its complete mirror and opaque version together in its own
 private SQLite database. A failed download, validation or transaction preserves
-the previous mirror and version. An unchanged ETag avoids download and persistence.
+the previous mirror and version. An unchanged ETag avoids download and persistence. Its private mirror
+has an explicit application identity and format. Existing files are admitted through
+an immutable read-only check before any write or journal setup. Unrecognized files
+fail closed with instructions to preserve them and choose a new state path; the
+example never initializes an unrelated existing database as its mirror.
 Invalid saved state fails closed and remains available for inspection. Structured
 results go to stdout; immediate/periodic progress and failures go to stderr. A
 warehouse change is explicitly reported after a validated new baseline commits.

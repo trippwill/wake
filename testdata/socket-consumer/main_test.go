@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -225,5 +226,92 @@ func TestFollowInterruptDuringRequestExitsSuccessfully(t *testing.T) {
 	}
 	if err = command.Wait(); err != nil || strings.Contains(output.String(), `"failed"`) {
 		t.Fatal("interrupt reported protocol failure", err, output.String())
+	}
+}
+
+func TestOpenMirrorPreservesUnrelatedDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unrelated.db")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = foreign.Exec(`CREATE TABLE sentinel(value TEXT NOT NULL);INSERT INTO sentinel VALUES('unrelated retained data');`); err != nil {
+		t.Fatal(err)
+	}
+	if err = foreign.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := openMirror(path)
+	if db != nil {
+		_ = db.Close()
+	}
+	if err == nil {
+		t.Error("accepted an unrelated database as a mirror")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("mirror admission modified an unrelated existing database")
+	}
+}
+
+func TestOpenMirrorRejectsUnknownFilesWithoutWrites(t *testing.T) {
+	for _, kind := range []string{"empty", "text", "other-identity", "other-version"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.db")
+			if kind == "empty" || kind == "text" {
+				data := []byte{}
+				if kind == "text" {
+					data = []byte("unrelated retained text")
+				}
+				if err := os.WriteFile(path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				db, err := openMirror(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				sql := `PRAGMA application_id=1;`
+				if kind == "other-version" {
+					sql = `PRAGMA user_version=2;`
+				}
+				if _, err = db.Exec(sql); err != nil {
+					t.Fatal(err)
+				}
+				if err = db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := openMirror(path)
+			if db != nil {
+				_ = db.Close()
+			}
+			if err == nil {
+				t.Fatal("unrecognized file was admitted")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("rejected file changed", err)
+			}
+			for _, suffix := range []string{"-journal", "-wal", "-shm"} {
+				if _, err := os.Stat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("read-only admission created a sidecar", suffix, err)
+				}
+			}
+		})
 	}
 }

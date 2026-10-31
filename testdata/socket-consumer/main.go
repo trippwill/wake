@@ -13,7 +13,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/getkin/kin-openapi/openapi3"
 	"io"
 	"net"
 	"net/http"
@@ -27,7 +26,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	_ "modernc.org/sqlite"
+)
+
+const (
+	mirrorApplicationID = 0x57414b43 // WAKC: this consumer
+	mirrorFormatVersion = 1
 )
 
 type resource struct {
@@ -305,6 +310,7 @@ func statement(name string) string {
 }
 func openMirror(path string) (*sql.DB, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	created := err == nil
 	if err == nil {
 		err = file.Close()
 	} else if errors.Is(err, os.ErrExist) {
@@ -321,12 +327,28 @@ func openMirror(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	uri := (&url.URL{Scheme: "file", Path: path}).String()
+	if !created {
+		// Immutable read-only admission cannot create journals or alter an unrelated DB.
+		probe, err := sql.Open("sqlite", uri+"?mode=ro&immutable=1")
+		if err != nil {
+			return nil, err
+		}
+		var applicationID, version int
+		err = probe.QueryRow(statement("Identity")).Scan(&applicationID, &version)
+		closeErr := probe.Close()
+		if err != nil || closeErr != nil || applicationID != mirrorApplicationID || version != mirrorFormatVersion {
+			return nil, errors.New("state file is not a supported consumer mirror; preserve it and choose a new state path")
+		}
+	}
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(statement("Initialize")); err != nil {
+	if _, err = db.Exec(statement("Settings")); err == nil && created {
+		_, err = db.Exec(statement("Initialize"))
+	}
+	if err != nil {
 		_ = db.Close()
 		return nil, err
 	}
