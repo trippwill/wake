@@ -30,13 +30,13 @@ INSERT INTO candidates(artifact_id,authority,kind,scope,value,name,currency) VAL
 -- name: Candidates :many
 SELECT candidates.* FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value;
 -- name: StartAttempt :exec
-INSERT INTO operational.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'');
+INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'');
 -- name: FinishAttempt :exec
-INSERT INTO operational.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM operational.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts;
+INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM main.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts;
 -- name: Succeeded :one
 SELECT counts FROM normalization_receipts WHERE artifact_id=? AND version=?;
 -- name: Attempts :many
-SELECT * FROM operational.attempts WHERE artifact_id=? ORDER BY rowid;
+SELECT * FROM main.attempts WHERE artifact_id=? ORDER BY rowid;
 -- name: PutRecord :exec
 INSERT INTO records(artifact_id,version,location,kind,data) VALUES(?,?,?,?,?);
 -- name: Records :many
@@ -57,7 +57,7 @@ UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (S
 -- name: RestartDiscovery :exec
 UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
 -- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
+SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
 SELECT * FROM work WHERE connection_id=? ORDER BY operation;
 -- name: DisableDiscovery :exec
@@ -133,9 +133,9 @@ INSERT INTO reference_evidence(id,retrieved,request,response,http_status,headers
 -- name: ReferenceEvidence :one
 SELECT * FROM reference_evidence WHERE id=?;
 -- name: CachedReference :one
-SELECT * FROM operational.reference_cache WHERE key=?;
+SELECT * FROM main.reference_cache WHERE key=?;
 -- name: CacheReference :exec
-INSERT INTO operational.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
+INSERT INTO main.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
 -- name: PendingReference :many
 SELECT * FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100;
 -- name: ResolveInstrument :exec
@@ -255,10 +255,6 @@ SELECT r.activity_id,coalesce(e.execution_id,'') AS target_id FROM activity_rela
 INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec
 INSERT INTO normalization_receipts(artifact_id,version,counts) VALUES(?,?,?) ON CONFLICT DO NOTHING;
--- name: RefreshExecution :exec
-INSERT INTO operational.execution(connection_id,stream,operation) SELECT connection_id,stream,operation FROM scheduled WHERE enabled=1 ON CONFLICT DO NOTHING;
--- name: DeleteExecution :exec
-DELETE FROM operational.execution WHERE NOT EXISTS(SELECT 1 FROM scheduled s WHERE s.connection_id=execution.connection_id AND s.stream=execution.stream AND s.operation=execution.operation AND s.enabled=1);
 -- name: Profile :one
 SELECT * FROM profile WHERE singleton=1;
 -- name: MissingAccess :many

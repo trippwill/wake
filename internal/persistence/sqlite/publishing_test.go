@@ -270,7 +270,7 @@ func TestPublishingCheckpointPaginationHighWaterAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, path := range []string{profile.ConnectionsPath, profile.OperationalPath} {
+	for _, path := range []string{profile.ConnectionsPath} {
 		if err = os.Remove(path); err != nil {
 			t.Fatal(err)
 		}

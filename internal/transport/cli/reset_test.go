@@ -24,15 +24,13 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 	cfg, path, _ := setupDaemonFixture(t)
 	cfg.Storage.WarehousePath = filepath.Join(filepath.Dir(cfg.Storage.WarehousePath), "history.sqlite")
 	cfg.Storage.ConnectionsPath = filepath.Join(filepath.Dir(cfg.Storage.ConnectionsPath), "credentials.sqlite")
-	cfg.Storage.OperationalPath = filepath.Join(filepath.Dir(cfg.Storage.OperationalPath), "execution.sqlite")
 	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "external-invalid.key")
 
 	original := fmt.Appendf(
 		nil,
-		"[storage]\nwarehouse_path=%q\nconnections_path=%q\noperational_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nmaster_key_path=%q\n",
+		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nmaster_key_path=%q\n",
 		cfg.Storage.WarehousePath,
 		cfg.Storage.ConnectionsPath,
-		cfg.Storage.OperationalPath,
 		cfg.Paths.RuntimeDir,
 		cfg.Credentials.MasterKeyPath,
 	)
@@ -48,7 +46,7 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 		files[filepath.Join(cfg.Paths.ConfigDir, name)] = []byte("keep " + name)
 	}
 
-	for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath} {
+	for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
 		for _, suffix := range resetSuffixes {
 			files[db+suffix] = []byte("invalid SQLite content: " + filepath.Base(db) + suffix)
 		}
@@ -107,9 +105,6 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 				}
 
 				count := 5
-				if target == "warehouse" {
-					count = 10
-				}
 
 				if !result.DryRun || string(result.Target) != target || len(result.Files) != count ||
 					len(result.Removed) != 0 {
@@ -140,7 +135,7 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 			}
 
 			removed := map[string]bool{}
-			for _, db := range []struct{ name, path string }{{"warehouse", cfg.Storage.WarehousePath}, {"credentials", cfg.Storage.ConnectionsPath}, {"operational", cfg.Storage.OperationalPath}} {
+			for _, db := range []struct{ name, path string }{{"warehouse", cfg.Storage.WarehousePath}, {"credentials", cfg.Storage.ConnectionsPath}} {
 				if (target == "credentials" && db.name != "credentials") ||
 					(target == "warehouse" && db.name == "credentials") {
 					continue
@@ -169,10 +164,10 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 }
 
 func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
-	for _, locked := range []string{"warehouse", "connections", "operational"} {
+	for _, locked := range []string{"warehouse", "connections"} {
 		t.Run(locked, func(t *testing.T) {
 			cfg, path, files := resetFixture(t)
-			database := map[string]string{"warehouse": cfg.Storage.WarehousePath, "connections": cfg.Storage.ConnectionsPath, "operational": cfg.Storage.OperationalPath}[locked]
+			database := map[string]string{"warehouse": cfg.Storage.WarehousePath, "connections": cfg.Storage.ConnectionsPath}[locked]
 			//nolint:gosec // Synthetic database selected from the fixture above.
 			owner, err := os.OpenFile(database, os.O_RDWR, 0)
 			if err != nil {
@@ -224,22 +219,22 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 			case "symlink", "hardlink":
 				alias := filepath.Join(cfg.Paths.ConfigDir, "alias")
 				if kind == "hardlink" {
-					if err := os.Link(cfg.Storage.OperationalPath, alias); err != nil {
+					if err := os.Link(cfg.Storage.WarehousePath, alias); err != nil {
 						t.Fatal(err)
 					}
 				} else {
-					if err := os.Rename(cfg.Storage.OperationalPath, alias); err != nil {
+					if err := os.Rename(cfg.Storage.WarehousePath, alias); err != nil {
 						t.Fatal(err)
 					}
 
-					if err := os.Symlink(alias, cfg.Storage.OperationalPath); err != nil {
+					if err := os.Symlink(alias, cfg.Storage.WarehousePath); err != nil {
 						t.Fatal(err)
 					}
 				}
 			case "sidecar", "superjournal":
-				sidecar := cfg.Storage.OperationalPath + "-wal"
+				sidecar := cfg.Storage.WarehousePath + "-wal"
 				if kind == "superjournal" {
-					sidecar = cfg.Storage.OperationalPath + "-mjABCDEF912"
+					sidecar = cfg.Storage.WarehousePath + "-mjABCDEF912"
 				}
 
 				if err := os.Remove(sidecar); err != nil {
@@ -285,8 +280,6 @@ func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
 		filepath.Join(missing, "warehouse", "history.sqlite"),
 		"--connections-path",
 		filepath.Join(missing, "access", "credentials.sqlite"),
-		"--operational-path",
-		filepath.Join(missing, "state", "execution.sqlite"),
 		"--master-key-path",
 		filepath.Join(missing, "key"),
 		"--runtime-dir",
@@ -308,7 +301,7 @@ func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(result.Files) != 0 || len(result.Removed) != 0 || len(result.Databases) != 2 {
+		if len(result.Files) != 0 || len(result.Removed) != 0 || len(result.Databases) != 1 {
 			t.Fatal(result)
 		}
 

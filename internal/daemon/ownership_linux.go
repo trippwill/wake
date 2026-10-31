@@ -84,7 +84,7 @@ func claimOwnershipFile(path string, flags int, private bool) (*os.File, error) 
 func CheckStopped(cfg config.Config) error {
 	files := []string{}
 	dirs := []string{}
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.OperationalPath} {
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
 		if path == "" {
 			continue
 		}

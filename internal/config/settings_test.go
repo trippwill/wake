@@ -205,13 +205,7 @@ func TestStorePathsHaveIndependentXDGDefaults(t *testing.T) {
 		filepath.Join(roots.config, "wake", "connections.db"),
 		"XDG/default",
 	)
-	assertResolvedValue(
-		t,
-		overrides,
-		"storage.operational_path",
-		filepath.Join(roots.state, "wake", "operational.db"),
-		"XDG/default",
-	)
+
 	custom := filepath.Join(roots.base, "private-access", "credentials.sqlite")
 	overrides.Values["connections-path"] = custom
 
@@ -236,7 +230,7 @@ func TestStorePathsHaveIndependentXDGDefaults(t *testing.T) {
 
 func TestConnectionsDatabaseRejectsInvalidAndCollidingPaths(t *testing.T) {
 	roots := configureEnvironment(t, true)
-	for _, value := range []string{"", "relative.db", filepath.Join(roots.data, "wake", "wake.db"), filepath.Join(roots.state, "wake", "operational.db"), filepath.Join(roots.data, "wake", "wake.db-journal"), filepath.Join(roots.state, "wake", "operational.db-mjABCDEF912")} {
+	for _, value := range []string{"", "relative.db", filepath.Join(roots.data, "wake", "wake.db"), filepath.Join(roots.data, "wake", "wake.db-journal"), filepath.Join(roots.data, "wake", "wake.db-mjABCDEF912")} {
 		if _, err := Resolve(
 			Overrides{Values: map[string]string{"connections-path": value}},
 		); !errors.Is(

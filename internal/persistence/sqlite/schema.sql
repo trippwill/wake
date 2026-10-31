@@ -1,7 +1,7 @@
 -- SPDX-FileCopyrightText: 2026 trippwill
 -- SPDX-License-Identifier: MPL-2.0
 
-CREATE TABLE store_metadata(singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, version TEXT NOT NULL, id TEXT NOT NULL, warehouse_id TEXT NOT NULL) STRICT;
+CREATE TABLE store_metadata(singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, version TEXT NOT NULL, id TEXT NOT NULL) STRICT;
 CREATE TABLE profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1), access_id TEXT NOT NULL, paused INTEGER NOT NULL CHECK(paused IN (0,1)), reference_review INTEGER NOT NULL CHECK(reference_review IN (0,1)), warehouse_reset INTEGER NOT NULL DEFAULT 0 CHECK(warehouse_reset IN (0,1)), recovery_revision INTEGER NOT NULL DEFAULT 0, resumed_by TEXT NOT NULL DEFAULT '', resumed_at TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE normalization_receipts(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, counts BLOB NOT NULL, PRIMARY KEY(artifact_id,version)) STRICT;
 CREATE TABLE connections(id TEXT PRIMARY KEY NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL DEFAULT '') STRICT;
@@ -74,3 +74,8 @@ CREATE INDEX relationships_target ON activity_relationships(target,activity_id);
 CREATE INDEX corrections_target ON source_corrections(account_id,target,replacement);
 CREATE INDEX corrections_replacement ON source_corrections(account_id,replacement,target);
 CREATE INDEX event_links_execution ON event_links(execution_id,account_id,reference);
+
+-- Operational execution belongs to the warehouse's lifetime and transaction.
+CREATE TABLE attempts(id TEXT PRIMARY KEY NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, outcome TEXT NOT NULL, counts BLOB NOT NULL) STRICT;
+CREATE INDEX attempts_artifact ON attempts(artifact_id,version,outcome);
+CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;

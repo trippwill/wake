@@ -293,18 +293,18 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 }
 
 const attempts = `-- name: Attempts :many
-SELECT id, artifact_id, version, outcome, counts FROM operational.attempts WHERE artifact_id=? ORDER BY rowid
+SELECT id, artifact_id, version, outcome, counts FROM main.attempts WHERE artifact_id=? ORDER BY rowid
 `
 
-func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]OperationalAttempt, error) {
+func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]Attempt, error) {
 	rows, err := q.db.QueryContext(ctx, attempts, artifactID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OperationalAttempt
+	var items []Attempt
 	for rows.Next() {
-		var i OperationalAttempt
+		var i Attempt
 		if err := rows.Scan(
 			&i.ID,
 			&i.ArtifactID,
@@ -326,7 +326,7 @@ func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]Operationa
 }
 
 const cacheReference = `-- name: CacheReference :exec
-INSERT INTO operational.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id
+INSERT INTO main.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id
 `
 
 type CacheReferenceParams struct {
@@ -349,12 +349,12 @@ func (q *Queries) CacheReference(ctx context.Context, arg CacheReferenceParams) 
 }
 
 const cachedReference = `-- name: CachedReference :one
-SELECT "key", status, records, expires, evidence_id FROM operational.reference_cache WHERE key=?
+SELECT "key", status, records, expires, evidence_id FROM main.reference_cache WHERE key=?
 `
 
-func (q *Queries) CachedReference(ctx context.Context, key string) (OperationalReferenceCache, error) {
+func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCache, error) {
 	row := q.db.QueryRowContext(ctx, cachedReference, key)
-	var i OperationalReferenceCache
+	var i ReferenceCache
 	err := row.Scan(
 		&i.Key,
 		&i.Status,
@@ -758,15 +758,6 @@ func (q *Queries) Decisions(ctx context.Context, arg DecisionsParams) ([]Operato
 	return items, nil
 }
 
-const deleteExecution = `-- name: DeleteExecution :exec
-DELETE FROM operational.execution WHERE NOT EXISTS(SELECT 1 FROM scheduled s WHERE s.connection_id=execution.connection_id AND s.stream=execution.stream AND s.operation=execution.operation AND s.enabled=1)
-`
-
-func (q *Queries) DeleteExecution(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteExecution)
-	return err
-}
-
 const descriptor = `-- name: Descriptor :one
 SELECT id, provider, name FROM connections WHERE id=?
 `
@@ -1038,7 +1029,7 @@ func (q *Queries) FailWork(ctx context.Context, arg FailWorkParams) error {
 }
 
 const finishAttempt = `-- name: FinishAttempt :exec
-INSERT INTO operational.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM operational.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts
+INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM main.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts
 `
 
 type FinishAttemptParams struct {
@@ -1527,7 +1518,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 }
 
 const pendingWork = `-- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
+SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
 `
 
 type PendingWorkRow struct {
@@ -2399,15 +2390,6 @@ func (q *Queries) ReferenceSetting(ctx context.Context) (AccessReferenceSetting,
 	return i, err
 }
 
-const refreshExecution = `-- name: RefreshExecution :exec
-INSERT INTO operational.execution(connection_id,stream,operation) SELECT connection_id,stream,operation FROM scheduled WHERE enabled=1 ON CONFLICT DO NOTHING
-`
-
-func (q *Queries) RefreshExecution(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, refreshExecution)
-	return err
-}
-
 const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
 SELECT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.target=e.reference WHERE e.execution_id=?1
 UNION
@@ -2921,7 +2903,7 @@ func (q *Queries) SourceCorrections(ctx context.Context) ([]SourceCorrection, er
 }
 
 const startAttempt = `-- name: StartAttempt :exec
-INSERT INTO operational.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'')
+INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'')
 `
 
 type StartAttemptParams struct {

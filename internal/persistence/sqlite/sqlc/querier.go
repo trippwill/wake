@@ -27,9 +27,9 @@ type Querier interface {
 	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
 	ArtifactProvider(ctx context.Context, id string) (string, error)
-	Attempts(ctx context.Context, artifactID string) ([]OperationalAttempt, error)
+	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
-	CachedReference(ctx context.Context, key string) (OperationalReferenceCache, error)
+	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]Candidate, error)
 	Candidates(ctx context.Context, connectionID string) ([]Candidate, error)
@@ -47,7 +47,6 @@ type Querier interface {
 	CredentialKeys(ctx context.Context, connectionID string) ([]string, error)
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
 	Decisions(ctx context.Context, arg DecisionsParams) ([]OperatorDecision, error)
-	DeleteExecution(ctx context.Context) error
 	Descriptor(ctx context.Context, id string) (Connection, error)
 	DisableDiscovery(ctx context.Context, connectionID string) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
@@ -114,7 +113,6 @@ type Querier interface {
 	ReferenceFailure(ctx context.Context, failure string) error
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
 	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
-	RefreshExecution(ctx context.Context) error
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) error

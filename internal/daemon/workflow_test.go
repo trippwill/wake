@@ -61,7 +61,6 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		context.Background(),
 		persistence.Profile{
 			WarehousePath:   cfg.Storage.WarehousePath,
-			OperationalPath: cfg.Storage.OperationalPath,
 			ConnectionsPath: cfg.Storage.ConnectionsPath,
 		},
 		nil,
@@ -134,7 +133,6 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		context.Background(),
 		persistence.Profile{
 			WarehousePath:   cfg.Storage.WarehousePath,
-			OperationalPath: cfg.Storage.OperationalPath,
 			ConnectionsPath: cfg.Storage.ConnectionsPath,
 		},
 		nil,
