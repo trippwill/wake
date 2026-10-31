@@ -261,6 +261,39 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 			t.Fatal("valid preflight", target, response.Code, response.Body.String(), e)
 		}
 
+		if target.kind == "activity" {
+			invalidField := "quantity"
+			if target.id == view.Conversions[0].ID() {
+				invalidField = "rate"
+			}
+
+			values.Set("scope", invalidField)
+			values.Set("value", "0")
+
+			invalid := request(http.MethodPost, path, values, false)
+
+			var invalidResult struct {
+				Valid, Stale bool
+				Message      string
+			}
+			if e = json.Unmarshal(
+				invalid.Body.Bytes(),
+				&invalidResult,
+			); e != nil || invalid.Code != http.StatusOK || invalidResult.Valid || invalidResult.Stale || strings.Contains(invalidResult.Message, "unavailable") ||
+				invalidResult.Message == "" {
+				t.Fatal(
+					"invalid financial input became service failure",
+					target,
+					invalid.Code,
+					invalid.Body.String(),
+					e,
+				)
+			}
+
+			values.Set("scope", target.field)
+			values.Set("value", target.value)
+		}
+
 		values.Set("revision", strconv.FormatInt(form.Revision+1, 10))
 
 		response = request(http.MethodPost, path, values, false)

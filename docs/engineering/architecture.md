@@ -45,6 +45,35 @@ Activity lifecycle, review reasons and selection authority are independent typed
 facts. Persist and publish them without encoding state in combined display phrases.
 Source failures retain machine classifications separately from diagnostic wording;
 scheduling depends on the classifications.
+Shared instrument enrichment compares all retained claims for the original root
+against one pre-write baseline and persists that root once per processing batch.
+Competing enrichments retain that baseline for review; execution IDs do not select
+financial terms. Indexed source-occurrence bindings include nested underliers,
+which are reconciled even when they have no activity of their own. Underlier
+identity is calculated independently of disagreements in parent contract terms.
+Activity correction preflight/save does not re-enrich shared source roots.
+Admission compares each genuinely new claim against its retained source baseline
+and every prior source assertion, excluding operator choices. A projected unknown
+caused by existing disagreement cannot corroborate a later conflicting value or
+admit its relationships. Shared compatibility rules govern this comparison and the
+automatic financial calculation.
+
+Financial calculation consumes one consistent retained input set: source claims,
+identity bindings, selected references, active decisions and an explicit implemented
+rule. It returns typed accepted values, independent conflict/authority facts and
+explanations without SQL writes or upstream calls. Processing, correction preflight,
+saving and release use that same calculation. Field parsing and whole-value
+constructor failures return the typed invalid-input outcome, not a service failure. Preflight substitutes a prospective
+decision in memory inside a read transaction; saving persists the calculated result,
+decision and publication atomically. Only groups reached by new claims or changed
+source-correction state require recalculation. Retained appearances remain provenance;
+financial selection reads distinct source claims with their multiplicity.
+
+Small typed field policies own applicable activity/instrument families, scalar value
+types, optionality and bounds. Domain constructors own parsing/application invariants;
+editors consume the policies and own wording and controls. The published accepted
+read model is encoded directly; OpenAPI conformance tests protect its wire contract.
+
 Reference acquisition happens outside deterministic rule evaluation. Cache eviction
 cannot erase evidence supporting an accepted result, and a refresh cannot silently
 overwrite an operator correction.
@@ -145,6 +174,10 @@ Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
+
+Warehouse and encrypted access formats are checked independently. An unsupported
+warehouse still fails closed with recreation instructions; an unchanged encrypted
+access seed remains reusable when only the warehouse format changes.
 
 One daemon owns two SQLite files: a warehouse containing financial evidence and
 operational state, and an independent access store containing current connection

@@ -224,6 +224,23 @@ module and run it through the actual private host and SQLite store. Run
 `mise run test:provider` for that proof, including race detection. CI and behavior
 coverage include the same proof; the production module imports no fixture.
 
+## Financial calculation changes
+
+Load retained claims and reference/link selections before calculation. Use the shared
+pure calculation for processing and the prospective active decision set for both
+preflight and saving. Keep persistence and upstream acquisition outside that code.
+A correction check uses one read transaction and must not write decisions, selection
+baselines, revisions, publication or operational state. Saving checks the same
+revision and persists its decision and calculated result atomically. Releasing a
+scope recalculates automatic terms while retaining other active choices.
+
+Typed field policies own applicability, value kinds, optionality and scalar bounds;
+editor labels and help remain in presentation. Reuse the retained activity codecs
+and encode the authoritative published read model directly. Include constructor,
+exact-text, disagreement, release and rollback cases when changing these rules.
+The retained-data update requirement above still applies; the shared calculation
+does not provide an automatic historical updater.
+
 ## Provider extensions
 
 Start with the independently compiled [synthetic provider](../../testdata/external-provider/fixture.go)

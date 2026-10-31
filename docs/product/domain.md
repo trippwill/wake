@@ -180,3 +180,10 @@ Read-only candidate comparison preserves qualified source account, event, order 
 Retained instrument, underlier and listing choices include their stable Wake identities in both selectable and current-value labels, so matching names or symbols remain distinguishable and searchable before a link decision is saved.
 
 Published active-decision explanations contain only currently applied overrides. Releasing a scope returns its authority to automatic selection and removes it from the active explanation; the full decision and release history remains retained.
+
+Correction preflight evaluates the complete prospective set of active decisions
+against retained source inputs and current bindings, using the same financial
+calculation as saving and release. A successful check writes no financial or
+operational state. Saving still checks the resource revision in its transaction;
+concurrent changes require a fresh review. Releasing a scope recomputes its
+automatic value from retained claims while preserving other active decisions.

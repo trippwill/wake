@@ -4,6 +4,20 @@ package application
 
 import "go.trippwill.dev/wake/source"
 
+type (
+	correctionAction struct {
+		kind        source.CorrectionKind
+		replacement string
+	}
+	correctionVisit uint8
+)
+
+const (
+	unvisitedCorrection correctionVisit = iota
+	visitingCorrection
+	visitedCorrection
+)
+
 type CorrectionEdge struct {
 	Kind                  source.CorrectionKind
 	Targets, Replacements []string
@@ -21,7 +35,14 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []Corre
 		ids := append(append([]string{}, e.Targets...), e.Replacements...)
 		for _, id := range ids {
 			members[id] = append(members[id], i)
-			adj[id] = append(adj[id], ids...)
+			if len(ids) > 0 && id != ids[0] {
+				adj[id] = append(adj[id], ids[0])
+				adj[ids[0]] = append(adj[ids[0]], id)
+			} else {
+				if _, ok := adj[id]; !ok {
+					adj[id] = nil
+				}
+			}
 		}
 	}
 
@@ -53,7 +74,7 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []Corre
 
 		invalid := false
 
-		actions := map[string]string{}
+		actions := map[string]correctionAction{}
 		next := map[string]string{}
 		replacementTargets := map[string]string{}
 		for i := range group {
@@ -65,10 +86,10 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []Corre
 			}
 
 			target := e.Targets[0]
-			action := string(e.Kind)
+			action := correctionAction{kind: e.Kind}
 			if e.Kind == source.Replacement {
 				replacement := e.Replacements[0]
-				action += "/" + replacement
+				action.replacement = replacement
 				next[target] = replacement
 				if previous := replacementTargets[replacement]; previous != "" && previous != target {
 					invalid = true
@@ -80,22 +101,33 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []Corre
 				}
 			}
 
-			if previous := actions[target]; previous != "" && previous != action {
+			if previous, ok := actions[target]; ok && previous != action {
 				invalid = true
 			}
 
 			actions[target] = action
 		}
 
+		visits := map[string]correctionVisit{}
 		for start := range next {
-			path := map[string]bool{}
-			for id := start; id != ""; id = next[id] {
-				if path[id] {
-					invalid = true
-					break
-				}
+			if visits[start] == visitedCorrection {
+				continue
+			}
 
-				path[id] = true
+			path := []string{}
+			id := start
+			for id != "" && visits[id] == unvisitedCorrection {
+				visits[id] = visitingCorrection
+				path = append(path, id)
+				id = next[id]
+			}
+
+			if id != "" && visits[id] == visitingCorrection {
+				invalid = true
+			}
+
+			for _, id := range path {
+				visits[id] = visitedCorrection
 			}
 		}
 
@@ -109,6 +141,12 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []Corre
 			}
 
 			continue
+		}
+
+		// Return the complete group state, including accepted replacement leaves.
+		// A previously unresolved group may have marked those leaves for review.
+		for _, id := range nodes {
+			states[id], _ = NewActivityState(Accepted, 0, AutomaticSelection)
 		}
 
 		for i := range group {
