@@ -3,6 +3,8 @@
 
 package application
 
+import "slices"
+
 const ErrNotFound Error = "financial resource not found"
 
 type CanonicalResource struct {
@@ -154,4 +156,20 @@ type FinancialSnapshot struct {
 type SnapshotRead struct {
 	Snapshot  FinancialSnapshot
 	Unchanged bool
+}
+
+// SnapshotCondition keeps an HTTP wildcard distinct from literal opaque versions.
+// Its zero value does not match any publication.
+type SnapshotCondition struct {
+	wildcard bool
+	versions []string
+}
+
+func AnySnapshotVersion() SnapshotCondition { return SnapshotCondition{wildcard: true} }
+func MatchingSnapshotVersions(versions ...string) SnapshotCondition {
+	return SnapshotCondition{versions: slices.Clone(versions)}
+}
+
+func (condition SnapshotCondition) Matches(version string) bool {
+	return condition.wildcard || slices.Contains(condition.versions, version)
 }

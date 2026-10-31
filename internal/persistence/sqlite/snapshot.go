@@ -8,12 +8,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
 )
 
-func (s *Store) Snapshot(ctx context.Context, known []string) (application.SnapshotRead, error) {
+func (s *Store) Snapshot(
+	ctx context.Context,
+	condition application.SnapshotCondition,
+) (application.SnapshotRead, error) {
 	out := application.SnapshotRead{}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -39,7 +41,7 @@ func (s *Store) Snapshot(ctx context.Context, known []string) (application.Snaps
 		Version:     hex.EncodeToString(digest[:]),
 		Resources:   []application.CanonicalResource{},
 	}
-	if slices.Contains(known, out.Snapshot.Version) || slices.Contains(known, "*") {
+	if condition.Matches(out.Snapshot.Version) {
 		out.Unchanged = true
 	} else {
 		rows, e := tx.QueryContext(ctx, publishingStatement("Snapshot"))

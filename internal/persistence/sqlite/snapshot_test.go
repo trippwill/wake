@@ -25,7 +25,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	row := equityRow("U1", "snapshot-fill", "9007199254740993.0000000000001")
 	coverageReport(t, s, "snapshot", row)
 
-	first, err := s.Snapshot(ctx, nil)
+	first, err := s.Snapshot(ctx, application.SnapshotCondition{})
 	if err != nil || first.Unchanged || first.Snapshot.WarehouseID == "" || first.Snapshot.Version == "" ||
 		len(first.Snapshot.Resources) != 4 {
 		t.Fatal(first, err)
@@ -47,7 +47,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 
 	coverageReport(t, s, "same-source-again", row)
 
-	unchanged, err := s.Snapshot(ctx, []string{first.Snapshot.Version})
+	unchanged, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
 	if err != nil || !unchanged.Unchanged || unchanged.Snapshot.Version != first.Snapshot.Version ||
 		len(unchanged.Snapshot.Resources) != 0 {
 		t.Fatal("repeat claims re-published or conditional read loaded resources", unchanged, err)
@@ -55,7 +55,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 
 	retainDecision(t, s, "activity", activity, "price", "12.000000000000001", "USD", "set")
 
-	changed, err := s.Snapshot(ctx, []string{first.Snapshot.Version})
+	changed, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
 	if err != nil || changed.Unchanged || changed.Snapshot.Version == first.Snapshot.Version ||
 		changed.Snapshot.WarehouseID != first.Snapshot.WarehouseID {
 		t.Fatal("accepted change did not replace snapshot version", changed, err)
@@ -74,7 +74,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	replacement := coverageStore(t)
 	coverageReport(t, replacement, "new-warehouse", row)
 
-	baseline, err := replacement.Snapshot(ctx, []string{changed.Snapshot.Version})
+	baseline, err := replacement.Snapshot(ctx, application.MatchingSnapshotVersions(changed.Snapshot.Version))
 	if err != nil || baseline.Unchanged || baseline.Snapshot.WarehouseID == changed.Snapshot.WarehouseID ||
 		baseline.Snapshot.Version == changed.Snapshot.Version {
 		t.Fatal("warehouse identity did not establish a new baseline", baseline, err)
@@ -83,7 +83,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 
 func TestEmptyWarehouseSnapshotIsComplete(t *testing.T) {
 	s, _ := testStore(t)
-	snapshot, err := s.Snapshot(t.Context(), nil)
+	snapshot, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
 	if err != nil || snapshot.Snapshot.WarehouseID == "" || snapshot.Snapshot.Version == "" ||
 		snapshot.Snapshot.Resources == nil ||
 		len(snapshot.Snapshot.Resources) != 0 {
@@ -95,7 +95,7 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "blocked-client", equityRow("U1", "fill", "10.0000"))
 
-	first, err := s.Snapshot(t.Context(), nil)
+	first, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 	}()
 
 	for range 40 {
-		snapshot, err := s.Snapshot(t.Context(), nil)
+		snapshot, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,5 +292,32 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
+	store := coverageStore(t)
+	handler := socket.NewHandler(store, nil)
+	for _, test := range []struct {
+		condition string
+		status    int
+	}{
+		{`"*"`, http.StatusOK}, {`W/"*"`, http.StatusOK}, {`*`, http.StatusNotModified},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
+		request.Header.Set("If-None-Match", test.condition)
+
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+
+		if response.Code != test.status {
+			t.Fatalf("condition %s: got%d, want%d", test.condition, response.Code, test.status)
+		}
+
+		if response.Header().Get("ETag") == "" ||
+			(test.status == http.StatusOK && !bytes.Contains(response.Body.Bytes(), []byte(`"warehouse_id"`))) ||
+			test.status == http.StatusNotModified && response.Body.Len() != 0 {
+			t.Fatal("incorrect conditional snapshot body", test.condition, response.Body.String())
+		}
 	}
 }

@@ -132,13 +132,11 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 	}
 }
 
-func (s reads) Snapshot(_ context.Context, known []string) (application.SnapshotRead, error) {
-	unchanged := false
-	for _, v := range known {
-		if v == "*" || v == "opaque-version" {
-			unchanged = true
-		}
-	}
+func (s reads) Snapshot(
+	_ context.Context,
+	condition application.SnapshotCondition,
+) (application.SnapshotRead, error) {
+	unchanged := condition.Matches("opaque-version")
 
 	return application.SnapshotRead{
 		Snapshot: application.FinancialSnapshot{
@@ -190,6 +188,9 @@ func TestSnapshotConditionalSyntax(t *testing.T) {
 		status    int
 	}{
 		{`"other,tag"`, 200},
+		{`"*"`, 200},
+		{`W/"*"`, 200},
+		{`"*", W/"opaque-version"`, 304},
 		{`W/"other,tag", W/"opaque-version"`, 304},
 		{`""`, 200},
 		{`"opaque-version",`, 400},

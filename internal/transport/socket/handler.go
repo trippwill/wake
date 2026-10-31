@@ -21,7 +21,7 @@ import (
 // FinancialReader is the socket adapter's finite accepted-state read dependency.
 // Every result is materialized before transport I/O begins.
 type FinancialReader interface {
-	Snapshot(context.Context, []string) (application.SnapshotRead, error)
+	Snapshot(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
 	Resource(context.Context, string, string) (application.CanonicalResource, error)
 	Explanation(context.Context, string, string, int64) (application.Explanation, error)
 }
@@ -178,52 +178,52 @@ func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
 	_ = json.NewEncoder(w).Encode(Error{Code: code, Message: messages[code]})
 }
 
-func snapshotConditions(headers []string) ([]string, error) {
+func snapshotConditions(headers []string) (application.SnapshotCondition, error) {
 	value := strings.Trim(strings.Join(headers, ","), " \t")
 	if len(value) > 8192 || strings.ContainsAny(value, "\r\n") {
-		return nil, application.ErrInvalid
+		return application.SnapshotCondition{}, application.ErrInvalid
 	}
 
 	if value == "" {
-		return nil, nil
+		return application.SnapshotCondition{}, nil
 	}
 
 	if value == "*" {
-		return []string{"*"}, nil
+		return application.AnySnapshotVersion(), nil
 	}
 
 	var versions []string
 	for {
 		value = strings.TrimPrefix(value, "W/")
 		if len(value) < 2 || value[0] != '"' {
-			return nil, application.ErrInvalid
+			return application.SnapshotCondition{}, application.ErrInvalid
 		}
 
 		end := strings.IndexByte(value[1:], '"')
 		if end < 0 {
-			return nil, application.ErrInvalid
+			return application.SnapshotCondition{}, application.ErrInvalid
 		}
 
 		end++
 		for _, c := range []byte(value[1:end]) {
 			if c < 0x21 || c == 0x7f {
-				return nil, application.ErrInvalid
+				return application.SnapshotCondition{}, application.ErrInvalid
 			}
 		}
 
 		versions = append(versions, value[1:end])
 		value = strings.Trim(value[end+1:], " \t")
 		if value == "" {
-			return versions, nil
+			return application.MatchingSnapshotVersions(versions...), nil
 		}
 
 		if value[0] != ',' {
-			return nil, application.ErrInvalid
+			return application.SnapshotCondition{}, application.ErrInvalid
 		}
 
 		value = strings.Trim(value[1:], " \t")
 		if value == "" {
-			return nil, application.ErrInvalid
+			return application.SnapshotCondition{}, application.ErrInvalid
 		}
 	}
 }

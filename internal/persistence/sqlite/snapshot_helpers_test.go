@@ -18,7 +18,7 @@ type (
 )
 
 func snapshotState(ctx context.Context, s *Store) (application.FinancialSnapshot, error) {
-	read, err := s.Snapshot(ctx, nil)
+	read, err := s.Snapshot(ctx, application.SnapshotCondition{})
 	return read.Snapshot, err
 }
 
