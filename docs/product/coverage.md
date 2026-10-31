@@ -98,10 +98,12 @@ this boundary.
 The executable targets Linux. Storage uses explicit pre-release development
 formats with no automatic compatibility migration. Unsupported stores fail closed
 with recreate guidance and preserve the original files. Back up stores and sidecars
-before explicitly moving or resetting them. Warehouse, connections and operational
-stores have independent paths; recovery preserves financial identity, evidence,
-decisions and durable progress. See [architecture](../engineering/architecture.md)
-for trust and recovery boundaries and [development](../engineering/development.md)
+before explicitly moving or resetting them. The warehouse retains financial
+evidence, decisions and operational progress in one database. The encrypted access store has an independent path. Replacing that
+store preserves the warehouse and pauses upstream work until access is repaired
+and explicitly resumed; recreating the warehouse preserves reusable encrypted
+access but establishes new financial identities. See
+[architecture](../engineering/architecture.md) for trust and recovery boundaries and [development](../engineering/development.md)
 for verification and reset procedures. No version tag is implied by this coverage.
 
 Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.
