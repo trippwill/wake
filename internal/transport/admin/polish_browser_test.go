@@ -593,6 +593,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.SendKeys("#unlock", "synthetic-polish-unlock"),
 		chromedp.Click(`button[type="submit"]`),
 		chromedp.WaitVisible("#main-navigation"),
+		chromedp.Evaluate(`localStorage.setItem('tabulator-wake-activity-columns','invalid JSON')`, nil),
 		chromedp.Navigate(origin+"/test/grid"),
 		chromedp.WaitVisible(".tabulator"),
 		chromedp.Poll(`document.querySelector('.tabulator-row')!==null`, nil),
@@ -660,6 +661,17 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			`new URL(location.href).searchParams.get('q')==='investment' && new URL(location.href).searchParams.get('page')==='1' && document.querySelector('#activity-search').value==='investment' && document.querySelectorAll('.tabulator-row').length===50`,
 			nil,
 		),
+	)
+	// A denied preference write must leave keyboard/layout interactions usable.
+	check(
+		chromedp.Evaluate(
+			`(()=>{const write=Storage.prototype.setItem;try{Storage.prototype.setItem=()=>{throw new DOMException('Blocked','SecurityError')};window.proofGrid.getColumn('label').setWidth(334)}finally{Storage.prototype.setItem=write}})()`,
+			nil,
+		),
+	)
+	assert(
+		`window.proofGrid.getColumn('label').getWidth()===334 && document.querySelectorAll('.tabulator-row').length===50`,
+		"blocked preference storage prevented table interactions",
 	)
 	check(
 		chromedp.Evaluate(

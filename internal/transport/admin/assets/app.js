@@ -425,6 +425,21 @@
           persistence: { columns: true },
           persistenceID: `wake-${kind}`,
           persistenceMode: "local",
+          persistenceReaderFunc: (id, type) => {
+            try {
+              const saved = JSON.parse(localStorage.getItem(`${id}-${type}`));
+              return Array.isArray(saved) ? saved : false;
+            } catch {
+              return false;
+            }
+          },
+          persistenceWriterFunc: (id, type, data) => {
+            try {
+              localStorage.setItem(`${id}-${type}`, JSON.stringify(data));
+            } catch {
+              // Layout preferences must not block table interactions.
+            }
+          },
           placeholder: "No matching records.",
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: async (url, _config, parameters) => {

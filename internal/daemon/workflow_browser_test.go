@@ -368,11 +368,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(".tabulator-row"),
 	)
 
+	navigate(chromedp.Click(
+		`//div[contains(@class,'tabulator-row') and contains(.,'REFERENCE EQUITY')]//a[starts-with(@href,'/executions/')][1]`,
+		chromedp.BySearch,
+	))
 	check(
-		chromedp.Click(
-			`//div[contains(@class,'tabulator-row') and contains(.,'REFERENCE EQUITY')]//a[starts-with(@href,'/executions/')][1]`,
-			chromedp.BySearch,
-		),
 		chromedp.WaitVisible(".wake-card dl"),
 		chromedp.Evaluate(
 			`document.body.textContent.includes('2026-10-20T13:30:00.120Z') && document.body.textContent.includes('accepted')`,
