@@ -14,6 +14,7 @@ import (
 type AccessConfiguration struct {
 	ID       string
 	Provider string
+	Name     string
 	Settings []byte
 }
 
@@ -99,12 +100,14 @@ type Candidate struct {
 type Connection struct {
 	ID       string
 	Provider string
+	Name     string
 }
 
 type EventLink struct {
-	AccountID   string
-	Reference   string
-	ExecutionID string
+	DistinctEvent int64
+	AccountID     string
+	Reference     string
+	ExecutionID   string
 }
 
 type Execution struct {

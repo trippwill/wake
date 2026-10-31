@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 	"strconv"
 )
@@ -24,21 +25,21 @@ func operationLabel(operation string) string {
 
 		return "Account discovery"
 	}
-	return "Confirmation synchronization"
+	return "Source synchronization"
 }
-func progressLabel(code string) string {
+func progressLabel(code provider.ProgressPhase) string {
 	switch code {
 	case "":
 		return "Waiting for work"
 	case "requesting":
-		return "Contacting IBKR"
-	case "generating", "ibkr-1019":
-		return "Waiting for report generation"
-	case "paced", "ibkr-1018":
+		return "Contacting source"
+	case "waiting":
+		return "Waiting for source work"
+	case "paced":
 		return "Waiting for the shared request allowance"
 	case "retained":
-		return "Report retained"
-	case "ibkr-1003":
+		return "Evidence retained"
+	case "unavailable":
 		return "Requested history unavailable; automatic retry retained"
 	default:
 		return "Waiting to retry source work"
@@ -66,7 +67,7 @@ func instrumentLabel(view application.Dashboard, id string) string {
 templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 	@Breadcrumbs("Confirm account")
 	@PageHeader("Confirm account", "Review the discovered account before granting automatic synchronization.")
-	<p>Source account { candidate.Candidate.Reference().Value() }. Confirmation activates this account and starts automatic Confirmation synchronization. Missing profile fields remain unknown.</p>
+	<p>Source account { candidate.Candidate.Reference().Value() }. Confirmation grants authority for this source account. Automatic acquisition runs when the source supports it. Missing profile fields remain unknown.</p>
 	<section class="wake-card">
 		<h2>Account authority</h2>
 		<form method="post" action={ templ.SafeURL("/connections/" + id + "/confirm") }>
@@ -74,7 +75,7 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 			<input type="hidden" name="authority" value={ candidate.Candidate.Reference().Authority() }/><input type="hidden" name="kind" value={ candidate.Candidate.Reference().Kind() }/><input type="hidden" name="scope" value={ candidate.Candidate.Reference().Scope() }/><input type="hidden" name="account" value={ candidate.Candidate.Reference().Value() }/>
 			<p><label for="account-name">Account display name</label><input class="input" id="account-name" name="name" value={ candidate.Candidate.Name() } required maxlength="256"/></p>
 			<p><label for="account-currency">Account currency (optional)</label><input class="input" id="account-currency" name="currency" value={ currencyText(candidate.Candidate.Currency()) } pattern="[A-Z]{3}" maxlength="3"/></p>
-			<button class="btn btn-primary" type="submit">Confirm and start synchronization</button>
+			<button class="btn btn-primary" type="submit">Confirm account</button>
 		</form>
 	</section>
 }

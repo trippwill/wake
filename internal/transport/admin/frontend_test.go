@@ -14,6 +14,8 @@ import (
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
 func TestRenderFrontend(t *testing.T) {
@@ -41,7 +43,13 @@ func TestRenderFrontend(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	registration, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	source := application.ConnectionView{
+		Descriptor:       registration.Descriptor(),
 		ID:               "synthetic-source",
 		Name:             "Synthetic IBKR",
 		SettingsStored:   true,
@@ -54,7 +62,7 @@ func TestRenderFrontend(t *testing.T) {
 		"source":         ConnectionPage("synthetic-csrf", view, source),
 		"source-access":  ConnectionAccess("synthetic-csrf", source),
 		"source-reports": ConnectionReports("synthetic-csrf", source),
-		"source-new":     ConnectionSetup("synthetic-csrf"),
+		"source-new":     ConnectionSetup("synthetic-csrf", []provider.Registration{registration}),
 		"reference":      ReferencePage("synthetic-csrf", view),
 		"recovery":       RecoveryPage("synthetic-csrf", view),
 		"maintenance":    MaintenancePage("synthetic-csrf", view),

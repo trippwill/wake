@@ -140,7 +140,12 @@ func (s *Source) acquire(
 				later(request.Now.Add(time.Duration(1<<min(state.Failures, 7))*time.Second), until),
 			)
 			if paceErr == nil {
-				step, paceErr = provider.NewRetryStep(step.State(), step.NextEligibleAt(), "network-failure")
+				step, paceErr = provider.NewRetryStep(
+					step.State(),
+					step.NextEligibleAt(),
+					provider.RetryNetwork,
+					"network-failure",
+				)
 			}
 
 			return paceErr
@@ -250,7 +255,12 @@ func (s *Source) acquire(
 				code = "http-" + response.code
 			}
 
-			step, paceErr = provider.NewRetryStep(step.State(), step.NextEligibleAt(), code)
+			reason := provider.RetryUpstream
+			if response.code == "1018" || response.code == "429" {
+				reason = provider.RetryThrottled
+			}
+
+			step, paceErr = provider.NewRetryStep(step.State(), step.NextEligibleAt(), reason, code)
 		}
 
 		return paceErr
@@ -516,7 +526,19 @@ func later(a, b time.Time) time.Time {
 }
 
 func progress(ctx context.Context, access provider.Access, code string) error {
-	value, err := provider.NewProgress(code, 0, 0)
+	phase := provider.ProgressWaiting
+	switch code {
+	case "requesting":
+		phase = provider.ProgressRequesting
+	case "paced", "ibkr-1018":
+		phase = provider.ProgressPaced
+	case "retained":
+		phase = provider.ProgressRetained
+	case "ibkr-1003":
+		phase = provider.ProgressUnavailable
+	}
+
+	value, err := provider.NewProgress(phase, 0, 0)
 	if err != nil {
 		return err
 	}

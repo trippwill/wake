@@ -6,6 +6,7 @@ package admin
 import (
 	"crypto/rand"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 	"strconv"
 )
 
@@ -44,9 +45,9 @@ templ DashboardOverview(view application.Dashboard) {
 	} else if view.Account.ID()=="" {
 		<section class="wake-card wake-priority">
 			<h2>Connect and confirm an account</h2>
-			<ol class="wake-steps"><li>Create an IBKR connection.</li><li>Wait for account discovery.</li><li>Confirm one account to start synchronization.</li></ol>
+			<p>Configure a source, review its available account discovery, and confirm account authority before automatic synchronization.</p>
 			if len(view.Connections)==0 {
-				<a class="btn btn-primary" href="/connections/new">Add IBKR connection</a>
+				<a class="btn btn-primary" href="/connections/new">Add source connection</a>
 			} else {
 				<a class="btn btn-primary" href="/connections">Review account discovery</a>
 			}
@@ -121,7 +122,7 @@ templ ConnectionsPage(csrf string, view application.Dashboard) {
 		<section class="wake-card wake-priority"><h2>Upstream work is paused</h2><p>Review restored access before reconnecting to your sources.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
 	}
 	<section id="workflow-progress" class="wake-card">
-		<div class="wake-card-heading"><h2>Sources</h2><a class="btn" href="/connections/new">Add IBKR connection</a></div>
+		<div class="wake-card-heading"><h2>Sources</h2><a class="btn" href="/connections/new">Add source connection</a></div>
 		if len(view.Connections)==0 {
 			<p>No sources configured. Add a connection to discover accounts.</p>
 		}
@@ -130,7 +131,7 @@ templ ConnectionsPage(csrf string, view application.Dashboard) {
 				<div>
 					<h3><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a></h3>
 					if view.Account.Connection()==c.ID {
-						<p>{ view.Account.Details().Name() } · Authorized Confirmation source</p>
+						<p>{ view.Account.Details().Name() } · Authorized source</p>
 					} else {
 						<p>Account discovery</p>
 					}
@@ -159,7 +160,7 @@ templ ConnectionsNavigation(view string) {
 
 templ ConnectionPage(csrf string, v application.Dashboard, c application.ConnectionView) {
 	@Breadcrumbs("Source")
-	@PageHeader(c.Name, "IBKR Confirmation source")
+	@PageHeader(c.Name, c.Descriptor.Name())
 	<nav class="wake-tabs" aria-label="Source views">
 		for _,tab:=range []string{"status","reports","access"} {
 			<a href={ templ.SafeURL(connectionURL(c.ID, tab)) } aria-current={ currentPage(activeView(ctx, "status") == tab) }>{ stringTitle(tab) }</a>
@@ -172,7 +173,11 @@ templ ConnectionPage(csrf string, v application.Dashboard, c application.Connect
 	} else {
 		<section class="wake-card" id="workflow-progress">
 			<h2>Current source state</h2>
-			if v.Account.Connection()==c.ID {
+			if c.Descriptor.ID()=="" {
+				<p class="wake-notice">This provider is unavailable in this build.</p>
+			} else if !c.CanAcquire && !c.CanDiscover {
+				<p>This source interprets supplied evidence and does not perform automatic acquisition.</p>
+			} else if v.Account.Connection()==c.ID {
 				<p>Authorized account: <strong>{ v.Account.Details().Name() }</strong></p>
 			} else {
 				<p>Account confirmation is required before ongoing synchronization.</p>
@@ -181,7 +186,7 @@ templ ConnectionPage(csrf string, v application.Dashboard, c application.Connect
 				<p class="wake-notice">Upstream work is paused. <a href="/connections/recovery">Review recovery steps</a>.</p>
 			}
 			if c.MissingAccess {
-				<p class="wake-notice">Source access is incomplete. <a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair settings and token</a>.</p>
+				<p class="wake-notice">Source access is incomplete. <a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair settings and credentials</a>.</p>
 			}
 			<dl>
 				for _,w:=range sourceWork(v,c) {
@@ -200,11 +205,11 @@ templ ConnectionPage(csrf string, v application.Dashboard, c application.Connect
 			}
 			<a href={ templ.SafeURL(connectionURL(c.ID, "reports")) }>Inspect processing and recent reports</a>
 		</section>
-		if v.Account.ID()=="" {
+		if c.CanDiscover && v.Account.ID()=="" {
 			<section class="wake-card">
 				<h2>Choose your account</h2>@DiscoveredAccounts(c, v)
 			</section>
-		} else {
+		} else if c.CanDiscover {
 			<details class="wake-card">
 				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
 			</details>
@@ -242,23 +247,62 @@ templ DiscoveredAccounts(c application.ConnectionView, v application.Dashboard) 
 	}
 }
 
+templ ProviderSettings(descriptor provider.Descriptor, settings provider.Settings, scope, owner string) {
+	for _,field:=range descriptor.Fields() {
+		if field.Kind()==provider.TextField {
+			<p><label for={ providerFieldID(scope, owner, field) }>{ field.Label() }</label><input class="input" id={ providerFieldID(scope, owner, field) } name={ "setting." + field.Key() } value={ settingValue(settings, field.Key()) } required?={ field.Required() } maxlength="4096"/></p>
+		}
+	}
+}
+
 templ ConnectionAccess(csrf string, c application.ConnectionView) {
 	<section class="wake-card wake-connection">
 		<h2>{ c.Name }</h2>
 		<details><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
-		<p class="wake-help">Stored settings and token do not establish that the provider is reachable.</p>
+		<p class="wake-help">Stored settings and credentials do not establish that the provider is reachable.</p>
 		if c.MissingAccess {
-			<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Save the connection name and Confirmation Query ID, then replace its token.</p>
+			<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Review the source settings and required credentials.</p>
 		}
-		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }><input type="hidden" name="csrf" value={ csrf }/><p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="name" value={ c.Name } maxlength="256" required/></p><p><label for={ "query-" + c.ID }>Confirmation Query ID</label><input class="input" id={ "query-" + c.ID } name="query_id" value={ c.Query } pattern="[0-9]+" maxlength="64" required/></p><button class="btn" type="submit">Save connection settings and retry</button></form>
-		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/token") }><input type="hidden" name="csrf" value={ csrf }/><p><label for={ "token-" + c.ID }>Replacement token</label><input class="input" id={ "token-" + c.ID } name="token" type="password" autocomplete="new-password" required maxlength="4096"/></p><button class="btn" type="submit">Replace token and retry</button></form>
+		<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }>
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="connection_name" value={ c.Name } maxlength="256" required/></p>
+			@ProviderSettings(c.Descriptor, c.Settings, "update", c.ID)
+			<button class="btn" type="submit">Save connection settings and retry</button>
+		</form>
+		for _,field:=range c.Descriptor.Fields() {
+			if field.Kind()==provider.SecretField {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets") }>
+					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="secret_key" value={ field.Key() }/>
+					<p><label for={ providerFieldID("update", c.ID, field) }>{ "Replacement "+field.Label() }</label><input class="input" id={ providerFieldID("update", c.ID, field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
+					<button class="btn" type="submit">Replace credential and retry</button>
+				</form>
+			}
+		}
 	</section>
 }
 
-templ ConnectionSetup(csrf string) {
+templ ConnectionSetup(csrf string, registrations []provider.Registration) {
 	@Breadcrumbs("Add source")
-	@PageHeader("Add IBKR connection", "Discover accounts before granting synchronization authority.")
-	<section class="wake-card"><h2>Connection access</h2><form method="post" action="/connections"><input type="hidden" name="csrf" value={ csrf }/><p><label for="connection-name">Connection name</label><input class="input" id="connection-name" name="name" required maxlength="256"/></p><p><label for="query-id">Confirmation Query ID</label><input class="input" id="query-id" name="query_id" inputmode="numeric" pattern="[0-9]+" required maxlength="64"/></p><p><label for="flex-token">Flex Web Service token</label><input class="input" id="flex-token" name="token" type="password" autocomplete="new-password" required maxlength="4096"/></p><button class="btn btn-primary" type="submit">Create connection and discover accounts</button></form></section>
+	@PageHeader("Add source connection", "Configure a source before granting synchronization authority.")
+	if len(registrations)==0 {
+		<p>No source providers are available in this build.</p>
+	}
+	for _,registration:=range registrations {
+		<section class="wake-card">
+			<h2>{ registration.Descriptor().Name() }</h2>
+			<form method="post" action="/connections">
+				<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="provider" value={ registration.Descriptor().ID() }/>
+				<p><label for={ "connection-name-" + registration.Descriptor().ID() }>Connection name</label><input class="input" id={ "connection-name-" + registration.Descriptor().ID() } name="connection_name" required maxlength="256"/></p>
+				@ProviderSettings(registration.Descriptor(), provider.Settings{}, "create", registration.Descriptor().ID())
+				for _,field:=range registration.Descriptor().Fields() {
+					if field.Kind()==provider.SecretField {
+						<p><label for={ providerFieldID("create", registration.Descriptor().ID(), field) }>{ field.Label() }</label><input class="input" id={ providerFieldID("create", registration.Descriptor().ID(), field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required?={ field.Required() } maxlength="4096"/></p>
+					}
+				}
+				<button class="btn btn-primary" type="submit">Create connection</button>
+			</form>
+		</section>
+	}
 }
 
 templ ReferenceSettings(csrf string, view application.Dashboard) {
@@ -332,8 +376,12 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 		for _,p:=range c.Processing {
 			<article class="wake-report-row">
 				<div class="wake-card-heading">
-					<h3><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Confirmation report</a></h3>
-					if p.Complete {
+					<h3><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Source report</a></h3>
+					if c.Descriptor.ID()=="" {
+						<p>Provider unavailable. Evidence is retained.</p>
+					} else if !c.CanNormalize {
+						<p>Evidence retained. This source does not provide normalization.</p>
+					} else if p.Complete {
 						@StateBadge("Processing complete")
 					} else {
 						@StateBadge("Processing pending")
@@ -343,12 +391,12 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 				if p.NeedsReview>0 {
 					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Inspect report observations</a>.</p>
 				}
-				if p.Failure!="" {
+				if c.CanNormalize && p.Failure!="" {
 					<p class="wake-notice">{ p.Failure }</p>
 					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
 				}
 				<details><summary>Report identity and excluded rows</summary><p>{ p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
-				if p.Failure=="" {
+				if c.CanNormalize && p.Failure=="" {
 					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}
 			</article>

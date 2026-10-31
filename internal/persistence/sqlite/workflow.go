@@ -118,6 +118,7 @@ func (s *Store) Confirm(
 	id, artifact string,
 	ref source.Reference,
 	details application.AccountDetails,
+	acquire bool,
 ) (application.Account, error) {
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
@@ -209,18 +210,20 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if err = q.EnsureWork(
-		ctx,
-		sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
-	); err != nil {
-		return application.Account{}, err
-	}
+	if acquire {
+		if err = q.EnsureWork(
+			ctx,
+			sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
+		); err != nil {
+			return application.Account{}, err
+		}
 
-	if err = setScheduled(q,
-		ctx,
-		sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
-	); err != nil {
-		return application.Account{}, err
+		if err = setScheduled(q,
+			ctx,
+			sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
+		); err != nil {
+			return application.Account{}, err
+		}
 	}
 
 	if err = disableDiscovery(q, ctx, id); err != nil {
@@ -248,8 +251,29 @@ func (s *Store) PendingWork(ctx context.Context, now time.Time) ([]host.WorkKey,
 	return out, nil
 }
 
-func (s *Store) PendingArtifacts(ctx context.Context, now time.Time) ([]string, error) {
-	return s.queries.PendingArtifacts(ctx, now.UTC().Format(time.RFC3339Nano))
+func (s *Store) PendingArtifacts(
+	ctx context.Context,
+	now time.Time,
+	providers []string,
+) ([]application.PendingArtifact, error) {
+	if len(providers) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.queries.PendingArtifacts(
+		ctx,
+		sqlc.PendingArtifactsParams{Now: now.UTC().Format(time.RFC3339Nano), Providers: providers},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]application.PendingArtifact, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, application.PendingArtifact{ID: row.ID, Provider: row.Provider})
+	}
+
+	return out, nil
 }
 
 func (s *Store) ProcessingFailure(ctx context.Context, id string, next time.Time) error {
@@ -318,12 +342,9 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 			return out, e
 		}
 
-		name, _ := c.Settings.Get("name")
-		query, _ := c.Settings.Get("query_id")
-
-		view := application.ConnectionView{ID: id, Name: name, Query: query, Provider: c.Provider}
-		if name == "" {
-			view.Name = "Retained IBKR connection"
+		view := application.ConnectionView{ID: id, Name: c.Name, Settings: c.Settings, Provider: c.Provider}
+		if c.Name == "" {
+			view.Name = "Retained source connection"
 			if out.Account.Connection() == id {
 				view.Name = "Source for " + out.Account.Details().Name()
 			}
@@ -343,6 +364,11 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 
 		view.SettingsStored = readiness.SettingsStored
 		view.CredentialStored = readiness.CredentialStored
+
+		view.CredentialKeys, e = s.queries.CredentialKeys(ctx, id)
+		if e != nil {
+			return out, e
+		}
 
 		rows, e := s.queries.CandidateProfiles(ctx, id)
 		if e != nil {
@@ -391,7 +417,7 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 				view.Work,
 				application.WorkStatus{
 					Operation: r.Operation,
-					Progress:  r.Observed,
+					Progress:  provider.ProgressPhase(r.Observed),
 					Failure:   r.Failure,
 					Next:      r.Next,
 				},

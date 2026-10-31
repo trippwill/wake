@@ -24,6 +24,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -203,16 +204,28 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(s, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, logger)
+	workflow := application.New(s, h, refs, nil, logger)
 
 	token := credential.NewSecret([]byte("synthetic-private-token"))
 	defer token.Clear()
 
-	if _, err = workflow.CreateConnection(ctx, "Test", "not-numeric", token); err == nil {
+	if _, err = workflow.CreateConnection(
+		ctx,
+		"Test",
+		"ibkr-flex",
+		confirmationSettings("not-numeric"),
+		map[string]*credential.Secret{"token": token},
+	); err == nil {
 		t.Fatal("accepted invalid provider settings")
 	}
 
-	id, err := workflow.CreateConnection(ctx, "Test", "123", token)
+	id, err := workflow.CreateConnection(
+		ctx,
+		"Test",
+		"ibkr-flex",
+		confirmationSettings("123"),
+		map[string]*credential.Secret{"token": token},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +495,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	replacement := credential.NewSecret([]byte("replacement-token"))
 	defer replacement.Clear()
 
-	if err = workflow.ReplaceToken(ctx, id, replacement); err != nil {
+	if err = workflow.ReplaceSecret(ctx, id, "token", replacement); err != nil {
 		t.Fatal(err)
 	}
 
@@ -497,7 +510,12 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal("credential repair changed financial identity", err)
 	}
 
-	if err = workflow.UpdateConnection(ctx, id, "Repaired configuration", "456"); err != nil {
+	if err = workflow.UpdateConnection(
+		ctx,
+		id,
+		"Repaired configuration",
+		confirmationSettings("456"),
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -569,7 +587,7 @@ func TestIdleWorkflowDoesNotLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(s, h, refs, "", "", "", nil, logger)
+	workflow := application.New(s, h, refs, nil, logger)
 	for range 100 {
 		if err := workflow.RunOnce(ctx, time.Now()); err != nil {
 			t.Fatal(err)
@@ -579,4 +597,9 @@ func TestIdleWorkflowDoesNotLog(t *testing.T) {
 	if output.Len() != 0 {
 		t.Fatal("idle polling produced logs", output.String())
 	}
+}
+
+func confirmationSettings(query string) provider.Settings {
+	settings, _ := provider.NewSettings(map[string]string{"query_id": query})
+	return settings
 }

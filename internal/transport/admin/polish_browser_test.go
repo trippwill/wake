@@ -31,6 +31,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 )
 
 // Synthetic rows deliberately exceed binary floating-point precision and one page.
@@ -133,6 +134,22 @@ func polishObservations(changed bool) templ.Component {
 }
 
 func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
+	tenant, _ := provider.NewField("tenant", "Tenant identifier", provider.TextField, true)
+	secret, _ := provider.NewField("api_secret", "API secret", provider.SecretField, true)
+	stream, _ := provider.NewStream("statements", "synthetic-v1")
+	descriptor, _ := provider.NewDescriptor(
+		"synthetic",
+		"Synthetic source",
+		[]provider.Stream{stream},
+		[]provider.Field{tenant, secret},
+		nil,
+	)
+
+	registration, err := provider.NewRegistration(descriptor, "v1", nil, browserNormalizer{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	browser := os.Getenv("WAKE_BROWSER")
 	if browser == "" {
 		for _, name := range []string{"brave-browser", "chromium", "google-chrome"} {
@@ -223,12 +240,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	view := application.Dashboard{
 		Connections: []application.ConnectionView{
 			{
-				ID:             "synthetic-connection",
-				Name:           "Long-term investment account",
-				Query:          "123",
+				ID:         "synthetic-connection",
+				Name:       "Long-term investment account",
+				Descriptor: descriptor,
+
 				SettingsStored: true, CredentialStored: true,
 				Work: []application.WorkStatus{
-					{Operation: "discover", Progress: "generating", Next: "2026-10-26T12:00:00Z"},
+					{Operation: "discover", Progress: "waiting", Next: "2026-10-26T12:00:00Z"},
 				},
 				Processing: []application.ProcessingStatus{
 					{Artifact: "synthetic-report", TradeClaims: 70, Complete: true},
@@ -371,7 +389,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				component = ConnectionPage(csrf, view, view.Connections[0])
 			case "/test/new":
-				component = ConnectionSetup(csrf)
+				component = ConnectionSetup(csrf, []provider.Registration{registration})
 			case "/test/reference":
 				component = ReferencePage(csrf, view)
 			case "/test/maintenance":
@@ -968,4 +986,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	if exceptions.Load() != 0 {
 		t.Fatal("browser script exceptions", exceptions.Load())
 	}
+}
+
+type browserNormalizer struct{}
+
+func (browserNormalizer) Normalize(
+	context.Context,
+	provider.Artifact,
+	provider.Claims,
+) (provider.Result, error) {
+	return provider.Result{}, provider.ErrUnavailable
 }

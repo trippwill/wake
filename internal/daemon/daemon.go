@@ -172,15 +172,7 @@ func run(
 		return err
 	}
 
-	workflow := application.New(
-		store,
-		providerHost,
-		referenceService,
-		registration.Descriptor().ID(),
-		ibkrflex.Confirmations,
-		ibkrflex.Version,
-		options.Now, logger,
-	)
+	workflow := application.New(store, providerHost, referenceService, options.Now, logger)
 
 	workContext, cancelWork := context.WithCancel(ctx)
 

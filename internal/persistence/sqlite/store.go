@@ -33,7 +33,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching stores or explicitly recreate companions"
-	schemaVersion              = "wake-simplification-1"
+	schemaVersion              = "wake-simplification-2"
 )
 
 // Profile selects the warehouse, connections file and operational storage.

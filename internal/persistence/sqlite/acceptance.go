@@ -268,9 +268,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					if e = q.PutEventLink(
 						ctx,
 						sqlc.PutEventLinkParams{
-							AccountID:   account.ID(),
-							Reference:   referenceKey(f.Event),
-							ExecutionID: execution,
+							AccountID:     account.ID(),
+							Reference:     referenceKey(f.Event),
+							ExecutionID:   execution,
+							DistinctEvent: boolInt(f.EventDistinct),
 						},
 					); e != nil {
 						return e
@@ -283,9 +284,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					if e = q.PutEventLink(
 						ctx,
 						sqlc.PutEventLinkParams{
-							AccountID:   account.ID(),
-							Reference:   referenceKey(ref),
-							ExecutionID: execution,
+							AccountID:     account.ID(),
+							Reference:     referenceKey(ref),
+							ExecutionID:   execution,
+							DistinctEvent: boolInt(f.EventDistinct && ref == f.Event),
 						},
 					); e != nil {
 						return e
@@ -663,7 +665,7 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 	return out, nil
 }
 
-// An execution ID distinguishes fills even when another native reference is shared.
+// A distinct event reference distinguishes fills even when an alias is shared.
 // Aliases can corroborate an earlier observation with only a trade ID. Several
 // possible executions stay ambiguous instead of selecting an arbitrary fill.
 func matchExecution(
@@ -673,7 +675,7 @@ func matchExecution(
 	t source.Trade,
 ) (string, bool, error) {
 	f := t.Fields()
-	return matchReferences(ctx, q, account, f.Event, f.EventAliases)
+	return matchReferences(ctx, q, account, f.Event, f.EventAliases, f.EventDistinct)
 }
 
 func matchReferences(
@@ -682,6 +684,7 @@ func matchReferences(
 	account string,
 	event source.Reference,
 	aliases []source.Reference,
+	distinct bool,
 ) (string, bool, error) {
 	matches := map[string]bool{}
 	for index, ref := range append([]source.Reference{event}, aliases...) {
@@ -691,7 +694,7 @@ func matchReferences(
 		}
 
 		for _, id := range ids {
-			if index > 0 && event.Kind() == "execution-id" {
+			if index > 0 && distinct {
 				links, err := q.ExecutionLinks(ctx, id)
 				if err != nil {
 					return "", false, err
@@ -709,7 +712,8 @@ func matchReferences(
 						return "", false, err
 					}
 
-					if r.Kind() == "execution-id" && r != event {
+					if r.Authority() == event.Authority() && r.Kind() == event.Kind() && r.Scope() == event.Scope() &&
+						r != event {
 						different = true
 					}
 				}
@@ -722,7 +726,7 @@ func matchReferences(
 			matches[id] = true
 		}
 
-		if index == 0 && len(matches) == 1 && event.Kind() == "execution-id" {
+		if index == 0 && len(matches) == 1 && distinct {
 			for id := range matches {
 				return id, false, nil
 			}
@@ -866,7 +870,7 @@ func processLifecycle(
 		return q.PutObservation(ctx, o)
 	}
 
-	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases)
+	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases, f.EventDistinct)
 	if err != nil {
 		return err
 	}
@@ -918,7 +922,12 @@ func processLifecycle(
 	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
 		if err = q.PutEventLink(
 			ctx,
-			sqlc.PutEventLinkParams{AccountID: account.ID(), Reference: referenceKey(r), ExecutionID: id},
+			sqlc.PutEventLinkParams{
+				AccountID:     account.ID(),
+				Reference:     referenceKey(r),
+				ExecutionID:   id,
+				DistinctEvent: boolInt(f.EventDistinct && r == f.Event),
+			},
 		); err != nil {
 			return err
 		}
@@ -1032,7 +1041,7 @@ func processConversion(
 		return q.PutObservation(ctx, o)
 	}
 
-	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases)
+	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases, f.EventDistinct)
 	if err != nil {
 		return err
 	}
@@ -1078,7 +1087,12 @@ func processConversion(
 	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
 		if err = q.PutEventLink(
 			ctx,
-			sqlc.PutEventLinkParams{AccountID: account.ID(), Reference: referenceKey(r), ExecutionID: id},
+			sqlc.PutEventLinkParams{
+				AccountID:     account.ID(),
+				Reference:     referenceKey(r),
+				ExecutionID:   id,
+				DistinctEvent: boolInt(f.EventDistinct && r == f.Event),
+			},
 		); err != nil {
 			return err
 		}
@@ -1114,4 +1128,12 @@ func (s *Store) activityContext(
 	}
 
 	return out, nil
+}
+
+func boolInt(value bool) int64 {
+	if value {
+		return 1
+	}
+
+	return 0
 }

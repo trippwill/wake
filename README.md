@@ -40,7 +40,7 @@ settings from `config describe`; retired acquisition settings are rejected.
 
 ### Connect and inspect
 
-Open **Connections → Add IBKR connection**, enter a connection name, the saved
+Open **Connections → Add source connection**, enter a connection name, the saved
 Confirmation Query ID and the Flex Web Service token. See [IBKR setup](docs/providers/ibkr-flex.md) for
 query preparation. Wake encrypts the token and performs one bounded discovery
 attempt. It shows the available accounts and any missing profile information.

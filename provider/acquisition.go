@@ -73,6 +73,7 @@ type Step struct {
 	artifact Artifact
 	next     time.Time
 	failure  string
+	reason   RetryReason
 	coverage Coverage
 }
 
@@ -92,8 +93,8 @@ func (s Step) NextEligibleAt() time.Time { return s.next }
 
 // NewRetryStep retains updated continuation and a safe failure code together.
 // Generation-pending and unavailable-date waits use NewStep instead.
-func NewRetryStep(state State, next time.Time, code string) (Step, error) {
-	if !validKey(code) {
+func NewRetryStep(state State, next time.Time, reason RetryReason, code string) (Step, error) {
+	if !validKey(code) || (reason != RetryUpstream && reason != RetryNetwork && reason != RetryThrottled) {
 		return Step{}, ErrInvalid
 	}
 
@@ -103,11 +104,23 @@ func NewRetryStep(state State, next time.Time, code string) (Step, error) {
 	}
 
 	step.failure = code
+	step.reason = reason
 
 	return step, nil
 }
 
-func (s Step) FailureCode() string { return s.failure }
+func (s Step) FailureCode() string      { return s.failure }
+func (s Step) RetryReason() RetryReason { return s.reason }
+
+// RetryReason is a source-neutral outcome. FailureCode retains a provider-owned
+// diagnostic identifier; hosts must never interpret its protocol meaning.
+type RetryReason string
+
+const (
+	RetryUpstream  RetryReason = "upstream_retry"
+	RetryNetwork   RetryReason = "network_failure"
+	RetryThrottled RetryReason = "throttled"
+)
 
 // Coverage distinguishes requested bounds from the bounds actually reported.
 // Absent returned bounds establish no coverage.
@@ -166,21 +179,38 @@ func (s Step) WithCoverage(c Coverage) (Step, error) {
 }
 func (s Step) Coverage() Coverage { return s.coverage }
 
+// ProgressPhase describes observable work without exposing protocol codes.
+type ProgressPhase string
+
+const (
+	ProgressRequesting  ProgressPhase = "requesting"
+	ProgressWaiting     ProgressPhase = "waiting"
+	ProgressPaced       ProgressPhase = "paced"
+	ProgressRetained    ProgressPhase = "retained"
+	ProgressUnavailable ProgressPhase = "unavailable"
+)
+
 // Progress describes work observed, not a claim that the host has committed it.
 type Progress struct {
-	code      string
+	code      ProgressPhase
 	completed uint64
 	total     uint64
 }
 
-func NewProgress(code string, completed, total uint64) (Progress, error) {
-	if !validKey(code) || (total != 0 && completed > total) {
+func NewProgress(code ProgressPhase, completed, total uint64) (Progress, error) {
+	switch code {
+	case ProgressRequesting, ProgressWaiting, ProgressPaced, ProgressRetained, ProgressUnavailable:
+	default:
+		return Progress{}, ErrInvalid
+	}
+
+	if total != 0 && completed > total {
 		return Progress{}, ErrInvalid
 	}
 
 	return Progress{code: code, completed: completed, total: total}, nil
 }
 
-func (p Progress) Code() string      { return p.code }
-func (p Progress) Completed() uint64 { return p.completed }
-func (p Progress) Total() uint64     { return p.total }
+func (p Progress) Phase() ProgressPhase { return p.code }
+func (p Progress) Completed() uint64    { return p.completed }
+func (p Progress) Total() uint64        { return p.total }

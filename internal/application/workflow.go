@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,11 +23,15 @@ type (
 		Paused, ReferenceReview, WarehouseReset bool
 		Revision                                int64
 	}
-	Candidate struct {
+	PendingArtifact struct{ ID, Provider string }
+	Candidate       struct {
 		Artifact  string
 		Candidate provider.Candidate
 	}
-	WorkStatus       struct{ Operation, Progress, Failure, Next string }
+	WorkStatus struct {
+		Operation, Failure, Next string
+		Progress                 provider.ProgressPhase
+	}
 	ProcessingStatus struct {
 		Artifact, Failure                                                         string
 		TradeClaims, LifecycleClaims, ConversionClaims, ExcludedRows, NeedsReview int64
@@ -34,12 +39,16 @@ type (
 		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo                      string
 	}
 	ConnectionView struct {
-		ID, Name, Query, Provider        string
-		MissingAccess                    bool
-		SettingsStored, CredentialStored bool
-		Candidates                       []Candidate
-		Work                             []WorkStatus
-		Processing                       []ProcessingStatus
+		ID, Name, Provider                    string
+		Settings                              provider.Settings
+		Descriptor                            provider.Descriptor
+		CredentialKeys                        []string
+		CanDiscover, CanAcquire, CanNormalize bool
+		MissingAccess                         bool
+		SettingsStored, CredentialStored      bool
+		Candidates                            []Candidate
+		Work                                  []WorkStatus
+		Processing                            []ProcessingStatus
 	}
 	Dashboard struct {
 		Storage          StorageStatus
@@ -57,10 +66,10 @@ type (
 	Store interface {
 		ResumeStorage(context.Context, int64, string, time.Time) error
 		Schedule(context.Context, host.WorkKey, bool) error
-		Confirm(context.Context, string, string, source.Reference, AccountDetails) (Account, error)
+		Confirm(context.Context, string, string, source.Reference, AccountDetails, bool) (Account, error)
 		Dashboard(context.Context) (Dashboard, error)
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
-		PendingArtifacts(context.Context, time.Time) ([]string, error)
+		PendingArtifacts(context.Context, time.Time, []string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
 		ProcessingFailure(context.Context, string, time.Time) error
 		ExecutionDetail(context.Context, string) (ExecutionDetail, error)
@@ -87,15 +96,14 @@ type (
 		SetKey(context.Context, *credential.Secret) error
 	}
 	Workflow struct {
-		logger                    *slog.Logger
-		store                     Store
-		host                      *host.Host
-		reference                 Reference
-		provider, stream, version string
-		wake                      chan struct{}
-		now                       func() time.Time
-		mu                        sync.Mutex
-		subscribers               map[chan struct{}]bool
+		logger      *slog.Logger
+		store       Store
+		host        *host.Host
+		reference   Reference
+		wake        chan struct{}
+		now         func() time.Time
+		mu          sync.Mutex
+		subscribers map[chan struct{}]bool
 	}
 )
 
@@ -103,7 +111,6 @@ func New(
 	store Store,
 	h *host.Host,
 	reference Reference,
-	providerID, stream, version string,
 	now func() time.Time,
 	logger *slog.Logger,
 ) *Workflow {
@@ -116,9 +123,6 @@ func New(
 		store:       store,
 		host:        h,
 		reference:   reference,
-		provider:    providerID,
-		stream:      stream,
-		version:     version,
 		wake:        make(chan struct{}, 1),
 		now:         now,
 		subscribers: map[chan struct{}]bool{},
@@ -152,53 +156,102 @@ func (w *Workflow) Subscribe() (chan struct{}, func()) {
 	return ch, func() { w.mu.Lock(); delete(w.subscribers, ch); w.mu.Unlock() }
 }
 
+// Providers exposes only the compiled registrations selected by composition.
+func (w *Workflow) Providers() []provider.Registration {
+	if w.host == nil {
+		return nil
+	}
+
+	return w.host.Registrations()
+}
+
+func (w *Workflow) Provider(id string) (provider.Registration, bool) {
+	if w.host == nil {
+		return provider.Registration{}, false
+	}
+
+	return w.host.Registration(id)
+}
+
+// ConnectionDescriptor reads provider metadata without decoding financial history.
+func (w *Workflow) ConnectionDescriptor(ctx context.Context, id string) (provider.Descriptor, error) {
+	if w.host == nil {
+		return provider.Descriptor{}, provider.ErrUnavailable
+	}
+
+	connection, err := w.host.Connection(ctx, id)
+	if err != nil {
+		return provider.Descriptor{}, err
+	}
+
+	registration, ok := w.Provider(connection.Provider)
+	if !ok {
+		return provider.Descriptor{}, provider.ErrUnavailable
+	}
+
+	return registration.Descriptor(), nil
+}
+
 func (w *Workflow) CreateConnection(
 	ctx context.Context,
-	name, query string,
-	token *credential.Secret,
-) (idResult string, resultErr error) {
+	name, providerID string,
+	settings provider.Settings,
+	secrets map[string]*credential.Secret,
+) (result string, resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_create")
 	defer func() { finishLog(resultErr) }()
 
-	settings, err := provider.NewSettings(map[string]string{"name": name, "query_id": query})
+	registration, ok := w.Provider(providerID)
+	if !ok {
+		return "", provider.ErrUnavailable
+	}
+
+	id, err := w.host.Configure(ctx, providerID, name, settings, secrets)
 	if err != nil {
 		return "", err
 	}
 
-	id, err := w.host.Configure(ctx, w.provider, settings, map[string]*credential.Secret{"token": token})
-	if err != nil {
-		return "", err
+	if registration.Discoverer() != nil {
+		for _, stream := range registration.Descriptor().Streams() {
+			if err = w.store.Schedule(
+				ctx,
+				host.WorkKey{Connection: id, Stream: stream.ID(), Operation: "discover"},
+				true,
+			); err != nil {
+				return id, err
+			}
+		}
 	}
 
-	err = w.store.Schedule(ctx, host.WorkKey{Connection: id, Stream: w.stream, Operation: "discover"}, true)
-	if err == nil {
-		w.notify()
-	}
+	w.notify()
 
-	return id, err
+	return id, nil
 }
 
-func (w *Workflow) ReplaceToken(ctx context.Context, id string, token *credential.Secret) (resultErr error) {
+func (w *Workflow) ReplaceSecret(
+	ctx context.Context,
+	id, key string,
+	secret *credential.Secret,
+) (resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_access_repair")
 	defer func() { finishLog(resultErr) }()
 
-	if err := w.host.ReplaceSecret(ctx, id, "token", token); err != nil {
+	if err := w.host.ReplaceSecret(ctx, id, key, secret); err != nil {
 		return err
 	}
 
 	return w.Retry(ctx, id)
 }
 
-func (w *Workflow) UpdateConnection(ctx context.Context, id, name, query string) (resultErr error) {
+func (w *Workflow) UpdateConnection(
+	ctx context.Context,
+	id, name string,
+	settings provider.Settings,
+) (resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_update")
 	defer func() { finishLog(resultErr) }()
 
-	settings, err := provider.NewSettings(map[string]string{"name": name, "query_id": query})
-	if err != nil {
-		return err
-	}
-
-	if err = w.host.UpdateSettings(ctx, id, settings); err != nil {
+	if err := w.host.UpdateSettings(ctx, id, name, settings); err != nil {
 		return err
 	}
 
@@ -209,22 +262,41 @@ func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "acquisition_retry")
 	defer func() { finishLog(resultErr) }()
 
+	connection, err := w.host.Connection(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	registration, ok := w.Provider(connection.Provider)
+	if !ok {
+		return provider.ErrUnavailable
+	}
+
 	view, err := w.store.Dashboard(ctx)
 	if err != nil {
 		return err
 	}
 
-	operation := "discover"
-	if view.Account.Connection() == id {
-		operation = "acquire"
+	for _, stream := range registration.Descriptor().Streams() {
+		operation := "discover"
+		if view.Account.Connection() == id && view.Account.Stream() == stream.ID() &&
+			registration.Acquirer() != nil {
+			operation = "acquire"
+		} else if registration.Discoverer() == nil {
+			continue
+		}
+
+		if err = w.host.Retry(
+			ctx,
+			host.WorkKey{Connection: id, Stream: stream.ID(), Operation: operation},
+		); err != nil {
+			return err
+		}
 	}
 
-	err = w.host.Retry(ctx, host.WorkKey{Connection: id, Stream: w.stream, Operation: operation})
-	if err == nil {
-		w.notify()
-	}
+	w.notify()
 
-	return err
+	return nil
 }
 
 func (w *Workflow) Confirm(
@@ -236,7 +308,17 @@ func (w *Workflow) Confirm(
 	ctx, finishLog := logging.Start(ctx, w.logger, "account_confirm")
 	defer func() { finishLog(resultErr) }()
 
-	a, err := w.store.Confirm(ctx, id, artifact, ref, details)
+	connection, err := w.host.Connection(ctx, id)
+	if err != nil {
+		return Account{}, err
+	}
+
+	registration, ok := w.Provider(connection.Provider)
+	if !ok {
+		return Account{}, provider.ErrUnavailable
+	}
+
+	a, err := w.store.Confirm(ctx, id, artifact, ref, details, registration.Acquirer() != nil)
 	if err == nil {
 		w.notify()
 	}
@@ -256,7 +338,39 @@ func (w *Workflow) SetReferenceKey(ctx context.Context, key *credential.Secret) 
 	return err
 }
 
-func (w *Workflow) Dashboard(ctx context.Context) (Dashboard, error) { return w.store.Dashboard(ctx) }
+func (w *Workflow) Dashboard(ctx context.Context) (Dashboard, error) {
+	view, err := w.store.Dashboard(ctx)
+	if err != nil {
+		return view, err
+	}
+
+	for index := range view.Connections {
+		connection := &view.Connections[index]
+
+		registration, ok := w.Provider(connection.Provider)
+		if !ok {
+			continue
+		}
+
+		connection.Descriptor = registration.Descriptor()
+
+		connection.CanAcquire = registration.Acquirer() != nil
+
+		connection.CanDiscover = registration.Discoverer() != nil
+		connection.CanNormalize = registration.Normalizer() != nil
+		connection.CredentialStored = true
+		for _, field := range connection.Descriptor.Fields() {
+			if field.Kind() == provider.SecretField && field.Required() &&
+				!slices.Contains(connection.CredentialKeys, field.Key()) {
+				connection.CredentialStored = false
+			}
+		}
+
+		connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+	}
+
+	return view, nil
+}
 
 func (w *Workflow) ExecutionDetail(ctx context.Context, id string) (ExecutionDetail, error) {
 	return w.store.ExecutionDetail(ctx, id)
@@ -353,17 +467,33 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	artifacts, err := w.store.PendingArtifacts(ctx, now)
+	providers := []string{}
+	for _, registration := range w.Providers() {
+		if registration.Normalizer() != nil {
+			providers = append(providers, registration.Descriptor().ID())
+		}
+	}
+
+	artifacts, err := w.store.PendingArtifacts(ctx, now, providers)
 	if err != nil {
 		return err
 	}
 
-	for _, id := range artifacts {
+	for _, artifact := range artifacts {
+		id := artifact.ID
 		work := logging.Correlate(ctx)
-		if _, err = w.host.Normalize(work, id, w.version); err == nil {
-			processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
-			err = w.store.Process(processContext, id, w.version)
-			finish(err)
+		registration, ok := w.Provider(artifact.Provider)
+		switch {
+		case !ok:
+			err = provider.ErrUnavailable
+		case registration.Normalizer() == nil:
+			continue
+		default:
+			if _, err = w.host.Normalize(work, id, registration.Version()); err == nil {
+				processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
+				err = w.store.Process(processContext, id, registration.Version())
+				finish(err)
+			}
 		}
 
 		if err != nil {
@@ -487,7 +617,7 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 	ctx, finishLog := logging.Start(ctx, w.logger, "storage_resume")
 	defer func() { finishLog(resultErr) }()
 
-	view, err := w.store.Dashboard(ctx)
+	view, err := w.Dashboard(ctx)
 	if err != nil {
 		return err
 	}
@@ -518,16 +648,19 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 
 	if view.Storage.WarehouseReset {
 		for _, connection := range view.Connections {
-			if connection.Provider != w.provider {
+			registration, ok := w.Provider(connection.Provider)
+			if !ok || registration.Discoverer() == nil {
 				continue
 			}
 
-			if err = w.store.Schedule(
-				ctx,
-				host.WorkKey{Connection: connection.ID, Stream: w.stream, Operation: "discover"},
-				true,
-			); err != nil {
-				return err
+			for _, stream := range registration.Descriptor().Streams() {
+				if err = w.store.Schedule(
+					ctx,
+					host.WorkKey{Connection: connection.ID, Stream: stream.ID(), Operation: "discover"},
+					true,
+				); err != nil {
+					return err
+				}
 			}
 		}
 	}

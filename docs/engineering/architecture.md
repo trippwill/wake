@@ -194,7 +194,18 @@ traffic stay out of info logs.
 Providers use public `financial`, `source` and `provider` packages. Registration is
 explicit and starts no work. Source references remain qualified claims, with no
 Wake financial IDs. Discovery returns candidates and grants no recurring access or
-financial authority. Normalization receives retained bytes and a sequential claim
+financial authority. Acquisition, discovery, settings preparation and normalization
+are independent capabilities; orchestration selects each artifact's registered
+interpreter rather than a global source/version. Common forms use provider field
+metadata. Connection display names belong to the host, while provider settings,
+credentials, continuation documents and native diagnostic codes belong to the source.
+Providers without a normalization capability retain acquired evidence without
+entering interpretation retries. Providers translate protocol progress and retry
+causes into shared typed outcomes;
+the core never infers their meaning from a native code or reference kind.
+Normalization-only providers can interpret explicitly supplied bounded evidence
+without acquisition credentials or scheduled upstream work. Supply grants no
+account authority. Normalization receives retained bytes and a sequential claim
 sink; it receives no credentials, reference lookup, SQL or presentation services.
 
 The host scopes work and credential callbacks to a connection and joins admitted
@@ -216,8 +227,8 @@ financial authority by themselves.
 
 Operator confirmation commits a Wake account, its qualified source binding and
 the intent to synchronize together. Discovery stops after its bounded attempt;
-authorized acquisition starts independently. The daemon resumes eligible durable
-work, retains pacing and unavailable ranges, and joins acquisition and reference
+authorized acquisition starts independently when that capability is implemented.
+The daemon resumes eligible durable work, retains pacing and unavailable ranges, and joins acquisition and reference
 work during shutdown. Requested windows and reported coverage remain distinct.
 
 Financial acceptance applies named/versioned authority, observation-matching and

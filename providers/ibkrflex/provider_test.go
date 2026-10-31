@@ -30,7 +30,7 @@ func (a *testAccess) WithSecret(ctx context.Context, _ string, fn func([]byte) e
 }
 
 func (a *testAccess) Report(_ context.Context, p provider.Progress) error {
-	a.progress = p.Code()
+	a.progress = string(p.Phase())
 	return nil
 }
 
@@ -177,12 +177,12 @@ func TestBoundedProtocolGenerationAndRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	settings, _ := provider.NewSettings(map[string]string{"name": "test", "query_id": "123"})
+	settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
 	access := &testAccess{token: []byte("synthetic-token"), now: now}
 	request := provider.Request{Stream: Confirmations, Settings: settings, Now: now}
 
 	step, err := reg.Acquirer().Acquire(context.Background(), request, access)
-	if err != nil || step.State().IsZero() || access.progress != "generating" {
+	if err != nil || step.State().IsZero() || access.progress != "waiting" {
 		t.Fatal("generation not retained", err)
 	}
 
@@ -200,7 +200,7 @@ func TestBoundedProtocolGenerationAndRepair(t *testing.T) {
 
 	access.now = request.Now
 	step, err = reg.Acquirer().Acquire(context.Background(), request, access)
-	if err != nil || step.FailureCode() != "" || access.progress != "ibkr-1019" {
+	if err != nil || step.FailureCode() != "" || access.progress != "waiting" {
 		t.Fatal("generation polling", err)
 	}
 

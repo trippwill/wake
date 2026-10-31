@@ -15,11 +15,15 @@ import (
 type Provider struct{}
 
 func Register() (provider.Registration, error) {
-	stream, err := provider.NewStream("confirmations", "fixture-v1")
+	stream, err := provider.NewStream("statements", "fixture-v1")
 	if err != nil {
 		return provider.Registration{}, err
 	}
-	field, err := provider.NewField("token", "Access token", provider.SecretField, true)
+	field, err := provider.NewField("api_secret", "API secret", provider.SecretField, true)
+	if err != nil {
+		return provider.Registration{}, err
+	}
+	tenant, err := provider.NewField("tenant", "Tenant identifier", provider.TextField, true)
 	if err != nil {
 		return provider.Registration{}, err
 	}
@@ -27,20 +31,20 @@ func Register() (provider.Registration, error) {
 	if err != nil {
 		return provider.Registration{}, err
 	}
-	d, err := provider.NewDescriptor("fixture", "Synthetic fixture", []provider.Stream{stream}, []provider.Field{field}, []provider.PacingPolicy{pacing})
+	d, err := provider.NewDescriptor("fixture", "Synthetic fixture", []provider.Stream{stream}, []provider.Field{tenant, field}, []provider.PacingPolicy{pacing})
 	if err != nil {
 		return provider.Registration{}, err
 	}
 	return provider.NewRegistration(d, "v1", Provider{}, Provider{}, Provider{}, nil)
 }
 func (Provider) Acquire(ctx context.Context, r provider.Request, a provider.Access) (provider.Step, error) {
-	if r.Stream != "confirmations" {
+	if tenant, _ := r.Settings.Get("tenant"); r.Stream != "statements" || tenant != "synthetic-tenant" {
 		return provider.Step{}, provider.ErrUnavailable
 	}
 	if !r.State.IsZero() && r.State.Version() != "v1" {
 		return provider.Step{}, provider.ErrUnavailable
 	}
-	err := a.WithSecret(ctx, "token", func(secret []byte) error {
+	err := a.WithSecret(ctx, "api_secret", func(secret []byte) error {
 		if string(secret) != "synthetic-token" {
 			return provider.ErrUnauthorized
 		}
@@ -60,7 +64,7 @@ func (Provider) Acquire(ctx context.Context, r provider.Request, a provider.Acce
 	if !reservation.Granted() {
 		return provider.NewStep(r.State, provider.Artifact{}, reservation.NextEligibleAt())
 	}
-	progress, err := provider.NewProgress("report-retained", 1, 1)
+	progress, err := provider.NewProgress(provider.ProgressRetained, 1, 1)
 	if err != nil {
 		return provider.Step{}, err
 	}
@@ -125,7 +129,7 @@ func (Provider) Normalize(ctx context.Context, artifact provider.Artifact, sink 
 	price, _ := financial.NewPrice("123.4500000000000000000000000001", currency)
 	date, _ := financial.ParseDate("2026-10-23")
 	at, _ := financial.ParseTimestamp("2026-10-23T12:00:00.1200Z")
-	trade, err := source.NewTrade(source.TradeInput{Location: "line:1", Account: account, Instrument: instrument, Event: event, Side: source.Buy, Quantity: quantity, Price: price, TradeDate: date, ExecutedAt: at})
+	trade, err := source.NewTrade(source.TradeInput{Location: "line:1", Account: account, Instrument: instrument, Event: event, EventDistinct: true, Side: source.Buy, Quantity: quantity, Price: price, TradeDate: date, ExecutedAt: at})
 	if err != nil {
 		return provider.Result{}, err
 	}
@@ -237,4 +241,42 @@ func Correction() (source.Correction, error) {
 	f := t.Fields()
 	target, _ := source.NewReference("fixture-broker", "trade", "account-1", "original")
 	return source.NewCorrection(source.CorrectionInput{Location: "correction:1", Account: f.Account, Target: target, Replacement: f.Event, Kind: source.Replacement})
+}
+
+// DocumentNormalizer intentionally has no acquisition, discovery, or settings
+// capability. Original bytes and source location enter through public contracts.
+type DocumentNormalizer struct{}
+
+func RegisterDocument() (provider.Registration, error) {
+	stream, err := provider.NewStream("documents", "synthetic-document-v1")
+	if err != nil {
+		return provider.Registration{}, err
+	}
+	descriptor, err := provider.NewDescriptor("synthetic-document", "Synthetic document", []provider.Stream{stream}, nil, nil)
+	if err != nil {
+		return provider.Registration{}, err
+	}
+	return provider.NewRegistration(descriptor, "document-v1", nil, DocumentNormalizer{}, nil, nil)
+}
+func (DocumentNormalizer) Normalize(ctx context.Context, artifact provider.Artifact, claims provider.Claims) (provider.Result, error) {
+	if artifact.Format() != "synthetic-document-v1" {
+		return provider.Result{}, provider.ErrUnavailable
+	}
+	if string(artifact.Content()) != "synthetic document bytes" {
+		return provider.Result{}, provider.ErrMalformed
+	}
+	trade, err := Option()
+	if err != nil {
+		return provider.Result{}, err
+	}
+	fields := trade.Fields()
+	fields.Location = "page:1/region:2/row:3"
+	trade, err = source.NewTrade(fields)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	if err = claims.PutTrade(ctx, trade); err != nil {
+		return provider.Result{}, err
+	}
+	return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
 }
