@@ -81,10 +81,12 @@ history stays inspectable. In **Connections → Recovery**, follow the ordered
 source-access and reference review steps, then select **Resume upstream work**.
 An ordinary restart with intact stores keeps the existing authorization.
 
-Activity search and filters select the displayed records. Enhanced tables provide
-exact sorting and pagination and retain their view through updates; native tables
-remain readable without JavaScript. Correction drafts survive validation errors,
-and changed data requires review before resubmission.
+The admin console requires JavaScript. Activity, instrument and observation tables
+load authenticated JSON, with filtering, exact ordering and pagination performed on
+the server at 50 rows per page by default. URLs retain filters and page state;
+Tabulator retains column preferences. Accepted detail pages offer an explicit refresh
+action, while retained observations update independently. Correction drafts survive
+validation errors, and changed data requires review before resubmission.
 
 The daemon writes structured operational logs to stderr, including completed work,
 failures and recovery actions. Startup always reports the admin binding and port,

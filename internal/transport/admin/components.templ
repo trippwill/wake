@@ -65,26 +65,29 @@ func stateKind(value string) string {
 	}
 }
 
-templ ObservationHistory(rows []application.Observation) {
-	<section class="wake-grid" id="observation-grid" data-grid="observations" aria-label="Retained observations">
-		<section class="wake-table-scroll" aria-label="Scrollable table">
-			<table class="table">
-				<caption>Retained observations</caption><thead><tr><th scope="col">Report</th><th scope="col">Outcome</th><th scope="col">Source location</th><th scope="col">Acceptance rule / version</th></tr></thead>
-				<tbody>
-					for _,row:=range rows {
-						<tr id={ observationID(row) }>
-							<td><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+row.Artifact) + "&location=" + url.QueryEscape(row.Location)) }>Source report</a></td>
-							<td>
-								@ObservationBadge(row.Outcome)
-							</td>
-							<td>{ row.Location }</td>
-							<td>{ row.Rule } · { row.Version }</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		</section>
+templ AcceptedDetailScope() {
+	<p class="wake-help">Accepted details reflect this page load. <a href={ templ.SafeURL(page(ctx).URL) }>Refresh accepted details</a>. Retained observations update independently.</p>
+}
+
+templ Grid(kind, endpoint, label string) {
+	<section class="wake-grid" id={ kind + "-grid" } data-grid={ kind } data-grid-url={ endpoint } aria-label={ label }>
+		<div class="wake-grid-controls">
+			<p role="status" data-grid-status>Loading table…</p>
+			<button class="btn btn-sm" type="button" data-grid-retry hidden>Retry table</button>
+			<a href="/login" data-grid-signin hidden>Sign in again</a>
+			<button class="btn btn-sm" type="button" data-grid-reset>Reset columns</button>
+		</div>
+		if kind=="observations" {
+			<form data-observation-filters><label for="observation-search">Search retained observations</label><input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("observations_q") }/><button class="btn" type="submit">Search</button></form>
+		}
+		<p class="wake-help">Sort, filter and page across all matching records. 50 rows per page. Enter sorts a focused heading; Alt + arrow keys resize it.</p>
+		<div data-grid-table></div>
+		<noscript><p class="wake-notice">JavaScript is required to display this table.</p></noscript>
 	</section>
+}
+
+templ ObservationHistory(kind, id string) {
+	@Grid("observations", "/grids/observations?subject="+kind+"&id="+url.QueryEscape(id), "Retained observations")
 }
 
 func comparisonText(value application.CorrectionValue) string {

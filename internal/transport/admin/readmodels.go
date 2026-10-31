@@ -243,11 +243,30 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		options.Page = n
 	}
 
+	if value := params.Get("size"); value != "" {
+		size, err := strconv.Atoi(value)
+		if err != nil {
+			return application.ListQuery{}, application.ErrInvalid
+		}
+
+		options.PageSize = size
+	}
+
 	if scope == application.SourceScope || scope == application.ReviewScope {
 		options.Kind = ""
 		options.State = ""
 		options.Sort = ""
 		options.Direction = ""
+	}
+
+	if scope == application.ObservationScope {
+		options.Kind = ""
+		options.State = ""
+		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationCorroborated, application.ObservationAccepted} {
+			if strings.Contains(strings.ToLower(observationStatus(outcome)), strings.ToLower(options.Search)) {
+				options.ObservationMatches = append(options.ObservationMatches, outcome)
+			}
+		}
 	}
 
 	search := strings.ToLower(options.Search)
@@ -303,10 +322,6 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	}
 
 	return application.NewListQuery(options, scope)
-}
-
-func listResult(p application.PageInfo) string {
-	return strconv.FormatInt(p.Matched, 10) + " of " + strconv.FormatInt(p.Total, 10) + " results"
 }
 
 func pageURL(ctx context.Context, n int) string {

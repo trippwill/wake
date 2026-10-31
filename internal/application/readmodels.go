@@ -21,6 +21,7 @@ type ListOptions struct {
 	ActivityText                         ActivityText
 	DisplayMatches                       DisplayMatches
 	ReviewMatches                        []ReviewMatch
+	ObservationMatches                   []ObservationOutcome
 }
 type (
 	ReviewMatch struct {
@@ -56,6 +57,7 @@ const (
 	InstrumentScope
 	SourceScope
 	ReviewScope
+	ObservationScope
 )
 
 type ListQuery struct {
@@ -80,7 +82,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if options.Direction == "" {
 		options.Direction = "desc"
-		if scope != ActivityScope {
+		if scope != ActivityScope && scope != ObservationScope {
 			options.Direction = "asc"
 		}
 	}
@@ -115,7 +117,13 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		kinds = []string{""}
 	}
 
-	if scope > ReviewScope {
+	if scope == ObservationScope {
+		sorts = []string{"report", "outcome", "location", "rule"}
+		states = []string{""}
+		kinds = []string{""}
+	}
+
+	if scope > ObservationScope {
 		return ListQuery{}, ErrInvalid
 	}
 
@@ -154,6 +162,25 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		}
 	}
 
+	for _, outcome := range options.ObservationMatches {
+		if scope != ObservationScope ||
+			!slices.Contains(
+				[]ObservationOutcome{
+					ObservationUnselected,
+					ObservationIdentityReview,
+					ObservationNativeReview,
+					ObservationKindConflict,
+					ObservationTermsConflict,
+					ObservationCorroborated,
+					ObservationAccepted,
+				},
+				outcome,
+			) {
+			return ListQuery{}, ErrInvalid
+		}
+	}
+
+	options.ObservationMatches = slices.Clone(options.ObservationMatches)
 	options.ReviewMatches = slices.Clone(options.ReviewMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
@@ -165,6 +192,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 func (q ListQuery) Scope() ListScope { return q.scope }
 func (q ListQuery) Options() ListOptions {
 	out := q.options
+	out.ObservationMatches = slices.Clone(out.ObservationMatches)
 	out.ReviewMatches = slices.Clone(out.ReviewMatches)
 	out.KindMatches = slices.Clone(out.KindMatches)
 	out.StateMatches = slices.Clone(out.StateMatches)
@@ -242,6 +270,10 @@ type (
 		Status                       CorrectionStatus
 		Count                        int64
 	}
+	ObservationList struct {
+		PageInfo
+		Items []Observation
+	}
 	ReviewList struct {
 		PageInfo
 		Items []ReviewEntry
@@ -263,5 +295,6 @@ type (
 		ActivityList(context.Context, ListQuery) (ActivityList, error)
 		InstrumentList(context.Context, ListQuery) (InstrumentList, error)
 		ReviewList(context.Context, ListQuery) (ReviewList, error)
+		ObservationList(context.Context, string, string, ListQuery) (ObservationList, error)
 	}
 )

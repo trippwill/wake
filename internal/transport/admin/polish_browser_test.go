@@ -9,8 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -34,8 +34,8 @@ import (
 	"go.trippwill.dev/wake/provider"
 )
 
-// Synthetic rows deliberately exceed binary floating-point precision and one page.
-func polishGrid(extra bool) templ.Component {
+// The independent browser fixture exposes only a remote page of exact values.
+func polishGrid() templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 		if err := PageHeader(
 			"Activity",
@@ -44,57 +44,127 @@ func polishGrid(extra bool) templ.Component {
 			return err
 		}
 
-		_, err := io.WriteString(
+		if _, err := io.WriteString(
 			w,
-			`<details id="view-notes"><summary>Reading this view</summary><p>Exact values remain available in every row.</p></details><section id="grid-refresh"><section data-grid="precision" aria-label="Precision activity" class="wake-grid"><table class="table"><caption>Loaded financial activity</caption><thead><tr><th scope="col">Investment</th><th scope="col" data-sort="decimal">Price</th><th scope="col">Status</th></tr></thead><tbody>`,
-		)
-		if err != nil {
+			`<details id="view-notes"><summary>Reading this view</summary><p>Exact values remain available in every row.</p></details>`,
+		); err != nil {
 			return err
 		}
 
-		values := []string{
-			"9007199254740993.0000000000001",
-			"9007199254740992.9999999999999",
-			"-1.0000000000000001",
-			"-1",
-			"0",
-			"-0",
+		if err := ListFilters(false).Render(ctx, w); err != nil {
+			return err
 		}
 
-		count := 70
-		if extra {
-			count = 71
-		}
-
-		for i := range count {
-			value := fmt.Sprint(i)
-			if i < len(values) {
-				value = values[i]
-			}
-
-			name := fmt.Sprintf("Synthetic investment %02d", i)
-			if i == 0 {
-				name = `Investment <img src=x onerror="window.privateInjection=true">`
-			}
-
-			if _, err = fmt.Fprintf(
-				w,
-				`<tr id="precision-%d"><td><a href="/test/grid">%s</a></td><td>%s USD</td><td>Accepted</td></tr>`,
-				i,
-				html.EscapeString(name),
-				value,
-			); err != nil {
-				return err
-			}
-		}
-
-		_, err = io.WriteString(w, `</tbody></table></section></section>`)
-
-		return err
+		return Grid("activity", "/test/grid-data", "Precision activity").Render(ctx, w)
 	})
 }
 
-func polishObservations(changed bool) templ.Component {
+func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
+	params := r.URL.Query()
+	page, _ := strconv.Atoi(params.Get("page"))
+	size, _ := strconv.Atoi(params.Get("size"))
+
+	query, err := application.NewListQuery(
+		application.ListOptions{
+			Page:      page,
+			PageSize:  size,
+			Search:    params.Get("q"),
+			Sort:      params.Get("sort"),
+			Direction: params.Get("dir"),
+		},
+		application.ActivityScope,
+	)
+	if err != nil {
+		gridJSON(w, nil, err)
+		return
+	}
+
+	options := query.Options()
+	values := []string{
+		"9007199254740993.0000000000001",
+		"9007199254740992.9999999999999",
+		"-1.0000000000000001",
+		"-1",
+		"0",
+		"-0",
+	}
+
+	count := 70
+	if extra {
+		count = 71
+	}
+
+	rows := make([]activityGridRow, 0, count)
+	for i := range count {
+		value := fmt.Sprint(i)
+		if i < len(values) {
+			value = values[i]
+		}
+
+		name := fmt.Sprintf("Synthetic investment %02d", i)
+		if i == 0 {
+			name = `Investment <img src=x onerror="window.privateInjection=true">`
+		}
+
+		if options.Search != "" &&
+			!strings.Contains(strings.ToLower(name+" "+value+" USD accepted"), options.Search) {
+			continue
+		}
+
+		rows = append(
+			rows,
+			activityGridRow{
+				ID:        fmt.Sprintf("precision-%03d", i),
+				Label:     gridCell{Text: name, Href: "/test/grid"},
+				Date:      gridCell{Text: "2026-10-20"},
+				Quantity:  gridCell{Text: "1 shares"},
+				Price:     gridCell{Text: value + " USD"},
+				State:     gridCell{Text: "accepted", Tone: "neutral"},
+				Reference: gridCell{Text: "provisional"},
+			},
+		)
+	}
+
+	slices.SortFunc(rows, func(a, b activityGridRow) int {
+		order := 0
+		switch options.Sort {
+		case "price":
+			av, _ := new(big.Rat).SetString(strings.TrimSuffix(a.Price.Text, " USD"))
+			bv, _ := new(big.Rat).SetString(strings.TrimSuffix(b.Price.Text, " USD"))
+			order = av.Cmp(bv)
+		case "label":
+			order = strings.Compare(a.Label.Text, b.Label.Text)
+		}
+
+		if options.Direction == "desc" {
+			order = -order
+		}
+
+		if order == 0 {
+			return strings.Compare(a.ID, b.ID)
+		}
+
+		return order
+	})
+	matched := len(rows)
+	start := min(int(query.Offset()), matched)
+	end := min(start+options.PageSize, matched)
+	gridJSON(
+		w,
+		gridResult(
+			rows[start:end],
+			application.PageInfo{
+				Page:     options.Page,
+				PageSize: options.PageSize,
+				Total:    int64(count),
+				Matched:  int64(matched),
+			},
+		),
+		nil,
+	)
+}
+
+func polishObservations() templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 		if err := PageHeader(
 			"Instrument observations",
@@ -103,34 +173,48 @@ func polishObservations(changed bool) templ.Component {
 			return err
 		}
 
-		outcome := "accepted"
-		if changed {
-			outcome = "terms-conflict"
+		return ObservationHistory("instrument", "synthetic-instrument").Render(ctx, w)
+	})
+}
+
+func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool) {
+	rows := []application.Observation{}
+	for i := range 2 {
+		outcome := application.ObservationAccepted
+		if i == 1 && changed {
+			outcome = application.ObservationTermsConflict
 		}
 
-		return ObservationHistory([]application.Observation{
-			{
-				Artifact: "synthetic-one",
+		rows = append(
+			rows,
+			application.Observation{
+				Artifact: fmt.Sprintf("synthetic-%d", i+1),
 				Version:  "1",
 				Location: strings.Repeat(
 					"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
 					4,
-				) + "/TradeConfirm[1]",
-				Outcome: "accepted",
-				Rule:    "qualified-activity-observations/2",
+				) + fmt.Sprintf(
+					"/TradeConfirm[%d]",
+					i+1,
+				),
+				Outcome:   outcome,
+				Rule:      "qualified-activity-observations/2",
+				Retrieved: "2026-10-20T12:00:00Z",
 			},
-			{
-				Artifact: "synthetic-two",
-				Version:  "1",
-				Location: strings.Repeat(
-					"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
-					4,
-				) + "/TradeConfirm[2]",
-				Outcome: application.ObservationOutcome(outcome),
-				Rule:    "qualified-activity-observations/2",
+		)
+	}
+
+	gridJSON(
+		w,
+		observationGrid(
+			r.Context(),
+			application.ObservationList{
+				Items:    rows,
+				PageInfo: application.PageInfo{Page: 1, PageSize: 50, Total: 2, Matched: 2},
 			},
-		}).Render(ctx, w)
-	})
+		),
+		nil,
+	)
 }
 
 func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
@@ -286,7 +370,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			return
 		}
 
-		if r.URL.Path == "/test/grid" && r.Header.Get("HX-Request") == "true" &&
+		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" &&
 			holdRefresh.CompareAndSwap(true, false) {
 			refreshStarted <- struct{}{}
 
@@ -297,7 +381,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 		}
 
-		if r.URL.Path == "/test/grid" && r.Header.Get("HX-Request") == "true" && refreshFailed.Load() {
+		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" && refreshFailed.Load() {
 			http.Error(w, "Read temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -357,6 +441,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			return
 		}
 
+		if r.URL.Path == "/test/grid-data" || r.URL.Path == "/grids/observations" {
+			if _, ok := auth.session(r); !ok || expired.Load() {
+				http.Error(w, "expired", http.StatusUnauthorized)
+				return
+			}
+
+			if r.URL.Path == "/test/grid-data" {
+				polishGridData(w, r, extra.Load())
+			} else {
+				polishObservationData(w, r, !extra.Load())
+			}
+
+			return
+		}
+
 		if strings.HasPrefix(r.URL.Path, "/test/") || r.URL.Path == "/" ||
 			r.URL.Path == "/activity/synthetic-activity/correct" {
 			csrf, ok := auth.session(r)
@@ -370,9 +469,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			var component templ.Component
 			switch r.URL.Path {
 			case "/test/grid":
-				component = polishGrid(extra.Load())
+				component = polishGrid()
 			case "/test/observations":
-				component = polishObservations(!extra.Load())
+				component = polishObservations()
 			case "/test/correction", "/activity/synthetic-activity/correct":
 				snapshot := page(r.Context())
 				snapshot.URL = "/activity/synthetic-activity/correct?" + r.URL.RawQuery
@@ -499,55 +598,100 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.Poll(`document.querySelector('.tabulator-row')!==null`, nil),
 	)
 	assert(
-		`document.querySelector('table').hidden && !window.privateInjection && document.querySelector('.wake-grid-controls').textContent.includes('70 loaded rows')`,
-		"grid/fallback or escaping",
+		`!document.querySelector('table') && !window.privateInjection && document.querySelector('[data-grid-status]').textContent==='70 of 70 results'`,
+		"JSON grid or escaping",
 	)
 	check(
 		chromedp.Evaluate(
-			`window.proofGrid=window.Tabulator.findTable('.tabulator')[0];proofGrid.setSort('c1','asc')`,
+			`window.proofGrid=window.Tabulator.findTable('.tabulator')[0];window.proofGrid.setSort('price','asc')`,
 			nil,
 		),
-	)
-	check(
 		chromedp.Poll(
-			`document.querySelector('.tabulator-row').textContent.includes('-1.0000000000000001')`,
+			`document.querySelector('.tabulator-row [tabulator-field=price]')?.textContent==='-1.0000000000000001 USD' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
 			nil,
 		),
 	)
 	assert(
-		`proofGrid.getData('active')[0].c1==='-1.0000000000000001 USD' && proofGrid.getData('active').at(-1).c1==='9007199254740993.0000000000001 USD'`,
-		"exact decimal ordering",
+		`document.querySelectorAll('.tabulator-row').length===50`,
+		"remote grid downloaded more than one bounded page",
 	)
 	check(
-		chromedp.SendKeys(".wake-grid-filter input", "Synthetic investment 69"),
-		chromedp.Poll(`document.querySelector('.wake-grid-controls').textContent.includes('1 of 70')`, nil),
-	)
-	assert(`document.querySelector('.tabulator-footer').hidden`, "single-page pagination remains visible")
-	check(
-		chromedp.Click(".wake-grid-controls button"),
-		chromedp.Poll(`document.querySelector('.wake-grid-controls').textContent.includes('70 of 70')`, nil),
-	)
-	check(
-		chromedp.Evaluate(
-			`(()=>{const filter=document.querySelector('.wake-grid-filter input');filter.value='investment';filter.dispatchEvent(new Event('input',{bubbles:true}));proofGrid.getColumn('c0').setWidth(310);proofGrid.setSort('c1','desc');proofGrid.setPage(2);document.activeElement.blur()})()`,
+		chromedp.Evaluate(`window.proofGrid.setPage(2)`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===20 && Array.from(document.querySelectorAll('.tabulator-row')).at(-1)?.querySelector('[tabulator-field=price]')?.textContent==='9007199254740993.0000000000001 USD'`,
 			nil,
 		),
 	)
-	check(chromedp.Evaluate(`document.querySelector('#view-notes').open=true`, nil))
+	check(
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='Synthetic investment 69';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='1 of 70 results' && document.querySelectorAll('.tabulator-row').length===1`,
+			nil,
+		),
+	)
+	assert(`window.proofGrid.getPageMax()===1`, "server filtering did not update pagination")
+	check(
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='investment';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && new URL(location.href).searchParams.get('page')==='1'`,
+			nil,
+		),
+	)
+	// Same-document browser history restores the filter form, server query and page.
+	check(
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('q')==='Synthetic investment 69' && document.querySelector('#activity-search').value==='Synthetic investment 69' && document.querySelector('[data-grid-status]').textContent==='1 of 70 results' && document.querySelectorAll('.tabulator-row').length===1`,
+			nil,
+		),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Poll(
+			`!new URL(location.href).searchParams.has('q') && new URL(location.href).searchParams.get('page')==='2' && document.querySelector('#activity-search').value==='' && document.querySelectorAll('.tabulator-row').length===20`,
+			nil,
+		),
+		chromedp.Evaluate(`history.go(2)`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('q')==='investment' && new URL(location.href).searchParams.get('page')==='1' && document.querySelector('#activity-search').value==='investment' && document.querySelectorAll('.tabulator-row').length===50`,
+			nil,
+		),
+	)
+	check(
+		chromedp.Evaluate(
+			`window.proofGrid.getColumn('label').setWidth(310);window.proofGrid.setSort('price','desc');document.activeElement.blur()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelector('.tabulator-row [tabulator-field=price]')?.textContent==='9007199254740993.0000000000001 USD' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setPage(2);document.querySelector('#view-notes').open=true`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===20`,
+			nil,
+		),
+	)
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(
-			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && document.querySelectorAll('.tabulator-row').length===21`,
 			nil,
 		),
-		chromedp.Poll(`document.querySelector('.wake-grid-controls').textContent.includes('71 of 71')`, nil),
 	)
 	assert(
-		`proofGrid.getPage()===2 && proofGrid.getSorters()[0].dir==='desc' && proofGrid.getColumn('c0').getWidth()===310 && document.querySelector('.wake-grid-filter input').value==='investment' && proofGrid.getFilters().length===1`,
-		"grid state lost on refresh",
+		`new URL(location.href).searchParams.get('page')==='2' && window.proofGrid.getSorters()[0].dir==='desc' && window.proofGrid.getColumn('label').getWidth()===310 && document.querySelector('#activity-search').value==='investment' && new URL(location.href).searchParams.get('q')==='investment'`,
+		"remote view state lost on refresh",
 	)
 	assert(`document.querySelector('#view-notes').open`, "disclosure lost on refresh")
-	// A response that started before focus changed must also leave active work alone.
+	// A response may update rows while an unsubmitted filter draft keeps focus.
 	extra.Store(false)
 	holdRefresh.Store(true)
 	check(
@@ -557,33 +701,47 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	select {
 	case <-refreshStarted:
 	case <-time.After(10 * time.Second):
-		t.Fatal("delayed refresh did not start")
+		t.Fatal("delayed JSON refresh did not start")
 	}
 
-	check(chromedp.Focus(".wake-grid-filter input"))
+	check(
+		chromedp.Focus("#activity-search"),
+		chromedp.Evaluate(`document.querySelector('#activity-search').value='unsubmitted filter draft'`, nil),
+	)
 	close(releaseRefresh)
 	check(
-		chromedp.Poll(`!document.querySelector('#workspace-content').classList.contains('htmx-request')`, nil),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelectorAll('.tabulator-row').length===20`,
+			nil,
+		),
 	)
 	assert(
-		`proofGrid.getDataCount()===71 && document.activeElement.matches('.wake-grid-filter input')`,
-		"in-flight refresh changed focused work",
+		`document.activeElement.id==='activity-search' && document.activeElement.value==='unsubmitted filter draft' && document.querySelector('#view-notes').open`,
+		"JSON refresh changed focused draft",
+	)
+	check(
+		chromedp.Evaluate(
+			`document.querySelector('#activity-search').value='investment';document.activeElement.blur()`,
+			nil,
+		),
 	)
 	extra.Store(true)
-	check(chromedp.Evaluate(`document.activeElement.blur()`, nil))
 	refreshFailed.Store(true)
 	check(
 		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("#refresh-issue"),
+		chromedp.WaitVisible("[data-grid-retry]"),
 	)
 	assert(
-		`proofGrid.getDataCount()===71 && document.querySelector('#view-notes').open`,
-		"failed refresh replaced displayed data",
+		`document.querySelectorAll('.tabulator-row').length===20 && document.querySelector('[data-grid-status]').textContent.includes('Previous results') && document.querySelector('#view-notes').open`,
+		"failed JSON request replaced displayed data",
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.Poll(`!document.querySelector('#refresh-issue')`, nil),
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && new URL(location.href).searchParams.get('page')==='2'`,
+			nil,
+		),
 	)
 	offline.Store(true)
 	check(
@@ -615,7 +773,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				),
 			)
 			assert(
-				`!document.querySelector('.tabulator details') && document.querySelector('.tabulator-row [tabulator-field="c2"]').textContent.endsWith('/TradeConfirm[1]') && document.querySelector('.tabulator-row [tabulator-field="c3"]').textContent==='qualified-activity-observations/2 · 1'`,
+				`!document.querySelector('.tabulator details') && document.querySelector('.tabulator-row [tabulator-field="location"]').textContent.endsWith('/TradeConfirm[1]') && document.querySelector('.tabulator-row [tabulator-field="rule"]').textContent==='qualified-activity-observations/2 · 1'`,
 				"observation metadata is not directly available in the table",
 			)
 			assert(
@@ -653,7 +811,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				),
 			)
 			assert(
-				`!document.querySelector('.tabulator details') && Array.from(document.querySelectorAll('.tabulator-cell')).every(cell=>cell.scrollHeight<=cell.clientHeight+1) && document.querySelector('.tabulator-row [tabulator-field="c2"]').textContent.endsWith('/TradeConfirm[1]')`,
+				`!document.querySelector('.tabulator details') && Array.from(document.querySelectorAll('.tabulator-cell')).every(cell=>cell.scrollHeight<=cell.clientHeight+1) && document.querySelector('.tabulator-row [tabulator-field="location"]').textContent.endsWith('/TradeConfirm[1]')`,
 				"refreshed observation metadata clipped or hidden",
 			)
 		}
@@ -915,67 +1073,54 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	check(chromedp.Navigate(origin+"/test/grid"), chromedp.WaitVisible(".tabulator"))
 	check(
 		chromedp.Evaluate(
-			`(()=>{const h=document.querySelector('.tabulator-col[tabulator-field="c0"]');h.focus();window.beforeWidth=window.Tabulator.findTable('.tabulator')[0].getColumn('c0').getWidth();h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true}))})()`,
+			`(()=>{const h=document.querySelector('.tabulator-col[tabulator-field="label"]');h.focus();window.beforeWidth=window.Tabulator.findTable('.tabulator')[0].getColumn('label').getWidth();h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true}))})()`,
 			nil,
 		),
 	)
 	assert(
-		`window.Tabulator.findTable('.tabulator')[0].getColumn('c0').getWidth()===beforeWidth+24`,
+		`window.Tabulator.findTable('.tabulator')[0].getColumn('label').getWidth()===beforeWidth+24`,
 		"keyboard column resize",
 	)
 	check(
 		chromedp.Evaluate(
-			`document.querySelector('.tabulator-col[tabulator-field="c1"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
+			`document.querySelector('.tabulator-col[tabulator-field="price"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
 			nil,
 		),
 	)
 	assert(
-		`window.Tabulator.findTable('.tabulator')[0].getSorters().some(s=>s.field==='c1')`,
+		`window.Tabulator.findTable('.tabulator')[0].getSorters().some(s=>s.field==='price')`,
 		"keyboard column sorting",
 	)
-	// Separate documents avoid inheriting an enhanced DOM when scripts are disabled.
+
 	for _, disabled := range []bool{false, true} {
 		noGrid.Store(!disabled)
 
-		fallback, closeFallback := chromedp.NewContext(ctx)
+		document, closeDocument := chromedp.NewContext(ctx)
 
-		step, stopStep := context.WithTimeout(fallback, 20*time.Second)
+		step, stopStep := context.WithTimeout(document, 20*time.Second)
 		err := chromedp.Run(
 			step,
 			network.SetCacheDisabled(true),
 			emulation.SetScriptExecutionDisabled(disabled),
 			chromedp.Navigate(origin+"/test/grid"),
-			chromedp.WaitVisible("table"),
+			chromedp.WaitVisible("[data-grid]"),
 		)
 
-		var native bool
+		var clear bool
 		if err == nil {
-			err = chromedp.Run(
-				step,
-				chromedp.Evaluate(
-					`!document.querySelector('table').hidden && !document.querySelector('.tabulator')`,
-					&native,
-				),
-			)
-		}
+			predicate := `!document.querySelector('table') && document.querySelector('[data-grid-status]').textContent.includes('could not load') && !document.querySelector('[data-grid-retry]').hidden`
+			if disabled {
+				predicate = `!document.querySelector('table') && document.querySelector('noscript').textContent.includes('JavaScript is required')`
+			}
 
-		if err == nil && native && disabled {
-			err = chromedp.Run(
-				step,
-				chromedp.Navigate(origin+"/activity/synthetic-activity/correct?field=instrument"),
-				chromedp.WaitVisible("#decision-value"),
-				chromedp.Evaluate(
-					`document.querySelector('#decision-value').tagName==='SELECT' && !document.querySelector('[data-correction]').hidden && document.querySelector('#decision-value').textContent.includes('Synthetic second option')`,
-					&native,
-				),
-			)
+			err = chromedp.Run(step, chromedp.Poll(predicate, &clear))
 		}
 
 		stopStep()
-		closeFallback()
+		closeDocument()
 
-		if err != nil || !native {
-			t.Fatal("native fallback", disabled, err, native)
+		if err != nil || !clear {
+			t.Fatal("JS requirement or component retry was unclear", disabled, err, clear)
 		}
 	}
 

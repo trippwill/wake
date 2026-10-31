@@ -29,6 +29,8 @@ type Querier interface {
 	AdminCounts(ctx context.Context) (AdminCountsRow, error)
 	AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error)
 	AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRowsParams) ([]AdminInstrumentRowsRow, error)
+	AdminObservationCount(ctx context.Context, arg AdminObservationCountParams) (AdminObservationCountRow, error)
+	AdminObservationRows(ctx context.Context, arg AdminObservationRowsParams) ([]AdminObservationRowsRow, error)
 	AdminReferenceStatus(ctx context.Context) (AdminReferenceStatusRow, error)
 	AdminReviewCount(ctx context.Context, arg AdminReviewCountParams) (AdminReviewCountRow, error)
 	AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams) ([]AdminReviewRowsRow, error)
@@ -76,13 +78,11 @@ type Querier interface {
 	EventLinks(ctx context.Context, arg EventLinksParams) ([]string, error)
 	Execution(ctx context.Context, id string) (Execution, error)
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
-	ExecutionObservations(ctx context.Context, executionID sql.NullString) ([]ExecutionObservation, error)
 	Executions(ctx context.Context) ([]Execution, error)
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
 	Instrument(ctx context.Context, id string) (Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
-	InstrumentObservations(ctx context.Context, instrumentID sql.NullString) ([]ExecutionObservation, error)
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)
 	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
 	Instruments(ctx context.Context) ([]Instrument, error)

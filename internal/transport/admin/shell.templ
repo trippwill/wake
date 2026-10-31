@@ -29,11 +29,10 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 				<link rel="stylesheet" href="/assets/app.css"/>
 				<script defer src="/assets/vendor/htmx-2.0.11/htmx.min.js"></script>
 				<script defer src="/assets/vendor/htmx-sse-2.2.4/sse.min.js"></script>
-				<script defer src="/assets/vendor/idiomorph-0.7.4/idiomorph-ext.min.js"></script>
 				<script defer src="/assets/vendor/tabulator-6.3.1/tabulator.min.js"></script>
 				<script defer src="/assets/app.js"></script>
 			</head>
-			<body data-live-state="connected" hx-ext="sse,morph" { streamAttributes(csrf)... } hx-history="false">
+			<body data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
 				<a class="wake-skip" href="#main-content">Skip to content</a>
 				<div class="wake-app">
 					<aside class="wake-sidebar" data-navigation>

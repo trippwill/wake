@@ -453,74 +453,22 @@ templ ReviewQueue(view activityView) {
 
 templ ActivityRows(view activityView) {
 	<section class="wake-card" id="activity-rows">
-		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
+		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div></div>
 		@ListFilters(false)
-		<section class="wake-grid" id="activity-grid" data-grid="activity" data-server-list aria-label="Financial activity">
-			<section class="wake-table-scroll" aria-label="Financial activity table">
-				<table class="table">
-					<caption>Recorded financial activity</caption><thead><tr><th scope="col" data-field="label">Activity</th><th scope="col" data-field="date">Date</th><th scope="col" data-field="quantity" data-sort="decimal">Quantity / currency roles</th><th scope="col" data-field="price" data-sort="decimal">Price / rate</th><th scope="col" data-field="state">Activity state</th><th scope="col" data-field="reference">Reference identity</th></tr></thead>
-					<tbody>
-						for _,r:=range view.Items {
-							<tr id={ "activity-" + r.ID }>
-								<td><a href={ templ.SafeURL(navURL(ctx, r.Href)) } data-record={ r.ID }>{ r.Label }</a><span class="wake-help wake-cell-note">{ activityKindLabel(r.Kind) }</span></td>
-								<td>{ r.Date }</td>
-								<td data-sort-value={ r.Quantity }>{ r.Quantity }</td>
-								<td data-sort-value={ r.Price + " " + r.Basis }>{ r.Price }<span class="wake-help wake-cell-note">{ r.Basis }</span></td>
-								<td>
-									@ActivityBadge(r.FinancialState)
-								</td>
-								<td>
-									if r.InstrumentID!="" {
-										<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+r.InstrumentID)) }>{ r.Reference }</a>
-									} else {
-										{ notApplicableValue }
-									}
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</section>
-		</section>
-		if len(view.Items)==0 {
-			<p>No activity matches these filters.</p>
-		}
-		@ListPagination(view.PageInfo)
+		@Grid("activity", "/grids/activity", "Financial activity")
 	</section>
 }
 
 templ InstrumentsView(view activityView) {
 	<section class="wake-card">
-		<div class="wake-card-heading"><h2>Instruments</h2><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
+		<h2>Instruments</h2>
 		@ListFilters(true)
-		<section class="wake-grid" id="instruments-grid" data-grid="instruments" data-server-list aria-label="Instruments">
-			<section class="wake-table-scroll" aria-label="Instrument table">
-				<table class="table">
-					<caption>Financial instruments</caption><thead><tr><th scope="col" data-field="name">Instrument</th><th scope="col" data-field="kind">Kind</th><th scope="col" data-field="ticker">Reported symbol</th><th scope="col" data-field="state">Reference identity</th></tr></thead>
-					<tbody>
-						for _,i:=range view.Instruments {
-							<tr id={ "instrument-" + i.ID }>
-								<td><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+i.ID)) } data-record={ i.ID }>{ known(i.Name) }</a></td>
-								<td>{ i.Kind }</td>
-								<td>{ known(i.Ticker) }</td>
-								<td>
-									@ReferenceBadge(i.Status, i.Authority)
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</section>
-		</section>
-		if len(view.Instruments)==0 {
-			<p>No instruments match these filters.</p>
-		}
-		@ListPagination(view.PageInfo)
+		@Grid("instruments", "/grids/instruments", "Instruments")
 	</section>
 }
 
 templ ListFilters(instruments bool) {
-	<form class="wake-filters" method="get" action="/activity" hx-get="/activity" hx-target="#workspace-content" hx-select="#workspace-content" hx-swap="morph:outerHTML" hx-trigger="submit, change" data-list-filters>
+	<form class="wake-filters" method="get" action="/activity" data-list-filters>
 		if instruments {
 			<input type="hidden" name="view" value="instruments"/>
 		}
@@ -583,8 +531,4 @@ templ ListPagination(info application.PageInfo) {
 			}
 		</nav>
 	}
-}
-
-templ ReferenceBadge(status application.ReferenceStatus, authority application.SelectionAuthority) {
-	<span class="badge" data-state={ referenceTone(status) }>{ referenceLabel(status,authority) }</span>
 }

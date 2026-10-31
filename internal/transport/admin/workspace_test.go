@@ -53,6 +53,54 @@ func TestNavigationContextStaysLocalAndBounded(t *testing.T) {
 	}
 }
 
+func TestGridNavigationUsesOwningPage(t *testing.T) {
+	root := "/activity?q=exact&sort=price&dir=desc&page=2&selected=one"
+	owner := "/activity/one?observations_q=duplicate&observations_sort=location&observations_dir=asc&observations_page=2"
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/grids/observations?page_url="+url.QueryEscape(owner)+"&origin="+url.QueryEscape(root),
+		nil,
+	)
+
+	r, err := gridPageRequest(request, "observations")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := url.Parse(navURL(r.Context(), "/evidence/report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if target.Query().Get("parent") != localDestination(owner) ||
+		target.Query().Get("origin") != localDestination(root) {
+		t.Fatal(target)
+	}
+
+	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
+
+	back, err := url.Parse(returnURL(next.Context()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if back.Path != "/activity/one" || back.Query().Get("observations_q") != "duplicate" ||
+		back.Query().Get("observations_page") != "2" ||
+		back.Query().Get("origin") != localDestination(root) {
+		t.Fatal(back)
+	}
+
+	for _, owner := range []string{"https://outside.invalid/activity", "//outside.invalid/activity", "/assets/app.js"} {
+		_, err := gridPageRequest(
+			httptest.NewRequest(http.MethodGet, "/grids/activity?page_url="+url.QueryEscape(owner), nil),
+			"activity",
+		)
+		if err == nil {
+			t.Fatal("accepted unsafe grid owner", owner)
+		}
+	}
+}
+
 func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 	for _, state := range []application.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
 		if state.NeedsReview() {

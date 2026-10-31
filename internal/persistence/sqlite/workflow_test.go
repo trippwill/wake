@@ -409,7 +409,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	detail, err := s.ExecutionDetail(ctx, acceptedID)
 	if err != nil || !detail.Execution.State().NeedsReview() ||
 		detail.Execution.Terms().Fields().Price.Amount() != "401.000000001" ||
-		len(detail.Observations) != 2 {
+		len(observationRowsForTest(t, s, "activity", acceptedID)) != 2 {
 		t.Fatal("conflict overwrote accepted values", detail, err)
 	}
 

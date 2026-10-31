@@ -10,6 +10,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const adminAccessSources = `-- name: AdminAccessSources :many
@@ -398,6 +399,98 @@ func (q *Queries) AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRo
 	for rows.Next() {
 		var i AdminInstrumentRowsRow
 		if err := rows.Scan(&i.Snapshot, &i.SelectionAuthority); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminObservationCount = `-- name: AdminObservationCount :one
+SELECT (SELECT count(*) FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2))) AS total,count(*) AS matched FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1 OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome))
+`
+
+type AdminObservationCountParams struct {
+	SubjectKind    interface{}
+	SubjectID      sql.NullString
+	Search         interface{}
+	OutcomeMatches interface{}
+}
+
+type AdminObservationCountRow struct {
+	Total   int64
+	Matched int64
+}
+
+func (q *Queries) AdminObservationCount(ctx context.Context, arg AdminObservationCountParams) (AdminObservationCountRow, error) {
+	row := q.db.QueryRowContext(ctx, adminObservationCount,
+		arg.SubjectKind,
+		arg.SubjectID,
+		arg.Search,
+		arg.OutcomeMatches,
+	)
+	var i AdminObservationCountRow
+	err := row.Scan(&i.Total, &i.Matched)
+	return i, err
+}
+
+const adminObservationRows = `-- name: AdminObservationRows :many
+WITH ordering AS (SELECT CAST(?7 AS TEXT) AS sort_field,CAST(?8 AS TEXT) AS direction)
+SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,a.retrieved FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id CROSS JOIN ordering WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1 OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome)) ORDER BY CASE WHEN sort_field='report' AND direction='asc' THEN o.rowid END asc,CASE WHEN sort_field='report' AND direction='desc' THEN o.rowid END desc,CASE WHEN sort_field='outcome' AND direction='asc' THEN o.outcome END asc,CASE WHEN sort_field='outcome' AND direction='desc' THEN o.outcome END desc,CASE WHEN sort_field='location' AND direction='asc' THEN o.location END asc,CASE WHEN sort_field='location' AND direction='desc' THEN o.location END desc,CASE WHEN sort_field='rule' AND direction='asc' THEN o.rule END asc,CASE WHEN sort_field='rule' AND direction='desc' THEN o.rule END desc,o.artifact_id,o.version,o.location LIMIT ?6 OFFSET ?5
+`
+
+type AdminObservationRowsParams struct {
+	SubjectKind    interface{}
+	SubjectID      sql.NullString
+	Search         interface{}
+	OutcomeMatches interface{}
+	PageOffset     int64
+	PageSize       int64
+	SortField      string
+	Direction      string
+}
+
+type AdminObservationRowsRow struct {
+	ArtifactID string
+	Version    string
+	Location   string
+	Rule       string
+	Outcome    string
+	Retrieved  string
+}
+
+func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservationRowsParams) ([]AdminObservationRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, adminObservationRows,
+		arg.SubjectKind,
+		arg.SubjectID,
+		arg.Search,
+		arg.OutcomeMatches,
+		arg.PageOffset,
+		arg.PageSize,
+		arg.SortField,
+		arg.Direction,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminObservationRowsRow
+	for rows.Next() {
+		var i AdminObservationRowsRow
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.Rule,
+			&i.Outcome,
+			&i.Retrieved,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

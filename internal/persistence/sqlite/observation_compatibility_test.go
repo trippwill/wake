@@ -102,7 +102,7 @@ func TestConflictsAcrossIncompleteObservations(t *testing.T) {
 			// The original accepted values and every dissenting report remain retained.
 			v, _ := s.Dashboard(t.Context())
 			detail, err := s.ExecutionDetail(t.Context(), v.Executions[0].ID())
-			if err != nil || len(detail.Observations) != len(tc.rows) {
+			if err != nil || len(observationRowsForTest(t, s, "activity", v.Executions[0].ID())) != len(tc.rows) {
 				t.Fatal(detail, err)
 			}
 		})

@@ -425,6 +425,14 @@ func (w *Workflow) InstrumentList(ctx context.Context, query ListQuery) (Instrum
 	return w.store.InstrumentList(ctx, query)
 }
 
+func (w *Workflow) ObservationList(
+	ctx context.Context,
+	kind, id string,
+	query ListQuery,
+) (ObservationList, error) {
+	return w.store.ObservationList(ctx, kind, id, query)
+}
+
 func (w *Workflow) ReviewList(ctx context.Context, query ListQuery) (ReviewList, error) {
 	return w.store.ReviewList(ctx, query)
 }

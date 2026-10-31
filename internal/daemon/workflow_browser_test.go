@@ -342,7 +342,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Navigate(origin+"/activity"),
 		chromedp.WaitVisible(".tabulator-row"),
 		chromedp.Poll(
-			`document.querySelector('.tabulator-col[tabulator-field="c1"]').getAttribute('aria-sort')==='descending'`,
+			`document.querySelector('.tabulator-col[tabulator-field="date"]').getAttribute('aria-sort')==='descending'`,
 			nil,
 		),
 	)
@@ -350,14 +350,14 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Navigate(origin+"/activity?view=instruments"),
 		chromedp.WaitVisible(".tabulator-row"),
 		chromedp.Poll(
-			`document.querySelector('.tabulator-col[tabulator-field="c0"]').getAttribute('aria-sort')==='ascending'`,
+			`document.querySelector('.tabulator-col[tabulator-field="name"]').getAttribute('aria-sort')==='ascending'`,
 			nil,
 		),
 	)
-	navigate(chromedp.Click(`.tabulator-col[tabulator-field="c0"]`))
+	check(chromedp.Click(`.tabulator-col[tabulator-field="name"]`))
 	check(
 		chromedp.Poll(
-			`new URL(location.href).searchParams.get('sort')==='name'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('.tabulator-col[tabulator-field="c0"]').getAttribute('aria-sort')==='descending'`,
+			`new URL(location.href).searchParams.get('sort')==='name'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('.tabulator-col[tabulator-field="name"]').getAttribute('aria-sort')==='descending'`,
 			nil,
 		),
 	)
@@ -431,7 +431,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 
 	if !ok {
-		t.Fatal("list filter, sort or selection lost on return")
+		var debug string
+
+		_ = chromedp.Run(
+			ctx,
+			chromedp.Evaluate(
+				`JSON.stringify({url:location.href,filter:document.querySelector('#activity-search')?.value,rows:document.querySelectorAll('.tabulator-row').length,count:window.Tabulator.findTable('.tabulator')[0]?.getDataCount('active')})`,
+				&debug,
+			),
+		)
+		t.Fatal("list filter, sort or selection lost on return", debug)
 	}
 
 	check(
@@ -641,9 +650,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	check(
 		chromedp.Navigate(origin+"/activity"),
-		chromedp.WaitVisible("#activity-rows"),
+		chromedp.Poll(`document.querySelectorAll(".tabulator-row").length===5`, nil),
 		chromedp.Evaluate(
-			`document.querySelectorAll('tbody tr').length===5&&document.body.textContent.includes('400.123456789')&&document.body.textContent.includes('cancelled')`,
+			`document.querySelectorAll('.tabulator-row').length===5&&document.body.textContent.includes('400.123456789')&&document.body.textContent.includes('cancelled')`,
 			&ok,
 		),
 	)
@@ -655,7 +664,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	if reportCalls.Load() != 2 {
 		t.Fatal("discovery did not stop after its bounded report", reportCalls.Load())
 	}
-	// Recover from losing both companions using only normal authenticated forms.
+	// Recover access independently using normal authenticated forms.
 	stopCurrent()
 
 	for _, path := range []string{cfg.Storage.ConnectionsPath} {
@@ -668,9 +677,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	startDaemon()
 	check(
 		chromedp.Navigate(origin+"/activity"),
-		chromedp.WaitVisible("#activity-rows"),
+		chromedp.Poll(`document.querySelectorAll(".tabulator-row").length===5`, nil),
 		chromedp.Evaluate(
-			`document.querySelectorAll('tbody tr').length===5&&document.body.textContent.includes('400.123456789')`,
+			`document.querySelectorAll('.tabulator-row').length===5&&document.body.textContent.includes('400.123456789')`,
 			&ok,
 		),
 	)

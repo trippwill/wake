@@ -231,7 +231,8 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 	}
 
 	d, err = s.LifecycleDetail(ctx, id)
-	if err != nil || d.Relationships[0].TargetID == "" || len(d.Observations) != 2 {
+	if err != nil || d.Relationships[0].TargetID == "" ||
+		len(observationRowsForTest(t, s, "activity", id)) != 2 {
 		t.Fatal("late endpoint/replay", d, err)
 	}
 
