@@ -5,6 +5,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"go.trippwill.dev/wake/financial"
@@ -22,7 +23,12 @@ func reviewList(
 	options := query.Options()
 	out := application.ReviewList{}
 
-	counts, err := q.AdminReviewCount(ctx, options.Search)
+	kinds, _ := json.Marshal(options.KindMatches)
+
+	counts, err := q.AdminReviewCount(
+		ctx,
+		sqlc.AdminReviewCountParams{Search: options.Search, KindMatches: string(kinds)},
+	)
 	if err != nil {
 		return out, err
 	}
@@ -32,9 +38,10 @@ func reviewList(
 	rows, err := q.AdminReviewRows(
 		ctx,
 		sqlc.AdminReviewRowsParams{
-			Search:     options.Search,
-			PageSize:   int64(options.PageSize),
-			PageOffset: query.Offset(),
+			Search:      options.Search,
+			KindMatches: string(kinds),
+			PageSize:    int64(options.PageSize),
+			PageOffset:  query.Offset(),
 		},
 	)
 	if err != nil {
@@ -42,10 +49,18 @@ func reviewList(
 	}
 
 	for _, row := range rows {
+		var activity *application.PublishedActivity
+		if row.Activity != "" {
+			if json.Unmarshal([]byte(row.Activity), &activity) != nil || activity == nil {
+				return out, ErrCorrupt
+			}
+		}
+
 		out.Items = append(
 			out.Items,
 			application.ReviewEntry{
 				Kind:     application.ReviewKind(row.Kind),
+				Activity: activity,
 				ID:       row.ID,
 				Name:     row.Name,
 				Artifact: row.Artifact,

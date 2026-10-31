@@ -97,6 +97,10 @@ unknown values sort last independently of direction and currency/unit groups rem
 explicit. Each read model is materialized in one consistent read transaction,
 released before rendering or client I/O. Presentation owns label wording and may
 supply structured label matches to search; SQL does not infer state from those words.
+Recovery pages read bounded source-access metadata, expose continuation links and
+check readiness across every retained connection before offering resume. Review
+labels retain structured activity context, and filtered empty pages distinguish
+an unmatched result from an empty review queue.
 The socket exposes accepted financial views with
 stable identities and compact conflict status; consumer changes include corrections
 and relevant link/reference changes, not just new activity. Presentation adapters

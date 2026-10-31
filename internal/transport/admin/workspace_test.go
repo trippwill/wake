@@ -224,3 +224,40 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testing.T) {
+	side, lifecycle := "buy", "assignment"
+	for _, test := range []struct {
+		activity application.PublishedActivity
+		want     string
+	}{
+		{application.PublishedActivity{Family: "trade", Side: &side}, "Buy Zebra"},
+		{application.PublishedActivity{Family: "lifecycle", LifecycleKind: &lifecycle}, "Assignment · Zebra"},
+		{application.PublishedActivity{Family: "conversion", Sent: &application.PublishedAmount{Currency: "EUR"}, Received: &application.PublishedAmount{Currency: "USD"}}, "Convert EUR → USD"},
+	} {
+		rows := reviewItems(
+			application.ReviewList{
+				Items: []application.ReviewEntry{
+					{Kind: application.ReviewActivity, Name: "Zebra", Activity: &test.activity},
+				},
+			},
+		)
+		if len(rows) != 1 || rows[0].Label != test.want {
+			t.Fatal(rows, test.want)
+		}
+	}
+
+	for _, info := range []application.PageInfo{{Total: 2, Matched: 0, Page: 1, PageSize: 50}, {Total: 2, Matched: 2, Page: 9, PageSize: 50}} {
+		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?view=review&q=unmatched", nil))
+
+		var out strings.Builder
+		if err := ReviewQueue(activityView{PageInfo: info}).Render(request.Context(), &out); err != nil {
+			t.Fatal(err)
+		}
+
+		if strings.Contains(out.String(), "No activity or identity conflicts are awaiting review") ||
+			!strings.Contains(out.String(), "No review items match") {
+			t.Fatal(out.String())
+		}
+	}
+}

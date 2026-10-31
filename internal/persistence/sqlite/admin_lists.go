@@ -96,6 +96,7 @@ func (s *Store) ActivityList(
 	}
 
 	states, references, kinds := searchMatches(options)
+	amounts, _ := json.Marshal(options.AmountMatches)
 
 	return readModel(ctx, s, func(q *sqlc.Queries) (application.ActivityList, error) {
 		out := application.ActivityList{}
@@ -117,6 +118,7 @@ func (s *Store) ActivityList(
 				Search:           options.Search,
 				StateMatches:     states,
 				KindMatches:      kinds,
+				AmountMatches:    string(amounts),
 				ReferenceMatches: references,
 			},
 		)
@@ -134,6 +136,7 @@ func (s *Store) ActivityList(
 				Search:           options.Search,
 				StateMatches:     states,
 				KindMatches:      kinds,
+				AmountMatches:    string(amounts),
 				ReferenceMatches: references,
 				SortField:        options.Sort,
 				Direction:        options.Direction,

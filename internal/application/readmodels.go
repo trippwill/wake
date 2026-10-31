@@ -18,8 +18,13 @@ type ListOptions struct {
 	KindMatches                          []ActivityKind
 	StateMatches                         []ActivityState
 	ReferenceMatches                     []ReferenceMatch
+	AmountMatches                        []AmountMatch
 }
 type (
+	AmountMatch struct {
+		Role   string `json:"role"`
+		Search string `json:"search"`
+	}
 	ReferenceMatch struct {
 		Status    ReferenceStatus
 		Authority SelectionAuthority
@@ -105,12 +110,19 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	for _, kind := range options.KindMatches {
-		if scope != ActivityScope ||
+		if scope != ActivityScope && scope != ReviewScope ||
 			!slices.Contains([]ActivityKind{TradeActivity, LifecycleActivity, ConversionActivity}, kind) {
 			return ListQuery{}, ErrInvalid
 		}
 	}
 
+	for _, match := range options.AmountMatches {
+		if match.Role != "sent" && match.Role != "received" || len(match.Search) > 256 {
+			return ListQuery{}, ErrInvalid
+		}
+	}
+
+	options.AmountMatches = slices.Clone(options.AmountMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
 	options.StateMatches = slices.Clone(options.StateMatches)
@@ -121,6 +133,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 func (q ListQuery) Scope() ListScope { return q.scope }
 func (q ListQuery) Options() ListOptions {
 	out := q.options
+	out.AmountMatches = slices.Clone(out.AmountMatches)
 	out.KindMatches = slices.Clone(out.KindMatches)
 	out.StateMatches = slices.Clone(out.StateMatches)
 	out.ReferenceMatches = slices.Clone(out.ReferenceMatches)
@@ -190,6 +203,7 @@ type (
 	ReviewEntry struct {
 		Kind                         ReviewKind
 		ID, Name, Artifact, Location string
+		Activity                     *PublishedActivity
 		Status                       CorrectionStatus
 		Count                        int64
 	}
@@ -205,6 +219,7 @@ type (
 	ReadQueries interface {
 		Prerequisites(context.Context) (Prerequisites, error)
 		SourcePage(context.Context, ListQuery) (SourcePage, error)
+		SourceAccessPage(context.Context, ListQuery) (SourcePage, error)
 		SourceDetail(context.Context, string, ListQuery) (SourceDetail, error)
 		SourceCandidate(context.Context, string, string, source.Reference) (Candidate, error)
 		SystemStatus(context.Context) (SystemStatus, error)

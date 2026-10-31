@@ -30,7 +30,7 @@ type Querier interface {
 	AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error)
 	AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRowsParams) ([]AdminInstrumentRowsRow, error)
 	AdminReferenceStatus(ctx context.Context) (AdminReferenceStatusRow, error)
-	AdminReviewCount(ctx context.Context, search interface{}) (AdminReviewCountRow, error)
+	AdminReviewCount(ctx context.Context, arg AdminReviewCountParams) (AdminReviewCountRow, error)
 	AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams) ([]AdminReviewRowsRow, error)
 	AdminSourceCount(ctx context.Context, search interface{}) (int64, error)
 	AdminSourceRows(ctx context.Context, arg AdminSourceRowsParams) ([]Connection, error)

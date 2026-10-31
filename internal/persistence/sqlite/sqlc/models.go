@@ -120,6 +120,8 @@ type AdminReview struct {
 	Location   string
 	Status     string
 	ClaimCount int64
+	Activity   string
+	SearchText string
 }
 
 type Artifact struct {

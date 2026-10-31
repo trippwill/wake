@@ -347,6 +347,7 @@ templ RecoveryPage(csrf string, view sourceView) {
 			for _,c:=range view.Connections {
 				<p><strong>{ c.Name }</strong> · Settings: { readiness(c.SettingsStored) } · Credentials: { readiness(c.CredentialStored) }</p>
 			}
+			@ListPagination(view.PageInfo)
 		</section>
 		for _,c:=range view.Connections {
 			if c.MissingAccess {
@@ -368,7 +369,7 @@ templ RecoveryPage(csrf string, view sourceView) {
 			<h2>3. Resume upstream work</h2>
 			<p>Resume grants permission to contact configured sources. It does not confirm a newly discovered account.</p>
 			if !recoveryReady(view) {
-				<p class="wake-notice">Complete the source and reference steps above before resuming.</p>
+				<p class="wake-notice">Complete the source and reference steps before resuming. Check every page of source access.</p>
 			}
 			<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
 		</section>
@@ -464,7 +465,12 @@ templ ReviewQueue(view activityView) {
 		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
 		<form class="wake-filters" method="get" action="/activity"><input type="hidden" name="view" value="review"/><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
 		if len(view.Reviews)==0 {
-			<p>No activity or identity conflicts are awaiting review.</p>
+			if view.Total==0 {
+				<p>No activity or identity conflicts are awaiting review.</p>
+			} else {
+				<p>No review items match this result page. Change the search or return to the first page.</p>
+				<a href="/activity?view=review">View all review items</a>
+			}
 		} else {
 			<ul class="wake-task-list">
 				for _,r:=range view.Reviews {

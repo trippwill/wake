@@ -15,9 +15,10 @@ type (
 	sourceView struct {
 		application.Prerequisites
 		application.PageInfo
-		Connections     []application.ConnectionView
-		Recovery        []application.RecoveryJob
-		MoreConnections bool
+		Connections           []application.ConnectionView
+		Recovery              []application.RecoveryJob
+		MoreConnections       bool
+		MissingRecoveryAccess bool
 	}
 	overviewView struct {
 		sourceView
@@ -124,7 +125,7 @@ func activityList(v application.ActivityList) activityView {
 		switch a.Family {
 		case "trade":
 			row.Href = "/executions/" + r.ID
-			row.Label = stringTitle(text(a.Side)) + " " + name
+			row.Label = activityLabel(a, name)
 			row.Quantity = known("")
 			if a.Quantity != nil {
 				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
@@ -133,22 +134,13 @@ func activityList(v application.ActivityList) activityView {
 			row.Price = publishedMoney(a.Price)
 			row.Basis = text(a.PriceBasis)
 		case "lifecycle":
-			row.Label = stringTitle(text(a.LifecycleKind)) + " · " + name
+			row.Label = activityLabel(a, name)
 			row.Price = "Not applicable"
 			if a.Quantity != nil {
 				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
 			}
 		case "conversion":
-			sent, received := "Unknown", "Unknown"
-			if a.Sent != nil {
-				sent = known(a.Sent.Currency)
-			}
-
-			if a.Received != nil {
-				received = known(a.Received.Currency)
-			}
-
-			row.Label = "Convert " + sent + " → " + received
+			row.Label = activityLabel(a, name)
 			row.Quantity = publishedAmount(a.Sent) + " sent · " + publishedAmount(a.Received) + " received"
 			row.Price = publishedMoney(a.Rate)
 			if a.Rate != nil {
@@ -187,6 +179,10 @@ func reviewItems(v application.ReviewList) []reviewItem {
 		item := reviewItem{Key: string(r.Kind) + "/" + r.ID, Label: known(r.Name)}
 		switch r.Kind {
 		case application.ReviewActivity:
+			if r.Activity != nil {
+				item.Label = activityLabel(r.Activity, known(r.Name))
+			}
+
 			item.Kind = "Activity"
 			item.Reason = "Reported values need review"
 			item.Href = "/activity/" + r.ID + "/correct?mode=evidence"
@@ -238,7 +234,18 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 
 	search := strings.ToLower(options.Search)
 	if search != "" {
-		if scope == application.ActivityScope {
+		if scope == application.ActivityScope || scope == application.ReviewScope {
+			for _, role := range []string{"sent", "received"} {
+				if strings.Contains(role, search) {
+					options.AmountMatches = append(options.AmountMatches, application.AmountMatch{Role: role})
+				} else if before, ok := strings.CutSuffix(search, " "+role); ok {
+					options.AmountMatches = append(
+						options.AmountMatches,
+						application.AmountMatch{Role: role, Search: before},
+					)
+				}
+			}
+
 			for kind, label := range map[application.ActivityKind]string{application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
 				if strings.Contains(strings.ToLower(label), search) {
 					options.KindMatches = append(options.KindMatches, kind)
@@ -297,4 +304,26 @@ func activityKindLabel(kind string) string {
 	}
 
 	return stringTitle(kind)
+}
+
+func activityLabel(a *application.PublishedActivity, name string) string {
+	switch a.Family {
+	case "trade":
+		return stringTitle(text(a.Side)) + " " + name
+	case "lifecycle":
+		return stringTitle(text(a.LifecycleKind)) + " · " + name
+	case "conversion":
+		sent, received := "Unknown", "Unknown"
+		if a.Sent != nil {
+			sent = known(a.Sent.Currency)
+		}
+
+		if a.Received != nil {
+			received = known(a.Received.Currency)
+		}
+
+		return "Convert " + sent + " → " + received
+	}
+
+	return name
 }

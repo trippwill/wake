@@ -61,7 +61,7 @@ func (s *Store) Prerequisites(ctx context.Context) (application.Prerequisites, e
 	)
 }
 
-func connectionStatus(
+func connectionAccess(
 	ctx context.Context,
 	q *sqlc.Queries,
 	connection sqlc.Connection,
@@ -85,6 +85,20 @@ func connectionStatus(
 	view.MissingAccess = !view.SettingsStored
 
 	view.CredentialKeys, err = q.CredentialKeys(ctx, connection.ID)
+	if err != nil {
+		return view, err
+	}
+
+	return view, nil
+}
+
+func connectionStatus(
+	ctx context.Context,
+	q *sqlc.Queries,
+	connection sqlc.Connection,
+	account application.Account,
+) (application.ConnectionView, error) {
+	view, err := connectionAccess(ctx, q, connection, account)
 	if err != nil {
 		return view, err
 	}
@@ -337,4 +351,56 @@ func (s *Store) SystemStatus(ctx context.Context) (application.SystemStatus, err
 		s,
 		func(q *sqlc.Queries) (application.SystemStatus, error) { return systemStatus(ctx, q) },
 	)
+}
+
+// SourceAccessPage reads only access metadata, without processing history or financial state.
+func (s *Store) SourceAccessPage(
+	ctx context.Context,
+	query application.ListQuery,
+) (application.SourcePage, error) {
+	options := query.Options()
+	if query.Scope() != application.SourceScope || options.Page < 1 || options.PageSize < 1 {
+		return application.SourcePage{}, application.ErrInvalid
+	}
+
+	return readModel(ctx, s, func(q *sqlc.Queries) (application.SourcePage, error) {
+		out := application.SourcePage{}
+
+		var err error
+
+		out.Prerequisites, err = prerequisites(ctx, q)
+		if err != nil {
+			return out, err
+		}
+
+		matched, err := q.AdminSourceCount(ctx, options.Search)
+		if err != nil {
+			return out, err
+		}
+
+		out.PageInfo = pageInfo(query, out.ConnectionCount, matched)
+
+		rows, err := q.AdminSourceRows(
+			ctx,
+			sqlc.AdminSourceRowsParams{
+				Search:     options.Search,
+				PageSize:   int64(options.PageSize),
+				PageOffset: query.Offset(),
+			},
+		)
+		if err != nil {
+			return out, err
+		}
+
+		for _, row := range rows {
+			view, e := connectionAccess(ctx, q, row, out.Account)
+			if e != nil {
+				return out, e
+			}
+
+			out.Connections = append(out.Connections, view)
+		}
+
+		return out, nil
+	})
 }

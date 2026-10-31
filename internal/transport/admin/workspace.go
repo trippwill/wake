@@ -413,7 +413,7 @@ func readiness(ok bool) string {
 }
 
 func recoveryReady(v sourceView) bool {
-	if v.Storage.ReferenceReview {
+	if v.Storage.ReferenceReview || v.MissingRecoveryAccess {
 		return false
 	}
 

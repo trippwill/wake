@@ -12,8 +12,10 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -445,5 +447,135 @@ func TestServerSearchPreservesUnicodeCaseMatching(t *testing.T) {
 	instruments, err := s.InstrumentList(ctx, query)
 	if err != nil || instruments.Matched != 1 {
 		t.Fatal("server instrument search lost Unicode matching", instruments, err)
+	}
+}
+
+func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	buy := strings.ReplaceAll(equityRow("U1", "buy-zebra", "10"), "Synthetic equity", "Zebra")
+	sell := strings.ReplaceAll(
+		strings.ReplaceAll(
+			strings.ReplaceAll(equityRow("U1", "sell-apple", "10"), "Synthetic equity", "Apple"),
+			`conid="100"`,
+			`conid="101"`,
+		),
+		`buySell="BUY"`,
+		`buySell="SELL"`,
+	)
+	coverageReport(t, s, "labels", buy+sell+syntheticFX)
+
+	query, _ := application.NewListQuery(
+		application.ListOptions{Sort: "label", Direction: "asc", PageSize: 1},
+		application.ActivityScope,
+	)
+
+	first, err := s.ActivityList(ctx, query)
+	if err != nil || len(first.Items) != 1 || first.Items[0].Resource.Activity.Side == nil ||
+		*first.Items[0].Resource.Activity.Side != "buy" {
+		t.Fatal("label order differs from visible action order", first, err)
+	}
+
+	for _, test := range []struct {
+		search, role, amount string
+		want                 int64
+	}{
+		{"shares", "", "", 2},
+		{"0.000000000123 shares", "", "", 2},
+		{"sent", "sent", "", 1},
+		{"100.123456789 EUR sent", "sent", "100.123456789 EUR", 1},
+		{"received", "received", "", 1},
+		{"USD received", "received", "USD", 1},
+	} {
+		options := application.ListOptions{Search: test.search}
+		if test.role != "" {
+			options.AmountMatches = []application.AmountMatch{{Role: test.role, Search: test.amount}}
+		}
+
+		query, _ = application.NewListQuery(options, application.ActivityScope)
+
+		results, e := s.ActivityList(ctx, query)
+		if e != nil || results.Matched != test.want {
+			t.Fatal("visible quantity search", test.search, results.Matched, e)
+		}
+	}
+
+	coverageReport(
+		t,
+		s,
+		"disputed-conversion",
+		strings.Replace(syntheticFX, `netCash="123.25"`, `netCash="124.25"`, 1),
+	)
+
+	query, _ = application.NewListQuery(application.ListOptions{Search: "EUR USD"}, application.ReviewScope)
+
+	reviews, err := s.ReviewList(ctx, query)
+	if err != nil || len(reviews.Items) != 1 || reviews.Items[0].Activity == nil ||
+		reviews.Items[0].Activity.Family != "conversion" {
+		t.Fatal("review lost currency pair and structured conversion", reviews, err)
+	}
+}
+
+func TestRecoveryReadinessAndRepairPageIncludeLateConnections(t *testing.T) {
+	s, _ := testStore(t)
+	ctx := t.Context()
+	settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
+	for n := 0; n < 51; n++ {
+		id := fmt.Sprintf("source-%02d", n)
+		if err := s.Configure(
+			ctx,
+			host.Connection{ID: id, Provider: "ibkr-flex", Settings: settings},
+			nil,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		if n < 50 {
+			if _, err := s.db.ExecContext(
+				ctx,
+				"INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,'token',X'01')",
+				id,
+			); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	registration, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := host.New(ctx, s, nil, nil, nil, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	workflow := application.New(s, h, nil, nil, nil)
+	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
+
+	first, ready, err := workflow.Recovery(ctx, query)
+	if err != nil || ready || len(first.Connections) != 50 || first.Total != 51 {
+		t.Fatal("first page hid missing access", first, ready, err)
+	}
+
+	query, _ = application.NewListQuery(application.ListOptions{Page: 2}, application.SourceScope)
+
+	second, ready, err := workflow.Recovery(ctx, query)
+	if err != nil || ready || len(second.Connections) != 1 || !second.Connections[0].MissingAccess {
+		t.Fatal("late source has no repair page", second, ready, err)
+	}
+
+	if _, err = s.db.ExecContext(
+		ctx,
+		"INSERT INTO access.credentials(connection_id,key,encrypted) VALUES('source-50','token',X'01')",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, ready, err = workflow.Recovery(ctx, query)
+	if err != nil || !ready {
+		t.Fatal("complete access remained disabled", ready, err)
 	}
 }

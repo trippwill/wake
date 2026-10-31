@@ -171,6 +171,17 @@ func registerWorkflowRoutes(
 				result, e := workflow.SourceDetail(r.Context(), id, query)
 				err = e
 				view = sourceDetail(result)
+			} else if r.URL.Path == "/connections/recovery" {
+				query, e := listQuery(r.Context(), application.SourceScope)
+				if e != nil {
+					http.Error(w, "invalid list query", http.StatusBadRequest)
+					return
+				}
+
+				result, ready, e := workflow.Recovery(r.Context(), query)
+				err = e
+				view = sourcePage(result)
+				view.MissingRecoveryAccess = !ready
 			} else {
 				result, e := workflow.SystemStatus(r.Context())
 				err = e

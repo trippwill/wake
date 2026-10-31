@@ -89,3 +89,10 @@ type fixtureView struct {
 	ReferenceKey     bool
 	ReferenceFailure string
 }
+
+func (s workspaceStore) SourceAccessPage(
+	ctx context.Context,
+	query application.ListQuery,
+) (application.SourcePage, error) {
+	return s.SourcePage(ctx, query)
+}

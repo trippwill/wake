@@ -368,6 +368,40 @@ func (w *Workflow) SourcePage(ctx context.Context, query ListQuery) (SourcePage,
 	return view, err
 }
 
+// Recovery returns a bounded repair page and checks access across every source.
+func (w *Workflow) Recovery(ctx context.Context, query ListQuery) (SourcePage, bool, error) {
+	view, err := w.store.SourceAccessPage(ctx, query)
+	if err != nil {
+		return view, false, err
+	}
+
+	w.decorateConnections(view.Connections)
+
+	for page := 1; ; page++ {
+		scan, e := NewListQuery(ListOptions{Page: page}, SourceScope)
+		if e != nil {
+			return view, false, e
+		}
+
+		batch, e := w.store.SourceAccessPage(ctx, scan)
+		if e != nil {
+			return view, false, e
+		}
+
+		w.decorateConnections(batch.Connections)
+
+		for _, connection := range batch.Connections {
+			if connection.MissingAccess {
+				return view, false, nil
+			}
+		}
+
+		if int64(page*batch.PageSize) >= batch.Matched {
+			return view, true, nil
+		}
+	}
+}
+
 func (w *Workflow) SourceDetail(ctx context.Context, id string, query ListQuery) (SourceDetail, error) {
 	view, err := w.store.SourceDetail(ctx, id, query)
 	if err == nil {
