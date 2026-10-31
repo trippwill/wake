@@ -67,3 +67,6 @@ SELECT (SELECT count(*) FROM admin_review) AS total,count(*) AS matched FROM adm
 SELECT CAST(kind AS TEXT) AS kind,CAST(id AS TEXT) AS id,CAST(name AS TEXT) AS name,CAST(artifact AS TEXT) AS artifact,CAST(location AS TEXT) AS location,CAST(status AS TEXT) AS status,CAST(claim_count AS INTEGER) AS claim_count,CAST(activity AS TEXT) AS activity FROM admin_review WHERE sqlc.arg(search)='' OR wake_contains(search_text || ' ' || kind || ' ' || id,sqlc.arg(search))=1 OR EXISTS(SELECT 1 FROM json_each(sqlc.arg(kind_matches)) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) ORDER BY kind,id LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
 -- name: AdminCandidate :one
 SELECT c.artifact_id,c.authority,c.kind,c.scope,c.value,c.name,c.currency FROM candidates c JOIN artifacts a ON a.id=c.artifact_id JOIN acquisition_receipts r ON r.id=c.receipt_id WHERE a.connection_id=? AND c.artifact_id=? AND c.authority=? AND c.kind=? AND c.scope=? AND c.value=? AND r.operation='discover' ORDER BY r.sequence DESC LIMIT 1;
+
+-- name: AdminAccessSources :many
+SELECT * FROM connections ORDER BY id;

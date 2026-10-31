@@ -159,6 +159,10 @@ type (
 		PageInfo
 		Connections []ConnectionView
 	}
+	AccessSnapshot struct {
+		Prerequisites
+		Connections []ConnectionView
+	}
 	SourceDetail struct {
 		Prerequisites
 		PageInfo
@@ -220,6 +224,7 @@ type (
 		Prerequisites(context.Context) (Prerequisites, error)
 		SourcePage(context.Context, ListQuery) (SourcePage, error)
 		SourceAccessPage(context.Context, ListQuery) (SourcePage, error)
+		SourceAccess(context.Context) (AccessSnapshot, error)
 		SourceDetail(context.Context, string, ListQuery) (SourceDetail, error)
 		SourceCandidate(context.Context, string, string, source.Reference) (Candidate, error)
 		SystemStatus(context.Context) (SystemStatus, error)

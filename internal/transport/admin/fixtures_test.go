@@ -96,3 +96,8 @@ func (s workspaceStore) SourceAccessPage(
 ) (application.SourcePage, error) {
 	return s.SourcePage(ctx, query)
 }
+
+func (s workspaceStore) SourceAccess(ctx context.Context) (application.AccessSnapshot, error) {
+	v, err := s.SourcePage(ctx, application.ListQuery{})
+	return application.AccessSnapshot{Prerequisites: v.Prerequisites, Connections: v.Connections}, err
+}

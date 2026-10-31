@@ -579,3 +579,91 @@ func TestRecoveryReadinessAndRepairPageIncludeLateConnections(t *testing.T) {
 		t.Fatal("complete access remained disabled", ready, err)
 	}
 }
+
+type renameDuringRecovery struct {
+	*Store
+	pages int
+}
+
+func (s *renameDuringRecovery) SourceAccessPage(
+	ctx context.Context,
+	query application.ListQuery,
+) (application.SourcePage, error) {
+	page, err := s.Store.SourceAccessPage(ctx, query)
+	s.pages++
+	if err == nil && s.pages == 2 {
+		_, err = s.db.ExecContext(ctx, "UPDATE connections SET name='AAA' WHERE id='source-50'")
+	}
+
+	return page, err
+}
+
+func TestRecoveryAuthorityDoesNotEnumerateMutableUIPages(t *testing.T) {
+	s, _ := testStore(t)
+	settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
+	for n := 0; n < 51; n++ {
+		id := fmt.Sprintf("source-%02d", n)
+		secrets := map[string][]byte{}
+		if n < 50 {
+			secrets["token"] = []byte("synthetic-encrypted")
+		}
+
+		if err := s.Configure(
+			t.Context(),
+			host.Connection{ID: id, Name: id, Provider: "ibkr-flex", Settings: settings},
+			secrets,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	registration, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := host.New(t.Context(), s, nil, nil, nil, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	wrapped := &renameDuringRecovery{Store: s}
+	workflow := application.New(wrapped, h, nil, nil, nil)
+	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
+
+	_, ready, err := workflow.Recovery(t.Context(), query)
+	if err != nil || ready {
+		t.Fatal("mutable offset page skipped a missing credential", ready, err)
+	}
+}
+
+func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
+	s := coverageStore(t)
+	row := strings.Replace(
+		equityRow("U1", "ticker-only", "10"),
+		`description="Synthetic equity"`,
+		`description=""`,
+		1,
+	)
+	coverageReport(t, s, "ticker-only", row)
+
+	query, _ := application.NewListQuery(
+		application.ListOptions{Sort: "label", Direction: "asc"},
+		application.ActivityScope,
+	)
+
+	page, err := s.ActivityList(t.Context(), query)
+	if err != nil || len(page.Items) != 1 || page.Items[0].InstrumentName != "SYN" {
+		t.Fatal("known ticker lost from activity label", page, err)
+	}
+
+	coverageReport(t, s, "ticker-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
+
+	query, _ = application.NewListQuery(application.ListOptions{}, application.ReviewScope)
+
+	review, err := s.ReviewList(t.Context(), query)
+	if err != nil || len(review.Items) != 1 || review.Items[0].Name != "SYN" {
+		t.Fatal("known ticker lost from review label", review, err)
+	}
+}

@@ -404,3 +404,34 @@ func (s *Store) SourceAccessPage(
 		return out, nil
 	})
 }
+
+// SourceAccess captures all source-access prerequisites together for authority checks.
+// Unlike UI lists it is intentionally complete, and never reads financial/processing history.
+func (s *Store) SourceAccess(ctx context.Context) (application.AccessSnapshot, error) {
+	return readModel(ctx, s, func(q *sqlc.Queries) (application.AccessSnapshot, error) {
+		out := application.AccessSnapshot{}
+
+		var err error
+
+		out.Prerequisites, err = prerequisites(ctx, q)
+		if err != nil {
+			return out, err
+		}
+
+		rows, err := q.AdminAccessSources(ctx)
+		if err != nil {
+			return out, err
+		}
+
+		for _, row := range rows {
+			c, e := connectionAccess(ctx, q, row, out.Account)
+			if e != nil {
+				return out, e
+			}
+
+			out.Connections = append(out.Connections, c)
+		}
+
+		return out, nil
+	})
+}

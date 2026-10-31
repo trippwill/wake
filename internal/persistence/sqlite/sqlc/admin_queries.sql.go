@@ -12,6 +12,33 @@ import (
 	"context"
 )
 
+const adminAccessSources = `-- name: AdminAccessSources :many
+SELECT id, provider, name FROM connections ORDER BY id
+`
+
+func (q *Queries) AdminAccessSources(ctx context.Context) ([]Connection, error) {
+	rows, err := q.db.QueryContext(ctx, adminAccessSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Connection
+	for rows.Next() {
+		var i Connection
+		if err := rows.Scan(&i.ID, &i.Provider, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminActivityCount = `-- name: AdminActivityCount :one
 
 SELECT (SELECT count(*) FROM admin_activity) AS total,count(*) AS matched FROM admin_activity WHERE (?1='' OR kind=?1)

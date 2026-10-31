@@ -403,11 +403,19 @@
       )
         continue;
       const serverList = region.hasAttribute("data-server-list");
+      const serverOrder = (params) => ({
+        field:
+          params.get("sort") ||
+          (region.dataset.grid === "activity" ? "date" : "name"),
+        direction:
+          params.get("dir") ||
+          (region.dataset.grid === "activity" ? "desc" : "asc"),
+      });
       const serverSort = (field) => {
         const url = new URL(location.href);
+        const current = serverOrder(url.searchParams);
         const direction =
-          url.searchParams.get("sort") === field &&
-          url.searchParams.get("dir") === "asc"
+          current.field === field && current.direction === "asc"
             ? "desc"
             : "asc";
         url.searchParams.set("sort", field);
@@ -565,8 +573,12 @@
                 source.querySelectorAll("thead th")[index]?.dataset.field;
               heading.setAttribute(
                 "aria-sort",
-                query.get("sort") === field
-                  ? query.get("dir") === "asc"
+                (query.get("sort") ||
+                  (region.dataset.grid === "activity" ? "date" : "name")) ===
+                  field
+                  ? (query.get("dir") ||
+                      (region.dataset.grid === "activity" ? "desc" : "asc")) ===
+                    "asc"
                     ? "ascending"
                     : "descending"
                   : "none",

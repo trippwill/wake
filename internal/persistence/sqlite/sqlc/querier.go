@@ -19,6 +19,7 @@ type Querier interface {
 	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
+	AdminAccessSources(ctx context.Context) ([]Connection, error)
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
 	AdminActivityCount(ctx context.Context, arg AdminActivityCountParams) (AdminActivityCountRow, error)

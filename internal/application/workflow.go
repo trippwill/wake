@@ -377,29 +377,20 @@ func (w *Workflow) Recovery(ctx context.Context, query ListQuery) (SourcePage, b
 
 	w.decorateConnections(view.Connections)
 
-	for page := 1; ; page++ {
-		scan, e := NewListQuery(ListOptions{Page: page}, SourceScope)
-		if e != nil {
-			return view, false, e
-		}
+	access, e := w.store.SourceAccess(ctx)
+	if e != nil {
+		return view, false, e
+	}
 
-		batch, e := w.store.SourceAccessPage(ctx, scan)
-		if e != nil {
-			return view, false, e
-		}
+	w.decorateConnections(access.Connections)
 
-		w.decorateConnections(batch.Connections)
-
-		for _, connection := range batch.Connections {
-			if connection.MissingAccess {
-				return view, false, nil
-			}
-		}
-
-		if int64(page*batch.PageSize) >= batch.Matched {
-			return view, true, nil
+	for _, connection := range access.Connections {
+		if connection.MissingAccess {
+			return view, false, nil
 		}
 	}
+
+	return view, true, nil
 }
 
 func (w *Workflow) SourceDetail(ctx context.Context, id string, query ListQuery) (SourceDetail, error) {
@@ -694,7 +685,7 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 	ctx, finishLog := logging.Start(ctx, w.logger, "storage_resume")
 	defer func() { finishLog(resultErr) }()
 
-	view, err := w.Prerequisites(ctx)
+	view, err := w.store.SourceAccess(ctx)
 	if err != nil {
 		return err
 	}
@@ -707,23 +698,8 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 		return ErrAccessReview
 	}
 
-	var connections []ConnectionView
-	for page := 1; ; page++ {
-		query, e := NewListQuery(ListOptions{Page: page}, SourceScope)
-		if e != nil {
-			return e
-		}
-
-		batch, e := w.SourcePage(ctx, query)
-		if e != nil {
-			return e
-		}
-
-		connections = append(connections, batch.Connections...)
-		if int64(page*batch.PageSize) >= batch.Matched {
-			break
-		}
-	}
+	connections := view.Connections
+	w.decorateConnections(connections)
 
 	for _, connection := range connections {
 		if connection.MissingAccess {

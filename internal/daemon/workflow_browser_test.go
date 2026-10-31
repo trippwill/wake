@@ -338,6 +338,30 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("missing exact financial view")
 	}
 
+	check(
+		chromedp.Navigate(origin+"/activity"),
+		chromedp.WaitVisible(".tabulator-row"),
+		chromedp.Poll(
+			`document.querySelector('.tabulator-col[tabulator-field="c1"]').getAttribute('aria-sort')==='descending'`,
+			nil,
+		),
+	)
+	check(
+		chromedp.Navigate(origin+"/activity?view=instruments"),
+		chromedp.WaitVisible(".tabulator-row"),
+		chromedp.Poll(
+			`document.querySelector('.tabulator-col[tabulator-field="c0"]').getAttribute('aria-sort')==='ascending'`,
+			nil,
+		),
+	)
+	navigate(chromedp.Click(`.tabulator-col[tabulator-field="c0"]`))
+	check(
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('sort')==='name'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('.tabulator-col[tabulator-field="c0"]').getAttribute('aria-sort')==='descending'`,
+			nil,
+		),
+	)
+	check(chromedp.Navigate(origin+"/activity"), chromedp.WaitVisible(".tabulator-row"))
 	capture("activity")
 	check(
 		chromedp.Navigate(origin+"/activity?q=REFERENCE+EQUITY&sort=price&dir=desc&page=1"),
