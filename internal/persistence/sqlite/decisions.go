@@ -10,8 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"sort"
-	"strings"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -70,25 +68,9 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 		return err
 	}
 
-	var revision int64
-	if f.TargetKind == "activity" {
-		r, e := q.Execution(ctx, f.TargetID)
-		if e != nil {
-			return e
-		}
-
-		revision = r.Revision
-	} else {
-		r, e := q.Instrument(ctx, f.TargetID)
-		if e != nil {
-			return e
-		}
-
-		revision = r.Revision
-	}
-
-	if revision != f.ExpectedRevision {
-		return application.ErrStale
+	prepared, err := prepareCorrection(ctx, q, f)
+	if err != nil {
+		return err
 	}
 
 	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: f.TargetKind, TargetID: f.TargetID})
@@ -125,25 +107,15 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 	}
 
 	if f.TargetKind == "activity" {
-		row, e := q.Execution(ctx, f.TargetID)
-		if e != nil {
-			return e
+		if err = persistActivityCalculation(ctx, q, prepared.row, prepared.activity); err != nil {
+			return err
 		}
-
-		states, e := correctionStates(ctx, q)
-		if e != nil {
-			return e
-		}
-
-		if e = projectActivity(ctx, q, row, states[row.ID]); e != nil {
-			return e
-		}
-		// A decision changes edit authority even if its value already matches.
-		if err = q.AdvanceActivityRevision(ctx, row.ID); err != nil {
+		// Choosing a value changes edit authority even when its text already matches.
+		if err = q.AdvanceActivityRevision(ctx, f.TargetID); err != nil {
 			return err
 		}
 	} else {
-		if err = projectInstrument(ctx, q, f.TargetID); err != nil {
+		if err = persistInstrumentCalculation(ctx, q, f.TargetID, prepared.instrument); err != nil {
 			return err
 		}
 
@@ -158,252 +130,6 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 func observationKey(r sqlc.RecordValue) string {
 	b, _ := json.Marshal([3]string{r.ArtifactID, r.Version, r.Location})
 	return string(b)
-}
-
-func applyActivityDecisions(
-	ctx context.Context,
-	q *sqlc.Queries,
-	row sqlc.Execution,
-	data []byte,
-	instrument, listing sql.NullString,
-) ([]byte, sql.NullString, sql.NullString, bool, error) {
-	fail := func(err error) ([]byte, sql.NullString, sql.NullString, bool, error) {
-		return nil, instrument, listing, false, err
-	}
-
-	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
-	if err != nil {
-		return fail(err)
-	}
-
-	active := activeDecisions(rows)
-	if d, ok := active["observation"]; ok {
-		inputs, e := activityInputs(ctx, q, row.ID)
-		if e != nil {
-			return fail(e)
-		}
-
-		found := false
-		for _, r := range inputs {
-			if observationKey(r) == d.Text && r.Kind == row.Kind {
-				data = r.Data
-				found = true
-
-				break
-			}
-		}
-
-		if !found {
-			return fail(application.ErrInvalid)
-		}
-	}
-
-	scopes := make([]string, 0, len(active))
-	for scope := range active {
-		scopes = append(scopes, scope)
-	}
-
-	sort.Strings(scopes)
-
-	for _, scope := range scopes {
-		d := active[scope]
-		switch scope {
-		case "observation":
-			continue
-		case "instrument":
-			r, e := q.Instrument(ctx, d.Text)
-			if e != nil {
-				return fail(application.ErrInvalid)
-			}
-
-			if !row.InstrumentID.Valid {
-				return fail(application.ErrInvalid)
-			}
-
-			old, e := q.Instrument(ctx, row.InstrumentID.String)
-			if e != nil {
-				return fail(e)
-			}
-
-			if r.Kind != old.Kind {
-				return fail(application.ErrInvalid)
-			}
-
-			if listing.Valid {
-				current, e := q.Listing(ctx, listing.String)
-				if e != nil {
-					return fail(e)
-				}
-
-				if current.InstrumentID != r.ID {
-					listing = sql.NullString{}
-				}
-			}
-
-			instrument = sql.NullString{String: r.ID, Valid: true}
-		case "listing":
-			if d.Text == "" {
-				listing = sql.NullString{}
-				continue
-			}
-
-			r, e := q.Listing(ctx, d.Text)
-			if e != nil || r.InstrumentID != instrument.String {
-				return fail(application.ErrInvalid)
-			}
-
-			listing = sql.NullString{String: r.ID, Valid: true}
-		default:
-			switch row.Kind {
-			case "trade":
-				t, e := decodeTrade(data)
-				if e != nil {
-					return fail(e)
-				}
-
-				t, e = application.ApplyTradeField(t, scope, d.Text, d.Currency)
-				if e != nil {
-					return fail(e)
-				}
-
-				data, err = encodeTrade(t)
-			case "lifecycle":
-				l, e := decodeLifecycle(data)
-				if e != nil {
-					return fail(e)
-				}
-
-				l, e = application.ApplyLifecycleField(l, scope, d.Text, d.Currency)
-				if e != nil {
-					return fail(e)
-				}
-
-				data, err = encodeLifecycle(l)
-			case "conversion":
-				c, e := decodeConversion(data)
-				if e != nil {
-					return fail(e)
-				}
-
-				c, e = application.ApplyConversionField(c, scope, d.Text, d.Currency)
-				if e != nil {
-					return fail(e)
-				}
-
-				data, err = encodeConversion(c)
-			default:
-				return fail(application.ErrInvalid)
-			}
-
-			if err != nil {
-				return fail(err)
-			}
-		}
-	}
-
-	return data, instrument, listing, len(active) > 0, nil
-}
-
-func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
-	if err := q.EnsureInstrumentSelection(ctx, id); err != nil {
-		return err
-	}
-
-	base, err := q.InstrumentSelection(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	root, err := q.Instrument(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "instrument", TargetID: id})
-	if err != nil {
-		return err
-	}
-
-	active := activeDecisions(rows)
-	name, ticker, figi, evidence, status, underlier := base.Name, base.Ticker, base.Figi, base.Evidence, base.Status, base.UnderlierID
-	if d, ok := active["reference"]; ok {
-		record, selectedEvidence, e := referenceCandidate(ctx, q, id, d.Text)
-		if e != nil {
-			return e
-		}
-
-		r, selected, compatible := reference.Select(source.InstrumentKind(root.Kind), []reference.Record{record})
-		if !compatible {
-			return application.ErrInvalid
-		}
-
-		others, e := q.CompetingFIGI(ctx, sqlc.CompetingFIGIParams{CurrentID: id, Figi: selected})
-		if e != nil {
-			return e
-		}
-
-		if len(others) > 0 {
-			return application.ErrInvalid
-		}
-
-		name, ticker, figi, evidence, status = r.Name, r.Ticker, selected, selectedEvidence, "resolved"
-	}
-
-	if d, ok := active["name"]; ok {
-		if !validDecisionLabel(d.Text, 1024) {
-			return application.ErrInvalid
-		}
-
-		name = d.Text
-	}
-
-	if d, ok := active["ticker"]; ok {
-		if d.Text != "" && !validDecisionLabel(d.Text, 256) {
-			return application.ErrInvalid
-		}
-
-		ticker = d.Text
-	}
-
-	if d, ok := active["underlier"]; ok {
-		if root.Kind != string(source.Option) {
-			return application.ErrInvalid
-		}
-
-		underlier = sql.NullString{}
-		if d.Text != "" {
-			u, e := q.Instrument(ctx, d.Text)
-			if e != nil || (u.Kind != string(source.Equity) && u.Kind != string(source.Fund)) || u.ID == id {
-				return application.ErrInvalid
-			}
-
-			underlier = sql.NullString{String: u.ID, Valid: true}
-		}
-	}
-
-	for scope := range active {
-		if !slices.Contains([]string{"reference", "name", "ticker", "underlier"}, scope) {
-			return application.ErrInvalid
-		}
-	}
-
-	return q.ProjectInstrument(
-		ctx,
-		sqlc.ProjectInstrumentParams{
-			ID:                 id,
-			Name:               name,
-			Ticker:             ticker,
-			Figi:               figi,
-			Evidence:           evidence,
-			Status:             status,
-			SelectionAuthority: string(selectionAuthority(len(active) > 0)),
-			UnderlierID:        underlier,
-		},
-	)
-}
-
-func validDecisionLabel(s string, max int) bool {
-	return s != "" && len(s) <= max && strings.TrimSpace(s) == s
 }
 
 func referenceCandidate(
@@ -505,16 +231,8 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			family = source.Option
 		}
 
-		for _, field := range application.ActivityFields(row.Kind) {
-			if strings.HasPrefix(field, "option.") && family != source.Option {
-				continue
-			}
-
-			if (strings.HasPrefix(field, "debt.") || field == "quotation_basis") && family != source.Debt {
-				continue
-			}
-
-			out.Fields = append(out.Fields, field)
+		for _, policy := range application.EditableActivityFields(application.ActivityKind(row.Kind), family) {
+			out.Fields = append(out.Fields, policy.Scope())
 		}
 
 		inputs, err := activityInputs(ctx, s.queries, id)
@@ -554,9 +272,8 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			"underlier":          {Value: row.UnderlierID.String},
 		}
 		out.Revision = row.Revision
-		out.Fields = []string{"name", "ticker"}
-		if row.Kind == string(source.Option) {
-			out.Fields = append(out.Fields, "underlier")
+		for _, policy := range application.EditableInstrumentFields(source.InstrumentKind(row.Kind)) {
+			out.Fields = append(out.Fields, policy.Scope())
 		}
 
 		candidates, err := s.queries.RetainedReferenceCandidates(ctx, id)

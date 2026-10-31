@@ -378,7 +378,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	}
 
 	if changed {
-		if err = projectAll(ctx, q); err != nil {
+		if err = projectArtifact(ctx, q, id); err != nil {
 			return err
 		}
 	}

@@ -45,6 +45,21 @@ Activity lifecycle, review reasons and selection authority are independent typed
 facts. Persist and publish them without encoding state in combined display phrases.
 Source failures retain machine classifications separately from diagnostic wording;
 scheduling depends on the classifications.
+Financial calculation consumes one consistent retained input set: source claims,
+identity bindings, selected references, active decisions and an explicit implemented
+rule. It returns typed accepted values, independent conflict/authority facts and
+explanations without SQL writes or upstream calls. Processing, correction preflight,
+saving and release use that same calculation. Preflight substitutes a prospective
+decision in memory inside a read transaction; saving persists the calculated result,
+decision and publication atomically. Only groups reached by new claims or changed
+source-correction state require recalculation. Retained appearances remain provenance;
+financial selection reads distinct source claims with their multiplicity.
+
+Small typed field policies own applicable activity/instrument families, scalar value
+types, optionality and bounds. Domain constructors own parsing/application invariants;
+editors consume the policies and own wording and controls. The published accepted
+read model is encoded directly; OpenAPI conformance tests protect its wire contract.
+
 Reference acquisition happens outside deterministic rule evaluation. Cache eviction
 cannot erase evidence supporting an accepted result, and a refresh cannot silently
 overwrite an operator correction.

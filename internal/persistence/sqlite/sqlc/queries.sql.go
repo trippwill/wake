@@ -407,6 +407,41 @@ func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCac
 	return i, err
 }
 
+const calculationInputs = `-- name: CalculationInputs :many
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM claim_processing p JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid
+`
+
+func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
+	rows, err := q.db.QueryContext(ctx, calculationInputs, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecordValue
+	for rows.Next() {
+		var i RecordValue
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.Kind,
+			&i.Data,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const candidateExists = `-- name: CandidateExists :one
 SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover')
 `
@@ -1496,6 +1531,33 @@ func (q *Queries) MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const newClaimActivityIDs = `-- name: NewClaimActivityIDs :many
+SELECT DISTINCT o.execution_id FROM execution_observations o JOIN records r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE o.artifact_id=? AND o.execution_id IS NOT NULL ORDER BY o.execution_id
+`
+
+func (q *Queries) NewClaimActivityIDs(ctx context.Context, artifactID string) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, newClaimActivityIDs, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var execution_id sql.NullString
+		if err := rows.Scan(&execution_id); err != nil {
+			return nil, err
+		}
+		items = append(items, execution_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -3107,12 +3169,12 @@ func (q *Queries) Secret(ctx context.Context, arg SecretParams) ([]byte, error) 
 	return encrypted, err
 }
 
-const seedActivityBases = `-- name: SeedActivityBases :exec
-INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT id,accepted,instrument_id,listing_id FROM executions WHERE id NOT IN (SELECT activity_id FROM activity_bases)
+const seedArtifactBases = `-- name: SeedArtifactBases :exec
+INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT e.id,e.accepted,e.instrument_id,e.listing_id FROM executions e WHERE e.id IN (SELECT execution_id FROM execution_observations WHERE artifact_id=?) ON CONFLICT DO NOTHING
 `
 
-func (q *Queries) SeedActivityBases(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, seedActivityBases)
+func (q *Queries) SeedArtifactBases(ctx context.Context, artifactID string) error {
+	_, err := q.db.ExecContext(ctx, seedArtifactBases, artifactID)
 	return err
 }
 
@@ -3123,6 +3185,37 @@ INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status
 func (q *Queries) SeedInstrumentSelections(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, seedInstrumentSelections)
 	return err
+}
+
+const selectedObservation = `-- name: SelectedObservation :one
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM record_values JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? AND o.artifact_id=? AND o.version=? AND o.location=?
+`
+
+type SelectedObservationParams struct {
+	ExecutionID sql.NullString
+	ArtifactID  string
+	Version     string
+	Location    string
+}
+
+func (q *Queries) SelectedObservation(ctx context.Context, arg SelectedObservationParams) (RecordValue, error) {
+	row := q.db.QueryRowContext(ctx, selectedObservation,
+		arg.ExecutionID,
+		arg.ArtifactID,
+		arg.Version,
+		arg.Location,
+	)
+	var i RecordValue
+	err := row.Scan(
+		&i.ArtifactID,
+		&i.Version,
+		&i.Location,
+		&i.ClaimID,
+		&i.Ordinal,
+		&i.Kind,
+		&i.Data,
+	)
+	return i, err
 }
 
 const setListingFIGI = `-- name: SetListingFIGI :exec

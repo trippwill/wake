@@ -186,8 +186,6 @@ SELECT r.kind,r.target,coalesce(e.execution_id,'') AS target_id FROM activity_re
 -- name: PutConversionActivity :exec
 INSERT INTO executions(kind,id,account_id,accepted,status,rule) VALUES('conversion',?,?,?,'accepted',?);
 
--- name: SeedActivityBases :exec
-INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT id,accepted,instrument_id,listing_id FROM executions WHERE id NOT IN (SELECT activity_id FROM activity_bases);
 -- name: ActivityBase :one
 SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
@@ -326,3 +324,13 @@ SELECT count(*) FROM acquisition_receipts WHERE artifact_id=?;
 
 -- name: SaveProcessingReceipt :exec
 INSERT INTO processing_receipts(artifact_id,version) VALUES(?,?) ON CONFLICT DO NOTHING;
+
+-- name: SeedArtifactBases :exec
+INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT e.id,e.accepted,e.instrument_id,e.listing_id FROM executions e WHERE e.id IN (SELECT execution_id FROM execution_observations WHERE artifact_id=?) ON CONFLICT DO NOTHING;
+-- name: NewClaimActivityIDs :many
+SELECT DISTINCT o.execution_id FROM execution_observations o JOIN records r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE o.artifact_id=? AND o.execution_id IS NOT NULL ORDER BY o.execution_id;
+
+-- name: CalculationInputs :many
+SELECT record_values.* FROM claim_processing p JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
+-- name: SelectedObservation :one
+SELECT record_values.* FROM record_values JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? AND o.artifact_id=? AND o.version=? AND o.location=?;

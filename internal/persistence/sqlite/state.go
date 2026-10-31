@@ -27,14 +27,6 @@ func activityState(row sqlc.Execution) (application.ActivityState, error) {
 	return state, nil
 }
 
-func selectionAuthority(decided bool) application.SelectionAuthority {
-	if decided {
-		return application.OperatorSelection
-	}
-
-	return application.AutomaticSelection
-}
-
 func workFailureCode(code provider.RetryReason) host.FailureCode {
 	if code == "" {
 		return ""

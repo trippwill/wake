@@ -118,7 +118,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		page, err = h.reads.Changes(r.Context(), query.Get("cursor"), query.Get("through"), limit)
 		if err == nil {
-			response, err = wire[ChangePage](page)
+			response = page
 		}
 	default:
 		switch len(parts) {
@@ -127,21 +127,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			page, err = h.reads.Resources(r.Context(), endpoint, query.Get("cursor"), limit)
 			if err == nil {
-				response, err = wire[ResourcePage](page)
+				response = page
 			}
 		case 3:
 			var resource application.CanonicalResource
 
 			resource, err = h.reads.Resource(r.Context(), endpoint, parts[2])
 			if err == nil {
-				response, err = wire[Resource](resource)
+				response = resource
 			}
 		default:
 			var explanation application.Explanation
 
 			explanation, err = h.reads.Explanation(r.Context(), endpoint, parts[2])
 			if err == nil {
-				response, err = wire[Explanation](explanation)
+				response = explanation
 			}
 		}
 	}
@@ -191,20 +191,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"transport_failed",
 		)
 	}
-}
-
-// Keep generated wire models in the transport; canonical storage uses application read models.
-func wire[T any](value any) (T, error) {
-	var out T
-
-	data, err := json.Marshal(value)
-	if err != nil {
-		return out, err
-	}
-
-	err = json.Unmarshal(data, &out)
-
-	return out, err
 }
 
 func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
