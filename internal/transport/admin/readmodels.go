@@ -178,28 +178,21 @@ func instrumentList(v application.InstrumentList) activityView {
 func reviewItems(v application.ReviewList) []reviewItem {
 	out := make([]reviewItem, 0, len(v.Items))
 	for _, r := range v.Items {
-		item := reviewItem{Key: string(r.Kind) + "/" + r.ID, Label: known(r.Name)}
+		kind, reason := reviewText(r)
+		item := reviewItem{Key: string(r.Kind) + "/" + r.ID, Label: known(r.Name), Kind: kind, Reason: reason}
 		switch r.Kind {
 		case application.ReviewActivity:
 			if r.Activity != nil {
 				item.Label = activityLabel(r.Activity, known(r.Name))
 			}
 
-			item.Kind = "Activity"
-			item.Reason = "Reported values need review"
 			item.Href = "/activity/" + r.ID + "/correct?mode=evidence"
 		case application.ReviewInstrument:
-			item.Kind = "Identity"
-			item.Reason = "Instrument identity needs review"
 			item.Href = "/instruments/" + r.ID + "/correct?mode=evidence"
 		case application.ReviewInstruction:
-			item.Kind = "Source instruction"
 			item.Label = stringTitle(r.Name) + " instruction"
-			item.Reason = correctionStatus(r.Status)
 			item.Href = "/evidence/" + r.Artifact + "?location=" + url.QueryEscape(r.Location)
 		case application.ReviewIdentity:
-			item.Kind = "Source claims"
-			item.Reason = strconv.FormatInt(r.Count, 10) + " source claims have unresolved identity."
 			item.Href = "/evidence/" + r.Artifact
 		}
 
@@ -236,6 +229,10 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 
 	search := strings.ToLower(options.Search)
 	if search != "" {
+		if scope == application.ReviewScope {
+			options.ReviewMatches = reviewSearchMatches(search)
+		}
+
 		if scope == application.ActivityScope || scope == application.InstrumentScope ||
 			scope == application.ReviewScope {
 			options.DisplayMatches.MissingValues = strings.Contains(strings.ToLower(known("")), search)
@@ -378,4 +375,56 @@ func amountSearch(role, search string) application.AmountMatch {
 	}
 
 	return application.AmountMatch{Role: role, Search: search}
+}
+
+func reviewText(r application.ReviewEntry) (string, string) {
+	switch r.Kind {
+	case application.ReviewActivity:
+		return "Activity", "Reported values need review"
+	case application.ReviewInstrument:
+		return "Identity", "Instrument identity needs review"
+	case application.ReviewInstruction:
+		return "Source instruction", correctionStatus(r.Status)
+	case application.ReviewIdentity:
+		return "Source claims", strconv.FormatInt(r.Count, 10) + " source claims have unresolved identity."
+	}
+
+	return "", ""
+}
+
+func reviewSearchMatches(search string) []application.ReviewMatch {
+	var matches []application.ReviewMatch
+	for _, kind := range []application.ReviewKind{application.ReviewActivity, application.ReviewInstrument, application.ReviewIdentity, application.ReviewInstruction} {
+		statuses := []application.CorrectionStatus{""}
+		if kind == application.ReviewInstruction {
+			statuses = []application.CorrectionStatus{
+				application.CorrectionUnresolved,
+				application.CorrectionNeedsReview,
+			}
+		}
+
+		for _, status := range statuses {
+			category, reason := reviewText(application.ReviewEntry{Kind: kind, Status: status})
+			if kind == application.ReviewIdentity {
+				reason = strings.TrimPrefix(reason, "0 ")
+			}
+
+			if strings.Contains(strings.ToLower(category), search) ||
+				strings.Contains(strings.ToLower(reason), search) {
+				matches = append(matches, application.ReviewMatch{Kind: kind, Status: status})
+			}
+		}
+
+		if kind == application.ReviewIdentity {
+			number, _, _ := strings.Cut(search, " ")
+			if count, err := strconv.ParseInt(number, 10, 64); err == nil && count >= 0 {
+				_, reason := reviewText(application.ReviewEntry{Kind: kind, Count: count})
+				if strings.Contains(strings.ToLower(reason), search) {
+					matches = append(matches, application.ReviewMatch{Kind: kind, CountKnown: true, Count: count})
+				}
+			}
+		}
+	}
+
+	return matches
 }

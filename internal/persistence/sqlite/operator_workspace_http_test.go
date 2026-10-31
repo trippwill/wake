@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"html"
@@ -17,7 +18,9 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/source"
 )
 
 func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
@@ -44,6 +47,47 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		s,
 		"operator-conversion-conflict",
 		strings.Replace(syntheticFX, `netCash="123.25"`, `netCash="124.25"`, 1),
+	)
+
+	coverageReport(
+		t,
+		s,
+		"operator-instrument-conflict",
+		strings.Replace(syntheticOption, `strike="100.00000000001"`, `strike="110"`, 1),
+	)
+
+	prerequisites, err := s.Prerequisites(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, _ := source.NewReference("synthetic", "event", "account", "not-reported")
+
+	instruction, err := source.NewCorrection(
+		source.CorrectionInput{
+			Location: "pending-instruction",
+			Account:  prerequisites.Account.Reference(),
+			Kind:     source.Cancellation,
+			Target:   target,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"operator-instruction",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+				if e := claims.PutCorrection(ctx, instruction); e != nil {
+					return provider.Result{}, e
+				}
+
+				return provider.NewResult(provider.Counts{Rows: 1, Corrections: 1})
+			},
+		),
 	)
 
 	view, err := s.Dashboard(t.Context())
@@ -169,7 +213,14 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?view=review&q=unmatched-synthetic-query", "No review items match"},
 		{"/activity?q=option+outcome", "Assignment"},
 		{"/activity?view=review", "Reported values need review"},
-		{"/activity?view=instruments&state=gaps", "Synthetic option"},
+		{"/activity?view=review&q=Identity", "Instrument identity needs review"},
+		{"/activity?view=review&q=unresolved", "endpoint unresolved; needs review"},
+		{"/activity?view=review&q=needs+review", "Instrument identity needs review"},
+		{"/activity?view=review&q=Source+instruction", "Source instruction"},
+		{"/activity?view=review&q=endpoint+unresolved", "endpoint unresolved; needs review"},
+		{"/activity?view=review&q=Reported+values", "Reported values need review"},
+		{"/activity?view=instruments&state=gaps", "Synthetic Treasury missing terms"},
+		{"/activity?view=instruments&state=review", "Synthetic option"},
 		{"/activity?q=unmatched-synthetic-query", "0 of"},
 		{"/connections/synthetic?view=access", "Confirmation Query ID"},
 		{"/connections/synthetic?view=reports", "operator-history"},

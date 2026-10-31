@@ -436,7 +436,7 @@ func (q *Queries) AdminReferenceStatus(ctx context.Context) (AdminReferenceStatu
 }
 
 const adminReviewCount = `-- name: AdminReviewCount :one
-SELECT (SELECT count(*) FROM admin_review) AS total,count(*) AS matched FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value)
+SELECT (SELECT count(*) FROM admin_review) AS total,count(*) AS matched FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count))
 `
 
 type AdminReviewCountParams struct {
@@ -445,6 +445,7 @@ type AdminReviewCountParams struct {
 	MissingValues           interface{}
 	MissingInstrumentAction interface{}
 	KindMatches             interface{}
+	ReviewMatches           interface{}
 }
 
 type AdminReviewCountRow struct {
@@ -459,6 +460,7 @@ func (q *Queries) AdminReviewCount(ctx context.Context, arg AdminReviewCountPara
 		arg.MissingValues,
 		arg.MissingInstrumentAction,
 		arg.KindMatches,
+		arg.ReviewMatches,
 	)
 	var i AdminReviewCountRow
 	err := row.Scan(&i.Total, &i.Matched)
@@ -466,7 +468,7 @@ func (q *Queries) AdminReviewCount(ctx context.Context, arg AdminReviewCountPara
 }
 
 const adminReviewRows = `-- name: AdminReviewRows :many
-SELECT CAST(kind AS TEXT) AS kind,CAST(id AS TEXT) AS id,CAST(name AS TEXT) AS name,CAST(artifact AS TEXT) AS artifact,CAST(location AS TEXT) AS location,CAST(status AS TEXT) AS status,CAST(claim_count AS INTEGER) AS claim_count,CAST(activity AS TEXT) AS activity FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) ORDER BY kind,id LIMIT ?7 OFFSET ?6
+SELECT CAST(kind AS TEXT) AS kind,CAST(id AS TEXT) AS id,CAST(name AS TEXT) AS name,CAST(artifact AS TEXT) AS artifact,CAST(location AS TEXT) AS location,CAST(status AS TEXT) AS status,CAST(claim_count AS INTEGER) AS claim_count,CAST(activity AS TEXT) AS activity FROM admin_review WHERE ?1='' OR wake_contains(search_text || ' ' || kind || ' ' || id,?1)=1 OR label_key<>'' AND wake_contains(label_key,coalesce(nullif(?2,''),?1))=1 OR ?3=1 AND name='' AND (kind='instrument' OR kind='activity' AND json_extract(activity,'$.family')<>'conversion') OR ?4<>'' AND name='' AND kind='activity' AND coalesce(json_extract(activity,'$.side'),json_extract(activity,'$.lifecycle_kind'))=?4 OR EXISTS(SELECT 1 FROM json_each(?5) match WHERE kind='activity' AND json_extract(activity,'$.family')=match.value) OR EXISTS(SELECT 1 FROM json_each(?6) match WHERE json_extract(match.value,'$.kind')=admin_review.kind AND (json_extract(match.value,'$.status')='' OR json_extract(match.value,'$.status')=admin_review.status) AND (json_extract(match.value,'$.count_known')<>1 OR json_extract(match.value,'$.count')=claim_count)) ORDER BY kind,id LIMIT ?8 OFFSET ?7
 `
 
 type AdminReviewRowsParams struct {
@@ -475,6 +477,7 @@ type AdminReviewRowsParams struct {
 	MissingValues           interface{}
 	MissingInstrumentAction interface{}
 	KindMatches             interface{}
+	ReviewMatches           interface{}
 	PageOffset              int64
 	PageSize                int64
 }
@@ -497,6 +500,7 @@ func (q *Queries) AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams
 		arg.MissingValues,
 		arg.MissingInstrumentAction,
 		arg.KindMatches,
+		arg.ReviewMatches,
 		arg.PageOffset,
 		arg.PageSize,
 	)

@@ -357,6 +357,26 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 	if err != nil || overview.Review.Total != 4 || overview.ActivityCount != 1 {
 		t.Fatal("overview differs from focused lists", overview, err)
 	}
+
+	for _, test := range []struct {
+		search  string
+		matches []application.ReviewMatch
+		want    int64
+	}{
+		{"identity", []application.ReviewMatch{{Kind: application.ReviewInstrument}, {Kind: application.ReviewIdentity}}, 2},
+		{"unresolved", []application.ReviewMatch{{Kind: application.ReviewInstruction, Status: application.CorrectionUnresolved}, {Kind: application.ReviewIdentity}}, 2},
+		{"needs review", []application.ReviewMatch{{Kind: application.ReviewInstrument}, {Kind: application.ReviewInstruction, Status: application.CorrectionUnresolved}, {Kind: application.ReviewInstruction, Status: application.CorrectionNeedsReview}}, 2},
+		{"1 source claims", []application.ReviewMatch{{Kind: application.ReviewIdentity, CountKnown: true, Count: 1}}, 1},
+	} {
+		query, _ := application.NewListQuery(
+			application.ListOptions{Search: test.search, ReviewMatches: test.matches, PageSize: 1},
+			application.ReviewScope,
+		)
+		page, e := s.ReviewList(ctx, query)
+		if e != nil || page.Matched != test.want || page.Total != 4 || len(page.Items) != 1 {
+			t.Fatal("review matches disagree with bounded count/rows", test.search, page.PageInfo, e)
+		}
+	}
 }
 
 func TestSourceCandidatesPageAndExactQualifiedLookup(t *testing.T) {

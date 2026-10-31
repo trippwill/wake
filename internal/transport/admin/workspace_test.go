@@ -261,3 +261,39 @@ func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testi
 		}
 	}
 }
+
+func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
+	for _, test := range []struct {
+		search     string
+		kind       application.ReviewKind
+		status     application.CorrectionStatus
+		countKnown bool
+		count      int64
+	}{
+		{"Identity", application.ReviewInstrument, "", false, 0},
+		{"unresolved", application.ReviewInstruction, application.CorrectionUnresolved, false, 0},
+		{"needs review", application.ReviewInstruction, application.CorrectionNeedsReview, false, 0},
+		{"Source claims", application.ReviewIdentity, "", false, 0},
+		{"3 source claims", application.ReviewIdentity, "", true, 3},
+		{"Reported values", application.ReviewActivity, "", false, 0},
+	} {
+		request := pageRequest(
+			httptest.NewRequest(http.MethodGet, "/activity?view=review&q="+url.QueryEscape(test.search), nil),
+		)
+
+		query, err := listQuery(request.Context(), application.ReviewScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expected := application.ReviewMatch{
+			Kind:       test.kind,
+			Status:     test.status,
+			CountKnown: test.countKnown,
+			Count:      test.count,
+		}
+		if !slices.Contains(query.Options().ReviewMatches, expected) {
+			t.Fatal("rendered review search lost typed predicate", test.search, query.Options().ReviewMatches)
+		}
+	}
+}

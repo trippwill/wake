@@ -99,6 +99,8 @@ released before rendering or client I/O. Presentation owns label wording and may
 supply structured label matches and normalize display separators for phrase search
 over canonical label components; SQL does not infer state from those words.
 Reference ordering includes selection authority before the stable identity tie.
+Review rendering and search share category/reason definitions; status/count
+constraints are passed as typed review matches before pagination.
 Missing-value and applicability searches use structured matches supplied by
 presentation; database predicates never depend on the displayed placeholder words.
 Recovery pages read bounded source-access metadata, expose continuation links and

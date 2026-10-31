@@ -21,8 +21,15 @@ type ListOptions struct {
 	ReferenceMatches                     []ReferenceMatch
 	AmountMatches                        []AmountMatch
 	DisplayMatches                       DisplayMatches
+	ReviewMatches                        []ReviewMatch
 }
 type (
+	ReviewMatch struct {
+		Kind       ReviewKind       `json:"kind"`
+		Status     CorrectionStatus `json:"status"`
+		CountKnown bool             `json:"count_known"`
+		Count      int64            `json:"count"`
+	}
 	DisplayMatches struct {
 		MissingValues           bool
 		InapplicableValues      bool
@@ -137,6 +144,20 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		return ListQuery{}, ErrInvalid
 	}
 
+	for _, match := range options.ReviewMatches {
+		if scope != ReviewScope ||
+			!slices.Contains(
+				[]ReviewKind{ReviewActivity, ReviewInstrument, ReviewInstruction, ReviewIdentity},
+				match.Kind,
+			) ||
+			match.Status != "" &&
+				(match.Kind != ReviewInstruction || match.Status != CorrectionUnresolved && match.Status != CorrectionNeedsReview) ||
+			match.CountKnown && (match.Kind != ReviewIdentity || match.Count < 0) {
+			return ListQuery{}, ErrInvalid
+		}
+	}
+
+	options.ReviewMatches = slices.Clone(options.ReviewMatches)
 	options.AmountMatches = slices.Clone(options.AmountMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
@@ -149,6 +170,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 func (q ListQuery) Scope() ListScope { return q.scope }
 func (q ListQuery) Options() ListOptions {
 	out := q.options
+	out.ReviewMatches = slices.Clone(out.ReviewMatches)
 	out.AmountMatches = slices.Clone(out.AmountMatches)
 	out.KindMatches = slices.Clone(out.KindMatches)
 	out.StateMatches = slices.Clone(out.StateMatches)

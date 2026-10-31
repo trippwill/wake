@@ -24,6 +24,7 @@ func reviewList(
 	out := application.ReviewList{}
 
 	kinds, _ := json.Marshal(options.KindMatches)
+	matches, _ := json.Marshal(options.ReviewMatches)
 
 	counts, err := q.AdminReviewCount(
 		ctx,
@@ -33,6 +34,7 @@ func reviewList(
 			MissingValues:           options.DisplayMatches.MissingValues,
 			MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
 			KindMatches:             string(kinds),
+			ReviewMatches:           string(matches),
 		},
 	)
 	if err != nil {
@@ -49,6 +51,7 @@ func reviewList(
 			MissingValues:           options.DisplayMatches.MissingValues,
 			MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
 			KindMatches:             string(kinds),
+			ReviewMatches:           string(matches),
 			PageSize:                int64(options.PageSize),
 			PageOffset:              query.Offset(),
 		},
