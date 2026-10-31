@@ -6,7 +6,6 @@ package persistence
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -307,31 +306,9 @@ func (s *Store) Accept(
 		return "", provider.ErrConflict
 	}
 
-	id := ""
-	a := step.Artifact()
-	if !a.IsZero() {
-		id = rand.Text()
-		if err = q.PutArtifact(
-			ctx,
-			sqlc.PutArtifactParams{
-				ID:           id,
-				ConnectionID: k.Connection,
-				Stream:       k.Stream,
-				Operation:    k.Operation,
-				Format:       a.Format(),
-				MediaType:    a.MediaType(),
-				Retrieved:    a.RetrievedAt().Format(time.RFC3339Nano),
-				Hash:         a.Hash(),
-				Content:      a.Content(),
-				RequestedFrom: step.Coverage().
-					RequestedFrom(),
-				RequestedTo:  step.Coverage().RequestedTo(),
-				ReportedFrom: step.Coverage().ReportedFrom(),
-				ReportedTo:   step.Coverage().ReportedTo(),
-			},
-		); err != nil {
-			return "", err
-		}
+	id, receipt, err := retainReport(ctx, q, k, step)
+	if err != nil {
+		return "", err
 	}
 
 	if k.Operation == "discover" && id != "" && step.State().IsZero() {
@@ -358,6 +335,7 @@ func (s *Store) Accept(
 		if err = q.PutCandidate(
 			ctx,
 			sqlc.PutCandidateParams{
+				ReceiptID:  receipt,
 				ArtifactID: id,
 				Authority:  ref.Authority(),
 				Kind:       ref.Kind(),

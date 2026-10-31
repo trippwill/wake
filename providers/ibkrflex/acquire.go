@@ -174,6 +174,16 @@ func (s *Source) acquire(
 				return artifactErr
 			}
 
+			digest, artifactErr := reportEquivalence(response.body)
+			if artifactErr != nil {
+				return artifactErr
+			}
+
+			artifact, artifactErr = artifact.WithEquivalence("ibkr-report-window/1", digest)
+			if artifactErr != nil {
+				return artifactErr
+			}
+
 			requested := periodWindow(state.Anchor, state.Period)
 			if state.Current != nil {
 				requested = *state.Current

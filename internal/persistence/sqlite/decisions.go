@@ -155,7 +155,7 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 	return s.commit(ctx, tx)
 }
 
-func observationKey(r sqlc.Record) string {
+func observationKey(r sqlc.RecordValue) string {
 	b, _ := json.Marshal([3]string{r.ArtifactID, r.Version, r.Location})
 	return string(b)
 }
@@ -178,7 +178,7 @@ func applyActivityDecisions(
 
 	active := activeDecisions(rows)
 	if d, ok := active["observation"]; ok {
-		inputs, e := q.ActivityInputs(ctx, sql.NullString{String: row.ID, Valid: true})
+		inputs, e := activityInputs(ctx, q, row.ID)
 		if e != nil {
 			return fail(e)
 		}
@@ -479,7 +479,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			return out, err
 		}
 
-		out.Label = observationLabel(sqlc.Record{Kind: row.Kind, Data: row.Accepted})
+		out.Label = observationLabel(sqlc.RecordValue{Kind: row.Kind, Data: row.Accepted})
 		out.Revision = row.Revision
 
 		out.Values, err = comparisonValues(row.Kind, row.Accepted)
@@ -517,7 +517,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			out.Fields = append(out.Fields, field)
 		}
 
-		inputs, err := s.queries.ActivityInputs(ctx, sql.NullString{String: id, Valid: true})
+		inputs, err := activityInputs(ctx, s.queries, id)
 		if err != nil {
 			return out, err
 		}
@@ -789,7 +789,7 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 	return projectInstrument(ctx, q, p.ID)
 }
 
-func observationLabel(r sqlc.Record) string {
+func observationLabel(r sqlc.RecordValue) string {
 	label := r.Kind
 	switch r.Kind {
 	case "trade":

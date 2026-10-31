@@ -73,7 +73,10 @@ for otherwise interpretable records.
 
 Exercise, explicit cancellation/replacement, adjusted-option and representative
 gilt checks use representative evidence or clearly identified synthetic cases.
-Raw report retention alone does not establish financial coverage. Private reports
+Synthetic repeat-acquisition proofs cover receipts without redundant bodies or
+normalization, pre-correction claim comparison, duplicate-row multiplicity and
+retention of disputed variants. Known claims add provenance without changing the
+accepted publication. Raw report retention alone does not establish financial coverage. Private reports
 and credentials are not repository fixtures.
 
 ## Canonical publishing

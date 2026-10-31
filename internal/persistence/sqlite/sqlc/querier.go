@@ -15,9 +15,10 @@ import (
 type Querier interface {
 	AccessReadiness(ctx context.Context, connectionID string) (AccessReadinessRow, error)
 	Account(ctx context.Context) (Account, error)
+	AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
-	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]Record, error)
+	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
 	AdvanceActivityRevision(ctx context.Context, id string) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceRecovery(ctx context.Context, id string) error
@@ -31,16 +32,20 @@ type Querier interface {
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
-	CandidateProfiles(ctx context.Context, connectionID string) ([]Candidate, error)
-	Candidates(ctx context.Context, connectionID string) ([]Candidate, error)
+	CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error)
+	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
+	ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
 	CompleteRecoveryGroup(ctx context.Context, arg CompleteRecoveryGroupParams) error
 	ConflictExecution(ctx context.Context, id string) error
 	Connection(ctx context.Context, id string) (AccessConfiguration, error)
 	ConnectionAccess(ctx context.Context, id string) (int64, error)
 	Connections(ctx context.Context) ([]string, error)
+	CopyClaimCorrection(ctx context.Context, arg CopyClaimCorrectionParams) error
+	CopyClaimObservation(ctx context.Context, arg CopyClaimObservationParams) error
 	CorrectionStatus(ctx context.Context, arg CorrectionStatusParams) error
+	CountAcquisitionReceipts(ctx context.Context, artifactID string) (int64, error)
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
 	CountTables(ctx context.Context) (int64, error)
@@ -79,13 +84,16 @@ type Querier interface {
 	PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error)
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
+	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
 	Profile(ctx context.Context) (Profile, error)
 	ProjectActivity(ctx context.Context, arg ProjectActivityParams) error
 	ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error
 	PutAccount(ctx context.Context, arg PutAccountParams) error
+	PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionReceiptParams) error
 	PutArtifact(ctx context.Context, arg PutArtifactParams) error
 	PutCandidate(ctx context.Context, arg PutCandidateParams) error
+	PutClaimProcessing(ctx context.Context, arg PutClaimProcessingParams) error
 	PutConnection(ctx context.Context, arg PutConnectionParams) error
 	PutConversionActivity(ctx context.Context, arg PutConversionActivityParams) error
 	PutDecision(ctx context.Context, arg PutDecisionParams) error
@@ -102,9 +110,12 @@ type Querier interface {
 	PutRecoveryItem(ctx context.Context, arg PutRecoveryItemParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
 	PutRelationship(ctx context.Context, arg PutRelationshipParams) error
+	PutReportComparison(ctx context.Context, arg PutReportComparisonParams) error
 	PutSecret(ctx context.Context, arg PutSecretParams) error
+	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
-	Records(ctx context.Context, arg RecordsParams) ([]Record, error)
+	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
+	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	RecoveryGroup(ctx context.Context, arg RecoveryGroupParams) ([]RecoveryItem, error)
 	RecoveryJob(ctx context.Context, id string) (RecoveryJob, error)
 	RecoveryJobs(ctx context.Context) ([]RecoveryJob, error)
@@ -116,6 +127,7 @@ type Querier interface {
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) error
+	ReportComparison(ctx context.Context, arg ReportComparisonParams) (string, error)
 	ResetConnectionWork(ctx context.Context, connectionID string) error
 	ResolveInstrument(ctx context.Context, arg ResolveInstrumentParams) error
 	RestartDiscovery(ctx context.Context, arg RestartDiscoveryParams) error
@@ -128,6 +140,7 @@ type Querier interface {
 	ReviewReference(ctx context.Context) error
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
+	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
 	SeedActivityBases(ctx context.Context) error
 	SeedInstrumentSelections(ctx context.Context) error

@@ -122,7 +122,7 @@ func projectActivity(
 		return err
 	}
 
-	inputs, err := q.ActivityInputs(ctx, sql.NullString{String: row.ID, Valid: true})
+	inputs, err := activityInputs(ctx, q, row.ID)
 	if err != nil {
 		return err
 	}

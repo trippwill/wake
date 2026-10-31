@@ -163,7 +163,7 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if count != 1 {
+	if count == 0 {
 		return application.Account{}, application.ErrCandidate
 	}
 
@@ -433,7 +433,8 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 			view.Processing = append(
 				view.Processing,
 				application.ProcessingStatus{
-					Artifact:         r.ID,
+					Artifact: r.ID,
+					Receipt:  r.ReceiptID, Retrieved: r.Retrieved, Hash: r.Hash, ComparisonPolicy: r.Policy,
 					Complete:         r.Processed == 1,
 					RequestedFrom:    r.RequestedFrom,
 					RequestedTo:      r.RequestedTo,
