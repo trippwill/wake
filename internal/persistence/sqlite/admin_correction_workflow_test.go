@@ -169,61 +169,12 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	request(http.MethodPost, "/processing/synthetic-option/retry", nil, http.StatusSeeOther)
 	request(http.MethodPost, "/recovery/resume", url.Values{"revision": {"invalid"}}, http.StatusBadRequest)
 	request(http.MethodPost, "/recovery/resume", url.Values{"revision": {"999999"}}, http.StatusBadRequest)
-	request(http.MethodPost, "/recovery/rebuild", url.Values{"submission": {"short"}}, http.StatusBadRequest)
-
-	submission := rand.Text()
-	request(http.MethodPost, "/recovery/rebuild", url.Values{"submission": {submission}}, http.StatusSeeOther)
-	// Fail a committed-group acknowledgement, then recover through the real HTTP retry.
-	if _, err = store.db.Exec(
-		`CREATE TRIGGER fail_recovery_group BEFORE UPDATE ON recovery_items BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = store.RunRecovery(ctx); err == nil {
-		t.Fatal("rebuild failure not retained")
-	}
-
-	older := submission
-	submission = rand.Text()
-	request(http.MethodPost, "/recovery/rebuild", url.Values{"submission": {submission}}, http.StatusSeeOther)
-
-	if _, err = store.RunRecovery(ctx); err == nil {
-		t.Fatal("new rebuild failure not retained")
-	}
-
-	rejected := request(http.MethodPost, "/recovery/"+older+"/retry", nil, http.StatusBadRequest)
-	if !strings.Contains(rejected.Body.String(), "no longer eligible") ||
-		strings.Contains(rejected.Body.String(), "account display name") {
-		t.Fatal("ineligible rebuild returned unrelated setup guidance")
-	}
-
-	if _, err = store.db.Exec(`DROP TRIGGER fail_recovery_group`); err != nil {
-		t.Fatal(err)
-	}
-
-	request(http.MethodPost, "/recovery/"+submission+"/retry", nil, http.StatusSeeOther)
-
-	for i := 0; i < 10; i++ {
-		changed, e := store.RunRecovery(ctx)
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		if !changed {
-			break
-		}
-
-		if i == 9 {
-			t.Fatal("rebuild failed to finish")
-		}
-	}
 
 	detail, err = store.ExecutionDetail(ctx, id)
 	named, nameErr := store.InstrumentDetail(ctx, instrument)
 	if err != nil || nameErr != nil || detail.Execution.Terms().Fields().Quantity.Value() != "3.0001" ||
 		named.Instrument.Name() != "Reviewed synthetic option" {
-		t.Fatal("rebuild lost retained decisions", err, nameErr)
+		t.Fatal("correction lost retained decisions", err, nameErr)
 	}
 
 	form, err = store.CorrectionForm(ctx, "activity", id)
@@ -248,5 +199,5 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 		t.Fatal("release did not restore reported quantity", detail, err)
 	}
 
-	request(http.MethodPost, "/recovery/missing/retry", nil, http.StatusBadRequest)
+	request(http.MethodPost, "/recovery/missing/retry", nil, http.StatusNotFound)
 }

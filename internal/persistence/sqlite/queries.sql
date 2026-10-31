@@ -232,33 +232,6 @@ INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status
 
 -- name: RetryProcessing :execrows
 UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream);
--- name: RecoveryJobs :many
-SELECT * FROM recovery_jobs ORDER BY rowid DESC LIMIT 10;
--- name: RecoveryJob :one
-SELECT * FROM recovery_jobs WHERE id=?;
--- name: ActiveRecovery :one
-SELECT * FROM recovery_jobs WHERE status IN ('queued','running') LIMIT 1;
--- name: PutRecovery :exec
-INSERT INTO recovery_jobs(id,status,total,actor,created) VALUES(?,'queued',?,?,?);
--- name: PutRecoveryItem :exec
-INSERT INTO recovery_items(job_id,group_id,kind,entity_id) VALUES(?,?,?,?);
--- name: NextRecoveryGroup :one
-SELECT group_id FROM recovery_items WHERE job_id=? AND complete=0 ORDER BY group_id LIMIT 1;
--- name: RecoveryGroup :many
-SELECT * FROM recovery_items WHERE job_id=? AND group_id=? ORDER BY kind,entity_id LIMIT 129;
--- name: CompleteRecoveryGroup :exec
-UPDATE recovery_items SET complete=1 WHERE job_id=? AND group_id=?;
--- name: AdvanceRecovery :exec
-UPDATE recovery_jobs SET status='running',completed=(SELECT count(*) FROM recovery_items WHERE job_id=recovery_jobs.id AND complete=1),failure='' WHERE id=?;
--- name: FinishRecovery :exec
-UPDATE recovery_jobs SET status='complete',completed=total,failure='' WHERE id=?;
--- name: FailRecovery :exec
-UPDATE recovery_jobs SET status='failed',failure='Projection rebuild failed; retained evidence is safe. Check daemon status and retry.' WHERE id=?;
--- name: RetryRecovery :execrows
-UPDATE recovery_jobs SET status='queued',failure='' WHERE recovery_jobs.id=? AND recovery_jobs.status='failed' AND recovery_jobs.rowid=(SELECT max(rowid) FROM recovery_jobs) AND NOT EXISTS(SELECT 1 FROM recovery_jobs WHERE status IN ('queued','running'));
--- name: AllRelationships :many
-SELECT r.activity_id,coalesce(e.execution_id,'') AS target_id FROM activity_relationships r JOIN executions a ON a.id=r.activity_id LEFT JOIN event_links e ON e.account_id=a.account_id AND e.reference=r.target;
-
 -- name: PutDescriptor :exec
 INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec

@@ -32,7 +32,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-simplification-6"
+	schemaVersion              = "wake-simplification-7"
 	accessSchemaVersion        = "wake-simplification-4"
 )
 
@@ -70,15 +70,12 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
-	db                             *sql.DB
-	queries                        *sqlc.Queries
-	owners                         [2]*os.File
-	logger                         *slog.Logger
-	closeOnce                      sync.Once
-	closeError                     error
-	recoveryMu                     sync.Mutex
-	recoveryJob, recoveryOperation string
-	recoveryNext                   time.Time
+	db         *sql.DB
+	queries    *sqlc.Queries
+	owners     [2]*os.File
+	logger     *slog.Logger
+	closeOnce  sync.Once
+	closeError error
 }
 
 type storeMetadata struct{ kind, version, id string }

@@ -4,7 +4,6 @@
 package admin
 
 import (
-	"crypto/rand"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/provider"
 	"strconv"
@@ -374,7 +373,6 @@ templ RecoveryPage(csrf string, view sourceView) {
 			<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
 		</section>
 	}
-	<a href="/system/maintenance">Inspect rebuild history and maintenance</a>
 }
 
 templ ConnectionReports(csrf string, c application.ConnectionView) {
@@ -410,35 +408,6 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 				if c.CanNormalize && p.Failure=="" {
 					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}
-			</article>
-		}
-	</section>
-}
-
-templ MaintenancePage(csrf string, view sourceView) {
-	@PageHeader("Maintenance", "Rebuild derived views from retained evidence and decisions.")
-	@SystemNavigation("maintenance")
-	<section class="wake-card" id="maintenance"><h2>Rebuild accepted views</h2><p>Original evidence and retained decisions stay intact. Rebuild resumes from committed progress after restart.</p><form method="post" action="/recovery/rebuild"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="submission" value={ rand.Text() }/><button class="btn" type="submit">Rebuild accepted views</button></form></section>
-	<section class="wake-card" id="workflow-progress">
-		<h2>Recovery history</h2>
-		if len(view.Recovery)==0 {
-			<p>No rebuilds recorded.</p>
-		}
-		for index,j:=range view.Recovery {
-			<article class="wake-report-row">
-				<h3>
-					Rebuild
-					@StateBadge(j.Status)
-				</h3>
-				<p>{ strconv.FormatInt(j.Completed,10) } / { strconv.FormatInt(j.Total,10) } entities</p>
-				<p class="wake-help">Started { j.Created }</p>
-				if j.Failure!="" {
-					<p class="wake-notice">{ j.Failure }</p>
-				}
-				if index==0 && j.Status=="failed" {
-					<form method="post" action={ templ.SafeURL("/recovery/" + j.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry rebuild</button></form>
-				}
-				<details><summary>Rebuild identity</summary><p>{ j.ID }</p></details>
 			</article>
 		}
 	</section>
@@ -599,7 +568,7 @@ templ ReferencePage(csrf string, view sourceView) {
 }
 
 templ SystemNavigation(view string) {
-	<nav class="wake-tabs" aria-label="System views"><a href="/status" aria-current={ currentPage(view == "status") }>Status</a><a href="/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a><a href="/system/maintenance" aria-current={ currentPage(view == "maintenance") }>Maintenance</a></nav>
+	<nav class="wake-tabs" aria-label="System views"><a href="/status" aria-current={ currentPage(view == "status") }>Status</a><a href="/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a></nav>
 }
 
 templ ListPagination(info application.PageInfo) {

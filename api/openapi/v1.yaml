@@ -2,94 +2,17 @@ openapi: 3.0.3
 info:
   title: Wake accepted financial model
   version: 1.0.0
-  description: 'GET-only HTTP over the private mode-0600 Unix socket, restricted to the daemon UID. All
-    responses are finite JSON. Opaque versioned cursors bind warehouse, publishing generation and position/purpose;
-    never edit or invent them. Bootstrap: checkpoint BEFORE scanning all four collections, then replay
-    from it to one fixed through cursor. Upsert only equal/newer revisions while retaining every delivered
-    transition. Current pages order by stable ID and are not a held snapshot. Persist mirror, cursor and
-    through atomically. Changes require cursor; omit through to capture a new high-water mark, then repeat
-    that returned through until more=false. Empty final pages advance cursor to through. No pruning within
-    a generation. Restart/companion recovery retains cursors. New rebuild/recreated warehouse invalidates
-    cursors (409 cursor_invalidated); rebuild or failed/paused rebuild rejects reads (503 rebuild_in_progress).
-    Bootstrap afresh explicitly after success. Malformed/wrong-purpose/future cursors return 400 malformed_cursor;
-    never silently reset. Unknown values are explicit null, distinct from decimal zero. Unknown parameters,
-    duplicate parameters and mutation methods are rejected. Raw evidence and operational interfaces are
-    excluded.'
+  description: GET-only HTTP over the private mode-0600 Unix socket, restricted to the daemon UID. GET
+    /v1/snapshot returns the complete accepted resource set, warehouse identity and an opaque publication
+    version. Compare versions for equality only. ETag and If-None-Match support unchanged conditional
+    reads. Each response is materialized from one consistent read, released before client I/O. Validate
+    the complete response before atomically replacing a mirror and its version. Failed downloads or writes
+    preserve the previous mirror. A different warehouse installs a clearly reported new baseline. Individual
+    resource lookups and revision-bound explanations remain available; a changed explanation revision
+    returns stale_revision. Current-state synchronization does not retain intermediate delivery transitions.
+    Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
+    mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
 paths:
-  /v1/checkpoint:
-    get:
-      operationId: checkpoint
-      parameters: []
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Checkpoint'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
-  /v1/changes:
-    get:
-      operationId: changes
-      parameters:
-      - $ref: '#/components/parameters/changeCursor'
-      - $ref: '#/components/parameters/through'
-      - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChangePage'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
-  /v1/accounts:
-    get:
-      operationId: listAccounts
-      parameters:
-      - $ref: '#/components/parameters/cursor'
-      - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResourcePage'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
   /v1/accounts/{id}:
     get:
       operationId: getAccounts
@@ -110,8 +33,6 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
   /v1/accounts/{id}/explanation:
@@ -119,6 +40,7 @@ paths:
       operationId: explainAccounts
       parameters:
       - $ref: '#/components/parameters/id'
+      - $ref: '#/components/parameters/revision'
       responses:
         '200':
           description: Successful finite read
@@ -133,33 +55,6 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
-  /v1/instruments:
-    get:
-      operationId: listInstruments
-      parameters:
-      - $ref: '#/components/parameters/cursor'
-      - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResourcePage'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
@@ -183,8 +78,6 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
   /v1/instruments/{id}/explanation:
@@ -192,6 +85,7 @@ paths:
       operationId: explainInstruments
       parameters:
       - $ref: '#/components/parameters/id'
+      - $ref: '#/components/parameters/revision'
       responses:
         '200':
           description: Successful finite read
@@ -206,33 +100,6 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
-  /v1/listings:
-    get:
-      operationId: listListings
-      parameters:
-      - $ref: '#/components/parameters/cursor'
-      - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResourcePage'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
@@ -256,8 +123,6 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
   /v1/listings/{id}/explanation:
@@ -265,6 +130,7 @@ paths:
       operationId: explainListings
       parameters:
       - $ref: '#/components/parameters/id'
+      - $ref: '#/components/parameters/revision'
       responses:
         '200':
           description: Successful finite read
@@ -279,33 +145,6 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '409':
-          $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
-        '500':
-          $ref: '#/components/responses/Error'
-  /v1/activity:
-    get:
-      operationId: listActivity
-      parameters:
-      - $ref: '#/components/parameters/cursor'
-      - $ref: '#/components/parameters/limit'
-      responses:
-        '200':
-          description: Successful finite read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResourcePage'
-        '400':
-          $ref: '#/components/responses/Error'
-        '404':
-          $ref: '#/components/responses/Error'
-        '405':
-          $ref: '#/components/responses/Error'
-        '409':
-          $ref: '#/components/responses/Error'
-        '503':
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
@@ -329,8 +168,6 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
-        '503':
-          $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
   /v1/activity/{id}/explanation:
@@ -338,6 +175,7 @@ paths:
       operationId: explainActivity
       parameters:
       - $ref: '#/components/parameters/id'
+      - $ref: '#/components/parameters/revision'
       responses:
         '200':
           description: Successful finite read
@@ -353,7 +191,42 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
-        '503':
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/snapshot:
+    get:
+      operationId: snapshot
+      description: One consistent complete accepted resource set. Transactions are released before client
+        I/O. Version is opaque and scoped to the warehouse identity.
+      parameters:
+      - in: header
+        name: If-None-Match
+        schema:
+          type: string
+        description: A previous ETag; weak validators and lists are supported.
+      responses:
+        '200':
+          description: Complete accepted state
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Quoted opaque publication version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialSnapshot'
+        '304':
+          description: Accepted state is unchanged
+          headers:
+            ETag:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '405':
           $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
@@ -755,14 +628,19 @@ components:
           type: string
         kind:
           type: string
-          enum: [accounts]
+          enum:
+          - accounts
         revision:
           type: integer
           format: int64
           minimum: 1
         account:
           $ref: '#/components/schemas/Account'
-      required: [id, kind, revision, account]
+      required:
+      - id
+      - kind
+      - revision
+      - account
     InstrumentResource:
       type: object
       additionalProperties: false
@@ -771,14 +649,19 @@ components:
           type: string
         kind:
           type: string
-          enum: [instruments]
+          enum:
+          - instruments
         revision:
           type: integer
           format: int64
           minimum: 1
         instrument:
           $ref: '#/components/schemas/Instrument'
-      required: [id, kind, revision, instrument]
+      required:
+      - id
+      - kind
+      - revision
+      - instrument
     ListingResource:
       type: object
       additionalProperties: false
@@ -787,14 +670,19 @@ components:
           type: string
         kind:
           type: string
-          enum: [listings]
+          enum:
+          - listings
         revision:
           type: integer
           format: int64
           minimum: 1
         listing:
           $ref: '#/components/schemas/Listing'
-      required: [id, kind, revision, listing]
+      required:
+      - id
+      - kind
+      - revision
+      - listing
     ActivityResource:
       type: object
       additionalProperties: false
@@ -803,14 +691,19 @@ components:
           type: string
         kind:
           type: string
-          enum: [activity]
+          enum:
+          - activity
         revision:
           type: integer
           format: int64
           minimum: 1
         activity:
           $ref: '#/components/schemas/Activity'
-      required: [id, kind, revision, activity]
+      required:
+      - id
+      - kind
+      - revision
+      - activity
     Correction:
       type: object
       additionalProperties: false
@@ -880,58 +773,6 @@ components:
       description: Compact accepted selection, active operator choices and source correction/conflict
         state for this exact resource revision. No raw reports, private evidence traversal, credentials
         or configuration.
-    ResourcePage:
-      type: object
-      additionalProperties: false
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Resource'
-        next:
-          type: string
-          nullable: true
-      required:
-      - items
-      - next
-    Checkpoint:
-      type: object
-      additionalProperties: false
-      properties:
-        cursor:
-          type: string
-      required:
-      - cursor
-    Change:
-      type: object
-      additionalProperties: false
-      properties:
-        cursor:
-          type: string
-        resource:
-          $ref: '#/components/schemas/Resource'
-      required:
-      - cursor
-      - resource
-    ChangePage:
-      type: object
-      additionalProperties: false
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Change'
-        cursor:
-          type: string
-        through:
-          type: string
-        more:
-          type: boolean
-      required:
-      - items
-      - cursor
-      - through
-      - more
     Error:
       type: object
       additionalProperties: false
@@ -940,10 +781,8 @@ components:
           type: string
           enum:
           - invalid_request
-          - malformed_cursor
-          - cursor_invalidated
           - not_found
-          - rebuild_in_progress
+          - stale_revision
           - method_not_allowed
           - internal_error
         message:
@@ -1077,36 +916,30 @@ components:
       - scope
       - value
       description: Qualified reported relationship identity, never an unqualified Wake resource ID.
+    FinancialSnapshot:
+      type: object
+      additionalProperties: false
+      properties:
+        warehouse_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        version:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Opaque publication version; compare for equality only.
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+          description: Complete accepted set, including cancelled or superseded activities. Each kind/id
+            occurs once.
+      required:
+      - warehouse_id
+      - version
+      - resources
   parameters:
-    limit:
-      name: limit
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 500
-        default: 100
-    cursor:
-      name: cursor
-      in: query
-      schema:
-        type: string
-        maxLength: 2048
-    changeCursor:
-      name: cursor
-      in: query
-      required: true
-      description: Checkpoint or continuation cursor for the change journal.
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 2048
-    through:
-      name: through
-      in: query
-      schema:
-        type: string
-        maxLength: 2048
     id:
       name: id
       in: path
@@ -1115,10 +948,19 @@ components:
         type: string
         minLength: 1
         maxLength: 256
+    revision:
+      name: revision
+      in: query
+      required: true
+      description: The mirrored resource revision. A different current revision returns stale_revision.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   responses:
     Error:
-      description: Structured error; 400 invalid request/cursor, 404 absent, 405 mutation, 409 invalid
-        generation, 503 rebuilding, 500 safe internal failure.
+      description: 'Structured error: 400 invalid request, 404 absent resource, 405 unsupported method,
+        409 stale explanation revision, 500 safe internal failure.'
       content:
         application/json:
           schema:

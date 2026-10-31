@@ -116,7 +116,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, route := range []string{"/", "/activity", "/activity?view=review", "/activity?view=instruments", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/status", "/configuration", "/system/maintenance"} {
+	for _, route := range []string{"/", "/activity", "/activity?view=review", "/activity?view=instruments", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/status", "/configuration"} {
 		for _, fragment := range []bool{false, true} {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+route, nil)
 			r.AddCookie(session.Result().Cookies()[0])

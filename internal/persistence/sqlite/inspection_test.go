@@ -30,26 +30,6 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 		Revision:        profile.RecoveryRevision,
 	}
 
-	jobs, recoveryErr := s.queries.RecoveryJobs(ctx)
-	if recoveryErr != nil {
-		return out, recoveryErr
-	}
-
-	for _, j := range jobs {
-		out.Recovery = append(
-			out.Recovery,
-			application.RecoveryJob{
-				ID:        j.ID,
-				Status:    j.Status,
-				Failure:   j.Failure,
-				Actor:     j.Actor,
-				Created:   j.Created,
-				Completed: j.Completed,
-				Total:     j.Total,
-			},
-		)
-	}
-
 	account, err := s.queries.Account(ctx)
 	if err == nil {
 		out.Account, err = accountValue(account)
@@ -307,7 +287,6 @@ type inspectionView struct {
 	Lifecycles       []application.Lifecycle
 	Conversions      []application.Conversion
 	Corrections      []application.CorrectionReview
-	Recovery         []application.RecoveryJob
 	Instruments      []application.Instrument
 	ReferenceKey     bool
 	ReferenceFailure string

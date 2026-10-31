@@ -96,25 +96,6 @@ func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([
 	return items, nil
 }
 
-const activeRecovery = `-- name: ActiveRecovery :one
-SELECT id, status, completed, total, failure, actor, created FROM recovery_jobs WHERE status IN ('queued','running') LIMIT 1
-`
-
-func (q *Queries) ActiveRecovery(ctx context.Context) (RecoveryJob, error) {
-	row := q.db.QueryRowContext(ctx, activeRecovery)
-	var i RecoveryJob
-	err := row.Scan(
-		&i.ID,
-		&i.Status,
-		&i.Completed,
-		&i.Total,
-		&i.Failure,
-		&i.Actor,
-		&i.Created,
-	)
-	return i, err
-}
-
 const activityBase = `-- name: ActivityBase :one
 SELECT activity_id, data, instrument_id, listing_id FROM activity_bases WHERE activity_id=?
 `
@@ -184,15 +165,6 @@ func (q *Queries) AdvanceInstrumentRevision(ctx context.Context, id string) erro
 	return err
 }
 
-const advanceRecovery = `-- name: AdvanceRecovery :exec
-UPDATE recovery_jobs SET status='running',completed=(SELECT count(*) FROM recovery_items WHERE job_id=recovery_jobs.id AND complete=1),failure='' WHERE id=?
-`
-
-func (q *Queries) AdvanceRecovery(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, advanceRecovery, id)
-	return err
-}
-
 const advanceWork = `-- name: AdvanceWork :execrows
 UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?
 `
@@ -231,38 +203,6 @@ func (q *Queries) AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected()
-}
-
-const allRelationships = `-- name: AllRelationships :many
-SELECT r.activity_id,coalesce(e.execution_id,'') AS target_id FROM activity_relationships r JOIN executions a ON a.id=r.activity_id LEFT JOIN event_links e ON e.account_id=a.account_id AND e.reference=r.target
-`
-
-type AllRelationshipsRow struct {
-	ActivityID string
-	TargetID   string
-}
-
-func (q *Queries) AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error) {
-	rows, err := q.db.QueryContext(ctx, allRelationships)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AllRelationshipsRow
-	for rows.Next() {
-		var i AllRelationshipsRow
-		if err := rows.Scan(&i.ActivityID, &i.TargetID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const artifactFailure = `-- name: ArtifactFailure :exec
@@ -739,20 +679,6 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const completeRecoveryGroup = `-- name: CompleteRecoveryGroup :exec
-UPDATE recovery_items SET complete=1 WHERE job_id=? AND group_id=?
-`
-
-type CompleteRecoveryGroupParams struct {
-	JobID   string
-	GroupID string
-}
-
-func (q *Queries) CompleteRecoveryGroup(ctx context.Context, arg CompleteRecoveryGroupParams) error {
-	_, err := q.db.ExecContext(ctx, completeRecoveryGroup, arg.JobID, arg.GroupID)
-	return err
 }
 
 const conflictExecution = `-- name: ConflictExecution :exec
@@ -1250,15 +1176,6 @@ func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
 	return items, nil
 }
 
-const failRecovery = `-- name: FailRecovery :exec
-UPDATE recovery_jobs SET status='failed',failure='Projection rebuild failed; retained evidence is safe. Check daemon status and retry.' WHERE id=?
-`
-
-func (q *Queries) FailRecovery(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, failRecovery, id)
-	return err
-}
-
 const failWork = `-- name: FailWork :exec
 UPDATE work SET failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=?
 `
@@ -1294,15 +1211,6 @@ type FinishAttemptParams struct {
 
 func (q *Queries) FinishAttempt(ctx context.Context, arg FinishAttemptParams) error {
 	_, err := q.db.ExecContext(ctx, finishAttempt, arg.Outcome, arg.Counts, arg.ID)
-	return err
-}
-
-const finishRecovery = `-- name: FinishRecovery :exec
-UPDATE recovery_jobs SET status='complete',completed=total,failure='' WHERE id=?
-`
-
-func (q *Queries) FinishRecovery(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, finishRecovery, id)
 	return err
 }
 
@@ -1636,17 +1544,6 @@ func (q *Queries) NewClaimActivityIDs(ctx context.Context, artifactID string) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const nextRecoveryGroup = `-- name: NextRecoveryGroup :one
-SELECT group_id FROM recovery_items WHERE job_id=? AND complete=0 ORDER BY group_id LIMIT 1
-`
-
-func (q *Queries) NextRecoveryGroup(ctx context.Context, jobID string) (string, error) {
-	row := q.db.QueryRowContext(ctx, nextRecoveryGroup, jobID)
-	var group_id string
-	err := row.Scan(&group_id)
-	return group_id, err
 }
 
 const observationExists = `-- name: ObservationExists :one
@@ -2460,48 +2357,6 @@ func (q *Queries) PutRecord(ctx context.Context, arg PutRecordParams) error {
 	return err
 }
 
-const putRecovery = `-- name: PutRecovery :exec
-INSERT INTO recovery_jobs(id,status,total,actor,created) VALUES(?,'queued',?,?,?)
-`
-
-type PutRecoveryParams struct {
-	ID      string
-	Total   int64
-	Actor   string
-	Created string
-}
-
-func (q *Queries) PutRecovery(ctx context.Context, arg PutRecoveryParams) error {
-	_, err := q.db.ExecContext(ctx, putRecovery,
-		arg.ID,
-		arg.Total,
-		arg.Actor,
-		arg.Created,
-	)
-	return err
-}
-
-const putRecoveryItem = `-- name: PutRecoveryItem :exec
-INSERT INTO recovery_items(job_id,group_id,kind,entity_id) VALUES(?,?,?,?)
-`
-
-type PutRecoveryItemParams struct {
-	JobID    string
-	GroupID  string
-	Kind     string
-	EntityID string
-}
-
-func (q *Queries) PutRecoveryItem(ctx context.Context, arg PutRecoveryItemParams) error {
-	_, err := q.db.ExecContext(ctx, putRecoveryItem,
-		arg.JobID,
-		arg.GroupID,
-		arg.Kind,
-		arg.EntityID,
-	)
-	return err
-}
-
 const putReferenceEvidence = `-- name: PutReferenceEvidence :exec
 INSERT INTO reference_evidence(id,retrieved,request,response,http_status,headers) VALUES(?,?,?,?,?,?)
 `
@@ -2702,98 +2557,6 @@ func (q *Queries) Records(ctx context.Context, arg RecordsParams) ([]RecordValue
 			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const recoveryGroup = `-- name: RecoveryGroup :many
-SELECT job_id, group_id, kind, entity_id, complete FROM recovery_items WHERE job_id=? AND group_id=? ORDER BY kind,entity_id LIMIT 129
-`
-
-type RecoveryGroupParams struct {
-	JobID   string
-	GroupID string
-}
-
-func (q *Queries) RecoveryGroup(ctx context.Context, arg RecoveryGroupParams) ([]RecoveryItem, error) {
-	rows, err := q.db.QueryContext(ctx, recoveryGroup, arg.JobID, arg.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RecoveryItem
-	for rows.Next() {
-		var i RecoveryItem
-		if err := rows.Scan(
-			&i.JobID,
-			&i.GroupID,
-			&i.Kind,
-			&i.EntityID,
-			&i.Complete,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const recoveryJob = `-- name: RecoveryJob :one
-SELECT id, status, completed, total, failure, actor, created FROM recovery_jobs WHERE id=?
-`
-
-func (q *Queries) RecoveryJob(ctx context.Context, id string) (RecoveryJob, error) {
-	row := q.db.QueryRowContext(ctx, recoveryJob, id)
-	var i RecoveryJob
-	err := row.Scan(
-		&i.ID,
-		&i.Status,
-		&i.Completed,
-		&i.Total,
-		&i.Failure,
-		&i.Actor,
-		&i.Created,
-	)
-	return i, err
-}
-
-const recoveryJobs = `-- name: RecoveryJobs :many
-SELECT id, status, completed, total, failure, actor, created FROM recovery_jobs ORDER BY rowid DESC LIMIT 10
-`
-
-func (q *Queries) RecoveryJobs(ctx context.Context) ([]RecoveryJob, error) {
-	rows, err := q.db.QueryContext(ctx, recoveryJobs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RecoveryJob
-	for rows.Next() {
-		var i RecoveryJob
-		if err := rows.Scan(
-			&i.ID,
-			&i.Status,
-			&i.Completed,
-			&i.Total,
-			&i.Failure,
-			&i.Actor,
-			&i.Created,
 		); err != nil {
 			return nil, err
 		}
@@ -3146,18 +2909,6 @@ UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE 
 
 func (q *Queries) RetryProcessing(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, retryProcessing, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const retryRecovery = `-- name: RetryRecovery :execrows
-UPDATE recovery_jobs SET status='queued',failure='' WHERE recovery_jobs.id=? AND recovery_jobs.status='failed' AND recovery_jobs.rowid=(SELECT max(rowid) FROM recovery_jobs) AND NOT EXISTS(SELECT 1 FROM recovery_jobs WHERE status IN ('queued','running'))
-`
-
-func (q *Queries) RetryRecovery(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, retryRecovery, id)
 	if err != nil {
 		return 0, err
 	}

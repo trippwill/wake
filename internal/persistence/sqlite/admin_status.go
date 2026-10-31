@@ -322,26 +322,6 @@ func systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatu
 		out.Connections = append(out.Connections, view)
 	}
 
-	jobs, err := q.RecoveryJobs(ctx)
-	if err != nil {
-		return out, err
-	}
-
-	for _, job := range jobs {
-		out.Recovery = append(
-			out.Recovery,
-			application.RecoveryJob{
-				ID:        job.ID,
-				Status:    job.Status,
-				Failure:   job.Failure,
-				Actor:     job.Actor,
-				Created:   job.Created,
-				Completed: job.Completed,
-				Total:     job.Total,
-			},
-		)
-	}
-
 	return out, nil
 }
 

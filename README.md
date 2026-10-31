@@ -68,9 +68,7 @@ Search compatible retained records when correcting a link. Comparisons lead with
 differences. Decisions retain the authenticated session, time
 and optional rationale. Release a decision to return to automatic selection.
 
-A source's **Reports** view provides **Retry processing report**. **System →
-Maintenance** provides **Rebuild accepted views** and recovery history. Rebuild uses
-retained inputs and decisions and resumes from committed progress after restart.
+A source's **Reports** view provides **Retry processing report** for retained reports.
 
 The two `[storage]` file settings are `warehouse_path` for financial history and
 operational state, and `connections_path` for active access and encrypted credentials.
@@ -125,18 +123,19 @@ configuration, then restart. Setup retains the credential key; keep that key saf
 ### Read from another application
 
 The private Unix socket publishes accepted accounts, instruments, listings and
-activity with stable identities, exact values and resumable changes. See the
+activity with stable identities, exact values and complete versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
 [standalone consumer scenarios](docs/engineering/development.md#socket-consumer-acceptance).
 For a running instance, use its socket path and an existing client-state directory:
 
 ```sh
-mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.json
+mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.db
 ```
 
-The consumer saves a durable mirror and cursor. Repeat the command to resume, or
-use `socket-consumer:follow` to keep reading. Rebuild explicitly starts a new baseline;
-ordinary daemon restarts and companion-store recovery preserve the cursor.
+The consumer validates a complete accepted snapshot and atomically saves its mirror
+and version in a private SQLite database. Repeat the command to synchronize, or use
+`socket-consumer:follow` to keep reading. Conditional reads skip unchanged snapshots.
+A different warehouse installs a clearly reported new baseline.
 
 
 ## Contribute

@@ -55,7 +55,7 @@ func acquireClaimReport(t *testing.T, s *Store, body string, equivalence bool) s
 
 	key := host.WorkKey{Connection: "synthetic", Stream: "confirmations", Operation: "acquire"}
 
-	checkpoint, err := s.Checkpoint(ctx, key)
+	baseline, err := s.Checkpoint(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func acquireClaimReport(t *testing.T, s *Store, body string, equivalence bool) s
 		t.Fatal(err)
 	}
 
-	id, err := s.Accept(ctx, key, checkpoint.Revision, step, nil, provider.Progress{})
+	id, err := s.Accept(ctx, key, baseline.Revision, step, nil, provider.Progress{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestAcquisitionReceiptsReuseBodiesAndNormalization(t *testing.T) {
 			body := singleClaimBody(equityRow("U1", "fill", "100"))
 			first := acquireClaimReport(t, s, body, equivalence)
 
-			checkpoint, err := s.PublishCheckpoint(t.Context())
+			baseline, err := snapshotState(t.Context(), s)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -131,7 +131,7 @@ func TestAcquisitionReceiptsReuseBodiesAndNormalization(t *testing.T) {
 				t.Fatal(receipts, err)
 			}
 
-			if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+			if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 				t.Fatal("repeated acquisition published", changes)
 			}
 		})
@@ -151,7 +151,7 @@ func TestSourceClaimsCompareBeforeOperatorCorrectionAndKeepMultiplicity(t *testi
 	id := view.Executions[0].ID()
 	retainDecision(t, s, "activity", id, "quantity", "12", "", "set")
 
-	checkpoint, err := s.PublishCheckpoint(t.Context())
+	baseline, err := snapshotState(t.Context(), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestSourceClaimsCompareBeforeOperatorCorrectionAndKeepMultiplicity(t *testi
 		t.Fatal("known source claim repeated processing")
 	}
 
-	if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+	if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 		t.Fatal("known claim published", changes)
 	}
 
@@ -249,12 +249,12 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 
 	discover := host.WorkKey{Connection: "synthetic", Stream: "confirmations", Operation: "discover"}
 
-	checkpoint, err := s.Checkpoint(ctx, discover)
+	baseline, err := s.Checkpoint(ctx, discover)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	id, err := s.Accept(ctx, discover, checkpoint.Revision, step, nil, provider.Progress{})
+	id, err := s.Accept(ctx, discover, baseline.Revision, step, nil, provider.Progress{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,12 +262,12 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 	acquire := discover
 	acquire.Operation = "acquire"
 
-	checkpoint, err = s.Checkpoint(ctx, acquire)
+	baseline, err = s.Checkpoint(ctx, acquire)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	same, err := s.Accept(ctx, acquire, checkpoint.Revision, step, nil, provider.Progress{})
+	same, err := s.Accept(ctx, acquire, baseline.Revision, step, nil, provider.Progress{})
 	if err != nil || same != id {
 		t.Fatal(id, same, err)
 	}
@@ -280,7 +280,7 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 	if _, err = s.Accept(
 		ctx,
 		acquire,
-		checkpoint.Revision,
+		baseline.Revision,
 		step,
 		nil,
 		provider.Progress{},

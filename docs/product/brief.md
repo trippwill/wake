@@ -32,7 +32,7 @@ Wake's job is to:
 5. **Apply operator decisions.** Retain attributable, replayable choices that
    resolve uncertainty through linking and reconciliation.
 6. **Serve consumers.** Make canonical views available through stable identities,
-   a resumable canonical-change cursor, lookups and queries.
+   complete versioned snapshots, conditional reads, lookups and queries.
 
 Operator decisions feed linking and reconciliation; they are part of the
 explanation of the result. Normalized claims remain distinguishable from canonical

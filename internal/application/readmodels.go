@@ -204,7 +204,6 @@ type (
 		Prerequisites
 		Connections     []ConnectionView
 		MoreConnections bool
-		Recovery        []RecoveryJob
 	}
 	ActivityListItem struct {
 		Resource       CanonicalResource
