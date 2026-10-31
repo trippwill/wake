@@ -96,7 +96,7 @@ func (s *Store) ActivityList(
 	}
 
 	states, references, kinds := searchMatches(options)
-	conversion, _ := json.Marshal(options.ConversionText)
+	presentation, _ := json.Marshal(options.ActivityText)
 
 	return readModel(ctx, s, func(q *sqlc.Queries) (application.ActivityList, error) {
 		out := application.ActivityList{}
@@ -113,17 +113,15 @@ func (s *Store) ActivityList(
 		counts, err := q.AdminActivityCount(
 			ctx,
 			sqlc.AdminActivityCountParams{
-				KindFilter:              options.Kind,
-				LabelSearch:             options.LabelSearch,
-				MissingValues:           options.DisplayMatches.MissingValues,
-				InapplicableValues:      options.DisplayMatches.InapplicableValues,
-				MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
-				StateFilter:             options.State,
-				Search:                  options.Search,
-				StateMatches:            states,
-				KindMatches:             kinds,
-				ConversionText:          string(conversion),
-				ReferenceMatches:        references,
+				KindFilter:         options.Kind,
+				MissingValues:      options.DisplayMatches.MissingValues,
+				InapplicableValues: options.DisplayMatches.InapplicableValues,
+				StateFilter:        options.State,
+				Search:             options.Search,
+				StateMatches:       states,
+				KindMatches:        kinds,
+				ActivityText:       string(presentation),
+				ReferenceMatches:   references,
 			},
 		)
 		if err != nil {
@@ -135,21 +133,19 @@ func (s *Store) ActivityList(
 		rows, err := q.AdminActivityRows(
 			ctx,
 			sqlc.AdminActivityRowsParams{
-				KindFilter:              options.Kind,
-				LabelSearch:             options.LabelSearch,
-				MissingValues:           options.DisplayMatches.MissingValues,
-				InapplicableValues:      options.DisplayMatches.InapplicableValues,
-				MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
-				StateFilter:             options.State,
-				Search:                  options.Search,
-				StateMatches:            states,
-				KindMatches:             kinds,
-				ConversionText:          string(conversion),
-				ReferenceMatches:        references,
-				SortField:               options.Sort,
-				Direction:               options.Direction,
-				PageSize:                int64(options.PageSize),
-				PageOffset:              query.Offset(),
+				KindFilter:         options.Kind,
+				MissingValues:      options.DisplayMatches.MissingValues,
+				InapplicableValues: options.DisplayMatches.InapplicableValues,
+				StateFilter:        options.State,
+				Search:             options.Search,
+				StateMatches:       states,
+				KindMatches:        kinds,
+				ActivityText:       string(presentation),
+				ReferenceMatches:   references,
+				SortField:          options.Sort,
+				Direction:          options.Direction,
+				PageSize:           int64(options.PageSize),
+				PageOffset:         query.Offset(),
 			},
 		)
 		if err != nil {

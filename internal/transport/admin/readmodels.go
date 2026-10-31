@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	lifecycleLabelSeparator   = " · "
 	notApplicableValue        = "Not applicable"
 	unknownValue              = "Unknown"
 	conversionPairSeparator   = " → "
@@ -21,14 +22,15 @@ const (
 	conversionReceived        = "received"
 )
 
-func conversionSearchText() application.ConversionText {
-	return application.ConversionText{
-		Unknown:         unknownValue,
-		LabelPrefix:     conversionLabelPrefix,
-		PairSeparator:   conversionPairSeparator,
-		AmountSeparator: conversionAmountSeparator,
-		Sent:            conversionSent,
-		Received:        conversionReceived,
+func activitySearchText() application.ActivityText {
+	return application.ActivityText{
+		Unknown:            unknownValue,
+		LifecycleSeparator: lifecycleLabelSeparator,
+		ConversionPrefix:   conversionLabelPrefix,
+		PairSeparator:      conversionPairSeparator,
+		AmountSeparator:    conversionAmountSeparator,
+		Sent:               conversionSent,
+		Received:           conversionReceived,
 	}
 }
 
@@ -269,20 +271,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		}
 
 		if scope == application.ActivityScope || scope == application.ReviewScope {
-			options.LabelSearch = search
-			for _, action := range []string{"assignment", "exercise", "expiration"} {
-				if name, ok := strings.CutPrefix(search, action+" · "); ok {
-					options.LabelSearch = action + " " + name
-				}
-			}
-
-			for _, action := range []string{"buy", "sell", "assignment", "exercise", "expiration"} {
-				if options.LabelSearch == action+" "+strings.ToLower(known("")) {
-					options.DisplayMatches.MissingInstrumentAction = action
-				}
-			}
-
-			options.ConversionText = conversionSearchText()
+			options.ActivityText = activitySearchText()
 
 			for kind, label := range map[application.ActivityKind]string{application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
 				if strings.Contains(strings.ToLower(label), search) ||
@@ -350,7 +339,7 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 	case "trade":
 		return stringTitle(text(a.Side)) + " " + name
 	case "lifecycle":
-		return stringTitle(text(a.LifecycleKind)) + " · " + name
+		return stringTitle(text(a.LifecycleKind)) + lifecycleLabelSeparator + name
 	case "conversion":
 		sent, received := unknownValue, unknownValue
 		if a.Sent != nil {

@@ -435,13 +435,20 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		strings.Replace(separatorLifecycle, `quantity="2"`, `quantity="3"`, 1),
 	)
 
-	for _, label := range []string{"Buy " + separatorName, "Assignment · " + separatorName} {
+	for _, test := range []struct{ search, label string }{
+		{"Buy " + separatorName, "Buy " + separatorName},
+		{"Assignment · " + separatorName, "Assignment · " + separatorName},
+		{"ment · " + separatorName, "Assignment · " + separatorName},
+		{" · Zebra · A", "Assignment · " + separatorName},
+	} {
 		for _, endpoint := range []string{"/activity?", "/activity?view=review&"} {
-			response := request(http.MethodGet, endpoint+"q="+url.QueryEscape(label), nil, false)
-			if response.Code != http.StatusOK ||
-				!strings.Contains(html.UnescapeString(response.Body.String()), ">"+label+"<") {
-				t.Fatal("search changed punctuation inside an instrument name", endpoint, label, response.Code)
-			}
+			t.Run("lifecycle-label/"+endpoint+test.search, func(t *testing.T) {
+				response := request(http.MethodGet, endpoint+"q="+url.QueryEscape(test.search), nil, false)
+				if response.Code != http.StatusOK ||
+					!strings.Contains(html.UnescapeString(response.Body.String()), ">"+test.label+"<") {
+					t.Fatal("displayed activity label did not match", endpoint, test.search, response.Code)
+				}
+			})
 		}
 	}
 }

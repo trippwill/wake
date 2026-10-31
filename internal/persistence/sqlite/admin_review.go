@@ -25,18 +25,16 @@ func reviewList(
 
 	kinds, _ := json.Marshal(options.KindMatches)
 	matches, _ := json.Marshal(options.ReviewMatches)
-	conversion, _ := json.Marshal(options.ConversionText)
+	presentation, _ := json.Marshal(options.ActivityText)
 
 	counts, err := q.AdminReviewCount(
 		ctx,
 		sqlc.AdminReviewCountParams{
-			Search:                  options.Search,
-			LabelSearch:             options.LabelSearch,
-			MissingValues:           options.DisplayMatches.MissingValues,
-			MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
-			KindMatches:             string(kinds),
-			ReviewMatches:           string(matches),
-			ConversionText:          string(conversion),
+			Search:        options.Search,
+			MissingValues: options.DisplayMatches.MissingValues,
+			KindMatches:   string(kinds),
+			ReviewMatches: string(matches),
+			ActivityText:  string(presentation),
 		},
 	)
 	if err != nil {
@@ -48,15 +46,13 @@ func reviewList(
 	rows, err := q.AdminReviewRows(
 		ctx,
 		sqlc.AdminReviewRowsParams{
-			Search:                  options.Search,
-			LabelSearch:             options.LabelSearch,
-			MissingValues:           options.DisplayMatches.MissingValues,
-			MissingInstrumentAction: options.DisplayMatches.MissingInstrumentAction,
-			KindMatches:             string(kinds),
-			ReviewMatches:           string(matches),
-			ConversionText:          string(conversion),
-			PageSize:                int64(options.PageSize),
-			PageOffset:              query.Offset(),
+			Search:        options.Search,
+			MissingValues: options.DisplayMatches.MissingValues,
+			KindMatches:   string(kinds),
+			ReviewMatches: string(matches),
+			ActivityText:  string(presentation),
+			PageSize:      int64(options.PageSize),
+			PageOffset:    query.Offset(),
 		},
 	)
 	if err != nil {

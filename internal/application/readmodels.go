@@ -14,12 +14,11 @@ import (
 
 type ListOptions struct {
 	Search, Kind, State, Sort, Direction string
-	LabelSearch                          string
 	Page, PageSize                       int
 	KindMatches                          []ActivityKind
 	StateMatches                         []ActivityState
 	ReferenceMatches                     []ReferenceMatch
-	ConversionText                       ConversionText
+	ActivityText                         ActivityText
 	DisplayMatches                       DisplayMatches
 	ReviewMatches                        []ReviewMatch
 }
@@ -31,19 +30,19 @@ type (
 		Count      int64            `json:"count"`
 	}
 	DisplayMatches struct {
-		MissingValues           bool
-		InapplicableValues      bool
-		MissingInstrumentAction string
+		MissingValues      bool
+		InapplicableValues bool
 	}
-	// ConversionText is presentation-owned wording for searchable conversion cells.
+	// ActivityText is presentation-owned wording for searchable activity cells.
 	// Storage combines it with exact typed values; it never derives policy from it.
-	ConversionText struct {
-		Unknown         string `json:"unknown"`
-		LabelPrefix     string `json:"label_prefix"`
-		PairSeparator   string `json:"pair_separator"`
-		AmountSeparator string `json:"amount_separator"`
-		Sent            string `json:"sent"`
-		Received        string `json:"received"`
+	ActivityText struct {
+		Unknown            string `json:"unknown"`
+		LifecycleSeparator string `json:"lifecycle_separator"`
+		ConversionPrefix   string `json:"conversion_prefix"`
+		PairSeparator      string `json:"pair_separator"`
+		AmountSeparator    string `json:"amount_separator"`
+		Sent               string `json:"sent"`
+		Received           string `json:"received"`
 	}
 	ReferenceMatch struct {
 		Status    ReferenceStatus
@@ -75,7 +74,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if options.Page < 1 || options.PageSize < 1 || options.PageSize > 200 ||
 		options.Page > math.MaxInt/options.PageSize ||
-		len(options.Search) > 256 || len(options.LabelSearch) > 256 {
+		len(options.Search) > 256 {
 		return ListQuery{}, ErrInvalid
 	}
 
@@ -136,17 +135,10 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		}
 	}
 
-	for _, text := range []string{options.ConversionText.LabelPrefix, options.ConversionText.Unknown, options.ConversionText.PairSeparator, options.ConversionText.AmountSeparator, options.ConversionText.Sent, options.ConversionText.Received} {
+	for _, text := range []string{options.ActivityText.LifecycleSeparator, options.ActivityText.ConversionPrefix, options.ActivityText.Unknown, options.ActivityText.PairSeparator, options.ActivityText.AmountSeparator, options.ActivityText.Sent, options.ActivityText.Received} {
 		if len(text) > 64 {
 			return ListQuery{}, ErrInvalid
 		}
-	}
-
-	if !slices.Contains(
-		[]string{"", "buy", "sell", "assignment", "exercise", "expiration"},
-		options.DisplayMatches.MissingInstrumentAction,
-	) {
-		return ListQuery{}, ErrInvalid
 	}
 
 	for _, match := range options.ReviewMatches {
@@ -165,7 +157,6 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	options.ReviewMatches = slices.Clone(options.ReviewMatches)
 	options.KindMatches = slices.Clone(options.KindMatches)
 	options.Search = strings.ToLower(options.Search)
-	options.LabelSearch = strings.ToLower(options.LabelSearch)
 	options.StateMatches = slices.Clone(options.StateMatches)
 	options.ReferenceMatches = slices.Clone(options.ReferenceMatches)
 

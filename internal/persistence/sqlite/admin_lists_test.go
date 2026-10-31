@@ -514,13 +514,14 @@ func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
 		options := application.ListOptions{
 			Search:   test.search,
 			PageSize: 1,
-			ConversionText: application.ConversionText{
-				Unknown:         "Unknown",
-				LabelPrefix:     "Convert ",
-				PairSeparator:   " → ",
-				AmountSeparator: " · ",
-				Sent:            "sent",
-				Received:        "received",
+			ActivityText: application.ActivityText{
+				Unknown:            "Unknown",
+				LifecycleSeparator: " · ",
+				ConversionPrefix:   "Convert ",
+				PairSeparator:      " → ",
+				AmountSeparator:    " · ",
+				Sent:               "sent",
+				Received:           "received",
 			},
 		}
 
@@ -861,9 +862,8 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 
 	query, _ := application.NewListQuery(
 		application.ListOptions{
-			Search:         "buy unknown",
-			LabelSearch:    "buy unknown",
-			DisplayMatches: application.DisplayMatches{MissingInstrumentAction: "buy"},
+			Search:       "buy unknown",
+			ActivityText: application.ActivityText{Unknown: "Unknown", LifecycleSeparator: " · "},
 		},
 		application.ActivityScope,
 	)
