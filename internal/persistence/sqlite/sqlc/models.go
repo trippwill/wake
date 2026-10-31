@@ -303,14 +303,6 @@ type Profile struct {
 	ResumedAt        string
 }
 
-type PublishedChange struct {
-	Position int64
-	Kind     string
-	ID       string
-	Revision int64
-	Snapshot []byte
-}
-
 type PublishedResource struct {
 	Kind        string
 	ID          string
@@ -320,8 +312,8 @@ type PublishedResource struct {
 }
 
 type Publishing struct {
-	Singleton  int64
-	Generation string
+	Singleton int64
+	Version   int64
 }
 
 type PublishingDirty struct {
@@ -345,24 +337,6 @@ type RecordValue struct {
 	Ordinal    int64
 	Kind       string
 	Data       []byte
-}
-
-type RecoveryItem struct {
-	JobID    string
-	GroupID  string
-	Kind     string
-	EntityID string
-	Complete int64
-}
-
-type RecoveryJob struct {
-	ID        string
-	Status    string
-	Completed int64
-	Total     int64
-	Failure   string
-	Actor     string
-	Created   string
 }
 
 type ReferenceBudget struct {

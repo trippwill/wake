@@ -6,10 +6,8 @@ package persistence
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -39,7 +37,7 @@ func publishingStatement(name string) string {
 
 // commit captures final accepted values before the transaction becomes visible.
 func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
-	if _, err := tx.ExecContext(ctx, publishingStatement("Init"), rand.Text()); err != nil {
+	if _, err := tx.ExecContext(ctx, publishingStatement("Init")); err != nil {
 		return err
 	}
 
@@ -69,6 +67,7 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 	}
 
 	q := s.queries.WithTx(tx)
+	changed := false
 	for _, k := range keys {
 		resource, explanation, err := canonicalSnapshot(ctx, q, k.kind, k.id)
 		if err != nil {
@@ -139,14 +138,11 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 
-		if _, err = tx.ExecContext(
-			ctx,
-			publishingStatement("Append"),
-			k.kind,
-			k.id,
-			resource.Revision,
-			data,
-		); err != nil {
+		changed = true
+	}
+
+	if changed {
+		if _, err = tx.ExecContext(ctx, publishingStatement("Advance")); err != nil {
 			return err
 		}
 	}
@@ -610,155 +606,17 @@ func canonicalSet[T any](values []T) ([]T, error) {
 	return out, nil
 }
 
-// Cursors are opaque to consumers and bound to one warehouse, generation and read purpose.
-type publishingCursor struct {
-	Version    int    `json:"v"`
-	Warehouse  string `json:"w"`
-	Generation string `json:"g"`
-	Kind       string `json:"k"`
-	Position   int64  `json:"p"`
-	After      string `json:"a"`
+type publicationState struct {
+	Warehouse string
+	Version   int64
 }
 
-func (c publishingCursor) encode() string {
-	b, _ := json.Marshal(c)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
+func publishingState(ctx context.Context, tx *sql.Tx) (publicationState, error) {
+	var state publicationState
 
-func parsePublishingCursor(value string) (publishingCursor, error) {
-	var c publishingCursor
-	if len(value) > 2048 {
-		return c, application.ErrCursor
-	}
+	err := tx.QueryRowContext(ctx, publishingStatement("State")).Scan(&state.Warehouse, &state.Version)
 
-	data, err := base64.RawURLEncoding.Strict().DecodeString(value)
-	if err != nil {
-		return c, application.ErrCursor
-	}
-
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-
-	if decoder.Decode(&c) != nil || c.Version != 1 || c.Warehouse == "" || c.Generation == "" ||
-		c.Position < 0 ||
-		c.encode() != value {
-		return c, application.ErrCursor
-	}
-
-	return c, nil
-}
-
-func publishingState(ctx context.Context, tx *sql.Tx) (publishingCursor, error) {
-	c := publishingCursor{Version: 1, Kind: "changes"}
-
-	var rebuilding bool
-	if err := tx.QueryRowContext(ctx, publishingStatement("State")).
-		Scan(&c.Warehouse, &c.Generation, &c.Position, &rebuilding); err != nil {
-		return c, err
-	}
-
-	if rebuilding {
-		return c, application.ErrRebuilding
-	}
-
-	return c, nil
-}
-
-func validateCursor(value, kind string, state publishingCursor) (publishingCursor, error) {
-	c, err := parsePublishingCursor(value)
-	if err != nil || c.Kind != kind || (kind == "changes" && c.After != "") ||
-		(kind != "changes" && (c.After == "" || c.Position != 0)) {
-		return c, application.ErrCursor
-	}
-
-	if c.Warehouse != state.Warehouse || c.Generation != state.Generation {
-		return c, application.ErrGeneration
-	}
-
-	if c.Position > state.Position {
-		return c, application.ErrCursor
-	}
-
-	return c, nil
-}
-
-func (s *Store) PublishCheckpoint(ctx context.Context) (string, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	state, err := publishingState(ctx, tx)
-	if err != nil {
-		return "", err
-	}
-
-	return state.encode(), nil
-}
-
-func (s *Store) Resources(
-	ctx context.Context,
-	kind, cursor string,
-	limit int,
-) (application.ResourcePage, error) {
-	out := application.ResourcePage{Items: []application.CanonicalResource{}}
-	if limit < 1 || limit > 500 {
-		return out, application.ErrInvalid
-	}
-
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return out, err
-	}
-
-	defer func() { _ = tx.Rollback() }()
-
-	state, err := publishingState(ctx, tx)
-	if err != nil {
-		return out, err
-	}
-
-	after := ""
-	if cursor != "" {
-		c, e := validateCursor(cursor, kind, state)
-		if e != nil {
-			return out, e
-		}
-
-		after = c.After
-	}
-
-	rows, err := tx.QueryContext(ctx, publishingStatement("Page"), kind, after, limit+1)
-	if err != nil {
-		return out, err
-	}
-
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var data []byte
-		if err = rows.Scan(&data); err != nil {
-			return out, err
-		}
-
-		var item application.CanonicalResource
-		if json.Unmarshal(data, &item) != nil {
-			return out, ErrCorrupt
-		}
-
-		if len(out.Items) == limit {
-			state.Kind, state.Position, state.After = kind, 0, out.Items[len(out.Items)-1].ID
-			next := state.encode()
-			out.Next = &next
-
-			break
-		}
-
-		out.Items = append(out.Items, item)
-	}
-
-	return out, rows.Err()
+	return state, err
 }
 
 func (s *Store) published(
@@ -776,10 +634,6 @@ func (s *Store) published(
 	}
 
 	defer func() { _ = tx.Rollback() }()
-
-	if _, err = publishingState(ctx, tx); err != nil {
-		return out, why, err
-	}
 
 	var (
 		revision          int64
@@ -807,86 +661,23 @@ func (s *Store) Resource(ctx context.Context, kind, id string) (application.Cano
 	return out, err
 }
 
-func (s *Store) Explanation(ctx context.Context, kind, id string) (application.Explanation, error) {
-	_, out, err := s.published(ctx, kind, id)
-	return out, err
-}
-
-func (s *Store) Changes(
+func (s *Store) Explanation(
 	ctx context.Context,
-	cursor, through string,
-	limit int,
-) (application.ChangePage, error) {
-	out := application.ChangePage{Items: []application.Change{}}
-	if limit < 1 || limit > 500 {
-		return out, application.ErrInvalid
-	}
-
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	kind, id string,
+	revision int64,
+) (application.Explanation, error) {
+	_, why, err := s.published(ctx, kind, id)
 	if err != nil {
-		return out, err
+		return why, err
 	}
 
-	defer func() { _ = tx.Rollback() }()
-
-	state, err := publishingState(ctx, tx)
-	if err != nil {
-		return out, err
+	if revision < 1 {
+		return application.Explanation{}, application.ErrInvalid
 	}
 
-	from, err := validateCursor(cursor, "changes", state)
-	if err != nil {
-		return out, err
+	if why.Revision != revision {
+		return application.Explanation{}, application.ErrStale
 	}
 
-	high := state
-	if through != "" {
-		high, err = validateCursor(through, "changes", state)
-		if err != nil {
-			return out, err
-		}
-	}
-
-	if from.Position > high.Position {
-		return out, application.ErrCursor
-	}
-
-	out.Cursor, out.Through = from.encode(), high.encode()
-
-	rows, err := tx.QueryContext(ctx, publishingStatement("Changes"), from.Position, high.Position, limit+1)
-	if err != nil {
-		return out, err
-	}
-
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var (
-			pos  int64
-			data []byte
-		)
-		if err = rows.Scan(&pos, &data); err != nil {
-			return out, err
-		}
-
-		if len(out.Items) == limit {
-			out.More = true
-			break
-		}
-
-		var resource application.CanonicalResource
-		if json.Unmarshal(data, &resource) != nil {
-			return out, ErrCorrupt
-		}
-
-		from.Position = pos
-		out.Cursor = from.encode()
-		out.Items = append(out.Items, application.Change{Cursor: out.Cursor, Resource: resource})
-	}
-
-	if !out.More {
-		out.Cursor = out.Through
-	}
-
-	return out, rows.Err()
+	return why, nil
 }

@@ -16,7 +16,6 @@ type Querier interface {
 	AccessReadiness(ctx context.Context, connectionID string) (AccessReadinessRow, error)
 	Account(ctx context.Context) (Account, error)
 	AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
-	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
 	AdminAccessSources(ctx context.Context) ([]Connection, error)
@@ -37,9 +36,7 @@ type Querier interface {
 	AdminSourceRows(ctx context.Context, arg AdminSourceRowsParams) ([]Connection, error)
 	AdvanceActivityRevision(ctx context.Context, id string) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
-	AdvanceRecovery(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
-	AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
@@ -56,7 +53,6 @@ type Querier interface {
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
 	ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
-	CompleteRecoveryGroup(ctx context.Context, arg CompleteRecoveryGroupParams) error
 	ConflictExecution(ctx context.Context, id string) error
 	Connection(ctx context.Context, id string) (AccessConfiguration, error)
 	ConnectionAccess(ctx context.Context, id string) (int64, error)
@@ -82,10 +78,8 @@ type Querier interface {
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
 	ExecutionObservations(ctx context.Context, executionID sql.NullString) ([]ExecutionObservation, error)
 	Executions(ctx context.Context) ([]Execution, error)
-	FailRecovery(ctx context.Context, id string) error
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
-	FinishRecovery(ctx context.Context, id string) error
 	Instrument(ctx context.Context, id string) (Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
 	InstrumentObservations(ctx context.Context, instrumentID sql.NullString) ([]ExecutionObservation, error)
@@ -97,7 +91,6 @@ type Querier interface {
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
 	MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
 	NewClaimActivityIDs(ctx context.Context, artifactID string) ([]sql.NullString, error)
-	NextRecoveryGroup(ctx context.Context, jobID string) (string, error)
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
 	Pacing(ctx context.Context, arg PacingParams) (string, error)
@@ -127,8 +120,6 @@ type Querier interface {
 	PutListing(ctx context.Context, arg PutListingParams) error
 	PutObservation(ctx context.Context, arg PutObservationParams) error
 	PutRecord(ctx context.Context, arg PutRecordParams) error
-	PutRecovery(ctx context.Context, arg PutRecoveryParams) error
-	PutRecoveryItem(ctx context.Context, arg PutRecoveryItemParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
 	PutRelationship(ctx context.Context, arg PutRelationshipParams) error
 	PutReportComparison(ctx context.Context, arg PutReportComparisonParams) error
@@ -137,9 +128,6 @@ type Querier interface {
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
-	RecoveryGroup(ctx context.Context, arg RecoveryGroupParams) ([]RecoveryItem, error)
-	RecoveryJob(ctx context.Context, id string) (RecoveryJob, error)
-	RecoveryJobs(ctx context.Context) ([]RecoveryJob, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)
 	ReferenceEvidence(ctx context.Context, id string) (ReferenceEvidence, error)
 	ReferenceFailure(ctx context.Context, failure string) error
@@ -156,7 +144,6 @@ type Querier interface {
 	Retained(ctx context.Context, id string) (RetainedRow, error)
 	RetainedReferenceCandidates(ctx context.Context, instrumentID string) ([]RetainedReferenceCandidatesRow, error)
 	RetryProcessing(ctx context.Context, id string) (int64, error)
-	RetryRecovery(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
 	RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error)

@@ -32,12 +32,12 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 				id, readKind, first, second, value1, value2, currency = view.Executions[0].Instrument(), "instruments", "name", "ticker", "Reviewed name", "REVIEWED", ""
 			}
 
-			before, err := s.Explanation(t.Context(), readKind, id)
+			before, err := explainCurrent(t.Context(), s, readKind, id)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			checkpoint, err := s.PublishCheckpoint(t.Context())
+			baseline, err := snapshotState(t.Context(), s)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -46,7 +46,7 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 			retainDecision(t, s, kind, id, second, value2, "", "set")
 			retainDecision(t, s, kind, id, first, "", "", "release")
 
-			why, err := s.Explanation(t.Context(), readKind, id)
+			why, err := explainCurrent(t.Context(), s, readKind, id)
 			if err != nil || len(why.Decisions) != 1 || why.Decisions[0].Scope != second ||
 				why.Decisions[0].Action != "set" {
 				t.Fatal("released scope remains active", why, err)
@@ -54,7 +54,7 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 
 			retainDecision(t, s, kind, id, second, "", "", "release")
 
-			why, err = s.Explanation(t.Context(), readKind, id)
+			why, err = explainCurrent(t.Context(), s, readKind, id)
 			resource, e := s.Resource(t.Context(), readKind, id)
 			if err != nil || e != nil || len(why.Decisions) != 0 || why.Selection != before.Selection ||
 				why.Revision != resource.Revision {
@@ -66,7 +66,7 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 				t.Fatal("release lost retained history", history, err)
 			}
 
-			transitions := publishedChanges(t, s, checkpoint)
+			transitions := snapshotChanges(t, s, baseline)
 			count := 0
 			for _, change := range transitions.Items {
 				if change.Resource.Kind == readKind && change.Resource.ID == id {
@@ -74,8 +74,8 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 				}
 			}
 
-			if count != 4 {
-				t.Fatal("authority changes did not remain separate committed transitions", count)
+			if count != 1 {
+				t.Fatal("snapshot did not contain exactly one current accepted resource", count)
 			}
 		})
 	}
@@ -225,7 +225,7 @@ func TestPublishingReverseLookupsUseEndpointIndexes(t *testing.T) {
 }
 
 func TestNormalizationPublishingFailureReleasesConnectionAndRecordsFailure(t *testing.T) {
-	for _, failure := range []string{"query", "append"} {
+	for _, failure := range []string{"query", "advance"} {
 		t.Run(failure, func(t *testing.T) {
 			s := coverageStore(t)
 			coverageReport(t, s, "publishing-failure", equityRow("U1", "trade", "100"))
@@ -235,21 +235,21 @@ func TestNormalizationPublishingFailureReleasesConnectionAndRecordsFailure(t *te
 				t.Fatal(err)
 			}
 
-			checkpoint, err := s.PublishCheckpoint(t.Context())
+			baseline, err := snapshotState(t.Context(), s)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			var before int
-			if err = s.db.QueryRow(`SELECT count(*) FROM published_changes`).Scan(&before); err != nil {
+			if err = s.db.QueryRow(`SELECT version FROM publishing WHERE singleton=1`).Scan(&before); err != nil {
 				t.Fatal(err)
 			}
 
 			inject, repair := `ALTER TABLE publishing_dirty RENAME TO unavailable_dirty`, `ALTER TABLE unavailable_dirty RENAME TO publishing_dirty`
-			if failure == "append" {
-				inject = `CREATE TRIGGER fail_journal BEFORE INSERT ON published_changes BEGIN SELECT RAISE(ABORT,'synthetic publishing failure'); END;
+			if failure == "advance" {
+				inject = `CREATE TRIGGER fail_publication BEFORE UPDATE ON publishing BEGIN SELECT RAISE(ABORT,'synthetic publishing failure'); END;
 UPDATE accounts SET name='Synthetic changed account' WHERE id='account';`
-				repair = `DROP TRIGGER fail_journal`
+				repair = `DROP TRIGGER fail_publication`
 			}
 
 			if _, err = s.db.Exec(inject); err != nil {
@@ -284,22 +284,22 @@ UPDATE accounts SET name='Synthetic changed account' WHERE id='account';`
 			}
 
 			var records, receipts, after int
-			if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM records WHERE artifact_id='publishing-failure' AND version=?),(SELECT count(*) FROM normalization_receipts WHERE artifact_id='publishing-failure' AND version=?),(SELECT count(*) FROM published_changes)`, version, version).
+			if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM records WHERE artifact_id='publishing-failure' AND version=?),(SELECT count(*) FROM normalization_receipts WHERE artifact_id='publishing-failure' AND version=?),(SELECT version FROM publishing WHERE singleton=1)`, version, version).
 				Scan(&records, &receipts, &after); err != nil {
 				t.Fatal(err)
 			}
 
 			if records != 0 || receipts != 0 || after != before {
-				t.Fatal("partial normalization or journal retained", records, receipts, after, before)
+				t.Fatal("partial normalization or publication retained", records, receipts, after, before)
 			}
 
 			if _, err = s.db.Exec(repair); err != nil {
 				t.Fatal(err)
 			}
 
-			unchanged, err := s.PublishCheckpoint(t.Context())
-			if err != nil || unchanged != checkpoint {
-				t.Fatal("failed transaction advanced checkpoint", unchanged, checkpoint, err)
+			unchanged, err := snapshotState(t.Context(), s)
+			if err != nil || unchanged.Version != baseline.Version {
+				t.Fatal("failed transaction advanced baseline", unchanged, baseline, err)
 			}
 
 			if _, err = s.Normalize(

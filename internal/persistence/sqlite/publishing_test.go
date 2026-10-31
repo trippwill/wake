@@ -6,9 +6,6 @@ package persistence
 import (
 	"context"
 	"crypto/rand"
-	"errors"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,22 +13,11 @@ import (
 	"go.trippwill.dev/wake/internal/reference"
 )
 
-func publishedChanges(t *testing.T, s *Store, cursor string) application.ChangePage {
-	t.Helper()
-
-	out, err := s.Changes(context.Background(), cursor, "", 500)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return out
-}
-
-func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
+func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 	ctx := context.Background()
 	s := coverageStore(t)
 
-	checkpoint, err := s.PublishCheckpoint(ctx)
+	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,12 +29,12 @@ func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
 		equityRow("U1", "original", "100.0000")+syntheticOption+syntheticDebt+syntheticFX,
 	)
 
-	initial := publishedChanges(t, s, checkpoint)
+	initial := snapshotChanges(t, s, baseline)
 	if len(initial.Items) < 8 {
 		t.Fatal("missing published resources", len(initial.Items))
 	}
 
-	page, err := s.Resources(ctx, "activity", "", 500)
+	page, err := snapshotResources(ctx, s, "activity")
 	if err != nil || len(page.Items) != 4 {
 		t.Fatal(page, err)
 	}
@@ -76,7 +62,7 @@ func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
 	)
 	coverageReport(t, s, "scale-only", equityRow("U1", "original", "100.00"))
 
-	if got := publishedChanges(t, s, initial.Cursor); len(got.Items) != 0 {
+	if got := snapshotChanges(t, s, initial.Snapshot); len(got.Items) != 0 {
 		t.Fatal("unchanged overlap published", got.Items)
 	}
 
@@ -100,31 +86,18 @@ func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
 		`<TradeConfirm accountId="U1" assetCategory="STK" transactionType="ExchTrade" levelOfDetail="EXECUTION" origTradeID="Toriginal" code="Ca"/>`,
 	)
 
-	transitions := publishedChanges(t, s, initial.Cursor)
-	states := []application.CanonicalResource{}
-	for _, c := range transitions.Items {
-		if c.Resource.ID == id {
-			states = append(states, c.Resource)
+	current := snapshotChanges(t, s, initial.Snapshot)
+
+	var latest application.CanonicalResource
+	for _, item := range current.Items {
+		if item.Resource.ID == id {
+			latest = item.Resource
 		}
 	}
 
-	if len(states) != 5 {
-		t.Fatal("committed transitions collapsed or submission duplicated", len(states))
-	}
-
-	for i, r := range states {
-		if r.Revision <= before.Revision {
-			t.Fatal("revision did not advance")
-		}
-
-		if i > 0 && r.Revision <= states[i-1].Revision {
-			t.Fatal("unordered revisions")
-		}
-	}
-
-	if states[1].Activity.Price.Amount != "101.000000000001" || !states[3].Activity.Conflict ||
-		states[4].Activity.State != "cancelled" {
-		t.Fatal("lost correction/conflict states", states)
+	if latest.Revision <= before.Revision || latest.Activity == nil || latest.Activity.State != "cancelled" ||
+		!latest.Activity.Conflict {
+		t.Fatal("latest disconnected state lost corrections/conflict", latest)
 	}
 
 	coverageReport(
@@ -134,17 +107,17 @@ func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
 		`<TradeConfirm accountId="U1" assetCategory="STK" transactionType="ExchTrade" levelOfDetail="EXECUTION" origTradeID="Toriginal" code="Ca"/>`,
 	)
 
-	if len(publishedChanges(t, s, transitions.Cursor).Items) != 0 {
+	if len(snapshotChanges(t, s, current.Snapshot).Items) != 0 {
 		t.Fatal("repeated source instruction published")
 	}
 
-	why, err := s.Explanation(ctx, "activity", id)
-	if err != nil || why.Revision != states[4].Revision || len(why.Corrections) != 1 {
+	why, err := explainCurrent(ctx, s, "activity", id)
+	if err != nil || why.Revision != latest.Revision || len(why.Corrections) != 1 {
 		t.Fatal("explanation revision", why, err)
 	}
-	// A failed publisher must roll back both the accepted write and its journal.
+	// A failed publisher must roll back both the accepted write and its publication version.
 	if _, err = s.db.Exec(
-		`CREATE TRIGGER reject_journal BEFORE INSERT ON published_changes BEGIN SELECT RAISE(ABORT,'injected'); END`,
+		`CREATE TRIGGER reject_publication BEFORE UPDATE ON publishing BEGIN SELECT RAISE(ABORT,'injected'); END`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -171,185 +144,16 @@ func TestPublishingAtomicCommitReplayAndDisconnectedTransitions(t *testing.T) {
 	}
 
 	if err = s.SaveDecision(ctx, command, "test", time.Now()); err == nil {
-		t.Fatal("journal fault acknowledged")
+		t.Fatal("publication fault acknowledged")
 	}
 
 	after, err := s.Resource(ctx, "activity", id)
-	if err != nil || after.Revision != states[4].Revision || after.Activity.Price.Amount == "999" {
+	if err != nil || after.Revision != latest.Revision || after.Activity.Price.Amount == "999" {
 		t.Fatal("partial accepted write", err)
 	}
 
-	if len(publishedChanges(t, s, transitions.Cursor).Items) != 0 {
-		t.Fatal("rolled back journal visible")
-	}
-}
-
-func TestPublishingCheckpointPaginationHighWaterAndRecovery(t *testing.T) {
-	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "first", syntheticOption+syntheticDebt+syntheticFX)
-
-	checkpoint, err := s.PublishCheckpoint(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	page, err := s.Resources(ctx, "activity", "", 1)
-	if err != nil || page.Next == nil {
-		t.Fatal(page, err)
-	}
-	// Change an already scanned resource while the consumer scans later pages.
-	scanCursor := *page.Next
-
-	first := page.Items[0]
-	scope, text, currency := "price", "2.0000", "USD"
-	if first.Activity.Family == "conversion" {
-		scope, text, currency = "sent_amount", "42.0000", ""
-	}
-	// All selected activity families expose a quantity/amount correction.
-	if first.Activity.Family == "conversion" {
-		scope = "sent_amount"
-	}
-
-	form, err := s.CorrectionForm(ctx, "activity", first.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if first.Activity.Family == "conversion" {
-		for _, field := range form.Fields {
-			if strings.Contains(field, "sent") && !strings.Contains(field, "currency") {
-				scope = field
-				break
-			}
-		}
-	}
-
-	retainDecision(t, s, "activity", first.ID, scope, text, currency, "set")
-
-	seen := map[string]bool{first.ID: true}
-	for page.Next != nil {
-		next, e := s.Resources(ctx, "activity", *page.Next, 1)
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		for _, r := range next.Items {
-			if seen[r.ID] {
-				t.Fatal("duplicate page")
-			}
-
-			seen[r.ID] = true
-		}
-
-		page = next
-	}
-
-	if len(seen) != 3 {
-		t.Fatal("scan lost resources")
-	}
-
-	replay := publishedChanges(t, s, checkpoint)
-	if len(replay.Items) == 0 {
-		t.Fatal("scan missed concurrent update")
-	}
-	// Each pass keeps a finite high-water mark despite subsequent writes.
-	retainDecision(t, s, "activity", first.ID, scope, "43.0000", currency, "set")
-
-	bounded, err := s.Changes(ctx, checkpoint, replay.Through, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if bounded.Cursor != replay.Cursor || bounded.More {
-		t.Fatal("pass high water moved")
-	}
-	// Restart and both companion losses preserve warehouse cursor identity.
-	profile := testProfile(s.owners[0].Name())
-	if err = s.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, path := range []string{profile.ConnectionsPath} {
-		if err = os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	reopened, err := Open(ctx, profile, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer func() { _ = reopened.Close() }()
-
-	if _, err = reopened.Changes(ctx, replay.Cursor, "", 500); err != nil {
-		t.Fatal("companion recovery invalidated cursor", err)
-	}
-
-	old, err := reopened.PublishCheckpoint(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	job, err := reopened.StartRebuild(ctx, rand.Text(), "test", time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = reopened.Changes(ctx, old, "", 5); !errors.Is(err, application.ErrRebuilding) {
-		t.Fatal("read during rebuild", err)
-	}
-
-	if _, err = reopened.db.Exec(`UPDATE recovery_jobs SET status='failed' WHERE id=?`, job); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = reopened.PublishCheckpoint(ctx); !errors.Is(err, application.ErrRebuilding) {
-		t.Fatal("failed rebuild exposed", err)
-	}
-
-	var generation string
-	if err = reopened.db.QueryRow(`SELECT generation FROM publishing`).Scan(&generation); err != nil {
-		t.Fatal(err)
-	}
-
-	if err = reopened.RetryRecovery(ctx, job); err != nil {
-		t.Fatal(err)
-	}
-
-	for n := 0; n < 100; n++ {
-		changed, e := reopened.RunRecovery(ctx)
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		if !changed {
-			break
-		}
-
-		if n == 99 {
-			t.Fatal("rebuild stalled")
-		}
-	}
-
-	var afterGeneration string
-	if err = reopened.db.QueryRow(`SELECT generation FROM publishing`).
-		Scan(&afterGeneration); err != nil ||
-		generation != afterGeneration {
-		t.Fatal("retry rotated generation", err)
-	}
-
-	if _, err = reopened.Changes(ctx, old, "", 10); !errors.Is(err, application.ErrGeneration) {
-		t.Fatal("old cursor accepted", err)
-	}
-
-	if _, err = reopened.Resources(ctx, "activity", scanCursor, 1); !errors.Is(err, application.ErrGeneration) {
-		t.Fatal("scan generation survived rebuild", err)
-	}
-
-	if _, err = reopened.PublishCheckpoint(ctx); err != nil {
-		t.Fatal("fresh bootstrap unavailable", err)
+	if len(snapshotChanges(t, s, current.Snapshot).Items) != 0 {
+		t.Fatal("rolled back publication visible")
 	}
 }
 
@@ -358,12 +162,12 @@ func TestPublishingReferenceRevisions(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "first", syntheticOption)
 
-	page, err := s.Resources(ctx, "instruments", "", 500)
+	page, err := snapshotResources(ctx, s, "instruments")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	checkpoint, err := s.PublishCheckpoint(ctx)
+	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,54 +182,9 @@ func TestPublishingReferenceRevisions(t *testing.T) {
 		}
 	}
 
-	changes := publishedChanges(t, s, checkpoint)
+	changes := snapshotChanges(t, s, baseline)
 	if len(changes.Items) != len(page.Items) {
 		t.Fatal("reference changes unpublished", len(changes.Items))
-	}
-}
-
-func TestPublishingCursorClassificationAndWarehouseRecreation(t *testing.T) {
-	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "first", syntheticOption)
-
-	checkpoint, err := s.PublishCheckpoint(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, bad := range []string{"", "1", "%%", checkpoint + "=", strings.Repeat("A", 2049)} {
-		if _, err = s.Changes(ctx, bad, "", 1); !errors.Is(err, application.ErrCursor) {
-			t.Fatal(bad, err)
-		}
-	}
-
-	page, err := s.Resources(ctx, "instruments", "", 1)
-	if err != nil || page.Next == nil {
-		t.Fatal(page, err)
-	}
-
-	if _, err = s.Changes(ctx, *page.Next, "", 1); !errors.Is(err, application.ErrCursor) {
-		t.Fatal("page cursor accepted as change cursor", err)
-	}
-
-	c, err := parsePublishingCursor(checkpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	c.Position++
-	if _, err = s.Changes(ctx, c.encode(), "", 1); !errors.Is(err, application.ErrCursor) {
-		t.Fatal("future cursor", err)
-	}
-
-	if _, err = s.Resource(ctx, "activity", "missing"); !errors.Is(err, application.ErrNotFound) {
-		t.Fatal(err)
-	}
-
-	other, _ := testStore(t)
-	if _, err = other.Changes(ctx, checkpoint, "", 1); !errors.Is(err, application.ErrGeneration) {
-		t.Fatal("warehouse binding", err)
 	}
 }
 
@@ -434,17 +193,17 @@ func TestPublishingFinalTransactionStateAndAccountListingRevisions(t *testing.T)
 	s := coverageStore(t)
 	coverageReport(t, s, "first", syntheticOption)
 
-	checkpoint, err := s.PublishCheckpoint(ctx)
+	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	accounts, err := s.Resources(ctx, "accounts", "", 1)
+	accounts, err := snapshotResources(ctx, s, "accounts")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	listings, err := s.Resources(ctx, "listings", "", 1)
+	listings, err := snapshotResources(ctx, s, "listings")
 	if err != nil || len(listings.Items) != 1 {
 		t.Fatal(listings, err)
 	}
@@ -466,7 +225,7 @@ func TestPublishingFinalTransactionStateAndAccountListingRevisions(t *testing.T)
 		t.Fatal(err)
 	}
 
-	changes := publishedChanges(t, s, checkpoint)
+	changes := snapshotChanges(t, s, baseline)
 	if len(changes.Items) != 2 {
 		t.Fatal("intermediate state published", changes)
 	}
@@ -495,7 +254,7 @@ func TestPublishingFinalTransactionStateAndAccountListingRevisions(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if len(publishedChanges(t, s, changes.Cursor).Items) != 0 {
+	if len(snapshotChanges(t, s, changes.Snapshot).Items) != 0 {
 		t.Fatal("rollback published")
 	}
 }

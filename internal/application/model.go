@@ -18,11 +18,10 @@ type Error string
 func (e Error) Error() string { return string(e) }
 
 const (
-	ErrInvalid       Error = "invalid account details"
-	ErrAccountLimit  Error = "one account is already activated"
-	ErrRecoveryGroup Error = "a related activity group exceeds the bounded rebuild limit; review its links before rebuilding"
-	ErrAccessReview  Error = "repair missing connection access and review the reference setting before resuming upstream work"
-	ErrCandidate     Error = "account was not discovered through this connection"
+	ErrInvalid      Error = "invalid account details"
+	ErrAccountLimit Error = "one account is already activated"
+	ErrAccessReview Error = "repair missing connection access and review the reference setting before resuming upstream work"
+	ErrCandidate    Error = "account was not discovered through this connection"
 )
 
 type AccountDetails struct {
@@ -300,9 +299,4 @@ type CorrectionReview struct {
 	Artifact, Version, Location, Kind, Target, Replacement string
 	Status                                                 CorrectionStatus
 	TargetIDs, ReplacementIDs                              []string
-}
-
-type RecoveryJob struct {
-	ID, Status, Failure, Actor, Created string
-	Completed, Total                    int64
 }

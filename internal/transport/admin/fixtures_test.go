@@ -18,7 +18,6 @@ func fixtureSource(v fixtureView) sourceView {
 			ConnectionCount:  int64(len(v.Connections)),
 		},
 		Connections: v.Connections,
-		Recovery:    v.Recovery,
 	}
 }
 
@@ -54,7 +53,6 @@ func (s workspaceStore) SystemStatus(context.Context) (application.SystemStatus,
 	return application.SystemStatus{
 		Prerequisites: v.Prerequisites,
 		Connections:   v.Connections,
-		Recovery:      v.Recovery,
 	}, nil
 }
 
@@ -85,7 +83,6 @@ type fixtureView struct {
 	Storage          application.StorageStatus
 	Account          application.Account
 	Connections      []application.ConnectionView
-	Recovery         []application.RecoveryJob
 	ReferenceKey     bool
 	ReferenceFailure string
 }

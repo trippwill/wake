@@ -104,31 +104,25 @@ func (e ChargeScope) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	CursorInvalidated ErrorCode = "cursor_invalidated"
-	InternalError     ErrorCode = "internal_error"
-	InvalidRequest    ErrorCode = "invalid_request"
-	MalformedCursor   ErrorCode = "malformed_cursor"
-	MethodNotAllowed  ErrorCode = "method_not_allowed"
-	NotFound          ErrorCode = "not_found"
-	RebuildInProgress ErrorCode = "rebuild_in_progress"
+	InternalError    ErrorCode = "internal_error"
+	InvalidRequest   ErrorCode = "invalid_request"
+	MethodNotAllowed ErrorCode = "method_not_allowed"
+	NotFound         ErrorCode = "not_found"
+	StaleRevision    ErrorCode = "stale_revision"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
-	case CursorInvalidated:
-		return true
 	case InternalError:
 		return true
 	case InvalidRequest:
-		return true
-	case MalformedCursor:
 		return true
 	case MethodNotAllowed:
 		return true
 	case NotFound:
 		return true
-	case RebuildInProgress:
+	case StaleRevision:
 		return true
 	default:
 		return false
@@ -289,22 +283,6 @@ type Amount struct {
 	Currency string  `json:"currency"`
 }
 
-// Change defines model for Change.
-type Change struct {
-	Cursor string `json:"cursor"`
-
-	// Resource Exactly one body, matching kind. Warehouse-local stable Wake identity and monotonically increasing resource revision. Cancellation/replacement retains the original resource.
-	Resource Resource `json:"resource"`
-}
-
-// ChangePage defines model for ChangePage.
-type ChangePage struct {
-	Cursor  string   `json:"cursor"`
-	Items   []Change `json:"items"`
-	More    bool     `json:"more"`
-	Through string   `json:"through"`
-}
-
 // Charge defines model for Charge.
 type Charge struct {
 	// Money Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
@@ -315,11 +293,6 @@ type Charge struct {
 
 // ChargeScope defines model for Charge.Scope.
 type ChargeScope string
-
-// Checkpoint defines model for Checkpoint.
-type Checkpoint struct {
-	Cursor string `json:"cursor"`
-}
 
 // Correction defines model for Correction.
 type Correction struct {
@@ -375,6 +348,16 @@ type Explanation struct {
 	Kind        string       `json:"kind"`
 	Revision    int64        `json:"revision"`
 	Selection   string       `json:"selection"`
+}
+
+// FinancialSnapshot defines model for FinancialSnapshot.
+type FinancialSnapshot struct {
+	// Resources Complete accepted set, including cancelled or superseded activities. Each kind/id occurs once.
+	Resources []Resource `json:"resources"`
+
+	// Version Opaque publication version; compare for equality only.
+	Version     string `json:"version"`
+	WarehouseId string `json:"warehouse_id"`
 }
 
 // Identifier defines model for Identifier.
@@ -527,57 +510,40 @@ type Resource struct {
 	union json.RawMessage
 }
 
-// ResourcePage defines model for ResourcePage.
-type ResourcePage struct {
-	Items []Resource `json:"items"`
-	Next  *string    `json:"next"`
-}
-
-// ChangeCursor defines model for changeCursor.
-type ChangeCursor = string
-
-// Cursor defines model for cursor.
-type Cursor = string
-
 // Id defines model for id.
 type Id = string
 
-// Limit defines model for limit.
-type Limit = int
+// Revision defines model for revision.
+type Revision = int64
 
-// Through defines model for through.
-type Through = string
-
-// ListAccountsParams defines parameters for ListAccounts.
-type ListAccountsParams struct {
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// ExplainAccountsParams defines parameters for ExplainAccounts.
+type ExplainAccountsParams struct {
+	// Revision The mirrored resource revision. A different current revision returns stale_revision.
+	Revision Revision `form:"revision" json:"revision"`
 }
 
-// ListActivityParams defines parameters for ListActivity.
-type ListActivityParams struct {
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// ExplainActivityParams defines parameters for ExplainActivity.
+type ExplainActivityParams struct {
+	// Revision The mirrored resource revision. A different current revision returns stale_revision.
+	Revision Revision `form:"revision" json:"revision"`
 }
 
-// ChangesParams defines parameters for Changes.
-type ChangesParams struct {
-	// Cursor Checkpoint or continuation cursor for the change journal.
-	Cursor  ChangeCursor `form:"cursor" json:"cursor"`
-	Through *Through     `form:"through,omitempty" json:"through,omitempty"`
-	Limit   *Limit       `form:"limit,omitempty" json:"limit,omitempty"`
+// ExplainInstrumentsParams defines parameters for ExplainInstruments.
+type ExplainInstrumentsParams struct {
+	// Revision The mirrored resource revision. A different current revision returns stale_revision.
+	Revision Revision `form:"revision" json:"revision"`
 }
 
-// ListInstrumentsParams defines parameters for ListInstruments.
-type ListInstrumentsParams struct {
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// ExplainListingsParams defines parameters for ExplainListings.
+type ExplainListingsParams struct {
+	// Revision The mirrored resource revision. A different current revision returns stale_revision.
+	Revision Revision `form:"revision" json:"revision"`
 }
 
-// ListListingsParams defines parameters for ListListings.
-type ListListingsParams struct {
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// SnapshotParams defines parameters for Snapshot.
+type SnapshotParams struct {
+	// IfNoneMatch A previous ETag; weak validators and lists are supported.
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
 // AsAccountResource returns the union data inside the Resource as a AccountResource

@@ -21,7 +21,7 @@ The build configuration and dependency manifests own exact tools and versions.
 | Source providers | External protocols and source-specific interpretation into qualified financial claims. |
 | Core reference service | OpenFIGI access, shared anonymous/keyed pacing, local cache and retained resolution evidence. |
 | Financial application | Wake identities, links, accepted projections, uncertainty and retained operator decisions. |
-| Persistence | Evidence, durable progress, atomic writes and rebuildable read views. |
+| Persistence | Evidence, durable progress, atomic writes and derived accepted read views. |
 | Presentation | Adapt application commands and queries to CLI, admin and read-only socket clients. |
 
 Providers use deliberate published contracts that an external Go package can
@@ -136,38 +136,37 @@ explain. Raw reports, private evidence traversal, credentials and operational
 configuration belong outside this consumer boundary. The response contract requires
 exactly one financial body matching the resource kind.
 
-A warehouse journal retains the final canonical snapshot of each affected resource
-in the same transaction as its accepted state. Intermediate changes within that
-transaction are private; successive committed transitions remain independently
-readable. Relationship resolution, reference changes, cancellation/replacement and
+The warehouse stores the current accepted resource and its revision in the same
+transaction as accepted state. Intermediate writes inside a transaction remain
+private. Relationship resolution, reference changes, cancellation/replacement and
 operator choices advance their owning resources, including choices that change
-authority while preserving a value. Unchanged replay and rollbacks publish nothing.
-The warehouse retains journal history without automatic pruning within its publishing
-generation. A publishing failure rolls back its transaction before recording
-the failed attempt separately, leaving neither partial normalization nor journal
-entries. Wire and admin models stay outside persistence.
+authority while preserving a value. A publication version advances once when a
+transaction changes accepted resources or their explanations. Unchanged source
+claims, acquisition receipts alone and rollbacks do not advance it. A publishing
+failure rolls back accepted writes before recording the failed attempt separately.
+The socket adapter owns its narrow financial-read interface. Wire and admin
+adapters consume application read values without exposing database transactions.
 
-Cursors are opaque, versioned and bound to the warehouse, publishing generation and
-read purpose/position. Bootstrap captures a checkpoint **before** scanning current
-resources in stable identity order, then replays changes through one fixed
-high-water mark. Pagination does not hold a server snapshot. Consumers upsert by
-resource revision so older replay cannot overwrite a newer scan result, while
-retaining every delivered transition. They save their mirror, cursor and any
-incomplete pass's high-water mark atomically. Each catch-up pass is finite even
-while new writes continue. The acceptance consumer saves a new baseline and every
-changed mirror/checkpoint atomically, skips disk writes for unchanged idle polls,
-and treats an operator interrupt during follow-mode requests as a clean stop.
+`GET /v1/snapshot` returns warehouse identity, an opaque publication version and
+the complete accepted resource set. One consistent read materializes the response
+and releases its transaction before client I/O. Its ETag supports conditional GET;
+an unchanged poll avoids loading resource bodies and returns no payload. Individual
+resource reads remain available. Explanation requests name the mirrored resource
+revision and fail visibly if it has changed.
 
-Daemon restarts and access-store recovery retain cursors when the
-warehouse remains intact. Starting a new projection rebuild rotates the publishing
-generation atomically with its durable job, invalidating older cursors. Retrying or
-resuming that job keeps its generation. A newer rebuild supersedes older jobs; only
-the latest failed job can be retried. Reads remain unavailable during rebuilding
-or a failed rebuild awaiting retry; successful completion permits a new bootstrap.
-Warehouse recreation likewise requires a new baseline. Every-transition delivery
-applies within a generation. Invalidated cursors require explicit rebootstrap;
-malformed cursors, missing resources and rebuilding have distinct errors. The
-server never substitutes a fresh cursor for a rejected one.
+Consumers validate a complete snapshot before atomically replacing their mirror
+and version. They preserve the prior mirror on failed downloads, validation or
+writes. The independent acceptance consumer uses its own private SQLite transaction
+for this replacement and skips writes for unchanged conditional reads. It retains
+exact scalar text and explicit unknowns, checks unique identities and resource
+links, and validates bodies against the published contract. It bounds downloads
+to 128 MiB and reports excess size as a failure without replacing its mirror.
+
+Daemon restarts and access-store recovery preserve warehouse identity and accepted
+publication state. A different warehouse installs a clearly reported new baseline.
+Synchronization delivers current accepted state; it does not deliver every
+intermediate committed transition that occurred while a client was disconnected.
+Immutable evidence and operator decision history remain retained inside Wake.
 
 ## Trust and recovery
 
@@ -342,17 +341,14 @@ selection is restricted to the affected instrument's identifier-mapping job with
 a retained batch, and link decisions validate the target family and listing root.
 
 Processing retry reuses retained reports and successful normalization records.
-Projection rebuild persists a job and its entity/explicit-relationship groups,
-committing one bounded group at a time from current retained inputs and decisions.
-An interruption resumes after committed progress; failure rolls back the current
-group and leaves other views at their last commit. A related group that exceeds
-the bounded work limit is rejected visibly before rebuilding begins. Source and
-reference access, credentials, identity allocations, reference evidence/cache,
-budgets and retry eligibility are independent of rebuild. Refresh hints follow
-committed progress, and recovery controls stay outside refreshed status regions.
+Source and reference access, identity allocations, reference evidence/cache,
+budgets and retry eligibility retain their own lifetimes. Refresh hints follow
+committed work, and access recovery controls stay outside refreshed status regions.
+Historical calculation changes follow the explicit retained-data contribution
+requirement in [development](development.md#changes-affecting-retained-data).
 
 Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.
 
 Restoring lost access settings invalidates opaque source continuations while preserving retained pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier enrichment continues beneath an operator link override, so releasing the decision restores the source-established link.
 
-Change-journal reads require a checkpoint or continuation cursor. Collection cursors remain optional for initial resource scans. Publishing resolves source-correction endpoints only for corrections related to the activity being published, within the same transaction.
+Publishing resolves source-correction endpoints only for corrections related to the activity being published, within the same transaction.

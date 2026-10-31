@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,6 +36,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
+	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -85,6 +88,13 @@ func TestSocketDaemonProcess(t *testing.T) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancel()
 
+	seed, err := time.Parse(time.RFC3339Nano, os.Getenv("WAKE_SOCKET_DAEMON_NOW"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	clockNow := func() time.Time { return seed.Add(time.Since(started)) }
 	endpoint := os.Getenv("WAKE_SOCKET_DAEMON_UPSTREAM")
 	if err = run(
 		ctx,
@@ -92,6 +102,7 @@ func TestSocketDaemonProcess(t *testing.T) {
 		slog.New(slog.NewJSONHandler(os.Stderr, nil)),
 		sourceOptions{
 			IBKR:            ibkrflex.Options{HTTPClient: client, BaseURL: endpoint},
+			Now:             clockNow,
 			ReferenceClient: client,
 			ReferenceURL:    endpoint + "/mapping",
 		},
@@ -293,6 +304,24 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		)
 	}
 
+	// Keep reference work quiescent for the restart-only identity assertion.
+	instrumentQuery, _ := application.NewListQuery(application.ListOptions{}, application.InstrumentScope)
+
+	instruments, e := store.InstrumentList(ctx, instrumentQuery)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	for _, item := range instruments.Items {
+		if e = store.ApplyReference(
+			ctx,
+			item.Resource.ID,
+			reference.Result{Status: "no-match", Next: now.Add(365 * 24 * time.Hour)},
+		); e != nil {
+			t.Fatal(e)
+		}
+	}
+
 	if err = store.Schedule(
 		ctx,
 		host.WorkKey{Connection: connection, Stream: ibkrflex.Confirmations, Operation: "acquire"},
@@ -363,6 +392,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		daemon.Env = append(
 			os.Environ(),
 			"WAKE_SOCKET_DAEMON_CONFIG="+string(data),
+			"WAKE_SOCKET_DAEMON_NOW="+now.UTC().Format(time.RFC3339Nano),
 			"WAKE_SOCKET_DAEMON_UPSTREAM="+upstream.URL,
 			"WAKE_SOCKET_DAEMON_CERT="+base64.StdEncoding.EncodeToString(upstream.Certificate().Raw),
 		)
@@ -378,7 +408,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 		deadline := time.Now().Add(45 * time.Second)
 		for time.Now().Before(deadline) {
-			response, e := socketClient.Get("http://wake/v1/checkpoint")
+			response, e := socketClient.Get("http://wake/v1/snapshot")
 			if e == nil {
 				_ = response.Body.Close()
 				if response.StatusCode == http.StatusOK {
@@ -399,11 +429,11 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 		t.Fatalf("socket did not become ready; daemon logs:\n%s", logs.String())
 	}
-	statePath := filepath.Join(t.TempDir(), "mirror.json")
+	statePath := filepath.Join(t.TempDir(), "mirror.db")
 	consume := func(assert bool) map[string]json.RawMessage {
 		t.Helper()
 
-		args := []string{"--socket", socket, "--state", statePath, "--page-size", "1"}
+		args := []string{"--socket", socket, "--state", statePath}
 		if assert {
 			args = append(args, "--assert", "../../testdata/socket-consumer/fixtures/confirmations.json")
 		}
@@ -433,31 +463,33 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		return result
 	}
 	mirror := func() struct {
-		Cursor    string
-		Resources map[string]application.CanonicalResource
-		History   []struct {
-			Cursor   string
-			Resource application.CanonicalResource
-		}
+		WarehouseID string `json:"warehouse_id"`
+		Version     string `json:"version"`
+		Resources   map[string]application.CanonicalResource
 	} {
 		t.Helper()
 
-		var s struct {
-			Cursor    string
-			Resources map[string]application.CanonicalResource
-			History   []struct {
-				Cursor   string
-				Resource application.CanonicalResource
-			}
+		var current struct {
+			WarehouseID string `json:"warehouse_id"`
+			Version     string `json:"version"`
+			Resources   map[string]application.CanonicalResource
 		}
 
-		//nolint:gosec // statePath belongs to this test's disposable directory.
-		data, e := os.ReadFile(statePath)
-		if e != nil || json.Unmarshal(data, &s) != nil {
+		db, e := sql.Open("sqlite", "file:"+statePath+"?mode=ro&_pragma=busy_timeout(5000)")
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		defer func() { _ = db.Close() }()
+
+		var data []byte
+		if e = db.QueryRowContext(ctx, "SELECT payload FROM mirror WHERE singleton=1").
+			Scan(&data); e != nil ||
+			json.Unmarshal(data, &current) != nil {
 			t.Fatal("mirror", e)
 		}
 
-		return s
+		return current
 	}
 
 	start()
@@ -468,12 +500,156 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("incomplete independent mirror", len(before.Resources))
 	}
 
+	// Interrupt a real daemon snapshot in a separate Unix-socket transport.
+	cutSocket := filepath.Join(t.TempDir(), "cut.sock")
+
+	cutListener, e := net.Listen("unix", cutSocket)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	cutServer := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			response, e := socketClient.Get("http://wake/v1/snapshot")
+			if e != nil {
+				http.Error(w, "upstream unavailable", http.StatusBadGateway)
+				return
+			}
+			defer func() { _ = response.Body.Close() }()
+
+			data, e := io.ReadAll(response.Body)
+			if e != nil {
+				http.Error(w, "upstream interrupted", http.StatusBadGateway)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("ETag", response.Header.Get("ETag"))
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			_, _ = w.Write(data[:len(data)/2])
+		}),
+	}
+	cutDone := make(chan error, 1)
+	go func() { cutDone <- cutServer.Serve(cutListener) }()
+	//nolint:gosec // The independent client reads the disposable interrupted socket and its own mirror.
+	interrupted := exec.CommandContext(ctx, binary, "--socket", cutSocket, "--state", statePath)
+	interrupted.Env = []string{"PATH=" + os.Getenv("PATH")}
+
+	var interruptedOutput bytes.Buffer
+
+	interrupted.Stdout = &interruptedOutput
+	interrupted.Stderr = &interruptedOutput
+	interruptedError := interrupted.Run()
+	_ = cutServer.Close()
+
+	<-cutDone
+
+	if interruptedError == nil || !strings.Contains(interruptedOutput.String(), "interrupted response") ||
+		mirror().Version != before.Version {
+		t.Fatal("interrupted socket download replaced baseline", interruptedError, interruptedOutput.String())
+	}
+
 	stop()
 	start()
 	consume(true)
 
-	if mirror().Cursor != before.Cursor {
-		t.Fatal("daemon restart lost cursor")
+	if mirror().Version != before.Version {
+		t.Fatal("daemon restart changed snapshot version")
+	}
+
+	// Acquire another source event while an independent process repeatedly installs snapshots.
+	stop()
+
+	store = open()
+	acquireKey := host.WorkKey{Connection: connection, Stream: ibkrflex.Confirmations, Operation: "acquire"}
+	if err = store.Schedule(ctx, acquireKey, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Retry(ctx, acquireKey); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	concurrentRow := regexp.MustCompile(`<TradeConfirm [^>]*tradeID="900000001"[^>]*/>`).
+		FindString(string(report))
+	if concurrentRow == "" {
+		t.Fatal("concurrent source fixture missing")
+	}
+
+	concurrentRow = strings.Replace(concurrentRow, `tradeID="900000001"`, `tradeID="concurrent-trade"`, 1)
+	concurrentRow = strings.Replace(
+		concurrentRow,
+		`execID="0000F001.00000001.01.01"`,
+		`execID="concurrent-fill"`,
+		1,
+	)
+	reports.Store(
+		[]byte(strings.Replace(string(report), "</TradeConfirms>", concurrentRow+"</TradeConfirms>", 1)),
+	)
+	start()
+	//nolint:gosec // Separate test client has no Wake store paths or upstream credentials.
+	concurrentConsumer := exec.CommandContext(
+		ctx,
+		binary,
+		"--socket",
+		socket,
+		"--state",
+		statePath,
+		"--follow",
+		"--interval",
+		"20ms",
+	)
+	concurrentConsumer.Env = []string{"PATH=" + os.Getenv("PATH")}
+	concurrentConsumer.Stdout = io.Discard
+
+	var concurrentLogs socketTestLog
+
+	concurrentConsumer.Stderr = &concurrentLogs
+	if err = concurrentConsumer.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	concurrentDone := make(chan error, 1)
+	go func() { concurrentDone <- concurrentConsumer.Wait() }()
+
+	deadlineConcurrent := time.Now().Add(45 * time.Second)
+	installed := false
+	for time.Now().Before(deadlineConcurrent) {
+		count := 0
+		for _, r := range mirror().Resources {
+			if r.Kind == "activity" {
+				count++
+			}
+		}
+
+		if count == 18 {
+			installed = true
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	_ = concurrentConsumer.Process.Signal(os.Interrupt)
+	select {
+	case e := <-concurrentDone:
+		if e != nil {
+			t.Fatal("concurrent snapshot client", e, concurrentLogs.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = concurrentConsumer.Process.Kill()
+
+		<-concurrentDone
+		t.Fatal("concurrent snapshot client did not stop")
+	}
+
+	if !installed {
+		t.Fatal("concurrent accepted update was not installed", concurrentLogs.String(), logs.String())
 	}
 
 	stop()
@@ -584,65 +760,43 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	consume(false)
 
 	after := mirror()
-	prices := []string{}
-	for _, entry := range after.History {
-		if entry.Resource.ID == id && entry.Resource.Activity.Price.Amount != "400.123456789" {
-			prices = append(prices, entry.Resource.Activity.Price.Amount)
-		}
-	}
-
-	if len(prices) != 2 || prices[0] != "401.00000000000100" || prices[1] != "402.0000" {
-		t.Fatal("disconnected transitions collapsed", prices)
+	if after.Resources["activity/"+id].Activity.Price.Amount != "402.0000" || after.Version == before.Version {
+		t.Fatal("snapshot lost latest disconnected correction", after.Version)
 	}
 
 	consume(false)
 
-	if len(mirror().History) != len(after.History) {
-		t.Fatal("duplicate synchronization changed history")
+	if mirror().Version != after.Version {
+		t.Fatal("unchanged synchronization advanced version")
 	}
 
 	stop()
-	// Start rebuild, commit one bounded group, then resume in a new daemon process.
-	store = open()
-
-	job, e := store.StartRebuild(ctx, rand.Text(), "synthetic/operator", time.Now())
-	if e != nil {
-		t.Fatal(e)
-	}
-
-	if _, e = store.RunRecovery(ctx); e != nil {
-		t.Fatal(e)
-	}
-
-	if err = store.Close(); err != nil {
+	// Recreating access keeps the warehouse identity and accepted publication intact.
+	if err = os.Remove(profile.ConnectionsPath); err != nil {
 		t.Fatal(err)
 	}
 
 	start()
 
 	result := consume(false)
-	if string(result["rebootstrap"]) != "true" {
-		t.Fatal("generation invalidation not reported", job)
-	}
-
-	fresh := mirror()
-	if fresh.Resources["activity/"+id].Activity.Price.Amount != "402.0000" || fresh.Cursor == after.Cursor {
-		t.Fatal("rebootstrap lost accepted model")
+	if string(result["new_baseline"]) != "false" || mirror().Version != after.Version {
+		t.Fatal("access recovery replaced financial baseline")
 	}
 
 	stop()
-	// Companion recreation keeps the warehouse generation and permits independent inspection.
-	for _, path := range []string{profile.ConnectionsPath} {
-		if err = os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
+	// A different warehouse installs a complete, explicitly reported new baseline.
+	if err = os.Remove(profile.WarehousePath); err != nil {
+		t.Fatal(err)
 	}
 
 	start()
 
 	result = consume(false)
-	if string(result["rebootstrap"]) != "false" || mirror().Cursor != fresh.Cursor {
-		t.Fatal("companion recovery reset consumer")
+	fresh := mirror()
+	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == after.WarehouseID ||
+		fresh.Version == after.Version ||
+		len(fresh.Resources) != 0 {
+		t.Fatal("new warehouse did not atomically replace baseline", fresh)
 	}
 
 	// Follow stays visible while idle and exits cleanly on an ordinary interrupt.

@@ -637,19 +637,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Click(`//summary[text()='Processing actions']`, chromedp.BySearch),
 		chromedp.Click(`form[action^="/processing/"] button`),
 		chromedp.WaitNotPresent("form[data-submitting]"),
-		chromedp.Navigate(origin+"/system/maintenance"),
-		chromedp.WaitVisible(`form[action="/recovery/rebuild"] button`),
-		chromedp.Click(`form[action="/recovery/rebuild"] button`),
-		chromedp.WaitVisible(
-			`//section[@id='workflow-progress']//article[contains(.,'Rebuild') and contains(.,'complete')]`,
-			chromedp.BySearch,
-		),
-		chromedp.Evaluate(`document.body.textContent.includes('complete')`, &ok),
 	)
-
-	if !ok {
-		t.Fatal("processing/rebuild browser recovery")
-	}
 
 	check(
 		chromedp.Navigate(origin+"/activity"),

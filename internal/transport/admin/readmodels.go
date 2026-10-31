@@ -43,7 +43,6 @@ type (
 		application.Prerequisites
 		application.PageInfo
 		Connections           []application.ConnectionView
-		Recovery              []application.RecoveryJob
 		MoreConnections       bool
 		MissingRecoveryAccess bool
 	}
@@ -71,7 +70,6 @@ func statusView(v application.SystemStatus) sourceView {
 	return sourceView{
 		Prerequisites:   v.Prerequisites,
 		Connections:     v.Connections,
-		Recovery:        v.Recovery,
 		MoreConnections: v.MoreConnections,
 	}
 }
