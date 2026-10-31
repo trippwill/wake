@@ -41,7 +41,7 @@ INSERT INTO profile(singleton,access_id,paused,reference_review,warehouse_reset,
 -- name: RebindMetadata
 UPDATE {{schema}}.store_metadata SET warehouse_id=? WHERE singleton=1 AND kind=? AND version=? AND id=? AND warehouse_id=?;
 -- name: RetainConnections
-INSERT INTO main.connections(id,provider) SELECT id,provider FROM access.configurations WHERE true ON CONFLICT(id) DO NOTHING;
+INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM access.configurations WHERE true ON CONFLICT(id) DO NOTHING;
 -- name: DiscardOldExecution
 DELETE FROM operational.execution;
 DELETE FROM operational.attempts;

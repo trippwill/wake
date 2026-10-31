@@ -66,7 +66,6 @@ func Registration(options Options) (provider.Registration, error) {
 	}
 
 	stream, _ := provider.NewStream(Confirmations, ConfirmationFormat)
-	name, _ := provider.NewField("name", "Connection name", provider.TextField, true)
 	query, _ := provider.NewField("query_id", "Confirmation Query ID", provider.TextField, true)
 	token, _ := provider.NewField("token", "Flex Web Service token", provider.SecretField, true)
 	policy, _ := provider.NewPacingPolicy(webBudget, 6*time.Second)
@@ -75,7 +74,7 @@ func Registration(options Options) (provider.Registration, error) {
 		"ibkr-flex",
 		"IBKR Flex",
 		[]provider.Stream{stream},
-		[]provider.Field{name, query, token},
+		[]provider.Field{query, token},
 		[]provider.PacingPolicy{policy},
 	)
 	if err != nil {
@@ -89,7 +88,7 @@ func Registration(options Options) (provider.Registration, error) {
 
 func (s *Source) PrepareSettings(settings provider.Settings) (provider.Settings, error) {
 	values := settings.Values()
-	if len(values) != 2 || !safeText(values["name"], 256) || !digits(values["query_id"]) ||
+	if len(values) != 1 || !digits(values["query_id"]) ||
 		len(values["query_id"]) > 64 {
 		return provider.Settings{}, provider.ErrInvalid
 	}

@@ -133,7 +133,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 			{ID: "one", Name: "Synthetic source", SettingsStored: true, CredentialStored: true},
 		},
 	}
-	workflow := application.New(workspaceStore{view: view}, nil, nil, "", "", "", nil, nil)
+	workflow := application.New(workspaceStore{view: view}, nil, nil, nil, nil)
 
 	h, err := NewHandler(auth, Dependencies{Workflow: workflow})
 	if err != nil {

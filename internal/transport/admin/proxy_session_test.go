@@ -60,7 +60,7 @@ func newProxySessionServer(t *testing.T) (*httptest.Server, *authenticator, *pro
 	t.Cleanup(auth.Close)
 
 	store := new(proxySessionStore)
-	workflow := application.New(store, nil, nil, "", "", "", nil, nil)
+	workflow := application.New(store, nil, nil, nil, nil)
 	stopping := make(chan struct{})
 
 	handler, err := NewHandler(auth, Dependencies{Workflow: workflow, Stopping: stopping})
@@ -100,7 +100,12 @@ func TestProxySessionThroughHTTPReverseProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxy.URL+"/connections/new", nil)
+	request, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		proxy.URL+"/connections/reference",
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

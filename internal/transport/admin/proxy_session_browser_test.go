@@ -42,7 +42,7 @@ func TestBrowserProxySession(t *testing.T) {
 	auth.now = func() time.Time { return time.Unix(now.Load(), 0) }
 
 	entry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = fmt.Fprintf(w, `<a id="wake" href="%s/connections/new">Open Wake</a>`, proxy.URL)
+		_, _ = fmt.Fprintf(w, `<a id="wake" href="%s/connections/reference">Open Wake</a>`, proxy.URL)
 	}))
 	defer entry.Close()
 	// The synthetic proxy uses an httptest certificate; keep the browser sandbox enabled.
@@ -71,14 +71,14 @@ func TestBrowserProxySession(t *testing.T) {
 
 	response, err := chromedp.RunResponse(ctx, chromedp.Click("#wake"))
 	if err != nil || response == nil || response.Status != http.StatusOK ||
-		response.URL != proxy.URL+"/connections/new" {
+		response.URL != proxy.URL+"/connections/reference" {
 		t.Fatal("cross-site entry did not serve the requested page", response, err)
 	}
 
 	var before, after string
 	if err = chromedp.Run(
 		ctx,
-		chromedp.WaitVisible(`form[action="/connections"]`),
+		chromedp.WaitVisible(`form[action="/reference/key"]`),
 		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &before),
 	); err != nil {
 		t.Fatal(err)
@@ -105,8 +105,8 @@ func TestBrowserProxySession(t *testing.T) {
 
 	if err = chromedp.Run(
 		ctx,
-		chromedp.Navigate(proxy.URL+"/connections/new"),
-		chromedp.WaitVisible(`form[action="/connections"]`),
+		chromedp.Navigate(proxy.URL+"/connections/reference"),
+		chromedp.WaitVisible(`form[action="/reference/key"]`),
 		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
 	); err != nil ||
 		before == after {

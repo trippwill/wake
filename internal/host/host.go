@@ -10,8 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
@@ -30,8 +34,8 @@ const (
 
 type (
 	Connection struct {
-		ID, Provider string
-		Settings     provider.Settings
+		ID, Provider, Name string
+		Settings           provider.Settings
 	}
 	WorkKey    struct{ Connection, Stream, Operation string }
 	Checkpoint struct {
@@ -40,6 +44,7 @@ type (
 		Next                   time.Time
 		Observed, Acknowledged provider.Progress
 		Failure                string
+		FailureCode            FailureCode
 	}
 	Retained struct {
 		ID, Connection, Provider, Stream string
@@ -165,10 +170,14 @@ func (h *Host) admit(ctx context.Context, key string) (context.Context, func(), 
 
 func (h *Host) Configure(
 	ctx context.Context,
-	id string,
+	id, name string,
 	settings provider.Settings,
 	secrets map[string]*credential.Secret,
 ) (string, error) {
+	if !validConnectionName(name) {
+		return "", provider.ErrInvalid
+	}
+
 	r, ok := h.registrations[id]
 	if !ok {
 		return "", provider.ErrUnavailable
@@ -212,7 +221,7 @@ func (h *Host) Configure(
 		}
 	}
 
-	connection := Connection{ID: rand.Text(), Provider: id, Settings: settings}
+	connection := Connection{ID: rand.Text(), Provider: id, Name: name, Settings: settings}
 	encrypted := map[string][]byte{}
 	for key, secret := range secrets {
 		if h.envelope == nil {
@@ -250,7 +259,11 @@ func secretAAD(c Connection, key string) []byte {
 	return b
 }
 
-func (h *Host) UpdateSettings(ctx context.Context, id string, settings provider.Settings) error {
+func (h *Host) UpdateSettings(ctx context.Context, id, name string, settings provider.Settings) error {
+	if !validConnectionName(name) {
+		return provider.ErrInvalid
+	}
+
 	work, finish, err := h.admit(ctx, id)
 	if err != nil {
 		return err
@@ -291,6 +304,7 @@ func (h *Host) UpdateSettings(ctx context.Context, id string, settings provider.
 	}
 
 	connection.Settings = settings
+	connection.Name = name
 	if err = h.store.Reconfigure(work, connection); err != nil {
 		return ErrStorage
 	}
@@ -503,17 +517,11 @@ func (h *Host) step(
 		outcome = "continued"
 	}
 
-	if step.FailureCode() != "" {
-		outcome, retryCode = "retry_scheduled", "upstream_retry"
-		switch step.FailureCode() {
-		case "network-failure":
-			retryCode = "network_failure"
-		case "http-429", "ibkr-1018":
-			retryCode = "throttled"
-		}
+	if step.RetryReason() != "" {
+		outcome, retryCode = "retry_scheduled", string(step.RetryReason())
 	}
 
-	if checkpoint.Failure != "" && step.FailureCode() == "" {
+	if checkpoint.FailureCode != "" && step.RetryReason() == "" {
 		h.logger.InfoContext(
 			ctx,
 			"source work recovered",
@@ -704,7 +712,7 @@ func (a *access) Report(ctx context.Context, p provider.Progress) error {
 	}
 	defer done()
 
-	if p.Code() == "" {
+	if p.Phase() == "" {
 		return provider.ErrInvalid
 	}
 
@@ -871,4 +879,95 @@ func (h *Host) CheckAccess(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+func validConnectionName(name string) bool {
+	return name != "" && len(name) <= 256 && utf8.ValidString(name) && strings.TrimSpace(name) == name &&
+		strings.IndexFunc(name, unicode.IsControl) < 0
+}
+
+// Registrations returns immutable metadata and independent capabilities selected
+// by composition. Reading it starts no provider work and opens no credentials.
+func (h *Host) Registrations() []provider.Registration {
+	out := make([]provider.Registration, 0, len(h.registrations))
+	for _, registration := range h.registrations {
+		out = append(out, registration)
+	}
+
+	slices.SortFunc(
+		out,
+		func(a, b provider.Registration) int { return strings.Compare(a.Descriptor().ID(), b.Descriptor().ID()) },
+	)
+
+	return out
+}
+
+func (h *Host) Registration(id string) (provider.Registration, bool) {
+	r, ok := h.registrations[id]
+	return r, ok
+}
+
+func (h *Host) Connection(ctx context.Context, id string) (Connection, error) {
+	c, err := h.store.Connection(ctx, id)
+	if err != nil {
+		return Connection{}, ErrStorage
+	}
+
+	return c, nil
+}
+
+// Supply admits bounded local evidence for a normalization capability. It does
+// not grant account authority, open credentials, or schedule upstream work.
+func (h *Host) Supply(ctx context.Context, id, stream string, artifact provider.Artifact) (string, error) {
+	work, finish, err := h.admit(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	defer finish()
+
+	connection, err := h.store.Connection(work, id)
+	if err != nil {
+		return "", ErrStorage
+	}
+
+	registration, ok := h.registrations[connection.Provider]
+	if !ok || registration.Normalizer() == nil {
+		return "", provider.ErrUnavailable
+	}
+
+	format := ""
+	for _, descriptor := range registration.Descriptor().Streams() {
+		if descriptor.ID() == stream {
+			format = descriptor.Format()
+		}
+	}
+
+	if artifact.IsZero() || format == "" || artifact.Format() != format {
+		return "", provider.ErrInvalid
+	}
+
+	key := WorkKey{Connection: id, Stream: stream, Operation: "supply"}
+
+	checkpoint, err := h.store.Checkpoint(work, key)
+	if err != nil {
+		return "", ErrStorage
+	}
+
+	step, err := provider.NewStep(provider.State{}, artifact, h.now())
+	if err != nil {
+		return "", err
+	}
+
+	progress, _ := provider.NewProgress(provider.ProgressRetained, 1, 1)
+
+	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress)
+	if err != nil {
+		if errors.Is(err, provider.ErrConflict) {
+			return "", err
+		}
+
+		return "", ErrStorage
+	}
+
+	return retained, nil
 }

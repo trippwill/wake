@@ -65,7 +65,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, refs, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, nil)
+	workflow := application.New(store, h, refs, nil, nil)
 
 	dir := t.TempDir()
 	if err = admin.SetUnlock(dir, []byte("synthetic-http-unlock")); err != nil {
@@ -142,13 +142,23 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	request(
 		http.MethodPost,
 		"/connections",
-		url.Values{"name": {"Synthetic"}, "query_id": {"invalid"}, "token": {"synthetic-token"}},
+		url.Values{
+			"provider":         {"ibkr-flex"},
+			"connection_name":  {"Synthetic"},
+			"setting.query_id": {"invalid"},
+			"secret.token":     {"synthetic-token"},
+		},
 		http.StatusBadRequest,
 	)
 	request(
 		http.MethodPost,
 		"/connections",
-		url.Values{"name": {"Synthetic"}, "query_id": {"123"}, "token": {"synthetic-token"}},
+		url.Values{
+			"provider":         {"ibkr-flex"},
+			"connection_name":  {"Synthetic"},
+			"setting.query_id": {"123"},
+			"secret.token":     {"synthetic-token"},
+		},
 		http.StatusSeeOther,
 	)
 
@@ -161,13 +171,17 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	request(
 		http.MethodPost,
 		"/connections/"+id+"/settings",
-		url.Values{"name": {"Updated synthetic"}, "query_id": {"123"}},
+		url.Values{
+			"provider":         {"ibkr-flex"},
+			"connection_name":  {"Updated synthetic"},
+			"setting.query_id": {"123"},
+		},
 		http.StatusSeeOther,
 	)
 	request(
 		http.MethodPost,
-		"/connections/"+id+"/token",
-		url.Values{"token": {"synthetic-token"}},
+		"/connections/"+id+"/secrets/token",
+		url.Values{"secret.token": {"synthetic-token"}},
 		http.StatusSeeOther,
 	)
 	request(http.MethodPost, "/connections/"+id+"/retry", nil, http.StatusSeeOther)

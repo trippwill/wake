@@ -543,7 +543,7 @@ func TestAttachedCrashRecoveryIsAtomic(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			p, s := profileFixture(t)
 			if _, err := s.db.Exec(
-				`INSERT INTO connections VALUES('crash','before'); INSERT INTO access.configurations VALUES('crash','before',X'6265666f7265'); INSERT INTO reference_evidence VALUES('e','now',X'',X'6265666f7265',200,X''); INSERT INTO operational.reference_cache VALUES('crash','before',X'','later','e');`,
+				`INSERT INTO connections(id,provider) VALUES('crash','before'); INSERT INTO access.configurations(id,provider,settings) VALUES('crash','before',X'6265666f7265'); INSERT INTO reference_evidence VALUES('e','now',X'',X'6265666f7265',200,X''); INSERT INTO operational.reference_cache VALUES('crash','before',X'','later','e');`,
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -705,13 +705,18 @@ func TestFreshWarehouseRetainsAccessAndDiscardsOldExecution(t *testing.T) {
 		t.Run(fmt.Sprint(loseOperational), func(t *testing.T) {
 			p, s := profileFixture(t)
 			ctx := t.Context()
-			settings, _ := provider.NewSettings(map[string]string{"name": "Retained connection", "query_id": "123"})
+			settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
 			token := []byte("opaque encrypted provider credential")
 			referenceKey := []byte("opaque encrypted reference credential")
 
 			if err := s.Configure(
 				ctx,
-				host.Connection{ID: "retained", Provider: "ibkr-flex", Settings: settings},
+				host.Connection{
+					ID:       "retained",
+					Provider: "ibkr-flex",
+					Name:     "Retained connection",
+					Settings: settings,
+				},
 				map[string][]byte{"token": token},
 			); err != nil {
 				t.Fatal(err)
@@ -836,7 +841,7 @@ func TestFreshWarehouseRebindingRollsBackWithoutLosingCredentials(t *testing.T) 
 	settings, _ := provider.NewSettings(map[string]string{"name": "Retained", "query_id": "123"})
 	if err := s.Configure(
 		ctx,
-		host.Connection{ID: "retained", Provider: "ibkr-flex", Settings: settings},
+		host.Connection{ID: "retained", Provider: "ibkr-flex", Name: "Retained connection", Settings: settings},
 		map[string][]byte{"token": []byte("encrypted")},
 	); err != nil {
 		t.Fatal(err)

@@ -115,12 +115,18 @@ func TestWorkflowRetryRefusesActiveDiscovery(t *testing.T) {
 
 	defer func() { cancel(); h.Close() }()
 
-	w := application.New(s, h, nil, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, nil)
+	w := application.New(s, h, nil, nil, nil)
 
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()
 
-	id, err := w.CreateConnection(ctx, "Synthetic", "123", token)
+	id, err := w.CreateConnection(
+		ctx,
+		"Synthetic",
+		"ibkr-flex",
+		confirmationSettings("123"),
+		map[string]*credential.Secret{"token": token},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

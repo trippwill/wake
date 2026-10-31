@@ -43,6 +43,7 @@ type Querier interface {
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
 	CountTables(ctx context.Context) (int64, error)
+	CredentialKeys(ctx context.Context, connectionID string) ([]string, error)
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
 	Decisions(ctx context.Context, arg DecisionsParams) ([]OperatorDecision, error)
 	DeleteExecution(ctx context.Context) error
@@ -70,7 +71,7 @@ type Querier interface {
 	Listing(ctx context.Context, id string) (Listing, error)
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
-	MissingAccess(ctx context.Context) ([]Connection, error)
+	MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
 	NextRecoveryGroup(ctx context.Context, jobID string) (string, error)
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
@@ -142,6 +143,7 @@ type Querier interface {
 	StartAttempt(ctx context.Context, arg StartAttemptParams) error
 	Succeeded(ctx context.Context, arg SucceededParams) ([]byte, error)
 	UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error
+	UpdateDescriptorName(ctx context.Context, arg UpdateDescriptorNameParams) error
 	WakeReference(ctx context.Context) error
 	WorkStatuses(ctx context.Context, connectionID string) ([]Work, error)
 }

@@ -140,6 +140,7 @@ type tradeData struct {
 	Proceeds                                                         moneyData
 	Order                                                            refData
 	EventAliases                                                     []refData
+	EventDistinct                                                    bool
 	PositionEffect                                                   source.PositionEffect
 	Charges                                                          []chargeData
 }
@@ -159,6 +160,7 @@ func encodeTrade(t source.Trade) ([]byte, error) {
 		Location:        f.Location,
 		Account:         refWire(f.Account),
 		Event:           refWire(f.Event),
+		EventDistinct:   f.EventDistinct,
 		Instrument:      instrumentWire(f.Instrument),
 		Side:            f.Side,
 		Quantity:        f.Quantity.Value(),
@@ -311,6 +313,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 			Kind:     wire.Kind, Relationships: relationships,
 			Account:        account,
 			Event:          event,
+			EventDistinct:  wire.EventDistinct,
 			Instrument:     instrument,
 			Side:           wire.Side,
 			Quantity:       quantity,
@@ -497,6 +500,7 @@ func encodeLifecycle(l source.Lifecycle) ([]byte, error) {
 		Location:      f.Location,
 		Account:       refWire(f.Account),
 		Event:         refWire(f.Event),
+		EventDistinct: f.EventDistinct,
 		Order:         refWire(f.Order),
 		Instrument:    instrumentWire(f.Instrument),
 		Quantity:      f.Quantity.Value(),
@@ -517,7 +521,7 @@ func decodeLifecycle(data []byte) (source.Lifecycle, error) {
 		return source.Lifecycle{}, err
 	}
 
-	f := source.LifecycleInput{Location: d.Trade.Location, Kind: d.Kind}
+	f := source.LifecycleInput{Location: d.Trade.Location, Kind: d.Kind, EventDistinct: d.Trade.EventDistinct}
 
 	var err error
 
@@ -646,6 +650,7 @@ type (
 		Location                              string
 		Account, Event, Order                 refData
 		EventAliases                          []refData
+		EventDistinct                         bool
 		Date, At, RateBase                    string
 		Rate                                  moneyData
 		Sent, Received                        currencyAmountData
@@ -660,6 +665,7 @@ func encodeConversion(c source.Conversion) ([]byte, error) {
 		Location:        f.Location,
 		Account:         refWire(f.Account),
 		Event:           refWire(f.Event),
+		EventDistinct:   f.EventDistinct,
 		Order:           refWire(f.Order),
 		Date:            f.Date.String(),
 		At:              f.At.String(),
@@ -692,7 +698,7 @@ func decodeConversion(data []byte) (source.Conversion, error) {
 		return source.Conversion{}, err
 	}
 
-	f := source.ConversionInput{Location: d.Location}
+	f := source.ConversionInput{EventDistinct: d.EventDistinct, Location: d.Location}
 
 	var err error
 	for _, r := range []struct {

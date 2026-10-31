@@ -7,6 +7,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/provider"
 )
 
 func activityState(row sqlc.Execution) (application.ActivityState, error) {
@@ -34,7 +35,7 @@ func selectionAuthority(decided bool) application.SelectionAuthority {
 	return application.AutomaticSelection
 }
 
-func workFailureCode(code string) host.FailureCode {
+func workFailureCode(code provider.RetryReason) host.FailureCode {
 	if code == "" {
 		return ""
 	}

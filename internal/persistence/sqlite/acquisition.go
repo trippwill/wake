@@ -34,13 +34,16 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 	defer func() { _ = tx.Rollback() }()
 
 	q := s.queries.WithTx(tx)
-	if err = q.PutDescriptor(ctx, sqlc.PutDescriptorParams{ID: c.ID, Provider: c.Provider}); err != nil {
+	if err = q.PutDescriptor(
+		ctx,
+		sqlc.PutDescriptorParams{ID: c.ID, Provider: c.Provider, Name: c.Name},
+	); err != nil {
 		return err
 	}
 
 	if err = q.PutConnection(
 		ctx,
-		sqlc.PutConnectionParams{ID: c.ID, Provider: c.Provider, Settings: data},
+		sqlc.PutConnectionParams{ID: c.ID, Provider: c.Provider, Name: c.Name, Settings: data},
 	); err != nil {
 		return err
 	}
@@ -67,7 +70,12 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 
 		settings, _ := provider.NewSettings(map[string]string{})
 
-		return host.Connection{ID: id, Provider: descriptor.Provider, Settings: settings}, nil
+		return host.Connection{
+			ID:       id,
+			Provider: descriptor.Provider,
+			Name:     descriptor.Name,
+			Settings: settings,
+		}, nil
 	}
 
 	if err != nil {
@@ -84,7 +92,7 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 		return host.Connection{}, ErrCorrupt
 	}
 
-	return host.Connection{ID: row.ID, Provider: row.Provider, Settings: settings}, nil
+	return host.Connection{ID: row.ID, Provider: row.Provider, Name: row.Name, Settings: settings}, nil
 }
 
 func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
@@ -114,8 +122,12 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 
 	if err = q.UpdateConnection(
 		ctx,
-		sqlc.UpdateConnectionParams{ID: c.ID, Provider: c.Provider, Settings: data},
+		sqlc.UpdateConnectionParams{ID: c.ID, Provider: c.Provider, Name: c.Name, Settings: data},
 	); err != nil {
+		return err
+	}
+
+	if err = q.UpdateDescriptorName(ctx, sqlc.UpdateDescriptorNameParams{Name: c.Name, ID: c.ID}); err != nil {
 		return err
 	}
 
@@ -187,6 +199,7 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 		Observed:     observed,
 		Acknowledged: ack,
 		Failure:      row.Failure,
+		FailureCode:  host.FailureCode(row.FailureCode),
 	}, nil
 }
 
@@ -212,7 +225,7 @@ func parseProgress(code string, n, total int64) (provider.Progress, error) {
 		return provider.Progress{}, ErrCorrupt
 	}
 
-	return provider.NewProgress(code, uint64(n), uint64(total))
+	return provider.NewProgress(provider.ProgressPhase(code), uint64(n), uint64(total))
 }
 
 func (s *Store) Observe(ctx context.Context, k host.WorkKey, p provider.Progress) error {
@@ -224,7 +237,7 @@ func (s *Store) Observe(ctx context.Context, k host.WorkKey, p provider.Progress
 	return s.queries.ObserveWork(
 		ctx,
 		sqlc.ObserveWorkParams{
-			Observed:          p.Code(),
+			Observed:          string(p.Phase()),
 			ObservedCompleted: int64(completed),
 			ObservedTotal:     int64(total),
 			ConnectionID:      k.Connection,
@@ -275,11 +288,11 @@ func (s *Store) Accept(
 			StateVersion:          step.State().Version(),
 			State:                 nonNil(step.State().Payload()),
 			Next:                  step.NextEligibleAt().Format(time.RFC3339Nano),
-			Acknowledged:          p.Code(),
+			Acknowledged:          string(p.Phase()),
 			AcknowledgedCompleted: int64(completed),
 			AcknowledgedTotal:     int64(total),
 			Failure:               step.FailureCode(),
-			FailureCode:           string(workFailureCode(step.FailureCode())),
+			FailureCode:           string(workFailureCode(step.RetryReason())),
 			ConnectionID:          k.Connection,
 			Stream:                k.Stream,
 			Operation:             k.Operation,

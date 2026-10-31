@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 )
 
 type staleCorrectionStore struct{ application.Store }
@@ -54,7 +55,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 	csrf := auth.issue(login)
 
-	workflow := application.New(staleCorrectionStore{}, nil, nil, "", "", "", nil, nil)
+	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil)
 
 	handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
 	if err != nil {
@@ -130,17 +131,28 @@ func TestContactFragmentRequiresAuthentication(t *testing.T) {
 func TestSubmissionFailureRetainsPublicFieldsWithoutSecrets(t *testing.T) {
 	var output bytes.Buffer
 
+	tenant, _ := provider.NewField("tenant", "Tenant", provider.TextField, true)
+	secret, _ := provider.NewField("api_secret", "API secret", provider.SecretField, true)
+	stream, _ := provider.NewStream("statements", "synthetic")
+	descriptor, _ := provider.NewDescriptor(
+		"synthetic",
+		"Synthetic",
+		[]provider.Stream{stream},
+		[]provider.Field{tenant, secret},
+		nil,
+	)
+
 	draft := url.Values{
-		"name":     {"Retained account name"},
-		"query_id": {"123456"},
-		"token":    {"secret-token-must-not-return"},
-		"csrf":     {"untrusted-posted-csrf"},
+		"connection_name":   {"Retained account name"},
+		"setting.tenant":    {"123456"},
+		"secret.api_secret": {"secret-token-must-not-return"},
+		"csrf":              {"untrusted-posted-csrf"},
 	}
 	if err := SubmissionFailure(
 		"verified-session-csrf",
 		"/connections",
 		"Access needs repair",
-		draft,
+		draft, descriptor,
 	).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +217,7 @@ func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 
 	handler, err := NewHandler(
 		auth,
-		Dependencies{Workflow: application.New(store, nil, nil, "", "", "", nil, nil)},
+		Dependencies{Workflow: application.New(store, nil, nil, nil, nil)},
 	)
 	if err != nil {
 		t.Fatal(err)

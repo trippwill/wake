@@ -72,7 +72,7 @@ func (s *Store) EvidenceContext(ctx context.Context, id string) (application.Evi
 		return out, err
 	}
 
-	out.ConnectionName, _ = connection.Settings.Get("name")
+	out.ConnectionName = connection.Name
 
 	rows, err := s.queries.ArtifactObservations(ctx, id)
 	if err != nil {

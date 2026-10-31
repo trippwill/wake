@@ -132,6 +132,11 @@ missing financial history, and explicit warehouse disposal is different from
 reinterpreting retained evidence.
 
 
+Sources explicitly qualify whether an event reference identifies one event within
+its authority, kind and scope. Native reference kind names carry no implicit core
+policy. Shared aliases can corroborate an observation without collapsing distinct
+fills; competing possible matches remain reviewable.
+
 A source cancellation marks its identified activity cancelled without deleting it.
 An explicitly identified replacement with a distinct source event receives a new
 Wake identity and a link to its superseded activity. Missing targets remain pending;

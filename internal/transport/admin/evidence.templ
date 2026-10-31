@@ -11,7 +11,7 @@ import (
 
 templ RetainedEvidence(retained host.Retained, info application.EvidenceContext) {
 	@Breadcrumbs("Supporting evidence")
-	@PageHeader("Confirmation report", known(info.ConnectionName)+" · "+retained.Provider)
+	@PageHeader("Source report", known(info.ConnectionName)+" · "+retained.Provider)
 	<section class="wake-card"><h2>Acquisition context</h2><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
 	<section class="wake-card">
 		<h2>Observed financial meaning</h2>

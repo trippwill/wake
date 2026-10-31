@@ -48,9 +48,9 @@ func TestAdminFailuresAreClassifiedAndPrivate(t *testing.T) {
 				path, origin, code string
 				authenticated      bool
 			}{
-				{"/connections/private-path/token?private-query=value", "http://127.0.0.1:8787", "session_required", false},
-				{"/connections/private-path/token", "http://private-origin.invalid", "invalid_origin", true},
-				{"/connections/private-path/token", "http://127.0.0.1:8787", "invalid_csrf", true},
+				{"/connections/private-path/secrets/token?private-query=value", "http://127.0.0.1:8787", "session_required", false},
+				{"/connections/private-path/secrets/token", "http://private-origin.invalid", "invalid_origin", true},
+				{"/connections/private-path/secrets/token", "http://127.0.0.1:8787", "invalid_csrf", true},
 				{"/login", "http://127.0.0.1:8787", "login_rejected", false},
 			} {
 				output.Reset()

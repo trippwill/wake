@@ -118,6 +118,7 @@ func (s *Store) Confirm(
 	id, artifact string,
 	ref source.Reference,
 	details application.AccountDetails,
+	acquire bool,
 ) (application.Account, error) {
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
@@ -209,18 +210,20 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if err = q.EnsureWork(
-		ctx,
-		sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
-	); err != nil {
-		return application.Account{}, err
-	}
+	if acquire {
+		if err = q.EnsureWork(
+			ctx,
+			sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
+		); err != nil {
+			return application.Account{}, err
+		}
 
-	if err = setScheduled(q,
-		ctx,
-		sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
-	); err != nil {
-		return application.Account{}, err
+		if err = setScheduled(q,
+			ctx,
+			sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
+		); err != nil {
+			return application.Account{}, err
+		}
 	}
 
 	if err = disableDiscovery(q, ctx, id); err != nil {
@@ -318,12 +321,9 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 			return out, e
 		}
 
-		name, _ := c.Settings.Get("name")
-		query, _ := c.Settings.Get("query_id")
-
-		view := application.ConnectionView{ID: id, Name: name, Query: query, Provider: c.Provider}
-		if name == "" {
-			view.Name = "Retained IBKR connection"
+		view := application.ConnectionView{ID: id, Name: c.Name, Settings: c.Settings, Provider: c.Provider}
+		if c.Name == "" {
+			view.Name = "Retained source connection"
 			if out.Account.Connection() == id {
 				view.Name = "Source for " + out.Account.Details().Name()
 			}
@@ -343,6 +343,11 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 
 		view.SettingsStored = readiness.SettingsStored
 		view.CredentialStored = readiness.CredentialStored
+
+		view.CredentialKeys, e = s.queries.CredentialKeys(ctx, id)
+		if e != nil {
+			return out, e
+		}
 
 		rows, e := s.queries.CandidateProfiles(ctx, id)
 		if e != nil {
@@ -391,7 +396,7 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 				view.Work,
 				application.WorkStatus{
 					Operation: r.Operation,
-					Progress:  r.Observed,
+					Progress:  provider.ProgressPhase(r.Observed),
 					Failure:   r.Failure,
 					Next:      r.Next,
 				},
