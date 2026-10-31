@@ -285,23 +285,17 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						continue
 					}
 
-					automatic, e := automaticActivityTerms(ctx, q, old)
+					terms, e := application.TradeTerms(t)
 					if e != nil {
 						return e
 					}
 
-					accepted := automatic.Trade()
-
-					if accepted.Fields().Instrument.Reference() == f.Instrument.Reference() {
-						if e = checkInstrumentRoot(ctx, q, old, f.Instrument); e != nil {
-							return e
-						}
+					outcome, e := sourceActivityOutcome(ctx, q, old, terms)
+					if e != nil {
+						return e
 					}
 
-					observation.Outcome = "corroborated"
-					if !application.Compatible(accepted, t) {
-						observation.Outcome = "terms-conflict"
-					}
+					observation.Outcome = string(outcome)
 				} else {
 					instrument, listing, e := acceptInstrument(
 						ctx,
@@ -399,49 +393,6 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	return s.commit(ctx, tx)
 }
 
-func checkInstrumentRoot(
-	ctx context.Context,
-	q *sqlc.Queries,
-	execution sqlc.Execution,
-	i source.Instrument,
-) error {
-	id := execution.InstrumentID.String
-
-	base, err := q.ActivityBase(ctx, execution.ID)
-	if err == nil {
-		// Source claims belong to the original root, even after an operator relink.
-		id = base.InstrumentID.String
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	// A repeated row in the initial artifact precedes creation of its base.
-	root, err := q.Instrument(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	previous, err := instrumentValue(root)
-	if err != nil {
-		return err
-	}
-
-	if !instrumentContradiction(previous.Reported(), i) {
-		return nil
-	}
-
-	return resolveAutomaticInstrument(ctx, q,
-		sqlc.ResolveInstrumentParams{
-			ID:              root.ID,
-			Name:            root.Name,
-			Ticker:          root.Ticker,
-			ReferenceFigi:   root.ReferenceFigi,
-			EvidenceID:      root.EvidenceID,
-			ReferenceStatus: "conflict",
-			ReferenceNext:   root.ReferenceNext,
-		},
-	)
-}
-
 func acceptInstrument(
 	ctx context.Context,
 	q *sqlc.Queries,
@@ -513,41 +464,6 @@ func acceptListing(
 	}
 
 	return listing.ID, nil
-}
-
-func instrumentContradiction(a, b source.Instrument) bool {
-	if !application.CompatibleInstrumentKind(a.Kind(), b.Kind()) {
-		return true
-	}
-
-	kinds := map[source.IdentifierKind]map[string]bool{}
-	for _, id := range a.Identifiers() {
-		if kinds[id.Kind()] == nil {
-			kinds[id.Kind()] = map[string]bool{}
-		}
-
-		kinds[id.Kind()][id.Value()] = true
-	}
-
-	for kind, values := range kinds {
-		reported := false
-		match := false
-		for _, id := range b.Identifiers() {
-			if id.Kind() == kind {
-				reported = true
-
-				if values[id.Value()] {
-					match = true
-				}
-			}
-		}
-
-		if reported && !match {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.ExecutionDetail, error) {
@@ -910,17 +826,17 @@ func processLifecycle(
 			return e
 		}
 
-		o.Outcome = "corroborated"
-
-		automatic, e := automaticActivityTerms(ctx, q, row)
+		terms, e := application.LifecycleTerms(l)
 		if e != nil {
 			return e
 		}
 
-		old := automatic.Lifecycle()
-		if row.Kind != "lifecycle" || e != nil || !application.CompatibleLifecycle(old, l) {
-			o.Outcome = "terms-conflict"
+		outcome, e := sourceActivityOutcome(ctx, q, row, terms)
+		if e != nil {
+			return e
 		}
+
+		o.Outcome = string(outcome)
 	}
 
 	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
@@ -1081,17 +997,17 @@ func processConversion(
 			return e
 		}
 
-		o.Outcome = "corroborated"
-
-		automatic, e := automaticActivityTerms(ctx, q, row)
+		terms, e := application.ConversionTerms(c)
 		if e != nil {
 			return e
 		}
 
-		old := automatic.Conversion()
-		if row.Kind != "conversion" || e != nil || !application.CompatibleConversion(old, c) {
-			o.Outcome = "terms-conflict"
+		outcome, e := sourceActivityOutcome(ctx, q, row, terms)
+		if e != nil {
+			return e
 		}
+
+		o.Outcome = string(outcome)
 	}
 
 	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
@@ -1148,40 +1064,30 @@ func boolInt(value bool) int64 {
 	return 0
 }
 
-// Source corroboration compares the automatic selection before this claim. The
-// incoming observation is not inserted yet, and operator decisions are excluded.
-func automaticActivityTerms(
+// Admission reads only prior retained source assertions. The incoming observation
+// is inserted afterwards; operator decisions never enter this comparison.
+func sourceActivityOutcome(
 	ctx context.Context,
 	q *sqlc.Queries,
 	row sqlc.Execution,
-) (application.ActivityTerms, error) {
+	incoming application.ActivityTerms,
+) (application.ObservationOutcome, error) {
 	base, err := q.ActivityBase(ctx, row.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		base.Data = row.Accepted
 	} else if err != nil {
-		return application.ActivityTerms{}, err
+		return "", err
 	}
 
 	baseline, err := decodeActivityTerms(row.Kind, base.Data)
 	if err != nil {
-		return application.ActivityTerms{}, err
+		return "", err
 	}
 
 	claims, err := retainedActivityClaims(ctx, q, row.ID)
 	if err != nil {
-		return application.ActivityTerms{}, err
+		return "", err
 	}
 
-	result, err := application.CalculateActivity(
-		application.ActivityCalculationInput{
-			Rule:     application.RetainedClaimsRule,
-			Baseline: baseline,
-			Claims:   claims,
-		},
-	)
-	if err != nil {
-		return application.ActivityTerms{}, err
-	}
-
-	return result.Automatic, nil
+	return application.SourceClaimOutcome(baseline, incoming, claims), nil
 }

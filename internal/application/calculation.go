@@ -289,3 +289,38 @@ func applyActivityField(value ActivityTerms, d FieldSelection) (ActivityTerms, e
 
 	return ActivityTerms{}, ErrInvalid
 }
+
+// SourceClaimOutcome compares source assertions before any operator selection.
+// Every prior claim participates even when their disagreement leaves the automatic
+// projection at an unknown baseline. Such a projection cannot corroborate a new
+// contradictory assertion merely by omitting the disputed value.
+func SourceClaimOutcome(base, incoming ActivityTerms, prior []ActivityClaim) ObservationOutcome {
+	if !compatibleActivityTerms(base, incoming) {
+		return ObservationTermsConflict
+	}
+
+	for _, claim := range prior {
+		if !compatibleActivityTerms(claim.Terms, incoming) {
+			return ObservationTermsConflict
+		}
+	}
+
+	return ObservationCorroborated
+}
+
+func compatibleActivityTerms(a, b ActivityTerms) bool {
+	if a.kind != b.kind {
+		return false
+	}
+
+	switch a.kind {
+	case TradeActivity:
+		return Compatible(a.trade, b.trade)
+	case LifecycleActivity:
+		return CompatibleLifecycle(a.lifecycle, b.lifecycle)
+	case ConversionActivity:
+		return CompatibleConversion(a.conversion, b.conversion)
+	default:
+		return false
+	}
+}

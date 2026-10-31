@@ -52,10 +52,11 @@ financial terms. Indexed source-occurrence bindings include nested underliers,
 which are reconciled even when they have no activity of their own. Underlier
 identity is calculated independently of disagreements in parent contract terms.
 Activity correction preflight/save does not re-enrich shared source roots.
-Admission compares each genuinely new claim against the automatic source selection
-before that claim, anchored in its retained baseline and excluding operator choices.
-Compatible prior enrichment participates in that comparison, so a later competing
-value remains a source disagreement and cannot admit conflicting relationships.
+Admission compares each genuinely new claim against its retained source baseline
+and every prior source assertion, excluding operator choices. A projected unknown
+caused by existing disagreement cannot corroborate a later conflicting value or
+admit its relationships. Shared compatibility rules govern this comparison and the
+automatic financial calculation.
 
 Financial calculation consumes one consistent retained input set: source claims,
 identity bindings, selected references, active decisions and an explicit implemented

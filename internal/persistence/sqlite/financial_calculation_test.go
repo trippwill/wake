@@ -467,4 +467,47 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 	if len(detail.Relationships) != 0 {
 		t.Fatal("disputed source relationships bypassed admission guard", detail.Relationships)
 	}
+	// Existing disagreement must not turn the next distinct contradiction into
+	// corroboration merely because automatic selection returned the unknown anchor.
+	fields.Net, _ = financial.NewMoney("-300", currency)
+	fields.Location = "later-conflicting-net"
+	laterTarget, _ := source.NewReference("synthetic", "event", "account", "later-related")
+	laterRelationship, _ := source.NewRelationship(source.LifecycleLink, laterTarget)
+	fields.Relationships = []source.Relationship{laterRelationship}
+
+	laterClaim, err := source.NewTrade(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"later-conflicting-net",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+				if e := claims.PutTrade(ctx, laterClaim); e != nil {
+					return provider.Result{}, e
+				}
+
+				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+			},
+		),
+	)
+
+	detail, err = s.ExecutionDetail(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, observation := range detail.Observations {
+		if observation.Artifact == "later-conflicting-net" &&
+			observation.Outcome != application.ObservationTermsConflict {
+			t.Error("prior disagreement hid a distinct conflicting claim", observation)
+		}
+	}
+
+	if len(detail.Relationships) != 0 {
+		t.Error("later disputed relationship bypassed admission guard", detail.Relationships)
+	}
 }
