@@ -18,12 +18,20 @@ import (
 	"go.trippwill.dev/wake/internal/logging"
 )
 
+// FinancialReader is the socket adapter's finite accepted-state read dependency.
+// Every result is materialized before transport I/O begins.
+type FinancialReader interface {
+	Snapshot(context.Context, []string) (application.SnapshotRead, error)
+	Resource(context.Context, string, string) (application.CanonicalResource, error)
+	Explanation(context.Context, string, string, int64) (application.Explanation, error)
+}
+
 type handler struct {
-	reads  application.Publishing
+	reads  FinancialReader
 	logger *slog.Logger
 }
 
-func NewHandler(reads application.Publishing, logger *slog.Logger) http.Handler {
+func NewHandler(reads FinancialReader, logger *slog.Logger) http.Handler {
 	return &handler{reads: reads, logger: logging.Component(logger, "socket")}
 }
 
@@ -56,109 +64,73 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	endpoint := parts[1]
-	allowed := map[string]bool{}
+	explanation := false
 	switch endpoint {
-	case "checkpoint":
+	case "snapshot":
 		if len(parts) != 2 {
 			h.failure(w, NotFound, http.StatusNotFound)
 			return
 		}
-	case "changes":
-		if len(parts) != 2 {
-			h.failure(w, NotFound, http.StatusNotFound)
-			return
-		}
-
-		allowed = map[string]bool{"cursor": true, "through": true, "limit": true}
 	case "accounts", "instruments", "listings", "activity":
-		if len(parts) > 4 || (len(parts) == 4 && parts[3] != "explanation") ||
-			(len(parts) > 2 && (parts[2] == "" || len(parts[2]) > 256)) {
+		if len(parts) != 3 && len(parts) != 4 || len(parts) > 2 && (parts[2] == "" || len(parts[2]) > 256) ||
+			len(parts) == 4 && parts[3] != "explanation" {
 			h.failure(w, NotFound, http.StatusNotFound)
 			return
 		}
 
-		if len(parts) == 2 {
-			allowed = map[string]bool{"cursor": true, "limit": true}
-		}
+		explanation = len(parts) == 4
 	default:
 		h.failure(w, NotFound, http.StatusNotFound)
 		return
 	}
 
 	for key, values := range query {
-		if !allowed[key] || len(values) != 1 || values[0] == "" || len(values[0]) > 2048 {
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
-			return
-		}
-	}
-
-	limit := 100
-	if value := query.Get("limit"); value != "" {
-		limit, err = strconv.Atoi(value)
-		if err != nil || limit < 1 || limit > 500 {
+		if !explanation || key != "revision" || len(values) != 1 || values[0] == "" || len(values[0]) > 32 {
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 	}
 
 	var response any
-	switch endpoint {
-	case "checkpoint":
-		var cursor string
-
-		cursor, err = h.reads.PublishCheckpoint(r.Context())
-		response = Checkpoint{Cursor: cursor}
-	case "changes":
-		if query.Get("cursor") == "" {
-			h.failure(w, MalformedCursor, http.StatusBadRequest)
+	switch {
+	case endpoint == "snapshot":
+		conditions, e := snapshotConditions(r.Header.Values("If-None-Match"))
+		if e != nil {
+			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 
-		var page application.ChangePage
+		var read application.SnapshotRead
 
-		page, err = h.reads.Changes(r.Context(), query.Get("cursor"), query.Get("through"), limit)
+		read, err = h.reads.Snapshot(r.Context(), conditions)
 		if err == nil {
-			response = page
+			w.Header().Set("ETag", `"`+read.Snapshot.Version+`"`)
+
+			if read.Unchanged {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+
+			response = read.Snapshot
 		}
+	case explanation:
+		revision, e := strconv.ParseInt(query.Get("revision"), 10, 64)
+		if e != nil || revision < 1 {
+			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			return
+		}
+
+		response, err = h.reads.Explanation(r.Context(), endpoint, parts[2], revision)
 	default:
-		switch len(parts) {
-		case 2:
-			var page application.ResourcePage
-
-			page, err = h.reads.Resources(r.Context(), endpoint, query.Get("cursor"), limit)
-			if err == nil {
-				response = page
-			}
-		case 3:
-			var resource application.CanonicalResource
-
-			resource, err = h.reads.Resource(r.Context(), endpoint, parts[2])
-			if err == nil {
-				response = resource
-			}
-		default:
-			var explanation application.Explanation
-
-			explanation, err = h.reads.Explanation(r.Context(), endpoint, parts[2])
-			if err == nil {
-				response = explanation
-			}
-		}
+		response, err = h.reads.Resource(r.Context(), endpoint, parts[2])
 	}
 
 	if err != nil {
 		switch {
-		case errors.Is(err, application.ErrCursor), errors.Is(err, application.ErrInvalid):
-			code := MalformedCursor
-			if errors.Is(err, application.ErrInvalid) {
-				code = InvalidRequest
-			}
-
-			h.failure(w, code, http.StatusBadRequest)
-		case errors.Is(err, application.ErrGeneration):
-			h.failure(w, CursorInvalidated, http.StatusConflict)
-		case errors.Is(err, application.ErrRebuilding):
-			h.failure(w, RebuildInProgress, http.StatusServiceUnavailable)
+		case errors.Is(err, application.ErrInvalid):
+			h.failure(w, InvalidRequest, http.StatusBadRequest)
+		case errors.Is(err, application.ErrStale):
+			h.failure(w, StaleRevision, http.StatusConflict)
 		case errors.Is(err, application.ErrNotFound):
 			h.failure(w, NotFound, http.StatusNotFound)
 		default:
@@ -195,15 +167,63 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
 	messages := map[ErrorCode]string{
-		InvalidRequest:    "Invalid or unsupported request parameters.",
-		MalformedCursor:   "Malformed or wrong-purpose cursor.",
-		CursorInvalidated: "Cursor invalidated; start a fresh bootstrap.",
-		RebuildInProgress: "Publishing paused for rebuild; retry after successful completion.",
-		NotFound:          "Financial resource not found.",
-		MethodNotAllowed:  "Only GET is supported.",
-		InternalError:     "Financial read failed.",
+		InvalidRequest:   "Invalid or unsupported request parameters.",
+		StaleRevision:    "Resource changed; refresh the snapshot before requesting its explanation.",
+		NotFound:         "Financial resource not found.",
+		MethodNotAllowed: "Only GET is supported.",
+		InternalError:    "Financial read failed.",
 	}
 
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(Error{Code: code, Message: messages[code]})
+}
+
+func snapshotConditions(headers []string) ([]string, error) {
+	value := strings.Trim(strings.Join(headers, ","), " \t")
+	if len(value) > 8192 || strings.ContainsAny(value, "\r\n") {
+		return nil, application.ErrInvalid
+	}
+
+	if value == "" {
+		return nil, nil
+	}
+
+	if value == "*" {
+		return []string{"*"}, nil
+	}
+
+	var versions []string
+	for {
+		value = strings.TrimPrefix(value, "W/")
+		if len(value) < 2 || value[0] != '"' {
+			return nil, application.ErrInvalid
+		}
+
+		end := strings.IndexByte(value[1:], '"')
+		if end < 0 {
+			return nil, application.ErrInvalid
+		}
+
+		end++
+		for _, c := range []byte(value[1:end]) {
+			if c < 0x21 || c == 0x7f {
+				return nil, application.ErrInvalid
+			}
+		}
+
+		versions = append(versions, value[1:end])
+		value = strings.Trim(value[end+1:], " \t")
+		if value == "" {
+			return versions, nil
+		}
+
+		if value[0] != ',' {
+			return nil, application.ErrInvalid
+		}
+
+		value = strings.Trim(value[1:], " \t")
+		if value == "" {
+			return nil, application.ErrInvalid
+		}
+	}
 }

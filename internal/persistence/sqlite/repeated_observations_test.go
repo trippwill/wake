@@ -17,12 +17,12 @@ func TestRepeatedObservationsRetainEvidenceWithoutPublishedChanges(t *testing.T)
 	rows := []string{equityRow("U1", "equity", "100"), syntheticOption, syntheticDebt, syntheticFX, lifecycle}
 	coverageReport(t, s, "base", strings.Join(rows, ""))
 
-	before, err := s.Resources(t.Context(), "activity", "", 100)
+	before, err := snapshotResources(t.Context(), s, "activity")
 	if err != nil || len(before.Items) != 5 {
 		t.Fatal(before, err)
 	}
 
-	checkpoint, err := s.PublishCheckpoint(t.Context())
+	baseline, err := snapshotState(t.Context(), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,12 +33,12 @@ func TestRepeatedObservationsRetainEvidenceWithoutPublishedChanges(t *testing.T)
 		coverageReport(t, s, fmt.Sprintf("repeat-%d", i), strings.Join(rows, ""))
 	}
 
-	after, err := s.Resources(t.Context(), "activity", "", 100)
+	after, err := snapshotResources(t.Context(), s, "activity")
 	if err != nil || !reflect.DeepEqual(before.Items, after.Items) {
 		t.Fatal("repeated observations changed canonical data", before, after, err)
 	}
 
-	if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+	if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 		t.Fatal("repeated observations published transitions", changes.Items)
 	}
 

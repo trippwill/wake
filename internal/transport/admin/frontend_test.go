@@ -65,7 +65,6 @@ func TestRenderFrontend(t *testing.T) {
 		"source-new":     ConnectionSetup("synthetic-csrf", []provider.Registration{registration}),
 		"reference":      ReferencePage("synthetic-csrf", fixtureSource(view)),
 		"recovery":       RecoveryPage("synthetic-csrf", fixtureSource(view)),
-		"maintenance":    MaintenancePage("synthetic-csrf", fixtureSource(view)),
 		"error":          ErrorPage("Temporarily unavailable", "Retry the current operation."),
 		"correction":     CorrectionPage("synthetic-csrf", application.CorrectionForm{Kind: "activity", ID: "synthetic", Label: "Synthetic activity", Revision: 1, Fields: []string{"price", "quantity"}, Candidates: []application.CorrectionCandidate{{Value: "synthetic-candidate", Label: "Synthetic retained observation"}}, Decisions: []application.DecisionRecord{{Scope: "price", Text: "1.25", Currency: "USD", Active: true}}}),
 	} {

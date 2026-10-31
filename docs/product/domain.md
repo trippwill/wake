@@ -140,7 +140,7 @@ state agree. Tax-relevant source facts differ from a user's tax treatment.
 
 Changes to accepted values, links, relevant reference data or conflict status matter
 to consumers even without a new trade. Stable identities and reproducible views
-support restart and recovery. Rebuilding a view is different from reconstructing
+support restart and recovery. Recalculating a view is different from reconstructing
 missing financial history, and explicit warehouse disposal is different from
 reinterpreting retained evidence.
 

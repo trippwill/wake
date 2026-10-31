@@ -243,7 +243,6 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/connections/synthetic?view=access", "Confirmation Query ID"},
 		{"/connections/synthetic?view=reports", "operator-history"},
 		{"/connections/recovery", "Access review complete"},
-		{"/system/maintenance", "Rebuild accepted views"},
 		{"/executions/" + optionID, "1.234567890123456789"},
 		{"/activity/" + view.Lifecycles[0].ID(), "Assignment"},
 		{"/activity/" + view.Conversions[0].ID(), "100.123456789"},

@@ -89,14 +89,10 @@ func registerWorkflowRoutes(
 			message = "Connection work is finishing. Wait for its progress to update, then retry."
 		case application.ErrInvalid:
 			message = "Enter an account display name and a valid currency, or leave currency unknown."
-			if r.Pattern == "POST /recovery/{id}/retry" {
-				message = "This rebuild is no longer eligible for retry. Review the latest rebuild status."
-			}
+
 		case application.ErrAccountLimit:
 			message = "One account is already activated. Other discovered accounts remain candidates."
 		case application.ErrStale, application.ErrAccessReview:
-			message = err.Error()
-		case application.ErrRecoveryGroup:
 			message = err.Error()
 		case application.ErrCandidate:
 			message = "This account was not discovered through the selected connection."
@@ -155,7 +151,7 @@ func registerWorkflowRoutes(
 			ServeHTTP(w, r)
 	})
 
-	for _, route := range []string{"/connections/reference", "/connections/recovery", "/system/maintenance", "/connections/{id}"} {
+	for _, route := range []string{"/connections/reference", "/connections/recovery", "/connections/{id}"} {
 		gate("GET "+route, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			var (
 				view sourceView
@@ -204,6 +200,7 @@ func registerWorkflowRoutes(
 			)
 
 			section := "Connections"
+
 			switch r.URL.Path {
 			case "/connections/reference":
 				title = "Instrument reference"
@@ -211,10 +208,6 @@ func registerWorkflowRoutes(
 			case "/connections/recovery":
 				title = "Recovery"
 				content = RecoveryPage(csrf, view)
-			case "/system/maintenance":
-				title = "Maintenance"
-				section = "System"
-				content = MaintenancePage(csrf, view)
 			default:
 				c, ok := connectionByID(view, r.PathValue("id"))
 				if !ok {
@@ -594,24 +587,6 @@ func registerWorkflowRoutes(
 		}
 
 		http.Redirect(w, r, "/connections", http.StatusSeeOther)
-	})
-	gate("POST /recovery/rebuild", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		digest := sha256.Sum256([]byte(csrf))
-		actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
-		if _, err := workflow.StartRebuild(r.Context(), r.PostForm.Get("submission"), actor); err != nil {
-			failure(w, r, csrf, err)
-			return
-		}
-
-		http.Redirect(w, r, "/system/maintenance", http.StatusSeeOther)
-	})
-	gate("POST /recovery/{id}/retry", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		if err := workflow.RetryRecovery(r.Context(), r.PathValue("id")); err != nil {
-			failure(w, r, csrf, err)
-			return
-		}
-
-		http.Redirect(w, r, "/system/maintenance", http.StatusSeeOther)
 	})
 
 	for _, kind := range []string{"activity", "instrument"} {

@@ -4,11 +4,9 @@
 package persistence
 
 import (
-	"crypto/rand"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 )
@@ -42,7 +40,7 @@ func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, phase := range []string{"replay", "restart", "rebuild"} {
+	for _, phase := range []string{"replay", "restart", "recalculate"} {
 		if phase == "restart" {
 			profile := testProfile(s.owners[0].Name())
 			if err = s.Close(); err != nil {
@@ -57,21 +55,8 @@ func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 			t.Cleanup(func() { _ = s.Close() })
 		}
 
-		if phase == "rebuild" {
-			if _, err = s.StartRebuild(ctx, rand.Text(), "test", time.Now()); err != nil {
-				t.Fatal(err)
-			}
-
-			for n := 0; ; n++ {
-				changed, e := s.RunRecovery(ctx)
-				if e != nil || n == 100 {
-					t.Fatal("rebuild did not finish", e)
-				}
-
-				if !changed {
-					break
-				}
-			}
+		if phase == "recalculate" {
+			recalculateFixture(t, s)
 		}
 
 		coverageReport(t, s, phase, original)

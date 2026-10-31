@@ -3,23 +3,7 @@
 
 package application
 
-import "context"
-
-const (
-	ErrCursor     Error = "malformed publishing cursor"
-	ErrGeneration Error = "publishing cursor invalidated; bootstrap required"
-	ErrRebuilding Error = "publishing unavailable during rebuild"
-	ErrNotFound   Error = "financial resource not found"
-)
-
-// Publishing reads accepted financial values independently of transport and admin views.
-type Publishing interface {
-	PublishCheckpoint(context.Context) (string, error)
-	Resources(context.Context, string, string, int) (ResourcePage, error)
-	Resource(context.Context, string, string) (CanonicalResource, error)
-	Explanation(context.Context, string, string) (Explanation, error)
-	Changes(context.Context, string, string, int) (ChangePage, error)
-}
+const ErrNotFound Error = "financial resource not found"
 
 type CanonicalResource struct {
 	ID         string               `json:"id"`
@@ -159,17 +143,15 @@ type PublishedDecision struct {
 	Scope  string `json:"scope"`
 	Action string `json:"action"`
 }
-type ResourcePage struct {
-	Items []CanonicalResource `json:"items"`
-	Next  *string             `json:"next"`
+
+// FinancialSnapshot is one complete, consistent accepted warehouse view. Version
+// is opaque and changes only when accepted resources or explanations change.
+type FinancialSnapshot struct {
+	WarehouseID string              `json:"warehouse_id"`
+	Version     string              `json:"version"`
+	Resources   []CanonicalResource `json:"resources"`
 }
-type Change struct {
-	Cursor   string            `json:"cursor"`
-	Resource CanonicalResource `json:"resource"`
-}
-type ChangePage struct {
-	Items   []Change `json:"items"`
-	Cursor  string   `json:"cursor"`
-	Through string   `json:"through"`
-	More    bool     `json:"more"`
+type SnapshotRead struct {
+	Snapshot  FinancialSnapshot
+	Unchanged bool
 }

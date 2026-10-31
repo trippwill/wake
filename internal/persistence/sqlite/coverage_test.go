@@ -192,7 +192,7 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 		t.Fatal("unresolved endpoint", d, err)
 	}
 
-	checkpoint, err := s.PublishCheckpoint(ctx)
+	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 		t.Fatal("late endpoint did not advance public owner", err)
 	}
 
-	journal := publishedChanges(t, s, checkpoint)
+	journal := snapshotChanges(t, s, baseline)
 	changedOwner := 0
 	for _, entry := range journal.Items {
 		if entry.Resource.ID == id {
@@ -406,14 +406,14 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 				t.Fatal("replacement identity changed")
 			}
 
-			checkpoint, err := s.PublishCheckpoint(ctx)
+			baseline, err := snapshotState(ctx, s)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			coverageReport(t, s, "repeat", instruction)
 
-			if len(publishedChanges(t, s, checkpoint).Items) != 0 {
+			if len(snapshotChanges(t, s, baseline).Items) != 0 {
 				t.Fatal("repeated replacement/cancellation published")
 			}
 

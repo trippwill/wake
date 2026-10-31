@@ -81,20 +81,21 @@ and credentials are not repository fixtures.
 
 ## Canonical publishing
 
-The versioned read-only socket publishes accepted accounts, instruments, listings
-and activity, optional revision-bound explanations and resumable changes. Changes
-retain every committed transition within a publishing generation, including source
-and operator corrections, conflicts and relevant reference/link changes. Restarts
-and companion-store recovery preserve cursors with an intact warehouse; projection
-rebuild and warehouse recreation require explicit rebootstrap.
+The versioned read-only socket publishes complete accepted accounts, instruments,
+listings and activity snapshots, individual resources and revision-bound explanations.
+Each snapshot has warehouse identity and an opaque publication version. Conditional
+GET avoids unchanged downloads. Accepted source/operator corrections, conflicts and
+relevant reference/link changes advance publication; repeated known claims do not.
+Restarts and access-store recovery retain publication with an intact warehouse.
+Warehouse replacement establishes a clearly reported new baseline.
 
 The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The independent
 [consumer acceptance procedure](../engineering/development.md#socket-consumer-acceptance)
-uses a separate process and the actual private socket without SQLite access, internal
-application calls or upstream credentials. It checks pagination, exact values,
-disconnect/resume, repeat-safe mirroring, corrections and conflict raise/clear,
-daemon restart and rebuild/cursor recovery. In-process tests alone do not establish
-this boundary.
+uses a separate process and actual private socket without Wake store access, internal
+application calls or upstream credentials. Its own transactional mirror retains the
+last complete validated snapshot on failed transfers or writes. Checks cover exact
+values, conditional reads, corrections/conflict raise/clear, restart, access recovery
+and warehouse replacement. In-process tests alone do not establish this boundary.
 
 ## Compatibility
 

@@ -71,9 +71,6 @@ type (
 		SaveDecision(context.Context, Decision, string, time.Time) error
 		CheckCorrection(context.Context, Decision) error
 		RetryProcessing(context.Context, string) error
-		StartRebuild(context.Context, string, string, time.Time) (string, error)
-		RunRecovery(context.Context) (bool, error)
-		RetryRecovery(context.Context, string) error
 	}
 )
 
@@ -501,15 +498,6 @@ func (w *Workflow) Run(ctx context.Context, reportFailure func()) {
 }
 
 func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
-	changed, recoveryErr := w.store.RunRecovery(ctx)
-	if changed {
-		w.notifyReaders()
-	}
-
-	if recoveryErr != nil {
-		return recoveryErr
-	}
-
 	work, err := w.store.PendingWork(ctx, now)
 	if err != nil {
 		return err
@@ -646,33 +634,6 @@ func (w *Workflow) RetryProcessing(ctx context.Context, id string) (resultErr er
 	defer func() { finishLog(resultErr) }()
 
 	err := w.store.RetryProcessing(ctx, id)
-	if err == nil {
-		w.notify()
-	}
-
-	return err
-}
-
-func (w *Workflow) StartRebuild(
-	ctx context.Context,
-	submission, actor string,
-) (result string, resultErr error) {
-	ctx, finishLog := logging.Start(ctx, w.logger, "rebuild_request")
-	defer func() { finishLog(resultErr) }()
-
-	id, err := w.store.StartRebuild(ctx, submission, actor, w.now())
-	if err == nil {
-		w.notify()
-	}
-
-	return id, err
-}
-
-func (w *Workflow) RetryRecovery(ctx context.Context, id string) (resultErr error) {
-	ctx, finishLog := logging.Start(ctx, w.logger, "rebuild_retry")
-	defer func() { finishLog(resultErr) }()
-
-	err := w.store.RetryRecovery(ctx, id)
 	if err == nil {
 		w.notify()
 	}

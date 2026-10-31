@@ -39,14 +39,10 @@ CREATE TABLE operator_decisions(id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, 
 CREATE INDEX decisions_target ON operator_decisions(target_kind,target_id,scope);
 CREATE TABLE instrument_selections(instrument_id TEXT PRIMARY KEY REFERENCES instruments(id), name TEXT NOT NULL, ticker TEXT NOT NULL, figi TEXT NOT NULL, evidence TEXT NOT NULL, status TEXT NOT NULL, underlier_id TEXT REFERENCES instruments(id)) STRICT;
 
-CREATE TABLE recovery_jobs(id TEXT PRIMARY KEY, status TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL, failure TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL, created TEXT NOT NULL) STRICT;
-CREATE UNIQUE INDEX one_active_recovery ON recovery_jobs((1)) WHERE status IN ('queued','running');
-CREATE TABLE recovery_items(job_id TEXT NOT NULL REFERENCES recovery_jobs(id), group_id TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(job_id,kind,entity_id)) STRICT;
 
-CREATE TABLE publishing(singleton INTEGER PRIMARY KEY CHECK(singleton=1), generation TEXT NOT NULL) STRICT;
+CREATE TABLE publishing(singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0)) STRICT;
 CREATE TABLE publishing_dirty(kind TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(kind,id)) STRICT;
 CREATE TABLE published_resources(kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, snapshot BLOB NOT NULL, explanation BLOB NOT NULL, PRIMARY KEY(kind,id)) STRICT;
-CREATE TABLE published_changes(position INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, snapshot BLOB NOT NULL) STRICT;
 CREATE TRIGGER publish_accounts_insert AFTER INSERT ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
 CREATE TRIGGER publish_accounts_update AFTER UPDATE ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
 CREATE TRIGGER publish_instruments_insert AFTER INSERT ON instruments BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('instruments',NEW.id); END;

@@ -5,11 +5,9 @@ package persistence
 
 import (
 	"context"
-	"crypto/rand"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/provider"
@@ -41,7 +39,7 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 
 				coverageReport(t, s, "base", base)
 
-				page, err := s.Resources(t.Context(), "activity", "", 10)
+				page, err := snapshotResources(t.Context(), s, "activity")
 				if err != nil || len(page.Items) != 1 {
 					t.Fatal(page, err)
 				}
@@ -61,7 +59,7 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 					want = ""
 				}
 
-				checkpoint, err := s.PublishCheckpoint(t.Context())
+				baseline, err := snapshotState(t.Context(), s)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -75,7 +73,7 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 				}
 
 				count := 0
-				for _, change := range publishedChanges(t, s, checkpoint).Items {
+				for _, change := range snapshotChanges(t, s, baseline).Items {
 					if change.Resource.Kind == "instruments" && change.Resource.ID == instrument {
 						count++
 					}
@@ -85,14 +83,14 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 					t.Fatal("expected one root conflict transition", count)
 				}
 
-				checkpoint, err = s.PublishCheckpoint(t.Context())
+				baseline, err = snapshotState(t.Context(), s)
 				if err != nil {
 					t.Fatal(err)
 				}
 
 				coverageReport(t, s, "repeat", second)
 
-				if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+				if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 					t.Fatal("replay published duplicate transition", changes.Items)
 				}
 				// Recreate the old missing conflict flag only in this disposable store.
@@ -110,25 +108,12 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if _, err = s.StartRebuild(t.Context(), rand.Text(), "test", time.Now()); err != nil {
-					t.Fatal(err)
-				}
-
-				for n := 0; ; n++ {
-					changed, e := s.RunRecovery(t.Context())
-					if e != nil || n == 100 {
-						t.Fatal("rebuild did not finish", e)
-					}
-
-					if !changed {
-						break
-					}
-				}
+				recalculateFixture(t, s)
 
 				rebuilt, err := s.InstrumentDetail(t.Context(), instrument)
 				if err != nil || rebuilt.Instrument.Status() != "conflict" ||
 					!reflect.DeepEqual(rebuilt.Instrument.Reported().Fields(), detail.Instrument.Reported().Fields()) {
-					t.Fatal("rebuild did not recover conflict and retained terms", rebuilt, err)
+					t.Fatal("recalculation did not recover conflict and retained terms", rebuilt, err)
 				}
 			})
 		}

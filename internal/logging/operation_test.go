@@ -84,7 +84,7 @@ func TestProgressIsPeriodicAndJoined(t *testing.T) {
 			var output bytes.Buffer
 
 			logger := slog.New(slog.NewJSONHandler(&output, nil))
-			stop := Progress(context.Background(), logger, "rebuild_progress", 30*time.Second)
+			stop := Progress(context.Background(), logger, "processing_progress", 30*time.Second)
 
 			synctest.Wait()
 			time.Sleep(elapsed)

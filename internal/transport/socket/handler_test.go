@@ -15,34 +15,20 @@ import (
 )
 
 type reads struct {
-	application.Publishing
 	err  error
 	item application.CanonicalResource
-}
-
-func (s reads) PublishCheckpoint(context.Context) (string, error) { return "opaque", s.err }
-func (s reads) Resources(context.Context, string, string, int) (application.ResourcePage, error) {
-	return application.ResourcePage{Items: []application.CanonicalResource{s.item}}, s.err
 }
 
 func (s reads) Resource(context.Context, string, string) (application.CanonicalResource, error) {
 	return s.item, s.err
 }
 
-func (s reads) Explanation(context.Context, string, string) (application.Explanation, error) {
+func (s reads) Explanation(context.Context, string, string, int64) (application.Explanation, error) {
 	return application.Explanation{
 		ID:          s.item.ID,
 		Revision:    s.item.Revision,
 		Decisions:   []application.PublishedDecision{},
 		Corrections: []application.PublishedCorrection{},
-	}, s.err
-}
-
-func (s reads) Changes(context.Context, string, string, int) (application.ChangePage, error) {
-	return application.ChangePage{
-		Items:   []application.Change{{Cursor: "next", Resource: s.item}},
-		Cursor:  "next",
-		Through: "next",
 	}, s.err
 }
 
@@ -63,7 +49,7 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 			Relationships: []application.PublishedRelationship{},
 		},
 	}
-	for _, path := range []string{"/v1/checkpoint", "/v1/activity?limit=1", "/v1/activity/financial-id", "/v1/activity/financial-id/explanation", "/v1/changes?cursor=opaque"} {
+	for _, path := range []string{"/v1/snapshot", "/v1/activity/financial-id", "/v1/activity/financial-id/explanation?revision=42"} {
 		w := httptest.NewRecorder()
 		NewHandler(reads{item: item}, nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 
@@ -102,7 +88,20 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		path, method string
 		status       int
 	}{
-		{"/v1/accounts", "POST", 405}, {"/v1/accounts", "HEAD", 405}, {"/v1/accounts?limit=0", "GET", 400}, {"/v1/accounts?limit=501", "GET", 400}, {"/v1/accounts?limit=1&limit=2", "GET", 400}, {"/v1/accounts?secret=private", "GET", 400}, {"/v1/accounts?cursor=", "GET", 400}, {"/v1/accounts?limit=%XX", "GET", 400}, {"/v1/accounts/", "GET", 404}, {"/v1/evidence/private", "GET", 404}, {"/v1/activity/id/explanation/extra", "GET", 404},
+		{"/v1/snapshot", "POST", 405},
+		{"/v1/snapshot", "HEAD", 405},
+		{"/v1/snapshot?extra=1", "GET", 400},
+		{"/v1/snapshot?x=%XX", "GET", 400},
+		{"/v1/activity/id/explanation", "GET", 400},
+		{"/v1/activity/id/explanation?revision=0", "GET", 400},
+		{"/v1/activity/id/explanation?revision=1&revision=2", "GET", 400},
+		{"/v1/activity/id?revision=1", "GET", 400},
+		{"/v1/accounts/", "GET", 404},
+		{"/v1/evidence/private", "GET", 404},
+		{"/v1/activity/id/explanation/extra", "GET", 404},
+		{"/v1/checkpoint", "GET", 404},
+		{"/v1/changes?cursor=old", "GET", 404},
+		{"/v1/accounts", "GET", 404},
 	} {
 		w := httptest.NewRecorder()
 		NewHandler(reads{item: item}, nil).ServeHTTP(w, httptest.NewRequest(test.method, test.path, nil))
@@ -117,13 +116,13 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		code   ErrorCode
 		status int
 	}{
-		{application.ErrCursor, MalformedCursor, 400}, {application.ErrGeneration, CursorInvalidated, 409}, {application.ErrRebuilding, RebuildInProgress, 503}, {application.ErrNotFound, NotFound, 404}, {application.ErrInvalid, InvalidRequest, 400},
+		{application.ErrStale, StaleRevision, 409}, {application.ErrNotFound, NotFound, 404}, {application.ErrInvalid, InvalidRequest, 400},
 	} {
 		w := httptest.NewRecorder()
 		NewHandler(
 			reads{err: test.err},
 			nil,
-		).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/checkpoint", nil))
+		).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
 
 		var response Error
 		if json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Code != test.code ||
@@ -133,46 +132,80 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 	}
 }
 
-type cursorCountingReads struct {
-	reads
-	calls int
-}
-
-func (r *cursorCountingReads) Changes(
-	ctx context.Context,
-	cursor, through string,
-	limit int,
-) (application.ChangePage, error) {
-	r.calls++
-	return r.reads.Changes(ctx, cursor, through, limit)
-}
-
-func TestChangesRequireCursorWhileInitialCollectionsDoNot(t *testing.T) {
-	backend := &cursorCountingReads{
-		reads: reads{
-			item: application.CanonicalResource{
-				ID:       "account",
-				Kind:     "accounts",
-				Revision: 1,
-				Account:  &application.PublishedAccount{Name: "Synthetic account"},
-			},
-		},
-	}
-
-	handler := NewHandler(backend, nil)
-	for _, test := range []struct {
-		path string
-		want int
-	}{{"/v1/changes", 400}, {"/v1/changes?cursor=", 400}, {"/v1/accounts", 200}, {"/v1/changes?cursor=opaque", 200}} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
-
-		if response.Code != test.want {
-			t.Error(test.path, response.Code, response.Body.String())
+func (s reads) Snapshot(_ context.Context, known []string) (application.SnapshotRead, error) {
+	unchanged := false
+	for _, v := range known {
+		if v == "*" || v == "opaque-version" {
+			unchanged = true
 		}
 	}
 
-	if backend.calls != 1 {
-		t.Fatal("missing cursor reached changes reader", backend.calls)
+	return application.SnapshotRead{
+		Snapshot: application.FinancialSnapshot{
+			WarehouseID: "warehouse",
+			Version:     "opaque-version",
+			Resources:   []application.CanonicalResource{s.item},
+		},
+		Unchanged: unchanged,
+	}, s.err
+}
+
+func TestSnapshotConditionalHTTP(t *testing.T) {
+	h := NewHandler(
+		reads{
+			item: application.CanonicalResource{
+				ID:       "one",
+				Kind:     "accounts",
+				Revision: 1,
+				Account:  &application.PublishedAccount{Name: "Synthetic"},
+			},
+		},
+		nil,
+	)
+	for _, condition := range []string{"", `"opaque-version"`, `W/"opaque-version"`, `"other", "opaque-version"`, "*"} {
+		r := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
+		r.Header.Set("If-None-Match", condition)
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		want := http.StatusNotModified
+		if condition == "" {
+			want = http.StatusOK
+		}
+
+		if w.Code != want || w.Header().Get("ETag") != `"opaque-version"` {
+			t.Fatal(condition, w.Code, w.Header(), w.Body.String())
+		}
+
+		if want == http.StatusNotModified && w.Body.Len() != 0 {
+			t.Fatal("conditional response had a body")
+		}
+	}
+}
+
+func TestSnapshotConditionalSyntax(t *testing.T) {
+	for _, test := range []struct {
+		condition string
+		status    int
+	}{
+		{`"other,tag"`, 200},
+		{`W/"other,tag", W/"opaque-version"`, 304},
+		{`""`, 200},
+		{`"opaque-version",`, 400},
+		{`*, "other"`, 400},
+		{`unquoted`, 400},
+		{`"space tag"`, 400},
+	} {
+		h := NewHandler(reads{}, nil)
+		request := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
+		request.Header.Set("If-None-Match", test.condition)
+
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, request)
+
+		if response.Code != test.status {
+			t.Fatal(test, response.Code, response.Body.String())
+		}
 	}
 }

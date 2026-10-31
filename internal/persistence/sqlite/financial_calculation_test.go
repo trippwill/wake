@@ -58,7 +58,7 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			checkpoint, e := s.PublishCheckpoint(ctx)
+			baseline, e := snapshotState(ctx, s)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -76,7 +76,7 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal("preflight performed writes", before, after, e)
 			}
 
-			if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+			if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 				t.Fatal("preflight published", changes)
 			}
 
@@ -154,7 +154,7 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 		t.Fatal(err)
 	}
 
-	checkpoint, err := s.PublishCheckpoint(ctx)
+	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 		t.Fatal("failed calculation retained decision")
 	}
 
-	if changes := publishedChanges(t, s, checkpoint); len(changes.Items) != 0 {
+	if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 		t.Fatal("failed calculation published", changes)
 	}
 }

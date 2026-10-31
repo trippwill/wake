@@ -68,8 +68,8 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 				}
 
 				if tree == "testdata/socket-consumer" &&
-					(strings.Contains(value, "go.trippwill.dev/wake") || value == "database/sql" || strings.Contains(value, "sqlite")) {
-					t.Errorf("independent consumer depends on private data or Wake packages: %s", value)
+					strings.Contains(value, "go.trippwill.dev/wake") {
+					t.Errorf("independent consumer imports Wake packages instead of using its wire contract: %s", value)
 				}
 
 				if strings.HasPrefix(rel, "internal/transport/") &&

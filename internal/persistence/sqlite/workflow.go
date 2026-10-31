@@ -373,3 +373,12 @@ func (s *Store) UpstreamAllowed(ctx context.Context) error {
 
 	return nil
 }
+
+func (s *Store) RetryProcessing(ctx context.Context, id string) error {
+	n, err := s.queries.RetryProcessing(ctx, id)
+	if err == nil && n != 1 {
+		return application.ErrInvalid
+	}
+
+	return err
+}

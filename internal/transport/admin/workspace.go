@@ -315,13 +315,6 @@ func repairs(v sourceView) []reviewItem {
 		)
 	}
 
-	if len(v.Recovery) > 0 && v.Recovery[0].Status == "failed" {
-		out = append(
-			out,
-			reviewItem{Label: "Projection rebuild", Reason: v.Recovery[0].Failure, Href: "/system/maintenance"},
-		)
-	}
-
 	return out
 }
 func repairCount(v sourceView) int { return len(repairs(v)) }

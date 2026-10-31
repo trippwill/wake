@@ -392,8 +392,6 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				component = ConnectionSetup(csrf, []provider.Registration{registration})
 			case "/test/reference":
 				component = ReferencePage(csrf, fixtureSource(view))
-			case "/test/maintenance":
-				component = MaintenancePage(csrf, fixtureSource(view))
 			case "/test/connections":
 				component = ConnectionsPage(csrf, fixtureSource(view))
 			case "/test/recovery":
@@ -404,9 +402,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				copy.Connections[0].CredentialStored = false
 				copy.Storage.Paused = true
 				copy.Storage.ReferenceReview = true
-				copy.Recovery = []application.RecoveryJob{
-					{ID: "synthetic-rebuild", Status: "running", Completed: 42, Total: 70},
-				}
+
 				component = RecoveryPage(csrf, fixtureSource(copy))
 			case "/test/overview", "/":
 				component = DashboardOverview(fixtureOverview(view))
@@ -828,7 +824,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/maintenance", "/test/recovery", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/recovery", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
 				check(
 					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
 					chromedp.Navigate(origin+path),
