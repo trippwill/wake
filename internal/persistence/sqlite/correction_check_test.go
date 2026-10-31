@@ -78,6 +78,10 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 		if (e == nil) != test.valid {
 			t.Errorf("%s=%s: %v", test.scope, test.value, e)
 		}
+
+		if !test.valid && !errors.Is(e, application.ErrInvalid) {
+			t.Errorf("invalid input lacks typed validation outcome: %s=%s: %v", test.scope, test.value, e)
+		}
 	}
 
 	for _, link := range form.Links {

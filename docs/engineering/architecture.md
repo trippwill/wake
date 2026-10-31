@@ -62,7 +62,8 @@ Financial calculation consumes one consistent retained input set: source claims,
 identity bindings, selected references, active decisions and an explicit implemented
 rule. It returns typed accepted values, independent conflict/authority facts and
 explanations without SQL writes or upstream calls. Processing, correction preflight,
-saving and release use that same calculation. Preflight substitutes a prospective
+saving and release use that same calculation. Field parsing and whole-value
+constructor failures return the typed invalid-input outcome, not a service failure. Preflight substitutes a prospective
 decision in memory inside a read transaction; saving persists the calculated result,
 decision and publication atomically. Only groups reached by new claims or changed
 source-correction state require recalculation. Retained appearances remain provenance;

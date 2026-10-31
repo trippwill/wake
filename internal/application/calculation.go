@@ -275,19 +275,26 @@ func applyActivityField(value ActivityTerms, d FieldSelection) (ActivityTerms, e
 		return ActivityTerms{}, ErrInvalid
 	}
 
+	out := ActivityTerms{kind: value.kind}
+
+	var err error
 	switch value.kind {
 	case TradeActivity:
-		v, err := ApplyTradeField(value.trade, d.Scope, d.Text, d.Currency)
-		return ActivityTerms{kind: value.kind, trade: v}, err
+		out.trade, err = ApplyTradeField(value.trade, d.Scope, d.Text, d.Currency)
 	case LifecycleActivity:
-		v, err := ApplyLifecycleField(value.lifecycle, d.Scope, d.Text, d.Currency)
-		return ActivityTerms{kind: value.kind, lifecycle: v}, err
+		out.lifecycle, err = ApplyLifecycleField(value.lifecycle, d.Scope, d.Text, d.Currency)
 	case ConversionActivity:
-		v, err := ApplyConversionField(value.conversion, d.Scope, d.Text, d.Currency)
-		return ActivityTerms{kind: value.kind, conversion: v}, err
+		out.conversion, err = ApplyConversionField(value.conversion, d.Scope, d.Text, d.Currency)
+	default:
+		return ActivityTerms{}, ErrInvalid
+	}
+	// Field edits perform no I/O. Parsing and whole-value constructor failures
+	// are application validation outcomes, including dependent term invariants.
+	if err != nil {
+		return ActivityTerms{}, ErrInvalid
 	}
 
-	return ActivityTerms{}, ErrInvalid
+	return out, nil
 }
 
 // SourceClaimOutcome compares source assertions before any operator selection.
