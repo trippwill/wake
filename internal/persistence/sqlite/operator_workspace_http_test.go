@@ -128,7 +128,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	for _, test := range []struct{ path, want string }{
 		{"/", "Synthetic account"},
 		{"/activity", "Convert EUR"},
-		{"/activity?kind=trade&state=needs+review", "Synthetic option"},
+		{"/activity?kind=trade&state=review", "Synthetic option"},
 		{"/activity?kind=conversion", "EUR"},
 		{"/activity?view=review", "Reported values need review"},
 		{"/activity?view=instruments&state=gaps", "Synthetic option"},

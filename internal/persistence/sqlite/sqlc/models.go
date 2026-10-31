@@ -108,15 +108,17 @@ type EventLink struct {
 }
 
 type Execution struct {
-	Revision     int64
-	Kind         string
-	ID           string
-	AccountID    string
-	InstrumentID sql.NullString
-	ListingID    sql.NullString
-	Accepted     []byte
-	Status       string
-	Rule         string
+	Revision           int64
+	Kind               string
+	ID                 string
+	AccountID          string
+	InstrumentID       sql.NullString
+	ListingID          sql.NullString
+	Accepted           []byte
+	Status             string
+	ReviewReasons      int64
+	SelectionAuthority string
+	Rule               string
 }
 
 type ExecutionObservation struct {
@@ -129,19 +131,20 @@ type ExecutionObservation struct {
 }
 
 type Instrument struct {
-	Revision        int64
-	ID              string
-	SourceKey       string
-	Name            string
-	Ticker          string
-	Kind            string
-	Reported        []byte
-	ReferenceStatus string
-	ReferenceFigi   string
-	EvidenceID      string
-	ReferenceNext   string
-	Rule            string
-	UnderlierID     sql.NullString
+	Revision           int64
+	ID                 string
+	SourceKey          string
+	Name               string
+	Ticker             string
+	Kind               string
+	Reported           []byte
+	ReferenceStatus    string
+	SelectionAuthority string
+	ReferenceFigi      string
+	EvidenceID         string
+	ReferenceNext      string
+	Rule               string
+	UnderlierID        sql.NullString
 }
 
 type InstrumentReferenceAttempt struct {
@@ -355,4 +358,5 @@ type Work struct {
 	AcknowledgedCompleted int64
 	AcknowledgedTotal     int64
 	Failure               string
+	FailureCode           string
 }

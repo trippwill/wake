@@ -11,10 +11,10 @@ type CorrectionEdge struct {
 
 // CorrectionStates evaluates whole connected groups, so a competing instruction
 // or cycle cannot partially apply based on which report arrived first.
-func CorrectionStates(edges []CorrectionEdge) (map[string]string, []string) {
-	states := map[string]string{}
+func CorrectionStates(edges []CorrectionEdge) (map[string]ActivityState, []CorrectionStatus) {
+	states := map[string]ActivityState{}
 
-	out := make([]string, len(edges))
+	out := make([]CorrectionStatus, len(edges))
 	adj := map[string][]string{}
 	members := map[string][]int{}
 	for i, e := range edges {
@@ -101,11 +101,11 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]string, []string) {
 
 		if invalid {
 			for _, id := range nodes {
-				states[id] = "needs review"
+				states[id], _ = NewActivityState(Accepted, AmbiguousCorrection, AutomaticSelection)
 			}
 
 			for i := range group {
-				out[i] = "needs review"
+				out[i] = CorrectionNeedsReview
 			}
 
 			continue
@@ -113,19 +113,19 @@ func CorrectionStates(edges []CorrectionEdge) (map[string]string, []string) {
 
 		for i := range group {
 			e := edges[i]
-			out[i] = "applied"
+			out[i] = CorrectionApplied
 
 			if e.Kind == source.Cancellation {
-				states[e.Targets[0]] = "cancelled"
+				states[e.Targets[0]], _ = NewActivityState(Cancelled, 0, AutomaticSelection)
 			} else {
-				states[e.Targets[0]] = "superseded"
+				states[e.Targets[0]], _ = NewActivityState(Superseded, 0, AutomaticSelection)
 			}
 		}
 	}
 
 	for i := range out {
 		if out[i] == "" {
-			out[i] = "endpoint unresolved; needs review"
+			out[i] = CorrectionUnresolved
 		}
 	}
 

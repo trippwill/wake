@@ -234,10 +234,16 @@ func (s *Store) Observe(ctx context.Context, k host.WorkKey, p provider.Progress
 	)
 }
 
-func (s *Store) Fail(ctx context.Context, k host.WorkKey, code string) error {
+func (s *Store) Fail(ctx context.Context, k host.WorkKey, code host.FailureCode, message string) error {
 	return s.queries.FailWork(
 		ctx,
-		sqlc.FailWorkParams{Failure: code, ConnectionID: k.Connection, Stream: k.Stream, Operation: k.Operation},
+		sqlc.FailWorkParams{
+			Failure:      message,
+			FailureCode:  string(code),
+			ConnectionID: k.Connection,
+			Stream:       k.Stream,
+			Operation:    k.Operation,
+		},
 	)
 }
 
@@ -273,6 +279,7 @@ func (s *Store) Accept(
 			AcknowledgedCompleted: int64(completed),
 			AcknowledgedTotal:     int64(total),
 			Failure:               step.FailureCode(),
+			FailureCode:           string(workFailureCode(step.FailureCode())),
 			ConnectionID:          k.Connection,
 			Stream:                k.Stream,
 			Operation:             k.Operation,

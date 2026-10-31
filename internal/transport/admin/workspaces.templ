@@ -432,7 +432,7 @@ templ ActivityRows(view application.Dashboard) {
 								<td data-sort-value={ r.Quantity }>{ r.Quantity }</td>
 								<td data-sort-value={ r.Price + " " + r.Basis }>{ r.Price }<span class="wake-help wake-cell-note">{ r.Basis }</span></td>
 								<td>
-									@StateBadge(r.State)
+									@ActivityBadge(r.FinancialState)
 								</td>
 								<td>
 									if r.InstrumentID!="" {
@@ -468,7 +468,7 @@ templ InstrumentsView(view application.Dashboard) {
 								<td>{ i.Kind() }</td>
 								<td>{ known(i.Ticker()) }</td>
 								<td>
-									@StateBadge(i.Status())
+									@InstrumentBadge(i)
 								</td>
 							</tr>
 						}
@@ -514,7 +514,7 @@ templ ListFilters(instruments bool) {
 						<option value={ v } selected?={ page(ctx).Query.Get("state")==v }>{ stringTitle(v) }</option>
 					}
 				} else {
-					for _,v:=range []string{"accepted","needs review","cancelled","superseded"} {
+					for _,v:=range []string{"accepted","review","cancelled","superseded"} {
 						<option value={ v } selected?={ page(ctx).Query.Get("state")==v }>{ stringTitle(v) }</option>
 					}
 				}

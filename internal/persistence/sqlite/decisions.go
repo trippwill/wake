@@ -346,7 +346,7 @@ func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
 			return application.ErrInvalid
 		}
 
-		name, ticker, figi, evidence, status = r.Name, r.Ticker, selected, selectedEvidence, "selected by operator"
+		name, ticker, figi, evidence, status = r.Name, r.Ticker, selected, selectedEvidence, "resolved"
 	}
 
 	if d, ok := active["name"]; ok {
@@ -390,13 +390,14 @@ func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
 	return q.ProjectInstrument(
 		ctx,
 		sqlc.ProjectInstrumentParams{
-			ID:          id,
-			Name:        name,
-			Ticker:      ticker,
-			Figi:        figi,
-			Evidence:    evidence,
-			Status:      status,
-			UnderlierID: underlier,
+			ID:                 id,
+			Name:               name,
+			Ticker:             ticker,
+			Figi:               figi,
+			Evidence:           evidence,
+			Status:             status,
+			SelectionAuthority: string(selectionAuthority(len(active) > 0)),
+			UnderlierID:        underlier,
 		},
 	)
 }

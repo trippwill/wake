@@ -457,7 +457,7 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 				Kind:           r.Kind,
 				Target:         r.Target,
 				Replacement:    r.Replacement,
-				Status:         r.Status,
+				Status:         application.CorrectionStatus(r.Status),
 				TargetIDs:      targets,
 				ReplacementIDs: replacements,
 			},

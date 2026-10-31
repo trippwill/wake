@@ -213,9 +213,9 @@ func RetainedEvidence(retained host.Retained, info application.EvidenceContext) 
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var12 string
-				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(stringTitle(o.Outcome))
+				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(observationStatus(application.ObservationOutcome(o.Outcome)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/evidence.templ`, Line: 31, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/evidence.templ`, Line: 31, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {

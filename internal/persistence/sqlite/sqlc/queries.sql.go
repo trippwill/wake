@@ -151,7 +151,7 @@ func (q *Queries) AdvanceRecovery(ctx context.Context, id string) error {
 }
 
 const advanceWork = `-- name: AdvanceWork :execrows
-UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?
+UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?
 `
 
 type AdvanceWorkParams struct {
@@ -162,6 +162,7 @@ type AdvanceWorkParams struct {
 	AcknowledgedCompleted int64
 	AcknowledgedTotal     int64
 	Failure               string
+	FailureCode           string
 	ConnectionID          string
 	Stream                string
 	Operation             string
@@ -177,6 +178,7 @@ func (q *Queries) AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64
 		arg.AcknowledgedCompleted,
 		arg.AcknowledgedTotal,
 		arg.Failure,
+		arg.FailureCode,
 		arg.ConnectionID,
 		arg.Stream,
 		arg.Operation,
@@ -449,7 +451,7 @@ func (q *Queries) Candidates(ctx context.Context, connectionID string) ([]Candid
 }
 
 const checkpoint = `-- name: Checkpoint :one
-SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure FROM work WHERE connection_id=? AND stream=? AND operation=?
+SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure, failure_code FROM work WHERE connection_id=? AND stream=? AND operation=?
 `
 
 type CheckpointParams struct {
@@ -476,12 +478,13 @@ func (q *Queries) Checkpoint(ctx context.Context, arg CheckpointParams) (Work, e
 		&i.AcknowledgedCompleted,
 		&i.AcknowledgedTotal,
 		&i.Failure,
+		&i.FailureCode,
 	)
 	return i, err
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
 JOIN (
  SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
  UNION
@@ -513,6 +516,7 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
 			&i.ReferenceNext,
@@ -547,7 +551,7 @@ func (q *Queries) CompleteRecoveryGroup(ctx context.Context, arg CompleteRecover
 }
 
 const conflictExecution = `-- name: ConflictExecution :exec
-UPDATE executions SET status='needs review' WHERE id=?
+UPDATE executions SET review_reasons=review_reasons|1 WHERE id=?
 `
 
 func (q *Queries) ConflictExecution(ctx context.Context, id string) error {
@@ -835,7 +839,7 @@ func (q *Queries) EventLinks(ctx context.Context, arg EventLinksParams) ([]strin
 }
 
 const execution = `-- name: Execution :one
-SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, rule FROM executions WHERE id=?
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule FROM executions WHERE id=?
 `
 
 func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
@@ -850,6 +854,8 @@ func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
 		&i.ListingID,
 		&i.Accepted,
 		&i.Status,
+		&i.ReviewReasons,
+		&i.SelectionAuthority,
 		&i.Rule,
 	)
 	return i, err
@@ -917,7 +923,7 @@ func (q *Queries) ExecutionObservations(ctx context.Context, executionID sql.Nul
 }
 
 const executions = `-- name: Executions :many
-SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, rule FROM executions ORDER BY rowid DESC
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule FROM executions ORDER BY rowid DESC
 `
 
 func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
@@ -938,6 +944,8 @@ func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
 			&i.ListingID,
 			&i.Accepted,
 			&i.Status,
+			&i.ReviewReasons,
+			&i.SelectionAuthority,
 			&i.Rule,
 		); err != nil {
 			return nil, err
@@ -963,11 +971,12 @@ func (q *Queries) FailRecovery(ctx context.Context, id string) error {
 }
 
 const failWork = `-- name: FailWork :exec
-UPDATE work SET failure=? WHERE connection_id=? AND stream=? AND operation=?
+UPDATE work SET failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=?
 `
 
 type FailWorkParams struct {
 	Failure      string
+	FailureCode  string
 	ConnectionID string
 	Stream       string
 	Operation    string
@@ -976,6 +985,7 @@ type FailWorkParams struct {
 func (q *Queries) FailWork(ctx context.Context, arg FailWorkParams) error {
 	_, err := q.db.ExecContext(ctx, failWork,
 		arg.Failure,
+		arg.FailureCode,
 		arg.ConnectionID,
 		arg.Stream,
 		arg.Operation,
@@ -1008,7 +1018,7 @@ func (q *Queries) FinishRecovery(ctx context.Context, id string) error {
 }
 
 const instrument = `-- name: Instrument :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id=?
 `
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
@@ -1023,6 +1033,7 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 		&i.Kind,
 		&i.Reported,
 		&i.ReferenceStatus,
+		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
 		&i.ReferenceNext,
@@ -1033,7 +1044,7 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 }
 
 const instrumentBySource = `-- name: InstrumentBySource :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE source_key=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE source_key=?
 `
 
 func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error) {
@@ -1048,6 +1059,7 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.Kind,
 		&i.Reported,
 		&i.ReferenceStatus,
+		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
 		&i.ReferenceNext,
@@ -1152,7 +1164,7 @@ func (q *Queries) InstrumentSelection(ctx context.Context, instrumentID string) 
 }
 
 const instruments = `-- name: Instruments :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments ORDER BY rowid
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments ORDER BY rowid
 `
 
 func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
@@ -1173,6 +1185,7 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
 			&i.ReferenceNext,
@@ -1402,7 +1415,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, julianday interface{}) (
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -1423,6 +1436,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
 			&i.ReferenceNext,
@@ -1443,7 +1457,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 }
 
 const pendingWork = `-- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure NOT IN ('source access not authorized','invalid provider contract value','source capability unavailable','malformed source evidence','source resource limit exceeded') ORDER BY work.rowid LIMIT 20
+SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) JOIN operational.execution USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
 `
 
 type PendingWorkRow struct {
@@ -1476,7 +1490,7 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 }
 
 const processingStatuses = `-- name: ProcessingStatuses :many
-SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity needs review','native identity needs review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10
+SELECT id,processed,processing_failure,requested_from,requested_to,reported_from,reported_to, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='trade') AS trade_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims, (SELECT count(*) FROM records WHERE records.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows, (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review FROM artifacts WHERE connection_id=? AND operation='acquire' ORDER BY rowid DESC LIMIT 10
 `
 
 type ProcessingStatusesRow struct {
@@ -1551,21 +1565,25 @@ func (q *Queries) Profile(ctx context.Context) (Profile, error) {
 }
 
 const projectActivity = `-- name: ProjectActivity :exec
-UPDATE executions SET accepted=?1,status=?2,instrument_id=?3,listing_id=?4,revision=revision+1 WHERE id=?5 AND (accepted<>?1 OR status<>?2 OR instrument_id IS NOT ?3 OR listing_id IS NOT ?4)
+UPDATE executions SET accepted=?1,status=?2,review_reasons=?3,selection_authority=?4,instrument_id=?5,listing_id=?6,revision=revision+1 WHERE id=?7 AND (accepted<>?1 OR status<>?2 OR review_reasons<>?3 OR selection_authority<>?4 OR instrument_id IS NOT ?5 OR listing_id IS NOT ?6)
 `
 
 type ProjectActivityParams struct {
-	Accepted     []byte
-	Status       string
-	InstrumentID sql.NullString
-	ListingID    sql.NullString
-	ID           string
+	Accepted           []byte
+	Status             string
+	ReviewReasons      int64
+	SelectionAuthority string
+	InstrumentID       sql.NullString
+	ListingID          sql.NullString
+	ID                 string
 }
 
 func (q *Queries) ProjectActivity(ctx context.Context, arg ProjectActivityParams) error {
 	_, err := q.db.ExecContext(ctx, projectActivity,
 		arg.Accepted,
 		arg.Status,
+		arg.ReviewReasons,
+		arg.SelectionAuthority,
 		arg.InstrumentID,
 		arg.ListingID,
 		arg.ID,
@@ -1574,17 +1592,18 @@ func (q *Queries) ProjectActivity(ctx context.Context, arg ProjectActivityParams
 }
 
 const projectInstrument = `-- name: ProjectInstrument :exec
-UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,underlier_id=?6,revision=revision+1 WHERE id=?7 AND (name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 OR underlier_id IS NOT ?6)
+UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,selection_authority=?6,underlier_id=?7,revision=revision+1 WHERE id=?8 AND (name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 OR selection_authority<>?6 OR underlier_id IS NOT ?7)
 `
 
 type ProjectInstrumentParams struct {
-	Name        string
-	Ticker      string
-	Figi        string
-	Evidence    string
-	Status      string
-	UnderlierID sql.NullString
-	ID          string
+	Name               string
+	Ticker             string
+	Figi               string
+	Evidence           string
+	Status             string
+	SelectionAuthority string
+	UnderlierID        sql.NullString
+	ID                 string
 }
 
 func (q *Queries) ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error {
@@ -1594,6 +1613,7 @@ func (q *Queries) ProjectInstrument(ctx context.Context, arg ProjectInstrumentPa
 		arg.Figi,
 		arg.Evidence,
 		arg.Status,
+		arg.SelectionAuthority,
 		arg.UnderlierID,
 		arg.ID,
 	)
@@ -2393,7 +2413,7 @@ func (q *Queries) ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) er
 }
 
 const resetConnectionWork = `-- name: ResetConnectionWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',observed='',acknowledged='' WHERE connection_id=?
+UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?
 `
 
 func (q *Queries) ResetConnectionWork(ctx context.Context, connectionID string) error {
@@ -2429,7 +2449,7 @@ func (q *Queries) ResolveInstrument(ctx context.Context, arg ResolveInstrumentPa
 }
 
 const restartDiscovery = `-- name: RestartDiscovery :exec
-UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover'
+UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover'
 `
 
 type RestartDiscoveryParams struct {
@@ -2567,7 +2587,7 @@ func (q *Queries) RetryRecovery(ctx context.Context, id string) (int64, error) {
 }
 
 const retryWork = `-- name: RetryWork :exec
-UPDATE work SET revision=revision+1,failure='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?
+UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?
 `
 
 type RetryWorkParams struct {
@@ -2873,7 +2893,7 @@ func (q *Queries) WakeReference(ctx context.Context) error {
 }
 
 const workStatuses = `-- name: WorkStatuses :many
-SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure FROM work WHERE connection_id=? ORDER BY operation
+SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure, failure_code FROM work WHERE connection_id=? ORDER BY operation
 `
 
 func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work, error) {
@@ -2900,6 +2920,7 @@ func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work
 			&i.AcknowledgedCompleted,
 			&i.AcknowledgedTotal,
 			&i.Failure,
+			&i.FailureCode,
 		); err != nil {
 			return nil, err
 		}

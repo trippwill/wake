@@ -16,13 +16,13 @@ func TestCorrectionGraphRejectsCyclesCompetitionAndAmbiguity(t *testing.T) {
 	} {
 		states, statuses := CorrectionStates(edges)
 		for _, status := range states {
-			if status != "needs review" {
+			if !status.NeedsReview() {
 				t.Fatal(states)
 			}
 		}
 
 		for _, status := range statuses {
-			if status != "needs review" {
+			if !status.NeedsReview() {
 				t.Fatal(statuses)
 			}
 		}
@@ -34,7 +34,8 @@ func TestCorrectionGraphRejectsCyclesCompetitionAndAmbiguity(t *testing.T) {
 			{Kind: source.Replacement, Targets: []string{"b"}, Replacements: []string{"c"}},
 		},
 	)
-	if states["a"] != "superseded" || states["b"] != "superseded" || states["c"] != "" ||
+	if states["a"].Lifecycle() != Superseded || states["b"].Lifecycle() != Superseded ||
+		states["c"].Lifecycle() != "" ||
 		statuses[0] != "applied" {
 		t.Fatal(states, statuses)
 	}

@@ -25,6 +25,32 @@ templ StateBadge(value string) {
 	<span class="wake-state" data-state={ stateKind(value) }>{ value }</span>
 }
 
+templ InstrumentBadge(instrument application.Instrument) {
+	<span class="wake-state" data-state={ stateKind(string(instrument.Status())) }>{ instrumentStatus(instrument) }</span>
+}
+
+templ ActivityBadge(state application.ActivityState) {
+	<span class="wake-state" data-state={ activityBadgeKind(state) }>{ activityStatus(state) }</span>
+}
+
+func activityBadgeKind(state application.ActivityState) string {
+	if state.NeedsReview() {
+		return "warning"
+	}
+	return "neutral"
+}
+
+templ ObservationBadge(outcome application.ObservationOutcome) {
+	<span class="wake-state" data-state={ observationBadgeKind(outcome) }>{ observationStatus(outcome) }</span>
+}
+
+func observationBadgeKind(outcome application.ObservationOutcome) string {
+	if outcome.NeedsReview() {
+		return "warning"
+	}
+	return "neutral"
+}
+
 func stateKind(value string) string {
 	switch value {
 	case "resolved", "complete", "completed", "Processing complete":
@@ -48,7 +74,7 @@ templ ObservationHistory(rows []application.Observation) {
 						<tr id={ observationID(row) }>
 							<td><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+row.Artifact) + "&location=" + url.QueryEscape(row.Location)) }>Confirmation report</a></td>
 							<td>
-								@StateBadge(row.Outcome)
+								@ObservationBadge(row.Outcome)
 							</td>
 							<td>{ row.Location }</td>
 							<td>{ row.Rule } · { row.Version }</td>

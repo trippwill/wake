@@ -28,7 +28,7 @@ templ RetainedEvidence(retained host.Retained, info application.EvidenceContext)
 							if page(ctx).Query.Get("location")==o.Location {
 								<p class="wake-help">Referenced observation</p>
 							}
-							<h3>{ stringTitle(o.Outcome) }</h3>
+							<h3>{ observationStatus(application.ObservationOutcome(o.Outcome)) }</h3>
 							if o.ActivityID!="" {
 								<p><a href={ templ.SafeURL(navURL(ctx, "/activity/"+o.ActivityID)) }>Inspect related activity</a></p>
 							}

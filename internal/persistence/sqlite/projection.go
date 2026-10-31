@@ -13,7 +13,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func correctionStates(ctx context.Context, q *sqlc.Queries) (map[string]string, error) {
+func correctionStates(ctx context.Context, q *sqlc.Queries) (map[string]application.ActivityState, error) {
 	return correctionStatesFor(ctx, q, nil)
 }
 
@@ -21,7 +21,7 @@ func correctionStatesFor(
 	ctx context.Context,
 	q *sqlc.Queries,
 	entities map[string]bool,
-) (map[string]string, error) {
+) (map[string]application.ActivityState, error) {
 	rows, err := q.SourceCorrections(ctx)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func correctionStatesFor(
 			applies = applies || entities[id]
 		}
 
-		if !applies || r.Status == statuses[i] {
+		if !applies || r.Status == string(statuses[i]) {
 			continue
 		}
 
@@ -66,7 +66,7 @@ func correctionStatesFor(
 				ArtifactID: r.ArtifactID,
 				Version:    r.Version,
 				Location:   r.Location,
-				Status:     statuses[i],
+				Status:     string(statuses[i]),
 			},
 		); err != nil {
 			return nil, err
@@ -115,7 +115,7 @@ func projectActivity(
 	ctx context.Context,
 	q *sqlc.Queries,
 	row sqlc.Execution,
-	correctionStatus string,
+	correctionState application.ActivityState,
 ) error {
 	base, err := q.ActivityBase(ctx, row.ID)
 	if err != nil {
@@ -249,16 +249,15 @@ func projectActivity(
 		return err
 	}
 
-	status := "accepted"
+	lifecycle := application.Accepted
+
+	review := correctionState.ReviewReasons()
 	if conflict {
-		status = "needs review"
+		review |= application.ConflictingClaims
 	}
 
-	if correctionStatus != "" {
-		status = correctionStatus
-		if conflict && correctionStatus != "needs review" {
-			status += "; needs review"
-		}
+	if correctionState.Lifecycle() != "" {
+		lifecycle = correctionState.Lifecycle()
 	}
 
 	data, instrument, listing, decided, err := applyActivityDecisions(
@@ -273,18 +272,21 @@ func projectActivity(
 		return err
 	}
 
+	authority := application.AutomaticSelection
 	if decided {
-		status += "; operator decision"
+		authority = application.OperatorSelection
 	}
 
 	return q.ProjectActivity(
 		ctx,
 		sqlc.ProjectActivityParams{
-			ID:           row.ID,
-			Accepted:     data,
-			Status:       status,
-			InstrumentID: instrument,
-			ListingID:    listing,
+			ID:                 row.ID,
+			Accepted:           data,
+			Status:             string(lifecycle),
+			ReviewReasons:      int64(review),
+			SelectionAuthority: string(authority),
+			InstrumentID:       instrument,
+			ListingID:          listing,
 		},
 	)
 }
