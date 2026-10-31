@@ -318,3 +318,27 @@ func TestProxySettingsCanCombinePartialFileAndEnvironment(t *testing.T) {
 		t.Fatal("valid effective configuration was rejected before source resolution", out, err)
 	}
 }
+
+func TestSelectedFileRejectsNoncanonicalKeysBeforeOverrides(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	path := filepath.Join(roots.base, "noncanonical.toml")
+	for _, content := range []string{
+		"[log]\nLEVEL='verbose'", "[LOG]\nlevel='info'", "[Log]\nlevel='debug'",
+		"[log]\nlevel='info'\nLEVEL='verbose'", "[ADMIN]\nport=0",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := resolveForTest(
+			Overrides{
+				ConfigPath:         path,
+				ConfigPathExplicit: true,
+				Values:             map[string]string{"log-level": "info", "admin-port": "8787"},
+			},
+		)
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("noncanonical TOML key silently fell back: %q: %v", content, err)
+		}
+	}
+}

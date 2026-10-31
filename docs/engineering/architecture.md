@@ -14,7 +14,8 @@ The build configuration and dependency manifests own exact tools and versions.
 
 Launch configuration resolves once on the actual parsed CLI command. Strictly decode
 and validate the selected TOML file before applying higher-priority values; explicit
-flags cannot conceal an invalid file. Native CLI environment and map sources apply
+flags cannot conceal an invalid file. TOML table and field names use the catalog's exact
+spelling and case. Native CLI environment and map sources apply
 `defaults < TOML < environment < explicit flags`, and discovery reports the authority
 of each selected value. Build typed configuration directly from these flags; do not
 reparse overrides through a second command or serialize intermediate TOML. Resolution

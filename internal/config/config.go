@@ -176,6 +176,22 @@ func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error
 		return cfg, metadata, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
 	}
 
+	// Struct decoding is case-insensitive; source admission and attribution are not.
+	// Admit the catalog's exact table/key paths before checking or selecting values.
+	admitted := map[string]bool{}
+	for _, setting := range Settings() {
+		parts := strings.Split(setting.Key, ".")
+		for n := 1; n <= len(parts); n++ {
+			admitted[toml.Key(parts[:n]).String()] = true
+		}
+	}
+
+	for _, key := range metadata.Keys() {
+		if !admitted[key.String()] {
+			return cfg, metadata, fmt.Errorf("%w: unknown or noncanonical TOML key: %s", ErrInvalid, key.String())
+		}
+	}
+
 	if undecoded := metadata.Undecoded(); len(undecoded) != 0 {
 		keys := make([]string, 0, len(undecoded))
 		for _, key := range undecoded {
