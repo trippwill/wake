@@ -53,7 +53,7 @@ func showConfig(_ context.Context, c *cli.Command) error {
 	activity := newActivity(c.ErrWriter, c.Bool("json"), "config show", "resolving local launch configuration")
 	defer activity.Stop()
 
-	out, err := config.Resolve(explicitSettings(c))
+	out, err := config.Resolve(c)
 	if err != nil {
 		return failure("configure: %v", err)
 	}
@@ -78,7 +78,7 @@ func getConfig(_ context.Context, c *cli.Command) error {
 		return usageError("config get requires one setting name")
 	}
 
-	out, err := config.ResolveReadOnly(explicitSettings(c))
+	out, err := config.ResolveReadOnly(c)
 	if err != nil {
 		return failure("configure: %v", err)
 	}
@@ -108,7 +108,7 @@ func checkConfig(_ context.Context, c *cli.Command) error {
 	activity := newActivity(c.ErrWriter, c.Bool("json"), "config check", "checking local launch configuration")
 	defer activity.Stop()
 
-	out, err := config.Resolve(explicitSettings(c))
+	out, err := config.Resolve(c)
 	if err != nil {
 		return failure("configure: %v", err)
 	}

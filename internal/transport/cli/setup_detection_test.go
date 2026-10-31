@@ -25,7 +25,9 @@ func setupDaemonFixture(t *testing.T) (config.Config, string, []byte) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(root, "runtime"))
 
-	cfg, err := config.Load(config.Overrides{})
+	resolved, err := launchForTest("", true)
+	cfg := resolved.Config
+
 	if err != nil {
 		t.Fatal(err)
 	}

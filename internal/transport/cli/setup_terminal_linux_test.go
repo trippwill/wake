@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"golang.org/x/sys/unix"
@@ -194,7 +193,9 @@ func TestSetupThroughTerminal(t *testing.T) {
 				t.Setenv("XDG_STATE_HOME", t.TempDir())
 				t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-				cfg, err := config.Load(config.Overrides{ConfigPath: configPath, ConfigPathExplicit: true})
+				resolved, err := launchForTest(configPath, true)
+				cfg := resolved.Config
+
 				if err != nil {
 					t.Fatal(err)
 				}

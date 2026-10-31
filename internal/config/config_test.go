@@ -14,9 +14,9 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	roots := configureEnvironment(t, true)
 
-	cfg, err := Load(Overrides{})
+	cfg, err := loadForTest(Overrides{})
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("loadForTest() error = %v", err)
 	}
 
 	assertPath(t, cfg.Paths.ConfigDir, filepath.Join(roots.config, "wake"))
@@ -62,14 +62,14 @@ func TestLoadFileAndOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(Overrides{
+	cfg, err := loadForTest(Overrides{
 		ConfigPath:         configPath,
 		ConfigPathExplicit: true,
 
 		Values: map[string]string{"runtime-dir": overrideRuntime, "log-level": "warn", "admin-port": "8791"},
 	})
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("loadForTest() error = %v", err)
 	}
 
 	assertPath(t, cfg.Storage.WarehousePath, fileData)
@@ -157,9 +157,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 				override.ConfigPathExplicit = true
 			}
 
-			_, err := Load(override)
+			_, err := loadForTest(override)
 			if !errors.Is(err, ErrInvalid) {
-				t.Fatalf("Load() error = %v, want ErrInvalid", err)
+				t.Fatalf("loadForTest() error = %v, want ErrInvalid", err)
 			}
 		})
 	}
@@ -169,19 +169,19 @@ func TestLoadConfigFilePresence(t *testing.T) {
 	t.Run("default is optional", func(t *testing.T) {
 		configureEnvironment(t, true)
 
-		if _, err := Load(Overrides{}); err != nil {
-			t.Fatalf("Load() error = %v", err)
+		if _, err := loadForTest(Overrides{}); err != nil {
+			t.Fatalf("loadForTest() error = %v", err)
 		}
 	})
 
 	t.Run("explicit is required", func(t *testing.T) {
 		roots := configureEnvironment(t, true)
-		_, err := Load(Overrides{
+		_, err := loadForTest(Overrides{
 			ConfigPath:         filepath.Join(roots.base, "missing.toml"),
 			ConfigPathExplicit: true,
 		})
 		if !errors.Is(err, ErrInvalid) {
-			t.Fatalf("Load() error = %v, want ErrInvalid", err)
+			t.Fatalf("loadForTest() error = %v, want ErrInvalid", err)
 		}
 	})
 }
@@ -189,9 +189,9 @@ func TestLoadConfigFilePresence(t *testing.T) {
 func TestLoadRequiresRuntimeDirectory(t *testing.T) {
 	configureEnvironment(t, false)
 
-	_, err := Load(Overrides{})
+	_, err := loadForTest(Overrides{})
 	if !errors.Is(err, ErrRuntimeDirRequired) {
-		t.Fatalf("Load() error = %v, want ErrRuntimeDirRequired", err)
+		t.Fatalf("loadForTest() error = %v, want ErrRuntimeDirRequired", err)
 	}
 }
 
@@ -206,9 +206,9 @@ func TestLoadUsesHomeFallbacks(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("XDG_RUNTIME_DIR", "")
 
-	cfg, err := Load(Overrides{Values: map[string]string{"runtime-dir": runtimeDir}})
+	cfg, err := loadForTest(Overrides{Values: map[string]string{"runtime-dir": runtimeDir}})
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("loadForTest() error = %v", err)
 	}
 
 	assertPath(t, cfg.Paths.ConfigDir, filepath.Join(home, ".config", "wake"))
@@ -232,9 +232,11 @@ func TestLoadRejectsInsecureDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load(Overrides{Values: map[string]string{"warehouse-path": filepath.Join(insecure, "wake.db")}})
+	_, err := loadForTest(
+		Overrides{Values: map[string]string{"warehouse-path": filepath.Join(insecure, "wake.db")}},
+	)
 	if !errors.Is(err, ErrInsecurePath) {
-		t.Fatalf("Load() error = %v, want ErrInsecurePath", err)
+		t.Fatalf("loadForTest() error = %v, want ErrInsecurePath", err)
 	}
 }
 
@@ -276,9 +278,11 @@ func TestLoadRejectsNonDirectoryAndSymlink(t *testing.T) {
 			path := filepath.Join(roots.base, test.name)
 			test.setup(t, path)
 
-			_, err := Load(Overrides{Values: map[string]string{"warehouse-path": filepath.Join(path, "wake.db")}})
+			_, err := loadForTest(
+				Overrides{Values: map[string]string{"warehouse-path": filepath.Join(path, "wake.db")}},
+			)
 			if !errors.Is(err, ErrInsecurePath) {
-				t.Fatalf("Load() error = %v, want ErrInsecurePath", err)
+				t.Fatalf("loadForTest() error = %v, want ErrInsecurePath", err)
 			}
 		})
 	}
@@ -299,9 +303,11 @@ func TestLoadRejectsDirectoryOwnedByAnotherUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load(Overrides{Values: map[string]string{"warehouse-path": filepath.Join(path, "wake.db")}})
+	_, err := loadForTest(
+		Overrides{Values: map[string]string{"warehouse-path": filepath.Join(path, "wake.db")}},
+	)
 	if !errors.Is(err, ErrInsecurePath) {
-		t.Fatalf("Load() error = %v, want ErrInsecurePath", err)
+		t.Fatalf("loadForTest() error = %v, want ErrInsecurePath", err)
 	}
 }
 

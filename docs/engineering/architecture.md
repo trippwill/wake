@@ -12,6 +12,17 @@ socket serves downstream applications. Deployment wrappers do not define the cor
 Wake uses Go, standard-library HTTP, SQLite/sqlc, templ and embedded browser assets.
 The build configuration and dependency manifests own exact tools and versions.
 
+Launch configuration resolves once on the actual parsed CLI command. Strictly decode
+and validate the selected TOML file before applying higher-priority values; explicit
+flags cannot conceal an invalid file. Native CLI environment and map sources apply
+`defaults < TOML < environment < explicit flags`, and discovery reports the authority
+of each selected value. Build typed configuration directly from these flags; do not
+reparse overrides through a second command or serialize intermediate TOML. Resolution
+performs no filesystem writes. Cross-setting requirements are checked on the effective
+configuration, allowing valid partial files to combine with environment or flags.
+Setup edits configured intent separately from launch
+overrides; directory preparation belongs to commands that need it.
+
 ## Responsibilities
 
 | Boundary | Responsibility |
