@@ -57,7 +57,7 @@ func (q *Queries) Account(ctx context.Context) (Account, error) {
 }
 
 const acquisitionReceipts = `-- name: AcquisitionReceipts :many
-SELECT id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
 `
 
 func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
@@ -70,6 +70,7 @@ func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([
 	for rows.Next() {
 		var i AcquisitionReceipt
 		if err := rows.Scan(
+			&i.Sequence,
 			&i.ID,
 			&i.ArtifactID,
 			&i.Operation,
@@ -434,7 +435,11 @@ func (q *Queries) CandidateExists(ctx context.Context, arg CandidateExistsParams
 }
 
 const candidateProfiles = `-- name: CandidateProfiles :many
-SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value
+SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
+ SELECT candidates.receipt_id, candidates.artifact_id, candidates.authority, candidates.kind, candidates.scope, candidates.value, candidates.name, candidates.currency,receipt.sequence AS appearance,row_number() OVER (PARTITION BY candidates.authority,candidates.kind,candidates.scope,candidates.value ORDER BY receipt.sequence DESC) AS ranking
+ FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id JOIN acquisition_receipts receipt ON receipt.id=candidates.receipt_id
+ WHERE artifacts.connection_id=? AND receipt.operation='discover'
+) WHERE ranking=1 ORDER BY appearance DESC,authority,kind,scope,value
 `
 
 type CandidateProfilesRow struct {
@@ -2479,7 +2484,7 @@ func (q *Queries) PutSourceCorrection(ctx context.Context, arg PutSourceCorrecti
 }
 
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
-SELECT id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
 
 func (q *Queries) RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
@@ -2492,6 +2497,7 @@ func (q *Queries) RecentAcquisitionReceipts(ctx context.Context, artifactID stri
 	for rows.Next() {
 		var i AcquisitionReceipt
 		if err := rows.Scan(
+			&i.Sequence,
 			&i.ID,
 			&i.ArtifactID,
 			&i.Operation,

@@ -69,7 +69,11 @@ SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifa
 -- name: PutAccount :exec
 INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?);
 -- name: CandidateProfiles :many
-SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value;
+SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
+ SELECT candidates.*,receipt.sequence AS appearance,row_number() OVER (PARTITION BY candidates.authority,candidates.kind,candidates.scope,candidates.value ORDER BY receipt.sequence DESC) AS ranking
+ FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id JOIN acquisition_receipts receipt ON receipt.id=candidates.receipt_id
+ WHERE artifacts.connection_id=? AND receipt.operation='discover'
+) WHERE ranking=1 ORDER BY appearance DESC,authority,kind,scope,value;
 -- name: PendingArtifacts :many
 SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ArtifactProcessed :exec

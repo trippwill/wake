@@ -55,6 +55,7 @@ type Account struct {
 }
 
 type AcquisitionReceipt struct {
+	Sequence      int64
 	ID            string
 	ArtifactID    string
 	Operation     string

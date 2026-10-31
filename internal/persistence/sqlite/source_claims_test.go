@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/source"
 )
 
 func recordTestReceipt(t *testing.T, s *Store, id string) {
@@ -444,5 +446,95 @@ func TestReceiptCoverageSurvivesEquivalentBodyReuse(t *testing.T) {
 	retained, err := s.Retained(ctx, bodyID)
 	if err != nil || retained.Artifact.Hash() != receipts[0].Hash {
 		t.Fatal("retained original body changed", retained, err)
+	}
+}
+
+func TestLatestDiscoveryProfileFollowsReceiptsWhenBodyIsReused(t *testing.T) {
+	s, _ := testStore(t)
+	ctx := t.Context()
+	if err := s.Configure(
+		ctx,
+		host.Connection{
+			ID:       "synthetic",
+			Provider: "ibkr-flex",
+			Name:     "Synthetic",
+			Settings: confirmationSettings("123"),
+		},
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	key := host.WorkKey{Connection: "synthetic", Stream: "confirmations", Operation: "discover"}
+
+	ref, err := source.NewReference("synthetic", "account", "scope", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var first, last string
+	for i, report := range []struct{ body, name, currency string }{{"A", "First", "USD"}, {"B", "Second", "GBP"}, {"A", "Latest", "EUR"}} {
+		currency, e := financial.ParseCurrency(report.currency)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		candidate, e := provider.NewCandidate(ref, report.name, currency)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		a, e := provider.NewArtifact("synthetic", "text/plain", time.Now(), []byte(report.body))
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		step, e := provider.NewStep(provider.State{}, a, time.Now().Add(time.Hour))
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		cp, e := s.Checkpoint(ctx, key)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		last, e = s.Accept(ctx, key, cp.Revision, step, []provider.Candidate{candidate}, provider.Progress{})
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		if i == 0 {
+			first = last
+		}
+	}
+
+	if first != last {
+		t.Fatal("discovery body was not reused", first, last)
+	}
+
+	view, err := s.Dashboard(ctx)
+	if err != nil || len(view.Connections) != 1 || len(view.Connections[0].Candidates) != 1 {
+		t.Fatal(view, err)
+	}
+
+	latest := view.Connections[0].Candidates[0]
+	if latest.Artifact != first || latest.Candidate.Name() != "Latest" ||
+		latest.Candidate.Currency().String() != "EUR" {
+		t.Fatal("stale discovery profile", latest)
+	}
+
+	candidates, err := s.Candidates(ctx, "synthetic")
+	if err != nil || len(candidates) != 3 {
+		t.Fatal("prior discovery appearances lost", candidates, err)
+	}
+
+	details, err := application.NewAccountDetails("Chosen", "EUR")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = s.Confirm(ctx, "synthetic", last, ref, details, true); err != nil {
+		t.Fatal("repeated discovery could not be confirmed", err)
 	}
 }
