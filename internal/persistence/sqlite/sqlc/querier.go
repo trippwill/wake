@@ -19,6 +19,21 @@ type Querier interface {
 	ActiveRecovery(ctx context.Context) (RecoveryJob, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
+	// SPDX-FileCopyrightText: 2026 trippwill
+	// SPDX-License-Identifier: MPL-2.0
+	AdminActivityCount(ctx context.Context, arg AdminActivityCountParams) (AdminActivityCountRow, error)
+	AdminActivityRows(ctx context.Context, arg AdminActivityRowsParams) ([]AdminActivityRowsRow, error)
+	AdminCandidate(ctx context.Context, arg AdminCandidateParams) (AdminCandidateRow, error)
+	AdminCandidateCount(ctx context.Context, connectionID string) (int64, error)
+	AdminCandidates(ctx context.Context, arg AdminCandidatesParams) ([]AdminCandidatesRow, error)
+	AdminCounts(ctx context.Context) (AdminCountsRow, error)
+	AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error)
+	AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRowsParams) ([]AdminInstrumentRowsRow, error)
+	AdminReferenceStatus(ctx context.Context) (AdminReferenceStatusRow, error)
+	AdminReviewCount(ctx context.Context, search interface{}) (AdminReviewCountRow, error)
+	AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams) ([]AdminReviewRowsRow, error)
+	AdminSourceCount(ctx context.Context, search interface{}) (int64, error)
+	AdminSourceRows(ctx context.Context, arg AdminSourceRowsParams) ([]Connection, error)
 	AdvanceActivityRevision(ctx context.Context, id string) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceRecovery(ctx context.Context, id string) error

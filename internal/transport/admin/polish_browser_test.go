@@ -237,7 +237,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			},
 		},
 	}
-	view := application.Dashboard{
+	view := fixtureView{
 		Connections: []application.ConnectionView{
 			{
 				ID:         "synthetic-connection",
@@ -379,23 +379,23 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				r = r.WithContext(context.WithValue(r.Context(), pageKey{}, snapshot))
 				component = CorrectionPage(csrf, form)
 			case "/test/source":
-				component = ConnectionPage(csrf, view, view.Connections[0])
+				component = ConnectionPage(csrf, fixtureSource(view), view.Connections[0])
 			case "/test/access":
 				page(r.Context()).Query.Set("view", "access")
 
-				component = ConnectionPage(csrf, view, view.Connections[0])
+				component = ConnectionPage(csrf, fixtureSource(view), view.Connections[0])
 			case "/test/reports":
 				page(r.Context()).Query.Set("view", "reports")
 
-				component = ConnectionPage(csrf, view, view.Connections[0])
+				component = ConnectionPage(csrf, fixtureSource(view), view.Connections[0])
 			case "/test/new":
 				component = ConnectionSetup(csrf, []provider.Registration{registration})
 			case "/test/reference":
-				component = ReferencePage(csrf, view)
+				component = ReferencePage(csrf, fixtureSource(view))
 			case "/test/maintenance":
-				component = MaintenancePage(csrf, view)
+				component = MaintenancePage(csrf, fixtureSource(view))
 			case "/test/connections":
-				component = ConnectionsPage(csrf, view)
+				component = ConnectionsPage(csrf, fixtureSource(view))
 			case "/test/recovery":
 				copy := view
 				copy.Connections = append([]application.ConnectionView{}, view.Connections...)
@@ -407,9 +407,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				copy.Recovery = []application.RecoveryJob{
 					{ID: "synthetic-rebuild", Status: "running", Completed: 42, Total: 70},
 				}
-				component = RecoveryPage(csrf, copy)
+				component = RecoveryPage(csrf, fixtureSource(copy))
 			case "/test/overview", "/":
-				component = DashboardOverview(view)
+				component = DashboardOverview(fixtureOverview(view))
 			default:
 				http.NotFound(w, r)
 				return

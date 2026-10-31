@@ -88,7 +88,16 @@ transaction mechanics and storage layout.
 ## User and consumer boundaries
 
 The admin console exposes understandable work, values, conflicts and next actions.
-Detailed evidence is optional. The socket exposes accepted financial views with
+Detailed evidence is optional. Prerequisite and status reads use source/access and
+work metadata without decoding financial history. Source list/detail, overview,
+review and accepted activity/instrument lists have separate typed read models.
+Lists filter and order in SQLite, default to 50 rows per page and retain stable
+identity tie-breakers. Exact decimal ordering uses the registered numeric collation;
+unknown values sort last independently of direction and currency/unit groups remain
+explicit. Each read model is materialized in one consistent read transaction,
+released before rendering or client I/O. Presentation owns label wording and may
+supply structured label matches to search; SQL does not infer state from those words.
+The socket exposes accepted financial views with
 stable identities and compact conflict status; consumer changes include corrections
 and relevant link/reference changes, not just new activity. Presentation adapters
 share application meaning without depending on one another's UI or wire types.

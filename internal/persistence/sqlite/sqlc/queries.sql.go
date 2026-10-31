@@ -1849,10 +1849,10 @@ func (q *Queries) ProcessingComplete(ctx context.Context, arg ProcessingComplete
 
 const processingStatuses = `-- name: ProcessingStatuses :many
 SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
- (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='trade') AS trade_claims,
- (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='lifecycle') AS lifecycle_claims,
- (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='conversion') AS conversion_claims,
- (SELECT count(*) FROM record_values WHERE record_values.artifact_id=artifacts.id AND kind='rejected') AS excluded_rows,
+ CAST(coalesce((SELECT json_extract(counts,'$.Trades') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS trade_claims,
+ CAST(coalesce((SELECT json_extract(counts,'$.Lifecycles') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS lifecycle_claims,
+ CAST(coalesce((SELECT json_extract(counts,'$.Conversions') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS conversion_claims,
+ CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
  (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
 `

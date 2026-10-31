@@ -5,12 +5,10 @@ package admin
 
 import (
 	"context"
-	"math/big"
 	"net/http"
 	"net/url"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/a-h/templ"
@@ -242,101 +240,7 @@ func hasDifferences(f application.CorrectionForm, c application.CorrectionCandid
 
 type reviewItem struct{ Key, Kind, Label, Reason, Href string }
 
-func reviews(v application.Dashboard) []reviewItem {
-	items := []reviewItem{}
-	seen := map[string]bool{}
-
-	add := func(i reviewItem) {
-		if !seen[i.Key] {
-			seen[i.Key] = true
-			items = append(items, i)
-		}
-	}
-	for _, r := range activityItems(v) {
-		if r.FinancialState.NeedsReview() {
-			add(
-				reviewItem{
-					"activity/" + r.ID,
-					"Activity",
-					r.Label,
-					"Reported values need review",
-					"/activity/" + r.ID + "/correct?mode=evidence",
-				},
-			)
-		}
-	}
-
-	for _, i := range v.Instruments {
-		if i.Status().NeedsReview() {
-			add(
-				reviewItem{
-					"instrument/" + i.ID(),
-					"Identity",
-					known(i.Name()),
-					"Instrument identity: " + string(i.Status()),
-					"/instruments/" + i.ID() + "/correct?mode=evidence",
-				},
-			)
-		}
-	}
-
-	for _, c := range v.Corrections {
-		if !c.Status.NeedsReview() {
-			continue
-		}
-
-		linked := false
-		for _, id := range append(append([]string{}, c.TargetIDs...), c.ReplacementIDs...) {
-			for _, a := range activityItems(v) {
-				if a.ID == id {
-					add(
-						reviewItem{
-							"activity/" + id,
-							"Activity",
-							a.Label,
-							"Source correction: " + correctionStatus(c.Status),
-							"/activity/" + id + "/correct?mode=evidence",
-						},
-					)
-
-					linked = true
-				}
-			}
-		}
-
-		if !linked {
-			add(
-				reviewItem{
-					"source/" + c.Artifact + "/" + c.Location,
-					"Source instruction",
-					stringTitle(c.Kind) + " instruction",
-					correctionStatus(c.Status),
-					"/evidence/" + c.Artifact + "?location=" + url.QueryEscape(c.Location),
-				},
-			)
-		}
-	}
-
-	for _, c := range v.Connections {
-		for _, p := range c.Processing {
-			if p.NeedsReview > 0 {
-				add(
-					reviewItem{
-						Key:    "report/" + p.Artifact,
-						Kind:   "Source claims",
-						Label:  "Identity review · " + c.Name,
-						Reason: strconv.FormatInt(p.NeedsReview, 10) + " source claims have unresolved identity.",
-						Href:   "/evidence/" + p.Artifact,
-					},
-				)
-			}
-		}
-	}
-
-	return items
-}
-
-func sourceWork(v application.Dashboard, c application.ConnectionView) []application.WorkStatus {
+func sourceWork(v sourceView, c application.ConnectionView) []application.WorkStatus {
 	operation := "discover"
 	if v.Account.Connection() == c.ID && c.CanAcquire {
 		operation = "acquire"
@@ -352,7 +256,7 @@ func sourceWork(v application.Dashboard, c application.ConnectionView) []applica
 	return out
 }
 
-func repairs(v application.Dashboard) []reviewItem {
+func repairs(v sourceView) []reviewItem {
 	out := []reviewItem{}
 	if v.Storage.Paused {
 		out = append(
@@ -371,7 +275,7 @@ func repairs(v application.Dashboard) []reviewItem {
 				out,
 				reviewItem{
 					Label:  c.Name,
-					Reason: "Source settings or token are missing.",
+					Reason: "Source settings or credentials are missing.",
 					Href:   connectionURL(c.ID, "access"),
 				},
 			)
@@ -420,7 +324,7 @@ func repairs(v application.Dashboard) []reviewItem {
 
 	return out
 }
-func repairCount(v application.Dashboard) int { return len(repairs(v)) }
+func repairCount(v sourceView) int { return len(repairs(v)) }
 
 func stringTitle(s string) string {
 	if s == "" {
@@ -430,242 +334,12 @@ func stringTitle(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-func instrumentName(v application.Dashboard, id string) string {
-	for _, i := range v.Instruments {
-		if i.ID() == id {
-			if i.Name() != "" {
-				return i.Name()
-			}
-
-			return known(i.Ticker())
-		}
-	}
-
-	return "Unresolved instrument"
-}
-
-func instrumentState(v application.Dashboard, id string) string {
-	for _, i := range v.Instruments {
-		if i.ID() == id {
-			return instrumentStatus(i)
-		}
-	}
-
-	return "Unknown"
-}
-
 type activityItem struct {
 	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State string
 	FinancialState                                                                                  application.ActivityState
 }
 
-func activityItems(v application.Dashboard) []activityItem {
-	out := []activityItem{}
-	for _, e := range v.Executions {
-		f := e.Terms().Fields()
-		name := instrumentName(v, e.Instrument())
-		out = append(
-			out,
-			activityItem{
-				ID:           e.ID(),
-				Href:         "/executions/" + e.ID(),
-				Label:        stringTitle(string(f.Side)) + " " + name,
-				Date:         f.TradeDate.String(),
-				Kind:         "trade",
-				Instrument:   name,
-				InstrumentID: e.Instrument(),
-				Reference:    instrumentState(v, e.Instrument()),
-				Quantity:     f.Quantity.Value() + " " + e.Terms().QuantityUnit(),
-				Price:        priceText(f.Price),
-				Basis:        e.Terms().PriceBasis(),
-				State:        e.Status(), FinancialState: e.State(),
-			},
-		)
-	}
-
-	for _, e := range v.Lifecycles {
-		f := e.Terms().Fields()
-		name := instrumentName(v, e.Instrument())
-		out = append(
-			out,
-			activityItem{
-				ID:           e.ID(),
-				Href:         "/activity/" + e.ID(),
-				Label:        stringTitle(string(f.Kind)) + " · " + name,
-				Date:         f.Date.String(),
-				Kind:         "option outcome",
-				Instrument:   name,
-				InstrumentID: e.Instrument(),
-				Reference:    instrumentState(v, e.Instrument()),
-				Quantity:     f.Quantity.Value() + " contracts",
-				Price:        "Not applicable",
-				State:        e.Status(), FinancialState: e.State(),
-			},
-		)
-	}
-
-	for _, e := range v.Conversions {
-		f := e.Terms().Fields()
-		pair := currencyText(f.Sent.Currency()) + " → " + currencyText(f.Received.Currency())
-		basis := ""
-		if f.Rate.Amount() != "" {
-			basis = "per " + currencyText(f.RateBase)
-		}
-
-		out = append(
-			out,
-			activityItem{
-				ID:         e.ID(),
-				Href:       "/activity/" + e.ID(),
-				Label:      "Convert " + pair,
-				Date:       f.Date.String(),
-				Kind:       "conversion",
-				Instrument: pair,
-				Quantity:   currencyAmountText(f.Sent) + " sent · " + currencyAmountText(f.Received) + " received",
-				Price:      priceText(f.Rate),
-				Basis:      basis,
-				State:      e.Status(), FinancialState: e.State(),
-			},
-		)
-	}
-
-	return out
-}
-
-func decimalOrder(a, b string) int {
-	af, bf := strings.Fields(a), strings.Fields(b)
-	if len(af) == 0 || len(bf) == 0 {
-		return strings.Compare(a, b)
-	}
-
-	x, xok := new(big.Rat).SetString(af[0])
-	y, yok := new(big.Rat).SetString(bf[0])
-	if !xok || !yok {
-		return strings.Compare(a, b)
-	}
-
-	if unit := strings.Compare(strings.Join(af[1:], " "), strings.Join(bf[1:], " ")); unit != 0 {
-		return unit
-	}
-
-	return x.Cmp(y)
-}
-
-func filteredActivity(ctx context.Context, v application.Dashboard) []activityItem {
-	q := page(ctx).Query
-	out := []activityItem{}
-	for _, r := range activityItems(v) {
-		if kind := q.Get("kind"); kind != "" && kind != r.Kind {
-			continue
-		}
-
-		if state := q.Get(
-			"state",
-		); state != "" && (state != "review" || !r.FinancialState.NeedsReview()) &&
-			state != r.State {
-			continue
-		}
-
-		if !strings.Contains(
-			strings.ToLower(
-				r.Label+" "+r.Date+" "+r.Quantity+" "+r.Price+" "+activityStatus(r.FinancialState)+" "+r.Reference,
-			),
-			strings.ToLower(q.Get("q")),
-		) {
-			continue
-		}
-
-		out = append(out, r)
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		cmp := 0
-		switch q.Get("sort") {
-		case "label":
-			cmp = strings.Compare(a.Label, b.Label)
-		case "quantity":
-			cmp = decimalOrder(a.Quantity, b.Quantity)
-		case "price":
-			cmp = decimalOrder(a.Price+" "+a.Basis, b.Price+" "+b.Basis)
-		case "state":
-			cmp = strings.Compare(a.State, b.State)
-		case "reference":
-			cmp = strings.Compare(a.Reference, b.Reference)
-		default:
-			cmp = strings.Compare(a.Date, b.Date)
-		}
-
-		if cmp == 0 {
-			cmp = strings.Compare(a.ID, b.ID)
-		}
-
-		if q.Get("dir") == "asc" {
-			return cmp < 0
-		}
-
-		return cmp > 0
-	})
-
-	return out
-}
-
-func filteredInstruments(ctx context.Context, v application.Dashboard) []application.Instrument {
-	q := page(ctx).Query
-	out := []application.Instrument{}
-	for _, i := range v.Instruments {
-		if kind := q.Get("kind"); kind != "" && kind != i.Kind() {
-			continue
-		}
-
-		state := q.Get("state")
-		if state == "gaps" && !i.Status().Gap() || state == "review" && !i.Status().NeedsReview() ||
-			state != "" && state != "gaps" && state != "review" && state != string(i.Status()) {
-			continue
-		}
-
-		if !strings.Contains(
-			strings.ToLower(i.Name()+" "+i.Ticker()+" "+i.Kind()+" "+instrumentStatus(i)),
-			strings.ToLower(q.Get("q")),
-		) {
-			continue
-		}
-
-		out = append(out, i)
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		left, right := a.Name(), b.Name()
-		switch q.Get("sort") {
-		case "kind":
-			left, right = a.Kind(), b.Kind()
-		case "ticker":
-			left, right = a.Ticker(), b.Ticker()
-		case "state":
-			left, right = string(a.Status()), string(b.Status())
-		}
-
-		cmp := strings.Compare(left, right)
-		if cmp == 0 {
-			cmp = strings.Compare(a.ID(), b.ID())
-		}
-
-		if q.Get("dir") == "desc" {
-			return cmp > 0
-		}
-
-		return cmp < 0
-	})
-
-	return out
-}
-
-func resultCount(n, total int) string {
-	return strconv.Itoa(n) + " of " + strconv.Itoa(total) + " records"
-}
-
-func connectionByID(v application.Dashboard, id string) (application.ConnectionView, bool) {
+func connectionByID(v sourceView, id string) (application.ConnectionView, bool) {
 	for _, c := range v.Connections {
 		if c.ID == id {
 			return c, true
@@ -679,7 +353,7 @@ func connectionURL(id, view string) string {
 	return "/connections/" + url.PathEscape(id) + "?view=" + view
 }
 
-func connectionFailure(v application.Dashboard, c application.ConnectionView) bool {
+func connectionFailure(v sourceView, c application.ConnectionView) bool {
 	if c.MissingAccess {
 		return true
 	}
@@ -718,11 +392,16 @@ func taskURL(ctx context.Context, path string) string {
 }
 
 func confirmURL(id string, c application.Candidate) string {
-	return "/connections/" + id + "/confirm?artifact=" + url.QueryEscape(
-		c.Artifact,
-	) + "&account=" + url.QueryEscape(
-		c.Candidate.Reference().Value(),
-	)
+	ref := c.Candidate.Reference()
+	query := url.Values{
+		"artifact":  {c.Artifact},
+		"account":   {ref.Value()},
+		"authority": {ref.Authority()},
+		"kind":      {ref.Kind()},
+		"scope":     {ref.Scope()},
+	}
+
+	return "/connections/" + id + "/confirm?" + query.Encode()
 }
 
 func readiness(ok bool) string {
@@ -733,7 +412,7 @@ func readiness(ok bool) string {
 	return "Missing"
 }
 
-func recoveryReady(v application.Dashboard) bool {
+func recoveryReady(v sourceView) bool {
 	if v.Storage.ReferenceReview {
 		return false
 	}

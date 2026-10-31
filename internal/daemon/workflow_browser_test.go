@@ -701,24 +701,28 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("premature resume accepted", status)
 	}
 
+	navigate(chromedp.Navigate(origin + "/connections/recovery"))
+	check(chromedp.WaitVisible("a[data-repair-source]"))
+	navigate(chromedp.Evaluate(`document.querySelector('a[data-repair-source]').click()`, nil))
 	check(
-		chromedp.Navigate(origin+"/connections/recovery"),
-		chromedp.WaitVisible("#storage-recovery-title"),
-		chromedp.SetValue(
-			`form[action$="/settings"] input[name="connection_name"]`,
-			"Recovered IBKR",
-		),
+		chromedp.WaitVisible(`form[action$="/settings"]`),
+		chromedp.SetValue(`form[action$="/settings"] input[name="connection_name"]`, "Recovered IBKR"),
 		chromedp.SetValue(`form[action$="/settings"] input[name="setting.query_id"]`, "123"),
-		chromedp.Click(`form[action$="/settings"] button`),
-		chromedp.WaitVisible(`//h2[text()="Recovered IBKR"]`, chromedp.BySearch),
-		chromedp.SetValue(
-			`input[name="secret.token"]`,
-			"synthetic-token",
-		),
-		chromedp.Click(`form[action$="/secrets"] button`),
+	)
+	navigate(chromedp.Click(`form[action$="/settings"] button`))
+	check(chromedp.WaitVisible("a[data-repair-source]"))
+	navigate(chromedp.Evaluate(`document.querySelector('a[data-repair-source]').click()`, nil))
+	check(
+		chromedp.WaitVisible(`form[action$="/secrets"]`),
+		chromedp.SetValue(`input[name="secret.token"]`, "synthetic-token"),
+	)
+	navigate(chromedp.Click(`form[action$="/secrets"] button`))
+	check(
 		chromedp.WaitNotPresent(`p[id^="access-missing-"]`),
 		chromedp.SetValue("#openfigi-key", "synthetic-reference-key"),
-		chromedp.Click(`form[action="/reference/key"] button`),
+	)
+	navigate(chromedp.Click(`form[action="/reference/key"] button`))
+	check(
 		chromedp.WaitVisible(`//p[text()='Reference access has been reviewed.']`, chromedp.BySearch),
 		chromedp.WaitVisible(`form[action="/recovery/resume"] button:not([disabled])`),
 	)

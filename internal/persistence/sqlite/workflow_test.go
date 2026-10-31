@@ -243,7 +243,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 
 	run()
 
-	view, err := workflow.Dashboard(ctx)
+	view, err := inspectWorkflow(ctx, s, workflow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal("independent initial requests", requests)
 	}
 
-	view, err = workflow.Dashboard(ctx)
+	view, err = inspectWorkflow(ctx, s, workflow)
 	if err != nil {
 		t.Fatal(err)
 	}

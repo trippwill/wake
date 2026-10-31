@@ -125,7 +125,15 @@ func registerWorkflowRoutes(
 		).Render(r.Context(), w)
 	}
 	gate("GET /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		view, err := workflow.Dashboard(r.Context())
+		query, err := listQuery(r.Context(), application.SourceScope)
+		if err != nil {
+			http.Error(w, "invalid list query", http.StatusBadRequest)
+			return
+		}
+
+		result, err := workflow.SourcePage(r.Context(), query)
+		view := sourcePage(result)
+
 		if err != nil {
 			servePageError(
 				w,
@@ -149,7 +157,31 @@ func registerWorkflowRoutes(
 
 	for _, route := range []string{"/connections/reference", "/connections/recovery", "/system/maintenance", "/connections/{id}"} {
 		gate("GET "+route, func(w http.ResponseWriter, r *http.Request, csrf string) {
-			view, err := workflow.Dashboard(r.Context())
+			var (
+				view sourceView
+				err  error
+			)
+			if id := r.PathValue("id"); id != "" {
+				query, e := listQuery(r.Context(), application.SourceScope)
+				if e != nil {
+					http.Error(w, "invalid list query", http.StatusBadRequest)
+					return
+				}
+
+				result, e := workflow.SourceDetail(r.Context(), id, query)
+				err = e
+				view = sourceDetail(result)
+			} else {
+				result, e := workflow.SystemStatus(r.Context())
+				err = e
+				view = statusView(result)
+			}
+
+			if errors.Is(err, application.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+
 			if err != nil {
 				http.Error(w, "source information unavailable", http.StatusServiceUnavailable)
 				return
@@ -230,7 +262,7 @@ func registerWorkflowRoutes(
 		}
 
 		destination := connectionURL(r.PathValue("id"), "access")
-		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+		if view, e := workflow.Prerequisites(r.Context()); e == nil && view.Storage.Paused {
 			destination = "/connections/recovery"
 		}
 		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
@@ -254,7 +286,7 @@ func registerWorkflowRoutes(
 		}
 
 		destination := connectionURL(r.PathValue("id"), "access")
-		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+		if view, e := workflow.Prerequisites(r.Context()); e == nil && view.Storage.Paused {
 			destination = "/connections/recovery"
 		}
 		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
@@ -270,33 +302,29 @@ func registerWorkflowRoutes(
 		http.Redirect(w, r, connectionURL(r.PathValue("id"), "status"), http.StatusSeeOther)
 	})
 	gate("GET /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		view, err := workflow.Dashboard(r.Context())
-		if err != nil {
-			servePageError(
-				w,
-				r,
-				csrf,
-				http.StatusServiceUnavailable,
-				"Temporarily unavailable",
-				"accounts unavailable. Retry or inspect daemon status.",
+		ref, err := source.NewReference(
+			r.URL.Query().Get("authority"),
+			r.URL.Query().Get("kind"),
+			r.URL.Query().Get("scope"),
+			r.URL.Query().Get("account"),
+		)
+		if err == nil {
+			candidate, e := workflow.SourceCandidate(
+				r.Context(),
+				r.PathValue("id"),
+				r.URL.Query().Get("artifact"),
+				ref,
 			)
+			if e == nil {
+				templ.Handler(SectionShell("Confirm account", csrf, "Connections", ConfirmAccount(csrf, r.PathValue("id"), candidate))).
+					ServeHTTP(w, r)
 
-			return
-		}
-
-		for _, connection := range view.Connections {
-			if connection.ID != r.PathValue("id") {
-				continue
+				return
 			}
 
-			for _, candidate := range connection.Candidates {
-				if candidate.Artifact == r.URL.Query().Get("artifact") &&
-					candidate.Candidate.Reference().Value() == r.URL.Query().Get("account") {
-					templ.Handler(SectionShell("Confirm account", csrf, "Connections", ConfirmAccount(csrf, connection.ID, candidate))).
-						ServeHTTP(w, r)
-
-					return
-				}
+			if !errors.Is(e, application.ErrCandidate) {
+				http.Error(w, "accounts unavailable", http.StatusServiceUnavailable)
+				return
 			}
 		}
 
@@ -352,14 +380,47 @@ func registerWorkflowRoutes(
 		}
 
 		destination := "/connections/reference"
-		if view, e := workflow.Dashboard(r.Context()); e == nil && view.Storage.Paused {
+		if view, e := workflow.Prerequisites(r.Context()); e == nil && view.Storage.Paused {
 			destination = "/connections/recovery"
 		}
 
 		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 	gate("GET /activity", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		view, err := workflow.Dashboard(r.Context())
+		var (
+			view activityView
+			err  error
+		)
+
+		scope := application.ActivityScope
+		switch activeView(r.Context(), "all") {
+		case "instruments":
+			scope = application.InstrumentScope
+		case "review":
+			scope = application.ReviewScope
+		}
+
+		query, err := listQuery(r.Context(), scope)
+		if err != nil {
+			http.Error(w, "invalid list query", http.StatusBadRequest)
+			return
+		}
+
+		switch scope {
+		case application.ActivityScope:
+			result, e := workflow.ActivityList(r.Context(), query)
+			err = e
+			view = activityList(result)
+		case application.InstrumentScope:
+			result, e := workflow.InstrumentList(r.Context(), query)
+			err = e
+			view = instrumentList(result)
+		case application.ReviewScope:
+			result, e := workflow.ReviewList(r.Context(), query)
+			err = e
+			view = activityView{PageInfo: result.PageInfo, Reviews: reviewItems(result)}
+		}
+
 		if err != nil {
 			servePageError(
 				w,

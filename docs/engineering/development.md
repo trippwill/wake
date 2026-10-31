@@ -277,3 +277,13 @@ An arbitrary native ID spelling never establishes fill identity in the core.
 Run `mise run test:provider` to verify independent public imports, scoped secret
 lifetime, durable pacing, atomic acknowledgement, cancellation, normalization
 rollback and replay through actual host/storage boundaries.
+
+## Admin read changes
+
+Keep prerequisite, status, list and detail reads scoped to the question being answered.
+Do not reintroduce exhaustive history reads into normal request or refresh paths.
+Exercise bounded pages, stable identity ties, explicit unknown handling and exact
+numeric ordering beyond floating-point precision. Use the registered SQLite driver
+when adding collations; a zero-value driver does not inherit global registrations.
+Warehouse and encrypted access formats have independent version checks, so an
+unchanged private access seed remains reusable when only the warehouse changes.

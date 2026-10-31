@@ -143,6 +143,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity", "Convert EUR"},
 		{"/activity?kind=trade&state=review", "Synthetic option"},
 		{"/activity?kind=conversion", "EUR"},
+		{"/activity?q=Convert", "Convert EUR"},
+		{"/activity?q=option+outcome", "Assignment"},
 		{"/activity?view=review", "Reported values need review"},
 		{"/activity?view=instruments&state=gaps", "Synthetic option"},
 		{"/activity?q=unmatched-synthetic-query", "0 of"},

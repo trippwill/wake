@@ -52,17 +52,6 @@ func currencyText(c financial.Currency) string {
 	}
 	return c.String()
 }
-func instrumentLabel(view application.Dashboard, id string) string {
-	for _, i := range view.Instruments {
-
-		if i.ID() == id {
-
-			return known(i.Name()) + " (" + known(i.Ticker()) + ") · " + "reference: " + instrumentStatus(i)
-		}
-	}
-
-	return id
-}
 
 templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 	@Breadcrumbs("Confirm account")

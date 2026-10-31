@@ -162,7 +162,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		http.StatusSeeOther,
 	)
 
-	view, err := workflow.Dashboard(ctx)
+	view, err := inspectWorkflow(ctx, store, workflow)
 	if err != nil || len(view.Connections) != 1 {
 		t.Fatal(view, err)
 	}
@@ -199,7 +199,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	run()
 	run()
 
-	view, err = workflow.Dashboard(ctx)
+	view, err = inspectWorkflow(ctx, store, workflow)
 	if err != nil || len(view.Connections[0].Candidates) != 2 {
 		t.Fatal(view, err)
 	}
@@ -209,7 +209,13 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	path := "/connections/" + id + "/confirm"
 	request(
 		http.MethodGet,
-		path+"?"+url.Values{"artifact": {candidate.Artifact}, "account": {ref.Value()}}.Encode(),
+		path+"?"+url.Values{
+			"artifact":  {candidate.Artifact},
+			"account":   {ref.Value()},
+			"authority": {ref.Authority()},
+			"kind":      {ref.Kind()},
+			"scope":     {ref.Scope()},
+		}.Encode(),
 		nil,
 		http.StatusOK,
 	)
@@ -224,14 +230,19 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	}
 	request(http.MethodPost, path, values, http.StatusSeeOther)
 
-	if view, err = workflow.Dashboard(ctx); err != nil || view.Account.ID() == "" || len(view.Executions) != 0 {
+	if view, err = inspectWorkflow(
+		ctx,
+		store,
+		workflow,
+	); err != nil || view.Account.ID() == "" ||
+		len(view.Executions) != 0 {
 		t.Fatal("confirmation did not retain authority boundary", view, err)
 	}
 
 	run()
 	run()
 
-	view, err = workflow.Dashboard(ctx)
+	view, err = inspectWorkflow(ctx, store, workflow)
 	if err != nil || len(view.Executions) != 1 || len(view.Instruments) != 1 {
 		t.Fatal(view, err)
 	}
@@ -250,7 +261,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/connections/" + id + "/confirm"} {
+	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/connections/" + id + "/confirm?" + url.Values{"artifact": {candidate.Artifact}, "account": {ref.Value()}, "authority": {ref.Authority()}, "kind": {ref.Kind()}, "scope": {ref.Scope()}}.Encode()} {
 		request(http.MethodGet, path, nil, http.StatusServiceUnavailable)
 	}
 }

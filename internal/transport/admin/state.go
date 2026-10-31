@@ -62,3 +62,15 @@ func instrumentStatus(instrument application.Instrument) string {
 
 	return label
 }
+
+func referenceTone(status application.ReferenceStatus) string {
+	if status.NeedsReview() {
+		return "error"
+	}
+
+	if status == "resolved" {
+		return "success"
+	}
+
+	return "warning"
+}
