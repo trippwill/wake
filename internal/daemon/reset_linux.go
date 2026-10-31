@@ -19,7 +19,6 @@ type ResetTarget string
 const (
 	ResetWarehouse   ResetTarget    = "warehouse"
 	ResetCredentials ResetTarget    = "credentials"
-	resetOperational ResetTarget    = "operational"
 	ErrResetTarget   OwnershipError = "reset requires a target: credentials or warehouse"
 	ErrUnsafeReset   OwnershipError = "reset refuses unsafe, linked or protected paths"
 	ErrResetChanged  OwnershipError = "storage paths changed during reset; inspect remaining files and preview again"
@@ -73,7 +72,6 @@ func ResetStorage(
 	all := []ResetDatabase{
 		{Name: ResetWarehouse, Path: cfg.Storage.WarehousePath},
 		{Name: ResetCredentials, Path: cfg.Storage.ConnectionsPath},
-		{Name: resetOperational, Path: cfg.Storage.OperationalPath},
 	}
 	selected := []ResetDatabase{}
 	snapshots := resetSnapshot{}

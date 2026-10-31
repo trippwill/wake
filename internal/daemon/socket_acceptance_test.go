@@ -166,7 +166,6 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	profile := persistence.Profile{
 		WarehousePath:   cfg.Storage.WarehousePath,
 		ConnectionsPath: cfg.Storage.ConnectionsPath,
-		OperationalPath: cfg.Storage.OperationalPath,
 	}
 	open := func() *persistence.Store {
 		t.Helper()
@@ -597,7 +596,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 	stop()
 	// Companion recreation keeps the warehouse generation and permits independent inspection.
-	for _, path := range []string{profile.ConnectionsPath, profile.OperationalPath} {
+	for _, path := range []string{profile.ConnectionsPath} {
 		if err = os.Remove(path); err != nil {
 			t.Fatal(err)
 		}

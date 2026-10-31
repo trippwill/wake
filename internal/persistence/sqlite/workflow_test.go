@@ -564,7 +564,6 @@ func testProfile(warehouse string) Profile {
 	return Profile{
 		WarehousePath:   warehouse,
 		ConnectionsPath: filepath.Join(filepath.Dir(warehouse), "connections.db"),
-		OperationalPath: filepath.Join(filepath.Dir(warehouse), "operational.db"),
 	}
 }
 

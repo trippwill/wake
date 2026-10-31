@@ -98,7 +98,7 @@ while new writes continue. The acceptance consumer saves a new baseline and ever
 changed mirror/checkpoint atomically, skips disk writes for unchanged idle polls,
 and treats an operator interrupt during follow-mode requests as a clean stop.
 
-Daemon restarts and access/operational-store recovery retain cursors when the
+Daemon restarts and access-store recovery retain cursors when the
 warehouse remains intact. Starting a new projection rebuild rotates the publishing
 generation atomically with its durable job, invalidating older cursors. Retrying or
 resuming that job keeps its generation. A newer rebuild supersedes older jobs; only
@@ -139,41 +139,38 @@ on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
 
-One daemon owns a three-store profile: a financial warehouse, active connections
-and credentials, and reconstructable operational execution state. Each store has an independent
-file setting, with XDG defaults for financial data, active configuration and
-operational state. The warehouse
-retains historical source descriptors independently of current access, and owns
-evidence, financial identity, decisions and durable recovery inputs. Acknowledged
-checkpoints, coverage, completed-work receipts and pacing/retry restrictions survive
-loss of execution state. Reference cache entries are disposable; their supporting
-evidence remains retained.
+One daemon owns two SQLite files: a warehouse containing financial evidence and
+operational state, and an independent access store containing current connection
+settings and encrypted credentials. Their paths default to XDG data and config
+locations. The warehouse owns evidence, source descriptors, financial identities,
+decisions, checkpoints, coverage, processing receipts, pacing and execution state.
+Reference cache entries remain disposable; their supporting evidence is retained.
 
 One attached SQLite writer uses DELETE rollback journals and EXTRA synchronization
-for cross-store atomicity. Financial references remain within the warehouse;
-cross-store relationships are checked within the shared transaction. Every store
-has an explicit development format. The warehouse owns its identity; the operational
-store records which warehouse it belongs to. Credentials remain independent of
-warehouse identity. Ownership,
-format and association checks precede writable recovery. Unsupported formats fail
-closed; startup never converts or deletes them. Recreation is an explicit operator
-action, and master keys remain operator-provisioned through setup. Offline CLI
-reset exposes credentials and warehouse choices, previews the selected files and
-requires explicit confirmation for deletion. Warehouse reset also clears its
-operational state; credentials reset preserves financial data. It checks filesystem
-ownership without opening SQLite or reading keys.
+for cross-store atomicity. Warehouse references use ordinary foreign keys;
+relationships to access configuration are checked in the shared transaction.
+Each file has an explicit development format and independent identity. The access
+store has no reverse binding to a warehouse. Ownership, format and association
+checks precede writable recovery. Unsupported formats fail closed; startup never
+converts or deletes them. Recreation is an explicit operator action, and master
+keys remain operator-provisioned through setup.
 
-A supported warehouse remains useful for inspecting retained history without source
-credentials. A supported operational store associated with a different warehouse
-is cleared and rebound to the selected warehouse without changing financial identity.
-Missing companions are recreated and execution obligations reconstructed
-from durable inputs; this pauses acquisition and reference access until authenticated
-operator review, any required access repair and explicit resume. An intact restart
-retains its existing authority and scheduling. Recreating companions cannot shorten
-retained retry restrictions or discard acknowledged progress. A fresh warehouse
-can reuse retained connection settings and encrypted credentials, starting paused
-until explicit resume and bounded discovery. Account confirmation is required
-before financial synchronization.
+Offline CLI reset previews warehouse or credential files and requires explicit
+confirmation before deletion. Warehouse reset disposes its operational state in
+the same file and preserves encrypted access; credentials reset preserves the
+warehouse. Reset checks filesystem ownership without opening SQLite or reading keys.
+A warehouse remains inspectable without source credentials. Missing or replaced
+access starts upstream work paused until authenticated review, required repair
+and explicit resume. Retained pacing restrictions and acknowledged progress remain
+in the warehouse. An intact restart retains authority and scheduling.
+
+A fresh warehouse can reuse retained settings and encrypted credentials. It starts
+paused until explicit resume and bounded discovery; account confirmation is still
+required before financial synchronization. Development tests can copy a closed
+encrypted access seed into separate private profiles and use independent warehouse
+and access files. Those profiles never share a writable store or modify the seed.
+This keeps warehouse disposal independent of credential provisioning without a
+separate operational database or its association/rebinding lifecycle.
 
 Operational diagnostics use structured, component-scoped events and configured log
 levels across acquisition, normalization, financial processing, reference work,

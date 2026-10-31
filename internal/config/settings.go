@@ -50,13 +50,6 @@ func Settings() []Setting {
 			Description: "Absolute path to the active connection and encrypted credential database",
 		},
 		{
-			Key:         "storage.operational_path",
-			Flag:        "operational-path",
-			Type:        "string",
-			Default:     "${XDG_STATE_HOME:-$HOME/.local/state}/wake/operational.db",
-			Description: "Absolute path to the recoverable execution database",
-		},
-		{
 			Key:         "paths.runtime_dir",
 			Flag:        "runtime-dir",
 			Type:        "string",
@@ -390,11 +383,6 @@ func settingDefaults() (map[string]string, string, error) {
 		return nil, "", err
 	}
 
-	state, err := xdgRoot("XDG_STATE_HOME", filepath.Join(".local", "state"))
-	if err != nil {
-		return nil, "", err
-	}
-
 	defaults := map[string]string{}
 	for _, setting := range Settings() {
 		defaults[setting.Flag] = setting.Default
@@ -403,7 +391,6 @@ func settingDefaults() (map[string]string, string, error) {
 	defaults["warehouse-path"] = filepath.Join(data, "wake", "wake.db")
 
 	defaults["connections-path"] = filepath.Join(dir, "connections.db")
-	defaults["operational-path"] = filepath.Join(state, "wake", "operational.db")
 	defaults["runtime-dir"] = ""
 	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
 		if err := requireAbsolute("XDG_RUNTIME_DIR", runtime); err != nil {
@@ -478,7 +465,7 @@ func readConfigSnapshot(path string) ([]byte, error) {
 }
 
 func checkStorage(storage Storage) error {
-	paths := []string{storage.WarehousePath, storage.ConnectionsPath, storage.OperationalPath}
+	paths := []string{storage.WarehousePath, storage.ConnectionsPath}
 	for i, path := range paths {
 		if err := requireAbsolute("database file", path); err != nil {
 			return err

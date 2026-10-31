@@ -105,7 +105,7 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 	for _, item := range []struct {
 		flag  string
 		value *string
-	}{{"warehouse-path", &storage.WarehousePath}, {"connections-path", &storage.ConnectionsPath}, {"operational-path", &storage.OperationalPath}} {
+	}{{"warehouse-path", &storage.WarehousePath}, {"connections-path", &storage.ConnectionsPath}} {
 		value, err := promptSetting(ctx, c, item.flag, *item.value)
 		if err != nil {
 			return failure("read setup settings: %v", err)
@@ -146,15 +146,14 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 
 	if c.Bool("json") {
 		_ = json.NewEncoder(c.ErrWriter).
-			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "operational_path": storage.OperationalPath, "runtime_dir": runtime, "admin_port": port, "overwrite": setup.ConfigExists()})
+			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "runtime_dir": runtime, "admin_port": port, "overwrite": setup.ConfigExists()})
 	} else {
 		writef(
 			c.ErrWriter,
-			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  operational: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n",
+			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n",
 			setup.ConfigPath,
 			storage.WarehousePath,
 			storage.ConnectionsPath,
-			storage.OperationalPath,
 			runtime,
 			port,
 		)
@@ -241,8 +240,6 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 				launch.Storage.WarehousePath = value
 			case "connections-path":
 				launch.Storage.ConnectionsPath = value
-			case "operational-path":
-				launch.Storage.OperationalPath = value
 			default:
 				launch.Paths.RuntimeDir = value
 			}

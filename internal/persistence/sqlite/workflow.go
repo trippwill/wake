@@ -38,7 +38,7 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		flag = 1
 	}
 
-	if err = setScheduled(q,
+	if err = q.SetScheduled(
 		ctx,
 		sqlc.SetScheduledParams{
 			ConnectionID: key.Connection,
@@ -84,7 +84,7 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 		return err
 	}
 
-	if err = setScheduled(q,
+	if err = q.SetScheduled(
 		ctx,
 		sqlc.SetScheduledParams{
 			ConnectionID: key.Connection,
@@ -218,7 +218,7 @@ func (s *Store) Confirm(
 			return application.Account{}, err
 		}
 
-		if err = setScheduled(q,
+		if err = q.SetScheduled(
 			ctx,
 			sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
 		); err != nil {
@@ -226,7 +226,7 @@ func (s *Store) Confirm(
 		}
 	}
 
-	if err = disableDiscovery(q, ctx, id); err != nil {
+	if err = q.DisableDiscovery(ctx, id); err != nil {
 		return application.Account{}, err
 	}
 
@@ -549,26 +549,6 @@ func (s *Store) Dashboard(ctx context.Context) (application.Dashboard, error) {
 	}
 
 	return out, nil
-}
-
-func setScheduled(q *sqlc.Queries, ctx context.Context, p sqlc.SetScheduledParams) error {
-	if err := q.SetScheduled(ctx, p); err != nil {
-		return err
-	}
-
-	if err := q.RefreshExecution(ctx); err != nil {
-		return err
-	}
-
-	return q.DeleteExecution(ctx)
-}
-
-func disableDiscovery(q *sqlc.Queries, ctx context.Context, id string) error {
-	if err := q.DisableDiscovery(ctx, id); err != nil {
-		return err
-	}
-
-	return q.DeleteExecution(ctx)
 }
 
 func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string, now time.Time) error {

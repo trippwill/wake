@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-// Package persistence implements Wake's private three-store SQLite boundary.
+// Package persistence implements Wake's private two-store SQLite boundary.
 package persistence
 
 import (
@@ -32,15 +32,15 @@ const (
 	ErrUnsupportedSchema Error = "unsupported development store; stop Wake and preview wake reset warehouse or wake reset credentials using the same configuration; add --confirm to reset explicitly"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
-	ErrAssociation       Error = "store associations do not match; restore matching stores or explicitly recreate companions"
-	schemaVersion              = "wake-simplification-2"
+	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
+	schemaVersion              = "wake-simplification-3"
 )
 
-// Profile selects the warehouse, connections file and operational storage.
-type Profile struct{ WarehousePath, ConnectionsPath, OperationalPath string }
+// Profile selects the warehouse and independent encrypted access storage.
+type Profile struct{ WarehousePath, ConnectionsPath string }
 
-func (p Profile) paths() [3]string {
-	return [3]string{p.WarehousePath, p.ConnectionsPath, p.OperationalPath}
+func (p Profile) paths() [2]string {
+	return [2]string{p.WarehousePath, p.ConnectionsPath}
 }
 
 //go:embed schema.sql
@@ -48,9 +48,6 @@ var schemaSQL string
 
 //go:embed connections_schema.sql
 var connectionsSQL string
-
-//go:embed operational_schema.sql
-var operationalSQL string
 
 //go:embed connection.sql
 var connectionSQL string
@@ -75,7 +72,7 @@ func profileStatement(name, schema string) string {
 type Store struct {
 	db                             *sql.DB
 	queries                        *sqlc.Queries
-	owners                         [3]*os.File
+	owners                         [2]*os.File
 	logger                         *slog.Logger
 	closeOnce                      sync.Once
 	closeError                     error
@@ -84,11 +81,11 @@ type Store struct {
 	recoveryNext                   time.Time
 }
 
-type storeMetadata struct{ kind, version, id, warehouse string }
+type storeMetadata struct{ kind, version, id string }
 
 var (
-	storeKinds   = [3]string{"warehouse", "connections", "operational"}
-	storeSchemas = [3]string{"main", "access", "operational"}
+	storeKinds   = [2]string{"warehouse", "connections"}
+	storeSchemas = [2]string{"main", "access"}
 )
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *Store, resultErr error) {
@@ -116,7 +113,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 		}
 	}()
 
-	for _, dir := range []string{filepath.Dir(profile.WarehousePath), filepath.Dir(profile.ConnectionsPath), filepath.Dir(profile.OperationalPath)} {
+	for _, dir := range []string{filepath.Dir(profile.WarehousePath), filepath.Dir(profile.ConnectionsPath)} {
 		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
 			return nil, ErrUnsafeStore
 		}
@@ -154,8 +151,8 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 	}()
 
 	var (
-		metadata [3]storeMetadata
-		present  [3]bool
+		metadata [2]storeMetadata
+		present  [2]bool
 		previous string
 	)
 	for i, path := range paths {
@@ -200,7 +197,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 			}
 		}
 
-		probe := sql.OpenDB(&connector{paths: [3]string{path}, owners: [3]*os.File{s.owners[i]}, probe: true})
+		probe := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{s.owners[i]}, probe: true})
 
 		var count int
 
@@ -208,10 +205,10 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 		if err == nil && count > 0 {
 			m := &metadata[i]
 			err = probe.QueryRowContext(ctx, profileStatement("Metadata", "main")).
-				Scan(&m.kind, &m.version, &m.id, &m.warehouse)
-			expected := strings.Count([3]string{schemaSQL, connectionsSQL, operationalSQL}[i], "CREATE TABLE")
+				Scan(&m.kind, &m.version, &m.id)
+			expected := strings.Count([2]string{schemaSQL, connectionsSQL}[i], "CREATE TABLE")
 			if err == nil &&
-				(m.kind != storeKinds[i] || m.version != schemaVersion || m.id == "" || (i == 1 && m.warehouse != "") || (i != 1 && m.warehouse == "") || count != expected) {
+				(m.kind != storeKinds[i] || m.version != schemaVersion || m.id == "" || count != expected) {
 				err = ErrUnsupportedSchema
 			}
 
@@ -254,11 +251,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 
 	stage, storeKind = "association", "profile"
 
-	rebuildOperational := present[2] && (!present[0] || metadata[2].warehouse != metadata[0].id)
 	accessChanged := present[0] && present[1] && metadata[1].id != previous
-	if present[0] && metadata[0].warehouse != metadata[0].id {
-		return nil, ErrAssociation
-	}
 
 	stage, storeKind = "ownership", "profile"
 	// Do not create missing files until every existing store has passed preflight.
@@ -285,7 +278,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 	stopProgress := s.progress(ctx, "storage_open_progress", "open")
 	defer stopProgress()
 
-	if err := s.initialize(ctx, present, metadata, rebuildOperational, accessChanged); err != nil {
+	if err := s.initialize(ctx, present, metadata, accessChanged); err != nil {
 		return nil, err
 	}
 
@@ -326,7 +319,7 @@ func (s *Store) Close() error {
 			s.closeError = s.db.Close()
 		}
 
-		for i := 2; i >= 0; i-- {
+		for i := len(s.owners) - 1; i >= 0; i-- {
 			if s.owners[i] != nil {
 				s.closeError = errors.Join(s.closeError, s.owners[i].Close())
 			}
@@ -348,13 +341,13 @@ func (s *Store) Close() error {
 
 func (s *Store) initialize(
 	ctx context.Context,
-	present [3]bool,
-	metadata [3]storeMetadata,
-	rebuildOperational, accessChanged bool,
+	present [2]bool,
+	metadata [2]storeMetadata,
+	accessChanged bool,
 ) error {
 	started := time.Now()
 
-	recovering := present[0] && (!present[1] || !present[2] || rebuildOperational || accessChanged)
+	recovering := present[0] && (!present[1] || accessChanged)
 	if recovering {
 		s.logger.WarnContext(
 			ctx,
@@ -380,17 +373,11 @@ func (s *Store) initialize(
 			continue
 		}
 
-		if _, err = tx.ExecContext(ctx, [3]string{schemaSQL, connectionsSQL, operationalSQL}[i]); err != nil {
+		if _, err = tx.ExecContext(ctx, [2]string{schemaSQL, connectionsSQL}[i]); err != nil {
 			return err
 		}
 
 		metadata[i] = storeMetadata{kind: storeKinds[i], version: schemaVersion, id: rand.Text()}
-		switch i {
-		case 0:
-			metadata[i].warehouse = metadata[i].id
-		case 2:
-			metadata[i].warehouse = metadata[0].id
-		}
 
 		m := metadata[i]
 		if _, err = tx.ExecContext(
@@ -399,38 +386,7 @@ func (s *Store) initialize(
 			m.kind,
 			m.version,
 			m.id,
-			m.warehouse,
 		); err != nil {
-			return err
-		}
-	}
-
-	if rebuildOperational {
-		m := metadata[2]
-
-		result, e := tx.ExecContext(
-			ctx,
-			profileStatement("RebindMetadata", "operational"),
-			metadata[0].id,
-			m.kind,
-			m.version,
-			m.id,
-			m.warehouse,
-		)
-		if e != nil {
-			return e
-		}
-
-		n, e := result.RowsAffected()
-		if e != nil {
-			return e
-		}
-
-		if n != 1 {
-			return ErrAssociation
-		}
-
-		if _, err = tx.ExecContext(ctx, profileStatement("DiscardOldExecution", "")); err != nil {
 			return err
 		}
 	}
@@ -465,15 +421,6 @@ func (s *Store) initialize(
 	}
 
 	if _, err = tx.ExecContext(ctx, profileStatement("RetainConnections", "")); err != nil {
-		return err
-	}
-
-	q := s.queries.WithTx(tx)
-	if err = q.RefreshExecution(ctx); err != nil {
-		return err
-	}
-
-	if err = q.DeleteExecution(ctx); err != nil {
 		return err
 	}
 
@@ -583,8 +530,8 @@ func (s *Store) initialize(
 // Every physical writer connection attaches the same owned files and establishes
 // rollback-journal safety before it can participate in a cross-store transaction.
 type connector struct {
-	paths  [3]string
-	owners [3]*os.File
+	paths  [2]string
+	owners [2]*os.File
 	probe  bool
 }
 
@@ -620,7 +567,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		return connection, nil
 	}
 
-	for i, name := range []string{"AttachAccess", "AttachOperational"} {
+	for i, name := range []string{"AttachAccess"} {
 		uri := (&url.URL{Scheme: "file", Path: c.paths[i+1], RawQuery: "mode=rw"}).String()
 		if _, err = executor.ExecContext(
 			ctx,
