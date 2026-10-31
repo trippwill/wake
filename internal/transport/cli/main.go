@@ -252,21 +252,6 @@ func printCommandHelp(w io.Writer, c *cli.Command) {
 	}
 }
 
-func explicitSettings(c *cli.Command) config.Overrides {
-	values := map[string]string{}
-	for _, s := range config.Settings() {
-		if c.IsSet(s.Flag) {
-			values[s.Flag] = fmt.Sprint(c.Value(s.Flag))
-		}
-	}
-
-	return config.Overrides{
-		ConfigPath:         c.String("config"),
-		ConfigPathExplicit: c.IsSet("config"),
-		Values:             values,
-	}
-}
-
 func requireNoArgs(c *cli.Command) error {
 	if c.NArg() != 0 {
 		return usageError("unexpected argument " + c.Args().First())

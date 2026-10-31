@@ -11,7 +11,6 @@ require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/getkin/kin-openapi v0.150.0
 	github.com/oapi-codegen/runtime v1.7.0
-	github.com/urfave/cli-altsrc/v3 v3.1.0
 	github.com/urfave/cli/v3 v3.14.0
 	go.trippwill.dev/num v0.3.0
 	golang.org/x/crypto v0.57.0

@@ -22,7 +22,7 @@ func performServe(ctx context.Context, c *cli.Command) error {
 	activity := newActivity(c.ErrWriter, true, "serve", "resolving configuration")
 	defer activity.Stop()
 
-	cfg, err := config.Load(explicitSettings(c))
+	cfg, err := config.Load(c)
 	if err != nil {
 		return failure("configure: %v", err)
 	}

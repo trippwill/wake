@@ -108,7 +108,7 @@ func TestLocalSetupPreservesConfiguration(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cfg, err := Load(Overrides{ConfigPath: path, ConfigPathExplicit: true})
+			cfg, err := loadForTest(Overrides{ConfigPath: path, ConfigPathExplicit: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,7 +242,7 @@ func TestSetupCreatesAlternativeConfigurationWithoutChangingDefault(t *testing.T
 		t.Fatal(err)
 	}
 
-	resolved, err := Resolve(Overrides{ConfigPath: path, ConfigPathExplicit: true})
+	resolved, err := resolveForTest(Overrides{ConfigPath: path, ConfigPathExplicit: true})
 	if err != nil || resolved.Config.Storage.WarehousePath != filepath.Join(roots.base, "warehouse.db") {
 		t.Fatal("new destination did not resolve", err)
 	}

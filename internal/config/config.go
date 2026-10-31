@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/toml"
+	"github.com/urfave/cli/v3"
 )
 
 const directoryMode = 0o700
@@ -87,13 +88,6 @@ type Config struct {
 	Admin       Admin
 }
 
-// Overrides carries explicit command-line inputs; Values are keyed by switch name.
-type Overrides struct {
-	ConfigPath         string
-	ConfigPathExplicit bool
-	Values             map[string]string
-}
-
 type fileConfig struct {
 	Paths       filePaths       `toml:"paths"`
 	Storage     Storage         `toml:"storage"`
@@ -121,8 +115,8 @@ type fileAdmin struct {
 }
 
 // Load resolves configuration and prepares the daemon's private directories.
-func Load(overrides Overrides) (Config, error) {
-	resolved, err := Resolve(overrides)
+func Load(command *cli.Command) (Config, error) {
+	resolved, err := Resolve(command)
 	if err != nil {
 		return Config{}, err
 	}
@@ -170,11 +164,32 @@ func ConfigDir() (string, error) {
 }
 
 func decodeFileConfig(contents []byte) (fileConfig, error) {
+	cfg, _, err := decodeFileConfigSnapshot(contents)
+	return cfg, err
+}
+
+func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error) {
 	var cfg fileConfig
 
 	metadata, err := toml.Decode(string(contents), &cfg)
 	if err != nil {
-		return cfg, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
+		return cfg, metadata, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
+	}
+
+	// Struct decoding is case-insensitive; source admission and attribution are not.
+	// Admit the catalog's exact table/key paths before checking or selecting values.
+	admitted := map[string]bool{}
+	for _, setting := range Settings() {
+		parts := strings.Split(setting.Key, ".")
+		for n := 1; n <= len(parts); n++ {
+			admitted[toml.Key(parts[:n]).String()] = true
+		}
+	}
+
+	for _, key := range metadata.Keys() {
+		if !admitted[key.String()] {
+			return cfg, metadata, fmt.Errorf("%w: unknown or noncanonical TOML key: %s", ErrInvalid, key.String())
+		}
 	}
 
 	if undecoded := metadata.Undecoded(); len(undecoded) != 0 {
@@ -183,42 +198,23 @@ func decodeFileConfig(contents []byte) (fileConfig, error) {
 			keys = append(keys, key.String())
 		}
 
-		return cfg, fmt.Errorf(
+		return cfg, metadata, fmt.Errorf(
 			"%w: unknown TOML keys: %s",
 			ErrInvalid,
 			strings.Join(keys, ", "),
 		)
 	}
 
-	if err := validateFileConfig(cfg); err != nil {
-		return cfg, err
-	}
-
-	return cfg, nil
-}
-
-func validateFileConfig(cfg fileConfig) error {
-	for _, value := range []struct {
-		name string
-		path string
-	}{
-		{name: "warehouse database", path: cfg.Storage.WarehousePath},
-		{name: "connections database", path: cfg.Storage.ConnectionsPath},
-		{name: "runtime directory", path: cfg.Paths.RuntimeDir},
-		{name: "master key path", path: cfg.Credentials.MasterKeyPath},
-	} {
-		if value.path != "" && !filepath.IsAbs(value.path) {
-			return fmt.Errorf("%w: %s must be absolute", ErrInvalid, value.name)
+	values := fileSettingValues(cfg)
+	for _, setting := range Settings() {
+		if metadata.IsDefined(strings.Split(setting.Key, ".")...) {
+			if err := checkFileSetting(setting, values[setting.Flag]); err != nil {
+				return cfg, metadata, err
+			}
 		}
 	}
 
-	if cfg.Log.Level != "" {
-		if _, err := parseLogLevel(cfg.Log.Level); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return cfg, metadata, nil
 }
 
 func xdgRoot(environment, fallback string) (string, error) {

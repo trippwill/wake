@@ -105,7 +105,7 @@ func tomlValue(t *testing.T, kind, value string) any {
 func assertResolvedValue(t *testing.T, o Overrides, key, want, source string) {
 	t.Helper()
 
-	out, err := Resolve(o)
+	out, err := resolveForTest(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestInvalidSourcesDoNotFallBack(t *testing.T) {
 			configureEnvironment(t, true)
 			t.Setenv(test.name, test.value)
 
-			if _, err := Resolve(Overrides{}); err == nil {
+			if _, err := resolveForTest(Overrides{}); err == nil {
 				t.Fatal("invalid explicit environment value fell back")
 			}
 		})
@@ -142,7 +142,12 @@ func TestInvalidSourcesDoNotFallBack(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := Resolve(Overrides{ConfigPath: path, ConfigPathExplicit: true}); !errors.Is(err, ErrInvalid) {
+		if _, err := resolveForTest(
+			Overrides{ConfigPath: path, ConfigPathExplicit: true},
+		); !errors.Is(
+			err,
+			ErrInvalid,
+		) {
 			t.Fatalf("config error = %v", err)
 		}
 	}
@@ -152,7 +157,7 @@ func TestConfigSelectorAndExplicitEmptyValues(t *testing.T) {
 	roots := configureEnvironment(t, true)
 	t.Setenv("WAKE_CONFIG", filepath.Join(roots.base, "missing"))
 
-	if _, err := Resolve(Overrides{}); !errors.Is(err, ErrInvalid) {
+	if _, err := resolveForTest(Overrides{}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("explicit environment file was optional: %v", err)
 	}
 
@@ -161,7 +166,7 @@ func TestConfigSelectorAndExplicitEmptyValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := Resolve(
+	out, err := resolveForTest(
 		Overrides{
 			ConfigPath:         path,
 			ConfigPathExplicit: true,
@@ -180,7 +185,12 @@ func TestConfigSelectorAndExplicitEmptyValues(t *testing.T) {
 		t.Fatalf("resolution = %#v", out)
 	}
 
-	if _, err := Resolve(Overrides{ConfigPath: "", ConfigPathExplicit: true}); !errors.Is(err, ErrInvalid) {
+	if _, err := resolveForTest(
+		Overrides{ConfigPath: "", ConfigPathExplicit: true},
+	); !errors.Is(
+		err,
+		ErrInvalid,
+	) {
 		t.Fatalf("empty config selection = %v", err)
 	}
 }
@@ -188,7 +198,12 @@ func TestConfigSelectorAndExplicitEmptyValues(t *testing.T) {
 func TestResolutionRejectsNonRegularConfig(t *testing.T) {
 	roots := configureEnvironment(t, true)
 	for _, path := range []string{roots.base, os.DevNull} {
-		if _, err := Resolve(Overrides{ConfigPath: path, ConfigPathExplicit: true}); !errors.Is(err, ErrInvalid) {
+		if _, err := resolveForTest(
+			Overrides{ConfigPath: path, ConfigPathExplicit: true},
+		); !errors.Is(
+			err,
+			ErrInvalid,
+		) {
 			t.Fatalf("non-regular config %s = %v", path, err)
 		}
 	}
@@ -209,7 +224,7 @@ func TestStorePathsHaveIndependentXDGDefaults(t *testing.T) {
 	custom := filepath.Join(roots.base, "private-access", "credentials.sqlite")
 	overrides.Values["connections-path"] = custom
 
-	cfg, err := Load(overrides)
+	cfg, err := loadForTest(overrides)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +246,7 @@ func TestStorePathsHaveIndependentXDGDefaults(t *testing.T) {
 func TestConnectionsDatabaseRejectsInvalidAndCollidingPaths(t *testing.T) {
 	roots := configureEnvironment(t, true)
 	for _, value := range []string{"", "relative.db", filepath.Join(roots.data, "wake", "wake.db"), filepath.Join(roots.data, "wake", "wake.db-journal"), filepath.Join(roots.data, "wake", "wake.db-mjABCDEF912")} {
-		if _, err := Resolve(
+		if _, err := resolveForTest(
 			Overrides{Values: map[string]string{"connections-path": value}},
 		); !errors.Is(
 			err,
@@ -244,8 +259,86 @@ func TestConnectionsDatabaseRejectsInvalidAndCollidingPaths(t *testing.T) {
 	for _, value := range []string{"", "relative.db"} {
 		t.Setenv("WAKE_CONNECTIONS_PATH", value)
 
-		if _, err := Resolve(Overrides{}); !errors.Is(err, ErrInvalid) {
+		if _, err := resolveForTest(Overrides{}); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("accepted credential environment %q: %v", value, err)
+		}
+	}
+}
+
+func TestStrictFileValidationPrecedesExplicitFlags(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	path := filepath.Join(roots.base, "selected.toml")
+	for _, content := range []string{
+		"broken = [", "unknown = true", "[log]\nlevel='verbose'", "[log]\nlevel=''",
+		"[admin]\nport=0", "[admin]\nauth_mode='password'", "[admin]\nauth_mode=''",
+		"[admin]\npublic_origin='https://wake.example/path'", "[storage]\nwarehouse_path=''",
+		"[credentials]\nmaster_key_path='relative'",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := resolveForTest(Overrides{ConfigPath: path, ConfigPathExplicit: true, Values: map[string]string{
+			"log-level": "info", "admin-port": "8787", "admin-auth-mode": "local", "admin-public-origin": "",
+			"warehouse-path": filepath.Join(roots.base, "valid.db"), "master-key-path": "",
+		}})
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid selected file was hidden by flags: %q: %v", content, err)
+		}
+	}
+}
+
+func TestExplicitFlagsIgnoreUnusedInvalidEnvironment(t *testing.T) {
+	configureEnvironment(t, true)
+	t.Setenv("WAKE_ADMIN_PORT", "not-a-number")
+	t.Setenv("WAKE_LOG_LEVEL", "invalid")
+
+	out, err := resolveForTest(Overrides{Values: map[string]string{"admin-port": "9876", "log-level": "warn"}})
+	if err != nil || out.Config.Admin.Port != 9876 {
+		t.Fatal(out, err)
+	}
+}
+
+func TestProxySettingsCanCombinePartialFileAndEnvironment(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	path := filepath.Join(roots.base, "partial.toml")
+	if err := os.WriteFile(
+		path,
+		[]byte("[admin]\npublic_origin='https://wake.example.test'\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("WAKE_ADMIN_AUTH_MODE", "proxy")
+
+	out, err := resolveForTest(Overrides{ConfigPath: path, ConfigPathExplicit: true})
+	if err != nil || out.Config.Admin.AuthMode != "proxy" ||
+		out.Config.Admin.PublicOrigin != "https://wake.example.test" {
+		t.Fatal("valid effective configuration was rejected before source resolution", out, err)
+	}
+}
+
+func TestSelectedFileRejectsNoncanonicalKeysBeforeOverrides(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	path := filepath.Join(roots.base, "noncanonical.toml")
+	for _, content := range []string{
+		"[log]\nLEVEL='verbose'", "[LOG]\nlevel='info'", "[Log]\nlevel='debug'",
+		"[log]\nlevel='info'\nLEVEL='verbose'", "[ADMIN]\nport=0",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := resolveForTest(
+			Overrides{
+				ConfigPath:         path,
+				ConfigPathExplicit: true,
+				Values:             map[string]string{"log-level": "info", "admin-port": "8787"},
+			},
+		)
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("noncanonical TOML key silently fell back: %q: %v", content, err)
 		}
 	}
 }
