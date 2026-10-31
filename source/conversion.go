@@ -36,9 +36,12 @@ func (a CurrencyAmount) Currency() financial.Currency { return a.currency }
 func (a CurrencyAmount) Amount() string               { return a.amount.Value() }
 
 type ConversionInput struct {
-	Location                              string
-	Account, Event, Order                 Reference
-	EventAliases                          []Reference
+	Location              string
+	Account, Event, Order Reference
+	EventAliases          []Reference
+	// EventDistinct states that Event identifies one event within its qualified scope.
+	// Its native kind and value remain opaque to the core.
+	EventDistinct                         bool
 	Date                                  financial.Date
 	At                                    financial.Timestamp
 	Sent, Received                        CurrencyAmount
@@ -50,7 +53,8 @@ type ConversionInput struct {
 type Conversion struct{ input ConversionInput }
 
 func NewConversion(f ConversionInput) (Conversion, error) {
-	if !validText(f.Location, 1024) || f.Account.IsZero() || f.Date.IsZero() ||
+	if !validText(f.Location, 1024) || f.Account.IsZero() || (f.EventDistinct && f.Event.IsZero()) ||
+		f.Date.IsZero() ||
 		f.Sent.currency == (financial.Currency{}) ||
 		f.Received.currency == (financial.Currency{}) ||
 		f.Sent.currency == f.Received.currency ||

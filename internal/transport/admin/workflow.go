@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -54,7 +55,15 @@ func registerWorkflowRoutes(
 					return
 				}
 
-				r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+				limit := int64(16 << 10)
+				switch r.Pattern {
+				case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets":
+					// The SDK admits 64 fields of up to 4096 bytes, plus field names,
+					// host metadata and at most three URL-encoded bytes per input byte.
+					limit = 1 << 20
+				}
+
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
 				if r.ParseForm() != nil {
 					rejection(r, "invalid_form")
 					http.Error(w, "invalid form", http.StatusBadRequest)
@@ -92,7 +101,9 @@ func registerWorkflowRoutes(
 		case application.ErrCandidate:
 			message = "This account was not discovered through the selected connection."
 		case provider.ErrInvalid:
-			message = "Enter a connection name and a numeric Confirmation Query ID."
+			message = "Check the connection name and the selected provider’s required settings."
+		case provider.ErrUnavailable:
+			message = "This source provider or capability is unavailable in this build."
 		case provider.ErrUnauthorized:
 			message = "Credential protection is unavailable or the credential is invalid. Configure a master key with wake setup and retry."
 		}
@@ -103,7 +114,14 @@ func registerWorkflowRoutes(
 			"Unable to save",
 			csrf,
 			"Connections",
-			SubmissionFailure(csrf, r.URL.Path, message, r.PostForm),
+			SubmissionFailure(
+				csrf,
+				r.URL.EscapedPath(),
+				message,
+				r.PostForm,
+				requestDescriptor(r, workflow),
+				formSubmission(r.Pattern),
+			),
 		).Render(r.Context(), w)
 	}
 	gate("GET /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -125,7 +143,7 @@ func registerWorkflowRoutes(
 			ServeHTTP(w, r)
 	})
 	gate("GET /connections/new", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		templ.Handler(SectionShell("Add IBKR connection", csrf, "Connections", ConnectionSetup(csrf))).
+		templ.Handler(SectionShell("Add source connection", csrf, "Connections", ConnectionSetup(csrf, workflow.Providers()))).
 			ServeHTTP(w, r)
 	})
 
@@ -170,32 +188,43 @@ func registerWorkflowRoutes(
 	}
 
 	gate("POST /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		token := credential.NewSecret([]byte(r.PostForm.Get("token")))
-		defer token.Clear()
+		descriptor := requestDescriptor(r, workflow)
+		settings, err := formSettings(r, descriptor)
 
-		r.PostForm.Del("token")
+		secrets := formSecrets(r, descriptor)
+		defer clearSecrets(secrets)
 
-		connectionID, err := workflow.CreateConnection(
-			r.Context(),
-			r.PostForm.Get("name"),
-			r.PostForm.Get("query_id"),
-			token,
-		)
 		if err != nil {
 			failure(w, r, csrf, err)
 			return
 		}
 
-		//nolint:gosec // connectionURL fixes the local prefix and escapes the ID as one path segment.
+		connectionID, err := workflow.CreateConnection(
+			r.Context(),
+			r.PostForm.Get("connection_name"),
+			descriptor.ID(),
+			settings,
+			secrets,
+		)
+		if err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+		//nolint:gosec // connectionURL fixes the local prefix and escapes the ID.
 		http.Redirect(w, r, connectionURL(connectionID, "status"), http.StatusSeeOther)
 	})
 	gate("POST /connections/{id}/settings", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		if err := workflow.UpdateConnection(
-			r.Context(),
-			r.PathValue("id"),
-			r.PostForm.Get("name"),
-			r.PostForm.Get("query_id"),
-		); err != nil {
+		settings, err := formSettings(r, requestDescriptor(r, workflow))
+		if err == nil {
+			err = workflow.UpdateConnection(
+				r.Context(),
+				r.PathValue("id"),
+				r.PostForm.Get("connection_name"),
+				settings,
+			)
+		}
+
+		if err != nil {
 			failure(w, r, csrf, err)
 			return
 		}
@@ -208,13 +237,18 @@ func registerWorkflowRoutes(
 		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
 
-	gate("POST /connections/{id}/token", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		token := credential.NewSecret([]byte(r.PostForm.Get("token")))
-		defer token.Clear()
+	gate("POST /connections/{id}/secrets", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		descriptor := requestDescriptor(r, workflow)
 
-		r.PostForm.Del("token")
+		secrets := formSecrets(r, descriptor)
+		defer clearSecrets(secrets)
 
-		if err := workflow.ReplaceToken(r.Context(), r.PathValue("id"), token); err != nil {
+		if err := workflow.ReplaceSecret(
+			r.Context(),
+			r.PathValue("id"),
+			r.PostForm.Get("secret_key"),
+			secrets[r.PostForm.Get("secret_key")],
+		); err != nil {
 			failure(w, r, csrf, err)
 			return
 		}
@@ -438,7 +472,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell("Confirmation report", csrf, "Activity", RetainedEvidence(evidence, metadata))).
+		templ.Handler(SectionShell("Source report", csrf, "Activity", RetainedEvidence(evidence, metadata))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /reference-evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -694,4 +728,104 @@ func registerWorkflowRoutes(
 			}
 		}
 	})
+}
+
+func settingValue(settings provider.Settings, key string) string {
+	value, _ := settings.Get(key)
+	return value
+}
+
+func requestDescriptor(r *http.Request, workflow *application.Workflow) provider.Descriptor {
+	id := r.PostForm.Get("provider")
+	if connection := r.PathValue("id"); connection != "" {
+		descriptor, _ := workflow.ConnectionDescriptor(r.Context(), connection)
+		return descriptor
+	}
+
+	registration, ok := workflow.Provider(id)
+	if !ok {
+		return provider.Descriptor{}
+	}
+
+	return registration.Descriptor()
+}
+
+func formSettings(r *http.Request, descriptor provider.Descriptor) (provider.Settings, error) {
+	if descriptor.ID() == "" {
+		return provider.Settings{}, provider.ErrUnavailable
+	}
+
+	values := map[string]string{}
+	for _, field := range descriptor.Fields() {
+		if field.Kind() == provider.TextField {
+			if value := r.PostForm.Get("setting." + field.Key()); value != "" {
+				values[field.Key()] = value
+			}
+		}
+	}
+
+	return provider.NewSettings(values)
+}
+
+func formSecrets(r *http.Request, descriptor provider.Descriptor) map[string]*credential.Secret {
+	secrets := map[string]*credential.Secret{}
+	for _, field := range descriptor.Fields() {
+		if field.Kind() == provider.SecretField {
+			key := "secret." + field.Key()
+			if value := r.PostForm.Get(key); value != "" {
+				secrets[field.Key()] = credential.NewSecret([]byte(value))
+			}
+
+			r.PostForm.Del(key)
+		}
+	}
+	// Unknown secret fields must never survive in a rendered draft either.
+	for key := range r.PostForm {
+		if strings.HasPrefix(key, "secret.") {
+			r.PostForm.Del(key)
+		}
+	}
+
+	return secrets
+}
+
+func clearSecrets(secrets map[string]*credential.Secret) {
+	for _, secret := range secrets {
+		secret.Clear()
+	}
+}
+
+type submissionKind uint8
+
+const (
+	submissionNone submissionKind = iota
+	submissionCreate
+	submissionSettings
+	submissionConfirm
+	submissionSecret
+	submissionReference
+)
+
+func formSubmission(pattern string) submissionKind {
+	switch pattern {
+	case "POST /connections":
+		return submissionCreate
+	case "POST /connections/{id}/settings":
+		return submissionSettings
+	case "POST /connections/{id}/confirm":
+		return submissionConfirm
+	case "POST /connections/{id}/secrets":
+		return submissionSecret
+	case "POST /reference/key":
+		return submissionReference
+	default:
+		return submissionNone
+	}
+}
+
+// providerFieldID separates the form scope, owner and field into unambiguous
+// parts. Opaque IDs remain stable across refreshes for focus and label targets.
+func providerFieldID(scope, owner string, field provider.Field) string {
+	sum := sha256.Sum256([]byte(scope + "\x00" + owner + "\x00" + string(field.Kind()) + "\x00" + field.Key()))
+	return "provider-field-" + hex.EncodeToString(sum[:])
 }

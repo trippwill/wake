@@ -82,3 +82,17 @@ func (r Result) Lifecycles() uint64 { return r.counts.Lifecycles }
 func (r Result) Conversions() uint64 { return r.counts.Conversions }
 
 func (r Result) Corrections() uint64 { return r.counts.Corrections }
+
+// Rejection identifies an uninterpretable source row without retaining unsafe
+// upstream error text. Code is provider-owned and has no core financial meaning.
+type Rejection struct{ location, code string }
+
+func NewRejection(location, code string) (Rejection, error) {
+	if !validText(location, 1024) || !validKey(code) {
+		return Rejection{}, ErrInvalid
+	}
+
+	return Rejection{location: location, code: code}, nil
+}
+func (r Rejection) Location() string { return r.location }
+func (r Rejection) Code() string     { return r.code }

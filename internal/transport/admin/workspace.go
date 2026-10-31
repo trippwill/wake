@@ -338,7 +338,7 @@ func reviews(v application.Dashboard) []reviewItem {
 
 func sourceWork(v application.Dashboard, c application.ConnectionView) []application.WorkStatus {
 	operation := "discover"
-	if v.Account.Connection() == c.ID {
+	if v.Account.Connection() == c.ID && c.CanAcquire {
 		operation = "acquire"
 	}
 

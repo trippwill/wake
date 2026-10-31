@@ -129,6 +129,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		f := t.Fields()
 		metadata(f.Account, f.Event, f.Order, f.EventAliases, f.Relationships)
+		text("reported.event_distinct", strconv.FormatBool(f.EventDistinct))
 		text("reported.trade_kind", string(f.Kind))
 		text("reported.instrument", comparisonInstrument(f.Instrument))
 		charges(f.Charges)
@@ -184,6 +185,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		f := l.Fields()
 		metadata(f.Account, f.Event, f.Order, f.EventAliases, f.Relationships)
+		text("reported.event_distinct", strconv.FormatBool(f.EventDistinct))
 		text("reported.instrument", comparisonInstrument(f.Instrument))
 		values["quantity"] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: "contracts"}
 		text("kind", string(f.Kind))
@@ -198,6 +200,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		f := c.Fields()
 		metadata(f.Account, f.Event, f.Order, f.EventAliases, nil)
+		text("reported.event_distinct", strconv.FormatBool(f.EventDistinct))
 		charges(f.Charges)
 		values["sent_amount"] = application.CorrectionValue{
 			Value:    f.Sent.Amount(),

@@ -17,6 +17,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -74,12 +75,18 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, nil, "ibkr-flex", ibkrflex.Confirmations, ibkrflex.Version, nil, nil)
+	workflow := application.New(store, h, nil, nil, nil)
 
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()
 
-	id, err := workflow.CreateConnection(context.Background(), "Durable discovery", "123", token)
+	id, err := workflow.CreateConnection(
+		context.Background(),
+		"Durable discovery",
+		"ibkr-flex",
+		confirmationSettings("123"),
+		map[string]*credential.Secret{"token": token},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +149,12 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		context.Background(),
 		host.WorkKey{Connection: id, Stream: ibkrflex.Confirmations, Operation: "discover"},
 	)
-	if err != nil || checkpoint.Revision != 0 || checkpoint.Acknowledged.Code() != "" {
+	if err != nil || checkpoint.Revision != 0 || checkpoint.Acknowledged.Phase() != "" {
 		t.Fatal("cancellation acknowledged uncommitted work", checkpoint, err)
 	}
+}
+
+func confirmationSettings(query string) provider.Settings {
+	settings, _ := provider.NewSettings(map[string]string{"query_id": query})
+	return settings
 }

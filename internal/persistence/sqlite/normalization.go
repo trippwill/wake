@@ -255,7 +255,7 @@ func (c *claims) PutInstrument(ctx context.Context, o source.InstrumentObservati
 }
 
 func (c *claims) Reject(ctx context.Context, location, reason string) error {
-	if _, err := provider.NewProgress(reason, 0, 0); err != nil || location == "" || len(location) > 1024 {
+	if _, err := provider.NewRejection(location, reason); err != nil {
 		c.failed = provider.ErrInvalid
 		return c.failed
 	}

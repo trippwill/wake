@@ -11,6 +11,7 @@ package sqlc
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const accessReadiness = `-- name: AccessReadiness :one
@@ -278,6 +279,17 @@ UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE 
 func (q *Queries) ArtifactProcessed(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, artifactProcessed, id)
 	return err
+}
+
+const artifactProvider = `-- name: ArtifactProvider :one
+SELECT connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?
+`
+
+func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, artifactProvider, id)
+	var provider string
+	err := row.Scan(&provider)
+	return provider, err
 }
 
 const attempts = `-- name: Attempts :many
@@ -560,18 +572,23 @@ func (q *Queries) ConflictExecution(ctx context.Context, id string) error {
 }
 
 const connection = `-- name: Connection :one
-SELECT id, provider, settings FROM access.configurations WHERE id=?
+SELECT id, provider, name, settings FROM access.configurations WHERE id=?
 `
 
 func (q *Queries) Connection(ctx context.Context, id string) (AccessConfiguration, error) {
 	row := q.db.QueryRowContext(ctx, connection, id)
 	var i AccessConfiguration
-	err := row.Scan(&i.ID, &i.Provider, &i.Settings)
+	err := row.Scan(
+		&i.ID,
+		&i.Provider,
+		&i.Name,
+		&i.Settings,
+	)
 	return i, err
 }
 
 const connectionAccess = `-- name: ConnectionAccess :one
-SELECT count(*) FROM access.configurations c WHERE c.id=? AND EXISTS(SELECT 1 FROM access.credentials k WHERE k.connection_id=c.id)
+SELECT count(*) FROM access.configurations c WHERE c.id=?
 `
 
 func (q *Queries) ConnectionAccess(ctx context.Context, id string) (int64, error) {
@@ -641,6 +658,33 @@ func (q *Queries) CountTables(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const credentialKeys = `-- name: CredentialKeys :many
+SELECT key FROM access.credentials WHERE connection_id=? ORDER BY key
+`
+
+func (q *Queries) CredentialKeys(ctx context.Context, connectionID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, credentialKeys, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const decisionSubmission = `-- name: DecisionSubmission :one
@@ -724,13 +768,13 @@ func (q *Queries) DeleteExecution(ctx context.Context) error {
 }
 
 const descriptor = `-- name: Descriptor :one
-SELECT id, provider FROM connections WHERE id=?
+SELECT id, provider, name FROM connections WHERE id=?
 `
 
 func (q *Queries) Descriptor(ctx context.Context, id string) (Connection, error) {
 	row := q.db.QueryRowContext(ctx, descriptor, id)
 	var i Connection
-	err := row.Scan(&i.ID, &i.Provider)
+	err := row.Scan(&i.ID, &i.Provider, &i.Name)
 	return i, err
 }
 
@@ -862,7 +906,7 @@ func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
 }
 
 const executionLinks = `-- name: ExecutionLinks :many
-SELECT reference FROM event_links WHERE execution_id=?
+SELECT reference FROM event_links WHERE execution_id=? AND distinct_event=1
 `
 
 func (q *Queries) ExecutionLinks(ctx context.Context, executionID string) ([]string, error) {
@@ -1294,15 +1338,20 @@ const missingAccess = `-- name: MissingAccess :many
 SELECT c.id,c.provider FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid
 `
 
-func (q *Queries) MissingAccess(ctx context.Context) ([]Connection, error) {
+type MissingAccessRow struct {
+	ID       string
+	Provider string
+}
+
+func (q *Queries) MissingAccess(ctx context.Context) ([]MissingAccessRow, error) {
 	rows, err := q.db.QueryContext(ctx, missingAccess)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Connection
+	var items []MissingAccessRow
 	for rows.Next() {
-		var i Connection
+		var i MissingAccessRow
 		if err := rows.Scan(&i.ID, &i.Provider); err != nil {
 			return nil, err
 		}
@@ -1388,22 +1437,43 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 }
 
 const pendingArtifacts = `-- name: PendingArtifacts :many
-SELECT artifacts.id FROM artifacts JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE artifacts.operation='acquire' AND artifacts.processed=0 AND (processing_next='' OR julianday(processing_next)<=julianday(?)) ORDER BY artifacts.rowid LIMIT 20
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
 `
 
-func (q *Queries) PendingArtifacts(ctx context.Context, julianday interface{}) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, pendingArtifacts, julianday)
+type PendingArtifactsParams struct {
+	Now       interface{}
+	Providers []string
+}
+
+type PendingArtifactsRow struct {
+	ID       string
+	Provider string
+}
+
+func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error) {
+	query := pendingArtifacts
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Now)
+	if len(arg.Providers) > 0 {
+		for _, v := range arg.Providers {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:providers*/?", strings.Repeat(",?", len(arg.Providers))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:providers*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []PendingArtifactsRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i PendingArtifactsRow
+		if err := rows.Scan(&i.ID, &i.Provider); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1724,17 +1794,23 @@ func (q *Queries) PutCandidate(ctx context.Context, arg PutCandidateParams) erro
 }
 
 const putConnection = `-- name: PutConnection :exec
-INSERT INTO access.configurations(id,provider,settings) VALUES(?,?,?)
+INSERT INTO access.configurations(id,provider,name,settings) VALUES(?,?,?,?)
 `
 
 type PutConnectionParams struct {
 	ID       string
 	Provider string
+	Name     string
 	Settings []byte
 }
 
 func (q *Queries) PutConnection(ctx context.Context, arg PutConnectionParams) error {
-	_, err := q.db.ExecContext(ctx, putConnection, arg.ID, arg.Provider, arg.Settings)
+	_, err := q.db.ExecContext(ctx, putConnection,
+		arg.ID,
+		arg.Provider,
+		arg.Name,
+		arg.Settings,
+	)
 	return err
 }
 
@@ -1799,31 +1875,38 @@ func (q *Queries) PutDecision(ctx context.Context, arg PutDecisionParams) error 
 }
 
 const putDescriptor = `-- name: PutDescriptor :exec
-INSERT INTO connections(id,provider) VALUES(?,?)
+INSERT INTO connections(id,provider,name) VALUES(?,?,?)
 `
 
 type PutDescriptorParams struct {
 	ID       string
 	Provider string
+	Name     string
 }
 
 func (q *Queries) PutDescriptor(ctx context.Context, arg PutDescriptorParams) error {
-	_, err := q.db.ExecContext(ctx, putDescriptor, arg.ID, arg.Provider)
+	_, err := q.db.ExecContext(ctx, putDescriptor, arg.ID, arg.Provider, arg.Name)
 	return err
 }
 
 const putEventLink = `-- name: PutEventLink :exec
-INSERT INTO event_links(account_id,reference,execution_id) VALUES(?,?,?) ON CONFLICT(account_id,reference,execution_id) DO NOTHING
+INSERT INTO event_links(account_id,reference,execution_id,distinct_event) VALUES(?,?,?,?) ON CONFLICT(account_id,reference,execution_id) DO UPDATE SET distinct_event=max(event_links.distinct_event,excluded.distinct_event)
 `
 
 type PutEventLinkParams struct {
-	AccountID   string
-	Reference   string
-	ExecutionID string
+	AccountID     string
+	Reference     string
+	ExecutionID   string
+	DistinctEvent int64
 }
 
 func (q *Queries) PutEventLink(ctx context.Context, arg PutEventLinkParams) error {
-	_, err := q.db.ExecContext(ctx, putEventLink, arg.AccountID, arg.Reference, arg.ExecutionID)
+	_, err := q.db.ExecContext(ctx, putEventLink,
+		arg.AccountID,
+		arg.Reference,
+		arg.ExecutionID,
+		arg.DistinctEvent,
+	)
 	return err
 }
 
@@ -2463,7 +2546,7 @@ func (q *Queries) RestartDiscovery(ctx context.Context, arg RestartDiscoveryPara
 }
 
 const resumeStorage = `-- name: ResumeStorage :execrows
-UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL OR NOT EXISTS(SELECT 1 FROM access.credentials k WHERE k.connection_id=c.id))
+UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL)
 `
 
 type ResumeStorageParams struct {
@@ -2869,17 +2952,37 @@ func (q *Queries) Succeeded(ctx context.Context, arg SucceededParams) ([]byte, e
 }
 
 const updateConnection = `-- name: UpdateConnection :exec
-INSERT INTO access.configurations(id,provider,settings) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings WHERE configurations.provider=excluded.provider
+INSERT INTO access.configurations(id,provider,name,settings) VALUES(?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider
 `
 
 type UpdateConnectionParams struct {
 	ID       string
 	Provider string
+	Name     string
 	Settings []byte
 }
 
 func (q *Queries) UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error {
-	_, err := q.db.ExecContext(ctx, updateConnection, arg.ID, arg.Provider, arg.Settings)
+	_, err := q.db.ExecContext(ctx, updateConnection,
+		arg.ID,
+		arg.Provider,
+		arg.Name,
+		arg.Settings,
+	)
+	return err
+}
+
+const updateDescriptorName = `-- name: UpdateDescriptorName :exec
+UPDATE connections SET name=? WHERE id=?
+`
+
+type UpdateDescriptorNameParams struct {
+	Name string
+	ID   string
+}
+
+func (q *Queries) UpdateDescriptorName(ctx context.Context, arg UpdateDescriptorNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateDescriptorName, arg.Name, arg.ID)
 	return err
 }
 

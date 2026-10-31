@@ -55,17 +55,21 @@ type LifecycleInput struct {
 	Location              string
 	Account, Event, Order Reference
 	EventAliases          []Reference
-	Instrument            Instrument
-	Kind                  LifecycleKind
-	Quantity              financial.Quantity
-	Date                  financial.Date
-	At                    financial.Timestamp
-	Relationships         []Relationship
+	// EventDistinct states that Event identifies one event within its qualified scope.
+	// Its native kind and value remain opaque to the core.
+	EventDistinct bool
+	Instrument    Instrument
+	Kind          LifecycleKind
+	Quantity      financial.Quantity
+	Date          financial.Date
+	At            financial.Timestamp
+	Relationships []Relationship
 }
 type Lifecycle struct{ input LifecycleInput }
 
 func NewLifecycle(f LifecycleInput) (Lifecycle, error) {
-	if !validText(f.Location, 1024) || f.Account.IsZero() || f.Instrument.Kind() != Option ||
+	if !validText(f.Location, 1024) || f.Account.IsZero() || (f.EventDistinct && f.Event.IsZero()) ||
+		f.Instrument.Kind() != Option ||
 		!f.Quantity.Positive() ||
 		f.Date.IsZero() ||
 		len(f.EventAliases) > 16 ||

@@ -217,3 +217,31 @@ The provider proof uses disposable Go workspace files to compile an unrelated
 module and run it through the actual private host and SQLite store. Run
 `mise run test:provider` for that proof, including race detection. CI and behavior
 coverage include the same proof; the production module imports no fixture.
+
+## Provider extensions
+
+Start with the independently compiled [synthetic provider](../../testdata/external-provider/fixture.go)
+and its [host/store proofs](../../testdata/provider-integration/host_test.go).
+Implement only the public capabilities needed by the source. A normalizer can
+accept supplied evidence without an acquirer, account discoverer or credential
+fields. Keep source formats, settings, credentials and protocol interpretation
+inside the provider; composition selects registrations. Common admin forms use
+the descriptor's fields. A connection's display name is host metadata, separate
+from those provider settings.
+
+Use the public [financial parsers](../../financial/value.go) for exact money,
+quantity, price, currency and civil-date values, and the
+[timestamp parser](../../financial/timestamp.go) for reported time precision. The decimal
+parsers accept bounded finite base-ten syntax, expand exponents exactly and retain
+fractional scale. They do not guess grouping, locale, missing values or financial
+roles. A provider must explicitly interpret its own source syntax before calling
+them; keep unknown amounts unknown and preserve original bytes and source locations.
+
+Translate source protocol statuses to public progress phases and retry reasons.
+Native diagnostic codes remain provider-owned identifiers; shared scheduling and
+presentation do not interpret them. Qualify a reported event as distinct only when
+the source establishes that meaning within its assigning authority, kind and scope.
+An arbitrary native ID spelling never establishes fill identity in the core.
+Run `mise run test:provider` to verify independent public imports, scoped secret
+lifetime, durable pacing, atomic acknowledgement, cancellation, normalization
+rollback and replay through actual host/storage boundaries.

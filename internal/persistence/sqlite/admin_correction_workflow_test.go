@@ -15,7 +15,6 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/transport/admin"
-	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
 func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
@@ -30,16 +29,7 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 
 	id := view.Executions[0].ID()
 	instrument := view.Executions[0].Instrument()
-	workflow := application.New(
-		store,
-		nil,
-		nil,
-		"ibkr-flex",
-		ibkrflex.Confirmations,
-		ibkrflex.Version,
-		nil,
-		nil,
-	)
+	workflow := application.New(store, nil, nil, nil, nil)
 
 	dir := t.TempDir()
 	if err = admin.SetUnlock(dir, []byte("synthetic-correction-unlock")); err != nil {

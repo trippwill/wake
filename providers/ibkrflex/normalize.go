@@ -306,6 +306,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 
 		if fields.Event.IsZero() {
 			fields.Event = ref
+			fields.EventDistinct = entry.field == "execID"
 		} else {
 			fields.EventAliases = append(fields.EventAliases, ref)
 		}
@@ -512,16 +513,17 @@ func optionLifecycle(row map[string]string, parent, loc string) (source.Lifecycl
 
 	return source.NewLifecycle(
 		source.LifecycleInput{
-			Location:     loc,
-			Account:      f.Account,
-			Event:        f.Event,
-			EventAliases: f.EventAliases,
-			Order:        f.Order,
-			Instrument:   f.Instrument,
-			Kind:         outcome(row),
-			Quantity:     f.Quantity,
-			Date:         f.TradeDate,
-			At:           f.ExecutedAt,
+			Location:      loc,
+			Account:       f.Account,
+			Event:         f.Event,
+			EventAliases:  f.EventAliases,
+			EventDistinct: f.EventDistinct,
+			Order:         f.Order,
+			Instrument:    f.Instrument,
+			Kind:          outcome(row),
+			Quantity:      f.Quantity,
+			Date:          f.TradeDate,
+			At:            f.ExecutedAt,
 		},
 	)
 }
@@ -584,6 +586,7 @@ func conversion(row map[string]string, parent, loc string) (source.Conversion, e
 			Account:         f.Account,
 			Event:           f.Event,
 			EventAliases:    f.EventAliases,
+			EventDistinct:   f.EventDistinct,
 			Order:           f.Order,
 			Date:            f.TradeDate,
 			At:              f.ExecutedAt,

@@ -4,7 +4,7 @@
 -- name: CountTables :one
 SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%';
 -- name: PutConnection :exec
-INSERT INTO access.configurations(id,provider,settings) VALUES(?,?,?);
+INSERT INTO access.configurations(id,provider,name,settings) VALUES(?,?,?,?);
 -- name: Connection :one
 SELECT * FROM access.configurations WHERE id=?;
 -- name: PutSecret :exec
@@ -71,7 +71,7 @@ INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,au
 -- name: CandidateProfiles :many
 SELECT candidates.* FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY artifacts.rowid DESC,candidates.value;
 -- name: PendingArtifacts :many
-SELECT artifacts.id FROM artifacts JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE artifacts.operation='acquire' AND artifacts.processed=0 AND (processing_next='' OR julianday(processing_next)<=julianday(?)) ORDER BY artifacts.rowid LIMIT 20;
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND artifacts.operation='acquire' AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ArtifactProcessed :exec
 UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?;
 -- name: ArtifactFailure :exec
@@ -109,7 +109,7 @@ SELECT * FROM executions ORDER BY rowid DESC;
 -- name: EventLink :one
 SELECT execution_id FROM event_links WHERE account_id=? AND reference=?;
 -- name: PutEventLink :exec
-INSERT INTO event_links(account_id,reference,execution_id) VALUES(?,?,?) ON CONFLICT(account_id,reference,execution_id) DO NOTHING;
+INSERT INTO event_links(account_id,reference,execution_id,distinct_event) VALUES(?,?,?,?) ON CONFLICT(account_id,reference,execution_id) DO UPDATE SET distinct_event=max(event_links.distinct_event,excluded.distinct_event);
 -- name: PutObservation :exec
 INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) VALUES(?,?,?,?,?,?);
 -- name: ObservationExists :one
@@ -151,9 +151,9 @@ SELECT instrument_reference_attempts.*,reference_evidence.retrieved FROM instrum
 -- name: EventLinks :many
 SELECT execution_id FROM event_links WHERE account_id=? AND reference=? ORDER BY execution_id;
 -- name: ExecutionLinks :many
-SELECT reference FROM event_links WHERE execution_id=?;
+SELECT reference FROM event_links WHERE execution_id=? AND distinct_event=1;
 -- name: UpdateConnection :exec
-INSERT INTO access.configurations(id,provider,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings WHERE configurations.provider=excluded.provider;
+INSERT INTO access.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(name),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider;
 -- name: ResetConnectionWork :exec
 UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?;
 
@@ -252,7 +252,7 @@ UPDATE recovery_jobs SET status='queued',failure='' WHERE recovery_jobs.id=? AND
 SELECT r.activity_id,coalesce(e.execution_id,'') AS target_id FROM activity_relationships r JOIN executions a ON a.id=r.activity_id LEFT JOIN event_links e ON e.account_id=a.account_id AND e.reference=r.target;
 
 -- name: PutDescriptor :exec
-INSERT INTO connections(id,provider) VALUES(?,?);
+INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec
 INSERT INTO normalization_receipts(artifact_id,version,counts) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: RefreshExecution :exec
@@ -266,11 +266,11 @@ SELECT c.id,c.provider FROM connections c LEFT JOIN access.configurations a ON a
 -- name: ReviewReference :exec
 UPDATE profile SET reference_review=0 WHERE singleton=1;
 -- name: ResumeStorage :execrows
-UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL OR NOT EXISTS(SELECT 1 FROM access.credentials k WHERE k.connection_id=c.id));
+UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL);
 -- name: Descriptor :one
 SELECT * FROM connections WHERE id=?;
 -- name: ConnectionAccess :one
-SELECT count(*) FROM access.configurations c WHERE c.id=? AND EXISTS(SELECT 1 FROM access.credentials k WHERE k.connection_id=c.id);
+SELECT count(*) FROM access.configurations c WHERE c.id=?;
 
 -- name: AccessReadiness :one
 SELECT EXISTS(SELECT 1 FROM access.configurations WHERE id=sqlc.arg(connection_id)) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=sqlc.arg(connection_id)) AS credential_stored;
@@ -282,3 +282,11 @@ SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.accoun
 ORDER BY artifact_id,version,location;
 -- name: ArtifactObservations :many
 SELECT * FROM execution_observations WHERE artifact_id=? ORDER BY rowid;
+
+-- name: UpdateDescriptorName :exec
+UPDATE connections SET name=? WHERE id=?;
+-- name: CredentialKeys :many
+SELECT key FROM access.credentials WHERE connection_id=? ORDER BY key;
+
+-- name: ArtifactProvider :one
+SELECT connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?;

@@ -266,10 +266,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	navigate(chromedp.Click(`a[href="/connections"]`))
 	navigate(chromedp.Click(`a[href="/connections/new"]`))
 	check(
-		chromedp.WaitVisible("#connection-name"),
-		chromedp.SendKeys("#connection-name", "Synthetic IBKR"),
-		chromedp.SendKeys("#query-id", "123"),
-		chromedp.SendKeys("#flex-token", "synthetic-token"),
+		chromedp.WaitVisible("#connection-name-ibkr-flex"),
+		chromedp.SendKeys("#connection-name-ibkr-flex", "Synthetic IBKR"),
+		chromedp.SendKeys(`form[action="/connections"] input[name="setting.query_id"]`, "123"),
+		chromedp.SendKeys(`form[action="/connections"] input[name="secret.token"]`, "synthetic-token"),
 	)
 	navigate(chromedp.Click(`form[action="/connections"] button[type="submit"]`))
 	check(chromedp.WaitVisible("#workflow-progress"))
@@ -277,7 +277,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	var connectionPath string
 	check(chromedp.Location(&connectionPath))
 	connectionPath = strings.Split(strings.TrimPrefix(connectionPath, origin), "?")[0]
-	check(chromedp.Navigate(origin+"/connections/new"), chromedp.WaitVisible("#connection-name"))
+	check(chromedp.Navigate(origin+"/connections/new"), chromedp.WaitVisible("#connection-name-ibkr-flex"))
 
 	select {
 	case period := <-sent:
@@ -288,12 +288,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("no discovery request")
 	}
 	// A background status refresh must preserve an unfinished connection form.
-	check(chromedp.SendKeys("#connection-name", "Unsubmitted draft"))
+	check(chromedp.SendKeys("#connection-name-ibkr-flex", "Unsubmitted draft"))
 	clock.Add(10)
 	check(
 		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
 		chromedp.Evaluate(
-			`document.querySelector('#connection-name').value==='Unsubmitted draft' && document.body.dataset.liveState==='connected'`,
+			`document.querySelector('#connection-name-ibkr-flex').value==='Unsubmitted draft' && document.body.dataset.liveState==='connected'`,
 			&ok,
 		),
 	)
@@ -705,17 +705,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Navigate(origin+"/connections/recovery"),
 		chromedp.WaitVisible("#storage-recovery-title"),
 		chromedp.SetValue(
-			`form[action$="/settings"] input[name="name"]`,
+			`form[action$="/settings"] input[name="connection_name"]`,
 			"Recovered IBKR",
 		),
-		chromedp.SetValue(`form[action$="/settings"] input[name="query_id"]`, "123"),
+		chromedp.SetValue(`form[action$="/settings"] input[name="setting.query_id"]`, "123"),
 		chromedp.Click(`form[action$="/settings"] button`),
 		chromedp.WaitVisible(`//h2[text()="Recovered IBKR"]`, chromedp.BySearch),
 		chromedp.SetValue(
-			`input[id^="token-"]`,
+			`input[name="secret.token"]`,
 			"synthetic-token",
 		),
-		chromedp.Click(`form[action$="/token"] button`),
+		chromedp.Click(`form[action$="/secrets"] button`),
 		chromedp.WaitNotPresent(`p[id^="access-missing-"]`),
 		chromedp.SetValue("#openfigi-key", "synthetic-reference-key"),
 		chromedp.Click(`form[action="/reference/key"] button`),

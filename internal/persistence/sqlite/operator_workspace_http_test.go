@@ -15,7 +15,9 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
 func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
@@ -55,7 +57,18 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	}
 	defer auth.Close()
 
-	workflow := application.New(s, nil, nil, "", "", "", nil, nil)
+	registration, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := host.New(t.Context(), s, nil, nil, nil, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	workflow := application.New(s, h, nil, nil, nil)
 
 	handler, err := admin.NewHandler(auth, admin.Dependencies{Workflow: workflow})
 	if err != nil {

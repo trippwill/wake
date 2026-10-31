@@ -194,21 +194,18 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(
-		store,
-		providerHost,
-		nil,
-		"ibkr-flex",
-		ibkrflex.Confirmations,
-		ibkrflex.Version,
-		func() time.Time { return now },
-		nil,
-	)
+	workflow := application.New(store, providerHost, nil, func() time.Time { return now }, nil)
 
 	secret := credential.NewSecret([]byte("socket-synthetic-token"))
 	defer secret.Clear()
 
-	connection, err := workflow.CreateConnection(ctx, "Socket acceptance", "123", secret)
+	connection, err := workflow.CreateConnection(
+		ctx,
+		"Socket acceptance",
+		"ibkr-flex",
+		confirmationSettings("123"),
+		map[string]*credential.Secret{"token": secret},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,16 +451,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow = application.New(
-		store,
-		providerHost,
-		nil,
-		"ibkr-flex",
-		ibkrflex.Confirmations,
-		ibkrflex.Version,
-		func() time.Time { return now },
-		nil,
-	)
+	workflow = application.New(store, providerHost, nil, func() time.Time { return now }, nil)
 
 	id, replacementID := "", ""
 	for _, execution := range dashboard.Executions {

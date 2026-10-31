@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	fixture "example.org/wakefixture"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
@@ -54,8 +55,8 @@ func newFixture(t *testing.T, r provider.Registration) *fixtureHost {
 	f.open(t, r)
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()
-	settings, _ := provider.NewSettings(nil)
-	f.id, err = f.host.Configure(context.Background(), "fixture", settings, map[string]*credential.Secret{"token": token})
+	settings, _ := provider.NewSettings(map[string]string{"tenant": "synthetic-tenant"})
+	f.id, err = f.host.Configure(context.Background(), "fixture", "Synthetic source", settings, map[string]*credential.Secret{"api_secret": token})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func (f *fixtureHost) count(t *testing.T, table string) int {
 }
 func (f *fixtureHost) checkpoint(t *testing.T, operation string) host.Checkpoint {
 	t.Helper()
-	cp, err := f.store.Checkpoint(context.Background(), host.WorkKey{Connection: f.id, Stream: "confirmations", Operation: operation})
+	cp, err := f.store.Checkpoint(context.Background(), host.WorkKey{Connection: f.id, Stream: "statements", Operation: operation})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 	ctx := context.Background()
 	r := registration(t)
 	f := newFixture(t, r)
-	discovery, err := f.host.Discover(ctx, f.id, "confirmations")
+	discovery, err := f.host.Discover(ctx, f.id, "statements")
 	if err != nil || discovery == "" {
 		t.Fatal(discovery, err)
 	}
@@ -150,11 +151,11 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 	if err != nil || n != 0 {
 		t.Fatal("discovery activated account", n, err)
 	}
-	if id, e := f.host.Acquire(ctx, f.id, "confirmations"); e != nil || id != "" {
+	if id, e := f.host.Acquire(ctx, f.id, "statements"); e != nil || id != "" {
 		t.Fatal("shared pacing must defer immediate acquisition", id, e)
 	}
 	f.now = f.now.Add(2 * time.Second)
-	artifact, err := f.host.Acquire(ctx, f.id, "confirmations")
+	artifact, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil || artifact == "" {
 		t.Fatal(artifact, err)
 	}
@@ -206,7 +207,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal("restart reset pacing", err)
 	}
 	f.now = f.now.Add(2 * time.Hour)
-	if _, err = f.host.Acquire(ctx, f.id, "confirmations"); err != nil {
+	if _, err = f.host.Acquire(ctx, f.id, "statements"); err != nil {
 		t.Fatal(err)
 	}
 	if resumed.Version() != "v1" || string(resumed.Payload()) != `{"page":2}` {
@@ -243,21 +244,21 @@ func TestAtomicEvidenceAcknowledgementAndCandidateRollback(t *testing.T) {
 			if operation == "discover" {
 				run = f.host.Discover
 			}
-			if _, err := run(context.Background(), f.id, "confirmations"); err == nil {
+			if _, err := run(context.Background(), f.id, "statements"); err == nil {
 				t.Fatal("failed transaction acknowledged")
 			}
 			cp := f.checkpoint(t, operation)
-			if cp.Revision != 0 || !cp.State.IsZero() || cp.Acknowledged.Code() != "" || cp.Observed.Code() == "" || f.count(t, "artifacts") != 0 || f.count(t, "candidates") != 0 {
+			if cp.Revision != 0 || !cp.State.IsZero() || cp.Acknowledged.Phase() != "" || cp.Observed.Phase() == "" || f.count(t, "artifacts") != 0 || f.count(t, "candidates") != 0 {
 				t.Fatal("partial acknowledgement", cp)
 			}
 			f.sql(t, "DROP TRIGGER fail_accept")
 			f.now = f.now.Add(2 * time.Second)
-			id, err := run(context.Background(), f.id, "confirmations")
+			id, err := run(context.Background(), f.id, "statements")
 			if err != nil || id == "" {
 				t.Fatal(id, err)
 			}
 			step, _ := provider.NewStep(provider.State{}, provider.Artifact{}, f.now.Add(time.Hour))
-			if _, err = f.store.Accept(context.Background(), host.WorkKey{Connection: f.id, Stream: "confirmations", Operation: operation}, 0, step, nil, provider.Progress{}); !errors.Is(err, provider.ErrConflict) {
+			if _, err = f.store.Accept(context.Background(), host.WorkKey{Connection: f.id, Stream: "statements", Operation: operation}, 0, step, nil, provider.Progress{}); !errors.Is(err, provider.ErrConflict) {
 				t.Fatal("stale revision accepted", err)
 			}
 			if f.count(t, "artifacts") != 1 || f.checkpoint(t, operation).Revision != 1 {
@@ -319,7 +320,7 @@ func TestNormalizationRollbackRejectAccountingAndStorageFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			f := newFixture(t, r)
-			id, err := f.host.Acquire(context.Background(), f.id, "confirmations")
+			id, err := f.host.Acquire(context.Background(), f.id, "statements")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -363,7 +364,7 @@ func TestCancellationCredentialsAndJoinedHostShutdown(t *testing.T) {
 	var saved provider.Access
 	blocking := acquireFunc(func(ctx context.Context, r provider.Request, a provider.Access) (provider.Step, error) {
 		saved = a
-		err := a.WithSecret(ctx, "token", func(secret []byte) error {
+		err := a.WithSecret(ctx, "api_secret", func(secret []byte) error {
 			retained = secret
 			close(entered)
 			<-ctx.Done()
@@ -379,13 +380,13 @@ func TestCancellationCredentialsAndJoinedHostShutdown(t *testing.T) {
 	}
 	f := newFixture(t, r)
 	done := make(chan error, 1)
-	go func() { _, e := f.host.Acquire(context.Background(), f.id, "confirmations"); done <- e }()
+	go func() { _, e := f.host.Acquire(context.Background(), f.id, "statements"); done <- e }()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("credential callback did not start")
 	}
-	if _, err = f.host.Acquire(context.Background(), f.id, "confirmations"); !errors.Is(err, host.ErrBusy) {
+	if _, err = f.host.Acquire(context.Background(), f.id, "statements"); !errors.Is(err, host.ErrBusy) {
 		t.Fatal("concurrent connection admitted", err)
 	}
 	stopped := make(chan struct{})
@@ -413,13 +414,13 @@ func TestCancellationCredentialsAndJoinedHostShutdown(t *testing.T) {
 	if !bytes.Equal(retained, make([]byte, len(retained))) {
 		t.Fatal("credential callback bytes not cleared")
 	}
-	if err = saved.WithSecret(context.Background(), "token", func([]byte) error { return nil }); !errors.Is(err, provider.ErrUnauthorized) {
+	if err = saved.WithSecret(context.Background(), "api_secret", func([]byte) error { return nil }); !errors.Is(err, provider.ErrUnauthorized) {
 		t.Fatal("expired access remained usable", err)
 	}
 	if cp := f.checkpoint(t, "acquire"); cp.Failure != context.Canceled.Error() || cp.Revision != 0 {
 		t.Fatal("cancellation acknowledged work", cp)
 	}
-	if _, err = f.host.Acquire(context.Background(), f.id, "confirmations"); !errors.Is(err, host.ErrStopped) {
+	if _, err = f.host.Acquire(context.Background(), f.id, "statements"); !errors.Is(err, host.ErrStopped) {
 		t.Fatal("shutdown accepted new work", err)
 	}
 }
@@ -427,14 +428,14 @@ func TestCancellationCredentialsAndJoinedHostShutdown(t *testing.T) {
 func TestUnknownContinuationAndDurableCooldown(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, registration(t))
-	key := host.WorkKey{Connection: f.id, Stream: "confirmations", Operation: "acquire"}
+	key := host.WorkKey{Connection: f.id, Stream: "statements", Operation: "acquire"}
 	cp := f.checkpoint(t, "acquire")
 	state, _ := provider.NewState("future-v99", []byte(`{"page":42}`))
 	step, _ := provider.NewStep(state, provider.Artifact{}, f.now)
 	if _, err := f.store.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.host.Acquire(ctx, f.id, "confirmations"); !errors.Is(err, provider.ErrUnavailable) {
+	if _, err := f.host.Acquire(ctx, f.id, "statements"); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("unknown continuation silently reset", err)
 	}
 	if cp = f.checkpoint(t, "acquire"); cp.Revision != 1 || cp.State.Version() != "future-v99" {
@@ -475,7 +476,7 @@ func TestNormalizationCancellationJoinsBeforeRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	artifact, err := f.host.Acquire(context.Background(), f.id, "confirmations")
+	artifact, err := f.host.Acquire(context.Background(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +502,7 @@ func TestNormalizationCancellationJoinsBeforeRollback(t *testing.T) {
 }
 func TestInterruptedAttemptRecoveryAndCredentialFreeNormalization(t *testing.T) {
 	f := newFixture(t, registration(t))
-	artifact, err := f.host.Acquire(context.Background(), f.id, "confirmations")
+	artifact, err := f.host.Acquire(context.Background(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +537,7 @@ func TestIgnoredRowsKeepEvidenceWithoutFinancialContributions(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	id, err := f.host.Acquire(context.Background(), f.id, "confirmations")
+	id, err := f.host.Acquire(context.Background(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +564,7 @@ func TestPacingStorageFailureCannotBeAcknowledged(t *testing.T) {
 	}
 	f := newFixture(t, r)
 	f.sql(t, "CREATE TRIGGER fail_pacing BEFORE INSERT ON pacing BEGIN SELECT RAISE(ABORT,'synthetic pacing failure'); END")
-	if _, err = f.host.Acquire(context.Background(), f.id, "confirmations"); !errors.Is(err, host.ErrStorage) {
+	if _, err = f.host.Acquire(context.Background(), f.id, "statements"); !errors.Is(err, host.ErrStorage) {
 		t.Fatal("pacing failure acknowledged", err)
 	}
 	if cp := f.checkpoint(t, "acquire"); cp.Revision != 0 || cp.Failure != host.ErrStorage.Error() {
@@ -589,7 +590,7 @@ func TestAdjustedOptionExternalClaimRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	id, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +624,7 @@ func TestLifecycleExternalClaimRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	id, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +659,7 @@ func TestDebtExternalClaimRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 			f := newFixture(t, r)
-			id, err := f.host.Acquire(ctx, f.id, "confirmations")
+			id, err := f.host.Acquire(ctx, f.id, "statements")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -694,7 +695,7 @@ func TestConversionExternalClaimRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	id, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,7 +729,7 @@ func TestCorrectionExternalClaimRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	id, err := f.host.Acquire(ctx, f.id, "confirmations")
+	id, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +750,7 @@ func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing
 	ctx := context.Background()
 	r := registration(t)
 	f := newFixture(t, r)
-	artifact, err := f.host.Acquire(ctx, f.id, "confirmations")
+	artifact, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil || artifact == "" {
 		t.Fatal(artifact, err)
 	}
@@ -782,7 +783,7 @@ func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing
 	if records, err := f.store.Records(ctx, artifact, "v1"); err != nil || len(records) != 3 {
 		t.Fatal("lost retained claims", records, err)
 	}
-	if _, err = f.host.Acquire(ctx, f.id, "confirmations"); !errors.Is(err, provider.ErrUnavailable) {
+	if _, err = f.host.Acquire(ctx, f.id, "statements"); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("recovery restored source authority", err)
 	}
 }
@@ -790,7 +791,7 @@ func TestNormalizationReceiptSurvivesBothCompanionsWithoutCredentials(t *testing
 func TestNormalizationReceiptFailureRollsBackClaims(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, registration(t))
-	artifact, err := f.host.Acquire(ctx, f.id, "confirmations")
+	artifact, err := f.host.Acquire(ctx, f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -813,22 +814,220 @@ func TestNormalizationReceiptFailureRollsBackClaims(t *testing.T) {
 func TestCommittedRetryIsNotReportedAsAcquisitionSuccess(t *testing.T) {
 	base := registration(t)
 	acquire := acquireFunc(func(_ context.Context, request provider.Request, _ provider.Access) (provider.Step, error) {
-		return provider.NewRetryStep(provider.State{}, request.Now.Add(time.Minute), "private-provider-value")
+		return provider.NewRetryStep(provider.State{}, request.Now.Add(time.Minute), provider.RetryUpstream, "private-provider-value")
 	})
 	r, err := provider.NewRegistration(base.Descriptor(), base.Version(), acquire, base.Normalizer(), base.Discoverer(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	if _, err = f.host.Acquire(context.Background(), f.id, "confirmations"); err != nil {
+	if _, err = f.host.Acquire(context.Background(), f.id, "statements"); err != nil {
 		t.Fatal(err)
 	}
-	checkpoint, err := f.store.Checkpoint(context.Background(), host.WorkKey{Connection: f.id, Stream: "confirmations", Operation: "acquire"})
+	checkpoint, err := f.store.Checkpoint(context.Background(), host.WorkKey{Connection: f.id, Stream: "statements", Operation: "acquire"})
 	if err != nil || checkpoint.Revision != 1 || checkpoint.Failure != "private-provider-value" {
 		t.Fatal("retry was not retained", checkpoint, err)
 	}
 	text := f.diagnostics.String()
 	if !strings.Contains(text, `"outcome":"retry_scheduled"`) || !strings.Contains(text, `"code":"upstream_retry"`) || strings.Contains(text, "private-provider-value") || !strings.Contains(text, `"next_eligible_at"`) {
 		t.Fatal(text)
+	}
+}
+
+func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *testing.T) {
+	registration, err := fixture.RegisterDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err = os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f := &fixtureHost{path: filepath.Join(dir, "wake.db"), now: time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)}
+	f.open(t, registration)
+	t.Cleanup(func() {
+		f.host.Close()
+		if err := f.store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	workflow := application.New(f.store, f.host, nil, nil, nil)
+	id, err := workflow.CreateConnection(t.Context(), "Supplied document", registration.Descriptor().ID(), provider.Settings{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.host.CheckAccess(t.Context(), id); err != nil {
+		t.Fatal("normalizer required credentials", err)
+	}
+	if count := f.count(t, "scheduled"); count != 0 {
+		t.Fatal("normalizer scheduled upstream work", count)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil || len(view.Connections) != 1 || view.Connections[0].MissingAccess || view.Connections[0].CanAcquire || view.Connections[0].CanDiscover {
+		t.Fatal("normalizer-only capability/readiness mismatch", view, err)
+	}
+	artifact, err := provider.NewArtifact("synthetic-document-v1", "application/octet-stream", f.now, []byte("synthetic document bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retainedID, err := f.host.Supply(t.Context(), id, "documents", artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := f.store.Retained(t.Context(), retainedID)
+	if err != nil || !bytes.Equal(retained.Artifact.Content(), artifact.Content()) {
+		t.Fatal("supplied original bytes lost", err)
+	}
+	for range 2 {
+		result, err := f.host.Normalize(t.Context(), retainedID, registration.Version())
+		if err != nil || result.Trades() != 1 {
+			t.Fatal(result, err)
+		}
+	}
+	records, err := f.store.Records(t.Context(), retainedID, registration.Version())
+	if err != nil || len(records) != 1 || records[0].Trade.Fields().Location != "page:1/region:2/row:3" || records[0].Trade.Fields().Instrument.Option().Fields().Strike.Amount() != "123.4500000000000000001" {
+		t.Fatal("document source claims lost precision/provenance", records, err)
+	}
+	attempts, err := f.store.Attempts(t.Context(), retainedID)
+	if err != nil || len(attempts) != 1 {
+		t.Fatal("successful normalization replay repeated work", attempts, err)
+	}
+	if _, err = f.host.Acquire(t.Context(), id, "documents"); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("normalizer acquired upstream data", err)
+	}
+}
+
+func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T) {
+	base := registration(t)
+	r, err := provider.NewRegistration(base.Descriptor(), base.Version(), nil, nil, base.Discoverer(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	workflow := application.New(f.store, f.host, nil, nil, nil)
+	artifact, err := f.host.Discover(t.Context(), f.id, "statements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil || len(view.Connections) != 1 || len(view.Connections[0].Candidates) != 1 {
+		t.Fatal(view, err)
+	}
+	details, err := application.NewAccountDetails("Discovered account", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := view.Connections[0].Candidates[0]
+	if _, err = workflow.Confirm(t.Context(), f.id, artifact, candidate.Candidate.Reference(), details); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", f.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var scheduled int
+	if err = db.QueryRow("SELECT count(*) FROM scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
+		t.Fatal("discovery required an acquirer", scheduled, err)
+	}
+}
+
+func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *testing.T) {
+	base := registration(t)
+	r, err := provider.NewRegistration(base.Descriptor(), base.Version(), base.Acquirer(), nil, base.Discoverer(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t, r)
+	workflow := application.New(f.store, f.host, nil, nil, nil)
+	artifact, err := f.host.Discover(t.Context(), f.id, "statements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := view.Connections[0].Candidates[0]
+	details, _ := application.NewAccountDetails("Acquisition only", "")
+	if _, err = workflow.Confirm(t.Context(), f.id, artifact, candidate.Candidate.Reference(), details); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(2 * time.Second)
+	for range 2 {
+		if err = workflow.RunOnce(t.Context(), f.now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err = workflow.Dashboard(t.Context())
+	if err != nil || len(view.Connections[0].Processing) != 1 {
+		t.Fatal(view, err)
+	}
+	status := view.Connections[0].Processing[0]
+	if status.Failure != "" || status.Complete || view.Connections[0].CanNormalize {
+		t.Fatal("absent optional normalizer became processing failure", status)
+	}
+	attempts, err := f.store.Attempts(t.Context(), status.Artifact)
+	if err != nil || len(attempts) != 0 {
+		t.Fatal("raw acquisition enqueued normalization", attempts, err)
+	}
+	if retained, err := f.store.Retained(t.Context(), status.Artifact); err != nil || retained.Artifact.IsZero() {
+		t.Fatal("raw evidence lost", err)
+	}
+}
+
+type workflowReadProof struct {
+	*persistence.Store
+	retainedReads int
+}
+
+func (s *workflowReadProof) Retained(ctx context.Context, id string) (host.Retained, error) {
+	s.retainedReads++
+	return s.Store.Retained(ctx, id)
+}
+
+func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing.T) {
+	base := registration(t)
+	f := newFixture(t, base)
+	document, err := fixture.RegisterDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.host.Close()
+	f.host, err = host.New(t.Context(), f.store, f.envelope, nil, func() time.Time { return f.now }, base, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := &workflowReadProof{Store: f.store}
+	workflow := application.New(reads, f.host, nil, nil, nil)
+	discovery, err := f.host.Discover(t.Context(), f.id, "statements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := workflow.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := view.Connections[0].Candidates[0]
+	details, _ := application.NewAccountDetails("Metadata processing proof", "")
+	if _, err = workflow.Confirm(t.Context(), f.id, discovery, candidate.Candidate.Reference(), details); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(2 * time.Second)
+	artifact, err := f.host.Acquire(t.Context(), f.id, "statements")
+	if err != nil || artifact == "" {
+		t.Fatal(artifact, err)
+	}
+	// A nonempty, elapsed retry bound also proves multi-provider SQL parameters
+	// remain ordered correctly when the enabled normalizer list has two entries.
+	if err = f.store.ProcessingFailure(t.Context(), artifact, f.now.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err = workflow.RunOnce(t.Context(), f.now); err != nil {
+		t.Fatal(err)
+	}
+	view, err = workflow.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 || reads.retainedReads != 0 {
+		t.Fatal("orchestration decoded full evidence for metadata", view, reads.retainedReads, err)
 	}
 }

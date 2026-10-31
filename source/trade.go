@@ -61,18 +61,21 @@ type TradeInput struct {
 	Instrument                       Instrument
 	Event                            Reference
 	EventAliases                     []Reference
-	Order                            Reference
-	PositionEffect                   PositionEffect
-	Charges                          []Charge
-	Proceeds                         financial.Money
-	Side                             Side
-	Quantity                         financial.Quantity
-	Price                            financial.Price
-	TradeDate                        financial.Date
-	ExecutedAt                       financial.Timestamp
-	SettlementDate                   financial.Date
-	Gross                            financial.Money
-	Net                              financial.Money
+	// EventDistinct states that Event identifies one event within its qualified scope.
+	// Its native kind and value remain opaque to the core.
+	EventDistinct  bool
+	Order          Reference
+	PositionEffect PositionEffect
+	Charges        []Charge
+	Proceeds       financial.Money
+	Side           Side
+	Quantity       financial.Quantity
+	Price          financial.Price
+	TradeDate      financial.Date
+	ExecutedAt     financial.Timestamp
+	SettlementDate financial.Date
+	Gross          financial.Money
+	Net            financial.Money
 }
 type Trade struct{ input TradeInput }
 
@@ -98,6 +101,7 @@ func NewTrade(input TradeInput) (Trade, error) {
 	}
 
 	if !validText(input.Location, 1024) || input.Account.IsZero() ||
+		(input.EventDistinct && input.Event.IsZero()) ||
 		(input.Instrument.Kind() != Equity && input.Instrument.Kind() != Fund && input.Instrument.Kind() != Option && input.Instrument.Kind() != Debt) ||
 		(input.Side != Buy && input.Side != Sell) ||
 		!input.Quantity.Positive() ||
