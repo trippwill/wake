@@ -111,4 +111,10 @@ for verification and reset procedures. No version tag is implied by this coverag
 
 Admin history views and status refreshes currently read the accepted history through a shared dashboard query. Memory use and refresh work grow with warehouse history; server-side activity pagination and dedicated status queries are not implemented.
 
-Correction reconciliation currently builds pairwise adjacency for ambiguous multi-endpoint corrections and traverses replacement paths from each starting node. Large endpoint sets or long correction chains can require quadratic memory or work inside the writer transaction, delaying other writes. Scale benchmarking and a more efficient graph implementation are not yet provided.
+Processing, correction preflight, saved decisions and releases share deterministic
+financial calculations. Synthetic proofs cover exact decimal and timestamp
+precision, source disagreement, read-only checks, decision release and transaction
+rollback. The retained-history contribution requirement remains in the
+[development guide](../engineering/development.md); there is no automatic updater.
+
+Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group review behavior. Large retained groups still require memory and calculation inside the writer transaction; these checks do not establish unlimited history capacity.

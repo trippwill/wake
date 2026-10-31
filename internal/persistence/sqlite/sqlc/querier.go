@@ -25,12 +25,15 @@ type Querier interface {
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
 	AllRelationships(ctx context.Context) ([]AllRelationshipsRow, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
+	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
 	ArtifactProvider(ctx context.Context, id string) (string, error)
+	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
+	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error)
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
@@ -77,6 +80,7 @@ type Querier interface {
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
 	MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
+	NewClaimActivityIDs(ctx context.Context, artifactID string) ([]sql.NullString, error)
 	NextRecoveryGroup(ctx context.Context, jobID string) (string, error)
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
@@ -100,6 +104,7 @@ type Querier interface {
 	PutDescriptor(ctx context.Context, arg PutDescriptorParams) error
 	PutEventLink(ctx context.Context, arg PutEventLinkParams) error
 	PutExecution(ctx context.Context, arg PutExecutionParams) error
+	PutInstrumentClaim(ctx context.Context, arg PutInstrumentClaimParams) error
 	PutInstrumentReferenceAttempt(ctx context.Context, arg PutInstrumentReferenceAttemptParams) error
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
 	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
@@ -138,12 +143,14 @@ type Querier interface {
 	RetryRecovery(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
+	RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error)
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
-	SeedActivityBases(ctx context.Context) error
+	SeedArtifactBases(ctx context.Context, artifactID string) error
 	SeedInstrumentSelections(ctx context.Context) error
+	SelectedObservation(ctx context.Context, arg SelectedObservationParams) (RecordValue, error)
 	SetListingFIGI(ctx context.Context, arg SetListingFIGIParams) error
 	SetObservationOutcome(ctx context.Context, arg SetObservationOutcomeParams) error
 	SetPacing(ctx context.Context, arg SetPacingParams) error

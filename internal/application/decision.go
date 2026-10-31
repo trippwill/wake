@@ -75,61 +75,6 @@ type (
 	}
 )
 
-func activityFields(kind string) []string {
-	switch kind {
-	case "trade":
-		return []string{
-			"quantity",
-			"price",
-			"side",
-			"trade_date",
-			"executed_at",
-			"settlement_date",
-			"gross",
-			"proceeds",
-			"net",
-			"net_billable",
-			"accrued_interest",
-			"position_effect",
-			"quotation_basis",
-			"option.strike",
-			"option.multiplier",
-			"option.right",
-			"option.expiry",
-			"debt.coupon",
-			"debt.maturity",
-			"instrument",
-			"listing",
-		}
-	case "lifecycle":
-		return []string{
-			"quantity",
-			"kind",
-			"trade_date",
-			"executed_at",
-			"instrument",
-			"option.strike",
-			"option.multiplier",
-			"option.right",
-			"option.expiry",
-		}
-	case "conversion":
-		return []string{
-			"sent_amount",
-			"received_amount",
-			"rate",
-			"trade_date",
-			"executed_at",
-			"gross",
-			"proceeds",
-			"net",
-			"net_billable",
-		}
-	}
-
-	return nil
-}
-func ActivityFields(kind string) []string { return activityFields(kind) }
 func ApplyTradeField(t source.Trade, scope, text, currency string) (source.Trade, error) {
 	f := t.Fields()
 

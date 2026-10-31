@@ -181,6 +181,13 @@ type Instrument struct {
 	UnderlierID        sql.NullString
 }
 
+type InstrumentClaim struct {
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Role         string
+}
+
 type InstrumentReferenceAttempt struct {
 	InstrumentID string
 	EvidenceID   string

@@ -323,7 +323,10 @@ func (s *Store) RunRecovery(ctx context.Context) (bool, error) {
 
 	for _, m := range members {
 		if m.Kind == "instrument" {
-			err = projectInstrument(ctx, q, m.EntityID)
+			err = projectRoots(ctx, q, []string{m.EntityID})
+			if err == nil {
+				err = projectInstrument(ctx, q, m.EntityID)
+			}
 		} else {
 			var row sqlc.Execution
 

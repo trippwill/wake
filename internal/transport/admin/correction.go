@@ -49,6 +49,7 @@ func correctionEditValue(f application.CorrectionForm, field string) application
 }
 
 func correctionSpec(f application.CorrectionForm, field string) correctionControl {
+	policy, ok := application.CorrectionFieldPolicy(field)
 	c := correctionControl{
 		Kind:     "text",
 		Pattern:  ".*",
@@ -56,97 +57,71 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 		Required: true,
 		Limit:    2048,
 		Hint:     "Enter the corrected value.",
+		Unit:     f.Values[field].Unit,
 	}
-	c.Unit = f.Values[field].Unit
-	switch field {
-	case "instrument", "listing", "underlier":
+	if !ok {
+		return c
+	}
+
+	c.Required = !policy.Optional()
+	c.Limit = policy.Limit()
+	switch policy.ValueKind() {
+	case application.LinkCorrection:
 		c.Kind, c.Hint = "link", "Search by name, symbol or reference. Choose a retained record from the list."
-		c.Required = field == "instrument"
 		for _, link := range f.Links {
 			if link.Scope == field {
 				c.Choices = append(c.Choices, correctionChoice{link.Value, link.Label})
 			}
 		}
-	case "side":
-		c.Kind = "choice"
-		c.Choices = []correctionChoice{{"buy", "Buy"}, {"sell", "Sell"}}
-	case "kind":
-		c.Kind = "choice"
-		c.Choices = []correctionChoice{
-			{"exercise", "Exercise"},
-			{"assignment", "Assignment"},
-			{"expiration", "Expiration"},
+	case application.ChoiceCorrection:
+		c.Kind, c.Hint = "choice", "Choose the intended financial meaning."
+		switch field {
+		case "side":
+			c.Choices = []correctionChoice{{"buy", "Buy"}, {"sell", "Sell"}}
+		case "kind":
+			c.Choices = []correctionChoice{
+				{"exercise", "Exercise"},
+				{"assignment", "Assignment"},
+				{"expiration", "Expiration"},
+			}
+		case "option.right":
+			c.Choices = []correctionChoice{{"put", "Put"}, {"call", "Call"}}
+		case "position_effect":
+			c.Choices = []correctionChoice{{"opening", "Opening"}, {"closing", "Closing"}, {"mixed", "Mixed"}}
+		case "quotation_basis":
+			c.Choices = []correctionChoice{
+				{"per 100 nominal", "Per 100 nominal"},
+				{"per nominal unit", "Per nominal unit"},
+			}
 		}
-	case "option.right":
-		c.Kind = "choice"
-		c.Required = false
-		c.Choices = []correctionChoice{{"put", "Put"}, {"call", "Call"}}
-	case "position_effect":
-		c.Kind = "choice"
-		c.Required = false
-		c.Choices = []correctionChoice{{"opening", "Opening"}, {"closing", "Closing"}, {"mixed", "Mixed"}}
-	case "quotation_basis":
-		c.Kind = "choice"
-		c.Required = false
-		c.Choices = []correctionChoice{
-			{"per 100 nominal", "Per 100 nominal"},
-			{"per nominal unit", "Per nominal unit"},
-		}
-	case "trade_date", "settlement_date", "option.expiry", "debt.maturity":
+	case application.DateCorrection:
 		c.Kind, c.Hint = "date", "Choose a valid calendar date."
-		c.Required = field == "trade_date"
 		if field == "debt.maturity" {
 			c.Hint = "Choose a maturity date consistent with the issue and dated dates."
 		}
-	case "executed_at":
-		c.Kind = "timestamp"
-		c.Required = false
-		c.Hint = "Keep the reported time, fractional seconds and UTC offset. Leave all three parts blank for Unknown."
-	case "name":
-		c.Limit = 1024
-		c.Hint = "Enter a readable instrument name."
-	case "ticker":
-		c.Limit = 256
-		c.Required = false
-		c.Hint = "Enter the reported symbol, or leave blank for Unknown."
-	default:
-		c.Kind, c.Pattern, c.Limit = "decimal", decimalPattern, 256
-
-		c.Hint = "Enter an exact decimal value."
-		c.Monetary = slices.Contains(
-			[]string{"price", "gross", "proceeds", "net", "net_billable", "accrued_interest", "option.strike"},
-			field,
-		)
-		c.Required = !slices.Contains(
-			[]string{
-				"gross",
-				"proceeds",
-				"net",
-				"net_billable",
-				"accrued_interest",
-				"option.multiplier",
-				"debt.coupon",
-				"received_amount",
-				"sent_amount",
-			},
-			field,
-		)
-		if field == "quantity" || field == "option.multiplier" || field == "rate" {
-			c.Hint = "Enter a decimal greater than zero."
+	case application.TimestampCorrection:
+		c.Kind, c.Hint = "timestamp", "Keep the reported time, fractional seconds and UTC offset. Leave all three parts blank for Unknown."
+	case application.TextCorrection:
+		if field == "name" {
+			c.Hint = "Enter a readable instrument name."
+		} else {
+			c.Hint = "Enter the reported symbol, or leave blank for Unknown."
 		}
-
-		if field == "option.strike" || field == "debt.coupon" || field == "sent_amount" ||
-			field == "received_amount" {
+	case application.DecimalCorrection, application.MoneyCorrection:
+		c.Kind, c.Pattern = "decimal", decimalPattern
+		c.Monetary = policy.ValueKind() == application.MoneyCorrection
+		switch policy.DecimalBound() {
+		case application.PositiveDecimal:
+			c.Hint = "Enter a decimal greater than zero."
+		case application.NonnegativeDecimal:
 			c.Hint = "Enter a decimal of zero or more."
+		default:
+			c.Hint = "Enter an exact decimal value."
 		}
 
 		if !c.Monetary && f.Values[field].Currency != "" {
 			c.Unit = strings.TrimSpace(f.Values[field].Currency + " " + c.Unit)
 		}
-	}
-
-	if c.Kind == "choice" {
-		c.Hint = "Choose the intended financial meaning."
 	}
 
 	if !c.Required && c.Kind != "link" && c.Kind != "timestamp" && c.Kind != "choice" {
