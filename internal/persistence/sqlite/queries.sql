@@ -334,3 +334,6 @@ SELECT DISTINCT o.execution_id FROM execution_observations o JOIN records r USIN
 SELECT record_values.* FROM claim_processing p JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
 -- name: SelectedObservation :one
 SELECT record_values.* FROM record_values JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? AND o.artifact_id=? AND o.version=? AND o.location=?;
+
+-- name: RootCalculationInputs :many
+SELECT record_values.* FROM activity_bases b JOIN execution_observations o ON o.execution_id=b.activity_id JOIN claim_processing p ON p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location WHERE b.instrument_id=? AND record_values.kind IN ('trade','lifecycle') ORDER BY o.rowid;

@@ -88,6 +88,7 @@ type ActivityCalculationInput struct {
 	Rule               FinancialRule
 	Baseline           ActivityTerms
 	Root               source.Instrument
+	RootClaims         []source.Instrument
 	Claims             []ActivityClaim
 	ObservationChoices map[string]ActivityTerms
 	Binding            ActivityBinding
@@ -139,7 +140,12 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 	}
 
 	if in.Baseline.Kind() != ConversionActivity {
-		out.Root, out.RootConflict, err = ReconcileInstrument(in.Root, selected.Instrument(), out.Instruments)
+		rootClaims := in.RootClaims
+		if rootClaims == nil {
+			rootClaims = append([]source.Instrument{selected.Instrument()}, out.Instruments...)
+		}
+
+		out.Root, out.RootConflict, err = ReconcileInstrument(in.Root, rootClaims)
 		if err != nil {
 			return ActivityCalculation{}, err
 		}

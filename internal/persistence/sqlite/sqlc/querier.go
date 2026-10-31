@@ -140,6 +140,7 @@ type Querier interface {
 	RetryRecovery(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
+	RootCalculationInputs(ctx context.Context, instrumentID sql.NullString) ([]RecordValue, error)
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error

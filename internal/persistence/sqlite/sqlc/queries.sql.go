@@ -3097,6 +3097,41 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 	return err
 }
 
+const rootCalculationInputs = `-- name: RootCalculationInputs :many
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM activity_bases b JOIN execution_observations o ON o.execution_id=b.activity_id JOIN claim_processing p ON p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location JOIN record_values ON record_values.artifact_id=p.artifact_id AND record_values.version=p.version AND record_values.location=p.location WHERE b.instrument_id=? AND record_values.kind IN ('trade','lifecycle') ORDER BY o.rowid
+`
+
+func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID sql.NullString) ([]RecordValue, error) {
+	rows, err := q.db.QueryContext(ctx, rootCalculationInputs, instrumentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecordValue
+	for rows.Next() {
+		var i RecordValue
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.Kind,
+			&i.Data,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const saveInstrumentSelection = `-- name: SaveInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT(instrument_id) DO UPDATE SET name=excluded.name,ticker=excluded.ticker,figi=excluded.figi,evidence=excluded.evidence,status=excluded.status,underlier_id=excluded.underlier_id
 `

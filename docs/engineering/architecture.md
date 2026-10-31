@@ -45,6 +45,11 @@ Activity lifecycle, review reasons and selection authority are independent typed
 facts. Persist and publish them without encoding state in combined display phrases.
 Source failures retain machine classifications separately from diagnostic wording;
 scheduling depends on the classifications.
+Shared instrument enrichment compares all retained claims for the original root
+against one pre-write baseline and persists that root once per processing batch.
+Competing enrichments retain that baseline for review; execution IDs do not select
+financial terms.
+
 Financial calculation consumes one consistent retained input set: source claims,
 identity bindings, selected references, active decisions and an explicit implemented
 rule. It returns typed accepted values, independent conflict/authority facts and

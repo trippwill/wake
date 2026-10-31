@@ -16,6 +16,11 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+type rootCalculationInput struct {
+	baseline source.Instrument
+	claims   []source.Instrument
+}
+
 // loadActivityCalculation gathers a consistent retained input set. A prospective
 // decision replaces its active scope in memory, without inserting or projecting it.
 func loadActivityCalculation(
@@ -24,6 +29,13 @@ func loadActivityCalculation(
 	row sqlc.Execution,
 	state application.ActivityState,
 	proposed *application.DecisionInput,
+) (application.ActivityCalculationInput, error) {
+	return loadActivityCalculationWithRoots(ctx, q, row, state, proposed, nil)
+}
+
+func loadActivityCalculationWithRoots(
+	ctx context.Context, q *sqlc.Queries, row sqlc.Execution, state application.ActivityState,
+	proposed *application.DecisionInput, roots map[string]rootCalculationInput,
 ) (application.ActivityCalculationInput, error) {
 	in := application.ActivityCalculationInput{
 		Rule:        application.RetainedClaimsRule,
@@ -49,17 +61,41 @@ func loadActivityCalculation(
 		Listing:    base.ListingID.String,
 	}
 	if base.InstrumentID.Valid {
-		root, e := q.Instrument(ctx, base.InstrumentID.String)
-		if e != nil {
-			return in, e
+		root, found := roots[base.InstrumentID.String]
+		if !found {
+			stored, e := q.Instrument(ctx, base.InstrumentID.String)
+			if e != nil {
+				return in, e
+			}
+
+			parsed, e := instrumentValue(stored)
+			if e != nil {
+				return in, e
+			}
+
+			root.baseline = parsed.Reported()
+
+			claims, e := materializeRecords(q.RootCalculationInputs(ctx, base.InstrumentID))
+			if e != nil {
+				return in, e
+			}
+
+			root.claims = make([]source.Instrument, 0, len(claims))
+			for _, claim := range claims {
+				terms, e := decodeActivityTerms(claim.Kind, claim.Data)
+				if e != nil {
+					return in, e
+				}
+
+				root.claims = append(root.claims, terms.Instrument())
+			}
+
+			if roots != nil {
+				roots[base.InstrumentID.String] = root
+			}
 		}
 
-		parsed, e := instrumentValue(root)
-		if e != nil {
-			return in, e
-		}
-
-		in.Root = parsed.Reported()
+		in.Root, in.RootClaims = root.baseline, root.claims
 	}
 
 	inputs, err := materializeRecords(q.CalculationInputs(ctx, sql.NullString{String: row.ID, Valid: true}))
@@ -194,10 +230,7 @@ func projectActivity(
 }
 
 func persistActivityCalculation(
-	ctx context.Context,
-	q *sqlc.Queries,
-	row sqlc.Execution,
-	result application.ActivityCalculation,
+	ctx context.Context, q *sqlc.Queries, row sqlc.Execution, result application.ActivityCalculation,
 ) error {
 	base, err := q.ActivityBase(ctx, row.ID)
 	if err != nil {
@@ -209,6 +242,17 @@ func persistActivityCalculation(
 			return err
 		}
 	}
+
+	return persistActivityTerms(ctx, q, row, result)
+}
+
+func persistActivityTerms(
+	ctx context.Context,
+	q *sqlc.Queries,
+	row sqlc.Execution,
+	result application.ActivityCalculation,
+) error {
+	var err error
 
 	if result.AutomaticListing && result.Binding.Instrument != "" && result.Binding.Listing == "" &&
 		row.Kind == "trade" {
@@ -451,8 +495,49 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 
 	sort.Strings(ordered)
 
+	// Evaluate every affected activity against the same pre-write root state.
+	rootInputs := make(map[string]rootCalculationInput)
+	results := make(map[string]application.ActivityCalculation, len(ordered))
+	roots := make(map[string]application.ActivityCalculation)
 	for _, id := range ordered {
-		if err = projectActivity(ctx, q, affected[id], states[id]); err != nil {
+		in, e := loadActivityCalculationWithRoots(ctx, q, affected[id], states[id], nil, rootInputs)
+		if e != nil {
+			return e
+		}
+
+		result, e := application.CalculateActivity(in)
+		if e != nil {
+			return e
+		}
+
+		results[id] = result
+		if in.Binding.Instrument != "" {
+			roots[in.Binding.Instrument] = result
+		}
+	}
+
+	rootIDs := make([]string, 0, len(roots))
+	for id := range roots {
+		rootIDs = append(rootIDs, id)
+	}
+
+	sort.Strings(rootIDs)
+
+	for _, id := range rootIDs {
+		result := roots[id]
+		if err = persistRootEnrichment(
+			ctx,
+			q,
+			sql.NullString{String: id, Valid: true},
+			result.Root,
+			result.RootConflict,
+		); err != nil {
+			return err
+		}
+	}
+
+	for _, id := range ordered {
+		if err = persistActivityTerms(ctx, q, affected[id], results[id]); err != nil {
 			return err
 		}
 	}

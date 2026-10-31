@@ -287,3 +287,60 @@ func TestSelectingBoundInstrumentPreservesEnrichedListing(t *testing.T) {
 		t.Fatal("releasing listing choice did not restore automatic enrichment", detail, err)
 	}
 }
+
+func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprint("reverse-", reverse), func(t *testing.T) {
+			s := coverageStore(t)
+			ctx := t.Context()
+			unknown := strings.Replace(syntheticOption, ` multiplier="10"`, "", 1)
+			optionRow := func(event, multiplier string) string {
+				row := strings.NewReplacer(`execID="option-fill"`, `execID="`+event+`"`, `tradeID="option-trade"`, `tradeID="`+event+`-trade"`).
+					Replace(unknown)
+				if multiplier != "" {
+					row = strings.Replace(row, "/>", ` multiplier="`+multiplier+`"/>`, 1)
+				}
+
+				return row
+			}
+			coverageReport(
+				t,
+				s,
+				"unknown-root",
+				optionRow("baseline", "")+optionRow("candidate-a", "")+optionRow("candidate-b", ""),
+			)
+
+			view, err := s.Dashboard(ctx)
+			if err != nil || len(view.Executions) != 3 || len(view.Instruments) != 2 {
+				t.Fatal(view, err)
+			}
+
+			root := view.Executions[0].Instrument()
+			ids := map[string]string{}
+			for _, execution := range view.Executions {
+				ids[execution.Terms().Fields().Event.Value()] = execution.ID()
+			}
+
+			a, b := "10", "100"
+			if (ids["candidate-a"] < ids["candidate-b"]) == reverse {
+				a, b = b, a
+			}
+
+			coverageReport(t, s, "competing-enrichment", optionRow("candidate-a", a)+optionRow("candidate-b", b))
+
+			detail, err := s.InstrumentDetail(ctx, root)
+			if err != nil || detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "" ||
+				!detail.Instrument.Status().NeedsReview() {
+				t.Fatal("shared root selected a competing multiplier from projection order", detail, err)
+			}
+
+			for event, multiplier := range map[string]string{"candidate-a": a, "candidate-b": b} {
+				activity, e := s.ExecutionDetail(ctx, ids[event])
+				if e != nil ||
+					activity.Execution.Terms().Fields().Instrument.Option().Fields().Multiplier.Value() != multiplier {
+					t.Fatal("activity lost its own reported contract terms", activity, e)
+				}
+			}
+		})
+	}
+}

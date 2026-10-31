@@ -111,11 +111,11 @@ func CalculateInstrument(in InstrumentCalculationInput) (InstrumentCalculation, 
 // ReconcileInstrument compares reported roots before applying reference or operator
 // selections. Conflicting enrichment keeps the retained baseline for review.
 func ReconcileInstrument(
-	base, incoming source.Instrument,
+	base source.Instrument,
 	observations []source.Instrument,
 ) (source.Instrument, bool, error) {
 	known := base
-	conflict := !CompatibleInstrument(known, incoming)
+	conflict := false
 	for _, observation := range observations {
 		if !known.Reference().IsZero() && !observation.Reference().IsZero() &&
 			observation.Reference() != known.Reference() {
@@ -140,7 +140,5 @@ func ReconcileInstrument(
 		return base, true, nil
 	}
 
-	enriched, err := EnrichInstrument(base, incoming)
-
-	return enriched, false, err
+	return known, false, nil
 }
