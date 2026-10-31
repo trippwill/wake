@@ -17,7 +17,7 @@ on:
       - '**/*.md'
   push:
     tags: ["*"]
-    branches: ["main"]
+    branches: ["main", "codex/simplification-integration"]
     paths-ignore:
       - '**/*.md'
 

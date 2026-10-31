@@ -348,23 +348,23 @@ func canonicalSnapshot(
 		}
 
 		out.Revision = row.Revision
+
+		state, err := activityState(row)
+		if err != nil {
+			return out, why, err
+		}
+
 		a := &application.PublishedActivity{
 			Family:        row.Kind,
 			AccountID:     row.AccountID,
 			InstrumentID:  known(row.InstrumentID.String),
 			ListingID:     known(row.ListingID.String),
-			State:         "accepted",
-			Conflict:      strings.Contains(row.Status, "needs review"),
+			State:         string(state.Lifecycle()),
+			Conflict:      state.NeedsReview(),
 			Relationships: []application.PublishedRelationship{},
 			Charges:       []application.PublishedCharge{},
 		}
-		for _, state := range []string{"cancelled", "replaced"} {
-			if strings.Contains(row.Status, state) {
-				a.State = state
-			}
-		}
-
-		if strings.Contains(row.Status, "superseded") {
+		if state.Lifecycle() == application.Superseded {
 			a.State = "replaced"
 		}
 

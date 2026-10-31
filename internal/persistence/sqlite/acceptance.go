@@ -23,13 +23,18 @@ func executionValue(r sqlc.Execution) (application.Execution, error) {
 		return application.Execution{}, ErrCorrupt
 	}
 
+	state, err := activityState(r)
+	if err != nil {
+		return application.Execution{}, err
+	}
+
 	return application.NewExecution(
 		r.ID,
 		r.AccountID,
 		r.InstrumentID.String,
 		r.ListingID.String,
-		r.Status,
 		r.Rule,
+		state,
 		t, r.Revision,
 	)
 }
@@ -53,7 +58,7 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 		r.ReferenceStatus,
 		r.ReferenceFigi,
 		r.EvidenceID,
-		i, r.Rule, r.Revision,
+		i, r.Rule, r.Revision, application.SelectionAuthority(r.SelectionAuthority),
 	)
 }
 
@@ -171,7 +176,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 			Version:    version,
 			Location:   record.Location,
 			Rule:       application.AuthorityRule,
-			Outcome:    "unselected account or source",
+			Outcome:    "unselected",
 		}
 		t := record.Trade
 		f := t.Fields()
@@ -180,7 +185,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 			account.Reference() == f.Account {
 			observation.Rule = application.RepeatRule
 			if f.Event.IsZero() {
-				observation.Outcome = "identity needs review"
+				observation.Outcome = "identity-review"
 			} else {
 				execution, ambiguous, lookupErr := matchExecution(ctx, q, account.ID(), t)
 				if lookupErr != nil {
@@ -188,7 +193,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 				}
 
 				if ambiguous {
-					observation.Outcome = "native identity needs review"
+					observation.Outcome = "native-review"
 					if e = q.PutObservation(ctx, observation); e != nil {
 						return e
 					}
@@ -203,7 +208,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					}
 
 					if old.Kind != "trade" {
-						observation.Outcome = "conflicting activity kind; needs review"
+						observation.Outcome = "kind-conflict"
 						observation.ExecutionID = sql.NullString{String: execution, Valid: true}
 						if e = q.PutObservation(ctx, observation); e != nil {
 							return e
@@ -223,9 +228,9 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						}
 					}
 
-					observation.Outcome = "corroborating observation"
+					observation.Outcome = "corroborated"
 					if !application.Compatible(accepted, t) {
-						observation.Outcome = "conflicting terms; needs review"
+						observation.Outcome = "terms-conflict"
 					}
 				} else {
 					instrument, listing, e := acceptInstrument(
@@ -271,7 +276,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						return e
 					}
 
-					observation.Outcome = "accepted execution"
+					observation.Outcome = "accepted"
 				}
 
 				for _, ref := range append([]source.Reference{f.Event}, f.EventAliases...) {
@@ -287,7 +292,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					}
 				}
 
-				if observation.Outcome != "conflicting terms; needs review" {
+				if observation.Outcome != "terms-conflict" {
 					if e = putRelationships(ctx, q, execution, f.Relationships); e != nil {
 						return e
 					}
@@ -580,7 +585,7 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 				Artifact: o.ArtifactID,
 				Version:  o.Version,
 				Location: o.Location,
-				Outcome:  o.Outcome,
+				Outcome:  application.ObservationOutcome(o.Outcome),
 				Rule:     o.Rule,
 			},
 		)
@@ -649,7 +654,7 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 				Artifact: o.ArtifactID,
 				Version:  o.Version,
 				Location: o.Location,
-				Outcome:  o.Outcome,
+				Outcome:  application.ObservationOutcome(o.Outcome),
 				Rule:     o.Rule,
 			},
 		)
@@ -768,7 +773,12 @@ func lifecycleValue(r sqlc.Execution) (application.Lifecycle, error) {
 		return application.Lifecycle{}, ErrCorrupt
 	}
 
-	return application.NewLifecycle(r.ID, r.AccountID, r.InstrumentID.String, r.Status, r.Rule, l, r.Revision)
+	state, err := activityState(r)
+	if err != nil {
+		return application.Lifecycle{}, err
+	}
+
+	return application.NewLifecycle(r.ID, r.AccountID, r.InstrumentID.String, r.Rule, state, l, r.Revision)
 }
 
 func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.LifecycleDetail, error) {
@@ -810,7 +820,7 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 				Artifact: r.ArtifactID,
 				Version:  r.Version,
 				Location: r.Location,
-				Outcome:  r.Outcome,
+				Outcome:  application.ObservationOutcome(r.Outcome),
 				Rule:     r.Rule,
 			},
 		)
@@ -843,7 +853,7 @@ func processLifecycle(
 		Version:    version,
 		Location:   f.Location,
 		Rule:       application.AuthorityRule,
-		Outcome:    "unselected account or source",
+		Outcome:    "unselected",
 	}
 	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
 		account.Reference() != f.Account {
@@ -852,7 +862,7 @@ func processLifecycle(
 
 	o.Rule = application.RepeatRule
 	if f.Event.IsZero() {
-		o.Outcome = "identity needs review"
+		o.Outcome = "identity-review"
 		return q.PutObservation(ctx, o)
 	}
 
@@ -862,7 +872,7 @@ func processLifecycle(
 	}
 
 	if ambiguous {
-		o.Outcome = "native identity needs review"
+		o.Outcome = "native-review"
 		return q.PutObservation(ctx, o)
 	}
 
@@ -891,17 +901,17 @@ func processLifecycle(
 			return e
 		}
 
-		o.Outcome = "accepted " + string(f.Kind)
+		o.Outcome = "accepted"
 	} else {
 		row, e := q.Execution(ctx, id)
 		if e != nil {
 			return e
 		}
 
-		o.Outcome = "corroborating observation"
+		o.Outcome = "corroborated"
 		old, e := decodeLifecycle(row.Accepted)
 		if row.Kind != "lifecycle" || e != nil || !application.CompatibleLifecycle(old, l) {
-			o.Outcome = "conflicting terms; needs review"
+			o.Outcome = "terms-conflict"
 		}
 	}
 
@@ -914,7 +924,7 @@ func processLifecycle(
 		}
 	}
 
-	if o.Outcome != "conflicting terms; needs review" {
+	if o.Outcome != "terms-conflict" {
 		if err = putRelationships(ctx, q, id, f.Relationships); err != nil {
 			return err
 		}
@@ -931,7 +941,12 @@ func conversionValue(r sqlc.Execution) (application.Conversion, error) {
 		return application.Conversion{}, ErrCorrupt
 	}
 
-	return application.NewConversion(r.ID, r.AccountID, r.Status, r.Rule, v, r.Revision)
+	state, err := activityState(r)
+	if err != nil {
+		return application.Conversion{}, err
+	}
+
+	return application.NewConversion(r.ID, r.AccountID, r.Rule, state, v, r.Revision)
 }
 
 func (s *Store) ConversionDetail(ctx context.Context, id string) (application.ConversionDetail, error) {
@@ -973,7 +988,7 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 				Artifact: r.ArtifactID,
 				Version:  r.Version,
 				Location: r.Location,
-				Outcome:  r.Outcome,
+				Outcome:  application.ObservationOutcome(r.Outcome),
 				Rule:     r.Rule,
 			},
 		)
@@ -1004,7 +1019,7 @@ func processConversion(
 		Version:    version,
 		Location:   f.Location,
 		Rule:       application.AuthorityRule,
-		Outcome:    "unselected account or source",
+		Outcome:    "unselected",
 	}
 	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
 		account.Reference() != f.Account {
@@ -1013,7 +1028,7 @@ func processConversion(
 
 	o.Rule = application.RepeatRule
 	if f.Event.IsZero() {
-		o.Outcome = "identity needs review"
+		o.Outcome = "identity-review"
 		return q.PutObservation(ctx, o)
 	}
 
@@ -1023,7 +1038,7 @@ func processConversion(
 	}
 
 	if ambiguous {
-		o.Outcome = "native identity needs review"
+		o.Outcome = "native-review"
 		return q.PutObservation(ctx, o)
 	}
 
@@ -1046,17 +1061,17 @@ func processConversion(
 			return e
 		}
 
-		o.Outcome = "accepted conversion"
+		o.Outcome = "accepted"
 	} else {
 		row, e := q.Execution(ctx, id)
 		if e != nil {
 			return e
 		}
 
-		o.Outcome = "corroborating observation"
+		o.Outcome = "corroborated"
 		old, e := decodeConversion(row.Accepted)
 		if row.Kind != "conversion" || e != nil || !application.CompatibleConversion(old, c) {
-			o.Outcome = "conflicting terms; needs review"
+			o.Outcome = "terms-conflict"
 		}
 	}
 

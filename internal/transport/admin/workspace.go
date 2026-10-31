@@ -240,12 +240,6 @@ func hasDifferences(f application.CorrectionForm, c application.CorrectionCandid
 	return false
 }
 
-func reviewState(state string) bool {
-	return state == "needs review" || state == "conflict" || state == "ambiguous" ||
-		strings.Contains(state, "needs review")
-}
-func referenceGap(state string) bool { return state != "resolved" && !reviewState(state) }
-
 type reviewItem struct{ Key, Kind, Label, Reason, Href string }
 
 func reviews(v application.Dashboard) []reviewItem {
@@ -259,7 +253,7 @@ func reviews(v application.Dashboard) []reviewItem {
 		}
 	}
 	for _, r := range activityItems(v) {
-		if reviewState(r.State) {
+		if r.FinancialState.NeedsReview() {
 			add(
 				reviewItem{
 					"activity/" + r.ID,
@@ -273,13 +267,13 @@ func reviews(v application.Dashboard) []reviewItem {
 	}
 
 	for _, i := range v.Instruments {
-		if reviewState(i.Status()) {
+		if i.Status().NeedsReview() {
 			add(
 				reviewItem{
 					"instrument/" + i.ID(),
 					"Identity",
 					known(i.Name()),
-					"Instrument identity: " + i.Status(),
+					"Instrument identity: " + string(i.Status()),
 					"/instruments/" + i.ID() + "/correct?mode=evidence",
 				},
 			)
@@ -287,7 +281,7 @@ func reviews(v application.Dashboard) []reviewItem {
 	}
 
 	for _, c := range v.Corrections {
-		if !reviewState(c.Status) {
+		if !c.Status.NeedsReview() {
 			continue
 		}
 
@@ -300,7 +294,7 @@ func reviews(v application.Dashboard) []reviewItem {
 							"activity/" + id,
 							"Activity",
 							a.Label,
-							"Source correction: " + c.Status,
+							"Source correction: " + correctionStatus(c.Status),
 							"/activity/" + id + "/correct?mode=evidence",
 						},
 					)
@@ -316,7 +310,7 @@ func reviews(v application.Dashboard) []reviewItem {
 					"source/" + c.Artifact + "/" + c.Location,
 					"Source instruction",
 					stringTitle(c.Kind) + " instruction",
-					c.Status,
+					correctionStatus(c.Status),
 					"/evidence/" + c.Artifact + "?location=" + url.QueryEscape(c.Location),
 				},
 			)
@@ -453,14 +447,17 @@ func instrumentName(v application.Dashboard, id string) string {
 func instrumentState(v application.Dashboard, id string) string {
 	for _, i := range v.Instruments {
 		if i.ID() == id {
-			return i.Status()
+			return instrumentStatus(i)
 		}
 	}
 
 	return "Unknown"
 }
 
-type activityItem struct{ ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State string }
+type activityItem struct {
+	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State string
+	FinancialState                                                                                  application.ActivityState
+}
 
 func activityItems(v application.Dashboard) []activityItem {
 	out := []activityItem{}
@@ -481,7 +478,7 @@ func activityItems(v application.Dashboard) []activityItem {
 				Quantity:     f.Quantity.Value() + " " + e.Terms().QuantityUnit(),
 				Price:        priceText(f.Price),
 				Basis:        e.Terms().PriceBasis(),
-				State:        e.Status(),
+				State:        e.Status(), FinancialState: e.State(),
 			},
 		)
 	}
@@ -502,7 +499,7 @@ func activityItems(v application.Dashboard) []activityItem {
 				Reference:    instrumentState(v, e.Instrument()),
 				Quantity:     f.Quantity.Value() + " contracts",
 				Price:        "Not applicable",
-				State:        e.Status(),
+				State:        e.Status(), FinancialState: e.State(),
 			},
 		)
 	}
@@ -527,7 +524,7 @@ func activityItems(v application.Dashboard) []activityItem {
 				Quantity:   currencyAmountText(f.Sent) + " sent · " + currencyAmountText(f.Received) + " received",
 				Price:      priceText(f.Rate),
 				Basis:      basis,
-				State:      e.Status(),
+				State:      e.Status(), FinancialState: e.State(),
 			},
 		)
 	}
@@ -562,12 +559,17 @@ func filteredActivity(ctx context.Context, v application.Dashboard) []activityIt
 			continue
 		}
 
-		if state := q.Get("state"); state != "" && state != r.State {
+		if state := q.Get(
+			"state",
+		); state != "" && (state != "review" || !r.FinancialState.NeedsReview()) &&
+			state != r.State {
 			continue
 		}
 
 		if !strings.Contains(
-			strings.ToLower(r.Label+" "+r.Date+" "+r.Quantity+" "+r.Price+" "+r.State+" "+r.Reference),
+			strings.ToLower(
+				r.Label+" "+r.Date+" "+r.Quantity+" "+r.Price+" "+activityStatus(r.FinancialState)+" "+r.Reference,
+			),
 			strings.ToLower(q.Get("q")),
 		) {
 			continue
@@ -617,13 +619,13 @@ func filteredInstruments(ctx context.Context, v application.Dashboard) []applica
 		}
 
 		state := q.Get("state")
-		if state == "gaps" && !referenceGap(i.Status()) || state == "review" && !reviewState(i.Status()) ||
-			state != "" && state != "gaps" && state != "review" && state != i.Status() {
+		if state == "gaps" && !i.Status().Gap() || state == "review" && !i.Status().NeedsReview() ||
+			state != "" && state != "gaps" && state != "review" && state != string(i.Status()) {
 			continue
 		}
 
 		if !strings.Contains(
-			strings.ToLower(i.Name()+" "+i.Ticker()+" "+i.Kind()+" "+i.Status()),
+			strings.ToLower(i.Name()+" "+i.Ticker()+" "+i.Kind()+" "+instrumentStatus(i)),
 			strings.ToLower(q.Get("q")),
 		) {
 			continue
@@ -641,7 +643,7 @@ func filteredInstruments(ctx context.Context, v application.Dashboard) []applica
 		case "ticker":
 			left, right = a.Ticker(), b.Ticker()
 		case "state":
-			left, right = a.Status(), b.Status()
+			left, right = string(a.Status()), string(b.Status())
 		}
 
 		cmp := strings.Compare(left, right)

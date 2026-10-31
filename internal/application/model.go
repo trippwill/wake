@@ -94,44 +94,49 @@ func (a Account) Details() AccountDetails     { return a.details }
 func (a Account) Rule() string                { return a.rule }
 
 type Instrument struct {
-	id, name, ticker, kind, status, figi, evidence string
-	rule                                           string
-	reported                                       source.Instrument
-	revision                                       int64
+	id, name, ticker, kind, figi, evidence string
+	status                                 ReferenceStatus
+	authority                              SelectionAuthority
+	rule                                   string
+	reported                               source.Instrument
+	revision                               int64
 }
 
 func NewInstrument(
 	id, name, ticker, kind, status, figi, evidence string,
 	reported source.Instrument,
-	rule string, revision int64,
+	rule string, revision int64, authority SelectionAuthority,
 ) (Instrument, error) {
 	if revision < 1 || rule == "" || id == "" || reported.Kind() == "" ||
+		(authority != AutomaticSelection && authority != OperatorSelection) ||
 		(kind != string(source.Equity) && kind != string(source.Fund) && kind != string(source.Option) && kind != string(source.Debt) && kind != string(source.UnknownInstrument)) {
 		return Instrument{}, ErrInvalid
 	}
 
 	return Instrument{
-		revision: revision,
-		id:       id,
-		name:     name,
-		ticker:   ticker,
-		kind:     kind,
-		status:   status,
-		figi:     figi,
-		evidence: evidence,
-		reported: reported,
-		rule:     rule,
+		revision:  revision,
+		id:        id,
+		name:      name,
+		ticker:    ticker,
+		kind:      kind,
+		status:    ReferenceStatus(status),
+		authority: authority,
+		figi:      figi,
+		evidence:  evidence,
+		reported:  reported,
+		rule:      rule,
 	}, nil
 }
-func (i Instrument) ID() string                  { return i.id }
-func (i Instrument) Name() string                { return i.name }
-func (i Instrument) Ticker() string              { return i.ticker }
-func (i Instrument) Kind() string                { return i.kind }
-func (i Instrument) Status() string              { return i.status }
-func (i Instrument) FIGI() string                { return i.figi }
-func (i Instrument) Evidence() string            { return i.evidence }
-func (i Instrument) Reported() source.Instrument { return i.reported }
-func (i Instrument) Rule() string                { return i.rule }
+func (i Instrument) ID() string                    { return i.id }
+func (i Instrument) Name() string                  { return i.name }
+func (i Instrument) Ticker() string                { return i.ticker }
+func (i Instrument) Kind() string                  { return i.kind }
+func (i Instrument) Status() ReferenceStatus       { return i.status }
+func (i Instrument) Authority() SelectionAuthority { return i.authority }
+func (i Instrument) FIGI() string                  { return i.figi }
+func (i Instrument) Evidence() string              { return i.evidence }
+func (i Instrument) Reported() source.Instrument   { return i.reported }
+func (i Instrument) Rule() string                  { return i.rule }
 
 type Listing struct{ id, instrument, venue, ticker, currency, figi string }
 
@@ -154,16 +159,18 @@ func (l Listing) Currency() string   { return l.currency }
 func (l Listing) FIGI() string       { return l.figi }
 
 type Execution struct {
-	id, account, instrument, listing, status, rule string
-	terms                                          source.Trade
-	revision                                       int64
+	id, account, instrument, listing, rule string
+	state                                  ActivityState
+	terms                                  source.Trade
+	revision                               int64
 }
 
 func NewExecution(
-	id, account, instrument, listing, status, rule string,
+	id, account, instrument, listing, rule string,
+	state ActivityState,
 	terms source.Trade, revision int64,
 ) (Execution, error) {
-	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" {
+	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" || state.Lifecycle() == "" {
 		return Execution{}, ErrInvalid
 	}
 
@@ -171,19 +178,23 @@ func NewExecution(
 		return Execution{}, err
 	}
 
-	return Execution{id, account, instrument, listing, status, rule, terms, revision}, nil
+	return Execution{id, account, instrument, listing, rule, state, terms, revision}, nil
 }
-func (e Execution) ID() string          { return e.id }
-func (e Execution) Account() string     { return e.account }
-func (e Execution) Instrument() string  { return e.instrument }
-func (e Execution) Listing() string     { return e.listing }
-func (e Execution) Status() string      { return e.status }
-func (e Execution) Rule() string        { return e.rule }
-func (e Execution) Terms() source.Trade { return e.terms }
+func (e Execution) ID() string           { return e.id }
+func (e Execution) Account() string      { return e.account }
+func (e Execution) Instrument() string   { return e.instrument }
+func (e Execution) Listing() string      { return e.listing }
+func (e Execution) Status() string       { return string(e.state.Lifecycle()) }
+func (e Execution) State() ActivityState { return e.state }
+func (e Execution) Rule() string         { return e.rule }
+func (e Execution) Terms() source.Trade  { return e.terms }
 
 type (
 	ActivityContext struct{ AccountName, InstrumentName string }
-	Observation     struct{ Artifact, Version, Location, Outcome, Rule string }
+	Observation     struct {
+		Artifact, Version, Location, Rule string
+		Outcome                           ObservationOutcome
+	}
 	ExecutionDetail struct {
 		Context       ActivityContext
 		Execution     Execution
@@ -204,17 +215,19 @@ type (
 
 // Lifecycle retains a reported outcome independently of any stock booking.
 type Lifecycle struct {
-	id, account, instrument, status, rule string
-	terms                                 source.Lifecycle
-	revision                              int64
+	id, account, instrument, rule string
+	state                         ActivityState
+	terms                         source.Lifecycle
+	revision                      int64
 }
 
 func NewLifecycle(
-	id, account, instrument, status, rule string,
+	id, account, instrument, rule string,
+	state ActivityState,
 	terms source.Lifecycle,
 	revision int64,
 ) (Lifecycle, error) {
-	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" {
+	if revision < 1 || id == "" || account == "" || instrument == "" || rule == "" || state.Lifecycle() == "" {
 		return Lifecycle{}, ErrInvalid
 	}
 
@@ -222,12 +235,13 @@ func NewLifecycle(
 		return Lifecycle{}, err
 	}
 
-	return Lifecycle{id, account, instrument, status, rule, terms, revision}, nil
+	return Lifecycle{id, account, instrument, rule, state, terms, revision}, nil
 }
 func (l Lifecycle) ID() string              { return l.id }
 func (l Lifecycle) Account() string         { return l.account }
 func (l Lifecycle) Instrument() string      { return l.instrument }
-func (l Lifecycle) Status() string          { return l.status }
+func (l Lifecycle) Status() string          { return string(l.state.Lifecycle()) }
+func (l Lifecycle) State() ActivityState    { return l.state }
 func (l Lifecycle) Terms() source.Lifecycle { return l.terms }
 
 type (
@@ -242,17 +256,19 @@ type (
 )
 
 type Conversion struct {
-	id, account, status, rule string
-	terms                     source.Conversion
-	revision                  int64
+	id, account, rule string
+	state             ActivityState
+	terms             source.Conversion
+	revision          int64
 }
 
 func NewConversion(
-	id, account, status, rule string,
+	id, account, rule string,
+	state ActivityState,
 	terms source.Conversion,
 	revision int64,
 ) (Conversion, error) {
-	if revision < 1 || id == "" || account == "" || rule == "" {
+	if revision < 1 || id == "" || account == "" || rule == "" || state.Lifecycle() == "" {
 		return Conversion{}, ErrInvalid
 	}
 
@@ -260,11 +276,12 @@ func NewConversion(
 		return Conversion{}, err
 	}
 
-	return Conversion{id, account, status, rule, terms, revision}, nil
+	return Conversion{id, account, rule, state, terms, revision}, nil
 }
 func (c Conversion) ID() string               { return c.id }
 func (c Conversion) Account() string          { return c.account }
-func (c Conversion) Status() string           { return c.status }
+func (c Conversion) Status() string           { return string(c.state.Lifecycle()) }
+func (c Conversion) State() ActivityState     { return c.state }
 func (c Conversion) Terms() source.Conversion { return c.terms }
 
 type ConversionDetail struct {
@@ -280,8 +297,9 @@ func (l Lifecycle) Revision() int64  { return l.revision }
 func (c Conversion) Revision() int64 { return c.revision }
 
 type CorrectionReview struct {
-	Artifact, Version, Location, Kind, Target, Replacement, Status string
-	TargetIDs, ReplacementIDs                                      []string
+	Artifact, Version, Location, Kind, Target, Replacement string
+	Status                                                 CorrectionStatus
+	TargetIDs, ReplacementIDs                              []string
 }
 
 type RecoveryJob struct {

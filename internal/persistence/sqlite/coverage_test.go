@@ -348,7 +348,7 @@ func TestCompatibleEnrichmentAndCompetingOptionalClaims(t *testing.T) {
 	coverageReport(t, s, "competing-enrichment", competing)
 
 	d, err = s.ExecutionDetail(ctx, id)
-	if err != nil || d.Execution.Status() != "needs review" || d.Execution.Terms().Fields().Net.Amount() != "" {
+	if err != nil || !d.Execution.State().NeedsReview() || d.Execution.Terms().Fields().Net.Amount() != "" {
 		t.Fatal("arrival order selected optional claim", d, err)
 	}
 }
@@ -367,13 +367,13 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 			coverageReport(t, s, "early", instruction)
 
 			v, err := s.Dashboard(ctx)
-			if err != nil || len(v.Corrections) != 1 || !strings.Contains(v.Corrections[0].Status, "review") {
+			if err != nil || len(v.Corrections) != 1 || !v.Corrections[0].Status.NeedsReview() {
 				t.Fatal("early correction", v, err)
 			}
 
 			replacement := ""
 			if marker == "Co" {
-				if len(v.Executions) != 1 || v.Executions[0].Status() != "needs review" {
+				if len(v.Executions) != 1 || !v.Executions[0].State().NeedsReview() {
 					t.Fatal(v)
 				}
 
@@ -429,7 +429,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 				}
 
 				for _, e := range v.Executions {
-					if e.Status() != "needs review" {
+					if !e.State().NeedsReview() {
 						t.Fatal("competing replacement partially applied", e.Status())
 					}
 				}
@@ -446,7 +446,7 @@ func TestIdentifierMismatchCannotEnrichAcceptedTrade(t *testing.T) {
 	coverageReport(t, s, "mismatch", changed)
 
 	v, err := s.Dashboard(ctx)
-	if err != nil || len(v.Executions) != 1 || v.Executions[0].Status() != "needs review" ||
+	if err != nil || len(v.Executions) != 1 || !v.Executions[0].State().NeedsReview() ||
 		v.Executions[0].Terms().Fields().Instrument.Identifiers()[0].Value() != "US0000000001" {
 		t.Fatal(v, err)
 	}

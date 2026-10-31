@@ -81,7 +81,7 @@ func TestInterruptedRebuildPreservesIDsDecisionsAndReferenceSchedules(t *testing
 	}
 	// Corrupt only disposable accepted fields, retaining authoritative inputs.
 	if _, err = s.db.Exec(
-		`UPDATE executions SET status='damaged'; UPDATE instruments SET name='damaged'`,
+		`UPDATE executions SET review_reasons=1; UPDATE instruments SET name='damaged'`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestRecoveryGroupRollbackRetryAndProcessingRetry(t *testing.T) {
 	coverageReport(t, s, "replacement", correctionRow("replacement", "Co", "Toriginal"))
 
 	if _, err := s.db.Exec(
-		`UPDATE executions SET status='damaged'; CREATE TRIGGER recovery_failure BEFORE UPDATE ON executions WHEN NEW.status='superseded' BEGIN SELECT RAISE(ABORT,'injected'); END`,
+		`UPDATE executions SET review_reasons=1; CREATE TRIGGER recovery_failure BEFORE UPDATE ON executions WHEN NEW.status='superseded' AND NEW.review_reasons<>OLD.review_reasons BEGIN SELECT RAISE(ABORT,'injected'); END`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestRecoveryGroupRollbackRetryAndProcessingRetry(t *testing.T) {
 	}
 
 	for _, r := range rows {
-		if r.Status != "damaged" {
+		if r.ReviewReasons != 1 {
 			t.Fatal("relationship group partially committed", rows)
 		}
 	}

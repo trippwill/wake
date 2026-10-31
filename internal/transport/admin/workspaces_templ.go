@@ -2697,7 +2697,7 @@ func ActivityRows(view application.Dashboard) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = StateBadge(r.State).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ActivityBadge(r.FinancialState).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2894,7 +2894,7 @@ func InstrumentsView(view application.Dashboard) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = StateBadge(i.Status()).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = InstrumentBadge(i).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3130,7 +3130,7 @@ func ListFilters(instruments bool) templ.Component {
 				}
 			}
 		} else {
-			for _, v := range []string{"accepted", "needs review", "cancelled", "superseded"} {
+			for _, v := range []string{"accepted", "review", "cancelled", "superseded"} {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 285, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

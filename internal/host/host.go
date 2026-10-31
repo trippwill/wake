@@ -56,7 +56,7 @@ type (
 		ReplaceSecret(context.Context, string, string, []byte) error
 		Checkpoint(context.Context, WorkKey) (Checkpoint, error)
 		Observe(context.Context, WorkKey, provider.Progress) error
-		Fail(context.Context, WorkKey, string) error
+		Fail(context.Context, WorkKey, FailureCode, string) error
 		Accept(
 			context.Context,
 			WorkKey,
@@ -533,7 +533,7 @@ func (h *Host) fail(ctx context.Context, key WorkKey, err error) {
 	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
-	if failure := h.store.Fail(detached, key, err.Error()); failure != nil {
+	if failure := h.store.Fail(detached, key, failureCode(err), err.Error()); failure != nil {
 		h.logger.ErrorContext(
 			detached,
 			"could not retain source failure",
