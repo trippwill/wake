@@ -191,23 +191,21 @@ func (e Execution) Terms() source.Trade  { return e.terms }
 type (
 	ActivityContext struct{ AccountName, InstrumentName string }
 	Observation     struct {
-		Artifact, Version, Location, Rule string
-		Outcome                           ObservationOutcome
+		Artifact, Version, Location, Rule, Retrieved string
+		Outcome                                      ObservationOutcome
 	}
 	ExecutionDetail struct {
 		Context       ActivityContext
 		Execution     Execution
 		Relationships []Relationship
-		Observations  []Observation
 		Corrections   []CorrectionReview
 	}
 	ReferenceAttempt struct{ Evidence, Status, Retrieved, Rule string }
 	InstrumentDetail struct {
-		Instrument   Instrument
-		Underlier    string
-		Listings     []Listing
-		References   []ReferenceAttempt
-		Observations []Observation
+		Instrument Instrument
+		Underlier  string
+		Listings   []Listing
+		References []ReferenceAttempt
 	}
 	ReferenceEvidence struct{ Retrieved, Request, Response string }
 )
@@ -248,7 +246,6 @@ type (
 	LifecycleDetail struct {
 		Context       ActivityContext
 		Lifecycle     Lifecycle
-		Observations  []Observation
 		Corrections   []CorrectionReview
 		Relationships []Relationship
 	}
@@ -284,10 +281,9 @@ func (c Conversion) State() ActivityState     { return c.state }
 func (c Conversion) Terms() source.Conversion { return c.terms }
 
 type ConversionDetail struct {
-	Context      ActivityContext
-	Conversion   Conversion
-	Observations []Observation
-	Corrections  []CorrectionReview
+	Context     ActivityContext
+	Conversion  Conversion
+	Corrections []CorrectionReview
 }
 
 func (i Instrument) Revision() int64 { return i.revision }

@@ -199,8 +199,8 @@ Never communicate a difference or outcome through color alone.
 
 Support Light, Dark and System appearance on sign-in and authenticated pages.
 System follows the browser preference. Appearance belongs to the browser, not
-source configuration. Keep the choice usable when storage is unavailable and
-preserve a usable light/native fallback without JavaScript. Honor reduced motion.
+source configuration. Keep the choice usable when storage is unavailable. Honor
+reduced motion.
 
 ## Typography and icons
 
@@ -242,8 +242,8 @@ Applied corrections and ordinary reference gaps remain distinct from review task
 
 Use native labeled fields, buttons, disclosures and validation. Keep visible focus,
 skip navigation, usable touch targets and keyboard dismissal/return focus.
-Navigation remains available without JavaScript. Empty states explain what exists
-and offer an applicable action.
+Administration requires JavaScript. Navigation uses real links with visible focus
+and keyboard access. Empty states explain what exists and offer an applicable action.
 
 Activity should be purposeful and visible. Show recorded scope and elapsed time;
 leave unknown totals indeterminate. Acquisition, processing, freshness and financial
@@ -251,22 +251,27 @@ conflict labels retain their separate meanings. Quiet contact feedback must not
 mask failed refreshes or sign-in requirements. Animate running work or meaningful
 changes; keep unchanged and waiting/blocked states steady.
 
-Preserve drafts, focus/caret, selections, disclosures and table position through
-live updates. Native submissions give pending feedback and prevent accidental
+Preserve drafts, focus/caret, selections and disclosures through live updates.
+Retain intentional filter, ordering and page state in URLs, and selected column
+layout preferences through Tabulator persistence. Exact pixel-scroll restoration
+is unnecessary. Native submissions give pending feedback and prevent accidental
 duplicates. Financial history search, filtering, sorting and pagination operate on the complete
 matching warehouse set, with 50 rows per page by default. Bound other evidence
 views explicitly and clearly label any local interaction scope.
-Use embedded htmx, its SSE extension and idiomorph for authenticated read-only
-fragment updates. Keep commands ordinary HTTP submissions. Stateful grids reconcile
-incoming rows through their adapter; active/dirty forms and selections are protected.
-Decision forms and immutable raw-evidence pages remain explicit review snapshots;
-only their contact feedback updates automatically. Do not cache financial page HTML
-in browser history storage.
-Use the pinned, embedded Tabulator distribution for substantial read-only activity
-and observation datasets. Grids retain a readable native table when JavaScript or
-enhancement is unavailable. Label local filtering/sorting scope, preserve the view
-through refreshes and provide keyboard sorting/resizing. Compare decimal text
-without browser numeric conversion, keeping currency and unit distinctions.
+Use embedded htmx and its SSE extension for authenticated updates to independent
+source/status regions. Keep commands ordinary HTTP submissions. Tabulator owns
+interactive grid DOM and interactions, loading authenticated JSON and reloading
+through its API on SSE hints or polling. Render each interactive dataset once;
+parallel native tables, DOM scraping/cloning and htmx grid morphing are prohibited.
+Protect active/dirty forms and selections. Accepted detail pages, decision forms
+and immutable raw-evidence pages are explicit read snapshots with refresh/navigation
+actions; their contact feedback remains live. Retained observation grids refresh
+independently. Do not cache financial page HTML in browser history storage.
+Use the pinned, embedded Tabulator distribution for activity, instrument and
+observation datasets. Filtering, ordering and pagination use bounded server queries,
+with 50 rows per page by default. Preserve keyboard sorting/resizing, focused records,
+visible loading and clear error/retry or sign-in states. Compare decimal values on
+the server without floating-point conversion, keeping currency and unit distinctions.
 Short tables and decision controls remain native; exact, unrounded choices remain
 available in every appearance.
 
@@ -286,7 +291,8 @@ for links. Filter link choices by compatible family and parent instrument. Prese
 fractional seconds and timezone information when editing timestamps. Check syntax
 as the user edits and check financial constraints against the current record before
 enabling save; checks do not retain decisions or advance revisions. Keep native
-field selection and ordinary form submission usable without JavaScript.
+field selection and ordinary HTTP form submission explicit, with in-place controls
+and preflight feedback provided by JavaScript.
 Require an explicit choice; disclose optional reasons and retain them after errors.
 Observation tables show source location and acceptance rule/version directly in
 their cells, with wrapping and local scrolling for long values.

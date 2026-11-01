@@ -124,8 +124,6 @@ INSERT INTO event_links(account_id,reference,execution_id,distinct_event) VALUES
 INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) VALUES(?,?,?,?,?,?);
 -- name: ObservationExists :one
 SELECT count(*) FROM execution_observations WHERE artifact_id=? AND version=? AND location=?;
--- name: ExecutionObservations :many
-SELECT * FROM execution_observations WHERE execution_id=? ORDER BY rowid;
 -- name: ConflictExecution :exec
 UPDATE executions SET review_reasons=review_reasons|1 WHERE id=?;
 -- name: ReferenceSetting :one
@@ -166,9 +164,6 @@ SELECT reference FROM event_links WHERE execution_id=? AND distinct_event=1;
 INSERT INTO access.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(name),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider;
 -- name: ResetConnectionWork :exec
 UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?;
-
--- name: InstrumentObservations :many
-SELECT execution_observations.* FROM execution_observations JOIN executions ON executions.id=execution_id WHERE executions.instrument_id=? ORDER BY execution_observations.rowid DESC LIMIT 100;
 
 -- name: SetUnderlier :exec
 UPDATE instruments SET underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND underlier_id IS NOT sqlc.narg(underlier_id);

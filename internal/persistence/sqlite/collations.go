@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	"go.trippwill.dev/wake/financial"
 	modernsqlite "modernc.org/sqlite"
@@ -23,6 +24,11 @@ var (
 func registerCollations() error {
 	collationOnce.Do(func() {
 		collationError = modernsqlite.RegisterCollationUtf8("wake_decimal", compareDecimalText)
+		if collationError != nil {
+			return
+		}
+
+		collationError = modernsqlite.RegisterCollationUtf8("wake_instant", compareInstantText)
 		if collationError != nil {
 			return
 		}
@@ -84,4 +90,24 @@ func compareDecimalText(left, right string) int {
 	b, _ := new(big.Rat).SetString(r.Value())
 
 	return a.Cmp(b)
+}
+
+// RFC3339 text can vary in fractional precision and offset. Compare instants
+// without SQLite's floating-point timestamp conversion.
+func compareInstantText(left, right string) int {
+	l, le := time.Parse(time.RFC3339Nano, left)
+	r, re := time.Parse(time.RFC3339Nano, right)
+	if le != nil && re != nil {
+		return strings.Compare(left, right)
+	}
+
+	if le != nil {
+		return 1
+	}
+
+	if re != nil {
+		return -1
+	}
+
+	return l.Compare(r)
 }

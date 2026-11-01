@@ -218,7 +218,7 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 				@ListPagination(v.PageInfo)
 			</section>
 		} else if c.CanDiscover {
-			<details class="wake-card">
+			<details class="wake-card" data-disclosure={ "accounts-" + c.ID }>
 				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
 				@ListPagination(v.PageInfo)
 			</details>
@@ -267,7 +267,7 @@ templ ProviderSettings(descriptor provider.Descriptor, settings provider.Setting
 templ ConnectionAccess(csrf string, c application.ConnectionView) {
 	<section class="wake-card wake-connection">
 		<h2>{ c.Name }</h2>
-		<details><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
+		<details data-disclosure={ "identity-" + c.ID }><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
 		<p class="wake-help">Stored settings and credentials do not establish that the provider is reachable.</p>
 		if c.MissingAccess {
 			<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Review the source settings and required credentials.</p>
@@ -404,9 +404,9 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 					<p class="wake-notice">{ p.Failure }</p>
 					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
 				}
-				<details><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
+				<details data-disclosure={ "receipt-" + p.Receipt }><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
 				if c.CanNormalize && p.Failure=="" {
-					<details><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
+					<details data-disclosure={ "processing-" + p.Receipt }><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
 				}
 			</article>
 		}
@@ -453,74 +453,22 @@ templ ReviewQueue(view activityView) {
 
 templ ActivityRows(view activityView) {
 	<section class="wake-card" id="activity-rows">
-		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
+		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div></div>
 		@ListFilters(false)
-		<section class="wake-grid" id="activity-grid" data-grid="activity" data-server-list aria-label="Financial activity">
-			<section class="wake-table-scroll" aria-label="Financial activity table">
-				<table class="table">
-					<caption>Recorded financial activity</caption><thead><tr><th scope="col" data-field="label">Activity</th><th scope="col" data-field="date">Date</th><th scope="col" data-field="quantity" data-sort="decimal">Quantity / currency roles</th><th scope="col" data-field="price" data-sort="decimal">Price / rate</th><th scope="col" data-field="state">Activity state</th><th scope="col" data-field="reference">Reference identity</th></tr></thead>
-					<tbody>
-						for _,r:=range view.Items {
-							<tr id={ "activity-" + r.ID }>
-								<td><a href={ templ.SafeURL(navURL(ctx, r.Href)) } data-record={ r.ID }>{ r.Label }</a><span class="wake-help wake-cell-note">{ activityKindLabel(r.Kind) }</span></td>
-								<td>{ r.Date }</td>
-								<td data-sort-value={ r.Quantity }>{ r.Quantity }</td>
-								<td data-sort-value={ r.Price + " " + r.Basis }>{ r.Price }<span class="wake-help wake-cell-note">{ r.Basis }</span></td>
-								<td>
-									@ActivityBadge(r.FinancialState)
-								</td>
-								<td>
-									if r.InstrumentID!="" {
-										<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+r.InstrumentID)) }>{ r.Reference }</a>
-									} else {
-										{ notApplicableValue }
-									}
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</section>
-		</section>
-		if len(view.Items)==0 {
-			<p>No activity matches these filters.</p>
-		}
-		@ListPagination(view.PageInfo)
+		@Grid("activity", "/grids/activity", "Financial activity")
 	</section>
 }
 
 templ InstrumentsView(view activityView) {
 	<section class="wake-card">
-		<div class="wake-card-heading"><h2>Instruments</h2><span class="wake-help" role="status">{ listResult(view.PageInfo) }</span></div>
+		<h2>Instruments</h2>
 		@ListFilters(true)
-		<section class="wake-grid" id="instruments-grid" data-grid="instruments" data-server-list aria-label="Instruments">
-			<section class="wake-table-scroll" aria-label="Instrument table">
-				<table class="table">
-					<caption>Financial instruments</caption><thead><tr><th scope="col" data-field="name">Instrument</th><th scope="col" data-field="kind">Kind</th><th scope="col" data-field="ticker">Reported symbol</th><th scope="col" data-field="state">Reference identity</th></tr></thead>
-					<tbody>
-						for _,i:=range view.Instruments {
-							<tr id={ "instrument-" + i.ID }>
-								<td><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+i.ID)) } data-record={ i.ID }>{ known(i.Name) }</a></td>
-								<td>{ i.Kind }</td>
-								<td>{ known(i.Ticker) }</td>
-								<td>
-									@ReferenceBadge(i.Status, i.Authority)
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</section>
-		</section>
-		if len(view.Instruments)==0 {
-			<p>No instruments match these filters.</p>
-		}
-		@ListPagination(view.PageInfo)
+		@Grid("instruments", "/grids/instruments", "Instruments")
 	</section>
 }
 
 templ ListFilters(instruments bool) {
-	<form class="wake-filters" method="get" action="/activity" hx-get="/activity" hx-target="#workspace-content" hx-select="#workspace-content" hx-swap="morph:outerHTML" hx-trigger="submit, change" data-list-filters>
+	<form class="wake-filters" method="get" action="/activity" data-list-filters>
 		if instruments {
 			<input type="hidden" name="view" value="instruments"/>
 		}
@@ -583,8 +531,4 @@ templ ListPagination(info application.PageInfo) {
 			}
 		</nav>
 	}
-}
-
-templ ReferenceBadge(status application.ReferenceStatus, authority application.SelectionAuthority) {
-	<span class="badge" data-state={ referenceTone(status) }>{ referenceLabel(status,authority) }</span>
 }
