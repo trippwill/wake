@@ -150,36 +150,87 @@ type RootCalculation struct {
 	Conflict            bool
 }
 
+// RootBinding keeps the source baseline distinct from its verified identity.
+type RootBinding struct {
+	Reported, Canonical source.Instrument
+}
+
 // Root identities do not reconcile timeless financial terms. Those stay on each
 // dated activity, where same-event disagreements still use CompatibleInstrument.
-func rootIdentity(
+func rootTerms(
 	value source.Instrument,
-	bindings map[source.Reference]source.Instrument,
-) (source.Instrument, error) {
+	bindings map[source.Reference]RootBinding,
+) (source.Instrument, bool, error) {
 	if value.Kind() == "" {
-		return value, nil
+		return value, false, nil
 	}
 
 	f := value.Fields()
 	f.Debt = source.DebtTerms{}
-	if canonical, ok := bindings[value.Reference()]; ok && canonical.Reference() != value.Reference() {
-		f.Reference = canonical.Reference()
-		f.Identifiers = canonical.Identifiers()
-	}
-
+	conflict := false
 	if !f.Option.IsZero() {
-		underlier, err := rootIdentity(f.Option.Fields().Underlier, bindings)
+		underlier, disputed, err := rootIdentity(f.Option.Fields().Underlier, bindings)
 		if err != nil {
-			return source.Instrument{}, err
+			return source.Instrument{}, false, err
 		}
+
+		conflict = disputed
 
 		f.Option, err = source.NewOptionTerms(source.OptionInput{Underlier: underlier})
 		if err != nil {
-			return source.Instrument{}, err
+			return source.Instrument{}, false, err
 		}
 	}
 
-	return source.NewInstrument(f)
+	out, err := source.NewInstrument(f)
+
+	return out, conflict, err
+}
+
+func rootIdentity(
+	value source.Instrument,
+	bindings map[source.Reference]RootBinding,
+) (source.Instrument, bool, error) {
+	identity, conflict, err := rootTerms(value, bindings)
+	if err != nil {
+		return source.Instrument{}, false, err
+	}
+
+	binding, ok := bindings[value.Reference()]
+	if !ok || binding.Canonical.Reference() == value.Reference() {
+		return identity, conflict, nil
+	}
+
+	previous, disputed, err := rootTerms(binding.Reported, bindings)
+	if err != nil {
+		return source.Instrument{}, false, err
+	}
+
+	conflict = conflict || disputed || !CompatibleInstrument(previous, identity)
+	f := identity.Fields()
+
+	f.Reference = binding.Canonical.Reference()
+	f.Identifiers = binding.Canonical.Identifiers()
+	contains := func(ids []source.Identifier, id source.Identifier) bool {
+		return slices.ContainsFunc(ids, func(other source.Identifier) bool {
+			return other.Kind() == id.Kind() && other.Value() == id.Value()
+		})
+	}
+	for _, id := range identity.Identifiers() {
+		if !contains(previous.Identifiers(), id) && !contains(f.Identifiers, id) {
+			f.Identifiers = append(f.Identifiers, id)
+		}
+	}
+
+	out, err := source.NewInstrument(f)
+	if err != nil {
+		// Combined enrichment can exceed the constructor's identifier bound.
+		f.Identifiers = binding.Canonical.Identifiers()
+		out, err = source.NewInstrument(f)
+		conflict = true
+	}
+
+	return out, conflict, err
 }
 
 func CalculateRoot(base source.Instrument, claims []source.Instrument) (RootCalculation, error) {
@@ -189,11 +240,14 @@ func CalculateRoot(base source.Instrument, claims []source.Instrument) (RootCalc
 func CalculateBoundRoot(
 	base source.Instrument,
 	claims []source.Instrument,
-	bindings map[source.Reference]source.Instrument,
+	bindings map[source.Reference]RootBinding,
 ) (RootCalculation, error) {
-	var err error
+	var (
+		err            error
+		sourceConflict bool
+	)
 
-	base, err = rootIdentity(base, bindings)
+	base, sourceConflict, err = rootIdentity(base, bindings)
 	if err != nil {
 		return RootCalculation{}, err
 	}
@@ -201,10 +255,12 @@ func CalculateBoundRoot(
 	identities := make([]source.Instrument, 0, len(claims))
 	underliers := []source.Instrument{}
 	for _, claim := range claims {
-		identity, e := rootIdentity(claim, bindings)
+		identity, disputed, e := rootIdentity(claim, bindings)
 		if e != nil {
 			return RootCalculation{}, e
 		}
+
+		sourceConflict = sourceConflict || disputed
 
 		if u := identity.Option().Fields().Underlier; u.Kind() != "" {
 			underliers = append(underliers, u)
@@ -220,5 +276,9 @@ func CalculateBoundRoot(
 
 	underlier, disputed, err := ReconcileInstrument(base.Option().Fields().Underlier, underliers)
 
-	return RootCalculation{Reported: reported, Underlier: underlier, Conflict: conflict || disputed}, err
+	return RootCalculation{
+		Reported:  reported,
+		Underlier: underlier,
+		Conflict:  sourceConflict || conflict || disputed,
+	}, err
 }

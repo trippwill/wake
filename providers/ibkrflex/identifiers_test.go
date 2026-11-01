@@ -60,3 +60,16 @@ func TestReportedUnderlierAndOCCIdentifiers(t *testing.T) {
 		t.Fatal(terms, err)
 	}
 }
+
+func TestUnderlierISINDoesNotRequireNativeReference(t *testing.T) {
+	for _, native := range []string{"", "0"} {
+		terms, err := optionTerms(
+			map[string]string{"underlyingConid": native, "underlyingSecurityID": "US0378331005"},
+		)
+		if err != nil || terms.Fields().Underlier.Kind() != source.UnknownInstrument ||
+			!terms.Fields().Underlier.Reference().IsZero() ||
+			len(terms.Fields().Underlier.Identifiers()) != 1 {
+			t.Fatal("ISIN-only underlier lost", native, terms, err)
+		}
+	}
+}

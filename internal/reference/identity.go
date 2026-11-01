@@ -119,7 +119,9 @@ func SelectIdentity(kind source.InstrumentKind, records []Record) Selection {
 		incompatible := false
 		switch kind {
 		case source.Option:
-			incompatible = r.Market != "" && r.Market != "Equity" || r.SecurityType != "" && !option
+			incompatible = r.Market != "" && r.Market != "Equity" ||
+				r.SecurityType != "" && r.SecurityType != "Equity Option" ||
+				r.SecurityType2 != "" && r.SecurityType2 != "Option" && r.SecurityType2 != "Equity"
 		case source.Equity, source.Fund, source.UnknownInstrument:
 			incompatible = option || r.Market != "" && r.Market != "Equity"
 		case source.Debt:

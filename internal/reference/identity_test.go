@@ -106,3 +106,25 @@ func TestOptionIdentityIgnoresClassificationSpellingAndRowOrder(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestOptionIdentityRejectsContradictoryClassifications(t *testing.T) {
+	for _, tc := range []struct{ primary, secondary string }{
+		{"", "Common Stock"}, {"Equity Option", "Common Stock"}, {"Common Stock", "Option"},
+	} {
+		got := SelectIdentity(
+			source.Option,
+			[]Record{
+				{
+					FIGI:          "underlier-venue",
+					Composite:     "underlier-composite",
+					Market:        "Equity",
+					SecurityType:  tc.primary,
+					SecurityType2: tc.secondary,
+				},
+			},
+		)
+		if got.FIGI != "" || got.Reason != IncompatibleSubject {
+			t.Fatal("non-option classification identified an option", tc, got)
+		}
+	}
+}

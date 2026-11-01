@@ -180,6 +180,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 	defer s.mu.Unlock()
 
 	now := s.now().UTC()
+	parentOutcomes := map[string]Result{}
 
 	pending, err := s.store.PendingReference(ctx, now)
 	if err != nil || len(pending) == 0 {
@@ -294,7 +295,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 		}
 
 		if found {
-			cached, e = s.parents(ctx, p.Instrument.Kind(), cached, now, limit, secret)
+			cached, e = s.parents(ctx, p.Instrument.Kind(), cached, now, limit, secret, parentOutcomes)
 			if e != nil {
 				return changed, e
 			}
@@ -366,7 +367,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			result := results[i]
 			for _, p := range pending {
 				if p.ID == id {
-					result, err = s.parents(ctx, p.Instrument.Kind(), result, now, limit, secret)
+					result, err = s.parents(ctx, p.Instrument.Kind(), result, now, limit, secret, parentOutcomes)
 					if err != nil {
 						return changed, err
 					}
@@ -598,28 +599,34 @@ func (s *Service) parents(
 	now time.Time,
 	limit int,
 	secret []byte,
+	outcomes map[string]Result,
 ) (Result, error) {
 	// Missing equity parents require only the known composite's children. There is
 	// no search by labels or recursive graph walk; admission bounds outgoing work.
 	jobs := MissingComposites(kind, result.Records)
 	for _, parent := range jobs[:min(len(jobs), 10)] {
-		cached, found, err := s.store.ReferenceCached(ctx, parent.Key(), now)
-		if err != nil {
-			return result, err
-		}
-
+		cached, found := outcomes[parent.Key()]
 		if !found {
-			fetched, e := s.fetch(ctx, []Job{parent}, now, limit, secret)
-			if e != nil {
-				return result, e
+			var err error
+
+			cached, found, err = s.store.ReferenceCached(ctx, parent.Key(), now)
+			if err != nil {
+				return result, err
 			}
 
-			if len(fetched) == 0 {
-				result.Next = now.Add(time.Minute)
-				continue
+			if !found {
+				fetched, e := s.fetch(ctx, []Job{parent}, now, limit, secret)
+				if e != nil {
+					return result, e
+				}
+
+				cached = Result{Status: "temporary-failure", Next: now.Add(time.Minute)}
+				if len(fetched) > 0 {
+					cached = fetched[0]
+				}
 			}
 
-			cached = fetched[0]
+			outcomes[parent.Key()] = cached
 		}
 
 		if !cached.Next.IsZero() && (result.Next.IsZero() || cached.Next.Before(result.Next)) {

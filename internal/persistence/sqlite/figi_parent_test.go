@@ -217,3 +217,51 @@ func TestMatchingOperatorReferenceChoicesCombineAndReleaseTogether(t *testing.T)
 		t.Fatal("release invented automatic authority", detail, err)
 	}
 }
+
+func TestFailedFIGIParentIsAttemptedOncePerRun(t *testing.T) {
+	s, _ := testStore(t)
+	insertReferenceInstrument(t, s, "first", "shared-isin")
+	insertReferenceInstrument(t, s, "second", "shared-isin")
+
+	now := time.Now().UTC()
+	primary, parent := 0, 0
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var jobs []reference.Job
+		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil || len(jobs) != 1 {
+			t.Error(jobs, err)
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		if jobs[0].IDType == "ID_ISIN" {
+			primary++
+			_, _ = w.Write([]byte(`[{"data":[{"figi":"venue","compositeFIGI":"parent","marketSector":"Equity"}]}]`))
+		} else {
+			parent++
+
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	defer server.Close()
+
+	service, err := reference.New(s, nil, server.Client(), server.URL, func() time.Time { return now }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for run := 1; run <= 2; run++ {
+		if _, err = service.RunOnce(t.Context()); err != nil || primary != 1 || parent != run {
+			t.Fatalf(
+				"shared parent failure repeated: run=%d primary=%d parent=%d err=%v",
+				run,
+				primary,
+				parent,
+				err,
+			)
+		}
+
+		now = now.Add(2 * time.Minute)
+	}
+}

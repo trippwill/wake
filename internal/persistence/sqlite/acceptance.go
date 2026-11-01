@@ -544,7 +544,9 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 		return out, err
 	}
 
-	r, err := s.queries.Instrument(ctx, target)
+	id = target
+
+	r, err := s.queries.Instrument(ctx, id)
 	if err != nil {
 		return out, err
 	}

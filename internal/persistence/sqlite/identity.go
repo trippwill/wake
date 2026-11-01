@@ -94,16 +94,22 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 		return err
 	}
 
+	family := source.InstrumentKind(root.Kind)
+
 	choices := map[string]string{}
 	blocked := false
 	blockReason := reference.OperatorConflict
 	for _, r := range roots {
 		if !application.CompatibleInstrumentKind(
-			source.InstrumentKind(root.Kind),
+			family,
 			source.InstrumentKind(r.Kind),
 		) {
 			blocked = true
 			blockReason = reference.IncompatibleSubject
+		}
+
+		if family == source.UnknownInstrument {
+			family = source.InstrumentKind(r.Kind)
 		}
 
 		automatic, e := q.InstrumentSelection(ctx, r.ID)
@@ -249,9 +255,13 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 			ID:         target,
 			Allocation: root.ReferenceAllocation,
 			Reason:     reason,
-			Family:     root.Kind,
+			Family:     string(family),
 		},
 	); err != nil {
+		return err
+	}
+
+	if err = q.AdvanceInstrumentRevision(ctx, target); err != nil {
 		return err
 	}
 

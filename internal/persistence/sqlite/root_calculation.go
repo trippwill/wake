@@ -31,12 +31,26 @@ type retainedRoot struct {
 // A phase reads one stable set of bindings. Discard it after binding writes;
 // shared targets are read and decoded once regardless of their parent count.
 type rootPhase struct {
-	q     *sqlc.Queries
-	roots map[string]retainedRoot
+	q        *sqlc.Queries
+	roots    map[string]retainedRoot
+	bindings map[string][]sqlc.Instrument
 }
 
 func newRootPhase(q *sqlc.Queries) *rootPhase {
-	return &rootPhase{q: q, roots: map[string]retainedRoot{}}
+	return &rootPhase{q: q, roots: map[string]retainedRoot{}, bindings: map[string][]sqlc.Instrument{}}
+}
+
+func (p *rootPhase) bindingRows(ctx context.Context, id string) ([]sqlc.Instrument, error) {
+	if rows, ok := p.bindings[id]; ok {
+		return rows, nil
+	}
+
+	rows, err := p.q.InstrumentBindings(ctx, id)
+	if err == nil {
+		p.bindings[id] = rows
+	}
+
+	return rows, err
 }
 
 func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
@@ -78,9 +92,9 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		claims = append(claims, reported)
 	}
 
-	bindings := map[source.Reference]source.Instrument{}
+	bindings := map[source.Reference]application.RootBinding{}
 	if row.ReferenceFigi != "" {
-		rows, e := p.q.InstrumentBindings(ctx, id)
+		rows, e := p.bindingRows(ctx, id)
 		if e != nil {
 			return retainedRoot{}, e
 		}
@@ -91,7 +105,10 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 				return retainedRoot{}, e
 			}
 
-			bindings[value.Reported().Reference()] = root.reported
+			bindings[value.Reported().Reference()] = application.RootBinding{
+				Reported:  value.Reported(),
+				Canonical: root.reported,
+			}
 		}
 	}
 	// Verified aliases of nested underliers use the same identity comparison.
@@ -115,7 +132,22 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 			return retainedRoot{}, e
 		}
 
-		bindings[ref] = value.Reported()
+		rows, e := p.bindingRows(ctx, underlier.ID)
+		if e != nil {
+			return retainedRoot{}, e
+		}
+
+		for _, binding := range rows {
+			original, e := instrumentValue(binding)
+			if e != nil {
+				return retainedRoot{}, e
+			}
+
+			bindings[original.Reported().Reference()] = application.RootBinding{
+				Reported:  original.Reported(),
+				Canonical: value.Reported(),
+			}
+		}
 	}
 
 	root.calculation, err = application.CalculateBoundRoot(root.reported, claims, bindings)
