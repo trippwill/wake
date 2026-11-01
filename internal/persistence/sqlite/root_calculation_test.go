@@ -400,10 +400,16 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	activityQuery, activityArgs := recorded.query, recorded.args
+
+	if _, err = queries.ArtifactRootIDs(ctx, "indexed-root"); err != nil {
+		t.Fatal(err)
+	}
+
 	for name, read := range map[string]struct {
 		query string
 		args  []any
-	}{"root": {rootQuery, rootArgs}, "activity": {recorded.query, recorded.args}} {
+	}{"root": {rootQuery, rootArgs}, "activity": {activityQuery, activityArgs}, "dependents": {recorded.query, recorded.args}} {
 		plan, err := s.db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+read.query, read.args...)
 		if err != nil {
 			t.Fatal(err)
@@ -431,6 +437,14 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 
 		text := strings.Join(steps, "\n")
 		t.Log(name, text)
+
+		if name == "dependents" &&
+			!strings.Contains(
+				text,
+				"SEARCH parent USING INDEX instrument_claim_occurrence (claim_id=? AND ordinal=?)",
+			) {
+			t.Fatal("dependent parent lookup is not keyed by source occurrence", text)
+		}
 
 		for _, fullScan := range []string{"SCAN p", "SCAN i", "SCAN o", "SCAN source_claims", "SCAN records"} {
 			if strings.Contains(text, fullScan) {
@@ -850,5 +864,94 @@ func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
 		if count != 1 {
 			t.Fatal("history decoded more than once", id, count)
 		}
+	}
+}
+
+func TestAnonymousIdentifierDisputeReachesItsQualifiedGroup(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		s := coverageStore(t)
+		base := underlierTemplate(t)
+		if existing {
+			coverageReport(
+				t,
+				s,
+				"empty-target",
+				strings.Replace(equityRow("U1", "known-root", "100"), ` isin="US0000000001"`, "", 1),
+			)
+		}
+
+		retainUnderlierTrades(t, s, "anonymous-a", underlierTrade(t, base, "anonymous-a", "US0000000002", false))
+
+		root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		before, err := s.InstrumentDetail(t.Context(), root.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		retainUnderlierTrades(t, s, "qualified-b", underlierTrade(t, base, "qualified-b", "US0000000001", true))
+
+		after, err := s.InstrumentDetail(t.Context(), root.ID)
+		if err != nil || after.Underlier != before.Underlier || !after.Instrument.Status().NeedsReview() {
+			t.Fatal("dispute replaced established link", after, err)
+		}
+
+		target, err := s.queries.InstrumentBySource(
+			t.Context(),
+			referenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		detail, err := s.InstrumentDetail(t.Context(), target.ID)
+		if err != nil || !detail.Instrument.Status().NeedsReview() ||
+			len(detail.Instrument.Reported().Identifiers()) != 0 {
+			t.Fatal("anonymous identifier omitted from target dispute", existing, detail, err)
+		}
+	}
+}
+
+func TestLaterUnderlierConflictReprojectsRetainedParents(t *testing.T) {
+	s := coverageStore(t)
+	base := underlierTemplate(t)
+	retainUnderlierTrades(t, s, "parent-p", underlierTrade(t, base, "p-qualified", "US0000000002", true))
+
+	p, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := s.InstrumentDetail(t.Context(), p.ID)
+	if err != nil || before.Instrument.Status().NeedsReview() {
+		t.Fatal(before, err)
+	}
+
+	fields := base.Fields()
+	instrument := fields.Instrument.Fields()
+
+	instrument.Reference, err = source.NewReference("synthetic", "option", "", "later-parent-q")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields.Instrument, err = source.NewInstrument(instrument)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	other, err := source.NewTrade(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retainUnderlierTrades(t, s, "parent-q", underlierTrade(t, other, "q-qualified", "US0000000001", true))
+
+	after, err := s.InstrumentDetail(t.Context(), p.ID)
+	if err != nil || !after.Instrument.Status().NeedsReview() || after.Underlier != before.Underlier {
+		t.Fatal("retained dependent parent was not reprojected", after, err)
 	}
 }

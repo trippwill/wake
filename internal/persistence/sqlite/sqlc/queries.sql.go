@@ -318,7 +318,14 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 }
 
 const artifactRootIDs = `-- name: ArtifactRootIDs :many
-SELECT DISTINCT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=? ORDER BY i.instrument_id
+WITH RECURSIVE affected(instrument_id) AS (
+ SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?
+ UNION
+ SELECT parent.instrument_id FROM affected
+ JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
+ JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+)
+SELECT instrument_id FROM affected ORDER BY instrument_id
 `
 
 func (q *Queries) ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error) {

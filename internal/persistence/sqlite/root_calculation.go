@@ -24,6 +24,7 @@ type retainedRoot struct {
 	row         sqlc.Instrument
 	reported    source.Instrument
 	claims      []rootClaim
+	references  map[string]source.Reference
 	calculation application.RootCalculation
 }
 
@@ -58,7 +59,7 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		return retainedRoot{}, err
 	}
 
-	root := retainedRoot{row: row, reported: value.Reported()}
+	root := retainedRoot{row: row, reported: value.Reported(), references: map[string]source.Reference{}}
 	claims := make([]source.Instrument, 0, len(inputs))
 	for _, input := range inputs {
 		reported, e := reportedRootClaim(input)
@@ -67,6 +68,13 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		}
 
 		root.claims = append(root.claims, rootClaim{input.ClaimID, input.Ordinal, input.Role, reported})
+		if input.Role == "activity" {
+			reference := reported.Option().Fields().Underlier.Reference()
+			if !reference.IsZero() {
+				root.references[referenceKey(reference)] = reference
+			}
+		}
+
 		claims = append(claims, reported)
 	}
 
@@ -113,7 +121,7 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 			return nil, err
 		}
 
-		references := map[string]source.Reference{}
+		references := root.references
 
 		var claims []source.Instrument
 		for _, claim := range root.claims {
@@ -127,9 +135,6 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 			}
 
 			claims = append(claims, u)
-			if !u.Reference().IsZero() {
-				references[referenceKey(u.Reference())] = u.Reference()
-			}
 		}
 
 		for key, reference := range references {
@@ -411,13 +416,15 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 			ids := map[string]bool{}
 			if !u.Reference().IsZero() {
 				ids[targets[referenceKey(u.Reference())].id] = true
-				if u.Reference() == root.calculation.Underlier.Reference() {
+				if len(root.references) == 1 {
 					ids[links[parent]] = true
 				}
 			} else {
 				ids[links[parent]] = true
-				if !root.calculation.Underlier.Reference().IsZero() {
-					ids[targets[referenceKey(root.calculation.Underlier.Reference())].id] = true
+				if len(root.references) == 1 {
+					for key := range root.references {
+						ids[targets[key].id] = true
+					}
 				}
 			}
 

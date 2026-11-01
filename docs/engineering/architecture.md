@@ -339,7 +339,8 @@ Prospective nested inputs from all affected parents are reconciled before
 qualifying identities or selecting links. Retained source context contributes to
 target review regardless of reference/identifier arrival order. Each stable
 calculation phase reads shared history once; binding changes start a new phase
-before accepted state is written.
+before accepted state is written. Projection follows retained source dependencies,
+so a changed shared target also updates its previously observed parents.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
 instrument and observation tables require JavaScript and consume authenticated JSON.
