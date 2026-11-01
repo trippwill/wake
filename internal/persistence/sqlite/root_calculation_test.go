@@ -538,31 +538,61 @@ func retainUnderlierTrades(t *testing.T, s *Store, id string, trades ...source.T
 }
 
 func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
-	s := coverageStore(t)
-	base := underlierTemplate(t)
-	coverageReport(t, s, "qualified-with-isin", equityRow("U1", "known-root", "100"))
-	retainUnderlierTrades(
-		t,
-		s,
-		"anonymous-with-other-isin",
-		underlierTrade(t, base, "anonymous", "US0000000002", false),
-	)
+	for _, variant := range []string{"retained", "target-first", "parent-first"} {
+		t.Run(variant, func(t *testing.T) {
+			s := coverageStore(t)
+			base := underlierTemplate(t)
 
-	root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
-	if err != nil {
-		t.Fatal(err)
-	}
+			target := equityRow("U1", "known-root", "100")
+			initial := target
+			if variant != "retained" {
+				initial = strings.Replace(target, ` isin="US0000000001"`, "", 1)
+			}
 
-	before, err := s.InstrumentDetail(t.Context(), root.ID)
-	if err != nil || before.Underlier == "" {
-		t.Fatal(before, err)
-	}
+			coverageReport(t, s, "qualified-with-isin", initial)
+			retainUnderlierTrades(
+				t,
+				s,
+				"anonymous-with-other-isin",
+				underlierTrade(t, base, "anonymous", "US0000000002", false),
+			)
 
-	retainUnderlierTrades(t, s, "new-qualified-reference", underlierTrade(t, base, "qualified", "", true))
+			root, err := s.queries.InstrumentBySource(
+				t.Context(),
+				referenceKey(base.Fields().Instrument.Reference()),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	after, err := s.InstrumentDetail(t.Context(), root.ID)
-	if err != nil || after.Underlier != before.Underlier || !after.Instrument.Status().NeedsReview() {
-		t.Fatal("conflicting qualified identity silently replaced source link", before.Underlier, after, err)
+			before, err := s.InstrumentDetail(t.Context(), root.ID)
+			if err != nil || before.Underlier == "" {
+				t.Fatal(before, err)
+			}
+
+			batch := []source.Trade{underlierTrade(t, base, "qualified", "", true)}
+			if variant != "retained" {
+				seed := coverageStore(t)
+				coverageReport(t, seed, "target-template", target)
+
+				targetView, e := seed.Dashboard(t.Context())
+				if e != nil {
+					t.Fatal(e)
+				}
+
+				batch = append(batch, targetView.Executions[0].Terms())
+				if variant == "target-first" {
+					batch[0], batch[1] = batch[1], batch[0]
+				}
+			}
+
+			retainUnderlierTrades(t, s, "new-qualified-reference", batch...)
+
+			after, err := s.InstrumentDetail(t.Context(), root.ID)
+			if err != nil || after.Underlier != before.Underlier || !after.Instrument.Status().NeedsReview() {
+				t.Fatal("conflicting qualified identity silently replaced source link", before.Underlier, after, err)
+			}
+		})
 	}
 }
 

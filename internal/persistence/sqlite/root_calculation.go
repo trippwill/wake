@@ -172,20 +172,20 @@ func acceptAutomaticUnderlier(
 
 			qualified, e := q.InstrumentBySource(ctx, key)
 			if e == nil {
-				candidate, e := instrumentValue(qualified)
+				candidate, e := retainedRootCalculation(ctx, q, qualified)
 				if e != nil {
 					return "", e
 				}
 
 				_, conflict, e := application.ReconcileInstrument(
 					known,
-					[]source.Instrument{reported, candidate.Reported()},
+					[]source.Instrument{reported, candidate.Reported},
 				)
 				if e != nil {
 					return "", e
 				}
 
-				if conflict {
+				if conflict || candidate.Conflict {
 					return root.ID, nil
 				}
 
@@ -253,30 +253,11 @@ func calculateRoot(ctx context.Context, q *sqlc.Queries, id string) (application
 		return application.RootCalculation{}, e
 	}
 
-	baseline, e := instrumentValue(root)
+	result, e := retainedRootCalculation(ctx, q, root)
 	if e != nil {
 		return application.RootCalculation{}, e
 	}
 
-	rows, e := q.RootCalculationInputs(ctx, id)
-	if e != nil {
-		return application.RootCalculation{}, e
-	}
-
-	claims := make([]source.Instrument, 0, len(rows))
-	for _, row := range rows {
-		claim, e := reportedRootClaim(row)
-		if e != nil {
-			return application.RootCalculation{}, e
-		}
-
-		claims = append(claims, claim)
-	}
-
-	result, e := application.CalculateRoot(baseline.Reported(), claims)
-	if e != nil {
-		return application.RootCalculation{}, e
-	}
 	// A qualified identity held by another root is evidence for review, never
 	// permission to discard identifiers retained on the established binding.
 	for _, reported := range []source.Instrument{result.Reported, result.Underlier} {
@@ -297,12 +278,13 @@ func calculateRoot(ctx context.Context, q *sqlc.Queries, id string) (application
 			continue
 		}
 
-		value, e := instrumentValue(candidate)
+		value, e := retainedRootCalculation(ctx, q, candidate)
 		if e != nil {
 			return application.RootCalculation{}, e
 		}
 
-		result.Conflict = result.Conflict || !application.CompatibleInstrument(reported, value.Reported())
+		result.Conflict = result.Conflict || value.Conflict ||
+			!application.CompatibleInstrument(reported, value.Reported)
 	}
 
 	return result, nil
@@ -325,4 +307,33 @@ func reportedRootClaim(row sqlc.RootCalculationInputsRow) (source.Instrument, er
 	}
 
 	return claim, nil
+}
+
+// Read all source inputs without consulting other roots or projected selections.
+func retainedRootCalculation(
+	ctx context.Context,
+	q *sqlc.Queries,
+	root sqlc.Instrument,
+) (application.RootCalculation, error) {
+	baseline, e := instrumentValue(root)
+	if e != nil {
+		return application.RootCalculation{}, e
+	}
+
+	rows, e := q.RootCalculationInputs(ctx, root.ID)
+	if e != nil {
+		return application.RootCalculation{}, e
+	}
+
+	claims := make([]source.Instrument, 0, len(rows))
+	for _, row := range rows {
+		claim, e := reportedRootClaim(row)
+		if e != nil {
+			return application.RootCalculation{}, e
+		}
+
+		claims = append(claims, claim)
+	}
+
+	return application.CalculateRoot(baseline.Reported(), claims)
 }
