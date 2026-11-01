@@ -14,7 +14,13 @@ func TestOptionReferenceSubject(t *testing.T) {
 		t.Fatal("underlier identified option")
 	}
 
-	option := Record{FIGI: "contract", Name: "Contract", Market: "Equity", SecurityType2: "Option"}
+	option := Record{
+		FIGI:          "venue",
+		Composite:     "contract",
+		Name:          "Contract",
+		Market:        "Equity",
+		SecurityType2: "Option",
+	}
 	if _, id, ok := Select(source.Option, []Record{option}); !ok || id != "contract" {
 		t.Fatal("option rejected")
 	}
@@ -23,8 +29,8 @@ func TestOptionReferenceSubject(t *testing.T) {
 		t.Fatal("option identified equity")
 	}
 
-	if _, _, ok := Select(source.Option, []Record{option, option}); ok {
-		t.Fatal("arbitrary candidate selected")
+	if _, id, ok := Select(source.Option, []Record{option, option}); !ok || id != "contract" {
+		t.Fatal("duplicate representations did not agree")
 	}
 }
 

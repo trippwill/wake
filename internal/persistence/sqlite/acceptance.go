@@ -63,7 +63,11 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 		r.ReferenceStatus,
 		r.ReferenceFigi,
 		r.EvidenceID,
-		i, r.Rule, r.Revision, application.SelectionAuthority(r.SelectionAuthority),
+		i,
+		r.Rule,
+		r.Revision,
+		application.SelectionAuthority(r.SelectionAuthority),
+		application.ReferenceMetadata{Allocation: r.ReferenceAllocation, Reason: r.ReferenceReason},
 	)
 }
 
@@ -454,20 +458,54 @@ func acceptListing(
 		return "", nil
 	}
 
-	if err := q.PutListing(ctx, sqlc.PutListingParams{
-		ID: rand.Text(), InstrumentID: instrument, Venue: i.Venue(), Ticker: i.Ticker(), Currency: currency,
-	}); err != nil {
-		return "", err
-	}
-
-	listing, err := q.ListingByTerms(ctx, sqlc.ListingByTermsParams{
-		InstrumentID: instrument, Venue: i.Venue(), Ticker: i.Ticker(), Currency: currency,
-	})
+	listings, err := q.ListingsByTerms(
+		ctx,
+		sqlc.ListingsByTermsParams{
+			InstrumentID: instrument,
+			Venue:        i.Venue(),
+			Ticker:       i.Ticker(),
+			Currency:     currency,
+		},
+	)
 	if err != nil {
 		return "", err
 	}
+	// A reported venue identifier can select an already verified representation.
+	for _, identifier := range i.Identifiers() {
+		if identifier.Kind() != source.VenueFIGI && identifier.Kind() != source.UnclassifiedFIGI {
+			continue
+		}
 
-	return listing.ID, nil
+		for _, listing := range listings {
+			if listing.Figi == identifier.Value() {
+				return listing.ID, nil
+			}
+		}
+	}
+
+	if len(listings) == 1 {
+		return listings[0].ID, nil
+	}
+
+	if len(listings) > 1 {
+		return "", nil
+	} // labels alone cannot choose a venue identity
+
+	id := rand.Text()
+	if err = q.PutListing(
+		ctx,
+		sqlc.PutListingParams{
+			ID:           id,
+			InstrumentID: instrument,
+			Venue:        i.Venue(),
+			Ticker:       i.Ticker(),
+			Currency:     currency,
+		},
+	); err != nil {
+		return "", err
+	}
+
+	return id, nil
 }
 
 func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.ExecutionDetail, error) {
@@ -501,7 +539,12 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.InstrumentDetail, error) {
 	out := application.InstrumentDetail{}
 
-	r, err := s.queries.Instrument(ctx, id)
+	target, err := canonicalID(ctx, s.queries, "instruments", id)
+	if err != nil {
+		return out, err
+	}
+
+	r, err := s.queries.Instrument(ctx, target)
 	if err != nil {
 		return out, err
 	}

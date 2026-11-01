@@ -1,0 +1,1193 @@
+{
+  "observed_at": "2026-11-01",
+  "authentication": "anonymous",
+  "filters": "none",
+  "experiments": [
+    {
+      "experiment": "authority",
+      "label": "MSFT share class typed",
+      "request": {
+        "idType": "ID_BB_GLOBAL_SHARE_CLASS_LEVEL",
+        "idValue": "BBG001S5TD05"
+      },
+      "http_status": 200,
+      "rows": 297,
+      "share_classes": {
+        "BBG001S5TD05": 297
+      },
+      "composites": [
+        "BBG000BPH459",
+        "BBG000BWDD85",
+        "BBG000DMWLT3",
+        "BBG000HPKRW8",
+        "BBG000HSSTG8",
+        "BBG000LF7Z07",
+        "BBG000QFV2D4",
+        "BBG000RYMTY0",
+        "BBG001BD3ZF9",
+        "BBG001HRJ008",
+        "BBG002YTK8F8",
+        "BBG0032FLQS6",
+        "BBG0059JHQS1",
+        "BBG0077H2VN3",
+        "BBG007F5XJB6",
+        "BBG007F5XK32",
+        "BBG0089KGM75",
+        "BBG00B8TC802",
+        "BBG00DGYRDW6",
+        "BBG00FZLPPK6",
+        "BBG00FZLPQ88",
+        "BBG00FZMHMP5",
+        "BBG00GQ6S779",
+        "BBG00J7BK3T6",
+        "BBG00JPR0YD2",
+        "BBG00JPY8VC6",
+        "BBG00JPY8XZ7",
+        "BBG00JPY91B2",
+        "BBG00KD95GP3",
+        "BBG00KD95HK6",
+        "BBG00PPYJ4H5",
+        "BBG00PPYJ4K1",
+        "BBG00PPYJ4M9",
+        "BBG00PPYJ4P6",
+        "BBG00PPYJ4R4",
+        "BBG00PPYJ4T2",
+        "BBG00PPYJ4W8",
+        "BBG00PPYJ4Y6",
+        "BBG00PPYJ500",
+        "BBG00PPYJ5T9",
+        "BBG00QG4YZ92",
+        "BBG00QG4YZC8",
+        "BBG00QG4YZF5",
+        "BBG00QG4Z0B5",
+        "BBG00QNK31L3",
+        "BBG00QNK35Q9",
+        "BBG00QNK37C0",
+        "BBG00Y7B59W3",
+        "BBG00Y925844",
+        "BBG00YFS91J5",
+        "BBG00YJ60ZX7",
+        "BBG00YJ6SX53",
+        "BBG00ZJX7B98",
+        "BBG013QNM6T4",
+        "BBG018Z8ZMD4",
+        "BBG018Z9XMZ0",
+        "BBG01FRZDJ39",
+        "BBG01FRZF2F1",
+        "BBG01FSR3JS0",
+        "BBG01FSR5PY7",
+        "BBG01GVH9VN8",
+        "BBG01GVH9WM7",
+        "BBG01JWTD1K9",
+        "BBG01JWTD4C2",
+        "BBG01K1CB0M9",
+        "BBG01K1CBYT8",
+        "BBG01K1CCC42",
+        "BBG01K1CCF72",
+        "BBG01NX6JZT9",
+        "BBG01NYDFVR8",
+        "BBG01NYDFXC0",
+        "BBG0210YWRG8",
+        "BBG0210YWSD9",
+        "BBG0210YWSH5",
+        "BBG0210YWTG4",
+        "BBG023NV81L3",
+        "BBG023NV81Q8",
+        "BBG023NV81Y9",
+        "BBG023NV82K2",
+        "BBG02406R3D5",
+        "BBG024DKLV53",
+        "BBG024DKM3C6",
+        "BBG024DKM693",
+        "BBG024Y24MW9",
+        "BBG024Y2W5V6",
+        "BBG024Y8J6F4",
+        "BBG024YBLTF4",
+        "BBG024YBRLG4",
+        "BBG024YCD3N9",
+        "BBG024YF11P7",
+        "BBG024YHP2F6",
+        "BBG024YHYQF3",
+        "BBG0252YV8G0",
+        "BBG025BLMJV7",
+        "BBG025BLMN66",
+        "BBG025KY8R92",
+        "BBG0266NXPL2",
+        "BBG0266NYKB3"
+      ],
+      "names": [
+        "MICROSOFT CORP",
+        "MICROSOFT CORP- CDI"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "MSFT share class generic",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG001S5TD05"
+      },
+      "http_status": 200,
+      "rows": 0,
+      "share_classes": {},
+      "composites": [],
+      "names": [],
+      "classifications": [],
+      "warning": "No identifier found.",
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "MSFT composite typed",
+      "request": {
+        "idType": "COMPOSITE_ID_BB_GLOBAL",
+        "idValue": "BBG000BPH459"
+      },
+      "http_status": 200,
+      "rows": 21,
+      "share_classes": {
+        "BBG001S5TD05": 21
+      },
+      "composites": [
+        "BBG000BPH459"
+      ],
+      "names": [
+        "MICROSOFT CORP"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "MSFT composite generic",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG000BPH459"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "BBG001S5TD05": 1
+      },
+      "composites": [
+        "BBG000BPH459"
+      ],
+      "names": [
+        "MICROSOFT CORP"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "MSFT venue",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG000BPHFS9"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "BBG001S5TD05": 1
+      },
+      "composites": [
+        "BBG000BPH459"
+      ],
+      "names": [
+        "MICROSOFT CORP"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "WMT incomplete venue",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG00ZWGCJP9"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "<absent>": 1
+      },
+      "composites": [
+        "BBG00ZWGCJN1"
+      ],
+      "names": [
+        "WALMART INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": [
+        {
+          "figi": "BBG00ZWGCJP9",
+          "name": "WALMART INC",
+          "ticker": "WMTRUB",
+          "exchCode": "X2",
+          "compositeFIGI": "BBG00ZWGCJN1",
+          "securityType": "Common Stock",
+          "marketSector": "Equity",
+          "shareClassFIGI": null,
+          "securityType2": "Common Stock",
+          "securityDescription": null
+        }
+      ]
+    },
+    {
+      "experiment": "authority",
+      "label": "WMT incomplete composite typed",
+      "request": {
+        "idType": "COMPOSITE_ID_BB_GLOBAL",
+        "idValue": "BBG00ZWGCJN1"
+      },
+      "http_status": 200,
+      "rows": 18,
+      "share_classes": {
+        "BBG001S5XH92": 17,
+        "<absent>": 1
+      },
+      "composites": [
+        "BBG00ZWGCJN1"
+      ],
+      "names": [
+        "WALMART INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": [
+        {
+          "figi": "BBG00ZWGCJP9",
+          "name": "WALMART INC",
+          "ticker": "WMTRUB",
+          "exchCode": "X2",
+          "compositeFIGI": "BBG00ZWGCJN1",
+          "securityType": "Common Stock",
+          "marketSector": "Equity",
+          "shareClassFIGI": null,
+          "securityType2": "Common Stock",
+          "securityDescription": null
+        }
+      ]
+    },
+    {
+      "experiment": "authority",
+      "label": "WMT known share class",
+      "request": {
+        "idType": "ID_BB_GLOBAL_SHARE_CLASS_LEVEL",
+        "idValue": "BBG001S5XH92"
+      },
+      "http_status": 200,
+      "rows": 201,
+      "share_classes": {
+        "BBG001S5XH92": 201
+      },
+      "composites": [
+        "BBG000BWXBC2",
+        "BBG000D8VSM7",
+        "BBG000HVM1N0",
+        "BBG000J5MQZ7",
+        "BBG000LF8548",
+        "BBG000QFVNN7",
+        "BBG000RYMKV2",
+        "BBG0032FLPT7",
+        "BBG007254RF0",
+        "BBG007254S59",
+        "BBG0077GTC03",
+        "BBG007F5Z677",
+        "BBG007F5Z702",
+        "BBG0089KM3F1",
+        "BBG0089KM450",
+        "BBG00DGYT392",
+        "BBG00FZMHSM5",
+        "BBG00GQ6SC14",
+        "BBG00JQ4M9F1",
+        "BBG00JQ4MB93",
+        "BBG00NGT4L34",
+        "BBG00PPYKSH0",
+        "BBG00PPYKSK6",
+        "BBG00PPYKSM4",
+        "BBG00PPYKSP1",
+        "BBG00PPYKSR9",
+        "BBG00PPYKST7",
+        "BBG00Y942KL7",
+        "BBG00YGCM9S7",
+        "BBG00YJ6RHB2",
+        "BBG00YJ9X2V0",
+        "BBG00ZWGCJN1",
+        "BBG00ZWGDDH0",
+        "BBG0101NWBB4",
+        "BBG0101NWXF2",
+        "BBG0101NX5Y1",
+        "BBG0101NXGV0",
+        "BBG011DXS865",
+        "BBG011DXSQ01",
+        "BBG011DXSQR2",
+        "BBG011DXSRK7",
+        "BBG0147LBXF5",
+        "BBG01FT5GQC4",
+        "BBG01FT5GTK9",
+        "BBG01FT5H904",
+        "BBG01FYN1W14",
+        "BBG01FYN21J2",
+        "BBG01K3XGJ63",
+        "BBG01L6XWWS7",
+        "BBG01L8YM549",
+        "BBG01L8YM5H5",
+        "BBG01QRYQ4R1",
+        "BBG01QRYQ4X4",
+        "BBG01QRYQ561",
+        "BBG01QRYQ5S7",
+        "BBG023P880G0",
+        "BBG023P886R5",
+        "BBG023P88720",
+        "BBG023P887M8",
+        "BBG023VTRCP0",
+        "BBG023VTRDK3",
+        "BBG023VTRFN5",
+        "BBG023VTRGH0",
+        "BBG0249ZJ6W3",
+        "BBG024XZSGV5",
+        "BBG024Y074N0",
+        "BBG024Y1GBZ9",
+        "BBG024YGFSJ8",
+        "BBG024YHFDQ1",
+        "BBG024YHZCG2",
+        "BBG0250997B9",
+        "BBG0250CR198",
+        "BBG0250CTZS0",
+        "BBG0250CVDD2",
+        "BBG0250DM342",
+        "BBG0252YVJ67",
+        "BBG0253BCR41",
+        "BBG025BGVSV8",
+        "BBG025BLV7N2",
+        "BBG025BLVC51",
+        "BBG025LTY9Z4",
+        "BBG02692RT25",
+        "BBG0269300T6"
+      ],
+      "names": [
+        "WALMART INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "expired option composite generic",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG01Z053LZ1"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "<absent>": 1
+      },
+      "composites": [
+        "BBG01Z053LZ1"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "expired option composite typed",
+      "request": {
+        "idType": "COMPOSITE_ID_BB_GLOBAL",
+        "idValue": "BBG01Z053LZ1"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z053LZ1"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "expired option venue",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG01Z053LD5"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "<absent>": 1
+      },
+      "composites": [
+        "BBG01Z053LZ1"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "expired option OCC",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "F     260130C00014000"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z053LZ1"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "authority",
+      "label": "matured Treasury from API example",
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG009R4CLR3"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "share_classes": {
+        "<absent>": 1
+      },
+      "composites": [],
+      "names": [
+        "US TREASURY N/B"
+      ],
+      "classifications": [
+        [
+          "Govt",
+          "US GOVERNMENT",
+          "Note"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "AN8068571086",
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "AN8068571086"
+      },
+      "http_status": 200,
+      "rows": 135,
+      "share_classes": {
+        "BBG001S5W4C8": 135
+      },
+      "composites": [
+        "BBG000BT41Q8",
+        "BBG000C1YW87",
+        "BBG000C1Z7T8",
+        "BBG000K741C1",
+        "BBG000K7HXW5",
+        "BBG000L4B3T7",
+        "BBG000NCD896",
+        "BBG000NCDN02",
+        "BBG000RYQBC9",
+        "BBG001BJ8NN9",
+        "BBG001LHJ933",
+        "BBG001LHJ9R7",
+        "BBG006T0J593",
+        "BBG006T0J5G5",
+        "BBG006T0J5M8",
+        "BBG006T0JB90",
+        "BBG006T0JBZ1",
+        "BBG006T0JC25",
+        "BBG0077HCQG1",
+        "BBG007WWX5R1",
+        "BBG007WX0GH2",
+        "BBG008H0J100",
+        "BBG008H0J128",
+        "BBG008H0J146",
+        "BBG00FZMHXV4",
+        "BBG00JM8R2R3",
+        "BBG00JM8R3J0",
+        "BBG00PPZFZQ7",
+        "BBG00PPZFZS5",
+        "BBG00PPZFZV1",
+        "BBG00PPZFZX9",
+        "BBG00PPZFZZ7",
+        "BBG00PPZG010",
+        "BBG00T0KS2B4",
+        "BBG00Y44YGH1",
+        "BBG00Y44YGK7",
+        "BBG00Y92ZHK3",
+        "BBG00Y92ZHM1",
+        "BBG00YJ67Q15",
+        "BBG00YJ9XLX6",
+        "BBG01R0KPV71",
+        "BBG01R0KQLH1",
+        "BBG01R0KR111",
+        "BBG01R0KRDM2",
+        "BBG01S478Q83",
+        "BBG01TNWTBB1",
+        "BBG023788FP7",
+        "BBG023788LT0",
+        "BBG023788R71",
+        "BBG023788Y58",
+        "BBG024Y0K7J3",
+        "BBG024Y0TG86",
+        "BBG024Y4NB12",
+        "BBG024Y53XW9",
+        "BBG024YJ6414",
+        "BBG0252YXM68",
+        "BBG025BDW6K4",
+        "BBG025TSQN13"
+      ],
+      "names": [
+        "SCHLUMBERGER LTD",
+        "SLB LTD"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "US11135F1012",
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "US11135F1012"
+      },
+      "http_status": 200,
+      "rows": 202,
+      "share_classes": {
+        "BBG00KHY5SY8": 202
+      },
+      "composites": [
+        "BBG00KHY5S69",
+        "BBG00KJ09B46",
+        "BBG00KJ09BZ2",
+        "BBG00KJLNPY0",
+        "BBG00KJLZ189",
+        "BBG00KJPPNQ3",
+        "BBG00KJQWZL1",
+        "BBG00KK1Y7D3",
+        "BBG00KK238J7",
+        "BBG00KK239C2",
+        "BBG00KK6CVS7",
+        "BBG00KK6CY65",
+        "BBG00KK6D0C1",
+        "BBG00KKCRDR9",
+        "BBG00L4TP935",
+        "BBG00L4TPNG0",
+        "BBG00L4TPV72",
+        "BBG00M6X3F96",
+        "BBG00PG1KV58",
+        "BBG00PPYTD57",
+        "BBG00PPYTD75",
+        "BBG00PPYTD93",
+        "BBG00PPYTDC9",
+        "BBG00TLDNGF7",
+        "BBG00TLDNGZ5",
+        "BBG00TLDNHK9",
+        "BBG00TLDNLB0",
+        "BBG00Y3XRPV0",
+        "BBG00Y7BF9Q9",
+        "BBG00Y7BJ8B3",
+        "BBG00YJ7LD25",
+        "BBG00YJHV5B9",
+        "BBG01FT4J2N5",
+        "BBG01FT4J3R9",
+        "BBG01FT4J4M2",
+        "BBG01FT4J6D7",
+        "BBG01FT5HYY2",
+        "BBG01FT5JXS9",
+        "BBG01FT5K4X5",
+        "BBG01FY4Q9Z3",
+        "BBG01FY4QBF0",
+        "BBG01K3X8GB2",
+        "BBG01KS11JM4",
+        "BBG01L6XNM09",
+        "BBG01L8XS8S3",
+        "BBG01L8XS938",
+        "BBG01N9ZCJX0",
+        "BBG01NWNMM09",
+        "BBG01NWNMMP2",
+        "BBG01NWNMNC4",
+        "BBG01NWNMNL4",
+        "BBG01QVYHKC6",
+        "BBG01TCMT966",
+        "BBG01TCMTBB5",
+        "BBG01YTQDRJ1",
+        "BBG01YV2CBM3",
+        "BBG01YV2CCJ5",
+        "BBG023TBTJ20",
+        "BBG023TBTJF6",
+        "BBG023TBTJP5",
+        "BBG023TBTK54",
+        "BBG02406DS18",
+        "BBG024FG6ZS3",
+        "BBG024FG78G5",
+        "BBG024FG7HZ4",
+        "BBG024T8SB50",
+        "BBG024YCX213",
+        "BBG024YJ87Z8",
+        "BBG024YP3P34",
+        "BBG024YP8T13",
+        "BBG024YSYR49",
+        "BBG024YT71P1",
+        "BBG025083W40",
+        "BBG0252YV5M9",
+        "BBG0253BC736",
+        "BBG025BLF910",
+        "BBG025BLFF43",
+        "BBG025LW2XT6",
+        "BBG0261FSQN6",
+        "BBG0268FML74",
+        "BBG0268G2L92"
+      ],
+      "names": [
+        "BROADCOM INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "US9311421039",
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "US9311421039"
+      },
+      "http_status": 200,
+      "rows": 202,
+      "share_classes": {
+        "BBG001S5XH92": 201,
+        "<absent>": 1
+      },
+      "composites": [
+        "BBG000BWXBC2",
+        "BBG000D8VSM7",
+        "BBG000HVM1N0",
+        "BBG000J5MQZ7",
+        "BBG000LF8548",
+        "BBG000QFVNN7",
+        "BBG000RYMKV2",
+        "BBG0032FLPT7",
+        "BBG007254RF0",
+        "BBG007254S59",
+        "BBG0077GTC03",
+        "BBG007F5Z677",
+        "BBG007F5Z702",
+        "BBG0089KM3F1",
+        "BBG0089KM450",
+        "BBG00DGYT392",
+        "BBG00FZMHSM5",
+        "BBG00GQ6SC14",
+        "BBG00JQ4M9F1",
+        "BBG00JQ4MB93",
+        "BBG00NGT4L34",
+        "BBG00PPYKSH0",
+        "BBG00PPYKSK6",
+        "BBG00PPYKSM4",
+        "BBG00PPYKSP1",
+        "BBG00PPYKSR9",
+        "BBG00PPYKST7",
+        "BBG00Y942KL7",
+        "BBG00YGCM9S7",
+        "BBG00YJ6RHB2",
+        "BBG00YJ9X2V0",
+        "BBG00ZWGCJN1",
+        "BBG00ZWGDDH0",
+        "BBG0101NWBB4",
+        "BBG0101NWXF2",
+        "BBG0101NX5Y1",
+        "BBG0101NXGV0",
+        "BBG011DXS865",
+        "BBG011DXSQ01",
+        "BBG011DXSQR2",
+        "BBG011DXSRK7",
+        "BBG0147LBXF5",
+        "BBG01FT5GQC4",
+        "BBG01FT5GTK9",
+        "BBG01FT5H904",
+        "BBG01FYN1W14",
+        "BBG01FYN21J2",
+        "BBG01K3XGJ63",
+        "BBG01L6XWWS7",
+        "BBG01L8YM549",
+        "BBG01L8YM5H5",
+        "BBG01QRYQ4R1",
+        "BBG01QRYQ4X4",
+        "BBG01QRYQ561",
+        "BBG01QRYQ5S7",
+        "BBG023P880G0",
+        "BBG023P886R5",
+        "BBG023P88720",
+        "BBG023P887M8",
+        "BBG023VTRCP0",
+        "BBG023VTRDK3",
+        "BBG023VTRFN5",
+        "BBG023VTRGH0",
+        "BBG0249ZJ6W3",
+        "BBG024XZSGV5",
+        "BBG024Y074N0",
+        "BBG024Y1GBZ9",
+        "BBG024YGFSJ8",
+        "BBG024YHFDQ1",
+        "BBG024YHZCG2",
+        "BBG0250997B9",
+        "BBG0250CR198",
+        "BBG0250CTZS0",
+        "BBG0250CVDD2",
+        "BBG0250DM342",
+        "BBG0252YVJ67",
+        "BBG0253BCR41",
+        "BBG025BGVSV8",
+        "BBG025BLV7N2",
+        "BBG025BLVC51",
+        "BBG025LTY9Z4",
+        "BBG02692RT25",
+        "BBG0269300T6"
+      ],
+      "names": [
+        "WALMART INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": [
+        {
+          "figi": "BBG00ZWGCJP9",
+          "name": "WALMART INC",
+          "ticker": "WMTRUB",
+          "exchCode": "X2",
+          "compositeFIGI": "BBG00ZWGCJN1",
+          "securityType": "Common Stock",
+          "marketSector": "Equity",
+          "shareClassFIGI": null,
+          "securityType2": "Common Stock",
+          "securityDescription": null
+        }
+      ]
+    },
+    {
+      "experiment": "initial",
+      "label": "US0378331005",
+      "request": {
+        "idType": "ID_ISIN",
+        "idValue": "US0378331005"
+      },
+      "http_status": 200,
+      "rows": 303,
+      "share_classes": {
+        "BBG001S5N8V8": 303
+      },
+      "composites": [
+        "BBG000B9XRY4",
+        "BBG000DGZJ27",
+        "BBG000KWV421",
+        "BBG000LF8110",
+        "BBG000N88V36",
+        "BBG000N898C6",
+        "BBG000NH0568",
+        "BBG000NJV2R4",
+        "BBG000NP33F2",
+        "BBG000P092T6",
+        "BBG000P0J6X1",
+        "BBG000P85RM5",
+        "BBG000QFTCC6",
+        "BBG000RYL8W9",
+        "BBG001BCVZQ8",
+        "BBG001BHSV71",
+        "BBG002W8W0G9",
+        "BBG0032FLQC3",
+        "BBG0077H2WN1",
+        "BBG009CHNPJ8",
+        "BBG009S1W8C1",
+        "BBG00DGYS838",
+        "BBG00FGWYHQ5",
+        "BBG00GQ6RZG8",
+        "BBG00J7BK3N2",
+        "BBG00JPR0LW9",
+        "BBG00JPY8TV0",
+        "BBG00JPY8XP8",
+        "BBG00JPY90Z8",
+        "BBG00JZ3XMD4",
+        "BBG00JZ3XN88",
+        "BBG00KXBTYS8",
+        "BBG00PPYC160",
+        "BBG00PPYC188",
+        "BBG00PPYC1B4",
+        "BBG00PPYC1D2",
+        "BBG00PPYC1G9",
+        "BBG00PPYC1J6",
+        "BBG00PPYC1L3",
+        "BBG00PPYC2D0",
+        "BBG00PPYC2G7",
+        "BBG00PPYC2J4",
+        "BBG00PVKFJD3",
+        "BBG00R0YSZZ9",
+        "BBG00R0YTZM2",
+        "BBG00R0YVCH6",
+        "BBG00Y7B5HV6",
+        "BBG00Y7BDC39",
+        "BBG00YFSB7R0",
+        "BBG00YJ5VRW4",
+        "BBG00YJ6HW11",
+        "BBG013QF8P24",
+        "BBG014K9CWV0",
+        "BBG014K9CYM6",
+        "BBG018Z8WZ57",
+        "BBG018Z9PT39",
+        "BBG01FRZFGR7",
+        "BBG01FRZGN00",
+        "BBG01FSR1897",
+        "BBG01FSR1986",
+        "BBG01JWTPDY5",
+        "BBG01JWTPHJ3",
+        "BBG01K1CD957",
+        "BBG01K1CDBM3",
+        "BBG01K1CDT99",
+        "BBG01K1CDVQ5",
+        "BBG01NX6JHM6",
+        "BBG01NYDFYM7",
+        "BBG01NYDFZV4",
+        "BBG01P7GQJF4",
+        "BBG01QDBQCP0",
+        "BBG01QDBQFX4",
+        "BBG022QS1724",
+        "BBG023NB6TX5",
+        "BBG023NB6W59",
+        "BBG023NB6XM8",
+        "BBG023NB6Z70",
+        "BBG023S1CKR1",
+        "BBG023S1CNB2",
+        "BBG023S1CR41",
+        "BBG023S1CV06",
+        "BBG023ZB6TV4",
+        "BBG024DKH1B7",
+        "BBG024DKHFS8",
+        "BBG024DKHWJ1",
+        "BBG024XZL591",
+        "BBG024Y0GKV5",
+        "BBG024Y0T0R0",
+        "BBG024Y10PJ3",
+        "BBG024YSR108",
+        "BBG0250750L1",
+        "BBG0250F63P2",
+        "BBG0250FC6G8",
+        "BBG0250JLKG9",
+        "BBG0252YV5T2",
+        "BBG0253BBKK9",
+        "BBG0253BD646",
+        "BBG025BLHC39",
+        "BBG025BLHJL4",
+        "BBG025KC3KT8",
+        "BBG025KC3MC2",
+        "BBG025KC7NN4",
+        "BBG025V0CT86",
+        "BBG025V0CTV0",
+        "BBG025V0CVQ1",
+        "BBG025V0CW70",
+        "BBG0265H4CK8",
+        "BBG0266NX6C4",
+        "BBG0266NXLH6"
+      ],
+      "names": [
+        "APPLE INC"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Common Stock",
+          "Common Stock"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "F     260130C00014000",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "F     260130C00014000"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z053LZ1"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "MSFT  260123C00492500",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "MSFT  260123C00492500"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01ZDNRTC0"
+      ],
+      "names": [
+        "January 26 Calls on MSFT US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "F     260116C00014500",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "F     260116C00014500"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z6XL936"
+      ],
+      "names": [
+        "January 26 Calls on F US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "MSFT  260102C00492500",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "MSFT  260102C00492500"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z1YD7L2"
+      ],
+      "names": [
+        "January 26 Calls on MSFT US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    },
+    {
+      "experiment": "initial",
+      "label": "MSFT  260130C00520000",
+      "request": {
+        "idType": "OCC_SYMBOL",
+        "idValue": "MSFT  260130C00520000"
+      },
+      "http_status": 200,
+      "rows": 19,
+      "share_classes": {
+        "<absent>": 19
+      },
+      "composites": [
+        "BBG01Z0FS3T9"
+      ],
+      "names": [
+        "January 26 Calls on MSFT US"
+      ],
+      "classifications": [
+        [
+          "Equity",
+          "Equity Option",
+          "Equity"
+        ],
+        [
+          "Equity",
+          "Equity Option",
+          "Option"
+        ]
+      ],
+      "warning": null,
+      "incomplete_records": []
+    }
+  ]
+}

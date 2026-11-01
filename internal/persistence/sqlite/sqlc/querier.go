@@ -65,7 +65,7 @@ type Querier interface {
 	CountTables(ctx context.Context) (int64, error)
 	CredentialKeys(ctx context.Context, connectionID string) ([]string, error)
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
-	Decisions(ctx context.Context, arg DecisionsParams) ([]OperatorDecision, error)
+	Decisions(ctx context.Context, arg DecisionsParams) ([]DecisionsRow, error)
 	Descriptor(ctx context.Context, id string) (Connection, error)
 	DisableDiscovery(ctx context.Context, connectionID string) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
@@ -78,7 +78,12 @@ type Querier interface {
 	Executions(ctx context.Context) ([]Execution, error)
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
+	FlattenAliases(ctx context.Context, arg FlattenAliasesParams) error
+	IdentityDependents(ctx context.Context, id string) ([]string, error)
+	IdentityMetadata(ctx context.Context, arg IdentityMetadataParams) error
+	IdentityRoots(ctx context.Context, figi string) ([]Instrument, error)
 	Instrument(ctx context.Context, id string) (Instrument, error)
+	InstrumentBindings(ctx context.Context, id string) ([]Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)
 	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
@@ -86,7 +91,17 @@ type Querier interface {
 	Listing(ctx context.Context, id string) (Listing, error)
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
+	ListingsByTerms(ctx context.Context, arg ListingsByTermsParams) ([]Listing, error)
 	MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
+	MoveActivityInstrument(ctx context.Context, arg MoveActivityInstrumentParams) error
+	MoveActivityListing(ctx context.Context, arg MoveActivityListingParams) error
+	MoveBaseInstrument(ctx context.Context, arg MoveBaseInstrumentParams) error
+	MoveBaseListing(ctx context.Context, arg MoveBaseListingParams) error
+	MoveInstrumentClaims(ctx context.Context, arg MoveInstrumentClaimsParams) error
+	MoveListing(ctx context.Context, arg MoveListingParams) error
+	MoveReferenceAttempts(ctx context.Context, arg MoveReferenceAttemptsParams) error
+	MoveSelectedUnderliers(ctx context.Context, arg MoveSelectedUnderliersParams) error
+	MoveUnderliers(ctx context.Context, arg MoveUnderliersParams) error
 	NewClaimActivityIDs(ctx context.Context, artifactID string) ([]sql.NullString, error)
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
@@ -120,6 +135,7 @@ type Querier interface {
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
 	PutRelationship(ctx context.Context, arg PutRelationshipParams) error
 	PutReportComparison(ctx context.Context, arg PutReportComparisonParams) error
+	PutResourceAlias(ctx context.Context, arg PutResourceAliasParams) error
 	PutSecret(ctx context.Context, arg PutSecretParams) error
 	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
@@ -137,10 +153,12 @@ type Querier interface {
 	ReportComparison(ctx context.Context, arg ReportComparisonParams) (string, error)
 	ResetConnectionWork(ctx context.Context, connectionID string) error
 	ResolveInstrument(ctx context.Context, arg ResolveInstrumentParams) error
+	ResourceAlias(ctx context.Context, arg ResourceAliasParams) (string, error)
 	RestartDiscovery(ctx context.Context, arg RestartDiscoveryParams) error
 	ResumeStorage(ctx context.Context, arg ResumeStorageParams) (int64, error)
 	Retained(ctx context.Context, id string) (RetainedRow, error)
 	RetainedReferenceCandidates(ctx context.Context, instrumentID string) ([]RetainedReferenceCandidatesRow, error)
+	RetireListing(ctx context.Context, id string) error
 	RetryProcessing(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
@@ -162,6 +180,7 @@ type Querier interface {
 	SourceCorrections(ctx context.Context) ([]SourceCorrection, error)
 	StartAttempt(ctx context.Context, arg StartAttemptParams) error
 	Succeeded(ctx context.Context, arg SucceededParams) ([]byte, error)
+	SupersedeDecisions(ctx context.Context, arg SupersedeDecisionsParams) error
 	UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error
 	UpdateDescriptorName(ctx context.Context, arg UpdateDescriptorNameParams) error
 	WakeReference(ctx context.Context) error

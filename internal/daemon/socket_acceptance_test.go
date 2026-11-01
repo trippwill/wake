@@ -581,6 +581,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("concurrent source fixture missing")
 	}
 
+	concurrentRow = strings.Replace(concurrentRow, `conid="99001001"`, `conid="99009999"`, 1)
 	concurrentRow = strings.Replace(concurrentRow, `tradeID="900000001"`, `tradeID="concurrent-trade"`, 1)
 	concurrentRow = strings.Replace(
 		concurrentRow,
@@ -752,6 +753,58 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		}
 	}
 
+	// Converge a second qualified binding for the same equity while the client is
+	// disconnected. Its previous mirror includes both roots and venue resources.
+	original, err := store.Resource(ctx, "activity", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	survivor := *original.Activity.InstrumentID
+
+	roots, err := store.InstrumentList(ctx, instrumentQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retired, retiredListing := "", ""
+	for _, item := range roots.Items {
+		detail, e := store.InstrumentDetail(ctx, item.Resource.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		if detail.Instrument.Reported().Reference().Value() == "99009999" {
+			retired = item.Resource.ID
+			if len(detail.Listings) > 0 {
+				retiredListing = detail.Listings[0].ID()
+			}
+		}
+	}
+
+	if retired == "" || retiredListing == "" {
+		t.Fatal("second binding/listing absent")
+	}
+
+	identity := reference.Result{
+		Status: "resolved",
+		Records: []reference.Record{
+			{
+				FIGI:         "BBG000BPHFS9",
+				Composite:    "BBG000BPH459",
+				ShareClass:   "BBG001S5TD05",
+				Market:       "Equity",
+				SecurityType: "Common Stock",
+			},
+		},
+		Next: now.Add(365 * 24 * time.Hour),
+	}
+	for _, root := range []string{survivor, retired} {
+		if err = store.ApplyReference(ctx, root, identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -760,6 +813,45 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	consume(false)
 
 	after := mirror()
+	if _, exists := after.Resources["instruments/"+retired]; exists {
+		t.Fatal("mirror kept retired root")
+	}
+
+	if _, exists := after.Resources["listings/"+retiredListing]; exists {
+		t.Fatal("mirror kept retired listing")
+	}
+
+	for _, resource := range after.Resources {
+		if resource.Activity != nil && resource.Activity.InstrumentID != nil &&
+			*resource.Activity.InstrumentID == retired {
+			t.Fatal("mirror contains old root link")
+		}
+	}
+
+	directClient := *socketClient
+	directClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	response, e := directClient.Get("http://wake/v1/instruments/" + retired)
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusPermanentRedirect ||
+		response.Header.Get("Location") != "/v1/instruments/"+survivor {
+		t.Fatal("old link did not redirect", response.StatusCode, response.Header)
+	}
+
+	response, e = socketClient.Get("http://wake/v1/instruments/" + retired + "/explanation?revision=1")
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusConflict {
+		t.Fatal("old explanation transferred to survivor", response.StatusCode)
+	}
+
 	if after.Resources["activity/"+id].Activity.Price.Amount != "402.0000" || after.Version == before.Version {
 		t.Fatal("snapshot lost latest disconnected correction", after.Version)
 	}

@@ -54,7 +54,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		t,
 		s,
 		"operator-instrument-conflict",
-		strings.Replace(syntheticOption, `strike="100.00000000001"`, `strike="110"`, 1),
+		strings.NewReplacer(`strike="100.00000000001"`, `strike="110"`, `underlyingConid="100"`, `underlyingConid="777"`).
+			Replace(syntheticOption),
 	)
 
 	prerequisites, err := s.Prerequisites(t.Context())

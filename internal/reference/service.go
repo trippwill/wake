@@ -22,7 +22,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-const Rule = "openfigi-family-link/2"
+const Rule = "openfigi-authority/3"
 
 type Job struct {
 	IDType  string `json:"idType"`
@@ -32,11 +32,13 @@ type Job struct {
 func (j Job) Key() string { b, _ := json.Marshal(j); return string(b) }
 
 type (
-	Record struct {
+	Attempt struct{ Evidence, Status string }
+	Record  struct {
 		FIGI          string `json:"figi"`
 		Name          string `json:"name"`
 		Ticker        string `json:"ticker"`
 		ShareClass    string `json:"shareClassFIGI"`
+		Composite     string `json:"compositeFIGI"`
 		Exchange      string `json:"exchCode"`
 		Market        string `json:"marketSector"`
 		SecurityType  string `json:"securityType"`
@@ -46,6 +48,7 @@ type (
 		Status, Evidence string
 		Records          []Record
 		Next             time.Time
+		Supporting       []Attempt
 	}
 	Pending struct {
 		ID         string
@@ -159,26 +162,11 @@ func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 }
 
 func job(p Pending) (Job, bool) {
-	// Symbols alone cannot identify a share class. Prefer an explicit identifier.
-	for _, kind := range []source.IdentifierKind{source.VenueFIGI, source.UnclassifiedFIGI, source.ISIN, source.CUSIP, source.SEDOL, source.ShareClassFIGI} {
+	for _, kind := range []source.IdentifierKind{source.VenueFIGI, source.InstrumentFIGI, source.CompositeFIGI, source.ShareClassFIGI, source.UnclassifiedFIGI, source.ISIN, source.CUSIP, source.SEDOL, source.OCC} {
 		for _, id := range p.Instrument.Identifiers() {
-			if id.Kind() != kind {
-				continue
+			if id.Kind() == kind {
+				return LookupJob(id)
 			}
-
-			idType := ""
-			switch kind {
-			case source.ISIN:
-				idType = "ID_ISIN"
-			case source.CUSIP:
-				idType = "ID_CUSIP"
-			case source.SEDOL:
-				idType = "ID_SEDOL"
-			default:
-				idType = "ID_BB_GLOBAL"
-			}
-
-			return Job{IDType: idType, IDValue: id.Value()}, true
 		}
 	}
 
@@ -306,6 +294,11 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 		}
 
 		if found {
+			cached, e = s.parents(ctx, p.Instrument.Kind(), cached, now, limit, secret)
+			if e != nil {
+				return changed, e
+			}
+
 			if e = s.store.ApplyReference(ctx, p.ID, cached); e != nil {
 				return changed, e
 			}
@@ -341,9 +334,115 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 		return changed, nil
 	}
 
+	batchSize = len(jobs)
+	results, err := s.fetch(ctx, jobs, now, limit, secret)
+	if err != nil || len(results) == 0 {
+		return changed, err
+	}
+
+	for i, j := range jobs {
+		switch results[i].Status {
+		case "resolved", "ambiguous", "no-match", "provisional":
+			outcomes[results[i].Status]++
+		case "throttled", "invalid-key", "temporary-failure":
+			outcomes[results[i].Status]++
+			s.logger.WarnContext(
+				ctx,
+				"reference lookup requires attention",
+				"event",
+				"reference_attention",
+				"operation_id",
+				logging.ID(ctx),
+				"code",
+				results[i].Status,
+				"next_eligible_at",
+				results[i].Next.UTC(),
+			)
+		default:
+			outcomes["other"]++
+		}
+
+		for _, id := range owners[j.Key()] {
+			result := results[i]
+			for _, p := range pending {
+				if p.ID == id {
+					result, err = s.parents(ctx, p.Instrument.Kind(), result, now, limit, secret)
+					if err != nil {
+						return changed, err
+					}
+
+					break
+				}
+			}
+
+			if err = s.store.ApplyReference(ctx, id, result); err != nil {
+				return changed, err
+			}
+
+			changed = true
+			applied++
+		}
+	}
+
+	return changed, nil
+}
+
+// Select identifies the reference subject before accepting a name or identity.
+// An equity root result cannot identify an option on that equity.
+func Select(kind source.InstrumentKind, records []Record) (Record, string, bool) {
+	selected := SelectIdentity(kind, records)
+
+	return Record{
+		FIGI:   selected.FIGI,
+		Name:   selected.Name,
+		Ticker: selected.Ticker,
+	}, selected.FIGI, selected.FIGI != ""
+}
+
+// CheckAccess verifies configured protection without making a reference request.
+func (s *Service) CheckAccess(ctx context.Context) error {
+	payload, failure, err := s.store.ReferenceKey(ctx)
+	if err != nil {
+		return err
+	}
+
+	if failure != "" {
+		return provider.ErrUnauthorized
+	}
+
+	if len(payload) == 0 {
+		return nil
+	}
+
+	if s.envelope == nil {
+		return provider.ErrUnauthorized
+	}
+
+	encrypted, err := credential.ParseEncryptedSecret(payload)
+	if err != nil {
+		return provider.ErrUnauthorized
+	}
+
+	key, err := s.envelope.Decrypt(encrypted, keyAAD)
+	if err != nil {
+		return provider.ErrUnauthorized
+	}
+
+	key.Clear()
+
+	return nil
+}
+
+func (s *Service) fetch(
+	ctx context.Context,
+	jobs []Job,
+	now time.Time,
+	limit int,
+	secret []byte,
+) ([]Result, error) {
 	admitted, next, err := s.store.ReserveReference(ctx, now, limit)
 	if err != nil {
-		return changed, err
+		return nil, err
 	}
 
 	if !admitted {
@@ -358,19 +457,17 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			next.UTC(),
 		)
 
-		return changed, nil
+		return nil, nil
 	}
-
-	batchSize = len(jobs)
 
 	requestBytes, err := json.Marshal(jobs)
 	if err != nil {
-		return changed, err
+		return nil, err
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(requestBytes))
 	if err != nil {
-		return changed, provider.ErrInvalid
+		return nil, provider.ErrInvalid
 	}
 
 	request.Header.Set("Content-Type", "application/json")
@@ -410,10 +507,8 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 				if json.Unmarshal(body, &decoded) == nil && len(decoded) == len(jobs) {
 					for i, r := range decoded {
 						switch {
-						case len(r.Data) == 1 && r.Data[0].FIGI != "" && r.Data[0].Name != "":
-							results[i] = Result{Status: "resolved", Records: r.Data, Next: now.Add(7 * 24 * time.Hour)}
 						case len(r.Data) > 0:
-							results[i] = Result{Status: "ambiguous", Records: r.Data, Next: now.Add(7 * 24 * time.Hour)}
+							results[i] = Result{Status: "resolved", Records: r.Data, Next: now.Add(7 * 24 * time.Hour)}
 						case r.Warning != "" || r.Error == "No identifier found.":
 							results[i] = Result{Status: "no-match", Next: now.Add(6 * time.Hour)}
 						}
@@ -448,7 +543,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 
 		if !cooldown.IsZero() {
 			if err = s.store.ReferenceCooldown(ctx, cooldown); err != nil {
-				return changed, err
+				return nil, err
 			}
 
 			next = cooldown
@@ -460,7 +555,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 				limit-min(remaining, limit),
 				now.Add(time.Duration(reset)*time.Second),
 			); err != nil {
-				return changed, err
+				return nil, err
 			}
 		}
 
@@ -473,7 +568,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 				ctx,
 				"OpenFIGI rejected the configured key; replace it and retry",
 			); err != nil {
-				return changed, err
+				return nil, err
 			}
 		}
 
@@ -485,101 +580,62 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 	}
 
 	if ctx.Err() != nil {
-		return changed, ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	results, err = s.store.SaveReference(ctx, evidence, jobs, results)
 	if err != nil {
-		return changed, err
+		return nil, err
 	}
 
-	for i, j := range jobs {
-		switch results[i].Status {
-		case "resolved", "ambiguous", "no-match", "provisional":
-			outcomes[results[i].Status]++
-		case "throttled", "invalid-key", "temporary-failure":
-			outcomes[results[i].Status]++
-			s.logger.WarnContext(
-				ctx,
-				"reference lookup requires attention",
-				"event",
-				"reference_attention",
-				"operation_id",
-				logging.ID(ctx),
-				"code",
-				results[i].Status,
-				"next_eligible_at",
-				results[i].Next.UTC(),
-			)
-		default:
-			outcomes["other"]++
+	return results, nil
+}
+
+func (s *Service) parents(
+	ctx context.Context,
+	kind source.InstrumentKind,
+	result Result,
+	now time.Time,
+	limit int,
+	secret []byte,
+) (Result, error) {
+	// Missing equity parents require only the known composite's children. There is
+	// no search by labels or recursive graph walk; admission bounds outgoing work.
+	jobs := MissingComposites(kind, result.Records)
+	for _, parent := range jobs[:min(len(jobs), 10)] {
+		cached, found, err := s.store.ReferenceCached(ctx, parent.Key(), now)
+		if err != nil {
+			return result, err
 		}
 
-		for _, id := range owners[j.Key()] {
-			if err = s.store.ApplyReference(ctx, id, results[i]); err != nil {
-				return changed, err
+		if !found {
+			fetched, e := s.fetch(ctx, []Job{parent}, now, limit, secret)
+			if e != nil {
+				return result, e
 			}
 
-			changed = true
-			applied++
+			if len(fetched) == 0 {
+				result.Next = now.Add(time.Minute)
+				continue
+			}
+
+			cached = fetched[0]
+		}
+
+		if !cached.Next.IsZero() && (result.Next.IsZero() || cached.Next.Before(result.Next)) {
+			result.Next = cached.Next
+		}
+
+		for _, r := range cached.Records {
+			if r.Composite == parent.IDValue {
+				result.Records = append(result.Records, r)
+			}
+		}
+
+		if cached.Evidence != "" {
+			result.Supporting = append(result.Supporting, Attempt{Evidence: cached.Evidence, Status: cached.Status})
 		}
 	}
 
-	return changed, nil
-}
-
-// Select identifies the reference subject before accepting a name or identity.
-// An equity root result cannot identify an option on that equity.
-func Select(kind source.InstrumentKind, records []Record) (Record, string, bool) {
-	if len(records) != 1 {
-		return Record{}, "", false
-	}
-
-	r := records[0]
-	option := r.SecurityType2 == "Option" || r.SecurityType == "Equity Option"
-	switch kind {
-	case source.Option:
-		return r, r.FIGI, option && r.Market == "Equity" && r.FIGI != "" && r.Name != ""
-	case source.Debt:
-		return r, r.FIGI, (r.Market == "Govt" || r.Market == "Corp" || r.Market == "M-Mkt") && r.FIGI != "" &&
-			r.Name != ""
-	case source.Equity, source.Fund, source.UnknownInstrument:
-		return r, r.ShareClass, !option && r.Market == "Equity" && r.ShareClass != "" && r.Name != ""
-	}
-
-	return Record{}, "", false
-}
-
-// CheckAccess verifies configured protection without making a reference request.
-func (s *Service) CheckAccess(ctx context.Context) error {
-	payload, failure, err := s.store.ReferenceKey(ctx)
-	if err != nil {
-		return err
-	}
-
-	if failure != "" {
-		return provider.ErrUnauthorized
-	}
-
-	if len(payload) == 0 {
-		return nil
-	}
-
-	if s.envelope == nil {
-		return provider.ErrUnauthorized
-	}
-
-	encrypted, err := credential.ParseEncryptedSecret(payload)
-	if err != nil {
-		return provider.ErrUnauthorized
-	}
-
-	key, err := s.envelope.Decrypt(encrypted, keyAAD)
-	if err != nil {
-		return provider.ErrUnauthorized
-	}
-
-	key.Clear()
-
-	return nil
+	return result, nil
 }

@@ -89,7 +89,7 @@ SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,rece
  (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
-SELECT * FROM instruments WHERE source_key=?;
+SELECT target.* FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?;
 -- name: QualifyInstrument :exec
 UPDATE instruments SET source_key=sqlc.arg(source_key) WHERE id=sqlc.arg(id);
 -- name: CompetingFIGI :many
@@ -99,15 +99,15 @@ JOIN (
  UNION
  SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=sqlc.arg(figi)
 ) claims ON claims.id=instruments.id
-WHERE instruments.id<>sqlc.arg(current_id) ORDER BY instruments.id;
+WHERE instruments.id<>sqlc.arg(current_id) AND instruments.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY instruments.id;
 -- name: PutInstrumentRoot :exec
 INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status) VALUES(?,?,?,?,?,?,?,'provisional');
 -- name: Instruments :many
-SELECT * FROM instruments ORDER BY rowid;
+SELECT * FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid;
 -- name: Instrument :one
 SELECT * FROM instruments WHERE id=?;
 -- name: PutListing :exec
-INSERT INTO listings(id,instrument_id,venue,ticker,currency) VALUES(?,?,?,?,?) ON CONFLICT(instrument_id,venue,ticker,currency) DO NOTHING;
+INSERT INTO listings(id,instrument_id,venue,ticker,currency) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: ListingByTerms :one
 SELECT * FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND currency=?;
 -- name: Listings :many
@@ -147,7 +147,7 @@ SELECT * FROM main.reference_cache WHERE key=?;
 -- name: CacheReference :exec
 INSERT INTO main.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
 -- name: PendingReference :many
-SELECT * FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100;
+SELECT * FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100;
 -- name: ResolveInstrument :exec
 UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(reference_figi),evidence_id=sqlc.arg(evidence_id),reference_status=sqlc.arg(reference_status),reference_next=sqlc.arg(reference_next),revision=revision+CASE WHEN name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(reference_figi) OR reference_status<>sqlc.arg(reference_status) THEN 1 ELSE 0 END WHERE id=sqlc.arg(id);
 -- name: SetListingFIGI :exec
@@ -171,7 +171,7 @@ UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (S
 UPDATE instruments SET underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND underlier_id IS NOT sqlc.narg(underlier_id);
 
 -- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END, reference_next='' WHERE id=sqlc.arg(id);
+UPDATE instruments SET revision=revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END, reference_next='',reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=sqlc.arg(id);
 
 -- name: PutLifecycleActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES('lifecycle',?,?,?,?,'accepted',?);
@@ -199,7 +199,7 @@ UPDATE source_corrections SET status=? WHERE artifact_id=? AND version=? AND loc
 UPDATE execution_observations SET outcome=? WHERE artifact_id=? AND version=? AND location=?;
 
 -- name: Decisions :many
-SELECT * FROM operator_decisions WHERE target_kind=? AND target_id=? ORDER BY rowid;
+SELECT sqlc.embed(d), EXISTS(SELECT 1 FROM decision_supersessions x WHERE x.previous_id=d.id) AS superseded FROM operator_decisions d WHERE d.target_kind=sqlc.arg(target_kind) AND (d.target_id=sqlc.arg(target_id) OR (d.target_kind='instrument' AND d.target_id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=sqlc.arg(target_id)))) ORDER BY d.rowid;
 -- name: DecisionSubmission :one
 SELECT * FROM operator_decisions WHERE submission=?;
 -- name: PutDecision :exec
@@ -318,6 +318,55 @@ WITH RECURSIVE affected(instrument_id) AS (
  JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
  JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
 )
-SELECT instrument_id FROM affected ORDER BY instrument_id;
+SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id;
 -- name: RootCalculationInputs :many
 SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role;
+
+-- name: ResourceAlias :one
+SELECT target_id FROM resource_aliases WHERE kind=? AND id=?;
+-- name: PutResourceAlias :exec
+INSERT INTO resource_aliases(kind,id,target_id) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET target_id=excluded.target_id;
+-- name: FlattenAliases :exec
+UPDATE resource_aliases SET target_id=sqlc.arg(target) WHERE kind=sqlc.arg(kind) AND target_id=sqlc.arg(previous);
+-- name: IdentityMetadata :exec
+UPDATE instruments SET reference_allocation=sqlc.arg(allocation),reference_reason=sqlc.arg(reason),kind=sqlc.arg(family) WHERE id=sqlc.arg(id) AND (reference_allocation<>sqlc.arg(allocation) OR reference_reason<>sqlc.arg(reason) OR kind<>sqlc.arg(family));
+-- name: IdentityRoots :many
+SELECT i.* FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=sqlc.arg(figi) UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=sqlc.arg(figi)) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid;
+-- name: MoveInstrumentClaims :exec
+INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) SELECT sqlc.arg(target),c.claim_id,c.ordinal,c.role FROM instrument_claims c WHERE c.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
+-- name: MoveReferenceAttempts :exec
+INSERT INTO instrument_reference_attempts(instrument_id,evidence_id,status,rule) SELECT sqlc.arg(target),a.evidence_id,a.status,a.rule FROM instrument_reference_attempts a WHERE a.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
+-- name: MoveActivityInstrument :exec
+UPDATE executions SET instrument_id=sqlc.arg(target) WHERE instrument_id=sqlc.arg(previous);
+-- name: MoveBaseInstrument :exec
+UPDATE activity_bases SET instrument_id=sqlc.arg(target) WHERE instrument_id=sqlc.arg(previous);
+-- name: MoveUnderliers :exec
+UPDATE instruments SET underlier_id=sqlc.arg(target) WHERE underlier_id=sqlc.arg(previous);
+-- name: MoveSelectedUnderliers :exec
+UPDATE instrument_selections SET underlier_id=sqlc.arg(target) WHERE underlier_id=sqlc.arg(previous);
+-- name: MoveListing :exec
+UPDATE listings SET instrument_id=? WHERE id=?;
+-- name: MoveActivityListing :exec
+UPDATE executions SET listing_id=sqlc.arg(target) WHERE listing_id=sqlc.arg(previous);
+-- name: MoveBaseListing :exec
+UPDATE activity_bases SET listing_id=sqlc.arg(target) WHERE listing_id=sqlc.arg(previous);
+-- name: RetireListing :exec
+DELETE FROM listings WHERE id=?;
+-- name: InstrumentBindings :many
+SELECT i.* FROM instruments i WHERE i.id=sqlc.arg(id) OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=sqlc.arg(id)) ORDER BY i.rowid;
+
+-- name: SupersedeDecisions :exec
+INSERT INTO decision_supersessions(decision_id,previous_id)
+SELECT sqlc.arg(decision_id), d.id FROM operator_decisions d
+WHERE d.id<>sqlc.arg(decision_id) AND d.target_kind=sqlc.arg(target_kind) AND d.scope=sqlc.arg(scope)
+AND (d.target_id=sqlc.arg(target_id) OR (d.target_kind='instrument' AND d.target_id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=sqlc.arg(target_id))))
+AND NOT EXISTS(SELECT 1 FROM decision_supersessions x WHERE x.previous_id=d.id);
+
+-- name: ListingsByTerms :many
+SELECT * FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND currency=? ORDER BY id;
+
+-- name: IdentityDependents :many
+WITH bindings(id) AS (SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT alias.id FROM resource_aliases alias WHERE alias.kind='instruments' AND alias.target_id=sqlc.arg(id)), affected(id) AS (
+ SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT p.instrument_id FROM instrument_claims n JOIN instrument_claims p ON p.claim_id=n.claim_id AND p.ordinal=n.ordinal AND p.role='activity' WHERE n.instrument_id IN (SELECT id FROM bindings) AND n.role='underlier'
+)
+SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id;

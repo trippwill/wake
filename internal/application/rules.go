@@ -13,7 +13,7 @@ import (
 const (
 	AuthorityRule  = "account-authority/1"
 	RepeatRule     = "qualified-activity-observations/2"
-	InstrumentRule = "qualified-instrument-reference/1"
+	InstrumentRule = "qualified-instrument-reference/2"
 )
 
 // Compatible leaves absent optional facts unknown. It never reconciles a changed

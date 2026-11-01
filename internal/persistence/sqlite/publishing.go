@@ -10,12 +10,14 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -69,6 +71,24 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 	q := s.queries.WithTx(tx)
 	changed := false
 	for _, k := range keys {
+		if _, e := q.ResourceAlias(ctx, sqlc.ResourceAliasParams{Kind: k.kind, ID: k.id}); e == nil {
+			result, e := tx.ExecContext(ctx, publishingStatement("RetireResource"), k.kind, k.id)
+			if e != nil {
+				return e
+			}
+
+			count, e := result.RowsAffected()
+			if e != nil {
+				return e
+			}
+
+			changed = changed || count > 0
+
+			continue
+		} else if !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+
 		resource, explanation, err := canonicalSnapshot(ctx, q, k.kind, k.id)
 		if err != nil {
 			return err
@@ -310,12 +330,6 @@ func canonicalSnapshot(
 			return out, why, err
 		}
 
-		value, err := instrumentValue(i)
-		if err != nil {
-			return out, why, err
-		}
-
-		reported := value.Reported()
 		out.Revision = i.Revision
 		out.Instrument = &application.PublishedInstrument{
 			Family:          i.Kind,
@@ -325,18 +339,40 @@ func canonicalSnapshot(
 			ReferenceStatus: i.ReferenceStatus,
 			UnderlierID:     known(i.UnderlierID.String),
 			Identifiers:     []application.PublishedIdentifier{},
-			Option:          publicOption(reported.Option()),
-			Debt:            publicDebt(reported.Debt()),
+			FIGIAllocation:  known(i.ReferenceAllocation),
+			ReferenceReason: known(i.ReferenceReason),
 		}
-		for _, identifier := range reported.Identifiers() {
-			out.Instrument.Identifiers = append(
-				out.Instrument.Identifiers,
-				application.PublishedIdentifier{Kind: string(identifier.Kind()), Value: identifier.Value()},
-			)
+
+		bindings, err := q.InstrumentBindings(ctx, id)
+		if err != nil {
+			return out, why, err
+		}
+
+		for _, binding := range bindings {
+			value, e := instrumentValue(binding)
+			if e != nil {
+				return out, why, e
+			}
+
+			for _, identifier := range value.Reported().Identifiers() {
+				candidate := application.PublishedIdentifier{
+					Kind:  string(identifier.Kind()),
+					Value: identifier.Value(),
+				}
+				if !slices.Contains(out.Instrument.Identifiers, candidate) {
+					out.Instrument.Identifiers = append(out.Instrument.Identifiers, candidate)
+				}
+			}
 		}
 
 		why.Selection = i.Rule + "; " + i.ReferenceStatus
-		why.Conflict = i.ReferenceStatus == "conflict"
+		why.Conflict = application.ReferenceStatus(i.ReferenceStatus).NeedsReview()
+		why.Identity = &application.PublishedIdentity{
+			FIGI:       known(i.ReferenceFigi),
+			Allocation: known(i.ReferenceAllocation),
+			Reason:     known(i.ReferenceReason),
+			Rule:       reference.Rule,
+		}
 	case "activity":
 		row, err := q.Execution(ctx, id)
 		if err != nil {
@@ -640,6 +676,13 @@ func (s *Store) published(
 		data, explanation []byte
 	)
 
+	target, e := canonicalID(ctx, s.queries.WithTx(tx), kind, id)
+	if e != nil {
+		return out, why, e
+	}
+
+	id = target
+
 	err = tx.QueryRowContext(ctx, publishingStatement("Current"), kind, id).Scan(&revision, &data, &explanation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, why, application.ErrNotFound
@@ -666,7 +709,11 @@ func (s *Store) Explanation(
 	kind, id string,
 	revision int64,
 ) (application.Explanation, error) {
-	_, why, err := s.published(ctx, kind, id)
+	resource, why, err := s.published(ctx, kind, id)
+	if err == nil && resource.ID != id {
+		return application.Explanation{}, application.ErrStale
+	}
+
 	if err != nil {
 		return why, err
 	}

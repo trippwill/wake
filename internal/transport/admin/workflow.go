@@ -507,6 +507,11 @@ func registerWorkflowRoutes(
 			return
 		}
 
+		if detail.Instrument.ID() != r.PathValue("id") {
+			http.Redirect(w, r, navURL(r.Context(), "/instruments/"+detail.Instrument.ID()), http.StatusSeeOther)
+			return
+		}
+
 		templ.Handler(SectionShell(known(detail.Instrument.Name()), csrf, "Activity", InstrumentPage(detail))).
 			ServeHTTP(w, r)
 	})
@@ -609,6 +614,11 @@ func registerWorkflowRoutes(
 					"This item is unavailable. Return to its workspace to inspect current records.",
 				)
 
+				return
+			}
+
+			if kind == "instrument" && form.ID != r.PathValue("id") {
+				http.Redirect(w, r, navURL(r.Context(), "/instruments/"+form.ID+"/correct"), http.StatusSeeOther)
 				return
 			}
 

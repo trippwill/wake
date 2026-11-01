@@ -101,6 +101,14 @@ changes. Cover failure and repeat execution so an interrupted update cannot expo
 partial results or duplicate financial activity. Record why no historical update
 is needed when a change leaves retained results valid.
 
+The FIGI authority development format is an explicit, approved warehouse-disposal
+exception to that retained-history procedure. It changes source interpretation,
+identity grouping and public instrument shape; old warehouses fail closed. Deploy
+by preserving any needed old evidence/decisions, explicitly recreating the warehouse
+and reacquiring history with the reusable encrypted access seed. There is no
+compatibility conversion, automatic updater or rebuild command. The general
+retained-history requirement above continues to apply to later changes.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL

@@ -92,7 +92,10 @@ func (a Account) Reference() source.Reference { return a.reference }
 func (a Account) Details() AccountDetails     { return a.details }
 func (a Account) Rule() string                { return a.rule }
 
+type ReferenceMetadata struct{ Allocation, Reason string }
+
 type Instrument struct {
+	metadata                               ReferenceMetadata
 	id, name, ticker, kind, figi, evidence string
 	status                                 ReferenceStatus
 	authority                              SelectionAuthority
@@ -104,7 +107,7 @@ type Instrument struct {
 func NewInstrument(
 	id, name, ticker, kind, status, figi, evidence string,
 	reported source.Instrument,
-	rule string, revision int64, authority SelectionAuthority,
+	rule string, revision int64, authority SelectionAuthority, metadata ReferenceMetadata,
 ) (Instrument, error) {
 	if revision < 1 || rule == "" || id == "" || reported.Kind() == "" ||
 		(authority != AutomaticSelection && authority != OperatorSelection) ||
@@ -113,6 +116,7 @@ func NewInstrument(
 	}
 
 	return Instrument{
+		metadata:  metadata,
 		revision:  revision,
 		id:        id,
 		name:      name,
@@ -126,16 +130,17 @@ func NewInstrument(
 		rule:      rule,
 	}, nil
 }
-func (i Instrument) ID() string                    { return i.id }
-func (i Instrument) Name() string                  { return i.name }
-func (i Instrument) Ticker() string                { return i.ticker }
-func (i Instrument) Kind() string                  { return i.kind }
-func (i Instrument) Status() ReferenceStatus       { return i.status }
-func (i Instrument) Authority() SelectionAuthority { return i.authority }
-func (i Instrument) FIGI() string                  { return i.figi }
-func (i Instrument) Evidence() string              { return i.evidence }
-func (i Instrument) Reported() source.Instrument   { return i.reported }
-func (i Instrument) Rule() string                  { return i.rule }
+func (i Instrument) ReferenceMetadata() ReferenceMetadata { return i.metadata }
+func (i Instrument) ID() string                           { return i.id }
+func (i Instrument) Name() string                         { return i.name }
+func (i Instrument) Ticker() string                       { return i.ticker }
+func (i Instrument) Kind() string                         { return i.kind }
+func (i Instrument) Status() ReferenceStatus              { return i.status }
+func (i Instrument) Authority() SelectionAuthority        { return i.authority }
+func (i Instrument) FIGI() string                         { return i.figi }
+func (i Instrument) Evidence() string                     { return i.evidence }
+func (i Instrument) Reported() source.Instrument          { return i.reported }
+func (i Instrument) Rule() string                         { return i.rule }
 
 type Listing struct{ id, instrument, venue, ticker, currency, figi string }
 

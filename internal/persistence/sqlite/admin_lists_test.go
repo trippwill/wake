@@ -264,7 +264,8 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 	}
 
 	fields := view.Executions[0].Terms().Fields()
-	disputed := strings.Replace(syntheticOption, `strike="100.00000000001"`, `strike="110"`, 1)
+	disputed := strings.NewReplacer(`strike="100.00000000001"`, `strike="110"`, `underlyingConid="100"`, `underlyingConid="777"`).
+		Replace(syntheticOption)
 	coverageReport(t, s, "disputed-option", disputed)
 
 	target, _ := source.NewReference("synthetic", "event", "account", "not-yet-reported")

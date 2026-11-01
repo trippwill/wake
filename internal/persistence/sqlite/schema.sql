@@ -21,9 +21,13 @@ CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT
 
 CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
 CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, singleton INTEGER NOT NULL UNIQUE CHECK(singleton=1), name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), provider TEXT NOT NULL, stream TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/1') STRICT;
-CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1', underlier_id TEXT REFERENCES instruments(id)) STRICT;
-CREATE UNIQUE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
-CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '', UNIQUE(instrument_id,venue,ticker,currency)) STRICT;
+CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/2', underlier_id TEXT REFERENCES instruments(id)) STRICT;
+CREATE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
+CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '') STRICT;
+CREATE INDEX listing_terms ON listings(instrument_id,venue,ticker,currency);
+CREATE TABLE resource_aliases(kind TEXT NOT NULL CHECK(kind IN ('instruments','listings')),id TEXT NOT NULL,target_id TEXT NOT NULL,CHECK(id<>target_id),PRIMARY KEY(kind,id)) STRICT;
+CREATE INDEX alias_target ON resource_aliases(kind,target_id);
+
 CREATE TABLE executions(revision INTEGER NOT NULL DEFAULT 1,kind TEXT NOT NULL DEFAULT 'trade', id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), instrument_id TEXT REFERENCES instruments(id), listing_id TEXT REFERENCES listings(id), accepted BLOB NOT NULL, status TEXT NOT NULL, review_reasons INTEGER NOT NULL DEFAULT 0 CHECK(review_reasons BETWEEN 0 AND 3), selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), rule TEXT NOT NULL) STRICT;
 CREATE TABLE event_links(distinct_event INTEGER NOT NULL DEFAULT 0 CHECK(distinct_event IN (0,1)),account_id TEXT NOT NULL REFERENCES accounts(id), reference TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), PRIMARY KEY(account_id,reference,execution_id)) STRICT;
 CREATE TABLE execution_observations(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, execution_id TEXT REFERENCES executions(id), outcome TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(artifact_id,version,location)) STRICT;
@@ -38,6 +42,8 @@ CREATE TABLE source_corrections(artifact_id TEXT NOT NULL, version TEXT NOT NULL
 
 CREATE TABLE operator_decisions(id TEXT PRIMARY KEY, target_kind TEXT NOT NULL, target_id TEXT NOT NULL, scope TEXT NOT NULL, text TEXT NOT NULL, currency TEXT NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, rationale TEXT NOT NULL, supersedes TEXT NOT NULL, submission TEXT NOT NULL UNIQUE, request BLOB NOT NULL) STRICT;
 CREATE INDEX decisions_target ON operator_decisions(target_kind,target_id,scope);
+CREATE TABLE decision_supersessions(decision_id TEXT NOT NULL REFERENCES operator_decisions(id),previous_id TEXT NOT NULL REFERENCES operator_decisions(id),PRIMARY KEY(decision_id,previous_id)) STRICT;
+CREATE INDEX decision_superseded ON decision_supersessions(previous_id);
 CREATE TABLE instrument_selections(instrument_id TEXT PRIMARY KEY REFERENCES instruments(id), name TEXT NOT NULL, ticker TEXT NOT NULL, figi TEXT NOT NULL, evidence TEXT NOT NULL, status TEXT NOT NULL, underlier_id TEXT REFERENCES instruments(id)) STRICT;
 
 
@@ -114,3 +120,7 @@ CREATE VIEW admin_review AS
 CREATE INDEX artifacts_connection ON artifacts(connection_id);
 CREATE INDEX candidate_artifact ON candidates(artifact_id,authority,kind,scope,value,receipt_id);
 CREATE INDEX source_instruction_review ON source_corrections(status,artifact_id,version,location);
+
+CREATE TRIGGER publish_alias AFTER INSERT ON resource_aliases BEGIN
+ INSERT OR IGNORE INTO publishing_dirty VALUES(NEW.kind,NEW.id);
+END;

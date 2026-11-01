@@ -201,11 +201,7 @@ must remain private. This browser gate is separate from financial socket access.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
-pre-release stores fail closed with explicit recreation guidance. The publishing
-schema adds reverse endpoint indexes for relationship/correction invalidation and
-per-activity explanation reads; its storage version advances so profiles from
-the preceding development schema cannot silently miss those indexes and triggers.
-Privacy depends
+pre-release stores fail closed with explicit recreation guidance. Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ## Persistence and work boundaries
@@ -332,8 +328,31 @@ the parent's automatic link selects it only when their complete retained source
 identities agree, including new claims in the same processing transaction. Both
 roots and their original source bindings remain retained; disagreements require
 review and preserve established links. Operator link selections remain in effect
-until released. Unifying distinct existing roots requires review rather than a
-silent merge. Financial processing remains useful with provisional identity.
+until released. Verified FIGI equality combines compatible roots transactionally: the oldest root
+survives, source bindings and immutable histories remain retained, and current
+activity, underlier and listing links point to the survivor. Conflicting active
+operator choices or explicit reference contradictions keep roots separate for
+review. Alias lookups redirect to current resources; explanations for an old ID
+and new correction submissions against it fail stale. Complete snapshots omit
+retired aliases, so a consumer installs the new graph atomically. Financial processing remains useful with provisional identity.
+
+Equity/fund identity uses share-class FIGIs, supported US equity options use
+composite FIGIs and debt uses issue FIGIs. Lookup types preserve that allocation.
+Selection follows explicit parent relationships; it does not count rows or require
+uniform names/classification spelling. A missing share-class edge can trigger one
+bounded lookup of its known composite through the same durable admission, cache
+and evidence path. No label search or unrestricted recursive traversal is used.
+Accepted identity and refresh health have independent lifetimes. Missing usable
+identifiers wait for new source enrichment. Instruments carry identity metadata;
+financial terms remain on dated observations and activity, including same-activity
+financial conflicts. The [research](../research/openfigi-identity.md#how-far-can-figi-authority-extend)
+records the guarantees, experiments and limits supporting this choice.
+
+Operator decision supersession explicitly links each new choice or release to
+all prior active choices in its combined identity. Histories from formerly
+separate roots retain their own releases; combining them does not turn a release
+on one root into a release of another root's surviving choice.
+
 
 Prospective nested inputs from all affected parents are reconciled before
 qualifying identities or selecting links. Retained source context contributes to
@@ -369,8 +388,9 @@ expected entity revision prevents stale writes. Decision history appends superse
 and release rather than mutating previous decisions. The projector reapplies active
 decisions over automatic selections; automatic reference selections are retained
 separately so refresh and release preserve the correct authority. Reference candidate
-selection is restricted to the affected instrument's identifier-mapping job within
-a retained batch, and link decisions validate the target family and listing root.
+selection is restricted to the affected instrument's source-bound mapping jobs or
+their retained, explicitly linked composite-parent lookup; another job in the same
+batch grants no authority. Link decisions validate the target family and listing root.
 
 Processing retry reuses retained reports and successful normalization records.
 Source and reference access, identity allocations, reference evidence/cache,

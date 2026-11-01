@@ -150,24 +150,75 @@ type RootCalculation struct {
 	Conflict            bool
 }
 
+// Root identities do not reconcile timeless financial terms. Those stay on each
+// dated activity, where same-event disagreements still use CompatibleInstrument.
+func rootIdentity(
+	value source.Instrument,
+	bindings map[source.Reference]source.Instrument,
+) (source.Instrument, error) {
+	if value.Kind() == "" {
+		return value, nil
+	}
+
+	f := value.Fields()
+	f.Debt = source.DebtTerms{}
+	if canonical, ok := bindings[value.Reference()]; ok && canonical.Reference() != value.Reference() {
+		f.Reference = canonical.Reference()
+		f.Identifiers = canonical.Identifiers()
+	}
+
+	if !f.Option.IsZero() {
+		underlier, err := rootIdentity(f.Option.Fields().Underlier, bindings)
+		if err != nil {
+			return source.Instrument{}, err
+		}
+
+		f.Option, err = source.NewOptionTerms(source.OptionInput{Underlier: underlier})
+		if err != nil {
+			return source.Instrument{}, err
+		}
+	}
+
+	return source.NewInstrument(f)
+}
+
 func CalculateRoot(base source.Instrument, claims []source.Instrument) (RootCalculation, error) {
-	reported, conflict, err := ReconcileInstrument(base, claims)
+	return CalculateBoundRoot(base, claims, nil)
+}
+
+func CalculateBoundRoot(
+	base source.Instrument,
+	claims []source.Instrument,
+	bindings map[source.Reference]source.Instrument,
+) (RootCalculation, error) {
+	var err error
+
+	base, err = rootIdentity(base, bindings)
 	if err != nil {
 		return RootCalculation{}, err
 	}
 
-	underliers := make([]source.Instrument, 0, len(claims))
+	identities := make([]source.Instrument, 0, len(claims))
+	underliers := []source.Instrument{}
 	for _, claim := range claims {
-		if u := claim.Option().Fields().Underlier; u.Kind() != "" {
+		identity, e := rootIdentity(claim, bindings)
+		if e != nil {
+			return RootCalculation{}, e
+		}
+
+		if u := identity.Option().Fields().Underlier; u.Kind() != "" {
 			underliers = append(underliers, u)
 		}
+
+		identities = append(identities, identity)
 	}
 
-	underlier, underlierConflict, err := ReconcileInstrument(base.Option().Fields().Underlier, underliers)
+	reported, conflict, err := ReconcileInstrument(base, identities)
+	if err != nil {
+		return RootCalculation{}, err
+	}
 
-	return RootCalculation{
-		Reported:  reported,
-		Underlier: underlier,
-		Conflict:  conflict || underlierConflict,
-	}, err
+	underlier, disputed, err := ReconcileInstrument(base.Option().Fields().Underlier, underliers)
+
+	return RootCalculation{Reported: reported, Underlier: underlier, Conflict: conflict || disputed}, err
 }

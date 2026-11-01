@@ -174,6 +174,11 @@ type Connection struct {
 	Name     string
 }
 
+type DecisionSupersession struct {
+	DecisionID string
+	PreviousID string
+}
+
 type EventLink struct {
 	DistinctEvent int64
 	AccountID     string
@@ -205,20 +210,22 @@ type ExecutionObservation struct {
 }
 
 type Instrument struct {
-	Revision           int64
-	ID                 string
-	SourceKey          string
-	Name               string
-	Ticker             string
-	Kind               string
-	Reported           []byte
-	ReferenceStatus    string
-	SelectionAuthority string
-	ReferenceFigi      string
-	EvidenceID         string
-	ReferenceNext      string
-	Rule               string
-	UnderlierID        sql.NullString
+	Revision            int64
+	ID                  string
+	SourceKey           string
+	Name                string
+	Ticker              string
+	Kind                string
+	Reported            []byte
+	ReferenceStatus     string
+	ReferenceAllocation string
+	ReferenceReason     string
+	SelectionAuthority  string
+	ReferenceFigi       string
+	EvidenceID          string
+	ReferenceNext       string
+	Rule                string
+	UnderlierID         sql.NullString
 }
 
 type InstrumentClaim struct {
@@ -368,6 +375,12 @@ type ReportComparison struct {
 	Policy       string
 	Digest       string
 	ArtifactID   string
+}
+
+type ResourceAlias struct {
+	Kind     string
+	ID       string
+	TargetID string
 }
 
 type Scheduled struct {

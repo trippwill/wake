@@ -10,6 +10,8 @@ info:
     preserve the previous mirror. A different warehouse installs a clearly reported new baseline. Individual
     resource lookups and revision-bound explanations remain available; a changed explanation revision
     returns stale_revision. Current-state synchronization does not retain intermediate delivery transitions.
+    Retired instrument/listing lookups redirect to their current IDs; explanations for retired IDs
+    return stale_revision. Instrument resources describe identity; financial terms belong to activity.
     Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
     mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
 paths:
@@ -70,6 +72,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Resource'
+        '308':
+          description: Retired identity; follow Location to the current resource. No old explanation revision is transferred.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
         '400':
           $ref: '#/components/responses/Error'
         '404':
@@ -115,6 +124,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Resource'
+        '308':
+          description: Retired identity; follow Location to the current resource. No old explanation revision is transferred.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
         '400':
           $ref: '#/components/responses/Error'
         '404':
@@ -454,10 +470,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Identifier'
-        option:
-          $ref: '#/components/schemas/NullableOption'
-        debt:
-          $ref: '#/components/schemas/NullableDebt'
+        figi_allocation:
+          description: Allocation of the accepted FIGI. Equity/fund roots use share_class, supported equity options use composite, debt issues use instrument.
+          type: string
+          nullable: true
+          enum: [share_class, composite, instrument, null]
+        reference_reason:
+          description: Stable machine reason for unresolved identity or incomplete supporting metadata; independent of lookup health.
+          type: string
+          nullable: true
       required:
       - name
       - ticker
@@ -466,8 +487,8 @@ components:
       - family
       - reference_status
       - identifiers
-      - option
-      - debt
+      - figi_allocation
+      - reference_reason
     Listing:
       type: object
       additionalProperties: false
@@ -743,6 +764,23 @@ components:
       type: object
       additionalProperties: false
       properties:
+        identity:
+          type: object
+          nullable: true
+          additionalProperties: false
+          properties:
+            figi:
+              type: string
+              nullable: true
+            allocation:
+              type: string
+              nullable: true
+            reason:
+              type: string
+              nullable: true
+            rule:
+              type: string
+          required: [figi, allocation, reason, rule]
         id:
           type: string
         kind:
@@ -763,6 +801,7 @@ components:
           items:
             $ref: '#/components/schemas/Decision'
       required:
+      - identity
       - id
       - kind
       - revision

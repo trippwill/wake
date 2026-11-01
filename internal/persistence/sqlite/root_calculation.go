@@ -78,7 +78,47 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		claims = append(claims, reported)
 	}
 
-	root.calculation, err = application.CalculateRoot(root.reported, claims)
+	bindings := map[source.Reference]source.Instrument{}
+	if row.ReferenceFigi != "" {
+		rows, e := p.q.InstrumentBindings(ctx, id)
+		if e != nil {
+			return retainedRoot{}, e
+		}
+
+		for _, binding := range rows {
+			value, e := instrumentValue(binding)
+			if e != nil {
+				return retainedRoot{}, e
+			}
+
+			bindings[value.Reported().Reference()] = root.reported
+		}
+	}
+	// Verified aliases of nested underliers use the same identity comparison.
+	// Raw claims remain unchanged, including their original qualified references.
+	for _, ref := range root.references {
+		underlier, e := p.q.InstrumentBySource(ctx, referenceKey(ref))
+		if errors.Is(e, sql.ErrNoRows) {
+			continue
+		}
+
+		if e != nil {
+			return retainedRoot{}, e
+		}
+
+		if underlier.ReferenceFigi == "" {
+			continue
+		}
+
+		value, e := instrumentValue(underlier)
+		if e != nil {
+			return retainedRoot{}, e
+		}
+
+		bindings[ref] = value.Reported()
+	}
+
+	root.calculation, err = application.CalculateBoundRoot(root.reported, claims, bindings)
 	if err != nil {
 		return retainedRoot{}, err
 	}
@@ -354,7 +394,8 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 		}
 
 		reported := terms.Instrument()
-		if !baseline.Reported().Reference().IsZero() && !reported.Reference().IsZero() &&
+		if root.ReferenceFigi == "" && !baseline.Reported().Reference().IsZero() &&
+			!reported.Reference().IsZero() &&
 			baseline.Reported().Reference() != reported.Reference() {
 			continue
 		}

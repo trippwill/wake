@@ -237,6 +237,7 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 		"rule",
 		1,
 		application.OperatorSelection,
+		application.ReferenceMetadata{},
 	)
 	if err != nil {
 		t.Fatal(err)
