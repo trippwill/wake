@@ -16,6 +16,8 @@ linters:
     - wsl_v5
   exclusions:
     generated: strict
+    paths:
+      - ^internal/persistence/sqlite/sqlc/
   settings:
     wsl_v5:
       allow-whole-block: true
@@ -33,6 +35,8 @@ formatters:
     - golines
   exclusions:
     generated: strict
+    paths:
+      - ^internal/persistence/sqlite/sqlc/
   settings:
     gofumpt:
       extra:

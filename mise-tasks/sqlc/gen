@@ -6,6 +6,3 @@
 set -euo pipefail
 sqlc -f sqlc.yaml compile
 sqlc -f sqlc.yaml generate
-for file in internal/persistence/sqlite/sqlc/*.go; do
-  sed -i '1i// SPDX-FileCopyrightText: 2026 trippwill\n// SPDX-License-Identifier: MPL-2.0\n' "$file"
-done

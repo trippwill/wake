@@ -63,9 +63,11 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
   `mise run source:check` before delivery. Full suites are optional when the scope
   warrants them or the user requests them; report the checks run and material gaps.
   Documentation-only changes check links, information preservation, and diffs.
-- Every Go file has `SPDX-FileCopyrightText: 2026 trippwill` and
-  `SPDX-License-Identifier: MPL-2.0`. Follow enforced lint/formatting; detailed
-  whitespace and generator rules are in the development guide.
+- Go files have `SPDX-FileCopyrightText: 2026 trippwill` and
+  `SPDX-License-Identifier: MPL-2.0`, except generated files under
+  `internal/persistence/sqlite/sqlc/`. Keep that directory as native sqlc output;
+  it is excluded from all linters and formatters. Follow enforced lint/formatting
+  elsewhere; detailed whitespace and generator rules are in the development guide.
 - Prefer sealed immutable values, constructor/parser invariants, private
   representations, and read-only accessors; no exported `Validate` methods.
   Small direct newtypes are a limited exception. Mutability needs evidence.

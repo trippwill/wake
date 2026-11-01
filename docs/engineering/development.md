@@ -104,7 +104,12 @@ is needed when a change leaves retained results valid.
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL
-headers. Enforce financial invariants at constructors/parsers and preserve immutable
+headers, except generated files under `internal/persistence/sqlite/sqlc/`. Keep
+that directory as native sqlc output, without added headers or formatter changes.
+It is excluded from all linters and formatters; sqlc validation, generated-source
+freshness checks, compilation and tests still cover it.
+
+Enforce financial invariants at constructors/parsers and preserve immutable
 values with private representations. Exact decimal text remains authoritative;
 round only at deliberate calculation/display boundaries.
 
