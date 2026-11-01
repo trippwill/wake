@@ -66,12 +66,14 @@ func keyAttr(a slog.Attr) string {
 }
 
 func (h *coalescer) WithAttrs(attrs []slog.Attr) slog.Handler {
-	key := h.key
+	var key strings.Builder
+	key.WriteString(h.key)
+
 	for _, a := range attrs {
-		key += keyAttr(a)
+		key.WriteString(keyAttr(a))
 	}
 
-	return &coalescer{handler: h.handler.WithAttrs(attrs), state: h.state, key: key}
+	return &coalescer{handler: h.handler.WithAttrs(attrs), state: h.state, key: key.String()}
 }
 
 func (h *coalescer) WithGroup(name string) slog.Handler {

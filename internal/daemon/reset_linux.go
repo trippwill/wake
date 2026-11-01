@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -146,8 +147,8 @@ func ResetStorage(
 
 	held := []*os.File{}
 	defer func() {
-		for i := len(held) - 1; i >= 0; i-- {
-			_ = held[i].Close()
+		for _, h := range slices.Backward(held) {
+			_ = h.Close()
 		}
 	}()
 	// The runtime guard also catches a live daemon when a selected file is missing.
