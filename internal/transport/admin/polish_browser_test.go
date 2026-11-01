@@ -294,13 +294,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection, holdMovedFocus atomic.Bool
+	var (
+		extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection, holdMovedFocus atomic.Bool
+		emptyGrid, failFirstPage                                                                   atomic.Bool
+	)
 
-	refreshStarted, releaseRefresh := make(chan struct{}, 1), make(chan struct{})
+	refreshStarted, releaseRefresh := make(chan struct{}, 1), make(chan struct{}, 1)
 	selectionStarted, releaseSelection := make(chan struct{}, 1), make(chan struct{})
 	movedFocusStarted, releaseMovedFocus := make(chan struct{}, 1), make(chan struct{})
-
-	var gridRequests atomic.Int64
 
 	eventShutdown := make(chan struct{})
 	form := application.CorrectionForm{
@@ -428,7 +429,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 		}
 
-		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" && refreshFailed.Load() {
+		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" &&
+			(refreshFailed.Load() || (failFirstPage.Load() && r.URL.Query().Get("page") == "1")) {
 			http.Error(w, "Read temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -495,8 +497,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 
 			if r.URL.Path == "/test/grid-data" {
-				gridRequests.Add(1)
-				polishGridData(w, r, extra.Load())
+				if emptyGrid.Load() {
+					gridJSON(w, gridPage[activityGridRow]{Data: []activityGridRow{}, LastPage: 1, Total: 71}, nil)
+				} else {
+					polishGridData(w, r, extra.Load())
+				}
 			} else {
 				polishObservationData(w, r, !extra.Load())
 			}
@@ -634,6 +639,18 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 	}
 
+	applyGridUpdate := chromedp.Tasks{
+		chromedp.Poll(
+			`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && !document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+		chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-refresh]').hidden && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			nil,
+		),
+	}
+
 	check(
 		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/login")),
@@ -738,9 +755,91 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 	)
+
+	// A real polling tick must leave an unchanged page in place throughout the
+	// download and after completion, including its row nodes and scroll position.
+	check(chromedp.Evaluate(`
+		window.beforePollRow=document.querySelector('.tabulator-row');
+		document.querySelector('.tabulator-tableholder').scrollTop=150;
+		window.beforePollScroll=document.querySelector('.tabulator-tableholder').scrollTop;
+	`, nil))
+	holdRefresh.Store(true)
+
+	select {
+	case <-refreshStarted:
+	case <-time.After(15 * time.Second):
+		t.Fatal("polling did not request fresh table data")
+	}
+
+	assert(
+		`window.beforePollRow.isConnected && document.querySelectorAll('.tabulator-row').length===20 && document.querySelector('.tabulator-tableholder').clientHeight>0 && document.querySelector('[data-grid]').getAttribute('aria-busy')==='true'`,
+		"polling cleared the current rows while downloading",
+	)
+
+	releaseRefresh <- struct{}{}
+
+	check(chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil))
+	assert(
+		`window.beforePollRow===document.querySelector('.tabulator-row') && document.querySelector('.tabulator-tableholder').scrollTop===window.beforePollScroll && new URL(location.href).searchParams.get('page')==='2' && document.querySelector('[data-grid-refresh]').hidden`,
+		"unchanged polling response rebuilt the table or reset the current view",
+	)
+
 	extra.Store(true)
 	check(
 		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	assert(
+		`window.beforePollRow===document.querySelector('.tabulator-row') && document.querySelectorAll('.tabulator-row').length===20 && document.querySelector('[data-grid-status]').textContent.includes('Updated results are available')`,
+		"changed response replaced rows before explicit refresh",
+	)
+	// If fresh results return to the displayed state, there is no net change
+	// left to accept and the notice disappears without touching the rows.
+	check(chromedp.Focus("[data-grid-refresh]"))
+	extra.Store(false)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Poll(
+			`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+	assert(
+		`window.beforePollRow===document.querySelector('.tabulator-row')`,
+		"reverted update changed the displayed rows",
+	)
+	assert(
+		`document.activeElement.matches('.tabulator-col')`,
+		"reverted update left focus on a hidden refresh button",
+	)
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	// Refresh fetches the current response rather than installing the snapshot
+	// that first raised the notice; a last-moment reversion keeps the rows intact.
+	extra.Store(false)
+	check(
+		chromedp.Focus("[data-grid-refresh]"),
+		chromedp.KeyEvent("\r"),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-refresh]').hidden && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			nil,
+		),
+	)
+	assert(
+		`window.beforePollRow===document.querySelector('.tabulator-row')`,
+		"refresh applied a stale polling response",
+	)
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	check(
+		chromedp.Focus("[data-grid-refresh]"),
+		chromedp.KeyEvent("\r"),
 		chromedp.Poll(
 			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && document.querySelectorAll('.tabulator-row').length===21`,
 			nil,
@@ -751,6 +850,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"remote view state lost on refresh",
 	)
 	assert(`document.querySelector('#view-notes').open`, "disclosure lost on refresh")
+	assert(
+		`document.activeElement.matches('.tabulator-col') && document.querySelector('[data-grid-refresh]').hidden`,
+		"keyboard refresh did not restore focus to the table",
+	)
 	// A response may update rows while an unsubmitted filter draft keeps focus.
 	extra.Store(false)
 	holdRefresh.Store(true)
@@ -769,8 +872,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.Focus("#activity-search"),
 		chromedp.Evaluate(`document.querySelector('#activity-search').value='unsubmitted filter draft'`, nil),
 	)
-	close(releaseRefresh)
+
+	releaseRefresh <- struct{}{}
+
 	check(
+		applyGridUpdate,
 		chromedp.Poll(
 			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelectorAll('.tabulator-row').length===20`,
 			nil,
@@ -799,6 +905,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	refreshFailed.Store(false)
 	check(
 		chromedp.Click("[data-grid-retry]"),
+		applyGridUpdate,
 		chromedp.Poll(
 			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && new URL(location.href).searchParams.get('page')==='2'`,
 			nil,
@@ -839,6 +946,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 
 		check(
+			applyGridUpdate,
 			chromedp.Poll(
 				`!document.querySelector('[data-grid]').hasAttribute('aria-busy')&&document.querySelector('[data-grid]').dataset.gridReady==='true'`,
 				nil,
@@ -872,22 +980,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	// response that was already downloading when selection began.
 	check(chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil))
 
-	beforeSelection := gridRequests.Load()
-
 	check(
 		chromedp.Evaluate(
 			`(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('.tabulator-row [tabulator-field="price"]'));document.getSelection().removeAllRanges();document.getSelection().addRange(range);window.copiedExactValue=document.getSelection().toString();window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')})()`,
 			nil,
 		),
 		chromedp.Poll(
-			`document.querySelector('[data-grid-status]').textContent.includes('paused while text is selected')`,
+			`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
 			nil,
 		),
 	)
 
-	if gridRequests.Load() != beforeSelection {
-		t.Fatal("selected text started a background replacement")
-	}
+	assert(
+		`document.getSelection().toString()===window.copiedExactValue && window.copiedExactValue!==''`,
+		"background check disturbed selected exact text",
+	)
 
 	check(chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil))
 	holdSelection.Store(true)
@@ -909,23 +1016,163 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		),
 	)
 	close(releaseSelection)
-	check(
-		chromedp.Poll(
-			`document.querySelector('[data-grid-status]').textContent.includes('paused while text is selected')`,
-			nil,
-		),
-	)
+	check(chromedp.WaitVisible("[data-grid-refresh]"))
 	assert(
 		`document.getSelection().toString()===window.copiedExactValue&&window.copiedExactValue!==''&&document.querySelectorAll('.tabulator-row').length===21`,
 		"in-flight response erased selected exact text",
 	)
 	check(
 		chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil),
+		applyGridUpdate,
 		chromedp.Poll(
 			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results'&&document.querySelectorAll('.tabulator-row').length===20`,
 			nil,
 		),
 	)
+
+	// A disappearing final page also waits for consent, then moves to the last
+	// available page. A later increase updates the pagination controls on refresh.
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setPageSize(70).then(()=>window.proofGrid.setPage(2))`, nil),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===1 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	extra.Store(false)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	assert(
+		`window.proofGrid.getPage()===2 && document.querySelectorAll('.tabulator-row').length===1`,
+		"background removal changed the displayed page",
+	)
+	check(
+		applyGridUpdate,
+		chromedp.Poll(
+			`document.querySelector('.tabulator-page[data-page="1"]').classList.contains('active') && document.querySelector('.tabulator-page[data-page="next"]').disabled && document.querySelectorAll('.tabulator-row').length===70`,
+			nil,
+		),
+	)
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		applyGridUpdate,
+	)
+	assert(
+		`document.querySelector('.tabulator-page[data-page="2"]')!==null && !document.querySelector('.tabulator-page[data-page="next"]').disabled`,
+		"explicit refresh did not update page controls",
+	)
+
+	// Retry finishes the original foreground action with one click, while the
+	// earlier background-error test still requires an explicit Refresh afterward.
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='Synthetic investment 69';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent==='1 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='investment';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===70 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setSort('price','asc')`, nil),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('dir')==='asc' && document.querySelector('.tabulator-row [tabulator-field=price]').textContent==='-1.0000000000000001 USD' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setPage(2)`, nil),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+	extra.Store(false)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	refreshFailed.Store(true)
+	check(chromedp.Click("[data-grid-refresh]"), chromedp.WaitVisible("[data-grid-retry]"))
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='1' && document.querySelectorAll('.tabulator-row').length===70 && document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+
+	// A response is not the displayed baseline until its rows are installed.
+	// Empty results, a failed fallback and Retry must never retain stale rows.
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(
+			`window.Tabulator.findTable('.tabulator')[0].setData().then(()=>window.Tabulator.findTable('.tabulator')[0].setPage(2))`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===1 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	emptyGrid.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	failFirstPage.Store(true)
+	check(chromedp.Click("[data-grid-refresh]"), chromedp.WaitVisible("[data-grid-retry]"))
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent.includes('Previous results')`,
+		"failed page fallback obscured the retained results or its error",
+	)
+	failFirstPage.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-status]').textContent==='0 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil),
+	)
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-refresh]').hidden`,
+		"background comparison lost the installed empty baseline",
+	)
+	emptyGrid.Store(false)
 
 	offline.Store(true)
 	check(
@@ -1042,6 +1289,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					`document.activeElement.blur();window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
 					nil,
 				),
+				applyGridUpdate,
 				chromedp.Poll(
 					`document.querySelector('.tabulator-row:last-child').textContent.includes('needs review')`,
 					nil,

@@ -260,8 +260,11 @@ matching warehouse set, with 50 rows per page by default. Bound other evidence
 views explicitly and clearly label any local interaction scope.
 Use embedded htmx and its SSE extension for authenticated updates to independent
 source/status regions. Keep commands ordinary HTTP submissions. Tabulator owns
-interactive grid DOM and interactions, loading authenticated JSON and reloading
-through its API on SSE hints or polling. Render each interactive dataset once;
+interactive grid DOM and interactions, loading authenticated JSON and checking for
+changed results on SSE hints or polling. Keep displayed rows while downloading;
+unchanged responses leave the current rows in place. When results differ, announce
+available updates and offer an explicit refresh; apply them only at the user’s request.
+Render each interactive dataset once;
 parallel native tables, DOM scraping/cloning and htmx grid morphing are prohibited.
 Protect active/dirty forms and selections. Accepted detail pages, decision forms
 and immutable raw-evidence pages are explicit read snapshots with refresh/navigation

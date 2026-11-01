@@ -344,8 +344,10 @@ so a changed shared target also updates its previously observed parents.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
 instrument and observation tables require JavaScript and consume authenticated JSON.
-Tabulator owns each grid and reloads through its API on SSE hints or polling; HTML
-does not duplicate its rows. Queries filter, order and page the complete matching set,
+Tabulator owns each grid. SSE hints and polling check for changed results, then
+announce an available refresh without replacing the displayed rows. The operator
+applies the update through an explicit refresh action; HTML does not duplicate rows.
+Queries filter, order and page the complete matching set,
 with 50 rows per page by default and exact decimal ordering. URLs retain intentional
 filter and page state; native column persistence retains layout preferences.
 Source/status regions retain focused htmx updates. Accepted detail pages are explicit
