@@ -325,10 +325,22 @@ the evidence supporting accepted selections remains retained. Transient failures
 are not negative results. Configured key failures require repair or explicit
 selection of anonymous access. Reference selection distinguishes equity share
 classes from option contracts; an
-underlier result never identifies its option. An unambiguous reference can enrich
-an existing
-identity; unifying distinct existing roots requires review rather than a silent
-merge. Financial processing remains useful with provisional reference identity.
+underlier result never identifies its option. An unambiguous qualified reference
+can enrich an existing identity. A compatible ticker-only underlier keeps its root
+when its first qualified reference arrives. If that reference already has a root,
+the parent's automatic link selects it only when their complete retained source
+identities agree, including new claims in the same processing transaction. Both
+roots and their original source bindings remain retained; disagreements require
+review and preserve established links. Operator link selections remain in effect
+until released. Unifying distinct existing roots requires review rather than a
+silent merge. Financial processing remains useful with provisional identity.
+
+Prospective nested inputs from all affected parents are reconciled before
+qualifying identities or selecting links. Retained source context contributes to
+target review regardless of reference/identifier arrival order. Each stable
+calculation phase reads shared history once; binding changes start a new phase
+before accepted state is written. Projection follows retained source dependencies,
+so a changed shared target also updates its previously observed parents.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
 instrument and observation tables require JavaScript and consume authenticated JSON.

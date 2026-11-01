@@ -126,6 +126,7 @@ type Querier interface {
 	PutSecret(ctx context.Context, arg PutSecretParams) error
 	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
+	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)

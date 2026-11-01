@@ -318,7 +318,14 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 }
 
 const artifactRootIDs = `-- name: ArtifactRootIDs :many
-SELECT DISTINCT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=? ORDER BY i.instrument_id
+WITH RECURSIVE affected(instrument_id) AS (
+ SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?
+ UNION
+ SELECT parent.instrument_id FROM affected
+ JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
+ JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+)
+SELECT instrument_id FROM affected ORDER BY instrument_id
 `
 
 func (q *Queries) ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error) {
@@ -2423,6 +2430,20 @@ func (q *Queries) PutSourceCorrection(ctx context.Context, arg PutSourceCorrecti
 	return err
 }
 
+const qualifyInstrument = `-- name: QualifyInstrument :exec
+UPDATE instruments SET source_key=?1 WHERE id=?2
+`
+
+type QualifyInstrumentParams struct {
+	SourceKey string
+	ID        string
+}
+
+func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error {
+	_, err := q.db.ExecContext(ctx, qualifyInstrument, arg.SourceKey, arg.ID)
+	return err
+}
+
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
@@ -2872,10 +2893,12 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 }
 
 const rootCalculationInputs = `-- name: RootCalculationInputs :many
-SELECT c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
 `
 
 type RootCalculationInputsRow struct {
+	ClaimID  string
+	Ordinal  int64
 	Kind     string
 	Data     []byte
 	Location string
@@ -2892,6 +2915,8 @@ func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string
 	for rows.Next() {
 		var i RootCalculationInputsRow
 		if err := rows.Scan(
+			&i.ClaimID,
+			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
 			&i.Location,

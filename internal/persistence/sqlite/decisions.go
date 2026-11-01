@@ -484,7 +484,7 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 		return err
 	}
 
-	if base.UnderlierID.Valid {
+	if base.UnderlierID == p.UnderlierID {
 		return nil
 	}
 
