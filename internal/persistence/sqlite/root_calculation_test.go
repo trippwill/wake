@@ -393,3 +393,208 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 		}
 	}
 }
+
+func underlierTemplate(t *testing.T) source.Trade {
+	t.Helper()
+	seed := coverageStore(t)
+	coverageReport(t, seed, "underlier-template", syntheticOption)
+
+	view, err := seed.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return view.Executions[0].Terms()
+}
+
+func underlierTrade(t *testing.T, base source.Trade, event, isin string, qualified bool) source.Trade {
+	t.Helper()
+
+	fields := base.Fields()
+	fields.Location = event
+
+	var err error
+
+	fields.Event, err = source.NewReference("synthetic", "execution", "U1", event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields.EventAliases = nil
+	instrument := fields.Instrument.Fields()
+	option := instrument.Option.Fields()
+
+	underlier := option.Underlier.Fields()
+	if !qualified {
+		underlier.Reference = source.Reference{}
+	}
+
+	if isin != "" {
+		identifier, e := source.NewIdentifier(source.ISIN, isin, "synthetic")
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		underlier.Identifiers = []source.Identifier{identifier}
+	}
+
+	option.Underlier, err = source.NewInstrument(underlier)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	instrument.Option, err = source.NewOptionTerms(option)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields.Instrument, err = source.NewInstrument(instrument)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	trade, err := source.NewTrade(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return trade
+}
+
+func retainUnderlierTrades(t *testing.T, s *Store, id string, trades ...source.Trade) {
+	t.Helper()
+	coverageClaims(
+		t,
+		s,
+		id,
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+				var counts provider.Counts
+				for _, trade := range trades {
+					if err := claims.PutTrade(ctx, trade); err != nil {
+						return provider.Result{}, err
+					}
+
+					counts.Rows++
+					counts.Trades++
+				}
+
+				return provider.NewResult(counts)
+			},
+		),
+	)
+}
+
+func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
+	s := coverageStore(t)
+	base := underlierTemplate(t)
+	coverageReport(t, s, "qualified-with-isin", equityRow("U1", "known-root", "100"))
+	retainUnderlierTrades(
+		t,
+		s,
+		"anonymous-with-other-isin",
+		underlierTrade(t, base, "anonymous", "US0000000002", false),
+	)
+
+	root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := s.InstrumentDetail(t.Context(), root.ID)
+	if err != nil || before.Underlier == "" {
+		t.Fatal(before, err)
+	}
+
+	retainUnderlierTrades(t, s, "new-qualified-reference", underlierTrade(t, base, "qualified", "", true))
+
+	after, err := s.InstrumentDetail(t.Context(), root.ID)
+	if err != nil || after.Underlier != before.Underlier || !after.Instrument.Status().NeedsReview() {
+		t.Fatal("conflicting qualified identity silently replaced source link", before.Underlier, after, err)
+	}
+}
+
+func TestMixedUnderlierBatchEnrichesSelectedQualifiedRoot(t *testing.T) {
+	for name, variant := range map[string]string{"qualified-first": "", "anonymous-first": "reverse", "historical-identifier": "historical"} {
+		t.Run(name, func(t *testing.T) {
+			s := coverageStore(t)
+			base := underlierTemplate(t)
+			coverageReport(
+				t,
+				s,
+				"existing-without-isin",
+				strings.Replace(equityRow("U1", "known-root", "100"), ` isin="US0000000001"`, "", 1),
+			)
+
+			initialISIN := ""
+			if variant == "historical" {
+				initialISIN = "US0000000001"
+			}
+
+			retainUnderlierTrades(t, s, "initial-anonymous", underlierTrade(t, base, "initial", initialISIN, false))
+			qualified := underlierTrade(t, base, "qualified", "", true)
+			anonymous := underlierTrade(t, base, "new-isin", "US0000000001", false)
+
+			batch := []source.Trade{qualified, anonymous}
+			if variant == "reverse" {
+				batch[0], batch[1] = batch[1], batch[0]
+			}
+
+			if variant == "historical" {
+				batch = []source.Trade{qualified}
+			}
+
+			retainUnderlierTrades(t, s, "mixed-batch", batch...)
+
+			root, err := s.queries.InstrumentBySource(
+				t.Context(),
+				referenceKey(base.Fields().Instrument.Reference()),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			parent, err := s.InstrumentDetail(t.Context(), root.ID)
+			if err != nil || parent.Underlier == "" {
+				t.Fatal(parent, err)
+			}
+
+			selected, err := s.InstrumentDetail(t.Context(), parent.Underlier)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ids := selected.Instrument.Reported().Identifiers()
+			if len(ids) != 1 || ids[0].Value() != "US0000000001" {
+				t.Fatal("mixed batch lost identifier on selected root", selected.Instrument.Reported())
+			}
+		})
+	}
+}
+
+func TestDisputedNewUnderliersDoNotInventAnEmptyRoot(t *testing.T) {
+	s := coverageStore(t)
+	unknown := strings.NewReplacer(` underlyingConid="100"`, "", ` underlyingSymbol="SYN"`, "").
+		Replace(syntheticOption)
+	coverageReport(t, s, "unknown-underlier", unknown)
+
+	competing := strings.NewReplacer(`underlyingConid="100"`, `underlyingConid="777"`, `execID="option-fill"`, `execID="other-fill"`, `tradeID="option-trade"`, `tradeID="other-trade"`).
+		Replace(syntheticOption)
+	coverageReport(t, s, "competing-underliers", syntheticOption+competing)
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, instrument := range view.Instruments {
+		if instrument.Reported().Kind() == "" {
+			t.Fatal("dispute invented empty root", instrument)
+		}
+	}
+
+	detail, err := s.InstrumentDetail(t.Context(), view.Executions[0].Instrument())
+	if err != nil || !detail.Instrument.Status().NeedsReview() || detail.Underlier != "" {
+		t.Fatal("disputed new link was selected", detail, err)
+	}
+}

@@ -329,7 +329,12 @@ underlier result never identifies its option. An unambiguous reference can enric
 an existing
 identity. A compatible ticker-only underlier keeps its root when its first
 qualified reference arrives. If that reference already has a root, the parent's
-automatic link selects it while preserving both roots and their source bindings.
+automatic link selects it only when their complete reported identities agree,
+while preserving both roots and their source bindings. Conflicting identifiers
+retain the established link and require review. Underlier claims in one batch
+share the reconciled target, regardless of reference/identifier arrival order.
+Compatible earlier source inputs also contribute to that target; their original
+bindings remain retained.
 Operator link selections remain in effect until released. Unifying distinct
 existing roots requires review rather than a silent merge. Financial processing remains useful with provisional reference identity.
 

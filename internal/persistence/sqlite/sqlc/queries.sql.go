@@ -2886,10 +2886,12 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 }
 
 const rootCalculationInputs = `-- name: RootCalculationInputs :many
-SELECT c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
 `
 
 type RootCalculationInputsRow struct {
+	ClaimID  string
+	Ordinal  int64
 	Kind     string
 	Data     []byte
 	Location string
@@ -2906,6 +2908,8 @@ func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string
 	for rows.Next() {
 		var i RootCalculationInputsRow
 		if err := rows.Scan(
+			&i.ClaimID,
+			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
 			&i.Location,
