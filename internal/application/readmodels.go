@@ -5,6 +5,7 @@ package application
 
 import (
 	"context"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -22,6 +23,7 @@ type ListOptions struct {
 	DisplayMatches                       DisplayMatches
 	ReviewMatches                        []ReviewMatch
 	ObservationMatches                   []ObservationOutcome
+	ObservationLabels                    map[ObservationOutcome]string
 }
 type (
 	ReviewMatch struct {
@@ -163,22 +165,19 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	for _, outcome := range options.ObservationMatches {
-		if scope != ObservationScope ||
-			!slices.Contains(
-				[]ObservationOutcome{
-					ObservationUnselected,
-					ObservationIdentityReview,
-					ObservationNativeReview,
-					ObservationKindConflict,
-					ObservationTermsConflict,
-					ObservationCorroborated,
-					ObservationAccepted,
-				},
-				outcome,
-			) {
+		if scope != ObservationScope || !knownObservationOutcome(outcome) {
 			return ListQuery{}, ErrInvalid
 		}
 	}
+
+	for outcome, label := range options.ObservationLabels {
+		if scope != ObservationScope || !knownObservationOutcome(outcome) || strings.TrimSpace(label) == "" ||
+			len(label) > 256 {
+			return ListQuery{}, ErrInvalid
+		}
+	}
+
+	options.ObservationLabels = maps.Clone(options.ObservationLabels)
 
 	options.ObservationMatches = slices.Clone(options.ObservationMatches)
 	options.ReviewMatches = slices.Clone(options.ReviewMatches)
@@ -193,6 +192,7 @@ func (q ListQuery) Scope() ListScope { return q.scope }
 func (q ListQuery) Options() ListOptions {
 	out := q.options
 	out.ObservationMatches = slices.Clone(out.ObservationMatches)
+	out.ObservationLabels = maps.Clone(out.ObservationLabels)
 	out.ReviewMatches = slices.Clone(out.ReviewMatches)
 	out.KindMatches = slices.Clone(out.KindMatches)
 	out.StateMatches = slices.Clone(out.StateMatches)
@@ -298,3 +298,18 @@ type (
 		ObservationList(context.Context, string, string, ListQuery) (ObservationList, error)
 	}
 )
+
+func knownObservationOutcome(outcome ObservationOutcome) bool {
+	switch outcome {
+	case ObservationUnselected,
+		ObservationIdentityReview,
+		ObservationNativeReview,
+		ObservationKindConflict,
+		ObservationTermsConflict,
+		ObservationCorroborated,
+		ObservationAccepted:
+		return true
+	default:
+		return false
+	}
+}

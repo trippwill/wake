@@ -293,9 +293,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var extra, offline, expired, noGrid, refreshFailed, holdRefresh atomic.Bool
+	var extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection atomic.Bool
 
 	refreshStarted, releaseRefresh := make(chan struct{}, 1), make(chan struct{})
+	selectionStarted, releaseSelection := make(chan struct{}, 1), make(chan struct{})
+
+	var gridRequests atomic.Int64
 
 	eventShutdown := make(chan struct{})
 	form := application.CorrectionForm{
@@ -403,6 +406,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 		}
 
+		if r.URL.Path == "/test/grid-data" && holdSelection.CompareAndSwap(true, false) {
+			selectionStarted <- struct{}{}
+
+			select {
+			case <-releaseSelection:
+			case <-r.Context().Done():
+				return
+			}
+		}
+
 		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" && refreshFailed.Load() {
 			http.Error(w, "Read temporarily unavailable", http.StatusServiceUnavailable)
 			return
@@ -470,6 +483,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 
 			if r.URL.Path == "/test/grid-data" {
+				gridRequests.Add(1)
 				polishGridData(w, r, extra.Load())
 			} else {
 				polishObservationData(w, r, !extra.Load())
@@ -778,6 +792,65 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 	)
+	// Copying an exact displayed amount must survive both a queued refresh and a
+	// response that was already downloading when selection began.
+	check(chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil))
+
+	beforeSelection := gridRequests.Load()
+
+	check(
+		chromedp.Evaluate(
+			`(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('.tabulator-row [tabulator-field="price"]'));document.getSelection().removeAllRanges();document.getSelection().addRange(range);window.copiedExactValue=document.getSelection().toString();window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent.includes('paused while text is selected')`,
+			nil,
+		),
+	)
+
+	if gridRequests.Load() != beforeSelection {
+		t.Fatal("selected text started a background replacement")
+	}
+
+	check(chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil))
+	holdSelection.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+	)
+
+	select {
+	case <-selectionStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("selection test did not hold a JSON request")
+	}
+
+	extra.Store(false)
+	check(
+		chromedp.Evaluate(
+			`(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('.tabulator-row [tabulator-field="price"]'));document.getSelection().removeAllRanges();document.getSelection().addRange(range);window.copiedExactValue=document.getSelection().toString()})()`,
+			nil,
+		),
+	)
+	close(releaseSelection)
+	check(
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent.includes('paused while text is selected')`,
+			nil,
+		),
+	)
+	assert(
+		`document.getSelection().toString()===window.copiedExactValue&&window.copiedExactValue!==''&&document.querySelectorAll('.tabulator-row').length===21`,
+		"in-flight response erased selected exact text",
+	)
+	check(
+		chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results'&&document.querySelectorAll('.tabulator-row').length===20`,
+			nil,
+		),
+	)
+
 	offline.Store(true)
 	check(
 		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),

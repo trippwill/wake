@@ -323,6 +323,38 @@
   };
   const gridParameter = (region, name) =>
     region.dataset.grid === "observations" ? `observations_${name}` : name;
+  const selectedTextWithin = (region) => {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) return false;
+    for (let i = 0; i < selection.rangeCount; i++)
+      if (selection.getRangeAt(i).intersectsNode(region)) return true;
+    return false;
+  };
+  const selectionMessage = "Table refresh paused while text is selected.";
+  const waitForGridSelection = (region, signal) => {
+    if (!selectedTextWithin(region)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        document.removeEventListener("selectionchange", changed);
+        signal.removeEventListener("abort", aborted);
+      };
+      const changed = () => {
+        if (!selectedTextWithin(region)) {
+          cleanup();
+          resolve();
+        }
+      };
+      const aborted = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      document.addEventListener("selectionchange", changed);
+      signal.addEventListener("abort", aborted, { once: true });
+      if (signal.aborted) aborted();
+      else changed();
+    });
+  };
+
   const gridCell = (cell) => {
     const value = cell.getValue() || {};
     const node = document.createElement("div");
@@ -410,6 +442,7 @@
           index: "id",
           layout: "fitColumns",
           maxHeight: "32rem",
+          dataLoader: false,
           renderVertical: "basic",
           columns,
           pagination: true,
@@ -443,6 +476,7 @@
           placeholder: "No matching records.",
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: async (url, _config, parameters) => {
+            delete region.dataset.gridReady;
             rememberFocus();
             state.request?.abort();
             const sequence = ++state.sequence;
@@ -511,6 +545,13 @@
                 );
               if (sequence !== state.sequence)
                 throw new Error("Superseded table request");
+              if (selectedTextWithin(region)) {
+                status.textContent = selectionMessage;
+                clearTimeout(timeout);
+                await waitForGridSelection(region, controller.signal);
+                if (sequence !== state.sequence)
+                  throw new Error("Superseded table request");
+              }
               status.textContent = `${result.last_row} of ${result.total} results`;
               history.replaceState(null, "", current);
               return result;
@@ -541,9 +582,9 @@
           table.setColumns(columns);
         table.on("tableBuilt", () => {
           element.setAttribute("aria-label", region.getAttribute("aria-label"));
-          region.dataset.gridReady = "true";
         });
         table.on("renderComplete", () => {
+          region.dataset.gridReady = "true";
           const sort = table.getSorters()[0];
           for (const heading of element.querySelectorAll(".tabulator-col")) {
             heading.tabIndex = 0;
@@ -627,6 +668,11 @@
         state.request?.abort();
         state.table.destroy();
         grids.delete(region);
+        continue;
+      }
+      if (selectedTextWithin(region)) {
+        region.querySelector("[data-grid-status]").textContent =
+          selectionMessage;
         continue;
       }
       if (!state.pending && region.getClientRects().length)
@@ -718,15 +764,12 @@
   const protectedContent = () => {
     const region = document.querySelector("#workspace-content");
     if (!region) return false;
-    const selection = document.getSelection();
     return (
       region.contains(document.activeElement) ||
       [...region.querySelectorAll("form")].some((form) =>
         dirtyForms.has(form),
       ) ||
-      (selection &&
-        !selection.isCollapsed &&
-        region.contains(selection.anchorNode))
+      selectedTextWithin(region)
     );
   };
   let disclosures = new Map();

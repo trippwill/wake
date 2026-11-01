@@ -345,3 +345,52 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 		}
 	}
 }
+
+func TestObservationGridFallbackPreservesNamespacedState(t *testing.T) {
+	root := "/activity?q=original&page=3"
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/grids/observations?subject=activity&id=one&q=duplicate&sort=location&dir=asc&page=2&origin="+url.QueryEscape(
+			root,
+		),
+		nil,
+	)
+
+	owned, err := gridPageRequest(request, "observations")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := url.Parse(navURL(owned.Context(), "/evidence/report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
+
+	returned, err := url.Parse(returnURL(next.Context()))
+	if err != nil || returned.Path != "/activity/one" ||
+		returned.Query().Get("observations_q") != "duplicate" ||
+		returned.Query().Get("observations_sort") != "location" ||
+		returned.Query().Get("observations_dir") != "asc" ||
+		returned.Query().Get("observations_page") != "2" ||
+		returned.Query().Get("origin") != localDestination(root) ||
+		returned.Query().Get("q") != "" {
+		t.Fatal(returned, err)
+	}
+
+	query, err := listQuery(owned.Context(), application.ObservationScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for outcome, label := range query.Options().ObservationLabels {
+		if label != observationStatus(outcome) {
+			t.Fatal(outcome, label)
+		}
+	}
+
+	if len(query.Options().ObservationLabels) != 7 {
+		t.Fatal("incomplete outcome vocabulary", query.Options().ObservationLabels)
+	}
+}

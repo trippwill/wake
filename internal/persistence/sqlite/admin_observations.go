@@ -26,6 +26,7 @@ func (s *Store) ObservationList(
 	}
 
 	matches, _ := json.Marshal(options.ObservationMatches)
+	labels, _ := json.Marshal(options.ObservationLabels)
 
 	return readModel(ctx, s, func(q *sqlc.Queries) (application.ObservationList, error) {
 		out := application.ObservationList{Items: []application.Observation{}}
@@ -67,6 +68,7 @@ func (s *Store) ObservationList(
 				SubjectID:      sql.NullString{String: id, Valid: true},
 				Search:         options.Search,
 				OutcomeMatches: string(matches),
+				OutcomeLabels:  string(labels),
 				SortField:      options.Sort,
 				Direction:      options.Direction,
 				PageSize:       int64(options.PageSize),
