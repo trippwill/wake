@@ -330,30 +330,6 @@
       if (selection.getRangeAt(i).intersectsNode(region)) return true;
     return false;
   };
-  const selectionMessage = "Table refresh paused while text is selected.";
-  const waitForGridSelection = (region, signal) => {
-    if (!selectedTextWithin(region)) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        document.removeEventListener("selectionchange", changed);
-        signal.removeEventListener("abort", aborted);
-      };
-      const changed = () => {
-        if (!selectedTextWithin(region)) {
-          cleanup();
-          resolve();
-        }
-      };
-      const aborted = () => {
-        cleanup();
-        reject(signal.reason);
-      };
-      document.addEventListener("selectionchange", changed);
-      signal.addEventListener("abort", aborted, { once: true });
-      if (signal.aborted) aborted();
-      else changed();
-    });
-  };
 
   const gridCell = (cell) => {
     const value = cell.getValue() || {};
@@ -386,6 +362,7 @@
         continue;
       const status = region.querySelector("[data-grid-status]");
       const retry = region.querySelector("[data-grid-retry]");
+      const refresh = region.querySelector("[data-grid-refresh]");
       const signIn = region.querySelector("[data-grid-signin]");
       if (typeof window.Tabulator !== "function") {
         status.textContent =
@@ -419,6 +396,9 @@
           }));
         const state = {
           table: null,
+          check: null,
+          displayed: null,
+          available: false,
           request: null,
           sequence: 0,
           pending: false,
@@ -441,6 +421,106 @@
                     ?.getAttribute("tabulator-field"),
                 }
               : null;
+        };
+        const requestData = async (
+          url,
+          _config,
+          parameters,
+          background = false,
+        ) => {
+          if (!background) {
+            delete region.dataset.gridReady;
+            state.available = false;
+            refresh.hidden = true;
+            status.textContent = "Loading table…";
+          }
+          state.request?.abort();
+          const sequence = ++state.sequence;
+          const controller = new AbortController();
+          state.request = controller;
+          state.pending = true;
+          region.setAttribute("aria-busy", "true");
+          retry.hidden = true;
+          signIn.hidden = true;
+          const target = new URL(url, location.href);
+          const current = new URL(location.href);
+          for (const key of ["q", "kind", "state"])
+            if (current.searchParams.has(gridParameter(region, key)))
+              target.searchParams.set(
+                key,
+                current.searchParams.get(gridParameter(region, key)),
+              );
+          const sort = parameters.sort?.[0];
+          if (sort) {
+            target.searchParams.set("sort", sort.field);
+            target.searchParams.set("dir", sort.dir);
+          }
+          target.searchParams.set("page", String(parameters.page || 1));
+          target.searchParams.set("size", String(parameters.size || 50));
+          for (const key of ["sort", "dir", "page"])
+            current.searchParams.set(
+              gridParameter(region, key),
+              target.searchParams.get(key),
+            );
+          if (current.searchParams.has("origin"))
+            target.searchParams.set(
+              "origin",
+              current.searchParams.get("origin"),
+            );
+          target.searchParams.set(
+            "page_url",
+            current.pathname + current.search,
+          );
+          const timeout = setTimeout(() => controller.abort(), 8000);
+          try {
+            const response = await fetch(target, {
+              credentials: "same-origin",
+              headers: { Accept: "application/json", "HX-Request": "true" },
+              signal: controller.signal,
+            });
+            if (response.status === 401 || response.status === 403) {
+              signIn.hidden = false;
+              throw new Error(
+                "Your session expired. Sign in again to reload this table.",
+              );
+            }
+            if (!response.ok)
+              throw new Error(
+                "Table data is unavailable. Previous results remain displayed; retry.",
+              );
+            const result = await response.json();
+            if (
+              !Array.isArray(result.data) ||
+              !Number.isInteger(result.last_page) ||
+              result.last_page < 1 ||
+              !Number.isInteger(result.last_row)
+            )
+              throw new Error(
+                "The table response was incomplete. Previous results remain displayed; retry.",
+              );
+            if (sequence !== state.sequence)
+              throw new Error("Superseded table request");
+            if (!background) {
+              state.displayed = result;
+              status.textContent = `${result.last_row} of ${result.total} results`;
+              history.replaceState(null, "", current);
+            }
+            return result;
+          } catch (error) {
+            if (sequence === state.sequence) {
+              status.textContent = controller.signal.aborted
+                ? "Table request timed out. Previous results remain displayed; retry."
+                : error.message;
+              retry.hidden = false;
+            }
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+            if (sequence === state.sequence) {
+              state.pending = false;
+              region.removeAttribute("aria-busy");
+            }
+          }
         };
         const table = new window.Tabulator(element, {
           index: "id",
@@ -479,108 +559,65 @@
           },
           placeholder: "No matching records.",
           ajaxURL: region.dataset.gridUrl,
-          ajaxRequestFunc: async (url, _config, parameters) => {
-            delete region.dataset.gridReady;
-            state.request?.abort();
-            const sequence = ++state.sequence;
-            const controller = new AbortController();
-            state.request = controller;
-            state.pending = true;
-            region.setAttribute("aria-busy", "true");
-            status.textContent = "Loading table…";
-            retry.hidden = true;
-            signIn.hidden = true;
-            const target = new URL(url, location.href);
-            const current = new URL(location.href);
-            for (const key of ["q", "kind", "state"])
-              if (current.searchParams.has(gridParameter(region, key)))
-                target.searchParams.set(
-                  key,
-                  current.searchParams.get(gridParameter(region, key)),
-                );
-            const sort = parameters.sort?.[0];
-            if (sort) {
-              target.searchParams.set("sort", sort.field);
-              target.searchParams.set("dir", sort.dir);
-            }
-            target.searchParams.set("page", String(parameters.page || 1));
-            target.searchParams.set("size", String(parameters.size || 50));
-            for (const key of ["sort", "dir", "page"])
-              current.searchParams.set(
-                gridParameter(region, key),
-                target.searchParams.get(key),
-              );
-            if (current.searchParams.has("origin"))
-              target.searchParams.set(
-                "origin",
-                current.searchParams.get("origin"),
-              );
-            target.searchParams.set(
-              "page_url",
-              current.pathname + current.search,
-            );
-            const timeout = setTimeout(() => controller.abort(), 8000);
-            try {
-              const response = await fetch(target, {
-                credentials: "same-origin",
-                headers: { Accept: "application/json", "HX-Request": "true" },
-                signal: controller.signal,
-              });
-              if (response.status === 401 || response.status === 403) {
-                signIn.hidden = false;
-                throw new Error(
-                  "Your session expired. Sign in again to reload this table.",
-                );
-              }
-              if (!response.ok)
-                throw new Error(
-                  "Table data is unavailable. Previous results remain displayed; retry.",
-                );
-              const result = await response.json();
-              if (
-                !Array.isArray(result.data) ||
-                !Number.isInteger(result.last_page) ||
-                result.last_page < 1 ||
-                !Number.isInteger(result.last_row)
-              )
-                throw new Error(
-                  "The table response was incomplete. Previous results remain displayed; retry.",
-                );
-              if (sequence !== state.sequence)
-                throw new Error("Superseded table request");
-              if (selectedTextWithin(region)) {
-                status.textContent = selectionMessage;
-                clearTimeout(timeout);
-                await waitForGridSelection(region, controller.signal);
-                if (sequence !== state.sequence)
-                  throw new Error("Superseded table request");
-              }
-              status.textContent = `${result.last_row} of ${result.total} results`;
-              history.replaceState(null, "", current);
-              return result;
-            } catch (error) {
-              if (sequence === state.sequence) {
-                status.textContent = controller.signal.aborted
-                  ? "Table request timed out. Previous results remain displayed; retry."
-                  : error.message;
-                retry.hidden = false;
-              }
-              throw error;
-            } finally {
-              clearTimeout(timeout);
-              if (sequence === state.sequence) {
-                state.pending = false;
-                region.removeAttribute("aria-busy");
-              }
-            }
-          },
+          ajaxRequestFunc: requestData,
           rowFormatter: (row) => {
             row.getElement().dataset.record = row.getData().id;
           },
         });
         state.table = table;
         grids.set(region, state);
-        retry.onclick = () => table.setPage(table.getPage()).catch(() => {});
+        const readPage = (background) =>
+          requestData(
+            region.dataset.gridUrl,
+            null,
+            {
+              page: table.getPage(),
+              size: table.getPageSize(),
+              sort: table.getSorters(),
+            },
+            background,
+          );
+        state.check = async () => {
+          if (!state.displayed) return table.setPage(table.getPage());
+          const result = await readPage(true);
+          state.available =
+            JSON.stringify(state.displayed) !== JSON.stringify(result);
+          if (!state.available && document.activeElement === refresh)
+            element
+              .querySelector(".tabulator-col")
+              ?.focus({ preventScroll: true });
+          refresh.hidden = !state.available;
+          const message = state.available
+            ? "Updated results are available. Refresh the table to see them."
+            : `${state.displayed.last_row} of ${state.displayed.total} results`;
+          if (status.textContent !== message) status.textContent = message;
+        };
+        refresh.onclick = async () => {
+          if (!state.available) return;
+          const restoreFocus = document.activeElement === refresh;
+          const displayed = state.displayed;
+          try {
+            const result = await readPage(false);
+            if (table.getPage() > result.last_page) {
+              await table.setPage(result.last_page);
+            } else if (JSON.stringify(displayed) !== JSON.stringify(result)) {
+              table.setMaxPage(result.last_page);
+              await table.replaceData(result.data);
+            }
+            region.dataset.gridReady = "true";
+          } catch {
+            // The shared request path retains rows and presents retry/sign-in feedback.
+          }
+          if (
+            restoreFocus &&
+            (document.activeElement === document.body ||
+              document.activeElement === refresh)
+          )
+            element
+              .querySelector(".tabulator-col")
+              ?.focus({ preventScroll: true });
+        };
+        retry.onclick = () => state.check().catch(() => {});
         region.querySelector("[data-grid-reset]").onclick = () =>
           table.setColumns(createColumns());
         // Capture the current focus immediately before Tabulator removes old rows.
@@ -676,13 +713,8 @@
         grids.delete(region);
         continue;
       }
-      if (selectedTextWithin(region)) {
-        region.querySelector("[data-grid-status]").textContent =
-          selectionMessage;
-        continue;
-      }
       if (!state.pending && region.getClientRects().length)
-        state.table.setPage(state.table.getPage()).catch(() => {});
+        state.check().catch(() => {});
     }
   };
   enhance(document);
