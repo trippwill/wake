@@ -327,8 +327,11 @@ selection of anonymous access. Reference selection distinguishes equity share
 classes from option contracts; an
 underlier result never identifies its option. An unambiguous reference can enrich
 an existing
-identity; unifying distinct existing roots requires review rather than a silent
-merge. Financial processing remains useful with provisional reference identity.
+identity. A compatible ticker-only underlier keeps its root when its first
+qualified reference arrives. If that reference already has a root, the parent's
+automatic link selects it while preserving both roots and their source bindings.
+Operator link selections remain in effect until released. Unifying distinct
+existing roots requires review rather than a silent merge. Financial processing remains useful with provisional reference identity.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
 instrument and observation tables require JavaScript and consume authenticated JSON.

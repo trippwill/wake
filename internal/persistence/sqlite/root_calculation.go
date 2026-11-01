@@ -4,6 +4,8 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -63,7 +65,7 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 		}
 
 		if underlier := reported.Option().Fields().Underlier; underlier.Kind() != "" {
-			id, _, e := acceptInstrument(ctx, q, "retained", root.ID+"/underlier", underlier, "")
+			id, e := acceptAutomaticUnderlier(ctx, q, root.ID, underlier)
 			if e != nil {
 				return e
 			}
@@ -83,6 +85,68 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 	}
 
 	return nil
+}
+
+// Follow the source-established link, never the operator-projected link. A
+// compatible anonymous root can acquire its first qualified reference. Existing
+// qualified roots remain distinct; only the parent's automatic selection moves.
+func acceptAutomaticUnderlier(
+	ctx context.Context,
+	q *sqlc.Queries,
+	parent string,
+	reported source.Instrument,
+) (string, error) {
+	if err := q.EnsureInstrumentSelection(ctx, parent); err != nil {
+		return "", err
+	}
+
+	selection, err := q.InstrumentSelection(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
+	if selection.UnderlierID.Valid {
+		root, e := q.Instrument(ctx, selection.UnderlierID.String)
+		if e != nil {
+			return "", e
+		}
+
+		baseline, e := instrumentValue(root)
+		if e != nil {
+			return "", e
+		}
+
+		known := baseline.Reported()
+		if application.CompatibleInstrument(known, reported) {
+			if reported.Reference().IsZero() || !known.Reference().IsZero() {
+				return root.ID, nil
+			}
+
+			key := referenceKey(reported.Reference())
+
+			qualified, e := q.InstrumentBySource(ctx, key)
+			if e == nil {
+				return qualified.ID, nil
+			}
+
+			if !errors.Is(e, sql.ErrNoRows) {
+				return "", e
+			}
+			// A previous claim in this transaction may already have supplied a
+			// different reference, before the complete claim set is projected.
+			if root.SourceKey == anonymousInstrumentKey("retained", parent+"/underlier") || root.SourceKey == key {
+				if e = q.QualifyInstrument(ctx, sqlc.QualifyInstrumentParams{ID: root.ID, SourceKey: key}); e != nil {
+					return "", e
+				}
+
+				return root.ID, nil
+			}
+		}
+	}
+
+	id, _, err := acceptInstrument(ctx, q, "retained", parent+"/underlier", reported, "")
+
+	return id, err
 }
 
 func projectArtifactRoots(ctx context.Context, q *sqlc.Queries, artifact string) error {

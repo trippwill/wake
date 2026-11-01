@@ -146,26 +146,17 @@ func persistRootEnrichment(
 		}
 	}
 
-	if err = q.EnsureInstrumentSelection(ctx, root.ID); err != nil {
-		return err
-	}
-
-	selection, err := q.InstrumentSelection(ctx, root.ID)
-	if err != nil {
-		return err
-	}
-
-	if !selection.UnderlierID.Valid {
-		if u := result.Underlier; u.Kind() != "" {
-			underlier, _, e := acceptInstrument(ctx, q, "retained", root.ID+"/underlier", u, "")
-			if e != nil {
-				return e
-			}
-
-			return setAutomaticUnderlier(ctx, q,
-				sqlc.SetUnderlierParams{ID: root.ID, UnderlierID: sql.NullString{String: underlier, Valid: true}},
-			)
+	if u := result.Underlier; u.Kind() != "" {
+		underlier, e := acceptAutomaticUnderlier(ctx, q, root.ID, u)
+		if e != nil {
+			return e
 		}
+
+		return setAutomaticUnderlier(
+			ctx,
+			q,
+			sqlc.SetUnderlierParams{ID: root.ID, UnderlierID: sql.NullString{String: underlier, Valid: true}},
+		)
 	}
 
 	return nil

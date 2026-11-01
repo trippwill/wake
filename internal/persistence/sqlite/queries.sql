@@ -90,6 +90,8 @@ SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,rece
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT * FROM instruments WHERE source_key=?;
+-- name: QualifyInstrument :exec
+UPDATE instruments SET source_key=sqlc.arg(source_key) WHERE id=sqlc.arg(id);
 -- name: CompetingFIGI :many
 SELECT instruments.* FROM instruments
 JOIN (

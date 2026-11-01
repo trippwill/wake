@@ -2423,6 +2423,20 @@ func (q *Queries) PutSourceCorrection(ctx context.Context, arg PutSourceCorrecti
 	return err
 }
 
+const qualifyInstrument = `-- name: QualifyInstrument :exec
+UPDATE instruments SET source_key=?1 WHERE id=?2
+`
+
+type QualifyInstrumentParams struct {
+	SourceKey string
+	ID        string
+}
+
+func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error {
+	_, err := q.db.ExecContext(ctx, qualifyInstrument, arg.SourceKey, arg.ID)
+	return err
+}
+
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
