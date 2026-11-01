@@ -109,6 +109,13 @@ that directory as native sqlc output, without added headers or formatter changes
 It is excluded from all linters and formatters; sqlc validation, generated-source
 freshness checks, compilation and tests still cover it.
 
+In handwritten Go, prefer modern syntax and standard-library helpers when they
+express the same intent more directly: `any` instead of `interface{}`,
+`slices.Contains` for membership, `slices.Backward` for reverse iteration and
+`maps.Copy` for map copies. Use `strings.Builder` for repeated string concatenation
+in loops; ordinary concatenation is fine for a few fixed parts. Preserve ordering,
+ownership and error handling when replacing handwritten code with a helper.
+
 Enforce financial invariants at constructors/parsers and preserve immutable
 values with private representations. Exact decimal text remains authoritative;
 round only at deliberate calculation/display boundaries.
