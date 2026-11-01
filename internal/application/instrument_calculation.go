@@ -192,13 +192,18 @@ func rootIdentity(
 	bindings map[source.Reference]RootBinding,
 ) (source.Instrument, bool, error) {
 	identity, conflict, err := rootTerms(value, bindings)
-	if err != nil || identity.Kind() == "" {
+	if err != nil || identity.Kind() == "" || identity.Reference().IsZero() {
 		return identity, conflict, err
 	}
 
 	binding, ok := bindings[value.Reference()]
 	if !ok || binding.Canonical.Reference() == value.Reference() {
 		return identity, conflict, nil
+	}
+
+	if !CompatibleInstrumentKind(identity.Kind(), binding.Reported.Kind()) ||
+		!CompatibleInstrumentKind(identity.Kind(), binding.Canonical.Kind()) {
+		return identity, true, nil
 	}
 
 	previous, disputed, err := rootTerms(binding.Reported, bindings)

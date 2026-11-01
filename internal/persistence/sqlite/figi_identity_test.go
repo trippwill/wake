@@ -332,6 +332,42 @@ func TestFIGICombinationPreservesDifferentVenueIdentities(t *testing.T) {
 			t.Fatal(resource, err)
 		}
 	}
+
+	coverageReport(
+		t,
+		s,
+		"third",
+		strings.Replace(equityRow("U1", "third", "300"), `conid="100"`, `conid="300"`, 1),
+	)
+
+	current, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var thirdInstrument, thirdListing string
+	for _, execution := range current.Executions {
+		if execution.Terms().Fields().Event.Value() == "third" {
+			thirdInstrument, thirdListing = execution.Instrument(), execution.Listing()
+		}
+	}
+
+	if thirdInstrument == "" || thirdListing == "" {
+		t.Fatal("missing incoming listing")
+	}
+
+	applyEquityIdentity(t, s, thirdInstrument)
+
+	retained, err := s.Resource(t.Context(), "listings", thirdListing)
+	if err != nil || retained.ID != thirdListing || retained.Listing.InstrumentID != a ||
+		retained.Listing.FIGI != nil {
+		t.Fatal("ambiguous missing-FIGI listing was assigned a verified venue", retained, err)
+	}
+
+	detail, err = s.InstrumentDetail(t.Context(), a)
+	if err != nil || len(detail.Listings) != 3 {
+		t.Fatal("ambiguous listing was not retained separately", detail, err)
+	}
 }
 
 func TestFIGIContradictionCannotBeOutvotedByAnotherRoot(t *testing.T) {

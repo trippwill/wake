@@ -76,3 +76,57 @@ func TestAnonymousBindingsDoNotCreateAnAbsentUnderlier(t *testing.T) {
 		t.Fatal("anonymous binding replaced an absent underlier", got, err)
 	}
 }
+
+func TestUnderlierCannotUseAnOptionBinding(t *testing.T) {
+	for _, anonymous := range []bool{true, false} {
+		ref, _ := source.NewReference("synthetic", "contract", "", "reported")
+		if anonymous {
+			ref = source.Reference{}
+		}
+
+		canonicalRef, _ := source.NewReference("synthetic", "contract", "", "canonical")
+		id, _ := source.NewIdentifier(source.ISIN, "synthetic-underlier", "isin")
+
+		underlier, err := source.NewInstrument(
+			source.InstrumentInput{
+				Kind:        source.UnknownInstrument,
+				Reference:   ref,
+				Identifiers: []source.Identifier{id},
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		terms, err := source.NewOptionTerms(source.OptionInput{Underlier: underlier})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		original, err := source.NewInstrument(
+			source.InstrumentInput{Kind: source.Option, Reference: ref, Name: "Synthetic option", Option: terms},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f := original.Fields()
+		f.Reference = canonicalRef
+
+		canonical, err := source.NewInstrument(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := CalculateBoundRoot(
+			canonical,
+			[]source.Instrument{original},
+			map[source.Reference]RootBinding{ref: {Reported: original, Canonical: canonical}},
+		)
+		if err != nil || got.Conflict == anonymous || got.Underlier.Kind() != source.UnknownInstrument ||
+			len(got.Underlier.Identifiers()) != 1 ||
+			got.Underlier.Identifiers()[0] != id {
+			t.Fatal("underlier was recursively substituted with an option binding", anonymous, got, err)
+		}
+	}
+}

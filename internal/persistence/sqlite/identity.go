@@ -316,10 +316,18 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			func(candidate sqlc.Listing) bool { return candidate.Figi == l.Figi },
 		)
 		if index < 0 {
-			index = slices.IndexFunc(
-				candidates,
-				func(candidate sqlc.Listing) bool { return candidate.Figi == "" || l.Figi == "" },
-			)
+			for i, candidate := range candidates {
+				if candidate.Figi != "" && l.Figi != "" {
+					continue
+				}
+
+				if index >= 0 {
+					index = -1
+					break
+				}
+
+				index = i
+			}
 		}
 
 		if index < 0 {
