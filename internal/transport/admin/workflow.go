@@ -508,7 +508,7 @@ func registerWorkflowRoutes(
 		}
 
 		if detail.Instrument.ID() != r.PathValue("id") {
-			http.Redirect(w, r, navURL(r.Context(), "/instruments/"+detail.Instrument.ID()), http.StatusSeeOther)
+			http.Redirect(w, r, taskURL(r.Context(), "/instruments/"+detail.Instrument.ID()), http.StatusSeeOther)
 			return
 		}
 
@@ -618,7 +618,7 @@ func registerWorkflowRoutes(
 			}
 
 			if kind == "instrument" && form.ID != r.PathValue("id") {
-				http.Redirect(w, r, navURL(r.Context(), "/instruments/"+form.ID+"/correct"), http.StatusSeeOther)
+				http.Redirect(w, r, taskURL(r.Context(), "/instruments/"+form.ID+"/correct"), http.StatusSeeOther)
 				return
 			}
 

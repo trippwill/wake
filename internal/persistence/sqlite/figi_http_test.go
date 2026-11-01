@@ -94,7 +94,7 @@ func TestCombinedInstrumentHTTPRedirectPreservesNavigation(t *testing.T) {
 
 		target, e := url.Parse(w.Header().Get("Location"))
 		if e != nil || w.Code != http.StatusSeeOther || target.Path != "/instruments/"+first+suffix ||
-			target.Query().Get("origin") != listOrigin {
+			target.Query().Get("origin") != listOrigin || target.Query().Get("parent") != "" {
 			t.Fatal("combined instrument lost canonical URL or list navigation", w.Code, w.Header(), e)
 		}
 
