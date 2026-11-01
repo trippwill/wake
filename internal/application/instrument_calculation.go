@@ -192,8 +192,8 @@ func rootIdentity(
 	bindings map[source.Reference]RootBinding,
 ) (source.Instrument, bool, error) {
 	identity, conflict, err := rootTerms(value, bindings)
-	if err != nil {
-		return source.Instrument{}, false, err
+	if err != nil || identity.Kind() == "" {
+		return identity, conflict, err
 	}
 
 	binding, ok := bindings[value.Reference()]

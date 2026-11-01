@@ -49,3 +49,30 @@ func TestBoundIdentityEnrichmentLimitRetainsBaselineForReview(t *testing.T) {
 		t.Fatal("bounded enrichment lost baseline or stopped processing", got, err)
 	}
 }
+
+func TestAnonymousBindingsDoNotCreateAnAbsentUnderlier(t *testing.T) {
+	ref, _ := source.NewReference("synthetic", "contract", "", "identified")
+	optionRef, _ := source.NewReference("synthetic", "contract", "", "option")
+	id, _ := source.NewIdentifier(source.ISIN, "synthetic", "isin")
+	anonymous, _ := source.NewInstrument(
+		source.InstrumentInput{Kind: source.Equity, Identifiers: []source.Identifier{id}},
+	)
+	canonical, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Reference: ref})
+	terms, _ := source.NewOptionTerms(source.OptionInput{})
+
+	option, err := source.NewInstrument(
+		source.InstrumentInput{Kind: source.Option, Reference: optionRef, Option: terms},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := CalculateBoundRoot(
+		option,
+		[]source.Instrument{option},
+		map[source.Reference]RootBinding{{}: {Reported: anonymous, Canonical: canonical}},
+	)
+	if err != nil || got.Conflict || got.Underlier.Kind() != "" {
+		t.Fatal("anonymous binding replaced an absent underlier", got, err)
+	}
+}
