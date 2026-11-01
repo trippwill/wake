@@ -17,6 +17,11 @@ import (
 
 func referenceKey(ref source.Reference) string { b, _ := json.Marshal(refWire(ref)); return string(b) }
 
+func anonymousInstrumentKey(artifact, location string) string {
+	b, _ := json.Marshal([]string{artifact, location})
+	return string(b)
+}
+
 func executionValue(r sqlc.Execution) (application.Execution, error) {
 	t, err := decodeTrade(r.Accepted)
 	if err != nil {
@@ -402,8 +407,7 @@ func acceptInstrument(
 ) (string, string, error) {
 	key := referenceKey(i.Reference())
 	if i.Reference().IsZero() {
-		b, _ := json.Marshal([]string{artifact, location})
-		key = string(b)
+		key = anonymousInstrumentKey(artifact, location)
 	}
 
 	root, err := q.InstrumentBySource(ctx, key)
