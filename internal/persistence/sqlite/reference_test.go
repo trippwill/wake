@@ -256,9 +256,9 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 				t.Fatal("duplicate lookup was not suppressed")
 			}
 
-			duplicate, _ := s.queries.Instrument(ctx, "duplicate")
-			if duplicate.ReferenceStatus != "conflict" {
-				t.Fatal("silently unified distinct roots", duplicate)
+			duplicate, e := canonicalID(ctx, s.queries, "instruments", "duplicate")
+			if e != nil || duplicate != "root-001" {
+				t.Fatal("matching verified FIGIs did not converge", duplicate, e)
 			}
 
 			now = now.Add(6 * time.Hour)

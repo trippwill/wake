@@ -147,7 +147,13 @@ func TestObservationSelectionAndInstrumentNamingSurviveReplayAndReference(t *tes
 		reference.Result{
 			Status: "resolved",
 			Records: []reference.Record{
-				{FIGI: "option-reference", Name: "Reference name", Market: "Equity", SecurityType2: "Option"},
+				{
+					FIGI:          "option-venue",
+					Composite:     "option-reference",
+					Name:          "Reference name",
+					Market:        "Equity",
+					SecurityType2: "Option",
+				},
 			},
 			Next: time.Now().Add(time.Hour),
 		},

@@ -322,7 +322,7 @@ WITH RECURSIVE affected(instrument_id) AS (
  JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
  JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
 )
-SELECT instrument_id FROM affected ORDER BY instrument_id
+SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id
 `
 
 func (q *Queries) ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error) {
@@ -633,13 +633,13 @@ func (q *Queries) ClaimProcessing(ctx context.Context, arg ClaimProcessingParams
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
 JOIN (
  SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
  UNION
  SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=?1
 ) claims ON claims.id=instruments.id
-WHERE instruments.id<>?2 ORDER BY instruments.id
+WHERE instruments.id<>?2 AND instruments.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY instruments.id
 `
 
 type CompetingFIGIParams struct {
@@ -665,6 +665,8 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.ReferenceAllocation,
+			&i.ReferenceReason,
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
@@ -897,7 +899,7 @@ func (q *Queries) DecisionSubmission(ctx context.Context, submission string) (Op
 }
 
 const decisions = `-- name: Decisions :many
-SELECT id, target_kind, target_id, scope, text, currency, "action", actor, at, rationale, supersedes, submission, request FROM operator_decisions WHERE target_kind=? AND target_id=? ORDER BY rowid
+SELECT d.id, d.target_kind, d.target_id, d.scope, d.text, d.currency, d."action", d.actor, d.at, d.rationale, d.supersedes, d.submission, d.request, EXISTS(SELECT 1 FROM decision_supersessions x WHERE x.previous_id=d.id) AS superseded FROM operator_decisions d WHERE d.target_kind=?1 AND (d.target_id=?2 OR (d.target_kind='instrument' AND d.target_id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?2))) ORDER BY d.rowid
 `
 
 type DecisionsParams struct {
@@ -905,29 +907,35 @@ type DecisionsParams struct {
 	TargetID   string
 }
 
-func (q *Queries) Decisions(ctx context.Context, arg DecisionsParams) ([]OperatorDecision, error) {
+type DecisionsRow struct {
+	OperatorDecision OperatorDecision
+	Superseded       bool
+}
+
+func (q *Queries) Decisions(ctx context.Context, arg DecisionsParams) ([]DecisionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, decisions, arg.TargetKind, arg.TargetID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OperatorDecision
+	var items []DecisionsRow
 	for rows.Next() {
-		var i OperatorDecision
+		var i DecisionsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.TargetKind,
-			&i.TargetID,
-			&i.Scope,
-			&i.Text,
-			&i.Currency,
-			&i.Action,
-			&i.Actor,
-			&i.At,
-			&i.Rationale,
-			&i.Supersedes,
-			&i.Submission,
-			&i.Request,
+			&i.OperatorDecision.ID,
+			&i.OperatorDecision.TargetKind,
+			&i.OperatorDecision.TargetID,
+			&i.OperatorDecision.Scope,
+			&i.OperatorDecision.Text,
+			&i.OperatorDecision.Currency,
+			&i.OperatorDecision.Action,
+			&i.OperatorDecision.Actor,
+			&i.OperatorDecision.At,
+			&i.OperatorDecision.Rationale,
+			&i.OperatorDecision.Supersedes,
+			&i.OperatorDecision.Submission,
+			&i.OperatorDecision.Request,
+			&i.Superseded,
 		); err != nil {
 			return nil, err
 		}
@@ -963,7 +971,7 @@ func (q *Queries) DisableDiscovery(ctx context.Context, connectionID string) err
 }
 
 const enrichInstrument = `-- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END, reference_next='' WHERE id=?5
+UPDATE instruments SET revision=revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END, reference_next='',reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=?5
 `
 
 type EnrichInstrumentParams struct {
@@ -1184,8 +1192,118 @@ func (q *Queries) FinishAttempt(ctx context.Context, arg FinishAttemptParams) er
 	return err
 }
 
+const flattenAliases = `-- name: FlattenAliases :exec
+UPDATE resource_aliases SET target_id=?1 WHERE kind=?2 AND target_id=?3
+`
+
+type FlattenAliasesParams struct {
+	Target   string
+	Kind     string
+	Previous string
+}
+
+func (q *Queries) FlattenAliases(ctx context.Context, arg FlattenAliasesParams) error {
+	_, err := q.db.ExecContext(ctx, flattenAliases, arg.Target, arg.Kind, arg.Previous)
+	return err
+}
+
+const identityDependents = `-- name: IdentityDependents :many
+WITH bindings(id) AS (SELECT CAST(?1 AS TEXT) AS id UNION SELECT alias.id FROM resource_aliases alias WHERE alias.kind='instruments' AND alias.target_id=?1), affected(id) AS (
+ SELECT CAST(?1 AS TEXT) AS id UNION SELECT p.instrument_id FROM instrument_claims n JOIN instrument_claims p ON p.claim_id=n.claim_id AND p.ordinal=n.ordinal AND p.role='activity' WHERE n.instrument_id IN (SELECT id FROM bindings) AND n.role='underlier'
+)
+SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id
+`
+
+func (q *Queries) IdentityDependents(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, identityDependents, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityMetadata = `-- name: IdentityMetadata :exec
+UPDATE instruments SET reference_allocation=?1,reference_reason=?2,kind=?3 WHERE id=?4 AND (reference_allocation<>?1 OR reference_reason<>?2 OR kind<>?3)
+`
+
+type IdentityMetadataParams struct {
+	Allocation string
+	Reason     string
+	Family     string
+	ID         string
+}
+
+func (q *Queries) IdentityMetadata(ctx context.Context, arg IdentityMetadataParams) error {
+	_, err := q.db.ExecContext(ctx, identityMetadata,
+		arg.Allocation,
+		arg.Reason,
+		arg.Family,
+		arg.ID,
+	)
+	return err
+}
+
+const identityRoots = `-- name: IdentityRoots :many
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
+`
+
+func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument, error) {
+	rows, err := q.db.QueryContext(ctx, identityRoots, figi)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Instrument
+	for rows.Next() {
+		var i Instrument
+		if err := rows.Scan(
+			&i.Revision,
+			&i.ID,
+			&i.SourceKey,
+			&i.Name,
+			&i.Ticker,
+			&i.Kind,
+			&i.Reported,
+			&i.ReferenceStatus,
+			&i.ReferenceAllocation,
+			&i.ReferenceReason,
+			&i.SelectionAuthority,
+			&i.ReferenceFigi,
+			&i.EvidenceID,
+			&i.ReferenceNext,
+			&i.Rule,
+			&i.UnderlierID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const instrument = `-- name: Instrument :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id=?
 `
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
@@ -1200,6 +1318,8 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 		&i.Kind,
 		&i.Reported,
 		&i.ReferenceStatus,
+		&i.ReferenceAllocation,
+		&i.ReferenceReason,
 		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
@@ -1210,8 +1330,52 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 	return i, err
 }
 
+const instrumentBindings = `-- name: InstrumentBindings :many
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
+`
+
+func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrument, error) {
+	rows, err := q.db.QueryContext(ctx, instrumentBindings, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Instrument
+	for rows.Next() {
+		var i Instrument
+		if err := rows.Scan(
+			&i.Revision,
+			&i.ID,
+			&i.SourceKey,
+			&i.Name,
+			&i.Ticker,
+			&i.Kind,
+			&i.Reported,
+			&i.ReferenceStatus,
+			&i.ReferenceAllocation,
+			&i.ReferenceReason,
+			&i.SelectionAuthority,
+			&i.ReferenceFigi,
+			&i.EvidenceID,
+			&i.ReferenceNext,
+			&i.Rule,
+			&i.UnderlierID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const instrumentBySource = `-- name: InstrumentBySource :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE source_key=?
+SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.reference_next, target.rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
 `
 
 func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error) {
@@ -1226,6 +1390,8 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.Kind,
 		&i.Reported,
 		&i.ReferenceStatus,
+		&i.ReferenceAllocation,
+		&i.ReferenceReason,
 		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
@@ -1297,7 +1463,7 @@ func (q *Queries) InstrumentSelection(ctx context.Context, instrumentID string) 
 }
 
 const instruments = `-- name: Instruments :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments ORDER BY rowid
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
 `
 
 func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
@@ -1318,6 +1484,8 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.ReferenceAllocation,
+			&i.ReferenceReason,
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
@@ -1423,6 +1591,53 @@ func (q *Queries) Listings(ctx context.Context, instrumentID string) ([]Listing,
 	return items, nil
 }
 
+const listingsByTerms = `-- name: ListingsByTerms :many
+SELECT revision, id, instrument_id, venue, ticker, currency, figi FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND currency=? ORDER BY id
+`
+
+type ListingsByTermsParams struct {
+	InstrumentID string
+	Venue        string
+	Ticker       string
+	Currency     string
+}
+
+func (q *Queries) ListingsByTerms(ctx context.Context, arg ListingsByTermsParams) ([]Listing, error) {
+	rows, err := q.db.QueryContext(ctx, listingsByTerms,
+		arg.InstrumentID,
+		arg.Venue,
+		arg.Ticker,
+		arg.Currency,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Listing
+	for rows.Next() {
+		var i Listing
+		if err := rows.Scan(
+			&i.Revision,
+			&i.ID,
+			&i.InstrumentID,
+			&i.Venue,
+			&i.Ticker,
+			&i.Currency,
+			&i.Figi,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const missingAccess = `-- name: MissingAccess :many
 SELECT c.id,c.provider FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid
 `
@@ -1453,6 +1668,132 @@ func (q *Queries) MissingAccess(ctx context.Context) ([]MissingAccessRow, error)
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveActivityInstrument = `-- name: MoveActivityInstrument :exec
+UPDATE executions SET instrument_id=?1 WHERE instrument_id=?2
+`
+
+type MoveActivityInstrumentParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveActivityInstrument(ctx context.Context, arg MoveActivityInstrumentParams) error {
+	_, err := q.db.ExecContext(ctx, moveActivityInstrument, arg.Target, arg.Previous)
+	return err
+}
+
+const moveActivityListing = `-- name: MoveActivityListing :exec
+UPDATE executions SET listing_id=?1 WHERE listing_id=?2
+`
+
+type MoveActivityListingParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveActivityListing(ctx context.Context, arg MoveActivityListingParams) error {
+	_, err := q.db.ExecContext(ctx, moveActivityListing, arg.Target, arg.Previous)
+	return err
+}
+
+const moveBaseInstrument = `-- name: MoveBaseInstrument :exec
+UPDATE activity_bases SET instrument_id=?1 WHERE instrument_id=?2
+`
+
+type MoveBaseInstrumentParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveBaseInstrument(ctx context.Context, arg MoveBaseInstrumentParams) error {
+	_, err := q.db.ExecContext(ctx, moveBaseInstrument, arg.Target, arg.Previous)
+	return err
+}
+
+const moveBaseListing = `-- name: MoveBaseListing :exec
+UPDATE activity_bases SET listing_id=?1 WHERE listing_id=?2
+`
+
+type MoveBaseListingParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveBaseListing(ctx context.Context, arg MoveBaseListingParams) error {
+	_, err := q.db.ExecContext(ctx, moveBaseListing, arg.Target, arg.Previous)
+	return err
+}
+
+const moveInstrumentClaims = `-- name: MoveInstrumentClaims :exec
+INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) SELECT ?1,c.claim_id,c.ordinal,c.role FROM instrument_claims c WHERE c.instrument_id=?2 ON CONFLICT DO NOTHING
+`
+
+type MoveInstrumentClaimsParams struct {
+	Target   string
+	Previous string
+}
+
+func (q *Queries) MoveInstrumentClaims(ctx context.Context, arg MoveInstrumentClaimsParams) error {
+	_, err := q.db.ExecContext(ctx, moveInstrumentClaims, arg.Target, arg.Previous)
+	return err
+}
+
+const moveListing = `-- name: MoveListing :exec
+UPDATE listings SET instrument_id=? WHERE id=?
+`
+
+type MoveListingParams struct {
+	InstrumentID string
+	ID           string
+}
+
+func (q *Queries) MoveListing(ctx context.Context, arg MoveListingParams) error {
+	_, err := q.db.ExecContext(ctx, moveListing, arg.InstrumentID, arg.ID)
+	return err
+}
+
+const moveReferenceAttempts = `-- name: MoveReferenceAttempts :exec
+INSERT INTO instrument_reference_attempts(instrument_id,evidence_id,status,rule) SELECT ?1,a.evidence_id,a.status,a.rule FROM instrument_reference_attempts a WHERE a.instrument_id=?2 ON CONFLICT DO NOTHING
+`
+
+type MoveReferenceAttemptsParams struct {
+	Target   string
+	Previous string
+}
+
+func (q *Queries) MoveReferenceAttempts(ctx context.Context, arg MoveReferenceAttemptsParams) error {
+	_, err := q.db.ExecContext(ctx, moveReferenceAttempts, arg.Target, arg.Previous)
+	return err
+}
+
+const moveSelectedUnderliers = `-- name: MoveSelectedUnderliers :exec
+UPDATE instrument_selections SET underlier_id=?1 WHERE underlier_id=?2
+`
+
+type MoveSelectedUnderliersParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveSelectedUnderliers(ctx context.Context, arg MoveSelectedUnderliersParams) error {
+	_, err := q.db.ExecContext(ctx, moveSelectedUnderliers, arg.Target, arg.Previous)
+	return err
+}
+
+const moveUnderliers = `-- name: MoveUnderliers :exec
+UPDATE instruments SET underlier_id=?1 WHERE underlier_id=?2
+`
+
+type MoveUnderliersParams struct {
+	Target   sql.NullString
+	Previous sql.NullString
+}
+
+func (q *Queries) MoveUnderliers(ctx context.Context, arg MoveUnderliersParams) error {
+	_, err := q.db.ExecContext(ctx, moveUnderliers, arg.Target, arg.Previous)
+	return err
 }
 
 const newClaimActivityIDs = `-- name: NewClaimActivityIDs :many
@@ -1590,7 +1931,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsPara
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -1611,6 +1952,8 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 			&i.Kind,
 			&i.Reported,
 			&i.ReferenceStatus,
+			&i.ReferenceAllocation,
+			&i.ReferenceReason,
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
@@ -2223,7 +2566,7 @@ func (q *Queries) PutLifecycleActivity(ctx context.Context, arg PutLifecycleActi
 }
 
 const putListing = `-- name: PutListing :exec
-INSERT INTO listings(id,instrument_id,venue,ticker,currency) VALUES(?,?,?,?,?) ON CONFLICT(instrument_id,venue,ticker,currency) DO NOTHING
+INSERT INTO listings(id,instrument_id,venue,ticker,currency) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING
 `
 
 type PutListingParams struct {
@@ -2357,6 +2700,21 @@ func (q *Queries) PutReportComparison(ctx context.Context, arg PutReportComparis
 		arg.Digest,
 		arg.ArtifactID,
 	)
+	return err
+}
+
+const putResourceAlias = `-- name: PutResourceAlias :exec
+INSERT INTO resource_aliases(kind,id,target_id) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET target_id=excluded.target_id
+`
+
+type PutResourceAliasParams struct {
+	Kind     string
+	ID       string
+	TargetID string
+}
+
+func (q *Queries) PutResourceAlias(ctx context.Context, arg PutResourceAliasParams) error {
+	_, err := q.db.ExecContext(ctx, putResourceAlias, arg.Kind, arg.ID, arg.TargetID)
 	return err
 }
 
@@ -2739,6 +3097,22 @@ func (q *Queries) ResolveInstrument(ctx context.Context, arg ResolveInstrumentPa
 	return err
 }
 
+const resourceAlias = `-- name: ResourceAlias :one
+SELECT target_id FROM resource_aliases WHERE kind=? AND id=?
+`
+
+type ResourceAliasParams struct {
+	Kind string
+	ID   string
+}
+
+func (q *Queries) ResourceAlias(ctx context.Context, arg ResourceAliasParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, resourceAlias, arg.Kind, arg.ID)
+	var target_id string
+	err := row.Scan(&target_id)
+	return target_id, err
+}
+
 const restartDiscovery = `-- name: RestartDiscovery :exec
 UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover'
 `
@@ -2851,6 +3225,15 @@ func (q *Queries) RetainedReferenceCandidates(ctx context.Context, instrumentID 
 		return nil, err
 	}
 	return items, nil
+}
+
+const retireListing = `-- name: RetireListing :exec
+DELETE FROM listings WHERE id=?
+`
+
+func (q *Queries) RetireListing(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, retireListing, id)
+	return err
 }
 
 const retryProcessing = `-- name: RetryProcessing :execrows
@@ -3233,6 +3616,31 @@ func (q *Queries) Succeeded(ctx context.Context, arg SucceededParams) ([]byte, e
 	var counts []byte
 	err := row.Scan(&counts)
 	return counts, err
+}
+
+const supersedeDecisions = `-- name: SupersedeDecisions :exec
+INSERT INTO decision_supersessions(decision_id,previous_id)
+SELECT ?1, d.id FROM operator_decisions d
+WHERE d.id<>?1 AND d.target_kind=?2 AND d.scope=?3
+AND (d.target_id=?4 OR (d.target_kind='instrument' AND d.target_id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?4)))
+AND NOT EXISTS(SELECT 1 FROM decision_supersessions x WHERE x.previous_id=d.id)
+`
+
+type SupersedeDecisionsParams struct {
+	DecisionID string
+	TargetKind string
+	Scope      string
+	TargetID   string
+}
+
+func (q *Queries) SupersedeDecisions(ctx context.Context, arg SupersedeDecisionsParams) error {
+	_, err := q.db.ExecContext(ctx, supersedeDecisions,
+		arg.DecisionID,
+		arg.TargetKind,
+		arg.Scope,
+		arg.TargetID,
+	)
+	return err
 }
 
 const updateConnection = `-- name: UpdateConnection :exec

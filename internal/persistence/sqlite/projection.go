@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -115,6 +116,18 @@ func persistRootEnrichment(
 	}
 
 	if result.Conflict {
+		if err = q.IdentityMetadata(
+			ctx,
+			sqlc.IdentityMetadataParams{
+				ID:         root.ID,
+				Allocation: root.ReferenceAllocation,
+				Reason:     string(reference.SourceConflict),
+				Family:     root.Kind,
+			},
+		); err != nil {
+			return err
+		}
+
 		if err = resolveAutomaticInstrument(
 			ctx,
 			q,
@@ -127,17 +140,65 @@ func persistRootEnrichment(
 			return err
 		}
 	} else {
+		if root.ReferenceReason == string(reference.SourceConflict) {
+			if err = q.IdentityMetadata(
+				ctx,
+				sqlc.IdentityMetadataParams{
+					ID:         id,
+					Allocation: root.ReferenceAllocation,
+					Reason:     "",
+					Family:     root.Kind,
+				},
+			); err != nil {
+				return err
+			}
+
+			base, e := q.InstrumentSelection(ctx, id)
+			if e != nil {
+				return e
+			}
+
+			status := "provisional"
+			if base.Figi != "" {
+				status = "resolved"
+			}
+
+			if err = q.SaveInstrumentSelection(
+				ctx,
+				sqlc.SaveInstrumentSelectionParams{
+					InstrumentID: id,
+					Name:         base.Name,
+					Ticker:       base.Ticker,
+					Figi:         base.Figi,
+					Evidence:     base.Evidence,
+					Status:       status,
+					UnderlierID:  base.UnderlierID,
+				},
+			); err != nil {
+				return err
+			}
+
+			if err = projectInstrument(ctx, q, id); err != nil {
+				return err
+			}
+		}
+
 		data, err := json.Marshal(instrumentWire(result.Reported))
 		if err != nil {
 			return err
 		}
 
 		if !bytes.Equal(data, root.Reported) {
+			family := root.Kind
+			if root.ReferenceFigi == "" {
+				family = string(result.Reported.Kind())
+			}
+
 			if err = enrichAutomaticInstrument(ctx, q,
 				sqlc.EnrichInstrumentParams{
 					ID:       root.ID,
 					Reported: data,
-					Kind:     string(result.Reported.Kind()),
+					Kind:     family,
 					Name:     result.Reported.Name(),
 					Ticker:   result.Reported.Ticker(),
 				},

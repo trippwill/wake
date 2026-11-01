@@ -334,7 +334,7 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 
 			detail, err := s.InstrumentDetail(ctx, root)
 			if err != nil || detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "" ||
-				!detail.Instrument.Status().NeedsReview() {
+				detail.Instrument.Status().NeedsReview() {
 				t.Fatal("shared root selected a competing multiplier from projection order", detail, err)
 			}
 

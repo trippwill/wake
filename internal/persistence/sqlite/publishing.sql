@@ -27,3 +27,6 @@ SELECT kind,id,snapshot FROM published_resources ORDER BY kind,id;
 
 -- name: Advance
 UPDATE publishing SET version=version+1 WHERE singleton=1;
+
+-- name: RetireResource
+DELETE FROM published_resources WHERE kind=? AND id=?;

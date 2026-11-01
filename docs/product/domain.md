@@ -45,11 +45,26 @@ the root need not enumerate every venue-level identifier. A trade's optional
 listing must belong to the same root as the trade. ISIN and share-class FIGI are
 useful together but are not a universal one-to-one hierarchy.
 
+Verified share-class FIGIs establish equity/fund identity; supported US equity
+options use composite FIGIs and debt issues use instrument FIGIs. Venue FIGIs
+identify separate representations. Parent relationships establish grouping even
+when a lookup returns many rows or lacks a description. Explicit contradictory
+parents or subjects remain reviewable; repeated agreeing rows cannot outweigh them.
+
+Wake automatically combines entries with the same verified identity when active
+operator choices agree. The oldest Wake ID survives, old IDs remain aliases, and
+original bindings, observations and decisions remain attributable. Conflicting
+active choices keep entries separate until review. Matching names, tickers or
+financial terms alone never authorize combination.
+
 An equity option is one specific contract, linked to its equity/fund underlier.
 The underlier's identifier does not identify the option. Contract adjustments can
 preserve identity while changing terms. A premium multiplier is not a deliverable;
 an unknown deliverable must not become an assumed 100 shares. Historical activity
-retains the terms used to interpret it.
+retains the terms used to interpret it. Instruments describe identity; option and
+debt terms belong to dated observations and accepted activity. Different terms on
+distinct transactions do not dispute their shared identity. Conflicting financial
+terms for the same activity still require resolution.
 
 Treasuries and gilts represent individual debt issues. Nominal quantity, coupon,
 maturity, quoted price and accrued interest have separate meanings. A reopening
@@ -67,7 +82,10 @@ selected. A share-class result can contain several venue names/tickers; the firs
 row is not a naming policy. Ambiguity retains a provisional/current label. A new
 listing does not silently replace an established naming selection. An operator
 correction survives replay and reference refresh until superseded or
-released. There is no separate reporting-symbol identity.
+released. An accepted identity survives lookup failure, a later no-match and cache
+expiry; those describe refresh health rather than a changed identity. Missing usable
+identifiers wait for new evidence instead of repeating unchanged lookup work.
+There is no separate reporting-symbol identity.
 
 ## Evidence and accepted views
 

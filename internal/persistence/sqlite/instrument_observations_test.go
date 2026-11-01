@@ -14,7 +14,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
+func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 	for _, kind := range []string{"trade", "lifecycle"} {
 		for _, order := range []string{"10-first", "100-first", "same-artifact"} {
 			t.Run(kind+"/"+order, func(t *testing.T) {
@@ -32,9 +32,10 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 				base := strings.ReplaceAll(row, ` multiplier="10"`, "")
 
 				first, second := row, strings.ReplaceAll(row, `multiplier="10"`, `multiplier="100"`)
-				want := "10"
+				want := ""
+
 				if order == "100-first" {
-					first, second, want = second, first, "100"
+					first, second = second, first
 				}
 
 				coverageReport(t, s, "base", base)
@@ -67,9 +68,21 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 				coverageReport(t, s, "second", second)
 
 				detail, err := s.InstrumentDetail(t.Context(), instrument)
-				if err != nil || detail.Instrument.Status() != "conflict" ||
-					detail.Instrument.Reported().Option().Fields().Multiplier.Value() != want {
+				if err != nil || detail.Instrument.Status().NeedsReview() ||
+					detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "" {
 					t.Fatal("conflicting root lost prior terms or uncertainty", detail, err)
+				}
+
+				accepted, e := s.Resource(t.Context(), "activity", activity)
+				if e != nil || !accepted.Activity.Conflict || accepted.Activity.Option == nil ||
+					publishedString(accepted.Activity.Option.Multiplier) != want {
+					t.Fatalf(
+						"same-activity terms lost want=%s activity=%+v option=%+v err=%v",
+						want,
+						accepted.Activity,
+						accepted.Activity.Option,
+						e,
+					)
 				}
 
 				count := 0
@@ -79,8 +92,8 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 					}
 				}
 
-				if count != 1 {
-					t.Fatal("expected one root conflict transition", count)
+				if count != 0 {
+					t.Fatal("financial disagreement changed root identity", count)
 				}
 
 				baseline, err = snapshotState(t.Context(), s)
@@ -93,7 +106,7 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 				if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 					t.Fatal("replay published duplicate transition", changes.Items)
 				}
-				// Recreate the old missing conflict flag only in this disposable store.
+				// Re-evaluate identity separately from the retained financial dispute.
 				if _, err = s.db.Exec(
 					`UPDATE instruments SET reference_status='provisional' WHERE id=?`,
 					instrument,
@@ -111,16 +124,16 @@ func TestRetainedOptionObservationsExposeRootConflict(t *testing.T) {
 				recalculateFixture(t, s)
 
 				rebuilt, err := s.InstrumentDetail(t.Context(), instrument)
-				if err != nil || rebuilt.Instrument.Status() != "conflict" ||
+				if err != nil || rebuilt.Instrument.Status().NeedsReview() ||
 					!reflect.DeepEqual(rebuilt.Instrument.Reported().Fields(), detail.Instrument.Reported().Fields()) {
-					t.Fatal("recalculation did not recover conflict and retained terms", rebuilt, err)
+					t.Fatal("recalculation changed identity while recovering financial conflict", rebuilt, err)
 				}
 			})
 		}
 	}
 }
 
-func TestRetainedDebtObservationsExposeRootConflict(t *testing.T) {
+func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "base", syntheticDebt)
 
@@ -172,9 +185,21 @@ func TestRetainedDebtObservationsExposeRootConflict(t *testing.T) {
 	}
 
 	detail, err := s.InstrumentDetail(t.Context(), base.Instrument())
-	if err != nil || detail.Instrument.Status() != "conflict" ||
-		detail.Instrument.Reported().Debt().Fields().Coupon.Value() != "4.125" {
-		t.Fatal("debt conflict or retained coupon lost", detail, err)
+	if err != nil || detail.Instrument.Status().NeedsReview() ||
+		detail.Instrument.Reported().Debt().Fields().Coupon.Value() != "" {
+		t.Fatal("debt terms contaminated identity", detail, err)
+	}
+
+	accepted, e := s.Resource(t.Context(), "activity", base.ID())
+	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Debt == nil ||
+		publishedString(accepted.Activity.Debt.Coupon) != "" {
+		t.Fatalf(
+			"activity=%+v debt=%+v option=%+v err=%v",
+			accepted.Activity,
+			accepted.Activity.Debt,
+			accepted.Activity.Option,
+			e,
+		)
 	}
 }
 
@@ -231,8 +256,28 @@ func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
 	}
 
 	detail, err := s.InstrumentDetail(t.Context(), base.Instrument())
-	if err != nil || detail.Instrument.Status() != "conflict" ||
-		detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "10" {
-		t.Fatal("missing-reference disagreement was skipped", detail, err)
+	if err != nil || detail.Instrument.Status().NeedsReview() ||
+		detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "" {
+		t.Fatal("missing-reference terms contaminated identity", detail, err)
 	}
+
+	accepted, e := s.Resource(t.Context(), "activity", base.ID())
+	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Option == nil ||
+		publishedString(accepted.Activity.Option.Multiplier) != "" {
+		t.Fatalf(
+			"activity=%+v debt=%+v option=%+v err=%v",
+			accepted.Activity,
+			accepted.Activity.Debt,
+			accepted.Activity.Option,
+			e,
+		)
+	}
+}
+
+func publishedString(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return *value
 }

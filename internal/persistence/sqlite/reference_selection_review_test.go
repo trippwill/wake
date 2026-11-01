@@ -6,7 +6,6 @@ package persistence
 import (
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -121,11 +120,13 @@ func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 		duplicate,
 		"admin/synthetic-session",
 		time.Now(),
-	); !errors.Is(
-		err,
-		application.ErrInvalid,
-	) {
-		t.Fatal("operator acquired another root's hidden automatic FIGI", err)
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	separated, err := s.Dashboard(ctx)
+	if err != nil || len(separated.Instruments) != 2 {
+		t.Fatal("conflicting choice was silently merged", separated, err)
 	}
 
 	// Releasing the override must remain possible while the competing source stays visible.
@@ -134,8 +135,8 @@ func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 	restored, err := s.InstrumentDetail(ctx, a)
 	competing, otherErr := s.InstrumentDetail(ctx, b)
 	if err != nil || otherErr != nil || restored.Instrument.FIGI() != "X" ||
-		competing.Instrument.FIGI() != "" ||
-		competing.Instrument.Status() != "conflict" {
+		competing.Instrument.ID() != restored.Instrument.ID() ||
+		competing.Instrument.FIGI() != "X" {
 		t.Fatal("automatic identity reservation lost", restored, competing, err, otherErr)
 	}
 }

@@ -334,6 +334,11 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 
 	q := s.queries.WithTx(tx)
 
+	id, err = canonicalID(ctx, q, "instruments", id)
+	if err != nil {
+		return err
+	}
+
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
 		return err
@@ -348,22 +353,65 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	root.Name, root.Ticker, root.ReferenceFigi, root.EvidenceID, root.ReferenceStatus = base.Name, base.Ticker, base.Figi, base.Evidence, base.Status
+	status := base.Status
+	allocation, reason, family := root.ReferenceAllocation, root.ReferenceReason, root.Kind
+	if result.Status == "resolved" {
+		selected := reference.SelectIdentity(source.InstrumentKind(root.Kind), result.Records)
+		if selected.FIGI != "" {
+			if base.Figi != "" && base.Figi != selected.FIGI {
+				status = "conflict"
+				reason = string(reference.CompetingIdentity)
+			} else {
+				base.Figi = selected.FIGI
+				base.Evidence = result.Evidence
+				status = "resolved"
 
-	status := result.Status
-	name, figi, evidence := root.Name, root.ReferenceFigi, root.EvidenceID
-	ticker := root.Ticker
-	if root.ReferenceStatus == "conflict" {
-		status = "conflict"
+				if selected.Name != "" {
+					base.Name = selected.Name
+				}
+
+				if selected.Ticker != "" {
+					base.Ticker = selected.Ticker
+				}
+
+				allocation, reason, family = string(
+					selected.Allocation,
+				), string(
+					selected.Reason,
+				), string(
+					selected.Family,
+				)
+			}
+		} else if base.Figi == "" || selected.Reason == reference.ConflictingParents || selected.Reason == reference.CompetingIdentity || selected.Reason == reference.IncompatibleSubject {
+			status = "ambiguous"
+			reason = string(selected.Reason)
+		}
+	} else if base.Figi == "" {
+		status = result.Status
+		if status == "provisional" {
+			reason = string(reference.MissingIdentifier)
+		}
 	}
 
-	if result.Evidence != "" {
+	if root.ReferenceReason == string(reference.SourceConflict) {
+		status = "conflict"
+		reason = root.ReferenceReason
+	}
+
+	evidence := append(
+		[]reference.Attempt{{Evidence: result.Evidence, Status: result.Status}},
+		result.Supporting...)
+	for _, e := range evidence {
+		if e.Evidence == "" {
+			continue
+		}
+
 		if err = q.PutInstrumentReferenceAttempt(
 			ctx,
 			sqlc.PutInstrumentReferenceAttemptParams{
 				InstrumentID: id,
-				EvidenceID:   result.Evidence,
-				Status:       status,
+				EvidenceID:   e.Evidence,
+				Status:       e.Status,
 				Rule:         reference.Rule,
 			},
 		); err != nil {
@@ -371,55 +419,14 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		}
 	}
 
-	if status == "resolved" {
-		record, selectedFIGI, compatible := reference.Select(source.InstrumentKind(root.Kind), result.Records)
-		if !compatible {
-			status = "ambiguous"
-		}
-
-		if compatible {
-			if figi != "" && figi != selectedFIGI {
-				status = "conflict"
-			} else {
-				others, e := q.CompetingFIGI(ctx, sqlc.CompetingFIGIParams{CurrentID: id, Figi: selectedFIGI})
-				if e != nil {
-					return e
-				}
-
-				if len(others) > 0 {
-					status = "conflict"
-
-					for _, other := range others {
-						if e = resolveAutomaticInstrument(
-							ctx,
-							q,
-							sqlc.ResolveInstrumentParams{
-								ID:              other.ID,
-								ReferenceStatus: "conflict",
-								ReferenceNext:   other.ReferenceNext,
-							},
-						); e != nil {
-							return e
-						}
-					}
-				} else {
-					name, figi, evidence = record.Name, selectedFIGI, result.Evidence
-					if record.Ticker != "" {
-						ticker = record.Ticker
-					}
-				}
-			}
-		}
-	}
-
 	if err = q.SaveInstrumentSelection(
 		ctx,
 		sqlc.SaveInstrumentSelectionParams{
 			InstrumentID: id,
-			Name:         name,
-			Ticker:       ticker,
-			Figi:         figi,
-			Evidence:     evidence,
+			Name:         base.Name,
+			Ticker:       base.Ticker,
+			Figi:         base.Figi,
+			Evidence:     base.Evidence,
 			Status:       status,
 			UnderlierID:  base.UnderlierID,
 		},
@@ -438,34 +445,47 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	if status == "resolved" {
-		listings, e := q.Listings(ctx, id)
-		if e != nil {
-			return e
-		}
-		// A root lookup never chooses a listing from several candidates.
-		var exactFIGI bool
+	if err = q.IdentityMetadata(
+		ctx,
+		sqlc.IdentityMetadataParams{ID: id, Allocation: allocation, Reason: reason, Family: family},
+	); err != nil {
+		return err
+	}
 
+	if status == "resolved" {
+		// Only a directly corroborated reported venue FIGI may identify a listing.
 		value, e := instrumentValue(root)
 		if e != nil {
 			return e
 		}
 
-		for _, id := range value.Reported().Identifiers() {
-			if (id.Kind() == source.VenueFIGI || id.Kind() == source.UnclassifiedFIGI) &&
-				id.Value() == result.Records[0].FIGI {
-				exactFIGI = true
-			}
+		listings, e := q.Listings(ctx, id)
+		if e != nil {
+			return e
 		}
 
-		if len(listings) == 1 && len(result.Records) == 1 && exactFIGI {
-			if e = q.SetListingFIGI(
-				ctx,
-				sqlc.SetListingFIGIParams{ID: listings[0].ID, Figi: result.Records[0].FIGI},
-			); e != nil {
-				return e
+		if len(listings) == 1 {
+			for _, reported := range value.Reported().Identifiers() {
+				if reported.Kind() != source.VenueFIGI && reported.Kind() != source.UnclassifiedFIGI {
+					continue
+				}
+
+				for _, r := range result.Records {
+					if r.FIGI == reported.Value() && r.FIGI != r.Composite {
+						if e = q.SetListingFIGI(
+							ctx,
+							sqlc.SetListingFIGIParams{ID: listings[0].ID, Figi: r.FIGI},
+						); e != nil {
+							return e
+						}
+					}
+				}
 			}
 		}
+	}
+
+	if err = combineIdentity(ctx, q, id); err != nil {
+		return err
 	}
 
 	return s.commit(ctx, tx)

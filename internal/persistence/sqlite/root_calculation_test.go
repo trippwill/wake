@@ -350,7 +350,7 @@ func TestFirstBatchParentTermConflictKeepsUndisputedUnderlier(t *testing.T) {
 	}
 
 	detail, err := s.InstrumentDetail(ctx, view.Executions[0].Instrument())
-	if err != nil || !detail.Instrument.Status().NeedsReview() || detail.Underlier == "" {
+	if err != nil || detail.Instrument.Status().NeedsReview() || detail.Underlier == "" {
 		t.Fatal("parent dispute dropped an undisputed underlier", detail, err)
 	}
 

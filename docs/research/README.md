@@ -11,5 +11,5 @@ for research content and maintenance rules.
 
 ## Memos
 
-- [OpenFIGI identity levels and naming](openfigi-identity.md) — allocation semantics and a repeated public equity lookup.
+- [OpenFIGI identity levels and naming](openfigi-identity.md) — allocation semantics, public equity/option/debt experiments and [compact request/results](openfigi-authority-evidence.json).
 - [OpenFIGI API budgets and result interpretation](openfigi-api-behavior.md) — documented limits, observed headers and failure distinctions.

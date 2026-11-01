@@ -55,6 +55,15 @@ func prepareCorrection(
 		return out, err
 	}
 
+	target, err := canonicalID(ctx, q, "instruments", f.TargetID)
+	if err != nil {
+		return out, err
+	}
+
+	if target != f.TargetID {
+		return out, application.ErrStale
+	}
+
 	row, err := q.Instrument(ctx, f.TargetID)
 	if err != nil {
 		return out, err

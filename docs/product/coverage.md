@@ -38,7 +38,7 @@ the primary instrument identity and naming reference.
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
-| Reference data | Core OpenFIGI lookup, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Missing enrichment remains visible. |
+| Reference data | Allocation-aware OpenFIGI lookup, bounded composite-parent completion, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Matching verified identities combine with retained aliases; conflicting choices require review. Refresh failures preserve established identity. |
 | Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, compact conflicts, optional linked evidence/rules and correction of existing activity. |
 | Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
 
@@ -49,6 +49,18 @@ of completed cash settlement. Preserve reported option multipliers and terms;
 unknown deliverables remain unknown, rather than an assumed 100 shares. Historical
 activity retains the terms used to interpret it. A general automatic contract-
 adjustment or financial reconstruction engine is not required.
+Instrument resources expose identity; option/debt terms remain on dated activity
+and observations. Resource lookups redirect retired IDs to their current identity;
+old-ID explanations and new correction submissions are stale. Complete snapshots
+replace a consumer's resource graph, including combined identities and listings.
+
+This pre-release identity format requires explicit warehouse recreation on upgrade.
+Older warehouses fail closed and remain untouched; encrypted access seeds retain
+their independent format. Reacquire and confirm source history in the new warehouse.
+This selected deployment discards warehouse-only decisions and evidence; preserve
+any needed old warehouse before explicitly resetting. No automatic migration or
+historical updater is supplied by this change.
+
 
 Source-established relationships are useful when present. A missing relationship
 does not authorize an inferred stock delivery, cash payment or strategy. Family

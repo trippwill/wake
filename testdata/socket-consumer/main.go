@@ -458,6 +458,7 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			return errors.New("protocol: revision content differs")
 		}
 		var why struct {
+			Identity    json.RawMessage   `json:"identity"`
 			ID          string            `json:"id"`
 			Kind        string            `json:"kind"`
 			Revision    int64             `json:"revision"`

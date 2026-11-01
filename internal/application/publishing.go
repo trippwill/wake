@@ -26,10 +26,10 @@ type PublishedInstrument struct {
 	Ticker          *string               `json:"ticker"`
 	FIGI            *string               `json:"figi"`
 	ReferenceStatus string                `json:"reference_status"`
+	FIGIAllocation  *string               `json:"figi_allocation"`
+	ReferenceReason *string               `json:"reference_reason"`
 	UnderlierID     *string               `json:"underlier_id"`
 	Identifiers     []PublishedIdentifier `json:"identifiers"`
-	Option          *PublishedOption      `json:"option"`
-	Debt            *PublishedDebt        `json:"debt"`
 }
 type PublishedIdentifier struct {
 	Kind  string `json:"kind"`
@@ -125,7 +125,14 @@ type PublishedActivity struct {
 	Option *PublishedOption `json:"option"`
 	Debt   *PublishedDebt   `json:"debt"`
 }
+type PublishedIdentity struct {
+	FIGI       *string `json:"figi"`
+	Allocation *string `json:"allocation"`
+	Reason     *string `json:"reason"`
+	Rule       string  `json:"rule"`
+}
 type Explanation struct {
+	Identity    *PublishedIdentity    `json:"identity"`
 	ID          string                `json:"id"`
 	Kind        string                `json:"kind"`
 	Revision    int64                 `json:"revision"`

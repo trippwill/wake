@@ -143,11 +143,9 @@ templ InstrumentPage(d application.InstrumentDetail) {
 			</p>
 		}
 	</section>
-	if !d.Instrument.Reported().Option().IsZero() || !d.Instrument.Reported().Debt().IsZero() {
-		<section class="wake-card">
-			<h2>Contract terms</h2>@OptionFacts(d.Instrument.Reported().Option())
-			@DebtFacts(d.Instrument.Reported().Debt())
-		</section>
+	<p>Contract and issue terms belong to their dated observations and activity. Inspect supporting observations below for historical terms.</p>
+	if reason:=d.Instrument.ReferenceMetadata().Reason;reason!="" {
+		<p class="wake-notice">{ referenceReasonText(reason) }</p>
 	}
 	if len(d.Listings)>0 {
 		<section class="wake-card">
@@ -673,5 +671,30 @@ templ ChargesTable(rows []source.Charge) {
 				</tbody>
 			</table>
 		</section>
+	}
+}
+
+func referenceReasonText(reason string) string {
+	switch reason {
+	case "missing_identifier":
+		return "No supported identifier was reported. New source evidence is needed before a lookup can proceed."
+	case "missing_parent":
+		return "The lookup did not establish the parent identity required for this investment."
+	case "competing_identity":
+		return "The reference evidence identifies more than one investment. Review is required."
+	case "conflicting_parents":
+		return "Reference records disagree about an identifier's parent. Review is required."
+	case "incompatible_subject":
+		return "The reference result describes an incompatible kind of investment."
+	case "incomplete_metadata":
+		return "Identity is established, but some supporting reference metadata is incomplete."
+	case "source_conflict":
+		return "Source observations disagree about this investment's identity or underlier. Review is required."
+	case "convergence_blocked":
+		return "Another record for the same investment needs review before these entries can combine."
+	case "operator_conflict":
+		return "These entries identify the same investment, but operator choices must be reconciled before they can combine."
+	default:
+		return "Reference evidence needs review."
 	}
 }

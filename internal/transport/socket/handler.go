@@ -122,7 +122,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		response, err = h.reads.Explanation(r.Context(), endpoint, parts[2], revision)
 	default:
-		response, err = h.reads.Resource(r.Context(), endpoint, parts[2])
+		var resource application.CanonicalResource
+
+		resource, err = h.reads.Resource(r.Context(), endpoint, parts[2])
+		if err == nil && resource.ID != parts[2] {
+			// endpoint has passed the fixed resource allowlist above. Escape the
+			// opaque ID so Location remains inside that same local resource path.
+			w.Header().Set("Location", "/v1/"+endpoint+"/"+url.PathEscape(resource.ID))
+			w.WriteHeader(http.StatusPermanentRedirect)
+
+			return
+		}
+
+		response = resource
 	}
 
 	if err != nil {

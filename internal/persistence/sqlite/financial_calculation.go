@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -95,6 +96,20 @@ func loadActivityCalculation(
 	}
 
 	for scope, d := range active {
+		if d.Text != "" && (scope == "instrument" || scope == "listing") {
+			kind := "instruments"
+			if scope == "listing" {
+				kind = "listings"
+			}
+
+			value, e := canonicalID(ctx, q, kind, d.Text)
+			if e != nil {
+				return in, e
+			}
+
+			d.Text = value
+		}
+
 		in.Decisions = append(
 			in.Decisions,
 			application.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
@@ -278,6 +293,15 @@ func loadInstrumentCalculation(
 	}
 
 	for scope, d := range active {
+		if scope == "underlier" && d.Text != "" {
+			value, e := canonicalID(ctx, q, "instruments", d.Text)
+			if e != nil {
+				return in, e
+			}
+
+			d.Text = value
+		}
+
 		in.Decisions = append(
 			in.Decisions,
 			application.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
@@ -305,7 +329,11 @@ func loadInstrumentCalculation(
 				return in, e
 			}
 
-			in.CompetingFIGIs[figi] = len(others) > 0
+			for _, other := range others {
+				if !application.CompatibleInstrumentKind(in.Family, source.InstrumentKind(other.Kind)) {
+					in.CompetingFIGIs[figi] = true
+				}
+			}
 		case "underlier":
 			if d.Text != "" {
 				underlier, e := q.Instrument(ctx, d.Text)
@@ -346,6 +374,49 @@ func persistInstrumentCalculation(
 	}
 
 	selected := result.Selection
+
+	root, err := q.Instrument(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if !slices.Contains(result.Explanation.AppliedScopes, "reference") {
+		switch reference.Reason(root.ReferenceReason) {
+		case reference.OperatorConflict, reference.SourceConflict, reference.ConvergenceBlocked:
+			selected.Status = "conflict"
+		}
+	}
+
+	if selected.FIGI == "" && root.ReferenceAllocation != "" {
+		if err = q.IdentityMetadata(
+			ctx,
+			sqlc.IdentityMetadataParams{ID: id, Allocation: "", Reason: root.ReferenceReason, Family: root.Kind},
+		); err != nil {
+			return err
+		}
+	}
+
+	if slices.Contains(result.Explanation.AppliedScopes, "reference") {
+		root, e := q.Instrument(ctx, id)
+		if e != nil {
+			return e
+		}
+
+		allocation := reference.ShareClassAllocation
+		switch source.InstrumentKind(root.Kind) {
+		case source.Option:
+			allocation = reference.CompositeAllocation
+		case source.Debt:
+			allocation = reference.InstrumentAllocation
+		}
+
+		if e = q.IdentityMetadata(
+			ctx,
+			sqlc.IdentityMetadataParams{ID: id, Allocation: string(allocation), Reason: "", Family: root.Kind},
+		); e != nil {
+			return e
+		}
+	}
 
 	return q.ProjectInstrument(
 		ctx,

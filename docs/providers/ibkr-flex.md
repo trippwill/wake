@@ -54,7 +54,14 @@ the selected account and Confirmation stream.
 
 
 Option execution terms retain the reported strike, currency, put/call, expiry and
-premium multiplier separately from the underlier. Confirmation does not establish
+premium multiplier separately from the underlier.
+A structurally valid, checksum-valid `underlyingSecurityID` is retained as an ISIN
+on the underlier, with its source field attribution. Malformed or differently
+formatted values do not become ISIN assertions and do not reject the contract.
+A reported OCC symbol is eligible for mapping only when its exact structure,
+expiry, put/call and exact strike agree with the reported terms. Wake does not
+construct an OCC symbol from a display name or guessed terms.
+ Confirmation does not establish
 an adjusted deliverable merely by reporting a multiplier; absent deliverables stay
 unknown. Instrument mapping follows the response subject in the
 [OpenFIGI mapping contract](https://www.openfigi.com/api/documentation), so an

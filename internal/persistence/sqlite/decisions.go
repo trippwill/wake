@@ -18,12 +18,11 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func activeDecisions(rows []sqlc.OperatorDecision) map[string]sqlc.OperatorDecision {
+func activeDecisions(rows []sqlc.DecisionsRow) map[string]sqlc.OperatorDecision {
 	active := map[string]sqlc.OperatorDecision{}
-	for _, r := range rows {
-		if r.Action == "release" {
-			delete(active, r.Scope)
-		} else {
+	for _, row := range rows {
+		r := row.OperatorDecision
+		if !row.Superseded && r.Action != "release" {
 			active[r.Scope] = r
 		}
 	}
@@ -85,10 +84,11 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 		return application.ErrInvalid
 	}
 
+	decisionID := rand.Text()
 	if err = q.PutDecision(
 		ctx,
 		sqlc.PutDecisionParams{
-			ID:         rand.Text(),
+			ID:         decisionID,
 			TargetKind: f.TargetKind,
 			TargetID:   f.TargetID,
 			Scope:      f.Scope,
@@ -101,6 +101,18 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 			Supersedes: old.ID,
 			Submission: f.Submission,
 			Request:    request,
+		},
+	); err != nil {
+		return err
+	}
+
+	if err = q.SupersedeDecisions(
+		ctx,
+		sqlc.SupersedeDecisionsParams{
+			DecisionID: decisionID,
+			TargetKind: f.TargetKind,
+			TargetID:   f.TargetID,
+			Scope:      f.Scope,
 		},
 	); err != nil {
 		return err
@@ -120,6 +132,10 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 		}
 
 		if err = q.AdvanceInstrumentRevision(ctx, f.TargetID); err != nil {
+			return err
+		}
+
+		if err = combineIdentity(ctx, q, f.TargetID); err != nil {
 			return err
 		}
 	}
@@ -167,7 +183,8 @@ func referenceCandidate(
 
 		var jobs []reference.Job
 		if json.Unmarshal(row.Request, &jobs) != nil || selected.Job < 0 || selected.Job >= len(jobs) ||
-			!referenceJobMatches(instrument.Reported(), jobs[selected.Job]) {
+			!referenceJobMatches(instrument.Reported(), jobs[selected.Job]) &&
+				!boundJobMatches(ctx, q, id, jobs[selected.Job]) {
 			return reference.Record{}, "", application.ErrInvalid
 		}
 
@@ -180,7 +197,13 @@ func referenceCandidate(
 			return reference.Record{}, "", application.ErrInvalid
 		}
 
-		return decoded[selected.Job].Data[selected.Record], row.ID, nil
+		record := decoded[selected.Job].Data[selected.Record]
+		if jobs[selected.Job].IDType == "COMPOSITE_ID_BB_GLOBAL" &&
+			record.Composite != jobs[selected.Job].IDValue {
+			return reference.Record{}, "", application.ErrInvalid
+		}
+
+		return record, row.ID, nil
 	}
 
 	return reference.Record{}, "", application.ErrInvalid
@@ -196,6 +219,15 @@ func referenceCandidateKey(id string, job, record int) string {
 }
 
 func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (application.CorrectionForm, error) {
+	if kind == "instrument" {
+		target, err := canonicalID(ctx, s.queries, "instruments", id)
+		if err != nil {
+			return application.CorrectionForm{}, err
+		}
+
+		id = target
+	}
+
 	out := application.CorrectionForm{Kind: kind, ID: id}
 	family := source.InstrumentKind("")
 	switch kind {
@@ -300,11 +332,16 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			}
 
 			for j, job := range response {
-				if j >= len(jobs) || !referenceJobMatches(value.Reported(), jobs[j]) {
+				if j >= len(jobs) ||
+					!referenceJobMatches(value.Reported(), jobs[j]) && !boundJobMatches(ctx, s.queries, id, jobs[j]) {
 					continue
 				}
 
 				for k, r := range job.Data {
+					if jobs[j].IDType == "COMPOSITE_ID_BB_GLOBAL" && r.Composite != jobs[j].IDValue {
+						continue
+					}
+
 					if _, identity, ok := reference.Select(source.InstrumentKind(row.Kind), []reference.Record{r}); ok {
 						out.Candidates = append(
 							out.Candidates,
@@ -394,7 +431,8 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 	}
 
 	active := activeDecisions(rows)
-	for _, r := range rows {
+	for _, row := range rows {
+		r := row.OperatorDecision
 		out.Decisions = append(
 			out.Decisions,
 			application.DecisionRecord{
@@ -415,25 +453,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 	return out, nil
 }
 
-func referenceJobMatches(i source.Instrument, j reference.Job) bool {
-	for _, id := range i.Identifiers() {
-		kind := "ID_BB_GLOBAL"
-		switch id.Kind() {
-		case source.ISIN:
-			kind = "ID_ISIN"
-		case source.CUSIP:
-			kind = "ID_CUSIP"
-		case source.SEDOL:
-			kind = "ID_SEDOL"
-		}
-
-		if j.IDType == kind && j.IDValue == id.Value() {
-			return true
-		}
-	}
-
-	return false
-}
+func referenceJobMatches(i source.Instrument, j reference.Job) bool { return reference.Matches(i, j) }
 
 func resolveAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.ResolveInstrumentParams) error {
 	if err := q.EnsureInstrumentSelection(ctx, p.ID); err != nil {
@@ -579,4 +599,66 @@ func enrichAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.Enri
 	}
 
 	return projectInstrument(ctx, q, p.ID)
+}
+
+// A supporting composite job is eligible only through a retained response to
+// one of this root's qualified bindings, never through another job in the batch.
+func boundJobMatches(ctx context.Context, q *sqlc.Queries, id string, job reference.Job) bool {
+	rows, err := q.InstrumentBindings(ctx, id)
+	if err != nil {
+		return false
+	}
+
+	bindings := make([]source.Instrument, 0, len(rows))
+	for _, r := range rows {
+		value, e := instrumentValue(r)
+		if e != nil {
+			return false
+		}
+
+		bindings = append(bindings, value.Reported())
+		if reference.Matches(value.Reported(), job) {
+			return true
+		}
+	}
+
+	if job.IDType != "COMPOSITE_ID_BB_GLOBAL" {
+		return false
+	}
+
+	evidence, err := q.RetainedReferenceCandidates(ctx, id)
+	if err != nil {
+		return false
+	}
+
+	for _, attempt := range evidence {
+		var (
+			jobs     []reference.Job
+			response []struct {
+				Data []reference.Record `json:"data"`
+			}
+		)
+		if json.Unmarshal(attempt.Request, &jobs) != nil || json.Unmarshal(attempt.Response, &response) != nil {
+			continue
+		}
+
+		for j, request := range jobs {
+			if j >= len(response) ||
+				!slices.ContainsFunc(
+					bindings,
+					func(binding source.Instrument) bool { return reference.Matches(binding, request) },
+				) {
+				continue
+			}
+
+			if slices.ContainsFunc(
+				response[j].Data,
+				func(record reference.Record) bool { return record.Composite == job.IDValue },
+			) {
+				return true
+			}
+		}
+	}
+
+	return false
 }

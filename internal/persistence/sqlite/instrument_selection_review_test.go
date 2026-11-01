@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestDistinctExecutionsExposeConflictingSharedOptionTerms(t *testing.T) {
+func TestDistinctExecutionsRetainTheirOwnOptionTerms(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "first-option", syntheticOption)
 
@@ -23,14 +23,26 @@ func TestDistinctExecutionsExposeConflictingSharedOptionTerms(t *testing.T) {
 	coverageReport(t, s, "second-option", changed)
 
 	detail, err := s.InstrumentDetail(t.Context(), instrument)
-	if err != nil || detail.Instrument.Status() != "conflict" ||
-		detail.Instrument.Reported().Option().Fields().Strike.Amount() != "100.00000000001" {
-		t.Fatal("shared instrument disagreement lost", detail, err)
+	if err != nil || detail.Instrument.Status().NeedsReview() ||
+		detail.Instrument.Reported().Option().Fields().Strike.Amount() != "" {
+		t.Fatal("activity terms contaminated identity", detail, err)
 	}
 
 	v, err = s.Dashboard(t.Context())
 	if err != nil || len(v.Executions) != 2 {
 		t.Fatal("distinct executions lost", v, err)
+	}
+
+	terms := map[string]bool{}
+	for _, e := range v.Executions {
+		terms[e.Terms().Fields().Instrument.Option().Fields().Strike.Amount()] = true
+		if e.Instrument() != instrument || e.State().NeedsReview() {
+			t.Fatal(e)
+		}
+	}
+
+	if !terms["100.00000000001"] || !terms["110"] {
+		t.Fatal(terms)
 	}
 }
 

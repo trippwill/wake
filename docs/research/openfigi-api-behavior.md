@@ -57,3 +57,19 @@ These are deductions from the documented contract, not additional API guarantees
 Recheck the primary documentation when implementing pacing or interpreting new
 failure cases. Do not infer a cache lifetime, historical completeness or metadata
 redistribution permission from these rate limits.
+
+## Allocation-specific lookup and nullable results
+
+The 2026-11-01 [authority experiment](openfigi-identity.md#how-far-can-figi-authority-extend)
+confirmed that ID_BB_GLOBAL is not interchangeable with
+ID_BB_GLOBAL_SHARE_CLASS_LEVEL. COMPOSITE_ID_BB_GLOBAL expands a composite's
+representations, whereas ID_BB_GLOBAL can return the composite itself. Use the
+identifier's corroborated allocation, not a source field spelling or FIGI prefix.
+A no-match from the wrong request type does not invalidate a FIGI.
+
+The mapping contract permits absent parent and descriptive fields. Retain the
+whole response and distinguish transport outcome, identity selection, descriptive
+metadata and refresh health. Successful identity selection must not expire with a
+cache entry. No-match remains scoped to the submitted lookup; defaults exclude
+unlisted equities. A bounded parent lookup uses the same admission, cache and
+retained evidence mechanisms as the original request.

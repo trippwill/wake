@@ -207,6 +207,10 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 		if err != nil {
 			return source.TradeInput{}, err
 		}
+
+		if id, ok := occIdentifier(row["symbol"], option); ok {
+			ids = append(ids, id)
+		}
 	}
 
 	debt := source.DebtTerms{}
@@ -406,21 +410,28 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 func optionTerms(row map[string]string) (source.OptionTerms, error) {
 	f := source.OptionInput{}
 
-	var err error
+	var (
+		err error
+		r   source.Reference
+	)
 	if id := nativeValue(row["underlyingConid"]); id != "" {
-		r, e := source.NewReference("ibkr", "contract-id", "", id)
-		if e != nil {
-			return source.OptionTerms{}, e
+		r, err = source.NewReference("ibkr", "contract-id", "", id)
+		if err != nil {
+			return source.OptionTerms{}, err
 		}
+	}
 
-		f.Underlier, err = source.NewInstrument(
-			source.InstrumentInput{
-				Reference: r,
-				Kind:      source.UnknownInstrument,
-				Ticker:    row["underlyingSymbol"],
-				Venue:     row["underlyingListingExchange"],
-			},
-		)
+	var ids []source.Identifier
+	if value := row["underlyingSecurityID"]; underlierISIN(value) {
+		id, _ := source.NewIdentifier(source.ISIN, value, "underlyingSecurityID")
+		ids = append(ids, id)
+	}
+
+	if !r.IsZero() || len(ids) > 0 {
+		f.Underlier, err = source.NewInstrument(source.InstrumentInput{
+			Reference: r, Identifiers: ids, Kind: source.UnknownInstrument,
+			Ticker: row["underlyingSymbol"], Venue: row["underlyingListingExchange"],
+		})
 		if err != nil {
 			return source.OptionTerms{}, err
 		}

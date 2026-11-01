@@ -210,3 +210,23 @@ func TestSnapshotConditionalSyntax(t *testing.T) {
 		}
 	}
 }
+
+func TestRetiredResourceRedirectStaysWithinResourcePath(t *testing.T) {
+	for _, endpoint := range []string{"instruments", "listings"} {
+		w := httptest.NewRecorder()
+		NewHandler(reads{item: application.CanonicalResource{ID: "current /?id", Kind: endpoint}}, nil).
+			ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/"+endpoint+"/retired", nil))
+
+		if w.Code != http.StatusPermanentRedirect ||
+			w.Header().Get("Location") != "/v1/"+endpoint+"/current%20%2F%3Fid" ||
+			w.Body.Len() != 0 {
+			t.Fatal(
+				"retired ID did not redirect to its escaped canonical resource",
+				endpoint,
+				w.Code,
+				w.Header(),
+				w.Body.String(),
+			)
+		}
+	}
+}

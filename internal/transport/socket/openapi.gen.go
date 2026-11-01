@@ -156,6 +156,30 @@ func (e InstrumentFamily) Valid() bool {
 	}
 }
 
+// Defines values for InstrumentFigiAllocation.
+const (
+	InstrumentFigiAllocationComposite   InstrumentFigiAllocation = "composite"
+	InstrumentFigiAllocationInstrument  InstrumentFigiAllocation = "instrument"
+	InstrumentFigiAllocationLessThannil InstrumentFigiAllocation = "<nil>"
+	InstrumentFigiAllocationShareClass  InstrumentFigiAllocation = "share_class"
+)
+
+// Valid indicates whether the value is a known member of the InstrumentFigiAllocation enum.
+func (e InstrumentFigiAllocation) Valid() bool {
+	switch e {
+	case InstrumentFigiAllocationComposite:
+		return true
+	case InstrumentFigiAllocationInstrument:
+		return true
+	case InstrumentFigiAllocationLessThannil:
+		return true
+	case InstrumentFigiAllocationShareClass:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InstrumentResourceKind.
 const (
 	Instruments InstrumentResourceKind = "instruments"
@@ -345,9 +369,15 @@ type Explanation struct {
 	Corrections []Correction `json:"corrections"`
 	Decisions   []Decision   `json:"decisions"`
 	Id          string       `json:"id"`
-	Kind        string       `json:"kind"`
-	Revision    int64        `json:"revision"`
-	Selection   string       `json:"selection"`
+	Identity    *struct {
+		Allocation *string `json:"allocation"`
+		Figi       *string `json:"figi"`
+		Reason     *string `json:"reason"`
+		Rule       string  `json:"rule"`
+	} `json:"identity"`
+	Kind      string `json:"kind"`
+	Revision  int64  `json:"revision"`
+	Selection string `json:"selection"`
 }
 
 // FinancialSnapshot defines model for FinancialSnapshot.
@@ -368,21 +398,26 @@ type Identifier struct {
 
 // Instrument defines model for Instrument.
 type Instrument struct {
-	Debt        *NullableDebt    `json:"debt"`
-	Family      InstrumentFamily `json:"family"`
-	Figi        *string          `json:"figi"`
-	Identifiers []Identifier     `json:"identifiers"`
-	Name        *string          `json:"name"`
+	Family InstrumentFamily `json:"family"`
+	Figi   *string          `json:"figi"`
 
-	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-	Option          *NullableOption `json:"option"`
-	ReferenceStatus string          `json:"reference_status"`
-	Ticker          *string         `json:"ticker"`
-	UnderlierId     *string         `json:"underlier_id"`
+	// FigiAllocation Allocation of the accepted FIGI. Equity/fund roots use share_class, supported equity options use composite, debt issues use instrument.
+	FigiAllocation *InstrumentFigiAllocation `json:"figi_allocation"`
+	Identifiers    []Identifier              `json:"identifiers"`
+	Name           *string                   `json:"name"`
+
+	// ReferenceReason Stable machine reason for unresolved identity or incomplete supporting metadata; independent of lookup health.
+	ReferenceReason *string `json:"reference_reason"`
+	ReferenceStatus string  `json:"reference_status"`
+	Ticker          *string `json:"ticker"`
+	UnderlierId     *string `json:"underlier_id"`
 }
 
 // InstrumentFamily defines model for Instrument.Family.
 type InstrumentFamily string
+
+// InstrumentFigiAllocation Allocation of the accepted FIGI. Equity/fund roots use share_class, supported equity options use composite, debt issues use instrument.
+type InstrumentFigiAllocation string
 
 // InstrumentResource defines model for InstrumentResource.
 type InstrumentResource struct {
