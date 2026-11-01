@@ -320,6 +320,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(10)
 	check(
+		chromedp.WaitVisible("[data-grid-refresh]"),
+		chromedp.Evaluate(`document.querySelector('.tabulator-row')===null`, &ok),
+	)
+
+	if !ok {
+		t.Fatal("background acquisition replaced activity before explicit refresh")
+	}
+
+	check(
+		chromedp.Click("[data-grid-refresh]"),
 		chromedp.Poll(
 			`document.querySelector('a[href^="/executions/"]') !== null && document.body.textContent.includes('REFERENCE EQUITY')`,
 			nil,
@@ -893,6 +903,8 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(10)
 	check(
+		chromedp.WaitVisible("[data-grid-refresh]"),
+		chromedp.Click("[data-grid-refresh]"),
 		chromedp.Poll(
 			`document.body.textContent.includes('Fresh confirmed account')&&document.body.textContent.includes('400.123456789')`,
 			nil,

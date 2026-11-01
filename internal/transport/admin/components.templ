@@ -73,6 +73,7 @@ templ Grid(kind, endpoint, label string) {
 	<section class="wake-grid" id={ kind + "-grid" } data-grid={ kind } data-grid-url={ endpoint } aria-label={ label }>
 		<div class="wake-grid-controls">
 			<p role="status" data-grid-status>Loading table…</p>
+			<button class="btn btn-sm" type="button" data-grid-refresh hidden>Refresh table</button>
 			<button class="btn btn-sm" type="button" data-grid-retry hidden>Retry table</button>
 			<a href="/login" data-grid-signin hidden>Sign in again</a>
 			<button class="btn btn-sm" type="button" data-grid-reset>Reset columns</button>
