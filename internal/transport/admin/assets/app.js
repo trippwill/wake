@@ -408,14 +408,15 @@
           params.get(gridParameter(region, "dir")) ||
           (kind === "instruments" ? "asc" : "desc");
         const element = region.querySelector("[data-grid-table]");
-        const columns = gridColumns[kind].map(([field, title]) => ({
-          field,
-          title,
-          minWidth: 130,
-          headerWordWrap: true,
-          variableHeight: true,
-          formatter: gridCell,
-        }));
+        const createColumns = () =>
+          gridColumns[kind].map(([field, title]) => ({
+            field,
+            title,
+            minWidth: 130,
+            headerWordWrap: true,
+            variableHeight: true,
+            formatter: gridCell,
+          }));
         const state = {
           table: null,
           request: null,
@@ -425,6 +426,7 @@
           selectionRestored: false,
         };
         const rememberFocus = () => {
+          state.focus = null;
           const active = document.activeElement;
           if (!region.contains(active)) return;
           const heading = active.closest(".tabulator-col");
@@ -434,7 +436,9 @@
             : row && active.matches("a[href]")
               ? {
                   record: row.dataset.record,
-                  href: active.getAttribute("href"),
+                  column: active
+                    .closest("[tabulator-field]")
+                    ?.getAttribute("tabulator-field"),
                 }
               : null;
         };
@@ -444,7 +448,7 @@
           maxHeight: "32rem",
           dataLoader: false,
           renderVertical: "basic",
-          columns,
+          columns: createColumns(),
           pagination: true,
           paginationMode: "remote",
           paginationSize: 50,
@@ -477,7 +481,6 @@
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: async (url, _config, parameters) => {
             delete region.dataset.gridReady;
-            rememberFocus();
             state.request?.abort();
             const sequence = ++state.sequence;
             const controller = new AbortController();
@@ -579,12 +582,13 @@
         grids.set(region, state);
         retry.onclick = () => table.setPage(table.getPage()).catch(() => {});
         region.querySelector("[data-grid-reset]").onclick = () =>
-          table.setColumns(columns);
+          table.setColumns(createColumns());
+        // Capture the current focus immediately before Tabulator removes old rows.
+        table.on("dataProcessing", rememberFocus);
         table.on("tableBuilt", () => {
           element.setAttribute("aria-label", region.getAttribute("aria-label"));
         });
         table.on("renderComplete", () => {
-          region.dataset.gridReady = "true";
           const sort = table.getSorters()[0];
           for (const heading of element.querySelectorAll(".tabulator-col")) {
             heading.tabIndex = 0;
@@ -597,6 +601,9 @@
                 : "none",
             );
           }
+        });
+        table.on("dataProcessed", () => {
+          region.dataset.gridReady = "true";
           if (state.focus?.field && document.activeElement === document.body)
             element
               .querySelector(
@@ -604,11 +611,10 @@
               )
               ?.focus();
           if (state.focus?.record && document.activeElement === document.body) {
-            const row = element.querySelector(
-              `[data-record="${CSS.escape(state.focus.record)}"]`,
-            );
-            [...(row?.querySelectorAll("a[href]") || [])]
-              .find((link) => link.getAttribute("href") === state.focus.href)
+            element
+              .querySelector(
+                `[data-record="${CSS.escape(state.focus.record)}"] [tabulator-field="${CSS.escape(state.focus.column)}"] a[href]`,
+              )
               ?.focus();
           }
           state.focus = null;
@@ -796,7 +802,6 @@
     disclosures.clear();
   });
   document.addEventListener("htmx:afterSettle", () => {
-    refreshGrids();
     enhance(document);
     focusScrollableTables();
   });

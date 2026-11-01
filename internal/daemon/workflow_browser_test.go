@@ -23,11 +23,10 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -188,67 +187,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			t.Fatal(err, location, body)
 		}
 	}
-	// Grid URL updates emit same-document navigation events. Wait for a matching
-	// document loader's init/load events, not the first History API event.
-	newDocument := func(action chromedp.Action) chromedp.Action {
-		return chromedp.ActionFunc(func(ctx context.Context) error {
-			tree, err := page.GetFrameTree().Do(ctx)
-			if err != nil {
-				return err
-			}
-
-			listen, stop := context.WithCancel(ctx)
-			defer stop()
-
-			events := make(chan *page.EventLifecycleEvent, 32)
-
-			var response atomic.Pointer[network.Response]
-			chromedp.ListenTarget(listen, func(event any) {
-				switch event := event.(type) {
-				case *page.EventLifecycleEvent:
-					if event.FrameID == tree.Frame.ID && (event.Name == "init" || event.Name == "load") {
-						select {
-						case events <- event:
-						default:
-						}
-					}
-				case *network.EventResponseReceived:
-					if event.FrameID == tree.Frame.ID && event.Type == network.ResourceTypeDocument {
-						response.Store(event.Response)
-					}
-				}
-			})
-
-			if err := action.Do(ctx); err != nil {
-				return err
-			}
-
-			loader := ""
-			for {
-				select {
-				case event := <-events:
-					if event.Name == "init" {
-						loader = string(event.LoaderID)
-					}
-
-					if event.Name == "load" && loader != "" && string(event.LoaderID) == loader {
-						result := response.Load()
-						if result == nil {
-							return fmt.Errorf("document navigation produced no HTTP response")
-						}
-
-						if result.Status != http.StatusOK {
-							return fmt.Errorf("document navigation returned %v: %s", result.Status, result.URL)
-						}
-
-						return nil
-					}
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
-		})
-	}
+	newDocument := testbrowser.NewDocument
 	navigate := func(action chromedp.Action) { t.Helper(); check(newDocument(action)) }
 
 	capture := func(name string) {
@@ -483,6 +422,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		newDocument(chromedp.Click("[data-return]")),
 		chromedp.WaitVisible("#activity-search"),
 		chromedp.WaitVisible(".tabulator-row"),
+		chromedp.Poll(
+			`document.activeElement.closest('[data-record]')?.dataset.record===new URL(location.href).searchParams.get('selected')`,
+			nil,
+		),
 		chromedp.Evaluate(
 			`document.querySelector('#activity-search').value==='REFERENCE EQUITY' && new URL(location.href).searchParams.get('sort')==='price' && new URL(location.href).searchParams.has('selected') && window.Tabulator.findTable('.tabulator')[0].getDataCount('active')===1`,
 			&ok,
