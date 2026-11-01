@@ -474,6 +474,8 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("reference inspection")
 	}
 
+	var directInstrument string
+	check(chromedp.Location(&directInstrument))
 	capture("instrument")
 	check(
 		newDocument(chromedp.Click("[data-return]")),
@@ -511,6 +513,27 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatal("list context lost on browser history")
 	}
+
+	// A directly opened detail has no list-origin parameter. Evidence navigation
+	// must still return through the detail to Activity rather than a self-loop.
+	check(
+		newDocument(chromedp.Navigate(strings.Split(directInstrument, "?")[0])),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+		newDocument(chromedp.Click(`.tabulator a[href^="/evidence/"]`)),
+		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
+		newDocument(chromedp.Click("[data-return]")),
+		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
+		chromedp.Evaluate(`new URL(document.querySelector('[data-return]').href).pathname==='/activity'`, &ok),
+	)
+
+	if !ok {
+		t.Fatal("direct instrument acquired a self-referential navigation origin")
+	}
+
+	check(newDocument(chromedp.Click("[data-return]")), chromedp.WaitVisible("#activity-rows"))
 
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),

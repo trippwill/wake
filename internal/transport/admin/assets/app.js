@@ -507,11 +507,11 @@
                 gridParameter(region, key),
                 target.searchParams.get(key),
               );
-            target.searchParams.set(
-              "origin",
-              current.searchParams.get("origin") ||
-                current.pathname + current.search,
-            );
+            if (current.searchParams.has("origin"))
+              target.searchParams.set(
+                "origin",
+                current.searchParams.get("origin"),
+              );
             target.searchParams.set(
               "page_url",
               current.pathname + current.search,
