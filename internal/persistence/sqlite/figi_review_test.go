@@ -276,6 +276,20 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	coverageReport(
+		t,
+		s,
+		"compatible-enrichment",
+		strings.NewReplacer(`conid="100"`, `conid="200"`, `isin="US0000000001"`, `isin="US0000000001" cusip="new-cusip"`).
+			Replace(equityRow("U1", "b", "200")),
+	)
+
+	blocked, err := s.InstrumentDetail(t.Context(), b)
+	if err != nil || blocked.Instrument.ReferenceMetadata().Reason != string(reference.ConvergenceBlocked) ||
+		!blocked.Instrument.Status().NeedsReview() {
+		t.Fatal("compatible enrichment cleared blocked convergence review", blocked, err)
+	}
+
 	form, err := s.CorrectionForm(t.Context(), "instrument", a)
 	if err != nil || len(form.Candidates) == 0 {
 		t.Fatal(form, err)

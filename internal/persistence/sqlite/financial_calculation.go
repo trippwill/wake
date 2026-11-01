@@ -380,9 +380,11 @@ func persistInstrumentCalculation(
 		return err
 	}
 
-	if (root.ReferenceReason == string(reference.OperatorConflict) || root.ReferenceReason == string(reference.SourceConflict)) &&
-		!slices.Contains(result.Explanation.AppliedScopes, "reference") {
-		selected.Status = "conflict"
+	if !slices.Contains(result.Explanation.AppliedScopes, "reference") {
+		switch reference.Reason(root.ReferenceReason) {
+		case reference.OperatorConflict, reference.SourceConflict, reference.ConvergenceBlocked:
+			selected.Status = "conflict"
+		}
 	}
 
 	if selected.FIGI == "" && root.ReferenceAllocation != "" {
