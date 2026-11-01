@@ -206,6 +206,58 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 					t.Fatal(err)
 				}
 
+				// Fail after qualification has succeeded: the source key must roll back
+				// together with the claim bindings and accepted publication.
+				if _, err = s.db.Exec(
+					`CREATE TRIGGER fail_nested_binding BEFORE INSERT ON instrument_claims WHEN NEW.role='underlier' BEGIN SELECT RAISE(ABORT,'synthetic binding failure'); END;`,
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				if err = s.Process(
+					ctx,
+					"failed-qualification",
+					"synthetic-claims/1",
+				); err == nil ||
+					!strings.Contains(err.Error(), "synthetic binding failure") {
+					t.Fatal("failed nested binding was acknowledged", err)
+				}
+
+				if _, err = s.db.Exec(`DROP TRIGGER fail_nested_binding;`); err != nil {
+					t.Fatal(err)
+				}
+
+				retained, e := s.queries.Instrument(ctx, original)
+				if e != nil || retained.SourceKey != anonymousInstrumentKey("retained", parent+"/underlier") {
+					t.Fatal("failed binding retained qualified source key", retained.SourceKey, e)
+				}
+				// Invalid retained input must fail closed rather than be skipped during
+				// complete-root calculation or a later processing attempt.
+				var (
+					claimID   string
+					claimData []byte
+				)
+				if err = s.db.QueryRow(`SELECT c.id,c.data FROM source_claims c JOIN instrument_claims i ON i.claim_id=c.id WHERE i.instrument_id=? AND i.role='underlier' LIMIT 1`, original).
+					Scan(&claimID, &claimData); err != nil {
+					t.Fatal(err)
+				}
+
+				if _, err = s.db.Exec(`UPDATE source_claims SET data=X'00' WHERE id=?`, claimID); err != nil {
+					t.Fatal(err)
+				}
+
+				if _, err = calculateRoot(ctx, s.queries, parent); err == nil {
+					t.Fatal("invalid retained claim was ignored")
+				}
+
+				if err = s.Process(ctx, "failed-qualification", "synthetic-claims/1"); err == nil {
+					t.Fatal("processing accepted invalid retained input")
+				}
+
+				if _, err = s.db.Exec(`UPDATE source_claims SET data=? WHERE id=?`, claimData, claimID); err != nil {
+					t.Fatal(err)
+				}
+
 				if tableCount(t, s, "instrument_claims") != bindings {
 					t.Fatal("failed qualification retained new claim bindings")
 				}
