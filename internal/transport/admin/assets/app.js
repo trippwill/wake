@@ -398,6 +398,7 @@
           table: null,
           check: null,
           displayed: null,
+          installing: null,
           available: false,
           retryForeground: false,
           request: null,
@@ -431,6 +432,7 @@
         ) => {
           if (!background) {
             state.retryForeground = false;
+            state.installing = null;
             delete region.dataset.gridReady;
             state.available = false;
             refresh.hidden = true;
@@ -503,8 +505,7 @@
             if (sequence !== state.sequence)
               throw new Error("Superseded table request");
             if (!background) {
-              state.displayed = result;
-              status.textContent = `${result.last_row} of ${result.total} results`;
+              state.installing = result;
               history.replaceState(null, "", current);
             }
             return result;
@@ -608,7 +609,12 @@
               table.setMaxPage(result.last_page);
               await table.replaceData(result.data);
             }
-            region.dataset.gridReady = "true";
+            if (!state.retryForeground) {
+              state.installing = null;
+              region.dataset.gridReady = "true";
+              const message = `${state.displayed.last_row} of ${state.displayed.total} results`;
+              if (status.textContent !== message) status.textContent = message;
+            }
           } catch {
             // The shared request path retains rows and presents retry/sign-in feedback.
           }
@@ -649,7 +655,12 @@
             );
           }
         });
-        table.on("dataProcessed", () => {
+        table.on("dataProcessed", (rows) => {
+          if (state.installing?.data === rows) {
+            state.displayed = state.installing;
+            state.installing = null;
+            status.textContent = `${state.displayed.last_row} of ${state.displayed.total} results`;
+          }
           region.dataset.gridReady = "true";
           if (state.focus?.field && document.activeElement === document.body)
             element

@@ -294,7 +294,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection, holdMovedFocus atomic.Bool
+	var (
+		extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection, holdMovedFocus atomic.Bool
+		emptyGrid, failFirstPage                                                                   atomic.Bool
+	)
 
 	refreshStarted, releaseRefresh := make(chan struct{}, 1), make(chan struct{}, 1)
 	selectionStarted, releaseSelection := make(chan struct{}, 1), make(chan struct{})
@@ -426,7 +429,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 		}
 
-		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" && refreshFailed.Load() {
+		if r.URL.Path == "/test/grid-data" && r.Header.Get("HX-Request") == "true" &&
+			(refreshFailed.Load() || (failFirstPage.Load() && r.URL.Query().Get("page") == "1")) {
 			http.Error(w, "Read temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -493,7 +497,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 
 			if r.URL.Path == "/test/grid-data" {
-				polishGridData(w, r, extra.Load())
+				if emptyGrid.Load() {
+					gridJSON(w, gridPage[activityGridRow]{Data: []activityGridRow{}, LastPage: 1, Total: 71}, nil)
+				} else {
+					polishGridData(w, r, extra.Load())
+				}
 			} else {
 				polishObservationData(w, r, !extra.Load())
 			}
@@ -1125,6 +1133,46 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 	)
+
+	// A response is not the displayed baseline until its rows are installed.
+	// Empty results, a failed fallback and Retry must never retain stale rows.
+	extra.Store(true)
+	check(
+		chromedp.Evaluate(
+			`window.Tabulator.findTable('.tabulator')[0].setData().then(()=>window.Tabulator.findTable('.tabulator')[0].setPage(2))`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===1 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	emptyGrid.Store(true)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	failFirstPage.Store(true)
+	check(chromedp.Click("[data-grid-refresh]"), chromedp.WaitVisible("[data-grid-retry]"))
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent.includes('Previous results')`,
+		"failed page fallback obscured the retained results or its error",
+	)
+	failFirstPage.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-status]').textContent==='0 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil),
+	)
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-refresh]').hidden`,
+		"background comparison lost the installed empty baseline",
+	)
+	emptyGrid.Store(false)
 
 	offline.Store(true)
 	check(
