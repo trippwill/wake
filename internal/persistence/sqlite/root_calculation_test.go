@@ -5,6 +5,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -678,5 +679,176 @@ func TestDisputedNewUnderliersDoNotInventAnEmptyRoot(t *testing.T) {
 	detail, err := s.InstrumentDetail(t.Context(), view.Executions[0].Instrument())
 	if err != nil || !detail.Instrument.Status().NeedsReview() || detail.Underlier != "" {
 		t.Fatal("disputed new link was selected", detail, err)
+	}
+}
+
+func TestProspectiveUnderlierClaimsAcrossParentsAgreeOnReview(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		for _, reverse := range []bool{false, true} {
+			for range 2 {
+				s := coverageStore(t)
+				base := underlierTemplate(t)
+				if existing {
+					coverageReport(
+						t,
+						s,
+						"existing-without-isin",
+						strings.Replace(equityRow("U1", "known-root", "100"), ` isin="US0000000001"`, "", 1),
+					)
+				}
+
+				retainUnderlierTrades(
+					t,
+					s,
+					"parent-p-anonymous",
+					underlierTrade(t, base, "p-initial", "US0000000002", false),
+				)
+
+				p, err := s.queries.InstrumentBySource(
+					t.Context(),
+					referenceKey(base.Fields().Instrument.Reference()),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				before, err := s.InstrumentDetail(t.Context(), p.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				other := base.Fields()
+				instrument := other.Instrument.Fields()
+
+				instrument.Reference, err = source.NewReference("synthetic", "option", "", "parent-q")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				other.Instrument, err = source.NewInstrument(instrument)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				q, err := source.NewTrade(other)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				batch := []source.Trade{
+					underlierTrade(t, base, "p-qualified", "", true),
+					underlierTrade(t, q, "q-qualified", "US0000000001", true),
+				}
+				if reverse {
+					batch[0], batch[1] = batch[1], batch[0]
+				}
+
+				retainUnderlierTrades(t, s, "two-parents", batch...)
+
+				after, err := s.InstrumentDetail(t.Context(), p.ID)
+				if err != nil || after.Underlier != before.Underlier || !after.Instrument.Status().NeedsReview() {
+					t.Fatal("prospective conflict moved parent P", after, err)
+				}
+
+				target, err := s.queries.InstrumentBySource(
+					t.Context(),
+					referenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				detail, err := s.InstrumentDetail(t.Context(), target.ID)
+				if err != nil || !detail.Instrument.Status().NeedsReview() ||
+					len(detail.Instrument.Reported().Identifiers()) != 0 {
+					t.Fatal("parent order selected disputed target identity", reverse, detail, err)
+				}
+			}
+		}
+	}
+}
+
+type rootHistoryReadDB struct {
+	*sql.DB
+	reads map[string]int
+}
+
+func (db *rootHistoryReadDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if strings.Contains(query, "-- name: RootCalculationInputs") && len(args) == 1 {
+		if id, ok := args[0].(string); ok {
+			db.reads[id]++
+		}
+	}
+
+	return db.DB.QueryContext(ctx, query, args...)
+}
+
+func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
+	s := coverageStore(t)
+
+	var rows strings.Builder
+	for n := 0; n < 8; n++ {
+		rows.WriteString(
+			strings.NewReplacer(`conid="200"`, fmt.Sprintf(`conid="option-%d"`, n), `execID="option-fill"`, fmt.Sprintf(`execID="option-fill-%d"`, n), `tradeID="option-trade"`, fmt.Sprintf(`tradeID="option-trade-%d"`, n)).
+				Replace(syntheticOption),
+		)
+	}
+
+	for n := 0; n < 32; n++ {
+		rows.WriteString(equityRow("U1", fmt.Sprintf("history-%d", n), "100"))
+	}
+
+	coverageReport(t, s, "shared-history", rows.String())
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		parents   []string
+		underlier string
+	)
+	for _, instrument := range view.Instruments {
+		if instrument.Reported().Kind() == source.Option {
+			parents = append(parents, instrument.ID())
+		} else {
+			underlier = instrument.ID()
+		}
+	}
+
+	if len(parents) != 8 || underlier == "" {
+		t.Fatal("incomplete history fixture", len(parents), underlier)
+	}
+
+	recorded := &rootHistoryReadDB{DB: s.db, reads: map[string]int{}}
+	q := sqlc.New(recorded)
+
+	phase := newRootPhase(q)
+	if _, err = phase.targets(t.Context(), parents); err != nil {
+		t.Fatal(err)
+	}
+
+	if recorded.reads[underlier] != 1 {
+		t.Fatal("binding phase reread shared history", recorded.reads)
+	}
+
+	recorded.reads = map[string]int{}
+
+	phase = newRootPhase(q)
+	for _, instrument := range view.Instruments {
+		if _, err = phase.calculate(t.Context(), instrument.ID()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if recorded.reads[underlier] != 1 {
+		t.Fatal("projection phase reread shared history", recorded.reads)
+	}
+
+	for id, count := range recorded.reads {
+		if count != 1 {
+			t.Fatal("history decoded more than once", id, count)
+		}
 	}
 }

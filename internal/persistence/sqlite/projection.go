@@ -107,6 +107,7 @@ func persistRootEnrichment(
 	q *sqlc.Queries,
 	id string,
 	result application.RootCalculation,
+	underlier string,
 ) error {
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
@@ -146,12 +147,7 @@ func persistRootEnrichment(
 		}
 	}
 
-	if u := result.Underlier; u.Kind() != "" {
-		underlier, e := acceptAutomaticUnderlier(ctx, q, root.ID, u)
-		if e != nil {
-			return e
-		}
-
+	if underlier != "" {
 		return setAutomaticUnderlier(
 			ctx,
 			q,
