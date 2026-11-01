@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/xml"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -44,9 +45,7 @@ func (s *Source) request(
 	}
 
 	values := url.Values{"t": {string(secret)}, "q": {query}, "v": {"3"}}
-	for key, entries := range parameters {
-		values[key] = entries
-	}
+	maps.Copy(values, parameters)
 
 	request, err := http.NewRequestWithContext(
 		ctx,

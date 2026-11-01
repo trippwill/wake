@@ -47,10 +47,8 @@ func NewInstrument(input InstrumentInput) (Instrument, error) {
 		return Instrument{}, ErrInvalidInstrument
 	}
 
-	for _, id := range input.Identifiers {
-		if id == (Identifier{}) {
-			return Instrument{}, ErrInvalidIdentifier
-		}
+	if slices.Contains(input.Identifiers, (Identifier{})) {
+		return Instrument{}, ErrInvalidIdentifier
 	}
 
 	if (input.Kind != Option && !input.Option.IsZero()) || (input.Kind != Debt && !input.Debt.IsZero()) {

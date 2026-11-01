@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -139,8 +140,8 @@ func CheckStopped(cfg config.Config) error {
 func (owner *daemonOwnership) close() {
 	defer func() { owner.files = nil }()
 
-	for i := len(owner.files) - 1; i >= 0; i-- {
-		_ = owner.files[i].Close()
+	for _, v := range slices.Backward(owner.files) {
+		_ = v.Close()
 	}
 }
 

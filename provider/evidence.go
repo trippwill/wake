@@ -100,13 +100,9 @@ func (r Result) Trades() uint64      { return r.counts.Trades }
 func (r Result) Instruments() uint64 { return r.counts.Instruments }
 func (r Result) Rejected() uint64    { return r.counts.Rejected }
 func (r Result) Ignored() uint64     { return r.counts.Ignored }
-
-func (r Result) Counts() Counts { return r.counts }
-
-func (r Result) Lifecycles() uint64 { return r.counts.Lifecycles }
-
+func (r Result) Counts() Counts      { return r.counts }
+func (r Result) Lifecycles() uint64  { return r.counts.Lifecycles }
 func (r Result) Conversions() uint64 { return r.counts.Conversions }
-
 func (r Result) Corrections() uint64 { return r.counts.Corrections }
 
 // Rejection identifies an uninterpretable source row without retaining unsafe
