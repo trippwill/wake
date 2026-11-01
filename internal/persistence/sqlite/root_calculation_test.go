@@ -89,66 +89,61 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 				qualifiedID = existingView.Executions[0].Instrument()
 			}
 
-			admit := func(id string, anonymous bool) {
-				t.Helper()
-				coverageClaims(
-					t,
-					s,
-					id,
-					claimNormalizer(
-						func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-							for _, execution := range template.Executions {
-								fields := execution.Terms().Fields()
-								if id == "later-anonymous" {
-									var e error
+			normalizer := func(id string, anonymous bool) provider.Normalizer {
+				return claimNormalizer(
+					func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+						for _, execution := range template.Executions {
+							fields := execution.Terms().Fields()
+							if id == "later-anonymous" {
+								var e error
 
-									fields.Event, e = source.NewReference("synthetic", "execution", "U1", id+execution.ID())
-									if e != nil {
-										return provider.Result{}, e
-									}
-
-									fields.EventAliases = nil
-								}
-
-								if fields.Instrument.Kind() == source.Option && anonymous {
-									instrument := fields.Instrument.Fields()
-									option := instrument.Option.Fields()
-									underlier := option.Underlier.Fields()
-									underlier.Reference = source.Reference{}
-
-									var e error
-
-									option.Underlier, e = source.NewInstrument(underlier)
-									if e != nil {
-										return provider.Result{}, e
-									}
-
-									instrument.Option, e = source.NewOptionTerms(option)
-									if e != nil {
-										return provider.Result{}, e
-									}
-
-									fields.Instrument, e = source.NewInstrument(instrument)
-									if e != nil {
-										return provider.Result{}, e
-									}
-								}
-
-								trade, e := source.NewTrade(fields)
+								fields.Event, e = source.NewReference("synthetic", "execution", "U1", id+execution.ID())
 								if e != nil {
 									return provider.Result{}, e
 								}
 
-								if e = claims.PutTrade(ctx, trade); e != nil {
+								fields.EventAliases = nil
+							}
+
+							if fields.Instrument.Kind() == source.Option && anonymous {
+								instrument := fields.Instrument.Fields()
+								option := instrument.Option.Fields()
+								underlier := option.Underlier.Fields()
+								underlier.Reference = source.Reference{}
+
+								var e error
+
+								option.Underlier, e = source.NewInstrument(underlier)
+								if e != nil {
+									return provider.Result{}, e
+								}
+
+								instrument.Option, e = source.NewOptionTerms(option)
+								if e != nil {
+									return provider.Result{}, e
+								}
+
+								fields.Instrument, e = source.NewInstrument(instrument)
+								if e != nil {
 									return provider.Result{}, e
 								}
 							}
 
-							return provider.NewResult(provider.Counts{Rows: 2, Trades: 2})
-						},
-					),
+							trade, e := source.NewTrade(fields)
+							if e != nil {
+								return provider.Result{}, e
+							}
+
+							if e = claims.PutTrade(ctx, trade); e != nil {
+								return provider.Result{}, e
+							}
+						}
+
+						return provider.NewResult(provider.Counts{Rows: 2, Trades: 2})
+					},
 				)
 			}
+			admit := func(id string, anonymous bool) { t.Helper(); coverageClaims(t, s, id, normalizer(id, anonymous)) }
 			admit("anonymous-underlier", true)
 
 			view, err := s.Dashboard(ctx)
@@ -173,6 +168,53 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 			original := detail.Underlier
 
 			retainDecision(t, s, "instrument", parent, "underlier", operator, "", "set")
+
+			if !existing {
+				coverageReport(t, s, "failed-qualification", "")
+
+				if _, err = s.Normalize(
+					ctx,
+					"failed-qualification",
+					"synthetic-claims/1",
+					normalizer("failed-qualification", false),
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				baseline, e := snapshotState(ctx, s)
+				if e != nil {
+					t.Fatal(e)
+				}
+
+				bindings := tableCount(t, s, "instrument_claims")
+				if _, err = s.db.Exec(
+					`CREATE TRIGGER fail_qualification BEFORE UPDATE OF source_key ON instruments BEGIN SELECT RAISE(ABORT,'synthetic qualification failure'); END;`,
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				if err = s.Process(
+					ctx,
+					"failed-qualification",
+					"synthetic-claims/1",
+				); err == nil ||
+					!strings.Contains(err.Error(), "synthetic qualification failure") {
+					t.Fatal("failed identity write was acknowledged", err)
+				}
+
+				if _, err = s.db.Exec(`DROP TRIGGER fail_qualification;`); err != nil {
+					t.Fatal(err)
+				}
+
+				if tableCount(t, s, "instrument_claims") != bindings {
+					t.Fatal("failed qualification retained new claim bindings")
+				}
+
+				if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
+					t.Fatal("failed qualification published", changes)
+				}
+			}
+
 			admit("qualified-underlier", false)
 
 			detail, err = s.InstrumentDetail(ctx, parent)
