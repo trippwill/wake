@@ -82,6 +82,8 @@ func registerWorkflowRoutes(
 			handler(w, r, csrf)
 		})
 	}
+	registerGridRoutes(gate, workflow)
+
 	failure := func(w http.ResponseWriter, r *http.Request, csrf string, err error) {
 		message := "The operation could not be saved. Retry after checking daemon status."
 		switch err {
@@ -412,13 +414,13 @@ func registerWorkflowRoutes(
 
 		switch scope {
 		case application.ActivityScope:
-			result, e := workflow.ActivityList(r.Context(), query)
+			result, e := workflow.Prerequisites(r.Context())
 			err = e
-			view = activityList(result)
+			view.Account = result.Account
 		case application.InstrumentScope:
-			result, e := workflow.InstrumentList(r.Context(), query)
+			result, e := workflow.Prerequisites(r.Context())
 			err = e
-			view = instrumentList(result)
+			view.Account = result.Account
 		case application.ReviewScope:
 			result, e := workflow.ReviewList(r.Context(), query)
 			err = e

@@ -298,346 +298,344 @@
     configure();
   }
 
-  const textOrder = (left, right) =>
-    left.localeCompare(right, undefined, { numeric: true });
-  // Compare arbitrary-precision decimal text within the same currency or unit.
-  const decimalOrder = (left, right) => {
-    const parse = (text) => {
-      const match = /^(-?)(\d+)(?:\.(\d+))?(?:\s+(.*))?$/.exec(text.trim());
-      if (!match) return null;
-      const integer = match[2].replace(/^0+(?=\d)/, "");
-      const fraction = (match[3] || "").replace(/0+$/, "");
-      return {
-        negative: match[1] === "-" && (integer !== "0" || fraction !== ""),
-        integer,
-        fraction,
-        unit: match[4] || "",
-      };
-    };
-    const a = parse(left),
-      b = parse(right);
-    if (!a || !b) return a ? -1 : b ? 1 : textOrder(left, right);
-    if (a.unit !== b.unit) return textOrder(a.unit, b.unit);
-    if (a.negative !== b.negative) return a.negative ? -1 : 1;
-    const places = Math.max(a.fraction.length, b.fraction.length);
-    const af = a.fraction.padEnd(places, "0"),
-      bf = b.fraction.padEnd(places, "0");
-    const order =
-      a.integer.length - b.integer.length ||
-      (a.integer < b.integer ? -1 : a.integer > b.integer ? 1 : 0) ||
-      (af < bf ? -1 : af > bf ? 1 : 0);
-    return a.negative ? -order : order;
-  };
-  const gridKey = (region) =>
-    `wake.grid:${location.pathname}:${new URL(location.href).searchParams.get("view") || "all"}:${region.dataset.grid}`;
-  const readGridState = (region) => {
-    try {
-      return JSON.parse(sessionStorage.getItem(gridKey(region)));
-    } catch {
-      return null;
-    }
-  };
-  const saveGridState = (region, state) => {
-    const table = state.table;
-    if (!table || !region.dataset.gridReady) return;
-    const holder = region.querySelector(".tabulator-tableholder");
-    const sort = table
-      .getSorters()
-      .map((s) => ({ column: s.field, dir: s.dir }));
-    const value = {
-      layout: table.getColumnLayout(),
-      sort,
-      page: region.hasAttribute("data-server-list")
-        ? Number(new URL(location.href).searchParams.get("page") || 1)
-        : table.getPage(),
-      x: holder?.scrollLeft || 0,
-      y: holder?.scrollTop || 0,
-    };
-    try {
-      sessionStorage.setItem(gridKey(region), JSON.stringify(value));
-    } catch {
-      /* Per-tab storage is optional. */
-    }
-    if (
-      location.pathname === "/activity" &&
-      !region.hasAttribute("data-server-list")
-    ) {
-      const url = new URL(location.href);
-      url.searchParams.set("page", String(value.page || 1));
-      if (sort.length) {
-        const index = Number(sort[0].column.slice(1));
-        const field = region.querySelectorAll("thead th")[index]?.dataset.field;
-        if (field) {
-          url.searchParams.set("sort", field);
-          url.searchParams.set("dir", sort[0].dir);
-        }
-      } else {
-        url.searchParams.delete("sort");
-        url.searchParams.delete("dir");
-      }
-      history.replaceState(null, "", url);
-      for (const name of ["sort", "dir"]) {
-        const control = document.querySelector(
-          `[data-list-filters] [name="${name}"]`,
-        );
-        if (control) control.value = url.searchParams.get(name) || "";
-      }
-    }
-  };
   const grids = new Map();
-  const rows = (source) =>
-    [...source.tBodies[0].rows].map((row) => {
-      const data = { id: row.id, cells: [...row.cells] };
-      data.cells.forEach((cell, index) => {
-        data[`c${index}`] = cell.dataset.sortValue || cell.textContent.trim();
-      });
-      return data;
+  const gridColumns = {
+    activity: [
+      ["label", "Activity"],
+      ["date", "Date"],
+      ["quantity", "Quantity / currency roles"],
+      ["price", "Price / rate"],
+      ["state", "Activity state"],
+      ["reference", "Reference identity"],
+    ],
+    instruments: [
+      ["name", "Instrument"],
+      ["kind", "Kind"],
+      ["ticker", "Reported symbol"],
+      ["state", "Reference identity"],
+    ],
+    observations: [
+      ["report", "Report"],
+      ["outcome", "Outcome"],
+      ["location", "Source location"],
+      ["rule", "Acceptance rule / version"],
+    ],
+  };
+  const gridParameter = (region, name) =>
+    region.dataset.grid === "observations" ? `observations_${name}` : name;
+  const selectedTextWithin = (region) => {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) return false;
+    for (let i = 0; i < selection.rangeCount; i++)
+      if (selection.getRangeAt(i).intersectsNode(region)) return true;
+    return false;
+  };
+  const selectionMessage = "Table refresh paused while text is selected.";
+  const waitForGridSelection = (region, signal) => {
+    if (!selectedTextWithin(region)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        document.removeEventListener("selectionchange", changed);
+        signal.removeEventListener("abort", aborted);
+      };
+      const changed = () => {
+        if (!selectedTextWithin(region)) {
+          cleanup();
+          resolve();
+        }
+      };
+      const aborted = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      document.addEventListener("selectionchange", changed);
+      signal.addEventListener("abort", aborted, { once: true });
+      if (signal.aborted) aborted();
+      else changed();
     });
+  };
+
+  const gridCell = (cell) => {
+    const value = cell.getValue() || {};
+    const node = document.createElement("div");
+    node.className = "wake-grid-cell";
+    const text = document.createElement(value.href ? "a" : "span");
+    text.textContent = value.text || "";
+    if (value.href?.startsWith("/") && !value.href.startsWith("//"))
+      text.href = value.href;
+    if (value.tone) {
+      text.classList.add("wake-state");
+      text.dataset.state = value.tone;
+    }
+    node.append(text);
+    if (value.note) {
+      const note = document.createElement("span");
+      note.className = "wake-help wake-cell-note";
+      note.textContent = value.note;
+      node.append(note);
+    }
+    return node;
+  };
   const enhance = (root) => {
-    if (typeof window.Tabulator !== "function") return;
     for (const region of root.querySelectorAll("[data-grid]")) {
       if (
         grids.has(region) ||
-        region.closest("details:not([open])") ||
+        region.dataset.gridFailed ||
         !region.getClientRects().length
       )
         continue;
-      const serverList = region.hasAttribute("data-server-list");
-      const serverOrder = (params) => ({
-        field:
-          params.get("sort") ||
-          (region.dataset.grid === "activity" ? "date" : "name"),
-        direction:
-          params.get("dir") ||
-          (region.dataset.grid === "activity" ? "desc" : "asc"),
-      });
-      const serverSort = (field) => {
-        const url = new URL(location.href);
-        const current = serverOrder(url.searchParams);
-        const direction =
-          current.field === field && current.direction === "asc"
-            ? "desc"
-            : "asc";
-        url.searchParams.set("sort", field);
-        url.searchParams.set("dir", direction);
-        url.searchParams.set("page", "1");
-        try {
-          sessionStorage.setItem(
-            "wake.grid.heading",
-            `${region.dataset.grid}|${field}`,
-          );
-        } catch {}
-        location.assign(url);
-      };
-      const source = region.querySelector("table");
-      if (!source?.tBodies[0]?.rows.length) continue;
-      const controls = document.createElement("div");
-      controls.className = "wake-grid-controls";
-      const label = document.createElement("label");
-      label.className = "wake-grid-filter";
-      label.textContent = "Filter loaded rows";
-      const input = document.createElement("input");
-      input.type = "search";
-      input.className = "input";
-      label.append(input);
-      const count = document.createElement("span");
-      count.setAttribute("role", "status");
-      const reset = document.createElement("button");
-      reset.type = "button";
-      reset.className = "btn btn-sm";
-      reset.textContent = "Reset view";
-      const serverFilters = !!document.querySelector("[data-list-filters]");
-      if (!serverFilters) controls.append(label);
-      controls.append(count, reset);
-      const help = document.createElement("details");
-      const helpTitle = document.createElement("summary");
-      helpTitle.textContent = "Table controls";
-      help.className = "wake-help";
-      help.textContent = serverList
-        ? "Sorting, filtering and paging apply to the whole warehouse. Enter sorts a focused heading; Alt + arrow keys resize it. 50 rows per page."
-        : "Sorting and filtering apply to loaded rows. Enter sorts a focused heading; Alt + arrow keys resize it. 50 rows per page.";
-      help.prepend(helpTitle);
-      const element = document.createElement("div");
-      element.setAttribute("aria-label", region.getAttribute("aria-label"));
-      const state = {
-        source,
-        html: source.outerHTML,
-        data: rows(source),
-        table: null,
-      };
-      const fallback = () => {
-        state.table?.destroy();
-        source.hidden = false;
-        controls.remove();
-        help.remove();
-        element.remove();
-        delete region.dataset.gridReady;
-        grids.delete(region);
-      };
-      region.append(controls, help, element);
+      const status = region.querySelector("[data-grid-status]");
+      const retry = region.querySelector("[data-grid-retry]");
+      const signIn = region.querySelector("[data-grid-signin]");
+      if (typeof window.Tabulator !== "function") {
+        status.textContent =
+          "The table component could not load. Reload this page to retry.";
+        retry.hidden = false;
+        retry.onclick = () => location.reload();
+        continue;
+      }
       try {
-        const columns = [...source.tHead.rows[0].cells].map(
-          (header, index) => ({
-            title: header.textContent,
-            field: `c${index}`,
-            headerSort: !serverList,
-            headerClick: serverList
-              ? () => serverSort(header.dataset.field)
-              : undefined,
+        const kind = region.dataset.grid;
+        const params = new URL(location.href).searchParams;
+        const initialSort =
+          params.get(gridParameter(region, "sort")) ||
+          (kind === "activity"
+            ? "date"
+            : kind === "instruments"
+              ? "name"
+              : "report");
+        const initialDirection =
+          params.get(gridParameter(region, "dir")) ||
+          (kind === "instruments" ? "asc" : "desc");
+        const element = region.querySelector("[data-grid-table]");
+        const createColumns = () =>
+          gridColumns[kind].map(([field, title]) => ({
+            field,
+            title,
             minWidth: 130,
             headerWordWrap: true,
             variableHeight: true,
-            titleFormatter: () => {
-              const node = document.createElement("span");
-              node.textContent = header.textContent;
-              return node;
-            },
-            sorter:
-              header.dataset.sort === "decimal" ? decimalOrder : textOrder,
-            formatter: (cell) => {
-              const node = document.createElement("div");
-              node.className = "wake-grid-cell";
-              node.append(
-                ...[...cell.getRow().getData().cells[index].childNodes].map(
-                  (child) => child.cloneNode(true),
-                ),
-              );
-              return node;
-            },
-          }),
-        );
+            formatter: gridCell,
+          }));
+        const state = {
+          table: null,
+          request: null,
+          sequence: 0,
+          pending: false,
+          focus: null,
+          selectionRestored: false,
+        };
+        const rememberFocus = () => {
+          state.focus = null;
+          const active = document.activeElement;
+          if (!region.contains(active)) return;
+          const heading = active.closest(".tabulator-col");
+          const row = active.closest("[data-record]");
+          state.focus = heading
+            ? { field: heading.getAttribute("tabulator-field") }
+            : row && active.matches("a[href]")
+              ? {
+                  record: row.dataset.record,
+                  column: active
+                    .closest("[tabulator-field]")
+                    ?.getAttribute("tabulator-field"),
+                }
+              : null;
+        };
         const table = new window.Tabulator(element, {
-          data: state.data,
-          columns,
           index: "id",
           layout: "fitColumns",
           maxHeight: "32rem",
-          pagination: !serverList,
-          paginationMode: "local",
-          paginationSize: 50,
+          dataLoader: false,
           renderVertical: "basic",
-          placeholder: "No matching loaded rows.",
+          columns: createColumns(),
+          pagination: true,
+          paginationMode: "remote",
+          paginationSize: 50,
+          paginationInitialPage: Number(
+            params.get(gridParameter(region, "page")) || 1,
+          ),
+          sortMode: "remote",
+          filterMode: "remote",
+          initialSort: [{ column: initialSort, dir: initialDirection }],
+          columnHeaderSortMulti: false,
+          persistence: { columns: true },
+          persistenceID: `wake-${kind}`,
+          persistenceMode: "local",
+          persistenceReaderFunc: (id, type) => {
+            try {
+              const saved = JSON.parse(localStorage.getItem(`${id}-${type}`));
+              return Array.isArray(saved) ? saved : false;
+            } catch {
+              return false;
+            }
+          },
+          persistenceWriterFunc: (id, type, data) => {
+            try {
+              localStorage.setItem(`${id}-${type}`, JSON.stringify(data));
+            } catch {
+              // Layout preferences must not block table interactions.
+            }
+          },
+          placeholder: "No matching records.",
+          ajaxURL: region.dataset.gridUrl,
+          ajaxRequestFunc: async (url, _config, parameters) => {
+            delete region.dataset.gridReady;
+            state.request?.abort();
+            const sequence = ++state.sequence;
+            const controller = new AbortController();
+            state.request = controller;
+            state.pending = true;
+            region.setAttribute("aria-busy", "true");
+            status.textContent = "Loading table…";
+            retry.hidden = true;
+            signIn.hidden = true;
+            const target = new URL(url, location.href);
+            const current = new URL(location.href);
+            for (const key of ["q", "kind", "state"])
+              if (current.searchParams.has(gridParameter(region, key)))
+                target.searchParams.set(
+                  key,
+                  current.searchParams.get(gridParameter(region, key)),
+                );
+            const sort = parameters.sort?.[0];
+            if (sort) {
+              target.searchParams.set("sort", sort.field);
+              target.searchParams.set("dir", sort.dir);
+            }
+            target.searchParams.set("page", String(parameters.page || 1));
+            target.searchParams.set("size", String(parameters.size || 50));
+            for (const key of ["sort", "dir", "page"])
+              current.searchParams.set(
+                gridParameter(region, key),
+                target.searchParams.get(key),
+              );
+            if (current.searchParams.has("origin"))
+              target.searchParams.set(
+                "origin",
+                current.searchParams.get("origin"),
+              );
+            target.searchParams.set(
+              "page_url",
+              current.pathname + current.search,
+            );
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            try {
+              const response = await fetch(target, {
+                credentials: "same-origin",
+                headers: { Accept: "application/json", "HX-Request": "true" },
+                signal: controller.signal,
+              });
+              if (response.status === 401 || response.status === 403) {
+                signIn.hidden = false;
+                throw new Error(
+                  "Your session expired. Sign in again to reload this table.",
+                );
+              }
+              if (!response.ok)
+                throw new Error(
+                  "Table data is unavailable. Previous results remain displayed; retry.",
+                );
+              const result = await response.json();
+              if (
+                !Array.isArray(result.data) ||
+                !Number.isInteger(result.last_page) ||
+                result.last_page < 1 ||
+                !Number.isInteger(result.last_row)
+              )
+                throw new Error(
+                  "The table response was incomplete. Previous results remain displayed; retry.",
+                );
+              if (sequence !== state.sequence)
+                throw new Error("Superseded table request");
+              if (selectedTextWithin(region)) {
+                status.textContent = selectionMessage;
+                clearTimeout(timeout);
+                await waitForGridSelection(region, controller.signal);
+                if (sequence !== state.sequence)
+                  throw new Error("Superseded table request");
+              }
+              status.textContent = `${result.last_row} of ${result.total} results`;
+              history.replaceState(null, "", current);
+              return result;
+            } catch (error) {
+              if (sequence === state.sequence) {
+                status.textContent = controller.signal.aborted
+                  ? "Table request timed out. Previous results remain displayed; retry."
+                  : error.message;
+                retry.hidden = false;
+              }
+              throw error;
+            } finally {
+              clearTimeout(timeout);
+              if (sequence === state.sequence) {
+                state.pending = false;
+                region.removeAttribute("aria-busy");
+              }
+            }
+          },
+          rowFormatter: (row) => {
+            row.getElement().dataset.record = row.getData().id;
+          },
         });
         state.table = table;
         grids.set(region, state);
-        let originalLayout;
-        const update = () => {
-          const summary = `${table.getDataCount("active")} of ${state.data.length} loaded rows`;
-          if (count.textContent !== summary) count.textContent = summary;
-          const footer = element.querySelector(".tabulator-footer");
-          if (footer) footer.hidden = table.getDataCount("active") <= 50;
-          for (const heading of element.querySelectorAll(".tabulator-col"))
-            heading.tabIndex = 0;
-        };
+        retry.onclick = () => table.setPage(table.getPage()).catch(() => {});
+        region.querySelector("[data-grid-reset]").onclick = () =>
+          table.setColumns(createColumns());
+        // Capture the current focus immediately before Tabulator removes old rows.
+        table.on("dataProcessing", rememberFocus);
         table.on("tableBuilt", () => {
-          source.hidden = true;
-          region.dataset.gridReady = "true";
-          originalLayout = table.getColumnLayout();
-          const query = new URL(location.href).searchParams;
-          const requestedIndex = [
-            ...source.querySelectorAll("thead th"),
-          ].findIndex((header) => header.dataset.field === query.get("sort"));
-          const stored = readGridState(region);
-          if (stored) {
-            if (Array.isArray(stored.layout))
-              table.setColumnLayout(stored.layout);
-            if (!serverList && requestedIndex < 0 && Array.isArray(stored.sort))
-              table.setSort(stored.sort);
-            if (!serverList)
-              table.setPage(
-                Math.min(stored.page || 1, table.getPageMax()) || 1,
-              );
-            requestAnimationFrame(() => {
-              const holder = element.querySelector(".tabulator-tableholder");
-              if (holder) {
-                holder.scrollTop = stored.y || 0;
-                holder.scrollLeft = stored.x || 0;
-              }
-            });
-          }
-          if (!serverList && requestedIndex >= 0)
-            table.setSort(
-              `c${requestedIndex}`,
-              query.get("dir") === "asc" ? "asc" : "desc",
+          element.setAttribute("aria-label", region.getAttribute("aria-label"));
+        });
+        table.on("renderComplete", () => {
+          const sort = table.getSorters()[0];
+          for (const heading of element.querySelectorAll(".tabulator-col")) {
+            heading.tabIndex = 0;
+            heading.setAttribute(
+              "aria-sort",
+              heading.getAttribute("tabulator-field") === sort?.field
+                ? sort.dir === "asc"
+                  ? "ascending"
+                  : "descending"
+                : "none",
             );
-          const requestedPage = Number(query.get("page"));
-          if (!serverList && requestedPage > 0)
-            table.setPage(Math.min(requestedPage, table.getPageMax()) || 1);
-          update();
-          if (serverList) {
-            for (const heading of element.querySelectorAll(".tabulator-col")) {
-              const index = Number(
-                heading.getAttribute("tabulator-field")?.slice(1),
-              );
-              const field =
-                source.querySelectorAll("thead th")[index]?.dataset.field;
-              heading.setAttribute(
-                "aria-sort",
-                (query.get("sort") ||
-                  (region.dataset.grid === "activity" ? "date" : "name")) ===
-                  field
-                  ? (query.get("dir") ||
-                      (region.dataset.grid === "activity" ? "desc" : "asc")) ===
-                    "asc"
-                    ? "ascending"
-                    : "descending"
-                  : "none",
-              );
-              try {
-                if (
-                  sessionStorage.getItem("wake.grid.heading") ===
-                  `${region.dataset.grid}|${field}`
-                ) {
-                  heading.focus({ preventScroll: true });
-                  sessionStorage.removeItem("wake.grid.heading");
-                }
-              } catch {}
-            }
           }
-          requestAnimationFrame(() => {
+        });
+        table.on("dataProcessed", () => {
+          region.dataset.gridReady = "true";
+          if (state.focus?.field && document.activeElement === document.body)
+            element
+              .querySelector(
+                `.tabulator-col[tabulator-field="${CSS.escape(state.focus.field)}"]`,
+              )
+              ?.focus();
+          if (state.focus?.record && document.activeElement === document.body) {
+            element
+              .querySelector(
+                `[data-record="${CSS.escape(state.focus.record)}"] [tabulator-field="${CSS.escape(state.focus.column)}"] a[href]`,
+              )
+              ?.focus();
+          }
+          state.focus = null;
+          if (!state.selectionRestored && table.getDataCount() > 0) {
+            state.selectionRestored = true;
             const selected = new URL(location.href).searchParams.get(
               "selected",
             );
-            const link =
-              selected &&
-              element.querySelector(`[data-record="${CSS.escape(selected)}"]`);
-            if (link && document.activeElement === document.body)
-              link.focus({ preventScroll: true });
-          });
-        });
-        const save = () => saveGridState(region, state);
-        table.on("dataSorted", save);
-        table.on("pageLoaded", save);
-        table.on("columnResized", save);
-        table.on("dataFiltered", update);
-        table.on("renderComplete", update);
-        input.addEventListener("input", () => {
-          const query = input.value.toLocaleLowerCase();
-          if (query)
-            table.setFilter((data) =>
-              data.cells.some((cell) =>
-                cell.textContent.toLocaleLowerCase().includes(query),
-              ),
-            );
-          else table.clearFilter();
-        });
-        reset.addEventListener("click", () => {
-          input.value = "";
-          table.clearFilter();
-          if (!serverList) table.clearSort();
-          if (originalLayout) table.setColumnLayout(originalLayout);
-          if (serverList) {
-            const url = new URL(location.href);
-            for (const key of ["sort", "dir", "page"])
-              url.searchParams.delete(key);
-            location.assign(url);
+            if (selected && document.activeElement === document.body)
+              element
+                .querySelector(
+                  `[data-record="${CSS.escape(selected)}"] a[href]`,
+                )
+                ?.focus({ preventScroll: true });
           }
         });
         element.addEventListener("keydown", (event) => {
-          const header = event.target.closest(".tabulator-col");
-          if (!header || header !== event.target) return;
+          const heading = event.target.closest(".tabulator-col");
+          if (!heading || heading !== event.target) return;
           const column = table.getColumn(
-            header.getAttribute("tabulator-field"),
+            heading.getAttribute("tabulator-field"),
           );
           if (event.altKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
             event.preventDefault();
@@ -649,152 +647,169 @@
             );
           } else if (["Enter", " "].includes(event.key)) {
             event.preventDefault();
-            header.dispatchEvent(
-              new MouseEvent("click", {
-                bubbles: true,
-                shiftKey: event.shiftKey,
-              }),
-            );
+            heading.click();
           }
         });
-        state.refresh = async (next) => {
-          const incoming = next.querySelector("table");
-          if (!incoming || incoming.outerHTML === state.html) return;
-          const holder = element.querySelector(".tabulator-tableholder");
-          const x = holder?.scrollLeft || 0,
-            y = holder?.scrollTop || 0,
-            page = serverList ? 1 : table.getPage();
-          state.data = rows(incoming);
-          state.html = incoming.outerHTML;
-          source.replaceChildren(
-            ...[...incoming.childNodes].map((child) => child.cloneNode(true)),
-          );
-          try {
-            await table.replaceData(state.data);
-            if (!serverList)
-              await table.setPage(Math.min(page, table.getPageMax()) || 1);
-            if (holder) {
-              holder.scrollLeft = x;
-              holder.scrollTop = y;
-            }
-            update();
-          } catch {
-            fallback();
-          }
-        };
       } catch {
-        fallback();
+        const failed = grids.get(region);
+        failed?.request?.abort();
+        if (failed) {
+          try {
+            failed.table.destroy();
+          } catch {}
+          grids.delete(region);
+        }
+        region.dataset.gridFailed = "true";
+        status.textContent =
+          "The table could not initialize. Reload this page to retry.";
+        retry.hidden = false;
+        retry.onclick = () => location.reload();
       }
     }
   };
-  const scrollable = (root) => {
-    for (const region of root.querySelectorAll(".wake-table-scroll")) {
+  const refreshGrids = () => {
+    if (document.hidden) return;
+    for (const [region, state] of grids) {
+      if (!region.isConnected) {
+        state.request?.abort();
+        state.table.destroy();
+        grids.delete(region);
+        continue;
+      }
+      if (selectedTextWithin(region)) {
+        region.querySelector("[data-grid-status]").textContent =
+          selectionMessage;
+        continue;
+      }
+      if (!state.pending && region.getClientRects().length)
+        state.table.setPage(state.table.getPage()).catch(() => {});
+    }
+  };
+  enhance(document);
+  document.addEventListener("sse:refresh", refreshGrids);
+  document.addEventListener(
+    "toggle",
+    (event) => {
+      if (event.target.open) enhance(event.target);
+    },
+    true,
+  );
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest(
+      "[data-list-filters],[data-observation-filters]",
+    );
+    if (!form) return;
+    event.preventDefault();
+    const region =
+      form.closest("[data-grid]") || document.querySelector("[data-grid]");
+    const state = grids.get(region);
+    if (!state) return;
+    const url = new URL(location.href);
+    for (const [key, value] of new FormData(form))
+      url.searchParams.set(gridParameter(region, key), value);
+    url.searchParams.set(gridParameter(region, "page"), "1");
+    url.searchParams.delete("selected");
+    history.pushState(null, "", url);
+    state.table.setData().catch(() => {});
+  });
+
+  window.addEventListener("popstate", () => {
+    const params = new URL(location.href).searchParams;
+    for (const [region, state] of grids) {
+      const form =
+        region.querySelector("[data-observation-filters]") ||
+        document.querySelector("[data-list-filters]");
+      for (const control of form?.querySelectorAll("[name]") || []) {
+        if (["q", "kind", "state"].includes(control.name))
+          control.value = params.get(gridParameter(region, control.name)) || "";
+      }
+      const kind = region.dataset.grid;
+      const field =
+        params.get(gridParameter(region, "sort")) ||
+        (kind === "activity"
+          ? "date"
+          : kind === "instruments"
+            ? "name"
+            : "report");
+      const dir =
+        params.get(gridParameter(region, "dir")) ||
+        (kind === "instruments" ? "asc" : "desc");
+      state.selectionRestored = false;
+      state.table.setSort(field, dir);
+      state.table
+        .setPage(Number(params.get(gridParameter(region, "page")) || 1))
+        .catch(() => {});
+    }
+  });
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-grid] a[href]");
+    if (!link || location.pathname !== "/activity") return;
+    const target = new URL(link.href, location.href);
+    if (target.origin !== location.origin) return;
+    const source = new URL(location.href);
+    const record = link.closest("[data-record]")?.dataset.record;
+    if (record) source.searchParams.set("selected", record);
+    target.searchParams.set("origin", source.pathname + source.search);
+    link.href = target.pathname + target.search;
+  });
+
+  const focusScrollableTables = () => {
+    for (const region of document.querySelectorAll(".wake-table-scroll")) {
       if (region.scrollWidth > region.clientWidth + 1) region.tabIndex = 0;
       else region.removeAttribute("tabindex");
     }
   };
-  enhance(document);
-  scrollable(document);
-  window.addEventListener("resize", () => scrollable(document));
-  document.addEventListener(
-    "toggle",
-    (event) => {
-      if (event.target.open) {
-        enhance(event.target);
-        scrollable(event.target);
-      }
-    },
-    true,
-  );
-
-  if (window.Idiomorph) {
-    window.Idiomorph.defaults.ignoreActiveValue = true;
-    window.Idiomorph.defaults.callbacks.beforeAttributeUpdated = (name, node) =>
-      name !== "open" || !(node instanceof HTMLDetailsElement);
-    window.Idiomorph.defaults.callbacks.beforeNodeMorphed = (old) =>
-      !grids.has(old);
-    window.Idiomorph.defaults.callbacks.beforeNodeRemoved = (old) =>
-      !grids.has(old);
-  }
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest("a[href]");
-    if (
-      !link ||
-      location.pathname !== "/activity" ||
-      !link.closest("[data-grid]")
-    )
-      return;
-    for (const [region, state] of grids) saveGridState(region, state);
-    const target = new URL(link.href, location.href);
-    if (target.origin !== location.origin) return;
-    const source = new URL(location.href);
-    const row = link.closest(".tabulator-row");
-    const record = row?.querySelector("[data-record]")?.dataset.record;
-    if (record) source.searchParams.set("selected", record);
-    target.searchParams.set("origin", source.pathname + source.search);
-    link.href = target.pathname + target.search + target.hash;
-  });
+  focusScrollableTables();
+  window.addEventListener("resize", focusScrollableTables);
   const dirtyForms = new WeakSet();
-  document.addEventListener("change", (event) => {
-    const form = event.target.closest("form");
-    if (form?.method.toLowerCase() === "post") dirtyForms.add(form);
-  });
-  document.addEventListener("input", (event) => {
-    const form = event.target.closest("form");
-    if (form?.method.toLowerCase() === "post") dirtyForms.add(form);
-  });
+  for (const name of ["input", "change"])
+    document.addEventListener(name, (event) => {
+      const form = event.target.closest("form");
+      if (form?.method.toLowerCase() === "post") dirtyForms.add(form);
+    });
   const protectedContent = () => {
     const region = document.querySelector("#workspace-content");
     if (!region) return false;
-    const selection = document.getSelection();
     return (
       region.contains(document.activeElement) ||
       [...region.querySelectorAll("form")].some((form) =>
         dirtyForms.has(form),
       ) ||
-      (selection &&
-        !selection.isCollapsed &&
-        region.contains(selection.anchorNode))
+      selectedTextWithin(region)
     );
   };
-  const incomingGrids = new Map();
+  let disclosures = new Map();
   document.addEventListener("htmx:beforeSwap", (event) => {
-    if (
-      event.detail.requestConfig?.elt?.id === "workspace-content" &&
-      protectedContent()
-    ) {
+    if (event.detail.requestConfig?.elt?.id !== "workspace-content") return;
+    if (protectedContent() || document.querySelector("[data-grid]")) {
       event.detail.shouldSwap = false;
       return;
     }
-    if (event.detail.xhr.status !== 200) return;
-    const next = new DOMParser().parseFromString(
-      event.detail.serverResponse,
-      "text/html",
+    disclosures = new Map(
+      [
+        ...document.querySelectorAll(
+          "#workspace-content details[data-disclosure]",
+        ),
+      ].map((element) => [element.dataset.disclosure, element.open]),
     );
-    for (const node of next.querySelectorAll("[data-grid]"))
-      incomingGrids.set(node.dataset.grid, node);
-    if (event.detail.requestConfig?.elt?.matches("[data-list-filters]")) {
-      const url = new URL(event.detail.xhr.responseURL, location.href);
-      if (url.origin === location.origin) {
-        url.searchParams.delete("page");
-        url.searchParams.delete("selected");
-        history.replaceState(null, "", url);
-      }
-    }
   });
-  document.addEventListener("htmx:afterSettle", async () => {
-    for (const [region, state] of grids) {
-      const next = incomingGrids.get(region.dataset.grid);
-      if (next) await state.refresh(next);
-    }
-    incomingGrids.clear();
+  document.addEventListener("htmx:afterSwap", () => {
+    for (const element of document.querySelectorAll(
+      "#workspace-content details[data-disclosure]",
+    ))
+      if (disclosures.has(element.dataset.disclosure))
+        element.open = disclosures.get(element.dataset.disclosure);
+    disclosures.clear();
+  });
+  document.addEventListener("htmx:afterSettle", () => {
     enhance(document);
-    scrollable(document);
+    focusScrollableTables();
   });
+  let gridPoll = setInterval(refreshGrids, 10000);
   window.addEventListener("pagehide", () => {
-    for (const [region, state] of grids) saveGridState(region, state);
+    clearInterval(gridPoll);
+    for (const state of grids.values()) state.request?.abort();
   });
-
   document.documentElement.dataset.wakeReady = "true";
   if (
     !document.querySelector('meta[name="wake-csrf-token"]')?.content ||
@@ -823,12 +838,15 @@
   const expire = () => {
     expired = true;
     clearInterval(poll);
+    clearInterval(gridPoll);
+    for (const state of grids.values()) state.request?.abort();
     document.body.removeAttribute("sse-connect");
     stream?.close();
     setContact("expired", "Sign-in required");
   };
   htmx.createEventSource = (url) => {
     stream = new EventSource(url, { withCredentials: true });
+    stream.addEventListener("refresh", refreshGrids);
     return stream;
   };
   const checkContact = () => {
@@ -916,6 +934,9 @@
   });
   window.addEventListener("pageshow", (event) => {
     if (event.persisted && !expired) {
+      clearInterval(gridPoll);
+      gridPoll = setInterval(refreshGrids, 10000);
+      refreshGrids();
       htmx.trigger(document.body, "htmx:afterProcessNode");
       for (const node of document.querySelectorAll("[hx-trigger]"))
         htmx.trigger(node, "htmx:afterProcessNode");

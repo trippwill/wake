@@ -380,7 +380,7 @@ func TestNewCompatibleClaimCorroboratesSourceBeforeOperatorChoices(t *testing.T)
 	}
 
 	found := false
-	for _, observation := range detail.Observations {
+	for _, observation := range observationRowsForTest(t, s, "activity", detail.Execution.ID()) {
 		if observation.Artifact == "new-compatible-source" {
 			found = true
 
@@ -450,7 +450,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 	}
 
 	found := false
-	for _, observation := range detail.Observations {
+	for _, observation := range observationRowsForTest(t, s, "activity", detail.Execution.ID()) {
 		if observation.Artifact == "conflicting-net" {
 			found = true
 
@@ -500,7 +500,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, observation := range detail.Observations {
+	for _, observation := range observationRowsForTest(t, s, "activity", detail.Execution.ID()) {
 		if observation.Artifact == "later-conflicting-net" &&
 			observation.Outcome != application.ObservationTermsConflict {
 			t.Error("prior disagreement hid a distinct conflicting claim", observation)

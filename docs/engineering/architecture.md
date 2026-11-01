@@ -106,7 +106,7 @@ review and accepted activity/instrument lists have separate typed read models.
 Lists filter and order in SQLite, default to 50 rows per page and retain stable
 identity tie-breakers. Exact decimal ordering uses the registered numeric collation;
 unknown values sort last independently of direction and currency/unit groups remain
-explicit. Each read model is materialized in one consistent read transaction,
+explicit. Each paged read model is materialized in one consistent read transaction,
 released before rendering or client I/O. Presentation owns label wording and may
 supply structured label matches and shared activity text fragments. Search composes
 complete labels from exact values and this presentation wording before pagination;
@@ -330,9 +330,15 @@ an existing
 identity; unifying distinct existing roots requires review rather than a silent
 merge. Financial processing remains useful with provisional reference identity.
 
-Administrative commands use authenticated HTTP forms. Committed work triggers
-SSE refresh hints; fallback polling reads the same status regions. Editable forms
-remain outside those regions, and refreshes preserve focused controls.
+Administrative commands use authenticated HTTP forms. Interactive activity,
+instrument and observation tables require JavaScript and consume authenticated JSON.
+Tabulator owns each grid and reloads through its API on SSE hints or polling; HTML
+does not duplicate its rows. Queries filter, order and page the complete matching set,
+with 50 rows per page by default and exact decimal ordering. URLs retain intentional
+filter and page state; native column persistence retains layout preferences.
+Source/status regions retain focused htmx updates. Accepted detail pages are explicit
+reads with a refresh action, while retained observations update independently.
+Editable forms preserve drafts, selection and focus while work runs.
 
 Activity identity allocations and baseline selections remain retained independently
 of accepted-value projection updates. The projector applies the same typed

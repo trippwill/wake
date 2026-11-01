@@ -78,7 +78,7 @@ func localDestination(raw string) string {
 	}
 
 	q := url.Values{}
-	for _, key := range []string{"view", "q", "kind", "state", "sort", "dir", "page", "selected", "mode", "candidate", "location", "field"} {
+	for _, key := range []string{"view", "q", "kind", "state", "sort", "dir", "page", "selected", "observations_q", "observations_sort", "observations_dir", "observations_page", "mode", "candidate", "location", "field"} {
 		if v := u.Query().Get(key); v != "" {
 			q.Set(key, v)
 		}
@@ -502,12 +502,21 @@ func workspaceAttributes(ctx context.Context, csrf string) templ.Attributes {
 		return templ.Attributes{}
 	}
 
+	// Financial grids refresh through their JSON API. Accepted details are explicit
+	// page-load snapshots, leaving disclosures and inspected terms stable.
+	if u.Path == "/activity" && page(ctx).Query.Get("view") != "review" ||
+		strings.HasPrefix(u.Path, "/executions/") ||
+		strings.HasPrefix(u.Path, "/instruments/") ||
+		strings.HasPrefix(u.Path, "/activity/") {
+		return templ.Attributes{}
+	}
+
 	return templ.Attributes{
 		"hx-get":     page(ctx).URL,
 		"hx-trigger": "sse:refresh, every 10s",
 		"hx-target":  "this",
 		"hx-select":  "#workspace-content",
-		"hx-swap":    "morph:outerHTML",
+		"hx-swap":    "outerHTML",
 		"hx-sync":    "this:queue last",
 	}
 }

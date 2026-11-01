@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 
-#MISE description="Repeat real admin and fallback workflows three times to detect navigation races"
+#MISE description="Repeat real daemon and admin workflows three times to detect navigation races"
 set -euo pipefail
 export WAKE_SCREENSHOT_DIR="$PWD/.cache/browser/screenshots"
 mkdir -p .cache/test-results

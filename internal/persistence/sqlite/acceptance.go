@@ -489,24 +489,6 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 		return out, err
 	}
 
-	observations, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
-	if err != nil {
-		return out, err
-	}
-
-	for _, o := range observations {
-		out.Observations = append(
-			out.Observations,
-			application.Observation{
-				Artifact: o.ArtifactID,
-				Version:  o.Version,
-				Location: o.Location,
-				Outcome:  application.ObservationOutcome(o.Outcome),
-				Rule:     o.Rule,
-			},
-		)
-	}
-
 	out.Relationships, err = relationships(ctx, s.queries, id)
 
 	return out, err
@@ -554,24 +536,6 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 				Status:    a.Status,
 				Retrieved: a.Retrieved,
 				Rule:      a.Rule,
-			},
-		)
-	}
-
-	observations, err := s.queries.InstrumentObservations(ctx, sql.NullString{String: id, Valid: true})
-	if err != nil {
-		return out, err
-	}
-
-	for _, o := range observations {
-		out.Observations = append(
-			out.Observations,
-			application.Observation{
-				Artifact: o.ArtifactID,
-				Version:  o.Version,
-				Location: o.Location,
-				Outcome:  application.ObservationOutcome(o.Outcome),
-				Rule:     o.Rule,
 			},
 		)
 	}
@@ -724,24 +688,6 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 	out.Context, err = s.activityContext(ctx, r)
 	if err != nil {
 		return out, err
-	}
-
-	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
-	if err != nil {
-		return out, err
-	}
-
-	for _, r := range rows {
-		out.Observations = append(
-			out.Observations,
-			application.Observation{
-				Artifact: r.ArtifactID,
-				Version:  r.Version,
-				Location: r.Location,
-				Outcome:  application.ObservationOutcome(r.Outcome),
-				Rule:     r.Rule,
-			},
-		)
 	}
 
 	out.Relationships, err = relationships(ctx, s.queries, id)
@@ -903,24 +849,6 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 	out.Context, err = s.activityContext(ctx, r)
 	if err != nil {
 		return out, err
-	}
-
-	rows, err := s.queries.ExecutionObservations(ctx, sql.NullString{String: id, Valid: true})
-	if err != nil {
-		return out, err
-	}
-
-	for _, r := range rows {
-		out.Observations = append(
-			out.Observations,
-			application.Observation{
-				Artifact: r.ArtifactID,
-				Version:  r.Version,
-				Location: r.Location,
-				Outcome:  application.ObservationOutcome(r.Outcome),
-				Rule:     r.Rule,
-			},
-		)
 	}
 
 	return out, nil

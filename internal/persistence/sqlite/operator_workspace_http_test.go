@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -158,6 +159,13 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		return w
 	}
 
+	for _, endpoint := range []string{"/grids/activity", "/grids/instruments", "/grids/observations?subject=activity&id=synthetic"} {
+		unauthorized := request(http.MethodGet, endpoint, nil, true)
+		if unauthorized.Code != http.StatusUnauthorized {
+			t.Fatal("grid bypassed authentication", endpoint, unauthorized.Code)
+		}
+	}
+
 	login := request(http.MethodPost, "/login", url.Values{"unlock": {"synthetic-workspace-review"}}, false)
 	if login.Code != http.StatusSeeOther {
 		t.Fatal(login.Code, login.Body.String())
@@ -165,10 +173,81 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 
 	cookie = login.Result().Cookies()[0]
 
+	// Grid page HTML owns structure; authenticated JSON owns the financial rows.
+	shell := request(http.MethodGet, "/activity", nil, false)
+	if shell.Code != http.StatusOK ||
+		!strings.Contains(shell.Body.String(), `data-grid-url="/grids/activity"`) ||
+		strings.Contains(shell.Body.String(), "<table") {
+		t.Fatal("financial grid duplicated rows in page HTML", shell.Code)
+	}
+
+	readPageOrGrid := func(path string, fragment bool) (*httptest.ResponseRecorder, string, bool) {
+		u, parseErr := url.Parse(path)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+
+		query := u.Query()
+		grid := u.Path == "/activity" && query.Get("view") != "review"
+		if grid {
+			u.Path = "/grids/activity"
+			if query.Get("view") == "instruments" {
+				u.Path = "/grids/instruments"
+			}
+
+			query.Del("view")
+			u.RawQuery = query.Encode()
+		}
+
+		response := request(http.MethodGet, u.String(), nil, fragment)
+		if !grid || response.Code != http.StatusOK {
+			return response, response.Body.String(), grid
+		}
+
+		var payload struct {
+			Data     []map[string]json.RawMessage `json:"data"`
+			LastRow  int64                        `json:"last_row"`
+			LastPage int64                        `json:"last_page"`
+			Total    int64                        `json:"total"`
+		}
+		if e := json.Unmarshal(
+			response.Body.Bytes(),
+			&payload,
+		); e != nil || payload.LastPage < 1 || len(payload.Data) > 50 ||
+			response.Header().Get("Content-Type") != "application/json" {
+			t.Fatal("invalid authenticated grid response", e)
+		}
+
+		text := fmt.Sprintf("%d of %d results", payload.LastRow, payload.Total)
+		for _, row := range payload.Data {
+			for name, raw := range row {
+				if name == "id" {
+					var id string
+					if e := json.Unmarshal(raw, &id); e != nil {
+						t.Fatal(e)
+					}
+
+					text += " " + id
+
+					continue
+				}
+
+				var cell struct{ Text, Note string }
+				if e := json.Unmarshal(raw, &cell); e != nil {
+					t.Fatal(e)
+				}
+
+				text += " " + cell.Text + " " + cell.Note
+			}
+		}
+
+		return response, text, grid
+	}
+
 	for _, search := range []string{"EUR → USD", "100.123456789 EUR sent · Unknown USD received", "EUR sent · Unknown USD"} {
 		t.Run("conversion-cell/"+search, func(t *testing.T) {
-			response := request(http.MethodGet, "/activity?q="+url.QueryEscape(search), nil, false)
-			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "1 of 4 results") {
+			response, text, _ := readPageOrGrid("/activity?q="+url.QueryEscape(search), false)
+			if response.Code != http.StatusOK || !strings.Contains(text, "1 of 4 results") {
 				t.Fatal("displayed conversion text did not match one row", search, response.Code)
 			}
 		})
@@ -251,8 +330,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{correctionPath + "?field=quantity", "Enter a decimal greater than zero."},
 	} {
 		for _, fragment := range []bool{false, true} {
-			response := request(http.MethodGet, test.path, nil, fragment)
-			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), test.want) {
+			response, text, grid := readPageOrGrid(test.path, fragment)
+			if response.Code != http.StatusOK || !strings.Contains(text, test.want) {
 				t.Fatalf(
 					"%s fragment=%v: %d: wanted %q in %s",
 					test.path,
@@ -263,21 +342,21 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 				)
 			}
 
-			if strings.Contains(strings.ToLower(response.Body.String()), "<!doctype html>") == fragment {
+			if !grid && strings.Contains(strings.ToLower(response.Body.String()), "<!doctype html>") == fragment {
 				t.Fatal("incorrect full-page/fragment response", test.path)
 			}
 		}
 	}
 	// The same retained records remain available through every sortable grid view.
 	for _, sort := range []string{"label", "quantity", "price", "state", "reference", "date"} {
-		response := request(http.MethodGet, "/activity?sort="+sort+"&dir=asc", nil, true)
+		response := request(http.MethodGet, "/grids/activity?sort="+sort+"&dir=asc", nil, true)
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), optionID) {
 			t.Fatal("activity ordering lost record", sort, response.Code)
 		}
 	}
 
 	for _, sort := range []string{"kind", "ticker", "state", "name"} {
-		response := request(http.MethodGet, "/activity?view=instruments&sort="+sort+"&dir=desc", nil, true)
+		response := request(http.MethodGet, "/grids/instruments?sort="+sort+"&dir=desc", nil, true)
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Synthetic option") {
 			t.Fatal("instrument ordering lost record", sort, response.Code)
 		}
@@ -442,9 +521,9 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	} {
 		for _, endpoint := range []string{"/activity?", "/activity?view=review&"} {
 			t.Run("lifecycle-label/"+endpoint+test.search, func(t *testing.T) {
-				response := request(http.MethodGet, endpoint+"q="+url.QueryEscape(test.search), nil, false)
-				if response.Code != http.StatusOK ||
-					!strings.Contains(html.UnescapeString(response.Body.String()), ">"+test.label+"<") {
+				response, text, grid := readPageOrGrid(endpoint+"q="+url.QueryEscape(test.search), false)
+				if response.Code != http.StatusOK || grid && !strings.Contains(text, test.label) ||
+					!grid && !strings.Contains(html.UnescapeString(text), ">"+test.label+"<") {
 					t.Fatal("displayed activity label did not match", endpoint, test.search, response.Code)
 				}
 			})

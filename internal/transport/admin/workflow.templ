@@ -72,6 +72,7 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 templ ExecutionPage(d application.ExecutionDetail) {
 	@Breadcrumbs("Activity detail")
 	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String())
+	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Financial summary</h2>
@@ -113,7 +114,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 	<section class="wake-card">
 		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
 		<details>
-			<summary>Retained observations and acceptance rules</summary>@ObservationHistory(d.Observations)
+			<summary>Retained observations and acceptance rules</summary>@ObservationHistory("activity", d.Execution.ID())
 		</details>
 	</section>
 }
@@ -121,6 +122,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 templ InstrumentPage(d application.InstrumentDetail) {
 	@Breadcrumbs("Instrument")
 	@PageHeader(known(d.Instrument.Name()), d.Instrument.Kind()+" · "+known(d.Instrument.Ticker()))
+	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Instrument identity</h2>
@@ -176,11 +178,9 @@ templ InstrumentPage(d application.InstrumentDetail) {
 		</ul>
 		<p>Wake instrument identity: { d.Instrument.ID() }</p>
 	</details>
-	if len(d.Observations)>0 {
-		<section class="wake-card">
-			<h2>Supporting observations</h2>@ObservationHistory(d.Observations)
-		</section>
-	}
+	<section class="wake-card">
+		<h2>Supporting observations</h2>@ObservationHistory("instrument", d.Instrument.ID())
+	</section>
 }
 
 templ EvidencePage(id, context, body string) {
@@ -277,6 +277,7 @@ templ RelationshipLinks(links []application.Relationship) {
 templ LifecyclePage(d application.LifecycleDetail) {
 	@Breadcrumbs("Option outcome")
 	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String())
+	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Reported option outcome</h2>
@@ -297,7 +298,7 @@ templ LifecyclePage(d application.LifecycleDetail) {
 	<section class="wake-card">
 		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
 		<details>
-			<summary>Retained observations and rules</summary>@ObservationHistory(d.Observations)
+			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Lifecycle.ID())
 		</details>
 	</section>
 }
@@ -336,6 +337,7 @@ func currencyAmountText(a source.CurrencyAmount) string {
 templ ConversionPage(d application.ConversionDetail) {
 	@Breadcrumbs("Currency conversion")
 	@PageHeader("Convert "+currencyText(d.Conversion.Terms().Fields().Sent.Currency())+" to "+currencyText(d.Conversion.Terms().Fields().Received.Currency()), d.Context.AccountName+" · "+d.Conversion.Terms().Fields().Date.String())
+	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Currency roles</h2>
@@ -371,7 +373,7 @@ templ ConversionPage(d application.ConversionDetail) {
 	<section class="wake-card">
 		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
 		<details>
-			<summary>Retained observations and rules</summary>@ObservationHistory(d.Observations)
+			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Conversion.ID())
 		</details>
 	</section>
 }

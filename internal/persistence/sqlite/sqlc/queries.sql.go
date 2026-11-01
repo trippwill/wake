@@ -1103,40 +1103,6 @@ func (q *Queries) ExecutionLinks(ctx context.Context, executionID string) ([]str
 	return items, nil
 }
 
-const executionObservations = `-- name: ExecutionObservations :many
-SELECT artifact_id, version, location, execution_id, outcome, rule FROM execution_observations WHERE execution_id=? ORDER BY rowid
-`
-
-func (q *Queries) ExecutionObservations(ctx context.Context, executionID sql.NullString) ([]ExecutionObservation, error) {
-	rows, err := q.db.QueryContext(ctx, executionObservations, executionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ExecutionObservation
-	for rows.Next() {
-		var i ExecutionObservation
-		if err := rows.Scan(
-			&i.ArtifactID,
-			&i.Version,
-			&i.Location,
-			&i.ExecutionID,
-			&i.Outcome,
-			&i.Rule,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const executions = `-- name: Executions :many
 SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule FROM executions ORDER BY rowid DESC
 `
@@ -1264,40 +1230,6 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.UnderlierID,
 	)
 	return i, err
-}
-
-const instrumentObservations = `-- name: InstrumentObservations :many
-SELECT execution_observations.artifact_id, execution_observations.version, execution_observations.location, execution_observations.execution_id, execution_observations.outcome, execution_observations.rule FROM execution_observations JOIN executions ON executions.id=execution_id WHERE executions.instrument_id=? ORDER BY execution_observations.rowid DESC LIMIT 100
-`
-
-func (q *Queries) InstrumentObservations(ctx context.Context, instrumentID sql.NullString) ([]ExecutionObservation, error) {
-	rows, err := q.db.QueryContext(ctx, instrumentObservations, instrumentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ExecutionObservation
-	for rows.Next() {
-		var i ExecutionObservation
-		if err := rows.Scan(
-			&i.ArtifactID,
-			&i.Version,
-			&i.Location,
-			&i.ExecutionID,
-			&i.Outcome,
-			&i.Rule,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const instrumentReferenceAttempts = `-- name: InstrumentReferenceAttempts :many

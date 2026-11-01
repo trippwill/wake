@@ -110,8 +110,13 @@ access but establishes new financial identities. See
 [architecture](../engineering/architecture.md) for trust and recovery boundaries and [development](../engineering/development.md)
 for verification and reset procedures. No version tag is implied by this coverage.
 
-Admin activity, instrument and review lists use server filtering and stable ordering,
-with 50 rows per page by default. Numeric ordering preserves exact decimal values,
+Admin activity, instrument, review and retained-observation lists use server filtering
+and stable ordering, with 50 rows per page by default. JavaScript is required for
+administration. Tabulator renders activity, instrument and observation tables from
+authenticated JSON; source/status regions use focused updates, and accepted detail
+pages offer an explicit refresh action. Retained observations preserve original
+source bindings, underliers and appearance multiplicity after operator relinks.
+Numeric ordering preserves exact decimal values,
 keeps currency/unit roles distinct and places unknown values last. Status and setup
 prerequisites use focused metadata reads; source detail loads one connection and a
 bounded account-candidate page. Result counts and page links preserve intentional

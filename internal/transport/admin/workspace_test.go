@@ -53,6 +53,54 @@ func TestNavigationContextStaysLocalAndBounded(t *testing.T) {
 	}
 }
 
+func TestGridNavigationUsesOwningPage(t *testing.T) {
+	root := "/activity?q=exact&sort=price&dir=desc&page=2&selected=one"
+	owner := "/activity/one?observations_q=duplicate&observations_sort=location&observations_dir=asc&observations_page=2"
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/grids/observations?page_url="+url.QueryEscape(owner)+"&origin="+url.QueryEscape(root),
+		nil,
+	)
+
+	r, err := gridPageRequest(request, "observations")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := url.Parse(navURL(r.Context(), "/evidence/report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if target.Query().Get("parent") != localDestination(owner) ||
+		target.Query().Get("origin") != localDestination(root) {
+		t.Fatal(target)
+	}
+
+	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
+
+	back, err := url.Parse(returnURL(next.Context()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if back.Path != "/activity/one" || back.Query().Get("observations_q") != "duplicate" ||
+		back.Query().Get("observations_page") != "2" ||
+		back.Query().Get("origin") != localDestination(root) {
+		t.Fatal(back)
+	}
+
+	for _, owner := range []string{"https://outside.invalid/activity", "//outside.invalid/activity", "/assets/app.js"} {
+		_, err := gridPageRequest(
+			httptest.NewRequest(http.MethodGet, "/grids/activity?page_url="+url.QueryEscape(owner), nil),
+			"activity",
+		)
+		if err == nil {
+			t.Fatal("accepted unsafe grid owner", owner)
+		}
+	}
+}
+
 func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 	for _, state := range []application.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
 		if state.NeedsReview() {
@@ -295,5 +343,54 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 		if !slices.Contains(query.Options().ReviewMatches, expected) {
 			t.Fatal("rendered review search lost typed predicate", test.search, query.Options().ReviewMatches)
 		}
+	}
+}
+
+func TestObservationGridFallbackPreservesNamespacedState(t *testing.T) {
+	root := "/activity?q=original&page=3"
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/grids/observations?subject=activity&id=one&q=duplicate&sort=location&dir=asc&page=2&origin="+url.QueryEscape(
+			root,
+		),
+		nil,
+	)
+
+	owned, err := gridPageRequest(request, "observations")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := url.Parse(navURL(owned.Context(), "/evidence/report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
+
+	returned, err := url.Parse(returnURL(next.Context()))
+	if err != nil || returned.Path != "/activity/one" ||
+		returned.Query().Get("observations_q") != "duplicate" ||
+		returned.Query().Get("observations_sort") != "location" ||
+		returned.Query().Get("observations_dir") != "asc" ||
+		returned.Query().Get("observations_page") != "2" ||
+		returned.Query().Get("origin") != localDestination(root) ||
+		returned.Query().Get("q") != "" {
+		t.Fatal(returned, err)
+	}
+
+	query, err := listQuery(owned.Context(), application.ObservationScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for outcome, label := range query.Options().ObservationLabels {
+		if label != observationStatus(outcome) {
+			t.Fatal(outcome, label)
+		}
+	}
+
+	if len(query.Options().ObservationLabels) != 7 {
+		t.Fatal("incomplete outcome vocabulary", query.Options().ObservationLabels)
 	}
 }
