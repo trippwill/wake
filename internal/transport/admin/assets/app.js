@@ -399,6 +399,7 @@
           check: null,
           displayed: null,
           available: false,
+          retryForeground: false,
           request: null,
           sequence: 0,
           pending: false,
@@ -429,6 +430,7 @@
           background = false,
         ) => {
           if (!background) {
+            state.retryForeground = false;
             delete region.dataset.gridReady;
             state.available = false;
             refresh.hidden = true;
@@ -508,6 +510,7 @@
             return result;
           } catch (error) {
             if (sequence === state.sequence) {
+              state.retryForeground = !background;
               status.textContent = controller.signal.aborted
                 ? "Table request timed out. Previous results remain displayed; retry."
                 : error.message;
@@ -592,9 +595,10 @@
             : `${state.displayed.last_row} of ${state.displayed.total} results`;
           if (status.textContent !== message) status.textContent = message;
         };
-        refresh.onclick = async () => {
-          if (!state.available) return;
-          const restoreFocus = document.activeElement === refresh;
+        const refreshTable = async () => {
+          const restoreFocus =
+            document.activeElement === refresh ||
+            document.activeElement === retry;
           const displayed = state.displayed;
           try {
             const result = await readPage(false);
@@ -617,7 +621,13 @@
               .querySelector(".tabulator-col")
               ?.focus({ preventScroll: true });
         };
-        retry.onclick = () => state.check().catch(() => {});
+        refresh.onclick = () => {
+          if (state.available) refreshTable();
+        };
+        retry.onclick = () =>
+          (state.retryForeground ? refreshTable() : state.check()).catch(
+            () => {},
+          );
         region.querySelector("[data-grid-reset]").onclick = () =>
           table.setColumns(createColumns());
         // Capture the current focus immediately before Tabulator removes old rows.
@@ -713,7 +723,11 @@
         grids.delete(region);
         continue;
       }
-      if (!state.pending && region.getClientRects().length)
+      if (
+        !state.pending &&
+        !state.retryForeground &&
+        region.getClientRects().length
+      )
         state.check().catch(() => {});
     }
   };

@@ -1058,6 +1058,74 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"explicit refresh did not update page controls",
 	)
 
+	// Retry finishes the original foreground action with one click, while the
+	// earlier background-error test still requires an explicit Refresh afterward.
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='Synthetic investment 69';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent==='1 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+		chromedp.Evaluate(
+			`(()=>{const input=document.querySelector('#activity-search');input.value='investment';input.form.requestSubmit()})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===70 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setSort('price','asc')`, nil),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('dir')==='asc' && document.querySelector('.tabulator-row [tabulator-field=price]').textContent==='-1.0000000000000001 USD' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+	refreshFailed.Store(true)
+	check(
+		chromedp.Evaluate(`window.proofGrid.setPage(2)`, nil),
+		chromedp.WaitVisible("[data-grid-retry]"),
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+	extra.Store(false)
+	check(
+		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.WaitVisible("[data-grid-refresh]"),
+	)
+	refreshFailed.Store(true)
+	check(chromedp.Click("[data-grid-refresh]"), chromedp.WaitVisible("[data-grid-retry]"))
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]"),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='1' && document.querySelectorAll('.tabulator-row').length===70 && document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelector('[data-grid-refresh]').hidden`,
+			nil,
+		),
+	)
+
 	offline.Store(true)
 	check(
 		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
