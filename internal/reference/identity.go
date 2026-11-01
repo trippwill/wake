@@ -28,6 +28,7 @@ const (
 	IncompatibleSubject Reason = "incompatible_subject"
 	IncompleteMetadata  Reason = "incomplete_metadata"
 	OperatorConflict    Reason = "operator_conflict"
+	ConvergenceBlocked  Reason = "convergence_blocked"
 	SourceConflict      Reason = "source_conflict"
 )
 
@@ -125,7 +126,9 @@ func SelectIdentity(kind source.InstrumentKind, records []Record) Selection {
 		case source.Equity, source.Fund, source.UnknownInstrument:
 			incompatible = option || r.Market != "" && r.Market != "Equity"
 		case source.Debt:
-			incompatible = r.Market != "" && r.Market != "Govt" && r.Market != "Corp" && r.Market != "M-Mkt"
+			incompatible = option || r.SecurityType == "Common Stock" || r.SecurityType2 == "Common Stock" ||
+				r.SecurityType2 == "Equity" ||
+				r.Market != "" && r.Market != "Govt" && r.Market != "Corp" && r.Market != "M-Mkt"
 		default:
 			incompatible = true
 		}

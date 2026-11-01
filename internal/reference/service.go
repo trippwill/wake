@@ -604,6 +604,13 @@ func (s *Service) parents(
 	// Missing equity parents require only the known composite's children. There is
 	// no search by labels or recursive graph walk; admission bounds outgoing work.
 	jobs := MissingComposites(kind, result.Records)
+	seen := map[string]bool{}
+	for _, r := range result.Records {
+		if r.FIGI != "" {
+			seen[r.FIGI] = true
+		}
+	}
+
 	for _, parent := range jobs[:min(len(jobs), 10)] {
 		cached, found := outcomes[parent.Key()]
 		if !found {
@@ -634,8 +641,11 @@ func (s *Service) parents(
 		}
 
 		for _, r := range cached.Records {
-			if r.Composite == parent.IDValue {
+			if r.Composite == parent.IDValue || r.FIGI != "" && seen[r.FIGI] {
 				result.Records = append(result.Records, r)
+				if r.FIGI != "" {
+					seen[r.FIGI] = true
+				}
 			}
 		}
 

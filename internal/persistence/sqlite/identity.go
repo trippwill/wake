@@ -163,12 +163,25 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 
 	if blocked {
 		for _, r := range roots {
+			reason := reference.Reason(r.ReferenceReason)
+			switch reason {
+			case reference.SourceConflict,
+				reference.CompetingIdentity,
+				reference.ConflictingParents,
+				reference.IncompatibleSubject:
+			default:
+				reason = blockReason
+				if blockReason != reference.OperatorConflict {
+					reason = reference.ConvergenceBlocked
+				}
+			}
+
 			if err = q.IdentityMetadata(
 				ctx,
 				sqlc.IdentityMetadataParams{
 					ID:         r.ID,
 					Allocation: r.ReferenceAllocation,
-					Reason:     string(blockReason),
+					Reason:     string(reason),
 					Family:     r.Kind,
 				},
 			); err != nil {
@@ -245,7 +258,7 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 	}
 
 	reason := root.ReferenceReason
-	if reason == string(reference.OperatorConflict) {
+	if reason == string(reference.OperatorConflict) || reason == string(reference.ConvergenceBlocked) {
 		reason = ""
 	}
 

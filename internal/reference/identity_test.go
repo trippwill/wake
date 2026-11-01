@@ -128,3 +128,12 @@ func TestOptionIdentityRejectsContradictoryClassifications(t *testing.T) {
 		}
 	}
 }
+
+func TestDebtIdentityRejectsExplicitEquityWithoutMarket(t *testing.T) {
+	for _, record := range []Record{{FIGI: "equity", SecurityType: "Equity Option"}, {FIGI: "equity", SecurityType2: "Option"}, {FIGI: "equity", SecurityType: "Common Stock"}, {FIGI: "equity", SecurityType2: "Common Stock"}, {FIGI: "equity", SecurityType2: "Equity"}} {
+		got := SelectIdentity(source.Debt, []Record{record})
+		if got.FIGI != "" || got.Reason != IncompatibleSubject {
+			t.Fatal("explicit equity classification identified a debt issue", record, got)
+		}
+	}
+}

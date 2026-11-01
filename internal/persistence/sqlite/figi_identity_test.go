@@ -407,7 +407,12 @@ func TestFIGIContradictionCannotBeOutvotedByAnotherRoot(t *testing.T) {
 	}
 
 	for _, i := range view.Instruments {
-		if !i.Status().NeedsReview() || i.ReferenceMetadata().Reason != string(reference.CompetingIdentity) {
+		reason := reference.ConvergenceBlocked
+		if i.ID() == a {
+			reason = reference.CompetingIdentity
+		}
+
+		if !i.Status().NeedsReview() || i.ReferenceMetadata().Reason != string(reason) {
 			t.Fatal(i)
 		}
 	}

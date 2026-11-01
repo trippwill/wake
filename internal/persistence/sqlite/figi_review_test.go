@@ -174,3 +174,117 @@ func TestConvergedDetailAndSnapshotIncludeAllBindings(t *testing.T) {
 		})
 	}
 }
+
+func TestSingletonListingRejectsConflictingReportedFIGI(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := view.Executions[0]
+	if _, err = s.db.Exec(`UPDATE listings SET figi='verified-a' WHERE id=?`, e.Listing()); err != nil {
+		t.Fatal(err)
+	}
+
+	f := e.Terms().Fields().Instrument.Fields()
+	id, _ := source.NewIdentifier(source.VenueFIGI, "reported-b", "figi")
+	f.Identifiers = append(f.Identifiers, id)
+
+	reported, err := source.NewInstrument(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listing, err := acceptListing(t.Context(), s.queries, e.Instrument(), reported, "USD")
+	if err != nil || listing != "" {
+		t.Fatal("singleton contradicted a reported venue FIGI", listing, err)
+	}
+}
+
+func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := view.Instruments[0].ID()
+	now := time.Now()
+	jobs := []reference.Job{{IDType: "ID_ISIN", IDValue: "US0000000001"}}
+
+	request, err := json.Marshal(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	records := []reference.Record{
+		{
+			FIGI:         "venue",
+			ShareClass:   "shared",
+			Name:         "Verified issuer",
+			Market:       "Equity",
+			SecurityType: "Common Stock",
+		},
+	}
+
+	response, err := json.Marshal([]struct {
+		Data []reference.Record `json:"data"`
+	}{{records}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := s.SaveReference(
+		t.Context(),
+		reference.Evidence{At: now, Request: request, Response: response, Status: 200},
+		jobs,
+		[]reference.Result{{Status: "resolved", Records: records, Next: now.Add(time.Hour)}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.ApplyReference(t.Context(), a, results[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	coverageReport(
+		t,
+		s,
+		"contradiction",
+		strings.Replace(equityRow("U1", "a", "100"), "US0000000001", "US0000000002", 1),
+	)
+	coverageReport(
+		t,
+		s,
+		"second",
+		strings.Replace(equityRow("U1", "b", "200"), `conid="100"`, `conid="200"`, 1),
+	)
+
+	view, err = s.Dashboard(t.Context())
+	if err != nil || len(view.Instruments) != 2 {
+		t.Fatal(view, err)
+	}
+
+	b := view.Instruments[1].ID()
+	if err = s.ApplyReference(t.Context(), b, results[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	form, err := s.CorrectionForm(t.Context(), "instrument", a)
+	if err != nil || len(form.Candidates) == 0 {
+		t.Fatal(form, err)
+	}
+
+	retainDecision(t, s, "instrument", a, "reference", form.Candidates[0].Value, "", "set")
+
+	view, err = s.Dashboard(t.Context())
+	if err != nil || len(view.Instruments) != 1 {
+		t.Fatal("copied source diagnosis required an unrelated override", view, err)
+	}
+}

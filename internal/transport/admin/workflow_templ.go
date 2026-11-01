@@ -3321,6 +3321,8 @@ func referenceReasonText(reason string) string {
 		return "Identity is established, but some supporting reference metadata is incomplete."
 	case "source_conflict":
 		return "Source observations disagree about this investment's identity or underlier. Review is required."
+	case "convergence_blocked":
+		return "Another record for the same investment needs review before these entries can combine."
 	case "operator_conflict":
 		return "These entries identify the same investment, but operator choices must be reconciled before they can combine."
 	default:

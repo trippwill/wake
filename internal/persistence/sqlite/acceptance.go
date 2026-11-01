@@ -471,10 +471,13 @@ func acceptListing(
 		return "", err
 	}
 	// A reported venue identifier can select an already verified representation.
+	hasVenueFIGI := false
 	for _, identifier := range i.Identifiers() {
 		if identifier.Kind() != source.VenueFIGI && identifier.Kind() != source.UnclassifiedFIGI {
 			continue
 		}
+
+		hasVenueFIGI = true
 
 		for _, listing := range listings {
 			if listing.Figi == identifier.Value() {
@@ -484,6 +487,10 @@ func acceptListing(
 	}
 
 	if len(listings) == 1 {
+		if hasVenueFIGI && listings[0].Figi != "" {
+			return "", nil
+		}
+
 		return listings[0].ID, nil
 	}
 

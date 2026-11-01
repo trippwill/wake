@@ -265,3 +265,43 @@ func TestFailedFIGIParentIsAttemptedOncePerRun(t *testing.T) {
 		now = now.Add(2 * time.Minute)
 	}
 }
+
+func TestParentLookupPreservesContradictoryKnownFIGI(t *testing.T) {
+	s, _ := testStore(t)
+	insertReferenceInstrument(t, s, "root", "synthetic-isin")
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var jobs []reference.Job
+		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil || len(jobs) != 1 {
+			t.Error(jobs, err)
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		if jobs[0].IDType == "ID_ISIN" {
+			_, _ = w.Write([]byte(`[{"data":[{"figi":"venue","compositeFIGI":"parent"}]}]`))
+		} else {
+			_, _ = w.Write(
+				[]byte(
+					`[{"data":[{"figi":"venue","compositeFIGI":"contradictory-parent"},{"figi":"sibling","compositeFIGI":"parent","shareClassFIGI":"share"},{"figi":"unrelated","compositeFIGI":"unrelated","shareClassFIGI":"unrelated-share"}]}]`,
+				),
+			)
+		}
+	}))
+	defer server.Close()
+
+	service, err := reference.New(s, nil, server.Client(), server.URL, time.Now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = service.RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	row, err := s.queries.Instrument(t.Context(), "root")
+	if err != nil || row.ReferenceFigi != "" || row.ReferenceReason != string(reference.ConflictingParents) {
+		t.Fatal("contradictory parent was filtered out", row, err)
+	}
+}
