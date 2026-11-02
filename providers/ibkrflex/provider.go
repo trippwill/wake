@@ -16,7 +16,7 @@ import (
 const (
 	Confirmations       = "confirmations"
 	ConfirmationFormat  = "ibkr-flex-confirmation-xml"
-	Version             = "confirmation-2"
+	Version             = "confirmation-3"
 	continuationVersion = "confirmation-state-1"
 	DefaultBaseURL      = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 	webBudget           = "web-service"

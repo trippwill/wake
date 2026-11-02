@@ -164,7 +164,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	for _, entry := range []struct {
 		field string
 		kind  source.IdentifierKind
-	}{{"isin", source.ISIN}, {"cusip", source.CUSIP}, {"sedol", source.SEDOL}, {"figi", source.UnclassifiedFIGI}} {
+	}{{"isin", source.ISIN}, {"cusip", source.CUSIP}, {"sedol", source.SEDOL}, {"figi", reportedFIGIKind(row["assetCategory"])}} {
 		if row[entry.field] == "" {
 			continue
 		}
@@ -180,11 +180,12 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	if value := row["securityID"]; value != "" {
 		kind := source.IdentifierKind(strings.ToLower(row["securityIDType"]))
 		if kind == "figi" {
-			kind = source.UnclassifiedFIGI
+			kind = reportedFIGIKind(row["assetCategory"])
+		} else if kind != source.ISIN && kind != source.CUSIP && kind != source.SEDOL {
+			kind = ""
 		}
 
-		if kind == source.ISIN || kind == source.CUSIP || kind == source.SEDOL ||
-			kind == source.UnclassifiedFIGI {
+		if kind != "" {
 			id, e := source.NewIdentifier(kind, value, "securityID")
 			if e != nil {
 				return source.TradeInput{}, e
@@ -405,6 +406,18 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	}
 
 	return fields, nil
+}
+
+// IBKR's observed convention is recorded in docs/research/ibkr-figi-allocation.md.
+func reportedFIGIKind(assetCategory string) source.IdentifierKind {
+	switch assetCategory {
+	case "STK", "OPT":
+		return source.CompositeFIGI
+	case "BOND", "BILL":
+		return source.InstrumentFIGI
+	default:
+		return source.UnclassifiedFIGI
+	}
 }
 
 func optionTerms(row map[string]string) (source.OptionTerms, error) {

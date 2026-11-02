@@ -103,7 +103,8 @@ is needed when a change leaves retained results valid.
 
 The FIGI authority and debt reported-values development formats are explicit,
 approved warehouse-disposal exceptions to that retained-history procedure. They
-change source interpretation, identity grouping, public instrument shape and the
+change source interpretation (including IBKR's observed FIGI allocation convention),
+identity grouping, public instrument shape and the
 retained debt claim/correction shape; old warehouses fail closed. Deploy
 by preserving any needed old evidence/decisions, explicitly recreating the warehouse
 and reacquiring history with the reusable encrypted access seed. There is no
