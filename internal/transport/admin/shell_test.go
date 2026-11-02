@@ -47,6 +47,24 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 			t.Fatal(path, w.Code)
 		}
 
+		if want == http.StatusOK {
+			for _, destination := range []string{"/", "/activity", "/connections", "/status", "/configuration"} {
+				if !strings.Contains(w.Body.String(), `href="`+destination+`"`) {
+					t.Errorf("%s has no navigation to %s", path, destination)
+				}
+			}
+
+			if path == "/configuration" {
+				for _, text := range []string{"Configuration", "Manage source and reference access"} {
+					if !strings.Contains(w.Body.String(), text) {
+						t.Errorf("configuration page missing %q", text)
+					}
+				}
+			} else if !strings.Contains(w.Body.String(), "Daemon running") {
+				t.Errorf("%s missing daemon status", path)
+			}
+		}
+
 		for _, retired := range []string{`href="/trades"`, `href="/documents"`, `href="/processing"`} {
 			if strings.Contains(w.Body.String(), retired) {
 				t.Fatal("retired navigation", retired)

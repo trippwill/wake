@@ -64,12 +64,12 @@ func TestBrowserProxySession(t *testing.T) {
 	if err := chromedp.Run(
 		ctx,
 		chromedp.Navigate(strings.Replace(entry.URL, "127.0.0.1", "localhost", 1)),
-		chromedp.WaitVisible("#wake"),
+		chromedp.WaitVisible("#wake", chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	response, err := chromedp.RunResponse(ctx, chromedp.Click("#wake"))
+	response, err := chromedp.RunResponse(ctx, chromedp.Click("#wake", chromedp.ByQuery))
 	if err != nil || response == nil || response.Status != http.StatusOK ||
 		response.URL != proxy.URL+"/connections/reference" {
 		t.Fatal("cross-site entry did not serve the requested page", response, err)
@@ -78,7 +78,7 @@ func TestBrowserProxySession(t *testing.T) {
 	var before, after string
 	if err = chromedp.Run(
 		ctx,
-		chromedp.WaitVisible(`form[action="/reference/key"]`),
+		chromedp.WaitVisible(`form[action="/reference/key"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &before),
 	); err != nil {
 		t.Fatal(err)
@@ -92,13 +92,13 @@ func TestBrowserProxySession(t *testing.T) {
 			`window.htmx.ajax("GET", "/status/contact", {source: document.body, swap: "none"});`,
 			nil,
 		),
-		chromedp.WaitVisible("#status-sign-in"),
+		chromedp.WaitVisible("#status-sign-in", chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
 	); err != nil || before != after {
 		t.Fatal("background expiry changed the form token", err)
 	}
 
-	response, err = chromedp.RunResponse(ctx, chromedp.Click("#status-sign-in"))
+	response, err = chromedp.RunResponse(ctx, chromedp.Click("#status-sign-in", chromedp.ByQuery))
 	if err != nil || response == nil || response.Status != http.StatusOK {
 		t.Fatal("proxy recovery navigation", response, err)
 	}
@@ -106,7 +106,7 @@ func TestBrowserProxySession(t *testing.T) {
 	if err = chromedp.Run(
 		ctx,
 		chromedp.Navigate(proxy.URL+"/connections/reference"),
-		chromedp.WaitVisible(`form[action="/reference/key"]`),
+		chromedp.WaitVisible(`form[action="/reference/key"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
 	); err != nil ||
 		before == after {

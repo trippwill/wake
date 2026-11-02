@@ -93,12 +93,11 @@ jobs:
         with:
           role: browser
           cold-cache: ${{ inputs.cold_cache || false }}
-      - name: Run selected browser suite
+      - name: Run full browser suite
         env:
-          BROWSER_TASK: ${{ (github.event_name == 'pull_request' || inputs.profile == 'pr') && 'test:browser:smoke' || 'test:browser' }}
           # Installed Chrome has Ubuntu's supported sandbox profile.
           WAKE_BROWSER: /usr/bin/google-chrome
-        run: mise run "$BROWSER_TASK"
+        run: mise run test:browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:
