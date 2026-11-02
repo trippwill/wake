@@ -24,10 +24,10 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 	ctx := t.Context()
 	lifecycle := strings.NewReplacer(`execID="option-fill"`, `execID="exercise-fill"`, `tradeID="option-trade"`, `tradeID="exercise-trade"`, `transactionType="ExchTrade"`, `transactionType="BookTrade" code="Ex"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "shared-calculation", syntheticOption+syntheticFX+lifecycle)
+	coverageReport(t, s, "shared-calculation", syntheticOption+syntheticDebt+syntheticFX+lifecycle)
 
 	rows, err := s.queries.Executions(ctx)
-	if err != nil || len(rows) != 3 {
+	if err != nil || len(rows) != 4 {
 		t.Fatal(rows, err)
 	}
 
@@ -123,7 +123,7 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing.T) {
 	s := coverageStore(t)
 	ctx := t.Context()
-	coverageReport(t, s, "atomic-calculation", syntheticOption)
+	coverageReport(t, s, "atomic-calculation", syntheticDebt)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {

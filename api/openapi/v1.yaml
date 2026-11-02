@@ -535,6 +535,7 @@ components:
           type: string
           nullable: true
         price_basis:
+          description: Price unit convention for supported instruments. Null for debt; no quotation basis is asserted.
           type: string
           nullable: true
         settlement_date:

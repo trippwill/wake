@@ -66,11 +66,3 @@ func (d DebtTerms) Fields() DebtInput {
 
 	return *d.input
 }
-
-type QuotationBasis string
-
-const (
-	UnknownQuotation QuotationBasis = ""
-	Per100Nominal    QuotationBasis = "per 100 nominal"
-	PerNominalUnit   QuotationBasis = "per nominal unit"
-)

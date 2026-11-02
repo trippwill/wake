@@ -58,12 +58,6 @@ func TestTradeCorrectionsPreserveExactValuesAndOtherFacts(t *testing.T) {
 		{"net_billable", money.Amount(), "USD", func(f *source.TradeInput) { f.NetWithBillable = money }},
 		{"accrued_interest", money.Amount(), "USD", func(f *source.TradeInput) { f.AccruedInterest = money }},
 		{"position_effect", "closing", "", func(f *source.TradeInput) { f.PositionEffect = source.Closing }},
-		{
-			"quotation_basis",
-			"per 100 nominal",
-			"",
-			func(f *source.TradeInput) { f.QuotationBasis = source.Per100Nominal },
-		},
 	}
 	original := base.Fields()
 	for _, tc := range cases {

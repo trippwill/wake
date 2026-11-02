@@ -212,7 +212,6 @@ func Debt(kind source.DebtType) (source.Trade, error) {
 	}
 	f.Price, _ = financial.NewPrice("99.123456789", c)
 	f.AccruedInterest, _ = financial.NewMoney("-12.345", c)
-	f.QuotationBasis = source.Per100Nominal
 	return source.NewTrade(f)
 }
 

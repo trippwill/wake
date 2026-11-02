@@ -83,7 +83,6 @@ var correctionPolicies = []FieldPolicy{
 	{"net_billable", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
 	{"accrued_interest", MoneyCorrection, true, SignedDecimal, 256, tradeFields, ""},
 	{"position_effect", ChoiceCorrection, true, SignedDecimal, 2048, tradeFields, ""},
-	{"quotation_basis", ChoiceCorrection, true, SignedDecimal, 2048, tradeFields, source.Debt},
 	{
 		"option.strike",
 		MoneyCorrection,

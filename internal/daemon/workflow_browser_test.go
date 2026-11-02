@@ -331,7 +331,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		chromedp.Click("[data-grid-refresh]"),
 		chromedp.Poll(
-			`document.querySelector('a[href^="/executions/"]') !== null && document.body.textContent.includes('REFERENCE EQUITY')`,
+			`document.querySelector('a[href^="/executions/"]') !== null`,
 			nil,
 		),
 		chromedp.Evaluate(
@@ -342,6 +342,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	if !ok {
 		t.Fatal("missing exact financial view")
+	}
+	// Acquisition and reference enrichment can produce separate publications.
+	check(chromedp.Evaluate(`document.body.textContent.includes('REFERENCE EQUITY')`, &ok))
+
+	if !ok {
+		check(
+			chromedp.WaitVisible("[data-grid-refresh]"),
+			chromedp.Click("[data-grid-refresh]"),
+			chromedp.Poll(`document.body.textContent.includes('REFERENCE EQUITY')`, nil),
+		)
 	}
 
 	check(
@@ -557,13 +567,48 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		)),
 		chromedp.WaitVisible(".wake-card dl"),
 		chromedp.Evaluate(
-			`document.body.textContent.includes('Quantity (nominal)')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('quotation basis unknown')&&document.body.textContent.includes('Coupon rate (reported)')`,
+			`document.body.textContent.includes('Face amount (nominal)')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('Reported price')&&document.body.textContent.includes('Trade net cash')&&!document.body.textContent.includes('quotation basis')&&document.body.textContent.includes('Coupon rate (reported)')`,
 			&ok,
 		),
 	)
 
 	if !ok {
 		t.Fatal("debt inspection")
+	}
+
+	capture("debt")
+	check(
+		newDocument(chromedp.Click(`a[href*="/correct"]`)),
+		chromedp.WaitVisible("#decision-scope"),
+		chromedp.Evaluate(`!document.querySelector('#decision-scope option[value="quotation_basis"]')`, &ok),
+	)
+
+	if !ok {
+		t.Fatal("debt quotation correction remains available")
+	}
+
+	check(
+		chromedp.SetValue("#decision-scope", "net"),
+		chromedp.Evaluate(
+			`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.SetValue("#decision-value", "-42.123456789"),
+		chromedp.SetValue("#decision-currency", "USD"),
+		chromedp.Focus("#decision-value"),
+		chromedp.Evaluate(
+			`document.querySelector('#decision-value').dispatchEvent(new Event('input',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil),
+		chromedp.Evaluate(
+			`document.activeElement.id==='decision-value'&&document.querySelector('#decision-value').value==='-42.123456789'`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("debt correction lost draft or focus during preflight")
 	}
 
 	check(

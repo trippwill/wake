@@ -54,7 +54,11 @@ and observations. Resource lookups redirect retired IDs to their current identit
 old-ID explanations and new correction submissions are stale. Complete snapshots
 replace a consumer's resource graph, including combined identities and listings.
 
-This pre-release identity format requires explicit warehouse recreation on upgrade.
+Debt activity retains nominal face quantity and exact reported price without a
+quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
+charges remain separate; no combined settlement total is inferred.
+
+This pre-release identity and debt format requires explicit warehouse recreation on upgrade.
 Older warehouses fail closed and remain untouched; encrypted access seeds retain
 their independent format. Reacquire and confirm source history in the new warehouse.
 This selected deployment discards warehouse-only decisions and evidence; preserve

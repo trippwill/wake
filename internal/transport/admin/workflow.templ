@@ -81,13 +81,37 @@ templ ExecutionPage(d application.ExecutionDetail) {
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Execution.ID()+"/correct")) }>Correct accepted data</a>
 			</div>
 		</div>
-		<dl><dt>Side</dt><dd>{ string(d.Execution.Terms().Fields().Side) }</dd><dt>{ "Quantity ("+d.Execution.Terms().QuantityUnit()+")" }</dt><dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd><dt>{ "Price ("+d.Execution.Terms().PriceBasis()+")" }</dt><dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd><dt>Trade date</dt><dd>{ d.Execution.Terms().Fields().TradeDate.String() }</dd><dt>Execution time (reported precision)</dt><dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd></dl>
+		<dl>
+			<dt>Side</dt>
+			<dd>{ string(d.Execution.Terms().Fields().Side) }</dd>
+			if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
+				<dt>Face amount (nominal)</dt>
+				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
+				<dt>Reported price</dt>
+				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
+			} else {
+				<dt>{ "Quantity ("+d.Execution.Terms().QuantityUnit()+")" }</dt>
+				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
+				<dt>{ "Price ("+d.Execution.Terms().PriceBasis()+")" }</dt>
+				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
+			}
+			<dt>Trade date</dt>
+			<dd>{ d.Execution.Terms().Fields().TradeDate.String() }</dd>
+			<dt>Execution time (reported precision)</dt>
+			<dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd>
+		</dl>
 		<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Execution.Instrument())) }>Inspect instrument</a>
 	</section>
 	<section class="wake-card">
 		<h2>Monetary terms</h2>
-		<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd></dl>
-		<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+		if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
+			<dl><dt>Reported principal</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Trade net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd></dl>
+			<p class="wake-help">Trade net cash and accrued interest are separate reported amounts. No combined settlement total is calculated.</p>
+			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+		} else {
+			<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd></dl>
+			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+		}
 		if len(d.Execution.Terms().Fields().Charges)>0 {
 			<section class="wake-table-scroll" aria-label="Attached charges">
 				<table class="table">
@@ -495,8 +519,6 @@ func fieldLabel(s string) string {
 		return "Sent amount"
 	case "received_amount":
 		return "Received amount"
-	case "quotation_basis":
-		return "Debt quotation basis"
 	case "position_effect":
 		return "Opening/closing qualification"
 	}

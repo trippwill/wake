@@ -300,10 +300,6 @@ func enrichTrade(a, b source.Trade) (source.Trade, error) {
 		f.NetWithBillable = g.NetWithBillable
 	}
 
-	if f.QuotationBasis == "" {
-		f.QuotationBasis = g.QuotationBasis
-	}
-
 	if f.PositionEffect == "" {
 		f.PositionEffect = g.PositionEffect
 	}

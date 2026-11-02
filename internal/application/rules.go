@@ -20,8 +20,7 @@ const (
 // monetary term, native identity, civil date or incompatible time bucket.
 func Compatible(a, b source.Trade) bool {
 	x, y := a.Fields(), b.Fields()
-	if (x.QuotationBasis != "" && y.QuotationBasis != "" && x.QuotationBasis != y.QuotationBasis) ||
-		x.Kind != y.Kind ||
+	if x.Kind != y.Kind ||
 		x.Account != y.Account ||
 		x.Side != y.Side ||
 		!x.Quantity.Equal(y.Quantity) ||
