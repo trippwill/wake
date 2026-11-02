@@ -248,10 +248,7 @@ func gcm(key []byte) (cipher.AEAD, error) {
 }
 
 func domainSeparatedAAD(label string, aad []byte) []byte {
-	result := make([]byte, 0, len(label)+len(aad))
-	result = append(result, label...)
-
-	return append(result, aad...)
+	return append([]byte(label), aad...)
 }
 
 // String redacts encrypted credential material.
