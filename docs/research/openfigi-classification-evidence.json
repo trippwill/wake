@@ -1,0 +1,96 @@
+{
+  "observed_at": "2026-11-02",
+  "authentication": "anonymous",
+  "filters": "none",
+  "endpoint": "https://api.openfigi.com/v3/mapping",
+  "experiments": [
+    {
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG000BBQCY0"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "sample": [
+        {
+          "figi": "BBG000BBQCY0",
+          "name": "ADVANCED MICRO DEVICES",
+          "ticker": "AMD",
+          "exchCode": "US",
+          "compositeFIGI": "BBG000BBQCY0",
+          "securityType": "Common Stock",
+          "marketSector": "Equity",
+          "shareClassFIGI": "BBG001S5NN36",
+          "securityType2": "Common Stock",
+          "securityDescription": "AMD"
+        }
+      ]
+    },
+    {
+      "request": {
+        "idType": "ID_BB_GLOBAL_SHARE_CLASS_LEVEL",
+        "idValue": "BBG001S5NN36"
+      },
+      "http_status": 200,
+      "rows": 246,
+      "sample": [
+        {
+          "figi": "BBG000BBQCY0",
+          "name": "ADVANCED MICRO DEVICES",
+          "ticker": "AMD",
+          "exchCode": "US",
+          "compositeFIGI": "BBG000BBQCY0",
+          "securityType": "Common Stock",
+          "marketSector": "Equity",
+          "shareClassFIGI": "BBG001S5NN36",
+          "securityType2": "Common Stock",
+          "securityDescription": "AMD"
+        }
+      ]
+    },
+    {
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG01Z053K47"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "sample": [
+        {
+          "figi": "BBG01Z053K47",
+          "name": "January 26 Calls on F US",
+          "ticker": "F 01/30/26 C13.5",
+          "exchCode": "US",
+          "compositeFIGI": "BBG01Z053K47",
+          "securityType": "Equity Option",
+          "marketSector": "Equity",
+          "shareClassFIGI": null,
+          "securityType2": "Option",
+          "securityDescription": "F US 01/30/26 C13.5"
+        }
+      ]
+    },
+    {
+      "request": {
+        "idType": "ID_BB_GLOBAL",
+        "idValue": "BBG000FWG7T8"
+      },
+      "http_status": 200,
+      "rows": 1,
+      "sample": [
+        {
+          "figi": "BBG000FWG7T8",
+          "name": "TREASURY BILL",
+          "ticker": "B 0 07/28/11",
+          "exchCode": null,
+          "compositeFIGI": null,
+          "securityType": "US GOVERNMENT",
+          "marketSector": "Govt",
+          "shareClassFIGI": null,
+          "securityType2": "Bill",
+          "securityDescription": "B 07/28/11"
+        }
+      ]
+    }
+  ]
+}

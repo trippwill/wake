@@ -51,6 +51,13 @@ identify separate representations. Parent relationships establish grouping even
 when a lookup returns many rows or lacks a description. Explicit contradictory
 parents or subjects remain reviewable; repeated agreeing rows cannot outweigh them.
 
+Providers interpret reported identifier fields using documented semantics or a
+reproducible observed convention, and retain the original field attribution.
+That classification remains a source claim, which reference evidence may
+corroborate or contradict. Leave the level unclassified when neither basis exists.
+A composite or share-class FIGI does not identify a particular listing; an absent
+venue FIGI does not make the instrument's established identity unresolved.
+
 Wake automatically combines entries with the same verified identity when active
 operator choices agree. The oldest Wake ID survives, old IDs remain aliases, and
 original bindings, observations and decisions remain attributable. Conflicting

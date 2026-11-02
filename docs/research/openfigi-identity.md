@@ -144,3 +144,43 @@ remain attributable to their dated observations. These experiments did not test
 all asset classes, corrected registry assignments, adjusted historical contracts,
 service failures or keyed access. They establish neither universal coverage nor
 an API availability guarantee. No operator store was modified.
+
+## Classifying a reported FIGI
+
+IBKR's [Financial Instrument Information reference](https://www.ibkrguides.com/reportingreference/reportguide/financialinstrumentinformationfq.htm)
+describes the FIGI field without specifying venue, composite or share-class level.
+The larger [IBKR sample study](ibkr-figi-allocation.md) establishes the convention
+adopted by its provider: reported stock and equity-option FIGIs are composites,
+and supported debt FIGIs are issue-level. Security type alone is insufficient,
+but it can be combined with a reproducible source convention. The
+[allocation rules, version 30.0](https://www.openfigi.com/docs/figi-allocation-rules.pdf),
+sections 1.4, 2.2, 2.7.1 and 2.10, establish the corresponding response-field
+meanings and the different allocation rules for US Treasury issues.
+
+On 2026-11-02, one anonymous, unfiltered mapping batch reproduced these public
+identifiers. [Compact requests and responses](openfigi-classification-evidence.json)
+record HTTP status, row counts and representative records; they contain no account
+or trade data.
+
+| Input | Observation | Supported interpretation |
+| --- | --- | --- |
+| AMD `BBG000BBQCY0`, ordinary FIGI lookup | One row; `figi` and `compositeFIGI` both equal input; `shareClassFIGI=BBG001S5NN36` | The reported value is the composite; it is not the NASDAQ-specific FIGI. |
+| AMD `BBG001S5NN36`, typed share-class lookup | 246 rows, including the same composite | Share class and composite identify different levels. Row count is not an identity rule. |
+| Ford option `BBG01Z053K47`, ordinary FIGI lookup | One row; `figi=compositeFIGI`; no share class | The reported option value is a composite. |
+| Treasury bill `BBG000FWG7T8`, ordinary FIGI lookup | One Government/Bill row, no composite/share-class fields | Consistent with an issue-level FIGI under the documented US Treasury rules. |
+
+Classify by exact equality to explicit share-class/composite fields first. An
+equity/option `figi` different from its explicit composite can establish a venue
+level. Supported debt metadata and its allocation rules support an issue level.
+A lone `figi` field without supporting context does not prove venue allocation.
+Conflicting roles, contradictory parents, incompatible subjects or unrelated jobs
+in the same batch cannot corroborate a classification. Preserve the source field
+and value when applying a provider's interpretation; retain requests/responses
+that corroborate or contradict that claim.
+
+These four public examples and the larger sample study support classifying the
+reported identifiers; they do not
+establish that an IBKR listing label matches an OpenFIGI venue. Filling a listing's
+FIGI from the composite or the first share-class result would assert an unsupported
+relationship. The adopted convention remains subject to contrary evidence; the
+experiments do not cover every debt allocation scheme.

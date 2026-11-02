@@ -1,0 +1,77 @@
+{
+  "observed_at": "2026-11-02",
+  "authentication": "anonymous",
+  "endpoint": "https://api.openfigi.com/v3/mapping",
+  "request_type": "ID_BB_GLOBAL",
+  "filters": "none",
+  "reports": {
+    "confirmation": {
+      "figi_records": 419,
+      "distinct_figis": 56
+    },
+    "activity": {
+      "distinct_figis": 56
+    }
+  },
+  "distinct_figis_across_reports": 56,
+  "mapping_requests": 6,
+  "max_jobs_per_request": 10,
+  "http_statuses": [
+    200
+  ],
+  "outcomes": [
+    {
+      "asset_category": "STK",
+      "unique_figis": 10,
+      "allocation": "composite",
+      "source_subcategories": {
+        "COMMON": 9,
+        "ADR": 1
+      },
+      "listing_exchanges": [
+        "NASDAQ",
+        "NYSE"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "criterion": "Every returned row has compositeFIGI equal to the reported value."
+    },
+    {
+      "asset_category": "OPT",
+      "unique_figis": 45,
+      "allocation": "composite",
+      "source_subcategories": {
+        "C": 35,
+        "P": 10
+      },
+      "listing_exchanges": [
+        "CBOE"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "criterion": "Every returned row has compositeFIGI equal to the reported value."
+    },
+    {
+      "asset_category": "BOND",
+      "unique_figis": 1,
+      "allocation": "instrument",
+      "source_subcategories": {
+        "Govt": 1
+      },
+      "issuer_country": "GB",
+      "criterion": "Returned figi equals the reported value, marketSector is Govt, and compositeFIGI/shareClassFIGI are absent."
+    }
+  ],
+  "unmatched": 0,
+  "contradictory_allocations": 0,
+  "privacy": "Private source rows and the full identifier set are not committed; only aggregate results are retained here. Public representative responses are in openfigi-classification-evidence.json.",
+  "limits": [
+    "The two exports overlap; repeated appearances are not independent identifiers.",
+    "No ETF identifier was present.",
+    "The Treasury-bill sample did not supply a FIGI.",
+    "Only the represented listing markets and instrument families were observed.",
+    "No FIGI-typed securityID field was present; the observed values came from the dedicated figi attribute."
+  ]
+}

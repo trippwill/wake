@@ -67,6 +67,16 @@ unknown. Instrument mapping follows the response subject in the
 [OpenFIGI mapping contract](https://www.openfigi.com/api/documentation), so an
 underlier lookup cannot select the option contract.
 
+Wake interprets IBKR's reported FIGI as a composite for stock/fund and supported
+equity-option records, and as an instrument/issue FIGI for supported debt. This is
+an adopted provider convention supported by experiments, rather than a published
+IBKR guarantee. All 56 distinct reported FIGIs in the inspected Confirmation and
+Activity samples agreed: ten stocks and 45 options were composites, and one bond
+was issue-level. The original field attribution and exact value remain attached;
+OpenFIGI can corroborate the claim and contradictory results remain reviewable.
+A composite does not identify the reported listing venue. See the
+[sample study and limits](../research/ibkr-figi-allocation.md).
+
 
 Wake interprets the documented `Ex`, `A` and `Ep` codes on option bookings as
 exercise, assignment and expiration. Stock bookings retain independent identities;

@@ -46,8 +46,8 @@ func (r Reference) Scope() string     { return r.scope }
 func (r Reference) Value() string     { return r.value }
 func (r Reference) IsZero() bool      { return r == Reference{} }
 
-// IdentifierKind states the reported scheme/allocation level. The source field
-// remains attached even when core cannot corroborate its asserted meaning.
+// IdentifierKind states the scheme/allocation level interpreted by the provider.
+// The source field remains attached even when core cannot corroborate the claim.
 type IdentifierKind string
 
 const (

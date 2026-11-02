@@ -15,3 +15,4 @@ for research content and maintenance rules.
 - [OpenFIGI API budgets and result interpretation](openfigi-api-behavior.md) — documented limits, observed headers and failure distinctions.
 
 - [IBKR debt reporting](ibkr-debt-reporting.md) — reported nominal amounts, price and monetary roles, and the limits of Flex configuration documentation.
+- [IBKR FIGI allocation](ibkr-figi-allocation.md) — the observed source convention across 56 distinct reported identifiers, its adoption and coverage limits.
