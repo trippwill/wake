@@ -500,6 +500,23 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("incomplete independent mirror", len(before.Resources))
 	}
 
+	debtCount := 0
+	for _, r := range before.Resources {
+		if r.Activity == nil || r.Activity.Quantity == nil || r.Activity.Quantity.Unit != "nominal" {
+			continue
+		}
+
+		debtCount++
+
+		if r.Activity.PriceBasis != nil || r.Activity.Price == nil || r.Activity.AccruedInterest == nil {
+			t.Fatal("independent mirror changed debt monetary roles or asserted a quotation basis", r)
+		}
+	}
+
+	if debtCount < 2 {
+		t.Fatal("independent mirror omitted debt samples", debtCount)
+	}
+
 	// Interrupt a real daemon snapshot in a separate Unix-socket transport.
 	cutSocket := filepath.Join(t.TempDir(), "cut.sock")
 

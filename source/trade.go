@@ -52,7 +52,6 @@ const (
 // TradeInput is one reported security execution. Native event identity and time
 // can be absent; location, account, exact terms and civil trade date cannot.
 type TradeInput struct {
-	QuotationBasis                   QuotationBasis
 	AccruedInterest, NetWithBillable financial.Money
 	Location                         string
 	Kind                             TradeKind
@@ -80,16 +79,6 @@ type TradeInput struct {
 type Trade struct{ input TradeInput }
 
 func NewTrade(input TradeInput) (Trade, error) {
-	switch input.QuotationBasis {
-	case UnknownQuotation, Per100Nominal, PerNominalUnit:
-	default:
-		return Trade{}, ErrInvalidTrade
-	}
-
-	if input.Instrument.Kind() != Debt && input.QuotationBasis != "" {
-		return Trade{}, ErrInvalidTrade
-	}
-
 	if input.Kind == "" {
 		input.Kind = ExchangeExecution
 	}
@@ -166,11 +155,7 @@ func (t Trade) PriceBasis() string {
 	}
 
 	if t.input.Instrument.Kind() == Debt {
-		if t.input.QuotationBasis == "" {
-			return "quotation basis unknown"
-		}
-
-		return string(t.input.QuotationBasis)
+		return ""
 	}
 
 	return "per share"

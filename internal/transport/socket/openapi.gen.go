@@ -260,8 +260,10 @@ type Activity struct {
 	PositionEffect *string            `json:"position_effect"`
 
 	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Price      *NullableMoney `json:"price"`
-	PriceBasis *string        `json:"price_basis"`
+	Price *NullableMoney `json:"price"`
+
+	// PriceBasis Price unit convention for supported instruments. Null for debt; no quotation basis is asserted.
+	PriceBasis *string `json:"price_basis"`
 
 	// Proceeds Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	Proceeds *NullableMoney    `json:"proceeds"`

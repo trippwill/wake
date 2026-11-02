@@ -155,7 +155,6 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		money("net_billable", f.NetWithBillable)
 		money("accrued_interest", f.AccruedInterest)
 		text("position_effect", string(f.PositionEffect))
-		text("quotation_basis", string(f.QuotationBasis))
 
 		if f.Instrument.Kind() == source.Option {
 			option(f.Instrument.Option())

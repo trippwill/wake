@@ -67,7 +67,11 @@ distinct transactions do not dispute their shared identity. Conflicting financia
 terms for the same activity still require resolution.
 
 Treasuries and gilts represent individual debt issues. Nominal quantity, coupon,
-maturity, quoted price and accrued interest have separate meanings. A reopening
+maturity, reported price and accrued interest have separate meanings. Wake retains
+the reported debt price without asserting a quotation basis or deriving principal
+from quantity and price. Principal, proceeds, trade net cash, accrued interest and
+charges remain independent reported roles; trade net cash does not establish a
+combined settlement total. A reopening
 or a different venue representation does not by itself establish a new issue.
 Distinct rights, depositary receipts, share classes and contracts remain distinct.
 

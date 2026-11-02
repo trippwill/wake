@@ -261,7 +261,7 @@ func TestDebtNominalMissingTermsAndReferenceSubject(t *testing.T) {
 
 	e := view.Executions[0]
 	f := e.Terms().Fields()
-	if e.Listing() != "" || e.Terms().QuantityUnit() != "nominal" || f.QuotationBasis != "" ||
+	if e.Listing() != "" || e.Terms().QuantityUnit() != "nominal" || e.Terms().PriceBasis() != "" ||
 		f.AccruedInterest.Amount() != "-12.3456789" ||
 		!f.Instrument.Debt().Fields().Maturity.IsZero() ||
 		f.Instrument.Debt().Fields().Coupon.Value() != "" {

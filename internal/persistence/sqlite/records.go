@@ -127,7 +127,6 @@ func (m moneyData) money() (financial.Money, error) {
 }
 
 type tradeData struct {
-	QuotationBasis                                                   source.QuotationBasis
 	AccruedInterest, NetWithBillable                                 moneyData
 	Kind                                                             source.TradeKind
 	Relationships                                                    []relationshipData
@@ -152,7 +151,6 @@ type chargeData struct {
 func encodeTrade(t source.Trade) ([]byte, error) {
 	f := t.Fields()
 	data := tradeData{
-		QuotationBasis:  f.QuotationBasis,
 		AccruedInterest: moneyWire(f.AccruedInterest),
 		NetWithBillable: moneyWire(f.NetWithBillable),
 		Kind:            f.Kind,
@@ -308,7 +306,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 
 	return source.NewTrade(
 		source.TradeInput{
-			QuotationBasis: wire.QuotationBasis, AccruedInterest: accrued, NetWithBillable: billable,
+			AccruedInterest: accrued, NetWithBillable: billable,
 			Location: wire.Location,
 			Kind:     wire.Kind, Relationships: relationships,
 			Account:        account,

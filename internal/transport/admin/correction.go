@@ -88,11 +88,6 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 			c.Choices = []correctionChoice{{"put", "Put"}, {"call", "Call"}}
 		case "position_effect":
 			c.Choices = []correctionChoice{{"opening", "Opening"}, {"closing", "Closing"}, {"mixed", "Mixed"}}
-		case "quotation_basis":
-			c.Choices = []correctionChoice{
-				{"per 100 nominal", "Per 100 nominal"},
-				{"per nominal unit", "Per nominal unit"},
-			}
 		}
 	case application.DateCorrection:
 		c.Kind, c.Hint = "date", "Choose a valid calendar date."

@@ -75,11 +75,16 @@ marker remains reviewable. Qualified trade IDs support rows without execution ID
 See the [IBKR Confirmation code reference](https://www.ibkrguides.com/reportingreference/reportguide/codestradeconfirm.htm).
 
 
-Debt executions preserve nominal quantity, exact quoted price, accrued interest and
-all reported monetary roles independently. A Confirmation trade row does not
-establish coupon, maturity or quotation basis from a symbol or amount equation;
+Debt executions preserve nominal (face) quantity, exact reported price and currency,
+principal/amount, proceeds, accrued interest, commissions, taxes, net cash and net
+cash with billable independently. Wake makes no quotation-basis assertion and does
+not calculate a missing principal or settlement total. In the inspected gilt and
+Treasury-bill samples, trade net cash excludes the separately reported accrued
+interest. Keep those roles separate even when their arithmetic happens to agree.
+A Confirmation trade row does not establish coupon or maturity from a symbol;
 missing terms remain unknown. Richer explicitly supplied issue terms retain their
-own provenance. Debt reference identity uses an issue FIGI rather than requiring a
+own provenance. See [debt reporting research](../research/ibkr-debt-reporting.md)
+for the documentation limits and sample evidence. Debt reference identity uses an issue FIGI rather than requiring a
 share-class FIGI, and no listing is created without reported listing evidence.
 
 

@@ -336,6 +336,10 @@ review. Alias lookups redirect to current resources; explanations for an old ID
 and new correction submissions against it fail stale. Complete snapshots omit
 retired aliases, so a consumer installs the new graph atomically. Financial processing remains useful with provisional identity.
 
+Debt calculation preserves exact reported prices and separate monetary roles without
+a quotation-basis claim or a derived principal/settlement total. The absence of a
+debt price basis is intentional, not a reference-enrichment gap.
+
 Equity/fund identity uses share-class FIGIs, supported US equity options use
 composite FIGIs and debt uses issue FIGIs. Lookup types preserve that allocation.
 Selection follows explicit parent relationships; it does not count rows or require

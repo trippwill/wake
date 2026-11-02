@@ -671,7 +671,7 @@ func TestDebtExternalClaimRoundTrip(t *testing.T) {
 				t.Fatal(records, err)
 			}
 			terms := records[0].Trade.Fields()
-			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || terms.QuotationBasis != source.Per100Nominal || terms.AccruedInterest.Amount() != "-12.345" {
+			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || records[0].Trade.PriceBasis() != "" || terms.AccruedInterest.Amount() != "-12.345" {
 				t.Fatal("debt terms lost", terms)
 			}
 		})

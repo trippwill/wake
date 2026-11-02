@@ -115,8 +115,6 @@ func ApplyTradeField(t source.Trade, scope, text, currency string) (source.Trade
 		}
 	case "position_effect":
 		f.PositionEffect = source.PositionEffect(text)
-	case "quotation_basis":
-		f.QuotationBasis = source.QuotationBasis(text)
 	default:
 		f.Instrument, err = applyInstrumentTerm(f.Instrument, scope, text, currency)
 	}
