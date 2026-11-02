@@ -287,7 +287,12 @@ labels and local scrolling. Preserve all candidates and exact terms.
 
 Separate field correction, retained-evidence comparison and decision management.
 Keep the chosen field's accepted value beside its editor, compare differing fields
-first and disclose unchanged fields and technical context. Missing dates are Unknown.
+first and disclose unchanged fields and technical context. For debt issue terms,
+use “Not provided” for absent values. Show no coupon payments for Treasury bills;
+omit absent coupon-only terms while retaining explicitly reported values, including
+zero. Listing tables distinguish an unestablished venue FIGI from resolved root
+identity. Evidence disclosures expose separately labelled, readable request and
+response content through one keyboard-accessible action.
 Use field-specific controls: calendar dates, exact decimals with visible units and
 currency, explicit enumerated choices, and searchable retained-record selectors
 for links. Filter link choices by compatible family and parent instrument. Preserve

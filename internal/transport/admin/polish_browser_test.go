@@ -33,6 +33,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 // The independent browser fixture exposes only a remote page of exact values.
@@ -294,6 +295,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	identity := presentationInstrument(t)
+
+	bill, err := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryBill})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var (
 		extra, offline, expired, noGrid, refreshFailed, holdRefresh, holdSelection, holdMovedFocus atomic.Bool
 		emptyGrid, failFirstPage                                                                   atomic.Bool
@@ -544,6 +552,24 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				component = ConnectionSetup(csrf, []provider.Registration{registration})
 			case "/test/reference":
 				component = ReferencePage(csrf, fixtureSource(view))
+			case "/test/reference-evidence":
+				component = EvidencePage(
+					application.ReferenceEvidence{
+						Retrieved: "2026-11-02",
+						Request:   `[{"idType":"ID_BB_GLOBAL","idValue":"synthetic-composite"}]`,
+						Response:  `[{"data":[{"figi":"synthetic-composite","compositeFIGI":"synthetic-composite","shareClassFIGI":"synthetic-share"}]}]`,
+					},
+				)
+			case "/test/bill":
+				component = templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
+					if err := PageHeader("Treasury bill", "Synthetic debt terms").Render(ctx, w); err != nil {
+						return err
+					}
+
+					return DebtFacts(bill).Render(ctx, w)
+				})
+			case "/test/instrument":
+				component = InstrumentPage(identity)
 			case "/test/connections":
 				component = ConnectionsPage(csrf, fixtureSource(view))
 			case "/test/recovery":
@@ -666,6 +692,27 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	assert(
 		`!document.querySelector('table') && !window.privateInjection && document.querySelector('[data-grid-status]').textContent==='70 of 70 results'`,
 		"JSON grid or escaping",
+	)
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/reference-evidence")),
+		chromedp.WaitVisible("#original-content summary"),
+	)
+	assert(
+		`!document.querySelector('#original-content').open&&!document.querySelector('a[href="#original-content"]')`,
+		"duplicate evidence action",
+	)
+	check(
+		chromedp.Focus("#original-content summary"),
+		chromedp.SendKeys("#original-content summary", "\r"),
+		chromedp.WaitVisible(`pre[aria-label="Retained response"]`),
+	)
+	assert(
+		`document.querySelector('#original-content').open&&document.querySelector('pre[aria-label="Retained request"]').textContent.includes('\n    "idType"')`,
+		"keyboard evidence disclosure",
+	)
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
+		chromedp.WaitVisible(".tabulator-row"),
 	)
 	check(
 		chromedp.Evaluate(
@@ -1494,7 +1541,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/recovery", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
 				check(
 					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
@@ -1504,6 +1551,33 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				if strings.Contains(path, "?field=") {
 					check(chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil))
+				}
+
+				if path == "/test/reference-evidence" {
+					check(
+						chromedp.Click("#original-content summary"),
+						chromedp.WaitVisible(`pre[aria-label="Retained response"]`),
+					)
+				}
+
+				if path == "/test/bill" {
+					assert(
+						`!document.body.textContent.includes('Unknown')&&!document.body.textContent.includes('0000-00-00')&&document.body.textContent.includes('None (Treasury bill)')&&!document.body.textContent.includes('Payments per year')`,
+						"bill inapplicable fields",
+					)
+				}
+
+				if path == "/test/instrument" {
+					check(
+						chromedp.Click(
+							`//summary[text()='Reported references and reference evidence']`,
+							chromedp.BySearch,
+						),
+					)
+					assert(
+						`document.querySelector('details').textContent.includes('Composite FIGI: synthetic-composite')`,
+						"reported FIGI classification",
+					)
 				}
 
 				assert(
