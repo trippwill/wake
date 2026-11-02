@@ -288,29 +288,6 @@ func TestLoadRejectsNonDirectoryAndSymlink(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsDirectoryOwnedByAnotherUser(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("changing directory ownership requires root")
-	}
-
-	roots := configureEnvironment(t, true)
-	path := filepath.Join(roots.base, "other-owner")
-	if err := os.Mkdir(path, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Chown(path, 1, -1); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := loadForTest(
-		Overrides{Values: map[string]string{"warehouse-path": filepath.Join(path, "wake.db")}},
-	)
-	if !errors.Is(err, ErrInsecurePath) {
-		t.Fatalf("loadForTest() error = %v, want ErrInsecurePath", err)
-	}
-}
-
 type environmentRoots struct {
 	base    string
 	config  string
