@@ -70,15 +70,14 @@ caused by existing disagreement cannot corroborate a later conflicting value or
 admit its relationships. Shared compatibility rules govern this comparison and the
 automatic financial calculation.
 
-Financial calculation consumes one consistent retained input set: source claims,
-identity bindings, selected references, active decisions and an explicit implemented
-rule. It returns typed accepted values, independent conflict/authority facts and
-explanations without SQL writes or upstream calls. Processing, correction preflight,
-saving and release use that same calculation. Field parsing and whole-value
-constructor failures return the typed invalid-input outcome, not a service failure. Preflight substitutes a prospective
-decision in memory inside a read transaction; saving persists the calculated result,
-decision and publication atomically. Only groups reached by new claims or changed
-source-correction state require recalculation. Retained appearances remain provenance;
+Financial calculation consumes one consistent retained input set: source claims, identity bindings,
+selected references, active decisions and an explicit implemented rule. It returns typed accepted
+values, independent conflict/authority facts and explanations without SQL writes or upstream calls.
+Processing, correction preflight, saving and release use that same calculation. Field parsing and
+whole-value constructor failures return the typed invalid-input outcome, not a service failure.
+Preflight substitutes a prospective decision in memory inside a read transaction; saving persists
+the calculated result, decision and publication atomically. Only groups reached by new claims or
+changed source-correction state require recalculation. Retained appearances remain provenance;
 financial selection reads distinct source claims with their multiplicity.
 
 Small typed field policies own applicable activity/instrument families, scalar value
@@ -293,11 +292,11 @@ sink error. Replaying a successful artifact/version returns its retained outcome
 Records retain artifact locations and interpretation versions without producing
 financial authority by themselves.
 
-Operator confirmation commits a Wake account, its qualified source binding and
-the intent to synchronize together. Discovery stops after its bounded attempt;
-authorized acquisition starts independently when that capability is implemented.
-The daemon resumes eligible durable work, retains pacing and unavailable ranges, and joins acquisition and reference
-work during shutdown. Requested windows and reported coverage remain distinct.
+Operator confirmation commits a Wake account, its qualified source binding and the intent to
+synchronize together. Discovery stops after its bounded attempt; authorized acquisition starts
+independently when that capability is implemented. The daemon resumes eligible durable work, retains
+pacing and unavailable ranges, and joins acquisition and reference work during shutdown. Requested
+windows and reported coverage remain distinct.
 
 Financial acceptance applies named/versioned authority, observation-matching and
 instrument-linking rules transactionally. Native references corroborate Wake-owned
@@ -312,29 +311,25 @@ bookings retain identities separate from option outcomes. Source summaries and
 unsupported activity stay
 in evidence without becoming accepted executions.
 
-The reference service maps identifiers using only their type and value; source
-currency and venue do not constrain identity lookup. It batches jobs under a shared
-durable budget. Cache reuse and retained selection evidence have separate
-lifetimes: successful lookups
-are reusable for seven days and successful no-match results for six hours, while
-the evidence supporting accepted selections remains retained. Transient failures
-are not negative results. Configured key failures require repair or explicit
-selection of anonymous access. Reference selection distinguishes equity share
-classes from option contracts; an
-underlier result never identifies its option. An unambiguous qualified reference
-can enrich an existing identity. A compatible ticker-only underlier keeps its root
-when its first qualified reference arrives. If that reference already has a root,
-the parent's automatic link selects it only when their complete retained source
-identities agree, including new claims in the same processing transaction. Both
-roots and their original source bindings remain retained; disagreements require
-review and preserve established links. Operator link selections remain in effect
-until released. Verified FIGI equality combines compatible roots transactionally: the oldest root
-survives, source bindings and immutable histories remain retained, and current
-activity, underlier and listing links point to the survivor. Conflicting active
-operator choices or explicit reference contradictions keep roots separate for
-review. Alias lookups redirect to current resources; explanations for an old ID
-and new correction submissions against it fail stale. Complete snapshots omit
-retired aliases, so a consumer installs the new graph atomically. Financial processing remains useful with provisional identity.
+The reference service maps identifiers using only their type and value; source currency and venue do
+not constrain identity lookup. It batches jobs under a shared durable budget. Cache reuse and
+retained selection evidence have separate lifetimes: successful lookups are reusable for seven days
+and successful no-match results for six hours, while the evidence supporting accepted selections
+remains retained. Transient failures are not negative results. Configured key failures require
+repair or explicit selection of anonymous access. Reference selection distinguishes equity share
+classes from option contracts; an underlier result never identifies its option. An unambiguous
+qualified reference can enrich an existing identity. A compatible ticker-only underlier keeps its
+root when its first qualified reference arrives. If that reference already has a root, the parent's
+automatic link selects it only when their complete retained source identities agree, including new
+claims in the same processing transaction. Both roots and their original source bindings remain
+retained; disagreements require review and preserve established links. Operator link selections
+remain in effect until released. Verified FIGI equality combines compatible roots transactionally:
+the oldest root survives, source bindings and immutable histories remain retained, and current
+activity, underlier and listing links point to the survivor. Conflicting active operator choices or
+explicit reference contradictions keep roots separate for review. Alias lookups redirect to current
+resources; explanations for an old ID and new correction submissions against it fail stale. Complete
+snapshots omit retired aliases, so a consumer installs the new graph atomically. Financial
+processing remains useful with provisional identity.
 
 Debt calculation preserves exact reported prices and separate monetary roles without
 a quotation-basis claim or a derived principal/settlement total. The absence of a
@@ -356,7 +351,6 @@ Operator decision supersession explicitly links each new choice or release to
 all prior active choices in its combined identity. Histories from formerly
 separate roots retain their own releases; combining them does not turn a release
 on one root into a release of another root's surviving choice.
-
 
 Prospective nested inputs from all affected parents are reconciled before
 qualifying identities or selecting links. Retained source context contributes to
@@ -403,8 +397,13 @@ committed work, and access recovery controls stay outside refreshed status regio
 Historical calculation changes follow the explicit retained-data contribution
 requirement in [development](development.md#changes-affecting-retained-data).
 
-Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests retain their bounded grace period and are joined before storage closes.
+Shutdown signals event streams to finish before draining HTTP servers. Ordinary in-flight requests
+retain their bounded grace period and are joined before storage closes.
 
-Restoring lost access settings invalidates opaque source continuations while preserving retained pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier enrichment continues beneath an operator link override, so releasing the decision restores the source-established link.
+Restoring lost access settings invalidates opaque source continuations while preserving retained
+pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier
+enrichment continues beneath an operator link override, so releasing the decision restores the
+source-established link.
 
-Publishing resolves source-correction endpoints only for corrections related to the activity being published, within the same transaction.
+Publishing resolves source-correction endpoints only for corrections related to the activity being
+published, within the same transaction.

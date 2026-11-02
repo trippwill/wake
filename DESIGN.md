@@ -183,13 +183,13 @@ Assets stay local and embedded; no external font/icon service is needed.
 
 ## Color and appearance
 
-Use shared light/dark semantic roles rather than page-specific palettes. Steel
-anchors the workspace; Copper emphasizes primary actions sparingly. Body text and keyboard focus use the foreground role. Underlined links use a
-Copper text role: `#805028` in light appearance and `#E6A675` in dark appearance.
-Filled primary actions retain Copper with dark text; secondary actions use visible
-borders and distinct hover/focus states. Selection has a distinct edge as
-well as background and text emphasis. Panels, fields and chrome remain distinct
-without decorative depth. Both themes retain the same layout and density.
+Use shared light/dark semantic roles rather than page-specific palettes. Steel anchors the
+workspace; Copper emphasizes primary actions sparingly. Body text and keyboard focus use the
+foreground role. Underlined links use a Copper text role: `#805028` in light appearance and
+`#E6A675` in dark appearance. Filled primary actions retain Copper with dark text; secondary actions
+use visible borders and distinct hover/focus states. Selection has a distinct edge as well as
+background and text emphasis. Panels, fields and chrome remain distinct without decorative depth.
+Both themes retain the same layout and density.
 
 Status combines color, wording and shape. Information uses Steel, success Sage,
 warning muted ochre and errors clay. Active/disabled connection states are neutral;

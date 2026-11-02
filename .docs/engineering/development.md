@@ -160,8 +160,8 @@ unambiguous. Browser waits must observe the intended page or UI state.
 PR and main CI run the same complete browser suite. A smaller smoke profile does
 not establish that interactive workflows pass.
 
-[DESIGN.md](../../DESIGN.md) is the visual standard. Choose focused affected workflows, with broader review at coherent
-boundaries. Screenshots supplement functional checks and require inspection.
+[DESIGN.md](../../DESIGN.md) is the visual standard. Choose focused affected workflows, with broader
+review at coherent boundaries. Screenshots supplement functional checks and require inspection.
 
 Use isolated synthetic instances and the supported Chromium workflow; keep the
 browser sandbox enabled. Tests must not use a personal browser profile or source
@@ -185,6 +185,15 @@ not a specification, task list or acceptance gate. Keep commands grounded in hel
 and source; avoid inventing screen labels or implementation details. Coverage and
 limitations belong in the coverage document. Remove obsolete documents and repair
 inbound links.
+
+Run `mise run docs:check` for Markdown style and local links, including anchors. Checks include
+Git-tracked and unignored new Markdown files, including hidden directories and fixture
+documentation. Prose has a 100-column limit; tables and code blocks are exempt. Keep code examples
+and financial meaning intact when reflowing text. `mise run docs:links:external` additionally
+contacts external sites and is an explicit, network-dependent check outside the ordinary gate.
+
+Markdown tool versions are declared on the file tasks that use them and resolved
+in the project lockfile. They are installed and activated for those tasks.
 
 ## Socket consumer acceptance
 

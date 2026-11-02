@@ -173,7 +173,6 @@ support restart and recovery. Recalculating a view is different from reconstruct
 missing financial history, and explicit warehouse disposal is different from
 reinterpreting retained evidence.
 
-
 Sources explicitly qualify whether an event reference identifies one event within
 its authority, kind and scope. Native reference kind names carry no implicit core
 policy. Shared aliases can corroborate an observation without collapsing distinct
@@ -187,28 +186,50 @@ instructions never acquire authority from arrival order. A retained baseline anc
 selection; mutually compatible observations may fill absent optional values. When
 those optional claims compete, the baseline remains visible with disagreement.
 
-
 An active operator decision controls only its selected fields or link. Superseding
 or releasing a decision appends attributable history; release returns that scope
 to the retained automatic selection. Selecting financial fields from an observation
 does not silently change instrument or listing identity. Decisions preserve dissent,
 and stale forms must not overwrite decisions made after the form was read.
 
-Compatible observations contribute charge roles in a deterministic field/scope order. If combining individually valid facts exceeds a constructor bound or produces invalid debt terms, retain the durable baseline with visible disagreement and preserve all supporting observations. Conflicting shared instrument terms mark the automatic instrument selection for review without replacing its reported values.
+Compatible observations contribute charge roles in a deterministic field/scope order. If combining
+individually valid facts exceeds a constructor bound or produces invalid debt terms, retain the
+durable baseline with visible disagreement and preserve all supporting observations. Conflicting
+shared instrument terms mark the automatic instrument selection for review without replacing its
+reported values.
 
-A retained automatic FIGI selection remains an identity claim while an operator override is active. Competing automatic or operator selections cannot acquire that FIGI for another root; conflicts remain visible and releasing the override can restore its retained selection.
+A retained automatic FIGI selection remains an identity claim while an operator override is active.
+Competing automatic or operator selections cannot acquire that FIGI for another root; conflicts
+remain visible and releasing the override can restore its retained selection.
 
-Reported deliverables compare component multiplicity and exact quantities/cash independently of list order. Equivalent reordered components do not establish disagreement; accepted selection preserves the durable baseline order.
+Reported deliverables compare component multiplicity and exact quantities/cash independently of list
+order. Equivalent reordered components do not establish disagreement; accepted selection preserves
+the durable baseline order.
 
-Correction preflight accounts for active dependent listing decisions before accepting a different instrument. Candidate comparisons include read-only attached charges with their reported role, total/component qualification, exact amount and currency, including differences that selecting the candidate would replace. Charges remain outside editable field scopes.
+Correction preflight accounts for active dependent listing decisions before accepting a different
+instrument. Candidate comparisons include read-only attached charges with their reported role,
+total/component qualification, exact amount and currency, including differences that selecting the
+candidate would replace. Charges remain outside editable field scopes.
 
-Evidence comparisons also retain read-only option effective dates and deliverable components (identities, multiplicity, exact quantities and cash currencies), plus debt type, currency, issue and dated dates, and payment frequency. These terms remain visible independently of editable correction scopes.
+Evidence comparisons also retain read-only option effective dates and deliverable components
+(identities, multiplicity, exact quantities and cash currencies), plus debt type, currency, issue
+and dated dates, and payment frequency. These terms remain visible independently of editable
+correction scopes.
 
-Read-only candidate comparison preserves qualified source account, event, order and alias references, reported relationships, trade kind and reported instrument/underlier identities with their identifier schemes and values. Canonical underlier-link decisions remain separate from the reported underlier. Reference candidates compare the accepted FIGI identity selected for the instrument family (including share-class FIGIs for equities), independently of matching names or tickers. Unknown currencies render as Unknown.
+Read-only candidate comparison preserves qualified source account, event, order and alias
+references, reported relationships, trade kind and reported instrument/underlier identities with
+their identifier schemes and values. Canonical underlier-link decisions remain separate from the
+reported underlier. Reference candidates compare the accepted FIGI identity selected for the
+instrument family (including share-class FIGIs for equities), independently of matching names or
+tickers. Unknown currencies render as Unknown.
 
-Retained instrument, underlier and listing choices include their stable Wake identities in both selectable and current-value labels, so matching names or symbols remain distinguishable and searchable before a link decision is saved.
+Retained instrument, underlier and listing choices include their stable Wake identities in both
+selectable and current-value labels, so matching names or symbols remain distinguishable and
+searchable before a link decision is saved.
 
-Published active-decision explanations contain only currently applied overrides. Releasing a scope returns its authority to automatic selection and removes it from the active explanation; the full decision and release history remains retained.
+Published active-decision explanations contain only currently applied overrides. Releasing a scope
+returns its authority to automatic selection and removes it from the active explanation; the full
+decision and release history remains retained.
 
 Correction preflight evaluates the complete prospective set of active decisions
 against retained source inputs and current bindings, using the same financial

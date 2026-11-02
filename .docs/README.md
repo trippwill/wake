@@ -17,4 +17,5 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 - [Research](research/README.md) — optional external findings and experiments.
 
 - [Financial socket contract](../api/openapi/v1.yaml) — canonical reads and changes.
-- [Socket consumer acceptance](engineering/development.md#socket-consumer-acceptance) — independent consumer checks.
+- [Socket consumer acceptance](engineering/development.md#socket-consumer-acceptance) — independent
+  consumer checks.

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Explicitly check external URLs as well as local Markdown links"
+#MISE tools = { "aqua:lycheeverse/lychee" = "0.24.2" }
+set -euo pipefail
+
+inventory=$(mktemp)
+trap 'rm -f "$inventory"' EXIT
+git ls-files -z --cached --others --exclude-standard -- '*.md' '*.markdown' > "$inventory"
+files=()
+while IFS= read -r -d '' file; do
+  if [[ -f "$file" ]]; then
+    files+=("$file")
+  fi
+done < "$inventory"
+
+if [[ ${#files[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+lychee --include-fragments --no-progress -- "${files[@]}"

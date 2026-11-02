@@ -40,7 +40,7 @@ run = ["go mod download", "go mod verify"]
 
 [tasks.check]
 description = "Run static checks"
-depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "openapi:check"]
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "openapi:check", "docs:check"]
 wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 
 [tasks.'source:check']
@@ -152,3 +152,7 @@ depends = ["test:provider"]
 [tasks.'provider:fmt']
 description = "Format external fixture and host proof modules"
 run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go testdata/socket-consumer/*.go"
+
+[tasks.'docs:check']
+description = "Check Markdown style and local links"
+depends = ["docs:lint", "docs:links", "test:docs"]
