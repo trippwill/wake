@@ -56,6 +56,15 @@ No live configuration editor was inspected, so the research cannot rule out othe
 query selections. Nothing here establishes all debt products' quotation conventions,
 indexation, clean/dirty pricing or denomination rules.
 
+For presentation, absent issue dates or maturity mean the report did not supply
+the term. They do not mean the instrument lacks one. US Treasury bills have no
+periodic coupon payments; their return is the difference between purchase price
+and face value at maturity, as described by
+[TreasuryDirect](https://www.treasurydirect.gov/marketable-securities/treasury-bills/)
+(checked 2026-11-02). Coupon payment frequency and an absent coupon-accrual dated
+date should not appear as missing requirements for a bill. Explicit reported
+values, including zero coupon, remain evidence and should remain inspectable.
+
 The synthetic regression cases in
 [debt reporting tests](../../internal/persistence/sqlite/debt_reporting_test.go)
 use invented issues, dates and values. They exercise normalization, persistence,

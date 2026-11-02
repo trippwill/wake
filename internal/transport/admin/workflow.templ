@@ -10,6 +10,7 @@ import (
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 	"strconv"
+	"strings"
 )
 
 func known(text string) string {
@@ -155,7 +156,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Instrument.ID()+"/correct")) }>Correct instrument data</a>
 			</div>
 		</div>
-		<dl><dt>Reference FIGI</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd></dl>
+		<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd></dl>
 		if d.Instrument.Kind()=="option" {
 			<p>
 				Underlier:
@@ -176,14 +177,26 @@ templ InstrumentPage(d application.InstrumentDetail) {
 			<h2>Listings</h2>
 			<section class="wake-table-scroll" aria-label="Listings">
 				<table class="table">
-					<caption>Instrument listings</caption><thead><tr><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">Reference FIGI</th></tr></thead>
+					<caption>Instrument listings</caption><thead><tr><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">Venue FIGI</th></tr></thead>
 					<tbody>
 						for _,l:=range d.Listings {
-							<tr><td>{ known(l.Venue()) }</td><td>{ known(l.Ticker()) }</td><td>{ l.Currency() }</td><td>{ known(l.FIGI()) }</td></tr>
+							<tr>
+								<td>{ known(l.Venue()) }</td>
+								<td>{ known(l.Ticker()) }</td>
+								<td>{ l.Currency() }</td>
+								<td>
+									if l.FIGI()=="" {
+										Not established
+									} else {
+										{ l.FIGI() }
+									}
+								</td>
+							</tr>
 						}
 					</tbody>
 				</table>
 			</section>
+			<p>A share-class or composite FIGI identifies a broader instrument. It does not establish a FIGI for this venue.</p>
 		</section>
 	}
 	<details class="wake-card">
@@ -192,7 +205,9 @@ templ InstrumentPage(d application.InstrumentDetail) {
 		<ul>
 			<li>{ d.Instrument.Reported().Reference().Authority() } { d.Instrument.Reported().Reference().Kind() } { d.Instrument.Reported().Reference().Value() }</li>
 			for _,id:=range d.Instrument.Reported().Identifiers() {
-				<li>{ string(id.Kind()) }: { id.Value() } ({ id.Field() })</li>
+				<li>
+					{ identifierLabel(id.Kind()) }: { id.Value() } ({ id.Field() })
+				</li>
 			}
 			for _,attempt:=range d.References {
 				<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL(navURL(ctx, "/reference-evidence/"+attempt.Evidence)) }>OpenFIGI mapping evidence</a></li>
@@ -205,11 +220,17 @@ templ InstrumentPage(d application.InstrumentDetail) {
 	</section>
 }
 
-templ EvidencePage(id, context, body string) {
+templ EvidencePage(evidence application.ReferenceEvidence) {
 	@Breadcrumbs("Reference evidence")
-	@PageHeader("Reference evidence", id)
-	<section class="wake-card"><h2>Retained reference lookup</h2><p>{ context }</p><a href="#original-content">Inspect retained request and response</a></section>
-	<details class="wake-card" id="original-content"><summary>Original request and response</summary><pre>{ body }</pre></details>
+	@PageHeader("Reference evidence", "OpenFIGI mapping")
+	<section class="wake-card"><h2>Retained reference lookup</h2><p>{ evidence.Retrieved }</p></section>
+	<details class="wake-card" id="original-content">
+		<summary>Inspect retained request and response</summary>
+		<h3>Request</h3>
+		<pre tabindex="0" aria-label="Retained request">{ readableJSON(evidence.Request) }</pre>
+		<h3>Response</h3>
+		<pre tabindex="0" aria-label="Retained response">{ readableJSON(evidence.Response) }</pre>
+	</details>
 }
 
 templ OptionFacts(terms source.OptionTerms) {
@@ -329,25 +350,35 @@ templ DebtFacts(terms source.DebtTerms) {
 	if !terms.IsZero() {
 		<dl>
 			<dt>Debt issue type</dt>
-			<dd>{ known(string(terms.Fields().Type)) }</dd>
+			<dd>{ provided(strings.ReplaceAll(string(terms.Fields().Type), "-", " ")) }</dd>
 			<dt>Issue currency</dt>
-			<dd>{ known(currencyText(terms.Fields().Currency)) }</dd>
+			<dd>{ provided(currencyText(terms.Fields().Currency)) }</dd>
 			<dt>Maturity</dt>
-			<dd>{ dateText(terms.Fields().Maturity) }</dd>
-			<dt>Coupon rate (reported)</dt>
-			<dd>{ known(terms.Fields().Coupon.Value()) }</dd>
+			<dd>{ providedDate(terms.Fields().Maturity) }</dd>
+			if terms.Fields().Type==source.TreasuryBill {
+				<dt>Coupon payments</dt>
+				<dd>None (Treasury bill)</dd>
+			}
+			if terms.Fields().Type!=source.TreasuryBill || terms.Fields().Coupon.Value()!="" {
+				<dt>Coupon rate (reported)</dt>
+				<dd>{ provided(terms.Fields().Coupon.Value()) }</dd>
+			}
 			<dt>Original issue date</dt>
-			<dd>{ dateText(terms.Fields().IssueDate) }</dd>
-			<dt>Dated date</dt>
-			<dd>{ dateText(terms.Fields().DatedDate) }</dd>
-			<dt>Payments per year</dt>
-			<dd>
-				if terms.Fields().PaymentsPerYear==0 {
-					Unknown
-				} else {
-					{ strconv.Itoa(terms.Fields().PaymentsPerYear) }
-				}
-			</dd>
+			<dd>{ providedDate(terms.Fields().IssueDate) }</dd>
+			if terms.Fields().Type!=source.TreasuryBill || !terms.Fields().DatedDate.IsZero() {
+				<dt>Dated date</dt>
+				<dd>{ providedDate(terms.Fields().DatedDate) }</dd>
+			}
+			if terms.Fields().Type!=source.TreasuryBill {
+				<dt>Payments per year</dt>
+				<dd>
+					if terms.Fields().PaymentsPerYear==0 {
+						Not provided
+					} else {
+						{ strconv.Itoa(terms.Fields().PaymentsPerYear) }
+					}
+				</dd>
+			}
 		</dl>
 	}
 }

@@ -562,7 +562,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell("Reference evidence", csrf, "Activity", EvidencePage("OpenFIGI mapping", evidence.Retrieved, evidence.Request+"\n"+evidence.Response))).
+		templ.Handler(SectionShell("Reference evidence", csrf, "Activity", EvidencePage(evidence))).
 			ServeHTTP(w, r)
 	})
 

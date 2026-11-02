@@ -4,7 +4,9 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"path"
@@ -12,8 +14,67 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/source"
 )
+
+func provided(value string) string {
+	if value == "" {
+		return "Not provided"
+	}
+
+	return value
+}
+
+func readableJSON(value string) string {
+	var formatted bytes.Buffer
+	if json.Indent(&formatted, []byte(value), "", "  ") != nil {
+		return value
+	}
+
+	return formatted.String()
+}
+
+func providedDate(value financial.Date) string {
+	if value.IsZero() {
+		return "Not provided"
+	}
+
+	return value.String()
+}
+
+func identifierLabel(kind source.IdentifierKind) string {
+	switch kind {
+	case source.UnclassifiedFIGI:
+		return "Reported FIGI"
+	case source.VenueFIGI:
+		return "Venue FIGI"
+	case source.CompositeFIGI:
+		return "Composite FIGI"
+	case source.ShareClassFIGI:
+		return "Share-class FIGI"
+	case source.InstrumentFIGI:
+		return "Instrument FIGI"
+	default:
+		return strings.ToUpper(string(kind))
+	}
+}
+
+func identityFIGILabel(allocation string) string {
+	switch allocation {
+	case "share_class":
+		return identifierLabel(source.ShareClassFIGI)
+	case "composite":
+		return identifierLabel(source.CompositeFIGI)
+	case "instrument":
+		return identifierLabel(source.InstrumentFIGI)
+	case "venue":
+		return identifierLabel(source.VenueFIGI)
+	default:
+		return "Reference FIGI"
+	}
+}
 
 type (
 	pageKey   struct{}
