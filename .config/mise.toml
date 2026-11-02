@@ -23,8 +23,8 @@ description = "Run continuous integration tasks"
 depends = ["check", "build", "test:coverage", "test:race", "test:browser", "test:provider", "test:socket"]
 
 [tasks.'ci:pr']
-description = "Run PR checks with full behavior, focused races and browser smoke"
-depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser:smoke", "test:provider", "test:socket"]
+description = "Run PR checks with full behavior, focused races and full browser workflows"
+depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser", "test:provider", "test:socket"]
 
 [tasks.validate]
 description = "Generate, fix, and validate sources for local development"

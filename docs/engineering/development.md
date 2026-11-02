@@ -146,7 +146,19 @@ text search remain ordinary text operations.
 Build functional structure and data in the existing shell. Browser checks cover
 page/form/table structure, exact displayed data, navigation, commands, validation,
 progress/error/conflict states and user-visible outcomes. Keep semantic labels,
-working controls and keyboard access in each slice.
+working controls and keyboard access in each slice. Keep browser tests for behavior
+that needs a browser, such as persisted theme preferences, focus and authenticated
+workflows; check route responses and static navigation in HTTP/rendering tests.
+
+Specify query modes in browser actions: `chromedp.ByQuery` for one CSS match,
+`chromedp.ByQueryAll` for a set, and explicit `chromedp.BySearch` for intentional
+XPath queries. The implicit general search also matches attribute text: an opaque
+CSRF token containing `h1` can match a heading search and make a visibility wait
+block on hidden metadata. Keep random security values intact and make selection
+unambiguous. Browser waits must observe the intended page or UI state.
+
+PR and main CI run the same complete browser suite. A smaller smoke profile does
+not establish that interactive workflows pass.
 
 [DESIGN.md](../../DESIGN.md) is the visual standard. Choose focused affected workflows, with broader review at coherent
 boundaries. Screenshots supplement functional checks and require inspection.
