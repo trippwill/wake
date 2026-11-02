@@ -41,7 +41,7 @@ settings from `config describe`; retired acquisition settings are rejected.
 ### Connect and inspect
 
 Open **Connections → Add source connection**, enter a connection name, the saved
-Confirmation Query ID and the Flex Web Service token. See [IBKR setup](docs/providers/ibkr-flex.md) for
+Confirmation Query ID and the Flex Web Service token. See [IBKR setup](.docs/providers/ibkr-flex.md) for
 query preparation. Wake encrypts the token and performs one bounded discovery
 attempt. It shows the available accounts and any missing profile information.
 
@@ -106,7 +106,7 @@ operational state and retains credentials. Start Wake, select **Resume upstream
 work**, then confirm the rediscovered account. A credentials reset retains financial
 history; repair access in **Connections** and resume. Configuration, keys and browser
 access are retained. See the
-[development guide](docs/engineering/development.md#workspaces-and-tools) for details.
+[development guide](.docs/engineering/development.md#workspaces-and-tools) for details.
 
 ### Find help
 
@@ -127,7 +127,7 @@ configuration, then restart. Setup retains the credential key; keep that key saf
 The private Unix socket publishes accepted accounts, instruments, listings and
 activity with stable identities, exact values and complete versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
-[standalone consumer scenarios](docs/engineering/development.md#socket-consumer-acceptance).
+[standalone consumer scenarios](.docs/engineering/development.md#socket-consumer-acceptance).
 For a running instance, use its socket path and an existing client-state directory:
 
 ```sh
@@ -143,6 +143,6 @@ A different warehouse installs a clearly reported new baseline.
 ## Contribute
 
 The Go module is `go.trippwill.dev/wake`. Start with [AGENTS.md](AGENTS.md), the
-[documentation index](docs/README.md) and [development guidance](docs/engineering/development.md).
-The [product brief](docs/product/brief.md) owns Wake's north star, [current coverage](docs/product/coverage.md)
+[documentation index](.docs/README.md) and [development guidance](.docs/engineering/development.md).
+The [product brief](.docs/product/brief.md) owns Wake's north star, [current coverage](.docs/product/coverage.md)
 describes supported behavior and limitations, and [DESIGN.md](DESIGN.md) owns visual design.

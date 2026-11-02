@@ -53,6 +53,6 @@ representative summaries are included. The overlap timeline is authored; it does
 not measure IBKR latency. Exercise, explicit source cancellation/replacement,
 adjusted deliverables and multiple accounts are not covered. Activity Flex processing is outside the current coverage.
 
-The [coverage guide](../../../docs/product/coverage.md) owns financial coverage
+The [coverage guide](../../../.docs/product/coverage.md) owns financial coverage
 independently of this fixture. Synthetic tests do not establish upstream arrival
 latency, account discovery across configurations or broker-wide reporting coverage.

@@ -5,20 +5,20 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Read for the task
 
-- Start with the user's request, [product brief](docs/product/brief.md) and
-  [current coverage](docs/product/coverage.md) as relevant.
-- Use [financial language](docs/product/domain.md) for meanings and policy choices,
-  and [architecture](docs/engineering/architecture.md) for high-level boundaries.
+- Start with the user's request, [product brief](.docs/product/brief.md) and
+  [current coverage](.docs/product/coverage.md) as relevant.
+- Use [financial language](.docs/product/domain.md) for meanings and policy choices,
+  and [architecture](.docs/engineering/architecture.md) for high-level boundaries.
   Source and tests own package layouts, schemas, signatures and exact behavior.
 - Use [DESIGN.md](DESIGN.md) as the portable visual-design standard and
-  [development](docs/engineering/development.md) for tools and check selection.
+  [development](.docs/engineering/development.md) for tools and check selection.
 - The [README](README.md#using-wake-v010) is a descriptive quick helper for
   v0.1.0 use, not an authoritative specification. Keep it in the present tense,
   within selected release scope, without deprecated workflows or future speculation.
-  [IBKR setup](docs/providers/ibkr-flex.md) provides source setup help.
+  [IBKR setup](.docs/providers/ibkr-flex.md) provides source setup help.
   CLI help and published contracts own exact public interfaces.
 - Use [$wake-docs](.agents/skills/wake-docs/SKILL.md) for substantive documentation
-  changes. The [index](docs/README.md) assigns document ownership. Do not recreate
+  changes. The [index](.docs/README.md) assigns document ownership. Do not recreate
   deleted historical plans or prose copies of implementation details.
 
 ## Constraints
@@ -56,7 +56,10 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Development and delivery
 
-- Mise is the only task runner. Pins/tasks live in [.config/mise.toml](.config/mise.toml).
+- Keep visible root directories for Go code, with `api` and `testdata` as explicit
+  exceptions. Put repository support in dot directories: documentation in `.docs`
+  and Mise configuration, locks and tasks in `.mise`.
+- Mise is the only task runner. Pins/tasks live in [.mise/config.toml](.mise/config.toml).
   Run `mise install`. Select tests and checks from the changed code, affected
   callers, and integration boundaries; include race, browser, or coverage checks
   when the change warrants them. Stage generated changes and run
@@ -85,13 +88,13 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
   level for each task. Every presented plan includes a recommendation for the
   implementation model and reasoning level.
 - Normally use one chat, worktree, and branch per reviewable change, usually
-  one PR. Reuse a suitable existing checkout. See the [development guide](docs/engineering/development.md#workspaces-and-tools)
+  one PR. Reuse a suitable existing checkout. See the [development guide](.docs/engineering/development.md#workspaces-and-tools)
   for setup and isolated review instances.
 - Implement, update affected docs, validate, and stage freely. Present the
   changed behavior, checks actually performed, material gaps, and how to try it.
   Use one Conventional Commit per logical change, explaining why.
 - Deliver coherent changes with meaningful functional verification. See the
-  [development guide](docs/engineering/development.md#browser-and-frontend-verification)
+  [development guide](.docs/engineering/development.md#browser-and-frontend-verification)
   for browser and frontend checks.
 - Obtain one explicit approval covering both commit and push of the reviewed
   changes to the stated destination. PRs are the default: publish the branch

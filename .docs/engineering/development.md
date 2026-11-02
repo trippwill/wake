@@ -11,7 +11,7 @@ instance with synthetic evidence and its own configuration, data, state, runtime
 paths and admin port. Do not use private operator reports as repository fixtures.
 
 Mise is the task runner. Run `mise install` in a new checkout. Use `mise tasks`
-and [.config/mise.toml](../../.config/mise.toml) to discover tasks, dependencies
+and [.mise/config.toml](../../.mise/config.toml) to discover tasks, dependencies
 and exact tool pins; [go.mod](../../go.mod) owns Go dependencies. Keep the lock file
 aligned with intentional tool updates. Avoid machine-global configuration changes.
 

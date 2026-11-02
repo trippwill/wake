@@ -152,7 +152,7 @@ DESIGN.md is Wake's visual-design standard. Its structured frontmatter is the
 portable design baseline. CSS, assets and templates implement that standard;
 inspect their source for exact rendered behavior rather than maintaining another
 component inventory. Keep the baseline aligned with approved design changes.
-The [product brief](docs/product/brief.md) and [financial language](docs/product/domain.md)
+The [product brief](.docs/product/brief.md) and [financial language](.docs/product/domain.md)
 own product intent and meaning.
 
 Wake is a calm, precise workspace for financial evidence. Steel and deep-steel
@@ -313,5 +313,5 @@ Review both themes, narrow layouts, keyboard use, feedback and evidence comparis
 with synthetic data. Inspect logos on their intended surfaces and favicons at
 small sizes after asset changes. Screenshots supplement structure/data checks;
 they do not establish full accessibility certification. The
-[development guide](docs/engineering/development.md#browser-and-frontend-verification)
+[development guide](.docs/engineering/development.md#browser-and-frontend-verification)
 explains check selection. UI polish has its own horizontal delivery slice.

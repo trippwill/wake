@@ -408,7 +408,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	return fields, nil
 }
 
-// IBKR's observed convention is recorded in docs/research/ibkr-figi-allocation.md.
+// IBKR's observed convention is recorded in .docs/research/ibkr-figi-allocation.md.
 func reportedFIGIKind(assetCategory string) source.IdentifierKind {
 	switch assetCategory {
 	case "STK", "OPT":
