@@ -362,6 +362,14 @@ func TestMasterKeyValidation(t *testing.T) {
 	}
 }
 
+func TestDomainSeparatedAAD(t *testing.T) {
+	got := domainSeparatedAAD("test/label\x00", []byte{0, 1, 2})
+	want := []byte("test/label\x00\x00\x01\x02")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("domainSeparatedAAD() = %v, want %v", got, want)
+	}
+}
+
 func stringsContain(value, substring string) bool {
 	return bytes.Contains([]byte(value), []byte(substring))
 }
