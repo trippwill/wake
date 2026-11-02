@@ -11,8 +11,12 @@ for research content and maintenance rules.
 
 ## Memos
 
-- [OpenFIGI identity levels and naming](openfigi-identity.md) — allocation semantics, public equity/option/debt experiments and [compact request/results](openfigi-authority-evidence.json).
-- [OpenFIGI API budgets and result interpretation](openfigi-api-behavior.md) — documented limits, observed headers and failure distinctions.
+- [OpenFIGI identity levels and naming](openfigi-identity.md) — allocation semantics, public
+  equity/option/debt experiments and [compact request/results](openfigi-authority-evidence.json).
+- [OpenFIGI API budgets and result interpretation](openfigi-api-behavior.md) — documented limits,
+  observed headers and failure distinctions.
 
-- [IBKR debt reporting](ibkr-debt-reporting.md) — reported nominal amounts, price and monetary roles, and the limits of Flex configuration documentation.
-- [IBKR FIGI allocation](ibkr-figi-allocation.md) — the observed source convention across 56 distinct reported identifiers, its adoption and coverage limits.
+- [IBKR debt reporting](ibkr-debt-reporting.md) — reported nominal amounts, price and monetary
+  roles, and the limits of Flex configuration documentation.
+- [IBKR FIGI allocation](ibkr-figi-allocation.md) — the observed source convention across 56
+  distinct reported identifiers, its adoption and coverage limits.

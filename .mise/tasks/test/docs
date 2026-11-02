@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify Markdown discovery and failures using disposable documents"
+#MISE tools = { "github:mrueg/goldmark-lint" = "0.6.1", "aqua:lycheeverse/lychee" = "0.24.2" }
+set -euo pipefail
+root=$PWD
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+cd "$workspace"
+git init --quiet
+cp "$root/.markdownlint.yaml" .
+mkdir .docs
+printf '# Topic\n' > '.docs/topic with spaces.md'
+printf '# Guide\n\n[Topic](.docs/topic%%20with%%20spaces.md#topic)\n' > README.md
+printf 'ignored.md\n' > .gitignore
+printf '[Broken](missing.md)\n' > ignored.md
+
+bash "$root/.mise/tasks/docs/lint"
+bash "$root/.mise/tasks/docs/links/_default"
+
+printf '\n%s\n' 'This prose line intentionally exceeds the configured one hundred column limit to prove that hidden untracked Markdown files are checked.' >> '.docs/topic with spaces.md'
+if bash "$root/.mise/tasks/docs/lint" > result 2>&1; then
+  printf 'Expected lint failure in a hidden untracked file\n' >&2
+  exit 1
+fi
+printf '# Topic\n' > '.docs/topic with spaces.md'
+
+printf '# Guide\n\n[Topic](.docs/topic%%20with%%20spaces.md#missing)\n' > README.md
+if bash "$root/.mise/tasks/docs/links/_default" > result 2>&1; then
+  printf 'Expected a broken cross-file anchor to fail\n' >&2
+  exit 1
+fi
+rm '.docs/topic with spaces.md'
+if bash "$root/.mise/tasks/docs/links/_default" > result 2>&1; then
+  printf 'Expected a missing local destination to fail\n' >&2
+  exit 1
+fi
+printf 'Markdown discovery and negative checks passed\n'

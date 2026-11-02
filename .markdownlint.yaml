@@ -1,0 +1,8 @@
+default: true
+MD013:
+  line_length: 100
+  code_blocks: false
+  tables: false
+MD025:
+  # DESIGN.md has a nested typography.title field, not a document title.
+  front_matter_title: "^$"

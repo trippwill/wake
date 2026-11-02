@@ -4,9 +4,10 @@ Resolving an equity share class can produce many market representations and tick
 strings. Identity grouping and choosing a display name are separate decisions.
 An identifier's source field name does not establish its FIGI allocation level.
 
-Checked 2026-11-01 against OMG FIGI 1.3, current allocation rules and anonymous mapping experiments. Earlier equity observations below are retained with their original conditions.
-This is supporting research; [financial policy](../product/domain.md#instruments-and-representations)
-owns Wake's selected instrument model.
+Checked 2026-11-01 against OMG FIGI 1.3, current allocation rules and anonymous mapping experiments.
+Earlier equity observations below are retained with their original conditions. This is supporting
+research; [financial policy](../product/domain.md#instruments-and-representations) owns Wake's
+selected instrument model.
 
 ## Documented allocation and lookup behavior
 
@@ -126,10 +127,10 @@ credentials or query filters were sent. Counts are observations, not guarantees.
   metadata, consistent with its different identity allocation.
 
 To repeat, POST each recorded request in JSON arrays of at most ten jobs to
-https://api.openfigi.com/v3/mapping with Content-Type: application/json and no API
-key. Respect returned rate limits. Count rows, distinct explicit parents, labels
-and classification combinations; inspect incomplete records separately. A changed
-result should update this memo rather than become an unexplained test failure.
+<https://api.openfigi.com/v3/mapping> with Content-Type: application/json and no API key. Respect
+returned rate limits. Count rows, distinct explicit parents, labels and classification combinations;
+inspect incomplete records separately. A changed result should update this memo rather than become
+an unexplained test failure.
 
 ### Engineering inferences and limits
 

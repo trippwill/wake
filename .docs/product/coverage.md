@@ -65,7 +65,6 @@ This selected deployment discards warehouse-only decisions and evidence; preserv
 any needed old warehouse before explicitly resetting. No automatic migration or
 historical updater is supplied by this change.
 
-
 Source-established relationships are useful when present. A missing relationship
 does not authorize an inferred stock delivery, cash payment or strategy. Family
 and market examples are representative, not rejection lists
@@ -115,16 +114,16 @@ and warehouse replacement. In-process tests alone do not establish this boundary
 
 ## Compatibility
 
-The executable targets Linux. Storage uses explicit pre-release development
-formats with no automatic compatibility migration. Unsupported stores fail closed
-with recreate guidance and preserve the original files. Back up stores and sidecars
-before explicitly moving or resetting them. The warehouse retains financial
-evidence, decisions and operational progress in one database. The encrypted access store has an independent path. Replacing that
-store preserves the warehouse and pauses upstream work until access is repaired
-and explicitly resumed; recreating the warehouse preserves reusable encrypted
-access but establishes new financial identities. See
-[architecture](../engineering/architecture.md) for trust and recovery boundaries and [development](../engineering/development.md)
-for verification and reset procedures. No version tag is implied by this coverage.
+The executable targets Linux. Storage uses explicit pre-release development formats with no
+automatic compatibility migration. Unsupported stores fail closed with recreate guidance and
+preserve the original files. Back up stores and sidecars before explicitly moving or resetting them.
+The warehouse retains financial evidence, decisions and operational progress in one database. The
+encrypted access store has an independent path. Replacing that store preserves the warehouse and
+pauses upstream work until access is repaired and explicitly resumed; recreating the warehouse
+preserves reusable encrypted access but establishes new financial identities. See
+[architecture](../engineering/architecture.md) for trust and recovery boundaries and
+[development](../engineering/development.md) for verification and reset procedures. No version tag
+is implied by this coverage.
 
 Admin activity, instrument, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for
@@ -145,4 +144,7 @@ precision, source disagreement, read-only checks, decision release and transacti
 rollback. The retained-history contribution requirement remains in the
 [development guide](../engineering/development.md); there is no automatic updater.
 
-Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group review behavior. Large retained groups still require memory and calculation inside the writer transaction; these checks do not establish unlimited history capacity.
+Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each
+replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group
+review behavior. Large retained groups still require memory and calculation inside the writer
+transaction; these checks do not establish unlimited history capacity.

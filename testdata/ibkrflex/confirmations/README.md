@@ -1,10 +1,10 @@
 # Synthetic IBKR Confirmation reports
 
-These fixtures use the IBKR Confirmation XML element/attribute shape. They contain fictional activity, not anonymized copies of
-private trades. Account and provider IDs, dates, quantities, prices, fees and
-execution histories are newly authored. Public Microsoft, gilt and Treasury-bill
-security metadata is retained for reference-resolution examples. Option contracts
-are fictional and have no asserted FIGI, ISIN or CUSIP.
+These fixtures use the IBKR Confirmation XML element/attribute shape. They contain fictional
+activity, not anonymized copies of private trades. Account and provider IDs, dates, quantities,
+prices, fees and execution histories are newly authored. Public Microsoft, gilt and Treasury-bill
+security metadata is retained for reference-resolution examples. Option contracts are fictional and
+have no asserted FIGI, ISIN or CUSIP.
 
 ## Files and expected sequence
 
@@ -48,10 +48,10 @@ report attribute names, with newly authored or empty values.
 
 ## Limits
 
-These are focused synthetic scenarios, not complete production exports. Only two
-representative summaries are included. The overlap timeline is authored; it does
-not measure IBKR latency. Exercise, explicit source cancellation/replacement,
-adjusted deliverables and multiple accounts are not covered. Activity Flex processing is outside the current coverage.
+These are focused synthetic scenarios, not complete production exports. Only two representative
+summaries are included. The overlap timeline is authored; it does not measure IBKR latency.
+Exercise, explicit source cancellation/replacement, adjusted deliverables and multiple accounts are
+not covered. Activity Flex processing is outside the current coverage.
 
 The [coverage guide](../../../.docs/product/coverage.md) owns financial coverage
 independently of this fixture. Synthetic tests do not establish upstream arrival

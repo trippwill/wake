@@ -40,10 +40,10 @@ settings from `config describe`; retired acquisition settings are rejected.
 
 ### Connect and inspect
 
-Open **Connections → Add source connection**, enter a connection name, the saved
-Confirmation Query ID and the Flex Web Service token. See [IBKR setup](.docs/providers/ibkr-flex.md) for
-query preparation. Wake encrypts the token and performs one bounded discovery
-attempt. It shows the available accounts and any missing profile information.
+Open **Connections → Add source connection**, enter a connection name, the saved Confirmation Query
+ID and the Flex Web Service token. See [IBKR setup](.docs/providers/ibkr-flex.md) for query
+preparation. Wake encrypts the token and performs one bounded discovery attempt. It shows the
+available accounts and any missing profile information.
 
 Select **Confirm account**, enter a display name, and confirm the available
 details. Leave an unknown account currency empty. Confirmation activates one
@@ -138,7 +138,6 @@ The consumer validates a complete accepted snapshot and atomically saves its mir
 and version in a private SQLite database. Repeat the command to synchronize, or use
 `socket-consumer:follow` to keep reading. Conditional reads skip unchanged snapshots.
 A different warehouse installs a clearly reported new baseline.
-
 
 ## Contribute
 
