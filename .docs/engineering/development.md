@@ -195,6 +195,12 @@ contacts external sites and is an explicit, network-dependent check outside the 
 Markdown tool versions are declared on the file tasks that use them and resolved
 in the project lockfile. They are installed and activated for those tasks.
 
+CI runs these documentation checks for every change, since removing or renaming
+code can break a documentation link. Markdown-only changes skip the application
+suites. Mixed changes, non-Markdown changes, tag builds and manual runs retain
+the application suites. Failed change classification defaults to full validation;
+the final `ci` gate requires documentation success and every expected suite result.
+
 ## Socket consumer acceptance
 
 [Current coverage](../product/coverage.md) owns acceptance;

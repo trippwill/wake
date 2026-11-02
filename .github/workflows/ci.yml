@@ -13,13 +13,9 @@ on:
         type: boolean
         default: false
   pull_request:
-    paths-ignore:
-      - '**/*.md'
   push:
     tags: ["*"]
     branches: ["main", "codex/simplification-integration"]
-    paths-ignore:
-      - '**/*.md'
 
 permissions:
   contents: read
@@ -29,7 +25,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.changes.outputs.full }}
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+        with:
+          install: false
+          cache: false
+      - id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          FORCE_FULL: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+        run: mise run --skip-tools ci:changes >> "$GITHUB_OUTPUT"
+
+  markdown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: github:mrueg/goldmark-lint aqua:lycheeverse/lychee
+          cache: ${{ inputs.cold_cache != true }}
+      - run: "mise run --skip-tools docs:check ::: test:ci"
+
   checks:
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +77,8 @@ jobs:
       - run: mise run test:socket
 
   behavior:
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -65,6 +100,8 @@ jobs:
           if-no-files-found: error
 
   race:
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -85,6 +122,8 @@ jobs:
           if-no-files-found: error
 
   browser:
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -113,10 +152,21 @@ jobs:
 
   ci:
     if: always()
-    needs: [checks, behavior, race, browser]
+    needs: [changes, markdown, checks, behavior, race, browser]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every check to succeed
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          install: false
+          cache: false
         env:
-          RESULTS: ${{ join(needs.*.result, ',') }}
-        run: test "$RESULTS" = 'success,success,success,success'
+          MISE_NO_HOOKS: "1"
+      - name: Require every expected check to succeed
+        env:
+          MISE_NO_HOOKS: "1"
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          MARKDOWN_RESULT: ${{ needs.markdown.result }}
+          FULL_CI: ${{ needs.changes.outputs.full }}
+          APPLICATION_RESULTS: ${{ format('{0},{1},{2},{3}', needs.checks.result, needs.behavior.result, needs.race.result, needs.browser.result) }}
+        run: mise run --skip-tools ci:result
