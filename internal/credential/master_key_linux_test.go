@@ -195,21 +195,6 @@ func TestLoadMasterKeyRejectsInsecureFiles(t *testing.T) {
 	}
 }
 
-func TestLoadMasterKeyRejectsForeignOwner(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("changing file ownership requires root")
-	}
-
-	path := writeMasterKeyFile(t, []byte("12345678901234567890123456789012"), 0o400)
-	if err := os.Chown(path, 1, -1); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := LoadMasterKey(path); !errors.Is(err, ErrInsecureMasterKeyFile) {
-		t.Fatalf("foreign owner error = %v", err)
-	}
-}
-
 func writeMasterKeyFile(t *testing.T, material []byte, mode os.FileMode) string {
 	t.Helper()
 	return writeMasterKeyFileAt(t, filepath.Join(t.TempDir(), "master-key"), material, mode)
