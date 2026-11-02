@@ -1,3 +1,7 @@
 mise.local.*
+/.mise/config.local.toml
+/.mise/config.*.local.toml
+/.mise/mise.local.lock
+/.mise/mise.*.local.lock
 coverage.txt
 /.cache/

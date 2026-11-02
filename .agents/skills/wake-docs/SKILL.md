@@ -7,8 +7,8 @@ description: Maintain Wake documentation when creating, reorganizing, or synchro
 
 Use the active checkout, including staged and unstaged changes. Repository scope
 and delivery approval live in [AGENTS.md](../../../AGENTS.md). Use the
-[docs index](../../../docs/README.md) to find document owners and the
-[development guide](../../../docs/engineering/development.md#documentation-maintenance)
+[docs index](../../../.docs/README.md) to find document owners and the
+[development guide](../../../.docs/engineering/development.md#documentation-maintenance)
 for delivery checks.
 
 ## Folder purposes and rules
@@ -17,7 +17,7 @@ Choose the folder by the question the material answers. Each document needs one
 job within that folder's purpose. Before adding a folder, establish its distinct
 purpose and content rules here; do not create another home for existing guidance.
 
-### `docs/product/`: what Wake is for and what its financial concepts mean
+### `.docs/product/`: what Wake is for and what its financial concepts mean
 
 Preserve the north star, user needs, product boundaries, financial meanings and
 durable policy decisions. Explain intent and rationale independently of a release
@@ -26,7 +26,7 @@ or implementation. Broader product ambition does not establish implemented cover
 Keep schedules, task status, port strategy, package layouts, database schemas and
 API catalogs out. Visual design belongs in root `DESIGN.md`.
 
-### `docs/engineering/`: how engineering decisions support the product
+### `.docs/engineering/`: how engineering decisions support the product
 
 Explain high-level architectural responsibilities, boundaries, consequential
 technical choices and rationale, plus the development and verification workflow.
@@ -37,7 +37,7 @@ narrate the codebase or maintain prose
 copies of packages, signatures, schemas, configuration options or test results.
 Source, tests, tool configuration, CLI help and OpenAPI own those details.
 
-### `docs/providers/`: how to configure and understand a particular source
+### `.docs/providers/`: how to configure and understand a particular source
 
 Provide practical source-specific access/query setup, input meaning, reporting
 limitations, pacing and troubleshooting that help someone use or interpret that
@@ -49,7 +49,7 @@ them. Do not put core architecture, generic extension contracts or speculative
 integrations here. Avoid copied vendor manuals and payload/field catalogs that
 source code or upstream documentation already supplies.
 
-### `docs/research/`: what external research and experiments have taught us
+### `.docs/research/`: what external research and experiments have taught us
 
 Memoize durable findings that would save someone a meaningful repeat investigation.
 Use focused memos organized around a question, with the conclusion first. Record
@@ -70,19 +70,19 @@ version or environment.
 
 ## Root documents
 
-`docs/README.md` is navigation and document ownership, not another specification.
+`.docs/README.md` is navigation and document ownership, not another specification.
 The repository `README.md` is a concise, descriptive setup and usage helper for
 selected v0.1.0 behavior. Write it in the present tense, without future speculation
 or deprecated workflows; it is not authoritative for requirements, acceptance or
 implementation status. Keep commands grounded in help/source and avoid invented
-screen labels. Source-specific setup detail may link to `docs/providers/`.
+screen labels. Source-specific setup detail may link to `.docs/providers/`.
 
-`docs/product/coverage.md` owns supported financial coverage, compatibility limits
+`.docs/product/coverage.md` owns supported financial coverage, compatibility limits
 and the boundaries required to verify them. Keep delivery chronology and completed
 task inventories out of current documentation.
 
 Root `DESIGN.md` is the portable visual-design standard. `AGENTS.md` owns repository
-instructions. Link to those owners instead of creating copies under `docs/`.
+instructions. Link to those owners instead of creating copies under `.docs/`.
 
 ## Maintain and verify
 
@@ -96,7 +96,7 @@ actual diff and affected source, tests, configuration and public contracts. Chec
 CLI claims against dispatch/help, wire claims against OpenAPI, storage claims
 against SQL sources and commands against Mise tasks. Edit authoritative sources,
 not generated output. Retired code does not dictate the selected release's usage
-helper; supported coverage belongs in `docs/product/coverage.md`.
+helper; supported coverage belongs in `.docs/product/coverage.md`.
 
 For moves or deletions, repair inbound links and anchors. Preserve useful current
 intent and unresolved work unless the user changes scope. Remove redundant or
