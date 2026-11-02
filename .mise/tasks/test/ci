@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify CI routing and result gates with disposable Git history"
+set -euo pipefail
+root=$PWD
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+cd "$workspace"
+git init --quiet --initial-branch=main
+
+commit() {
+  git add -A
+  git -c user.name=Wake -c user.email=wake@example.org commit --quiet -m fixture
+  git rev-parse HEAD
+}
+
+route() {
+  local expected=$1 event=$2 base=$3 head=$4 force=${5:-false} result
+  result=$(GITHUB_EVENT_NAME=$event BASE_SHA=$base HEAD_SHA=$head FORCE_FULL=$force bash "$root/.mise/tasks/ci/changes" 2> "$workspace/.git/route-error")
+  if [[ "$result" != "full=$expected" ]]; then
+    printf 'Expected full=%s for %s, got %s\n' "$expected" "$event" "$result" >&2
+    exit 1
+  fi
+}
+
+printf '# Guide\n' > README.md
+printf 'package fixture\n' > main.go
+base=$(commit)
+git switch --quiet -c docs
+mkdir .docs
+printf '# Hidden guide\n' > '.docs/guide with spaces.md'
+docs=$(commit)
+route false push "$base" "$docs"
+route false pull_request "$base" "$docs"
+git rm --quiet README.md
+deleted=$(commit)
+route false push "$docs" "$deleted"
+
+git switch --quiet main
+printf '// Source update\n' >> main.go
+printf '\nMore documentation.\n' >> README.md
+code=$(commit)
+route true push "$base" "$code"
+route false pull_request "$code" "$deleted"
+git mv main.go renamed.md
+renamed=$(commit)
+route true push "$code" "$renamed"
+git rm --quiet renamed.md
+printf 'package fixture\n' > deleted.go
+added=$(commit)
+git rm --quiet deleted.go
+removed=$(commit)
+route true push "$added" "$removed"
+printf 'default: true\n' > .markdownlint.yaml
+tooling=$(commit)
+route true push "$removed" "$tooling"
+route true push "$tooling" "$tooling"
+route true push "$(printf '%040d' 0)" "$tooling"
+route true push missing "$tooling"
+route true push "$(printf '%040d' 1)" "$tooling"
+route true push "$base" "$docs" true
+route true workflow_dispatch "$base" "$docs"
+
+CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,success,success,success bash "$root/.mise/tasks/ci/result"
+CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"
+for result in failure cancelled skipped; do
+  if CHANGES_RESULT=$result MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+    printf 'Expected routing result %s to fail the gate\n' "$result" >&2; exit 1
+  fi
+  if CHANGES_RESULT=success MARKDOWN_RESULT=$result FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+    printf 'Expected Markdown result %s to fail the gate\n' "$result" >&2; exit 1
+  fi
+  if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,$result,success,success bash "$root/.mise/tasks/ci/result"; then
+    printf 'Expected application result %s to fail the gate\n' "$result" >&2; exit 1
+  fi
+done
+if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=success,cancelled,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+  printf 'Expected unexpected application results to fail the Markdown-only gate\n' >&2; exit 1
+fi
+printf 'CI routing and result gates passed\n'

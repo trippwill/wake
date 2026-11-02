@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Select full or Markdown-only CI from the event's Git change set"
+set -euo pipefail
+
+if [[ ${FORCE_FULL:-false} == true || ! ${BASE_SHA:-} =~ ^[0-9a-f]{40}$ || ! ${HEAD_SHA:-} =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'full=true\n'
+  exit 0
+fi
+if [[ $BASE_SHA =~ ^0+$ ]]; then
+  printf 'full=true\n'
+  exit 0
+fi
+
+case "${GITHUB_EVENT_NAME:-}" in
+  pull_request) revisions=("$BASE_SHA...$HEAD_SHA") ;;
+  push) revisions=("$BASE_SHA" "$HEAD_SHA") ;;
+  *) printf 'full=true\n'; exit 0 ;;
+esac
+
+changes=$(mktemp)
+trap 'rm -f "$changes"' EXIT
+# Include both sides of renames so a non-Markdown source cannot disappear unnoticed.
+if ! git diff --name-only --no-renames -z "${revisions[@]}" -- > "$changes"; then
+  printf 'full=true\n'
+  exit 0
+fi
+
+full=false
+if [[ ! -s "$changes" ]]; then
+  full=true
+fi
+while IFS= read -r -d '' path; do
+  case "$path" in
+    *.md|*.markdown) ;;
+    *) full=true; break ;;
+  esac
+done < "$changes"
+printf 'full=%s\n' "$full"

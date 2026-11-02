@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Require documentation and every expected application CI result"
+set -euo pipefail
+
+[[ ${CHANGES_RESULT:-} == success && ${MARKDOWN_RESULT:-} == success ]]
+case "${FULL_CI:-}" in
+  true) [[ ${APPLICATION_RESULTS:-} == success,success,success,success ]] ;;
+  false) [[ ${APPLICATION_RESULTS:-} == skipped,skipped,skipped,skipped ]] ;;
+  *) exit 1 ;;
+esac
