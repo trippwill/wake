@@ -299,6 +299,11 @@
   }
 
   const grids = new Map();
+  const gridPageSizes = [10, 25, 50, 100, 200];
+  const gridPageSize = (value) => {
+    const size = typeof value === "string" ? Number(value) : value;
+    return gridPageSizes.includes(size) ? size : null;
+  };
   const gridColumns = {
     activity: [
       ["label", "Activity"],
@@ -406,6 +411,7 @@
           pending: false,
           focus: null,
           selectionRestored: false,
+          restoring: false,
         };
         const rememberFocus = () => {
           state.focus = null;
@@ -461,7 +467,18 @@
           }
           target.searchParams.set("page", String(parameters.page || 1));
           target.searchParams.set("size", String(parameters.size || 50));
-          for (const key of ["sort", "dir", "page"])
+          const resetFilters = region.querySelector(
+            "[data-grid-reset-filters]",
+          );
+          if (resetFilters) {
+            const destination = new URL(resetFilters.href, location.href);
+            destination.searchParams.set(
+              "size",
+              target.searchParams.get("size"),
+            );
+            resetFilters.href = destination.href;
+          }
+          for (const key of ["sort", "dir", "page", "size"])
             current.searchParams.set(
               gridParameter(region, key),
               target.searchParams.get(key),
@@ -529,13 +546,15 @@
         const table = new window.Tabulator(element, {
           index: "id",
           layout: "fitColumns",
-          maxHeight: "32rem",
+          height: "100%",
           dataLoader: false,
           renderVertical: "basic",
           columns: createColumns(),
           pagination: true,
           paginationMode: "remote",
-          paginationSize: 50,
+          paginationSize:
+            gridPageSize(params.get(gridParameter(region, "size"))) || 50,
+          paginationSizeSelector: [...gridPageSizes],
           paginationInitialPage: Number(
             params.get(gridParameter(region, "page")) || 1,
           ),
@@ -543,22 +562,34 @@
           filterMode: "remote",
           initialSort: [{ column: initialSort, dir: initialDirection }],
           columnHeaderSortMulti: false,
-          persistence: { columns: true },
+          langs: { default: { pagination: { page_size: "Rows per page" } } },
+          persistence: { columns: true, page: { size: true, page: false } },
           persistenceID: `wake-${kind}`,
           persistenceMode: "local",
           persistenceReaderFunc: (id, type) => {
+            if (type === "page") {
+              const size = gridPageSize(
+                params.get(gridParameter(region, "size")),
+              );
+              if (size) return { paginationSize: size };
+            }
             try {
               const saved = JSON.parse(localStorage.getItem(`${id}-${type}`));
+              if (type === "page") {
+                const size = gridPageSize(saved?.paginationSize);
+                return size ? { paginationSize: size } : false;
+              }
               return Array.isArray(saved) ? saved : false;
             } catch {
               return false;
             }
           },
           persistenceWriterFunc: (id, type, data) => {
+            if (type === "page" && !gridPageSize(data.paginationSize)) return;
             try {
               localStorage.setItem(`${id}-${type}`, JSON.stringify(data));
             } catch {
-              // Layout preferences must not block table interactions.
+              // Browser preferences must not block table interactions.
             }
           },
           placeholder: "No matching records.",
@@ -570,6 +601,16 @@
         });
         state.table = table;
         grids.set(region, state);
+        let previousPageSize;
+        table.on("pageSizeChanged", (size) => {
+          const changed =
+            previousPageSize !== undefined && previousPageSize !== size;
+          previousPageSize = size;
+          if (!changed || state.restoring) return;
+          const url = new URL(location.href);
+          url.searchParams.delete("selected");
+          history.replaceState(null, "", url);
+        });
         const readPage = (background) =>
           requestData(
             region.dataset.gridUrl,
@@ -640,6 +681,9 @@
         table.on("dataProcessing", rememberFocus);
         table.on("tableBuilt", () => {
           element.setAttribute("aria-label", region.getAttribute("aria-label"));
+          const selector = element.querySelector(".tabulator-page-size");
+          selector.id = `${kind}-page-size`;
+          selector.previousElementSibling.htmlFor = selector.id;
         });
         table.on("renderComplete", () => {
           const sort = table.getSorters()[0];
@@ -792,14 +836,22 @@
         params.get(gridParameter(region, "dir")) ||
         (kind === "instruments" ? "asc" : "desc");
       state.selectionRestored = false;
+      state.restoring = true;
+      const size =
+        gridPageSize(params.get(gridParameter(region, "size"))) ||
+        gridPageSize(state.table.getPageSize()) ||
+        50;
+      if (state.table.getPageSize() !== size)
+        state.table.setPageSize(size).catch(() => {});
       state.table.setSort(field, dir);
       state.table
         .setPage(Number(params.get(gridParameter(region, "page")) || 1))
         .catch(() => {});
+      state.restoring = false;
     }
   });
   document.addEventListener("click", (event) => {
-    const link = event.target.closest("[data-grid] a[href]");
+    const link = event.target.closest("[data-grid] [data-record] a[href]");
     if (!link || location.pathname !== "/activity") return;
     const target = new URL(link.href, location.href);
     if (target.origin !== location.origin) return;

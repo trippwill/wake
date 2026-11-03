@@ -406,6 +406,15 @@ func registerWorkflowRoutes(
 			scope = application.ReviewScope
 		}
 
+		if scope != application.ReviewScope {
+			params := page(r.Context()).Query
+			switch params.Get("size") {
+			case "", "10", "25", "50", "100", "200":
+			default:
+				params.Del("size")
+			}
+		}
+
 		query, err := listQuery(r.Context(), scope)
 		if err != nil {
 			http.Error(w, "invalid list query", http.StatusBadRequest)

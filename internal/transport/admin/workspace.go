@@ -139,7 +139,7 @@ func localDestination(raw string) string {
 	}
 
 	q := url.Values{}
-	for _, key := range []string{"view", "q", "kind", "state", "sort", "dir", "page", "selected", "observations_q", "observations_sort", "observations_dir", "observations_page", "mode", "candidate", "location", "field"} {
+	for _, key := range []string{"view", "q", "kind", "state", "sort", "dir", "page", "size", "selected", "observations_q", "observations_sort", "observations_dir", "observations_page", "observations_size", "mode", "candidate", "location", "field"} {
 		if v := u.Query().Get(key); v != "" {
 			q.Set(key, v)
 		}
