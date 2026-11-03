@@ -223,6 +223,15 @@ Invalid saved state fails closed and remains available for inspection. Structure
 results go to stdout; immediate/periodic progress and failures go to stderr. A
 warehouse change is explicitly reported after a validated new baseline commits.
 
+Follow mode subscribes to SSE publication notifications and conditionally synchronizes
+when the announced warehouse/version differs from its committed mirror. It keeps one
+snapshot synchronization active at a time; queued events or reconnect catch changes
+that arrive during a download. Stream failures reconnect with exponential backoff
+capped at 30 seconds; `--interval` sets the initial reconnect delay. Missing complete
+frames for 45 seconds close an idle stream. Snapshot or mirror failures terminate
+follow visibly while preserving the prior mirror. SSE carries refresh hints with no
+replay cursor; it does not acknowledge successful mirroring or expose admin work.
+
 Run the automated synthetic proof:
 
 ```sh
@@ -235,9 +244,12 @@ runs it against a separate daemon process over the actual private Unix socket.
 Controlled providers and disposable stores exercise exact values, conditional
 reads, disconnect/restart, source correction conflict raise/clear, successive
 operator corrections, repeat-safe mirroring, access recovery, warehouse replacement
-and follow-mode progress/interruption. It is part of `mise run ci`. Persistence and
-handler tests cover snapshot consistency, transactional rollback, unchanged claims,
+and SSE follow/reconnect across these changes, progress and interruption. It is part
+of `mise run ci`. Persistence and handler tests cover snapshot consistency, transactional
+rollback, unchanged claims,
 late relationships, revision-bound explanations and structured read-only errors.
+Stream tests cover subscription/read races, commit-only signals, burst coalescing,
+disconnect cleanup, finite metadata reads, heartbeat lifetime and joined shutdown.
 Consumer checks cover interrupted responses, malformed/incomplete protocol, failed
 persistence and fixture assertions.
 

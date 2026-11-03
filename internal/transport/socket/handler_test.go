@@ -14,6 +14,10 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 )
 
+func (s reads) SubscribePublications() (<-chan struct{}, func()) {
+	return make(chan struct{}), func() {}
+}
+
 type reads struct {
 	err  error
 	item application.CanonicalResource
@@ -51,7 +55,7 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 	}
 	for _, path := range []string{"/v1/snapshot", "/v1/activity/financial-id", "/v1/activity/financial-id/explanation?revision=42"} {
 		w := httptest.NewRecorder()
-		NewHandler(reads{item: item}, nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		NewHandler(reads{item: item}, nil, nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 
 		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
 			t.Fatal(path, w.Code, w.Body.String())
@@ -104,7 +108,7 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		{"/v1/accounts", "GET", 404},
 	} {
 		w := httptest.NewRecorder()
-		NewHandler(reads{item: item}, nil).ServeHTTP(w, httptest.NewRequest(test.method, test.path, nil))
+		NewHandler(reads{item: item}, nil, nil).ServeHTTP(w, httptest.NewRequest(test.method, test.path, nil))
 
 		if w.Code != test.status {
 			t.Fatal(test, w.Code)
@@ -121,6 +125,7 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		w := httptest.NewRecorder()
 		NewHandler(
 			reads{err: test.err},
+			nil,
 			nil,
 		).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
 
@@ -158,6 +163,7 @@ func TestSnapshotConditionalHTTP(t *testing.T) {
 				Account:  &application.PublishedAccount{Name: "Synthetic"},
 			},
 		},
+		nil,
 		nil,
 	)
 	for _, condition := range []string{"", `"opaque-version"`, `W/"opaque-version"`, `"other", "opaque-version"`, "*"} {
@@ -198,7 +204,7 @@ func TestSnapshotConditionalSyntax(t *testing.T) {
 		{`unquoted`, 400},
 		{`"space tag"`, 400},
 	} {
-		h := NewHandler(reads{}, nil)
+		h := NewHandler(reads{}, nil, nil)
 		request := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
 		request.Header.Set("If-None-Match", test.condition)
 
@@ -214,7 +220,7 @@ func TestSnapshotConditionalSyntax(t *testing.T) {
 func TestRetiredResourceRedirectStaysWithinResourcePath(t *testing.T) {
 	for _, endpoint := range []string{"instruments", "listings"} {
 		w := httptest.NewRecorder()
-		NewHandler(reads{item: application.CanonicalResource{ID: "current /?id", Kind: endpoint}}, nil).
+		NewHandler(reads{item: application.CanonicalResource{ID: "current /?id", Kind: endpoint}}, nil, nil).
 			ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/"+endpoint+"/retired", nil))
 
 		if w.Code != http.StatusPermanentRedirect ||

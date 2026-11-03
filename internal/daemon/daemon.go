@@ -199,7 +199,7 @@ func run(
 		return err
 	}
 
-	server := newHTTPServer(requests.handler(socketapi.NewHandler(store, logger)), logger)
+	server := newHTTPServer(requests.handler(socketapi.NewHandler(store, stopping, logger)), logger)
 	server.BaseContext = func(net.Listener) context.Context { return requestsContext }
 	servers := []*http.Server{server}
 	listeners := []net.Listener{
