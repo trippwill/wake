@@ -502,7 +502,9 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		}
 
 		if eventOutput != nil {
-			deadline := time.Now().Add(5 * time.Second)
+			// The separate consumer backs off for up to 30 seconds while the daemon
+			// is deliberately offline. Allow one bounded reconnect after restart.
+			deadline := time.Now().Add(35 * time.Second)
 			for {
 				// The follower may legitimately skip the one-shot consumer's version.
 				lines := strings.TrimSpace(eventOutput.String())
