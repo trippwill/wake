@@ -122,4 +122,32 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			}
 		}
 	}
+
+	if err = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{
+		document.body.style.minHeight='200vh';
+		const make=options=>{
+			const node=document.createElement('div');document.body.append(node);
+			return node.animate([{opacity:0},{opacity:1}],options);
+		};
+		window.pausedCapture=make({duration:1000,fill:'forwards'});window.pausedCapture.pause();
+		window.progressCapture=make({duration:1000,iterations:Infinity});
+		window.scrollCapture=make({timeline:new ScrollTimeline({source:document.scrollingElement}),fill:'both'});
+		window.finiteCapture=make({duration:100,fill:'forwards'});
+	})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	settle, stopSettle := context.WithTimeout(ctx, 2*time.Second)
+	defer stopSettle()
+
+	if err = chromedp.Run(settle, testbrowser.SettleAnimations()); err != nil {
+		t.Fatal("capture must not wait for paused, progress or scroll-driven animations", err)
+	}
+
+	var settled bool
+	if err = chromedp.Run(ctx, chromedp.Evaluate(`window.finiteCapture.playState==='finished'&&
+		window.pausedCapture.playState==='paused'&&window.progressCapture.playState==='running'&&
+		window.scrollCapture.playState!=='finished'`, &settled)); err != nil || !settled {
+		t.Fatal("capture did not settle finite transitions while preserving other animations", settled, err)
+	}
 }

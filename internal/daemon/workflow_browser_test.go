@@ -234,11 +234,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			)
 
 			// Capture the settled theme, including finite CSS control transitions.
-			check(chromedp.Evaluate(
-				`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))).then(()=>Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))))`,
-				nil,
-				func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
-			))
+			check(testbrowser.SettleAnimations())
 
 			var png []byte
 			check(chromedp.FullScreenshot(&png, 90))
