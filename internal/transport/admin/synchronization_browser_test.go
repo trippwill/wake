@@ -177,7 +177,14 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		window.pausedCapture=make({duration:1000,fill:'forwards'});window.pausedCapture.pause();
 		window.progressCapture=make({duration:1000,iterations:Infinity});
 		window.scrollCapture=make({timeline:new ScrollTimeline({source:document.scrollingElement}),fill:'both'});
-		window.finiteCapture=make({duration:100,fill:'forwards'});
+		window.finiteCapture=make({duration:500,fill:'forwards'});
+  Object.defineProperty(window.finiteCapture,'finished',{get:()=>new Promise(()=>{})});
+  window.finalCapturePaint=false;
+  const frame=requestAnimationFrame.bind(window);
+  window.requestAnimationFrame=callback=>frame(time=>{
+   if(window.finiteCapture.playState==='finished')window.finalCapturePaint=true;
+   callback(time);
+  });
 	})()`, nil)); err != nil {
 		t.Fatal(err)
 	}
@@ -190,9 +197,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	}
 
 	var settled bool
-	if err = chromedp.Run(ctx, chromedp.Evaluate(`window.finiteCapture.playState==='finished'&&
+	if err = chromedp.Run(
+		ctx,
+		chromedp.Evaluate(`window.finalCapturePaint&&window.finiteCapture.playState==='finished'&&
 		window.pausedCapture.playState==='paused'&&window.progressCapture.playState==='running'&&
-		window.scrollCapture.playState!=='finished'`, &settled)); err != nil || !settled {
+		window.scrollCapture.playState!=='finished'`, &settled),
+	); err != nil ||
+		!settled {
 		t.Fatal("capture did not settle finite transitions while preserving other animations", settled, err)
 	}
 }

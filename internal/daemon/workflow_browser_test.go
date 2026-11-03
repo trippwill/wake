@@ -202,10 +202,18 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		defer cancelStep()
 
 		if err := chromedp.Run(step, actions...); err != nil {
-			var body, location string
+			var body, location, animations string
 
-			_ = chromedp.Run(ctx, chromedp.Location(&location), chromedp.Text("body", &body, chromedp.ByQuery))
-			t.Fatal(err, location, body)
+			_ = chromedp.Run(
+				ctx,
+				chromedp.Location(&location),
+				chromedp.Text("body", &body, chromedp.ByQuery),
+				chromedp.Evaluate(
+					`JSON.stringify({phase:globalThis.wakeCapturePhase,visibility:document.visibilityState,animations:document.getAnimations().map(a=>({name:a.animationName,type:a.constructor.name,timeline:a.timeline?.constructor.name,play:a.playState,pending:a.pending,rate:a.playbackRate,current:String(a.currentTime),timing:a.effect?.getComputedTiming()}))})`,
+					&animations,
+				),
+			)
+			t.Fatal(err, location, body, animations)
 		}
 	}
 	newDocument := testbrowser.NewDocument
@@ -223,6 +231,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			theme string
 			width int64
 		}{{"light", 1440}, {"dark", 390}} {
+			captureAction := func(phase string, action chromedp.Action) chromedp.Action {
+				return chromedp.ActionFunc(func(step context.Context) error {
+					if err := action.Do(step); err != nil {
+						return fmt.Errorf("capture %s %s %s: %w", name, appearance.theme, phase, err)
+					}
+
+					return nil
+				})
+			}
+
 			check(
 				emulation.SetDeviceMetricsOverride(appearance.width, 1000, 1, false),
 				chromedp.Evaluate(
@@ -234,10 +252,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			)
 
 			// Capture the settled theme, including finite CSS control transitions.
-			check(testbrowser.SettleAnimations())
+			check(captureAction("settling", testbrowser.SettleAnimations()))
 
 			var png []byte
-			check(chromedp.FullScreenshot(&png, 90))
+			check(captureAction("screenshot", chromedp.FullScreenshot(&png, 90)))
 			//nolint:gosec // Caller-selected synthetic screenshot directory.
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
