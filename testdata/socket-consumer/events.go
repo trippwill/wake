@@ -33,7 +33,8 @@ func (c *client) follow(ctx context.Context, delay time.Duration, synchronize fu
 			syncError = synchronize(p)
 			return syncError
 		})
-		if syncError != nil {
+		var interruption transportError
+		if syncError != nil && !errors.As(syncError, &interruption) {
 			return syncError
 		}
 		if ctx.Err() != nil {

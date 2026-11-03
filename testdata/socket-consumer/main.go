@@ -57,6 +57,12 @@ type protocolError struct {
 
 func (e protocolError) Error() string { return e.Code + ": " + e.Message }
 
+// Transport interruptions can be retried without accepting partial mirror state.
+type transportError struct{ cause error }
+
+func (e transportError) Error() string { return e.cause.Error() }
+func (e transportError) Unwrap() error { return e.cause }
+
 type client struct {
 	http   *http.Client
 	base   string
@@ -143,7 +149,7 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, "", false, fmt.Errorf("socket transport: %w", err)
+		return nil, "", false, transportError{fmt.Errorf("socket transport: %w", err)}
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotModified {
@@ -157,7 +163,7 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (128<<20)+1))
 	if err != nil {
-		return nil, "", false, fmt.Errorf("interrupted response: %w", err)
+		return nil, "", false, transportError{fmt.Errorf("interrupted response: %w", err)}
 	}
 	if len(data) > 128<<20 {
 		return nil, "", false, errors.New("protocol: response exceeds 128 MiB bound")
