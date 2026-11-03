@@ -18,6 +18,10 @@ func (s *Source) Discover(
 	request provider.Request,
 	access provider.Access,
 ) (provider.Discovery, error) {
+	if request.Stream != Confirmations {
+		return provider.Discovery{}, provider.ErrUnavailable
+	}
+
 	// One protocol attempt only; discovery never expands unavailable ranges.
 	step, err := s.acquire(ctx, request, access, true)
 	if err != nil {

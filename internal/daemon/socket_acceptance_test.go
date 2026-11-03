@@ -37,6 +37,7 @@ import (
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -125,17 +126,36 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	realizedReport, err := os.ReadFile("../../testdata/ibkrflex/activity/realized.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var reports atomic.Value
 	reports.Store(report)
 
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/SendRequest":
+			if r.URL.Query().Get("q") == "456" {
+				_, _ = fmt.Fprint(
+					w,
+					`<FlexStatementResponse><Status>Success</Status><ReferenceCode>socket-result-fixture</ReferenceCode></FlexStatementResponse>`,
+				)
+
+				return
+			}
+
 			_, _ = fmt.Fprint(
 				w,
 				`<FlexStatementResponse><Status>Success</Status><ReferenceCode>socket-fixture</ReferenceCode></FlexStatementResponse>`,
 			)
 		case "/GetStatement":
+			if r.URL.Query().Get("q") == "socket-result-fixture" {
+				_, _ = w.Write(realizedReport)
+				return
+			}
+
 			_, _ = w.Write(reports.Load().([]byte))
 		case "/mapping":
 			var jobs []any
@@ -330,6 +350,24 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	realizedSettings, _ := provider.NewSettings(
+		map[string]string{"query_id": "123", "activity_query_id": "456"},
+	)
+	if err = workflow.UpdateConnection(ctx, connection, "Socket acceptance", realizedSettings); err != nil {
+		t.Fatal(err)
+	}
+
+	advance()
+	advance()
+
+	if err = store.Schedule(
+		ctx,
+		host.WorkKey{Connection: connection, Stream: ibkrflex.Activity, Operation: "acquire"},
+		false,
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	providerHost.Close()
 
 	if err = store.Close(); err != nil {
@@ -464,7 +502,9 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		}
 
 		if eventOutput != nil {
-			deadline := time.Now().Add(5 * time.Second)
+			// The separate consumer backs off for up to 30 seconds while the daemon
+			// is deliberately offline. Allow one bounded reconnect after restart.
+			deadline := time.Now().Add(35 * time.Second)
 			for {
 				// The follower may legitimately skip the one-shot consumer's version.
 				lines := strings.TrimSpace(eventOutput.String())

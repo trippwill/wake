@@ -11,9 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -111,4 +113,110 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 	if err != nil || stored.Version != "new" || current.Version != "new" || stored.WarehouseID != "replacement" || len(stored.Resources) != 0 {
 		t.Fatal("replacement baseline not committed", stored, err)
 	}
+}
+
+func TestPublicationFollowRetriesInterruptedSnapshot(t *testing.T) {
+	for _, failure := range []string{"request", "response"} {
+		t.Run(failure, func(t *testing.T) {
+			db := mirrorDB(t)
+			var current state
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			var connections, snapshots atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/events" {
+					connections.Add(1)
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"ready\"}\n\n")
+					return
+				}
+				if snapshots.Add(1) == 1 {
+					if failure == "request" {
+						connection, _, err := w.(http.Hijacker).Hijack()
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						_ = connection.Close()
+					} else {
+						w.Header().Set("Content-Type", "application/json")
+						w.Header().Set("Content-Length", "100")
+						_, _ = io.WriteString(w, `{"warehouse_id":`)
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("ETag", `"ready"`)
+				_ = json.NewEncoder(w).Encode(fixture("ready", 1, "1.0000"))
+			}))
+			defer server.Close()
+			transport := &http.Transport{DisableKeepAlives: true}
+			defer transport.CloseIdleConnections()
+			c := client{http: &http.Client{Transport: transport}, base: server.URL, stderr: io.Discard}
+			err := c.follow(ctx, time.Millisecond, func(publication) error {
+				_, err := c.sync(ctx, &current, db)
+				if err == nil {
+					cancel()
+				}
+				return err
+			})
+			if !errors.Is(err, context.Canceled) || connections.Load() != 2 || snapshots.Load() != 2 {
+				t.Fatal("snapshot transport interruption stopped follow", connections.Load(), snapshots.Load(), err)
+			}
+			stored, err := readState(db)
+			if err != nil || stored.Version != "ready" || current.Version != "ready" {
+				t.Fatal("reconnect did not commit a complete mirror", stored, err)
+			}
+		})
+	}
+}
+
+func TestPublicationFollowStopsOnSynchronizationFailure(t *testing.T) {
+	for _, failure := range []error{protocolError{Code: "invalid", Message: "snapshot"}, errors.New("persist mirror failed")} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n")
+			}))
+			defer server.Close()
+			c := client{http: server.Client(), base: server.URL, stderr: io.Discard}
+			attempts := 0
+			err := c.follow(t.Context(), time.Millisecond, func(publication) error { attempts++; return failure })
+			if !errors.Is(err, failure) || attempts != 1 {
+				t.Fatal("terminal synchronization failure was retried", attempts, err)
+			}
+		})
+	}
+}
+
+type eventTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f eventTransportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPublicationBackoffRequiresSuccessfulSynchronization(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n")), Request: r}, nil
+		})}, base: "http://wake", stderr: io.Discard}
+		start := time.Now()
+		times := []time.Duration{}
+		err := c.follow(ctx, time.Second, func(publication) error {
+			times = append(times, time.Since(start))
+			switch len(times) {
+			case 4:
+				return nil
+			case 6:
+				cancel()
+				return nil
+			default:
+				return transportError{errors.New("snapshot interrupted")}
+			}
+		})
+		want := []time.Duration{0, time.Second, 3 * time.Second, 7 * time.Second, 8 * time.Second, 10 * time.Second}
+		if !errors.Is(err, context.Canceled) || !slices.Equal(times, want) {
+			t.Fatal("unsuccessful snapshots reset reconnect delay", times, err)
+		}
+	})
 }

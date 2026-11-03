@@ -15,7 +15,7 @@ func TestEventMatchingUsesExplicitQualificationWithOpaqueNativeKinds(t *testing.
 
 	_, err := store.db.Exec(`INSERT INTO connections(id,provider) VALUES('source','synthetic');
  INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('report','source','statements','discover','synthetic','text/plain','2026-10-25T12:00:00Z','synthetic',X'00');
- INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic','','source','synthetic','statements','external','portfolio','','portfolio','report');
+ INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic','','source','synthetic','external','portfolio','','portfolio','report');
  INSERT INTO executions(id,account_id,accepted,status,rule) VALUES('first','account',X'00','accepted','synthetic'),('second','account',X'00','accepted','synthetic');`)
 	if err != nil {
 		t.Fatal(err)

@@ -231,11 +231,11 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 		"unknown-price",
 		claimNormalizer(
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-				if e := claims.PutConversion(ctx, conversion); e != nil {
+				if e := claims.PutActivity(ctx, conversion.Observation()); e != nil {
 					return provider.Result{}, e
 				}
 
-				return provider.NewResult(provider.Counts{Rows: 1, Conversions: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			},
 		),
 	)
@@ -313,11 +313,11 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 		"unknown-identity",
 		claimNormalizer(
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-				if e := claims.PutTrade(ctx, unidentified); e != nil {
+				if e := claims.PutActivity(ctx, unidentified.Observation()); e != nil {
 					return provider.Result{}, e
 				}
 
-				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			},
 		),
 	)
@@ -803,7 +803,7 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 		search  string
 		want    int64
 	}{
-		{application.DisplayMatches{MissingValues: true}, "unknown", 1},
+		{application.DisplayMatches{MissingValues: true}, "unknown", 2}, // Both activities lack reported P&L.
 		{application.DisplayMatches{InapplicableValues: true}, "not applicable", 2},
 	} {
 		t.Run(test.search, func(t *testing.T) {
@@ -852,11 +852,11 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 		"unnamed-fill",
 		claimNormalizer(
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-				if e := claims.PutTrade(ctx, trade); e != nil {
+				if e := claims.PutActivity(ctx, trade.Observation()); e != nil {
 					return provider.Result{}, e
 				}
 
-				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			},
 		),
 	)

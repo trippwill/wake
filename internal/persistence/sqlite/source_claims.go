@@ -25,43 +25,6 @@ func claimKeyData(kind string, data []byte) ([]byte, error) { return claimWire(k
 func claimWire(kind string, data []byte, location string, orderSets bool) ([]byte, error) {
 	var value any
 	switch kind {
-	case "trade":
-		var d tradeData
-		if err := json.Unmarshal(data, &d); err != nil {
-			return nil, err
-		}
-
-		d.Location = location
-		if orderSets {
-			canonicalTrade(&d)
-		}
-
-		value = d
-	case "lifecycle":
-		var d lifecycleData
-		if err := json.Unmarshal(data, &d); err != nil {
-			return nil, err
-		}
-
-		d.Trade.Location = location
-		if orderSets {
-			canonicalTrade(&d.Trade)
-		}
-
-		value = d
-	case "conversion":
-		var d conversionData
-		if err := json.Unmarshal(data, &d); err != nil {
-			return nil, err
-		}
-
-		d.Location = location
-		if orderSets {
-			orderClaimSet(d.EventAliases)
-			orderClaimSet(d.Charges)
-		}
-
-		value = d
 	case "correction":
 		var d correctionData
 		if err := json.Unmarshal(data, &d); err != nil {
@@ -78,6 +41,26 @@ func claimWire(kind string, data []byte, location string, orderSets bool) ([]byt
 
 		if orderSets {
 			canonicalInstrument(&d)
+		}
+
+		value = d
+	case "activity":
+		var d observationData
+		if err := json.Unmarshal(data, &d); err != nil {
+			return nil, err
+		}
+
+		d.Location = location
+		if orderSets {
+			orderClaimSet(d.EventAliases)
+
+			for i := range d.Fields {
+				if d.Fields[i].Instrument != nil {
+					canonicalInstrument(d.Fields[i].Instrument)
+				}
+			}
+
+			orderClaimSet(d.Fields)
 		}
 
 		value = d
@@ -121,13 +104,6 @@ func orderClaimSet[T any](values []T) {
 
 		return bytes.Compare(left, right)
 	})
-}
-
-func canonicalTrade(d *tradeData) {
-	orderClaimSet(d.EventAliases)
-	orderClaimSet(d.Relationships)
-	orderClaimSet(d.Charges)
-	canonicalInstrument(&d.Instrument)
 }
 
 func canonicalInstrument(d *instrumentData) {

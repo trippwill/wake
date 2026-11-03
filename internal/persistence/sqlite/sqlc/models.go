@@ -42,7 +42,6 @@ type Account struct {
 	Currency     string
 	ConnectionID string
 	Provider     string
-	Stream       string
 	Authority    string
 	Kind         string
 	Scope        string
@@ -73,10 +72,23 @@ type ActivityBasis struct {
 	ListingID    sql.NullString
 }
 
+type ActivityReference struct {
+	ClaimID   string
+	Ordinal   int64
+	AccountID string
+	Reference string
+}
+
 type ActivityRelationship struct {
 	ActivityID string
 	Kind       string
 	Target     string
+}
+
+type ActivitySelection struct {
+	ActivityID string
+	Baseline   []byte
+	Selected   []byte
 }
 
 type AdminActivity struct {
@@ -94,8 +106,10 @@ type AdminActivity struct {
 	QuantityUnit       string
 	Price              string
 	PriceUnit          string
+	Realized           string
+	RealizedCurrency   string
 	LabelSort          string
-	SearchText         string
+	SearchText         interface{}
 }
 
 type AdminInstrument struct {
@@ -118,7 +132,7 @@ type AdminReview struct {
 	Status     string
 	ClaimCount int64
 	Activity   string
-	SearchText string
+	SearchText interface{}
 	LabelKey   string
 }
 

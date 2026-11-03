@@ -71,7 +71,7 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 	)
 }
 
-// Process accepts only the designated account/provider/stream. Accepted terms and
+// Process accepts only the confirmed connection/provider/source account. Terms and
 // every matching or dissenting observation commit with the artifact completion.
 func (s *Store) Process(ctx context.Context, id, version string) error {
 	complete, err := s.queries.ProcessingComplete(
@@ -171,12 +171,17 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		}
 
 		changed = changed || record.Kind != "rejected" && record.Kind != "instrument"
+		if !record.Observation.IsZero() {
+			if err = admitActivity(ctx, q, account, retained, version, record); err != nil {
+				return err
+			}
+
+			continue
+		}
 
 		if record.Kind == "correction" {
 			f := record.Correction.Fields()
-			if account.Connection() == retained.Connection && account.Provider() == retained.Provider &&
-				account.Stream() == retained.Stream &&
-				account.Reference() == f.Account {
+			if account.AuthorizesSource(retained.Connection, retained.Provider, f.Account) {
 				if err = q.PutSourceCorrection(
 					ctx,
 					sqlc.PutSourceCorrectionParams{
@@ -194,191 +199,6 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 			}
 
 			continue
-		}
-
-		if record.Kind == "conversion" {
-			if err = processConversion(
-				ctx,
-				q,
-				account,
-				retained.Connection,
-				retained.Provider,
-				retained.Stream,
-				id,
-				version,
-				record.Conversion,
-			); err != nil {
-				return err
-			}
-
-			continue
-		}
-
-		if record.Kind == "lifecycle" {
-			if err = processLifecycle(
-				ctx,
-				q,
-				account,
-				retained.Connection,
-				retained.Provider,
-				retained.Stream,
-				id,
-				version,
-				record.Lifecycle,
-			); err != nil {
-				return err
-			}
-
-			continue
-		}
-
-		if record.Kind != "trade" {
-			continue
-		}
-
-		count, e := q.ObservationExists(
-			ctx,
-			sqlc.ObservationExistsParams{ArtifactID: id, Version: version, Location: record.Location},
-		)
-		if e != nil {
-			return e
-		}
-
-		if count != 0 {
-			continue
-		}
-
-		observation := sqlc.PutObservationParams{
-			ArtifactID: id,
-			Version:    version,
-			Location:   record.Location,
-			Rule:       application.AuthorityRule,
-			Outcome:    "unselected",
-		}
-		t := record.Trade
-		f := t.Fields()
-		if account.Connection() == retained.Connection && account.Provider() == retained.Provider &&
-			account.Stream() == retained.Stream &&
-			account.Reference() == f.Account {
-			observation.Rule = application.RepeatRule
-			if f.Event.IsZero() {
-				observation.Outcome = "identity-review"
-			} else {
-				execution, ambiguous, lookupErr := matchExecution(ctx, q, account.ID(), t)
-				if lookupErr != nil {
-					return lookupErr
-				}
-
-				if ambiguous {
-					observation.Outcome = "native-review"
-					if e = q.PutObservation(ctx, observation); e != nil {
-						return e
-					}
-
-					continue
-				}
-
-				if execution != "" {
-					old, e := q.Execution(ctx, execution)
-					if e != nil {
-						return e
-					}
-
-					if old.Kind != "trade" {
-						observation.Outcome = "kind-conflict"
-						observation.ExecutionID = sql.NullString{String: execution, Valid: true}
-						if e = q.PutObservation(ctx, observation); e != nil {
-							return e
-						}
-
-						continue
-					}
-
-					terms, e := application.TradeTerms(t)
-					if e != nil {
-						return e
-					}
-
-					outcome, e := sourceActivityOutcome(ctx, q, old, terms)
-					if e != nil {
-						return e
-					}
-
-					observation.Outcome = string(outcome)
-				} else {
-					instrument, listing, e := acceptInstrument(
-						ctx,
-						q,
-						id,
-						record.Location,
-						f.Instrument,
-						f.Price.Currency().String(),
-					)
-					if e != nil {
-						return e
-					}
-
-					data, e := encodeTrade(t)
-					if e != nil {
-						return e
-					}
-
-					execution = rand.Text()
-					if e = q.PutExecution(
-						ctx,
-						sqlc.PutExecutionParams{
-							ID:           execution,
-							AccountID:    account.ID(),
-							InstrumentID: sql.NullString{String: instrument, Valid: true},
-							ListingID:    sql.NullString{String: listing, Valid: listing != ""},
-							Accepted:     data,
-							Rule:         application.RepeatRule,
-						},
-					); e != nil {
-						return e
-					}
-
-					if e = q.PutEventLink(
-						ctx,
-						sqlc.PutEventLinkParams{
-							AccountID:     account.ID(),
-							Reference:     referenceKey(f.Event),
-							ExecutionID:   execution,
-							DistinctEvent: boolInt(f.EventDistinct),
-						},
-					); e != nil {
-						return e
-					}
-
-					observation.Outcome = "accepted"
-				}
-
-				for _, ref := range append([]source.Reference{f.Event}, f.EventAliases...) {
-					if e = q.PutEventLink(
-						ctx,
-						sqlc.PutEventLinkParams{
-							AccountID:     account.ID(),
-							Reference:     referenceKey(ref),
-							ExecutionID:   execution,
-							DistinctEvent: boolInt(f.EventDistinct && ref == f.Event),
-						},
-					); e != nil {
-						return e
-					}
-				}
-
-				if observation.Outcome != "terms-conflict" {
-					if e = putRelationships(ctx, q, execution, f.Relationships); e != nil {
-						return e
-					}
-				}
-
-				observation.ExecutionID = sql.NullString{String: execution, Valid: true}
-			}
-		}
-
-		if e = q.PutObservation(ctx, observation); e != nil {
-			return e
 		}
 	}
 
@@ -602,16 +422,6 @@ func (s *Store) InstrumentDetail(ctx context.Context, id string) (application.In
 // A distinct event reference distinguishes fills even when an alias is shared.
 // Aliases can corroborate an earlier observation with only a trade ID. Several
 // possible executions stay ambiguous instead of selecting an arbitrary fill.
-func matchExecution(
-	ctx context.Context,
-	q *sqlc.Queries,
-	account string,
-	t source.Trade,
-) (string, bool, error) {
-	f := t.Fields()
-	return matchReferences(ctx, q, account, f.Event, f.EventAliases, f.EventDistinct)
-}
-
 func matchReferences(
 	ctx context.Context,
 	q *sqlc.Queries,
@@ -751,121 +561,6 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 	return out, err
 }
 
-func processLifecycle(
-	ctx context.Context,
-	q *sqlc.Queries,
-	account application.Account,
-	connection, provider, stream, artifact, version string,
-	l source.Lifecycle,
-) error {
-	f := l.Fields()
-
-	n, err := q.ObservationExists(
-		ctx,
-		sqlc.ObservationExistsParams{ArtifactID: artifact, Version: version, Location: f.Location},
-	)
-	if err != nil || n > 0 {
-		return err
-	}
-
-	o := sqlc.PutObservationParams{
-		ArtifactID: artifact,
-		Version:    version,
-		Location:   f.Location,
-		Rule:       application.AuthorityRule,
-		Outcome:    "unselected",
-	}
-	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
-		account.Reference() != f.Account {
-		return q.PutObservation(ctx, o)
-	}
-
-	o.Rule = application.RepeatRule
-	if f.Event.IsZero() {
-		o.Outcome = "identity-review"
-		return q.PutObservation(ctx, o)
-	}
-
-	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases, f.EventDistinct)
-	if err != nil {
-		return err
-	}
-
-	if ambiguous {
-		o.Outcome = "native-review"
-		return q.PutObservation(ctx, o)
-	}
-
-	if id == "" {
-		instrument, _, e := acceptInstrument(ctx, q, artifact, f.Location, f.Instrument, "")
-		if e != nil {
-			return e
-		}
-
-		data, e := encodeLifecycle(l)
-		if e != nil {
-			return e
-		}
-
-		id = rand.Text()
-		if e = q.PutLifecycleActivity(
-			ctx,
-			sqlc.PutLifecycleActivityParams{
-				ID:           id,
-				AccountID:    account.ID(),
-				InstrumentID: sql.NullString{String: instrument, Valid: true},
-				Accepted:     data,
-				Rule:         application.RepeatRule,
-			},
-		); e != nil {
-			return e
-		}
-
-		o.Outcome = "accepted"
-	} else {
-		row, e := q.Execution(ctx, id)
-		if e != nil {
-			return e
-		}
-
-		terms, e := application.LifecycleTerms(l)
-		if e != nil {
-			return e
-		}
-
-		outcome, e := sourceActivityOutcome(ctx, q, row, terms)
-		if e != nil {
-			return e
-		}
-
-		o.Outcome = string(outcome)
-	}
-
-	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
-		if err = q.PutEventLink(
-			ctx,
-			sqlc.PutEventLinkParams{
-				AccountID:     account.ID(),
-				Reference:     referenceKey(r),
-				ExecutionID:   id,
-				DistinctEvent: boolInt(f.EventDistinct && r == f.Event),
-			},
-		); err != nil {
-			return err
-		}
-	}
-
-	if o.Outcome != "terms-conflict" {
-		if err = putRelationships(ctx, q, id, f.Relationships); err != nil {
-			return err
-		}
-	}
-
-	o.ExecutionID = sql.NullString{String: id, Valid: true}
-
-	return q.PutObservation(ctx, o)
-}
-
 func conversionValue(r sqlc.Execution) (application.Conversion, error) {
 	v, err := decodeConversion(r.Accepted)
 	if err != nil {
@@ -910,109 +605,6 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 	return out, nil
 }
 
-func processConversion(
-	ctx context.Context,
-	q *sqlc.Queries,
-	account application.Account,
-	connection, provider, stream, artifact, version string,
-	c source.Conversion,
-) error {
-	f := c.Fields()
-
-	n, err := q.ObservationExists(
-		ctx,
-		sqlc.ObservationExistsParams{ArtifactID: artifact, Version: version, Location: f.Location},
-	)
-	if err != nil || n > 0 {
-		return err
-	}
-
-	o := sqlc.PutObservationParams{
-		ArtifactID: artifact,
-		Version:    version,
-		Location:   f.Location,
-		Rule:       application.AuthorityRule,
-		Outcome:    "unselected",
-	}
-	if account.Connection() != connection || account.Provider() != provider || account.Stream() != stream ||
-		account.Reference() != f.Account {
-		return q.PutObservation(ctx, o)
-	}
-
-	o.Rule = application.RepeatRule
-	if f.Event.IsZero() {
-		o.Outcome = "identity-review"
-		return q.PutObservation(ctx, o)
-	}
-
-	id, ambiguous, err := matchReferences(ctx, q, account.ID(), f.Event, f.EventAliases, f.EventDistinct)
-	if err != nil {
-		return err
-	}
-
-	if ambiguous {
-		o.Outcome = "native-review"
-		return q.PutObservation(ctx, o)
-	}
-
-	if id == "" {
-		data, e := encodeConversion(c)
-		if e != nil {
-			return e
-		}
-
-		id = rand.Text()
-		if e = q.PutConversionActivity(
-			ctx,
-			sqlc.PutConversionActivityParams{
-				ID:        id,
-				AccountID: account.ID(),
-				Accepted:  data,
-				Rule:      application.RepeatRule,
-			},
-		); e != nil {
-			return e
-		}
-
-		o.Outcome = "accepted"
-	} else {
-		row, e := q.Execution(ctx, id)
-		if e != nil {
-			return e
-		}
-
-		terms, e := application.ConversionTerms(c)
-		if e != nil {
-			return e
-		}
-
-		outcome, e := sourceActivityOutcome(ctx, q, row, terms)
-		if e != nil {
-			return e
-		}
-
-		o.Outcome = string(outcome)
-	}
-
-	for _, r := range append([]source.Reference{f.Event}, f.EventAliases...) {
-		if err = q.PutEventLink(
-			ctx,
-			sqlc.PutEventLinkParams{
-				AccountID:     account.ID(),
-				Reference:     referenceKey(r),
-				ExecutionID:   id,
-				DistinctEvent: boolInt(f.EventDistinct && r == f.Event),
-			},
-		); err != nil {
-			return err
-		}
-	}
-
-	o.ExecutionID = sql.NullString{String: id, Valid: true}
-
-	return q.PutObservation(ctx, o)
-}
-
 func (s *Store) activityContext(
 	ctx context.Context,
 	row sqlc.Execution,
@@ -1025,6 +617,12 @@ func (s *Store) activityContext(
 	}
 
 	out.AccountName = account.Name
+
+	out.Realized, err = publishedRealized(ctx, s.queries, row.ID)
+	if err != nil {
+		return out, err
+	}
+
 	if row.InstrumentID.Valid {
 		instrument, err := s.queries.Instrument(ctx, row.InstrumentID.String)
 		if err != nil {
@@ -1050,28 +648,3 @@ func boolInt(value bool) int64 {
 
 // Admission reads only prior retained source assertions. The incoming observation
 // is inserted afterwards; operator decisions never enter this comparison.
-func sourceActivityOutcome(
-	ctx context.Context,
-	q *sqlc.Queries,
-	row sqlc.Execution,
-	incoming application.ActivityTerms,
-) (application.ObservationOutcome, error) {
-	base, err := q.ActivityBase(ctx, row.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		base.Data = row.Accepted
-	} else if err != nil {
-		return "", err
-	}
-
-	baseline, err := decodeActivityTerms(row.Kind, base.Data)
-	if err != nil {
-		return "", err
-	}
-
-	claims, err := retainedActivityClaims(ctx, q, row.ID)
-	if err != nil {
-		return "", err
-	}
-
-	return application.SourceClaimOutcome(baseline, incoming, claims), nil
-}

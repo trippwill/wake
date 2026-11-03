@@ -111,6 +111,17 @@ and reacquiring history with the reusable encrypted access seed. There is no
 compatibility conversion, automatic updater or rebuild command. The general
 retained-history requirement above continues to apply to later changes.
 
+The partial-activity development format separates valid source assertions from
+complete accepted terms and replaces the unpublished P&L-specific claim format.
+Financial authority remains the confirmed connection, provider and source account;
+acquisition inputs describe protocol work and preserve provenance. The format changes
+normalized observations, pending associations and retained field-selection state.
+Old warehouses fail closed without modification. Operator deployment preserves any
+needed old evidence and decisions and explicitly recreates the warehouse under this
+pre-release format exception; there is no migration, automatic reset or conversion.
+The encrypted access format is unchanged. Supported-format history retains complete
+and partial observations, active decisions and exact values across replay and restart.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL
@@ -224,12 +235,17 @@ results go to stdout; immediate/periodic progress and failures go to stderr. A
 warehouse change is explicitly reported after a validated new baseline commits.
 
 Follow mode subscribes to SSE publication notifications and conditionally synchronizes
-when the announced warehouse/version differs from its committed mirror. It keeps one
-snapshot synchronization active at a time; queued events or reconnect catch changes
-that arrive during a download. Stream failures reconnect with exponential backoff
-capped at 30 seconds; `--interval` sets the initial reconnect delay. Missing complete
-frames for 45 seconds close an idle stream. Snapshot or mirror failures terminate
-follow visibly while preserving the prior mirror. SSE carries refresh hints with no
+when the announced warehouse/version differs from its last fully synchronized
+publication. Completion includes optional lookup checks, fixture assertions and
+structured success output; an interrupted verification resumes even when the mirror
+has already committed that version. It keeps one snapshot synchronization active at
+a time; queued events or reconnect catch changes
+that arrive during a download. While following, stream and snapshot transport
+interruptions reconnect with exponential backoff capped at 30 seconds; `--interval`
+sets the initial reconnect delay. Only successful synchronization resets the delay.
+Missing complete frames for 45 seconds close an
+idle stream. Snapshot validation and mirror persistence failures terminate follow
+visibly while preserving the prior mirror. SSE carries refresh hints with no
 replay cursor; it does not acknowledge successful mirroring or expose admin work.
 
 Run the automated synthetic proof:

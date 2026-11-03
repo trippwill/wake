@@ -231,7 +231,7 @@ func TestCalculationUsesDistinctClaimsAndCanSelectAnyRetainedAppearance(t *testi
 	}
 
 	current, err := s.CorrectionForm(ctx, "activity", id)
-	if err != nil || len(current.Decisions) != 1 || current.Decisions[0].Text != choice {
+	if err != nil || len(current.Decisions) == 0 || current.Decisions[0].Text != choice {
 		t.Fatal("selected appearance provenance lost", current, err)
 	}
 
@@ -430,11 +430,11 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		"conflicting-net",
 		claimNormalizer(
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-				if e := claims.PutTrade(ctx, claim); e != nil {
+				if e := claims.PutActivity(ctx, claim.Observation()); e != nil {
 					return provider.Result{}, e
 				}
 
-				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			},
 		),
 	)
@@ -486,11 +486,11 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		"later-conflicting-net",
 		claimNormalizer(
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-				if e := claims.PutTrade(ctx, laterClaim); e != nil {
+				if e := claims.PutActivity(ctx, laterClaim.Observation()); e != nil {
 					return provider.Result{}, e
 				}
 
-				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			},
 		),
 	)

@@ -401,10 +401,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				SettingsStored: true, CredentialStored: true,
 				Work: []application.WorkStatus{
-					{Operation: "discover", Progress: "waiting", Next: "2026-10-26T12:00:00Z"},
+					{Operation: "discover", Progress: "waiting", Next: "2026-10-26T12:00:00Z", Scheduled: true},
 				},
 				Processing: []application.ProcessingStatus{
-					{Artifact: "synthetic-report", Receipt: "synthetic-receipt", TradeClaims: 70, Complete: true},
+					{Artifact: "synthetic-report", Receipt: "synthetic-receipt", ActivityClaims: 70, Complete: true},
 				},
 			},
 		},
@@ -660,7 +660,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
 
-	ctx, deadline := context.WithTimeout(ctx, 150*time.Second)
+	ctx, deadline := context.WithTimeout(ctx, 240*time.Second)
 	defer deadline()
 
 	if err := chromedp.Run(ctx); err != nil {

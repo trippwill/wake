@@ -42,6 +42,14 @@ type SettingsPreparer interface {
 	PrepareSettings(Settings) (Settings, error)
 }
 
+// StreamConfigurer selects enabled inputs and their configuration identities.
+// It is pure: it opens neither credentials nor storage and performs no I/O.
+// The host treats configuration identities as opaque; providers own dependencies
+// between settings and the continuations that those settings invalidate.
+type StreamConfigurer interface {
+	ConfigureStreams(Settings) ([]StreamConfiguration, error)
+}
+
 // Normalizer interprets retained evidence without credentials or financial
 // lookups. A sink failure aborts processing; it must not be counted as a bad row.
 type Normalizer interface {
@@ -61,9 +69,7 @@ type Access interface {
 // its commit boundary and retains artifact/location/version provenance.
 // Calls are sequential; a normalizer must not retain the sink after returning.
 type Claims interface {
-	PutTrade(context.Context, source.Trade) error
-	PutLifecycle(context.Context, source.Lifecycle) error
-	PutConversion(context.Context, source.Conversion) error
+	PutActivity(context.Context, source.ActivityObservation) error
 	PutCorrection(context.Context, source.Correction) error
 	PutInstrument(context.Context, source.InstrumentObservation) error
 	Reject(context.Context, string, string) error
@@ -97,8 +103,9 @@ func (f Field) Kind() FieldKind { return f.kind }
 func (f Field) Required() bool  { return f.required }
 
 type Stream struct {
-	id     string
-	format string
+	id        string
+	format    string
+	discovery bool
 }
 
 func NewStream(id, format string) (Stream, error) {
@@ -111,6 +118,20 @@ func NewStream(id, format string) (Stream, error) {
 
 func (s Stream) ID() string     { return s.id }
 func (s Stream) Format() string { return s.format }
+
+// WithDiscovery declares that this input can discover source accounts.
+// Stream metadata controls acquisition capabilities, never financial authority.
+func (s Stream) WithDiscovery() (Stream, error) {
+	if s.id == "" {
+		return Stream{}, ErrInvalid
+	}
+
+	s.discovery = true
+
+	return s, nil
+}
+
+func (s Stream) CanDiscover() bool { return s.discovery }
 
 type Descriptor struct {
 	id      string
@@ -179,12 +200,13 @@ func (d Descriptor) Fields() []Field   { return slices.Clone(d.fields) }
 // Registration binds explicit capabilities to metadata. Construction starts no
 // work and opens neither credentials nor storage. There is no global registry.
 type Registration struct {
-	descriptor Descriptor
-	version    string
-	acquirer   Acquirer
-	normalizer Normalizer
-	discoverer Discoverer
-	preparer   SettingsPreparer
+	descriptor       Descriptor
+	version          string
+	acquirer         Acquirer
+	normalizer       Normalizer
+	discoverer       Discoverer
+	preparer         SettingsPreparer
+	streamConfigurer StreamConfigurer
 }
 
 func NewRegistration(

@@ -129,6 +129,24 @@ func (e ErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for ExplanationReportedRealizedPnlSelection.
+const (
+	ExplanationReportedRealizedPnlSelectionAutomatic ExplanationReportedRealizedPnlSelection = "automatic"
+	ExplanationReportedRealizedPnlSelectionOperator  ExplanationReportedRealizedPnlSelection = "operator"
+)
+
+// Valid indicates whether the value is a known member of the ExplanationReportedRealizedPnlSelection enum.
+func (e ExplanationReportedRealizedPnlSelection) Valid() bool {
+	switch e {
+	case ExplanationReportedRealizedPnlSelectionAutomatic:
+		return true
+	case ExplanationReportedRealizedPnlSelectionOperator:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InstrumentFamily.
 const (
 	InstrumentFamilyDebt    InstrumentFamily = "debt"
@@ -210,6 +228,24 @@ func (e ListingResourceKind) Valid() bool {
 	}
 }
 
+// Defines values for NullableRealizedPnLSelection.
+const (
+	NullableRealizedPnLSelectionAutomatic NullableRealizedPnLSelection = "automatic"
+	NullableRealizedPnLSelectionOperator  NullableRealizedPnLSelection = "operator"
+)
+
+// Valid indicates whether the value is a known member of the NullableRealizedPnLSelection enum.
+func (e NullableRealizedPnLSelection) Valid() bool {
+	switch e {
+	case NullableRealizedPnLSelectionAutomatic:
+		return true
+	case NullableRealizedPnLSelectionOperator:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account defines model for Account.
 type Account struct {
 	Currency *string `json:"currency"`
@@ -276,6 +312,9 @@ type Activity struct {
 	// Received Known currency; null amount is unknown and differs from zero.
 	Received      *NullableAmount `json:"received"`
 	Relationships []Relationship  `json:"relationships"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
 
 	// Sent Known currency; null amount is unknown and differs from zero.
 	Sent           *NullableAmount `json:"sent"`
@@ -377,10 +416,18 @@ type Explanation struct {
 		Reason     *string `json:"reason"`
 		Rule       string  `json:"rule"`
 	} `json:"identity"`
-	Kind      string `json:"kind"`
+	Kind                string `json:"kind"`
+	ReportedRealizedPnl *struct {
+		Conflict  bool                                    `json:"conflict"`
+		Rule      string                                  `json:"rule"`
+		Selection ExplanationReportedRealizedPnlSelection `json:"selection"`
+	} `json:"reported_realized_pnl,omitempty"`
 	Revision  int64  `json:"revision"`
 	Selection string `json:"selection"`
 }
+
+// ExplanationReportedRealizedPnlSelection defines model for Explanation.ReportedRealizedPnl.Selection.
+type ExplanationReportedRealizedPnlSelection string
 
 // FinancialSnapshot defines model for FinancialSnapshot.
 type FinancialSnapshot struct {
@@ -498,6 +545,22 @@ type NullableQuantity struct {
 	Unit  string `json:"unit"`
 	Value string `json:"value"`
 }
+
+// NullableRealizedPnL Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+type NullableRealizedPnL struct {
+	// Amount Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Amount   *NullableMoney `json:"amount"`
+	Conflict bool           `json:"conflict"`
+
+	// CostBasis Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	CostBasis           *NullableMoney               `json:"cost_basis"`
+	CostBasisReportDate *string                      `json:"cost_basis_report_date"`
+	ReportDate          *string                      `json:"report_date"`
+	Selection           NullableRealizedPnLSelection `json:"selection"`
+}
+
+// NullableRealizedPnLSelection defines model for NullableRealizedPnL.Selection.
+type NullableRealizedPnLSelection string
 
 // NullableReference Qualified reported relationship identity, never an unqualified Wake resource ID.
 type NullableReference struct {

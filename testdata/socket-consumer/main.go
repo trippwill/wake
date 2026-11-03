@@ -57,6 +57,12 @@ type protocolError struct {
 
 func (e protocolError) Error() string { return e.Code + ": " + e.Message }
 
+// Transport interruptions can be retried without accepting partial mirror state.
+type transportError struct{ cause error }
+
+func (e transportError) Error() string { return e.cause.Error() }
+func (e transportError) Unwrap() error { return e.cause }
+
 type client struct {
 	http   *http.Client
 	base   string
@@ -143,7 +149,7 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, "", false, fmt.Errorf("socket transport: %w", err)
+		return nil, "", false, transportError{fmt.Errorf("socket transport: %w", err)}
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotModified {
@@ -157,7 +163,7 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (128<<20)+1))
 	if err != nil {
-		return nil, "", false, fmt.Errorf("interrupted response: %w", err)
+		return nil, "", false, transportError{fmt.Errorf("interrupted response: %w", err)}
 	}
 	if len(data) > 128<<20 {
 		return nil, "", false, errors.New("protocol: response exceeds 128 MiB bound")
@@ -219,8 +225,9 @@ var decimal = regexp.MustCompile(`^-?[0-9]+(?:\.[0-9]+)?$`)
 func validateScalars(value any) error {
 	switch v := value.(type) {
 	case map[string]any:
+		_, monetary := v["currency"]
 		for key, child := range v {
-			if child != nil && (key == "amount" || key == "multiplier" || key == "coupon" || key == "value" && v["unit"] != nil) {
+			if child != nil && (key == "amount" && monetary || key == "multiplier" || key == "coupon" || key == "value" && v["unit"] != nil) {
 				text, ok := child.(string)
 				if !ok || len(text) > 256 || !decimal.MatchString(text) {
 					return errors.New("protocol: invalid exact decimal")
@@ -458,6 +465,7 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			return errors.New("protocol: revision content differs")
 		}
 		var why struct {
+			RealizedPnL json.RawMessage   `json:"reported_realized_pnl"`
 			Identity    json.RawMessage   `json:"identity"`
 			ID          string            `json:"id"`
 			Kind        string            `json:"kind"`
@@ -599,6 +607,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	if err != nil {
 		return err
 	}
+	completed := publication{}
 	synchronize := func() error {
 		replaced, e := c.sync(ctx, &current, db)
 		if e != nil {
@@ -620,13 +629,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		}{"synchronized", len(current.Resources), replaced, current.Version}); e != nil {
 			return e
 		}
+		completed = publication{current.WarehouseID, current.Version}
 		return nil
 	}
 	if err = synchronize(); err != nil || !*follow {
 		return err
 	}
 	return c.follow(ctx, *interval, func(p publication) error {
-		if p.WarehouseID == current.WarehouseID && p.Version == current.Version {
+		if p == completed {
 			return nil
 		}
 		return synchronize()

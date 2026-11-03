@@ -78,6 +78,7 @@ func TestPausedQueryRepairPreservesDeadline(t *testing.T) {
 			}
 
 			connection.Settings, _ = provider.NewSettings(map[string]string{"query_id": "456"})
+			connection.ResetStreams = []string{"confirmations"}
 			if err = s.Reconfigure(ctx, connection); err != nil {
 				t.Fatal(err)
 			}

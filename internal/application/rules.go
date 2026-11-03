@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	AuthorityRule  = "account-authority/1"
-	RepeatRule     = "qualified-activity-observations/2"
+	AuthorityRule  = "account-authority/2"
+	RepeatRule     = "qualified-activity-observations/3"
 	InstrumentRule = "qualified-instrument-reference/2"
 )
 

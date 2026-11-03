@@ -135,12 +135,12 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 								return provider.Result{}, e
 							}
 
-							if e = claims.PutTrade(ctx, trade); e != nil {
+							if e = claims.PutActivity(ctx, trade.Observation()); e != nil {
 								return provider.Result{}, e
 							}
 						}
 
-						return provider.NewResult(provider.Counts{Rows: 2, Trades: 2})
+						return provider.NewResult(provider.Counts{Rows: 2, Activities: 2})
 					},
 				)
 			}
@@ -538,12 +538,12 @@ func retainUnderlierTrades(t *testing.T, s *Store, id string, trades ...source.T
 			func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
 				var counts provider.Counts
 				for _, trade := range trades {
-					if err := claims.PutTrade(ctx, trade); err != nil {
+					if err := claims.PutActivity(ctx, trade.Observation()); err != nil {
 						return provider.Result{}, err
 					}
 
 					counts.Rows++
-					counts.Trades++
+					counts.Activities++
 				}
 
 				return provider.NewResult(counts)

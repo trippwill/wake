@@ -93,7 +93,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		return ListQuery{}, ErrInvalid
 	}
 
-	sorts := []string{"date", "label", "quantity", "price", "state", "reference"}
+	sorts := []string{"date", "label", "quantity", "price", "realized", "state", "reference"}
 	states := []string{"", "accepted", "cancelled", "superseded", "review"}
 	kinds := []string{"", "trade", "lifecycle", "conversion"}
 	if scope == InstrumentScope {
@@ -302,6 +302,8 @@ type (
 func knownObservationOutcome(outcome ObservationOutcome) bool {
 	switch outcome {
 	case ObservationUnselected,
+		ObservationIncomplete,
+		ObservationIncompleteConflict,
 		ObservationIdentityReview,
 		ObservationNativeReview,
 		ObservationKindConflict,

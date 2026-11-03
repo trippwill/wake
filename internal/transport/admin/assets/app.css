@@ -1093,6 +1093,51 @@ body {
 .wake-task-list .wake-help {
   display: block;
 }
+.wake-source-summary > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 0.75rem 1.5rem;
+}
+.wake-source-summary > li:last-child {
+  border-block-end: 0;
+  padding-block-end: 0;
+}
+.wake-main .wake-source-summary a,
+.wake-sync-work {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wake-main .wake-sync-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+}
+.wake-sync-work > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 0.25rem 1rem;
+}
+.wake-main .wake-sync-work dt {
+  color: var(--color-base-content);
+  font-weight: 550;
+}
+.wake-main .wake-sync-work dd {
+  display: grid;
+  justify-items: start;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--wake-muted);
+}
+@media (max-width: 640px) {
+  .wake-source-summary > li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wake-sync-work > div {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
 .wake-steps {
   padding-inline-start: 1.25rem;
   margin-block: 1rem 1.5rem;

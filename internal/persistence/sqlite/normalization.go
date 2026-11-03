@@ -250,27 +250,6 @@ func (c *claims) put(ctx context.Context, location, kind string, data []byte) er
 	return nil
 }
 
-func (c *claims) PutTrade(ctx context.Context, t source.Trade) error {
-	if _, err := source.NewTrade(t.Fields()); err != nil {
-		c.failed = provider.ErrInvalid
-		return c.failed
-	}
-
-	data, err := encodeTrade(t)
-	if err != nil {
-		c.failed = err
-		return err
-	}
-
-	if err = c.put(ctx, t.Fields().Location, "trade", data); err != nil {
-		return err
-	}
-
-	c.counts.Trades++
-
-	return nil
-}
-
 func (c *claims) PutInstrument(ctx context.Context, o source.InstrumentObservation) error {
 	if o.Location() == "" {
 		c.failed = provider.ErrInvalid
@@ -324,11 +303,9 @@ type Record struct {
 	Location, Kind, Reason string
 	ClaimID                string
 	Ordinal                int64
-	Trade                  source.Trade
-	Lifecycle              source.Lifecycle
-	Conversion             source.Conversion
 	Correction             source.Correction
 	Instrument             source.InstrumentObservation
+	Observation            source.ActivityObservation
 }
 
 func (s *Store) Records(ctx context.Context, id, version string) ([]Record, error) {
@@ -341,24 +318,14 @@ func (s *Store) Records(ctx context.Context, id, version string) ([]Record, erro
 	for _, row := range rows {
 		record := Record{Location: row.Location, Kind: row.Kind, ClaimID: row.ClaimID, Ordinal: row.Ordinal}
 		switch row.Kind {
-		case "trade":
-			record.Trade, err = decodeTrade(row.Data)
-			if err == nil && record.Trade.Fields().Location != row.Location {
+		case "activity":
+			record.Observation, err = decodeObservation(row.Data)
+			if err == nil && record.Observation.Fields().Location != row.Location {
 				err = ErrCorrupt
 			}
 		case "correction":
 			record.Correction, err = decodeCorrection(row.Data)
 			if err == nil && record.Correction.Fields().Location != row.Location {
-				err = ErrCorrupt
-			}
-		case "conversion":
-			record.Conversion, err = decodeConversion(row.Data)
-			if err == nil && record.Conversion.Fields().Location != row.Location {
-				err = ErrCorrupt
-			}
-		case "lifecycle":
-			record.Lifecycle, err = decodeLifecycle(row.Data)
-			if err == nil && record.Lifecycle.Fields().Location != row.Location {
 				err = ErrCorrupt
 			}
 		case "instrument":
@@ -394,48 +361,6 @@ func (s *Store) Records(ctx context.Context, id, version string) ([]Record, erro
 	return out, nil
 }
 
-func (c *claims) PutLifecycle(ctx context.Context, l source.Lifecycle) error {
-	if _, err := source.NewLifecycle(l.Fields()); err != nil {
-		c.failed = provider.ErrInvalid
-		return c.failed
-	}
-
-	data, err := encodeLifecycle(l)
-	if err != nil {
-		c.failed = err
-		return err
-	}
-
-	if err = c.put(ctx, l.Fields().Location, "lifecycle", data); err != nil {
-		return err
-	}
-
-	c.counts.Lifecycles++
-
-	return nil
-}
-
-func (c *claims) PutConversion(ctx context.Context, v source.Conversion) error {
-	if _, err := source.NewConversion(v.Fields()); err != nil {
-		c.failed = provider.ErrInvalid
-		return c.failed
-	}
-
-	data, err := encodeConversion(v)
-	if err != nil {
-		c.failed = err
-		return err
-	}
-
-	if err = c.put(ctx, v.Fields().Location, "conversion", data); err != nil {
-		return err
-	}
-
-	c.counts.Conversions++
-
-	return nil
-}
-
 func (c *claims) PutCorrection(ctx context.Context, v source.Correction) error {
 	if _, err := source.NewCorrection(v.Fields()); err != nil {
 		c.failed = provider.ErrInvalid
@@ -453,6 +378,27 @@ func (c *claims) PutCorrection(ctx context.Context, v source.Correction) error {
 	}
 
 	c.counts.Corrections++
+
+	return nil
+}
+
+func (c *claims) PutActivity(ctx context.Context, value source.ActivityObservation) error {
+	if _, err := source.NewActivityObservation(value.Fields()); err != nil {
+		c.failed = provider.ErrInvalid
+		return c.failed
+	}
+
+	data, err := encodeObservation(value)
+	if err != nil {
+		c.failed = err
+		return err
+	}
+
+	if err = c.put(ctx, value.Fields().Location, "activity", data); err != nil {
+		return err
+	}
+
+	c.counts.Activities++
 
 	return nil
 }

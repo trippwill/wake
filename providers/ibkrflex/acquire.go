@@ -61,7 +61,12 @@ func (s *Source) acquire(
 		return provider.Step{}, provider.ErrInvalid
 	}
 
-	query, ok := request.Settings.Get("query_id")
+	queryKey := "query_id"
+	if request.Stream == Activity {
+		queryKey = "activity_query_id"
+	}
+
+	query, ok := request.Settings.Get(queryKey)
 	if !ok || !digits(query) || len(query) > 64 {
 		return provider.Step{}, provider.ErrInvalid
 	}
@@ -174,14 +179,16 @@ func (s *Source) acquire(
 				return artifactErr
 			}
 
-			digest, artifactErr := reportEquivalence(response.body)
-			if artifactErr != nil {
-				return artifactErr
-			}
+			if request.Stream == Confirmations {
+				digest, comparisonErr := reportEquivalence(response.body)
+				if comparisonErr != nil {
+					return comparisonErr
+				}
 
-			artifact, artifactErr = artifact.WithEquivalence("ibkr-report-window/1", digest)
-			if artifactErr != nil {
-				return artifactErr
+				artifact, artifactErr = artifact.WithEquivalence("ibkr-report-window/1", digest)
+				if artifactErr != nil {
+					return artifactErr
+				}
 			}
 
 			requested := periodWindow(state.Anchor, state.Period)
@@ -211,6 +218,9 @@ func (s *Source) acquire(
 			}
 
 			next := request.Now.Add(5 * time.Minute)
+			if request.Stream == Activity {
+				next = request.Now.Add(24 * time.Hour)
+			}
 
 			if len(state.Queue) != 0 {
 				next = request.Now.Add(6 * time.Second)
@@ -336,7 +346,7 @@ func readContinuation(saved provider.State, query string) (continuation, error) 
 	return state, nil
 }
 
-func (state *continuation) choose(now time.Time, _ string) {
+func (state *continuation) choose(now time.Time, stream string) {
 	if state.Period != 0 {
 		if state.Anchor != civil(now).Format("2006-01-02") {
 			selected := periodWindow(state.Anchor, state.Period)
@@ -350,10 +360,15 @@ func (state *continuation) choose(now time.Time, _ string) {
 		return
 	}
 
+	interval, recentPeriod := 5*time.Minute, 2
+	if stream == Activity {
+		interval, recentPeriod = 24*time.Hour, 7
+	}
+
 	lastRecent, _ := time.Parse(time.RFC3339Nano, state.LastRecent)
 	if state.Started && (len(state.Queue) > 0 || len(state.Missing) > 0) &&
-		(lastRecent.IsZero() || !now.Before(lastRecent.Add(5*time.Minute))) {
-		state.Period = 2
+		(lastRecent.IsZero() || !now.Before(lastRecent.Add(interval))) {
+		state.Period = recentPeriod
 		state.Anchor = civil(now).Format("2006-01-02")
 		state.Recent = true
 
@@ -384,7 +399,7 @@ func (state *continuation) choose(now time.Time, _ string) {
 		return
 	}
 
-	state.Period = 2
+	state.Period = recentPeriod
 	state.Recent = true
 
 	if state.LastTo == "" {

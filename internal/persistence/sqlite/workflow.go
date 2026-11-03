@@ -4,9 +4,11 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -109,16 +111,23 @@ func accountValue(row sqlc.Account) (application.Account, error) {
 		return application.Account{}, ErrCorrupt
 	}
 
-	return application.NewAccount(row.ID, row.ConnectionID, row.Provider, row.Stream, ref, details, row.Rule)
+	return application.NewAccount(row.ID, row.ConnectionID, row.Provider, ref, details, row.Rule)
 }
 
 func (s *Store) Confirm(
 	ctx context.Context,
-	id, artifact string,
+	connection host.Connection,
+	artifact string,
 	ref source.Reference,
 	details application.AccountDetails,
-	acquire bool,
 ) (application.Account, error) {
+	id := connection.ID
+
+	settings, err := json.Marshal(connection.Settings.Values())
+	if err != nil {
+		return application.Account{}, err
+	}
+
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
 	}
@@ -171,16 +180,14 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	evidence, err := q.Retained(ctx, artifact)
-	if err != nil {
-		return application.Account{}, err
+	if c.Provider != connection.Provider || !bytes.Equal(c.Settings, settings) {
+		return application.Account{}, application.ErrConnectionChanged
 	}
 
 	a, err := application.NewAccount(
 		rand.Text(),
 		id,
 		c.Provider,
-		evidence.Stream,
 		ref,
 		details,
 		application.AuthorityRule,
@@ -198,7 +205,6 @@ func (s *Store) Confirm(
 			Currency:     details.Currency(),
 			ConnectionID: id,
 			Provider:     c.Provider,
-			Stream:       evidence.Stream,
 			Authority:    ref.Authority(),
 			Kind:         ref.Kind(),
 			Scope:        ref.Scope(),
@@ -209,18 +215,8 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if acquire {
-		if err = q.EnsureWork(
-			ctx,
-			sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
-		); err != nil {
-			return application.Account{}, err
-		}
-
-		if err = q.SetScheduled(
-			ctx,
-			sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
-		); err != nil {
+	if connection.CanAcquire {
+		if err = scheduleAcquisition(ctx, q, id, connection.Streams); err != nil {
 			return application.Account{}, err
 		}
 	}

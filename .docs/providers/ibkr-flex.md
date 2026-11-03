@@ -1,6 +1,7 @@
 # Set up IBKR Flex
 
-The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account.
+The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account,
+with an optional Activity Flex query for reported realized P&L on individual activities.
 
 ## Prepare access and the query
 
@@ -26,6 +27,47 @@ timezone on timestamps; a missing time remains unknown. Account currency comes
 from available profile metadata or operator confirmation, never from a trade's
 currency.
 
+## Optional reported realized P&L
+
+Create a saved Activity Flex query with XML output for the same account, then add its
+Activity Query ID to the existing Wake connection. Both queries use the connection's
+encrypted Flex Web Service token; a second token or connection is unnecessary. Adding
+the query enables acquisition of reported results for the already confirmed source
+account. The IBKR provider keeps Confirmation trade interpretation and Activity
+result interpretation separate; both contribute to the same core Activity. Remove
+the Activity Query ID to stop its acquisition; retained results remain available.
+
+Include execution-level Trades with source account, contract, trade and execution
+references, quantities, currencies, trade/report dates, Cost Basis and Realized PNL.
+The observed XML names include `tradeID`, `ibExecID`, `transactionID`, `conid`, `cost`
+and `fifoPnlRealized`. Include both trade and execution references because booked
+activity can lack an execution ID. Preserve the signed allocated cost and gain/loss;
+Wake does not recompute either or subtract charges a second time. IBKR documents the
+[Activity Trades fields](https://www.ibkrguides.com/reportingreference/reportguide/tradesfq.htm).
+
+Only execution-level activity results contribute. Closed-lot rows, positions, period
+summaries and dedicated Forex P/L Details remain outside this interpretation. Extra
+sections remain in the original evidence. In particular, an FX conversion trade's
+reported result does not establish the realized gain on currency holdings.
+
+The first Activity acquisition requests 365 days. Daily acquisition requests a
+seven-day overlap, widening for downtime with bounded older catch-up. This cadence
+does not establish live P&L or guarantee discovery of older restatements. Returned
+coverage and source report dates remain distinct from retrieval time. IBKR's
+[P&L-not-ready responses](https://www.ibkrguides.com/adminportal/performanceandstatements/flex3error.htm)
+retain retry progress without acknowledging a completed report. Both streams share
+the token's durable request budget and keep independent continuations and failures.
+
+Wake links results through qualified source references and original activity context.
+Unmatched results wait for related evidence. Repeated known results add provenance;
+changed results use the same field reconciliation as other activity observations.
+Competing values retain the durable baseline with disagreement; an originally
+unreported value remains unknown when later enrichments compete. Retrieval order
+does not establish revision authority. Select or release retained fields through
+the activity's correction workflow; choosing partial evidence preserves omitted
+terms. Correcting a trade's price or quantity does not
+recalculate the broker's result or its allocated cost.
+
 ## Connection and processing boundaries
 
 The [current coverage](../product/coverage.md) defines
@@ -38,8 +80,9 @@ diagnostic message. Confirmation reports update during the day with an unspecifi
 delay; successful retrieval and completed normalization or financial processing
 remain separate outcomes.
 
-Discovery and the first authorized acquisition independently request the preceding
-365 days. Ongoing synchronization requests two days every five minutes and widens
+Confirmation discovery and the first authorized acquisition independently request
+the preceding 365 days. Ongoing Confirmation synchronization requests two days every
+five minutes and widens
 after downtime. Older catch-up uses dated windows of at most 365 days. IBKR
 documents both period and dated overrides in its
 [Flex Web Service guide](https://www.ibkrguides.com/adminportal/performanceandstatements/flex3.htm).
@@ -47,11 +90,11 @@ Returned bounds can differ from requested bounds; inspect both in synchronizatio
 progress. Unavailable ranges remain pending while recent work continues.
 
 Generation polling, pacing and transient retries resume automatically. Invalid
-access or query configuration pauses the connection. Renew the token or repair
+access or query configuration pauses the affected work. Renew the token or repair
 the saved query configuration, then use the connection's repair/retry controls.
-Changing connection settings restarts the bounded source protocol while preserving
+Changing a query restarts its own bounded source protocol while preserving
 the confirmed account and retained reports. Source financial authority stays with
-the selected account and Confirmation stream.
+the confirmed connection, provider and qualified source account.
 
 Option execution terms retain the reported strike, currency, put/call, expiry and
 premium multiplier separately from the underlier.
@@ -115,9 +158,14 @@ as evidence.
 ## Repeated reports
 
 Every completed fetch records its actual digest, retrieval time and requested and
-returned bounds. The provider's report comparison excludes only the attribute
+returned bounds. The provider's Confirmation report comparison excludes only the attribute
 values `fromDate` and `toDate` on report-level `FlexStatement` elements. All other
 bytes, including generated timestamps, whitespace and row dates, remain part of
 the comparison. Report-window-only repeats reuse the retained body without
 repeating normalization. Receipts identify that reuse; the evidence page displays
 the retained original body rather than reconstructing discarded window variants.
+
+Activity reports use exact-byte body comparison. Their source dates and original
+reporting bounds remain intact; the Confirmation window-exclusion policy does not
+apply. Per-activity claim comparison still excludes structural row location while
+preserving references, exact values, unknowns, source dates and row multiplicity.

@@ -66,13 +66,15 @@ func (s CorrectionStatus) NeedsReview() bool {
 type ObservationOutcome string
 
 const (
-	ObservationUnselected     ObservationOutcome = "unselected"
-	ObservationIdentityReview ObservationOutcome = "identity-review"
-	ObservationNativeReview   ObservationOutcome = "native-review"
-	ObservationKindConflict   ObservationOutcome = "kind-conflict"
-	ObservationTermsConflict  ObservationOutcome = "terms-conflict"
-	ObservationCorroborated   ObservationOutcome = "corroborated"
-	ObservationAccepted       ObservationOutcome = "accepted"
+	ObservationUnselected         ObservationOutcome = "unselected"
+	ObservationIdentityReview     ObservationOutcome = "identity-review"
+	ObservationIncomplete         ObservationOutcome = "incomplete"
+	ObservationIncompleteConflict ObservationOutcome = "incomplete-conflict"
+	ObservationNativeReview       ObservationOutcome = "native-review"
+	ObservationKindConflict       ObservationOutcome = "kind-conflict"
+	ObservationTermsConflict      ObservationOutcome = "terms-conflict"
+	ObservationCorroborated       ObservationOutcome = "corroborated"
+	ObservationAccepted           ObservationOutcome = "accepted"
 )
 
 type ReferenceStatus string
@@ -81,6 +83,8 @@ func (s ReferenceStatus) NeedsReview() bool { return s == "conflict" || s == "am
 func (s ReferenceStatus) Gap() bool         { return s != "resolved" && !s.NeedsReview() }
 
 func (o ObservationOutcome) NeedsReview() bool {
-	return o == ObservationIdentityReview || o == ObservationNativeReview || o == ObservationKindConflict ||
+	return o == ObservationIncompleteConflict || o == ObservationIncomplete || o == ObservationIdentityReview ||
+		o == ObservationNativeReview ||
+		o == ObservationKindConflict ||
 		o == ObservationTermsConflict
 }

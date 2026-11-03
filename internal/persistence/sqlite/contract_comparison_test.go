@@ -14,6 +14,50 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+func TestCompleteAndPartialComparisonUseTheSameFinancialVocabulary(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "comparison-vocabulary", syntheticOption+syntheticDebt+syntheticFX)
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, row := range rows {
+		terms, err := decodeActivityTerms(row.Kind, row.Accepted)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := encodeObservation(terms.Observation())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		accepted, err := comparisonValues(row.Kind, row.Accepted)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		candidate, err := comparisonValues("activity", data)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for key, value := range candidate {
+			if accepted[key] != value {
+				t.Errorf(
+					"%s %s: accepted %#v differs from identical source assertion %#v",
+					row.Kind,
+					key,
+					accepted[key],
+					value,
+				)
+			}
+		}
+	}
+}
+
 func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "comparison-contracts", syntheticOption+syntheticDebt)
@@ -99,7 +143,17 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			values, e := comparisonValues("trade", data)
+			kind := "trade"
+			if changed {
+				data, e = encodeObservation(trade.Observation())
+				if e != nil {
+					t.Fatal(e)
+				}
+
+				kind = "activity"
+			}
+
+			values, e := comparisonValues(kind, data)
 			if e != nil {
 				t.Fatal(e)
 			}

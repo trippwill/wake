@@ -51,6 +51,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	now := func() time.Time { return time.Unix(clock.Load(), 0).UTC() }
 	sent := make(chan string, 4)
+	realizedSent := make(chan struct{}, 1)
 
 	var (
 		reportCalls    atomic.Int64
@@ -62,6 +63,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/SendRequest":
+			if r.URL.Query().Get("q") == "456" && r.URL.Query().Get("t") == "synthetic-token" {
+				realizedSent <- struct{}{}
+
+				_, _ = fmt.Fprint(
+					w,
+					`<FlexStatementResponse><Status>Success</Status><ReferenceCode>realized-generation</ReferenceCode></FlexStatementResponse>`,
+				)
+
+				return
+			}
+
 			if r.URL.Query().Get("t") != "synthetic-token" || r.URL.Query().Get("q") != "123" {
 				t.Error("retained provider credential or settings missing")
 				http.Error(w, "invalid access", http.StatusUnauthorized)
@@ -76,6 +88,15 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 				`<FlexStatementResponse><Status>Success</Status><ReferenceCode>generation</ReferenceCode></FlexStatementResponse>`,
 			)
 		case "/GetStatement":
+			if r.URL.Query().Get("q") == "realized-generation" {
+				_, _ = fmt.Fprint(
+					w,
+					`<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><Trades><Trade accountId="U-SYNTHETIC" assetCategory="STK" conid="123" tradeID="trade-1" ibExecID="fill-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="0.125" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" fifoPnlRealized="12.34000000000000001" cost="-100.0000"/></Trades></FlexStatement></FlexStatements></FlexQueryResponse>`,
+				)
+
+				return
+			}
+
 			reportCalls.Add(1)
 
 			_, _ = fmt.Fprint(
@@ -181,10 +202,18 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		defer cancelStep()
 
 		if err := chromedp.Run(step, actions...); err != nil {
-			var body, location string
+			var body, location, animations string
 
-			_ = chromedp.Run(ctx, chromedp.Location(&location), chromedp.Text("body", &body, chromedp.ByQuery))
-			t.Fatal(err, location, body)
+			_ = chromedp.Run(
+				ctx,
+				chromedp.Location(&location),
+				chromedp.Text("body", &body, chromedp.ByQuery),
+				chromedp.Evaluate(
+					`JSON.stringify({phase:globalThis.wakeCapturePhase,visibility:document.visibilityState,animations:document.getAnimations().map(a=>({name:a.animationName,type:a.constructor.name,timeline:a.timeline?.constructor.name,play:a.playState,pending:a.pending,rate:a.playbackRate,current:String(a.currentTime),timing:a.effect?.getComputedTiming()}))})`,
+					&animations,
+				),
+			)
+			t.Fatal(err, location, body, animations)
 		}
 	}
 	newDocument := testbrowser.NewDocument
@@ -202,6 +231,16 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			theme string
 			width int64
 		}{{"light", 1440}, {"dark", 390}} {
+			captureAction := func(phase string, action chromedp.Action) chromedp.Action {
+				return chromedp.ActionFunc(func(step context.Context) error {
+					if err := action.Do(step); err != nil {
+						return fmt.Errorf("capture %s %s %s: %w", name, appearance.theme, phase, err)
+					}
+
+					return nil
+				})
+			}
+
 			check(
 				emulation.SetDeviceMetricsOverride(appearance.width, 1000, 1, false),
 				chromedp.Evaluate(
@@ -213,14 +252,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			)
 
 			// Capture the settled theme, including finite CSS control transitions.
-			check(chromedp.Evaluate(
-				`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))).then(()=>Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))))`,
-				nil,
-				func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
-			))
+			check(captureAction("settling", testbrowser.SettleAnimations()))
 
 			var png []byte
-			check(chromedp.FullScreenshot(&png, 90))
+			check(captureAction("screenshot", chromedp.FullScreenshot(&png, 90)))
 			//nolint:gosec // Caller-selected synthetic screenshot directory.
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
@@ -975,4 +1010,83 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			nil,
 		),
 	)
+	// Add the supplementary query through the actual connection form. The same
+	// encrypted token acquires and publishes a result without another activity.
+	check(
+		newDocument(chromedp.Navigate(origin+connectionPath+"?view=access")),
+		chromedp.WaitVisible(`input[name="setting.activity_query_id"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`input[name="setting.activity_query_id"]`, "456", chromedp.ByQuery),
+		newDocument(chromedp.Click(`form[action$="/settings"] button`, chromedp.ByQuery)),
+	)
+	clock.Add(6)
+
+	select {
+	case <-realizedSent:
+	case <-time.After(10 * time.Second):
+		t.Fatal("configured Activity query did not start")
+	}
+
+	clock.Add(10)
+	check(
+		newDocument(chromedp.Navigate(origin+"/activity?sort=realized&dir=desc")),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+		chromedp.Evaluate(`document.body.textContent.includes('12.34000000000000001 USD')`, &ok),
+	)
+
+	if !ok {
+		check(
+			chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+			chromedp.Click("[data-grid-refresh]", chromedp.ByQuery),
+		)
+	}
+
+	check(
+		chromedp.Poll(
+			`document.querySelector('.tabulator-row [tabulator-field="realized"]').textContent==='12.34000000000000001 USD'`,
+			nil,
+		),
+		newDocument(chromedp.Click(`.tabulator-row a[href^="/executions/"]`, chromedp.ByQuery)),
+		chromedp.WaitVisible("[data-reported-realized]", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('[data-reported-realized]').textContent.includes('-100.0000 USD')`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("reported allocated cost lost precision")
+	}
+
+	capture("reported-realized")
+
+	check(
+		newDocument(chromedp.Click(`a[href*="/correct"]`, chromedp.ByQuery)),
+		newDocument(chromedp.Click(`a[href*="mode=evidence"]`, chromedp.ByQuery)),
+		chromedp.Evaluate(
+			`(()=>{const select=document.querySelector('#decision-candidate');select.value=Array.from(select.options).find(option=>option.textContent.startsWith('Partial activity evidence')).value;select.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+			nil,
+		),
+		newDocument(chromedp.Click(`form[data-candidate-compare] button`, chromedp.ByQuery)),
+		chromedp.WaitVisible(`form[aria-label="Select retained evidence"]`, chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('form[aria-label="Select retained evidence"] input[name="scope"]').value==='observation'&&document.querySelector('.wake-comparison').textContent.includes('12.34000000000000001 USD')`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("P&L evidence selection used activity-field scope")
+	}
+
+	capture("reported-realized-selection")
+
+	check(newDocument(chromedp.Click(`form[aria-label="Select retained evidence"] button`, chromedp.ByQuery)))
+	check(chromedp.Evaluate(`!document.body.textContent.includes('Correction not saved')`, &ok))
+
+	if !ok {
+		t.Fatal("reported P&L selection failed")
+	}
 }

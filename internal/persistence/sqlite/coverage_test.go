@@ -19,13 +19,13 @@ import (
 )
 
 // Synthetic reports use a disposable account, never operator data or credentials.
-func coverageStore(t *testing.T) *Store {
+func coverageStore(t testing.TB) *Store {
 	t.Helper()
 	s, _ := testStore(t)
 
 	_, err := s.db.Exec(`INSERT INTO connections(id,provider) VALUES('synthetic','ibkr-flex');
 INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('discovery','synthetic','confirmations','discover','ibkr-confirmation-v1','application/xml','2026-10-20T00:00:00Z','synthetic',X'00');
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic account','','synthetic','ibkr-flex','confirmations','ibkr','account','','U1','discovery');`)
+INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic account','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,8 @@ func TestOptionIdentityHistoricalTermsAndReplay(t *testing.T) {
 	}
 
 	records, err := s.Records(ctx, "first", ibkrflex.Version)
-	if err != nil || records[0].Trade.Fields().Instrument.Option().Fields().Strike != f.Strike {
+	if err != nil ||
+		observedTrade(t, records[0].Observation).Fields().Instrument.Option().Fields().Strike != f.Strike {
 		t.Fatal("retained terms", err)
 	}
 }
@@ -171,11 +172,11 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 
 	n := claimNormalizer(
 		func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
-			if e := c.PutLifecycle(ctx, l); e != nil {
+			if e := c.PutActivity(ctx, l.Observation()); e != nil {
 				return provider.Result{}, e
 			}
 
-			return provider.NewResult(provider.Counts{Rows: 1, Lifecycles: 1})
+			return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 		},
 	)
 	coverageClaims(t, s, "exercise", n)
@@ -502,7 +503,12 @@ func TestSyntheticConfirmationSequenceAcceptsActivityByKind(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if result.Lifecycles() != 3 || result.Conversions() != 2 || result.Rejected() != 0 {
+		expected := uint64(17)
+		if name == "overlap.xml" {
+			expected = 12
+		}
+
+		if result.Activities() != expected || result.Rejected() != 0 {
 			t.Fatal("claim kinds", result.Counts())
 		}
 
@@ -573,11 +579,11 @@ func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 
 	n := claimNormalizer(
 		func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
-			if e := c.PutTrade(ctx, adjusted); e != nil {
+			if e := c.PutActivity(ctx, adjusted.Observation()); e != nil {
 				return provider.Result{}, e
 			}
 
-			return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+			return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 		},
 	)
 	coverageClaims(t, s, "reported-adjustment", n)
@@ -629,4 +635,15 @@ func TestOptionUnderlierCanLaterBeReportedAsETF(t *testing.T) {
 	if err != nil || d.Underlier != underlier {
 		t.Fatal("underlier identity changed", d, err)
 	}
+}
+
+func observedTrade(t testing.TB, o source.ActivityObservation) source.Trade {
+	t.Helper()
+
+	v, err := o.Trade()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return v
 }

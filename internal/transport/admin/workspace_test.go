@@ -406,7 +406,7 @@ func TestObservationGridFallbackPreservesNamespacedState(t *testing.T) {
 		}
 	}
 
-	if len(query.Options().ObservationLabels) != 7 {
+	if len(query.Options().ObservationLabels) != 9 {
 		t.Fatal("incomplete outcome vocabulary", query.Options().ObservationLabels)
 	}
 }

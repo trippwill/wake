@@ -34,8 +34,11 @@ const (
 
 type (
 	Connection struct {
-		ID, Provider, Name string
-		Settings           provider.Settings
+		ID, Provider, Name      string
+		Settings                provider.Settings
+		Streams                 []provider.Stream
+		ResetStreams            []string
+		CanAcquire, CanDiscover bool
 	}
 	WorkKey    struct{ Connection, Stream, Operation string }
 	Checkpoint struct {
@@ -221,6 +224,10 @@ func (h *Host) Configure(
 		}
 	}
 
+	if _, err := r.ConfigureStreams(settings); err != nil {
+		return "", safeError(err)
+	}
+
 	connection := Connection{ID: rand.Text(), Provider: id, Name: name, Settings: settings}
 	encrypted := map[string][]byte{}
 	for key, secret := range secrets {
@@ -303,8 +310,36 @@ func (h *Host) UpdateSettings(ctx context.Context, id, name string, settings pro
 		}
 	}
 
+	previous, previousErr := r.ConfigureStreams(connection.Settings)
+	if previousErr != nil && !errors.Is(previousErr, provider.ErrInvalid) {
+		return safeError(previousErr)
+	}
+
+	configured, err := r.ConfigureStreams(settings)
+	if err != nil {
+		return safeError(err)
+	}
+
 	connection.Settings = settings
 	connection.Name = name
+
+	connection.Streams = []provider.Stream{}
+	connection.CanAcquire = r.Acquirer() != nil
+	connection.CanDiscover = r.Discoverer() != nil
+	for _, configuration := range configured {
+		connection.Streams = append(connection.Streams, configuration.Stream())
+		unchanged := false
+		for _, old := range previous {
+			if old.Stream().ID() == configuration.Stream().ID() && old.Identity() == configuration.Identity() {
+				unchanged = true
+			}
+		}
+
+		if !unchanged {
+			connection.ResetStreams = append(connection.ResetStreams, configuration.Stream().ID())
+		}
+	}
+
 	if err = h.store.Reconfigure(work, connection); err != nil {
 		return ErrStorage
 	}
@@ -431,9 +466,19 @@ func (h *Host) step(
 		return "", provider.ErrUnavailable
 	}
 
+	configured, err := r.ConfigureStreams(c.Settings)
+	if err != nil {
+		return "", safeError(err)
+	}
+
 	format := ""
-	for _, s := range r.Descriptor().Streams() {
+	for _, configuration := range configured {
+		s := configuration.Stream()
 		if s.ID() == stream {
+			if discover && !s.CanDiscover() {
+				return "", provider.ErrUnavailable
+			}
+
 			format = s.Format()
 		}
 	}
@@ -598,8 +643,8 @@ func (h *Host) Normalize(ctx context.Context, id, version string) (result provid
 			resultErr,
 			"rows",
 			result.Rows(),
-			"trades",
-			result.Trades(),
+			"activity_observations",
+			result.Activities(),
 			"instruments",
 			result.Instruments(),
 			"rejected",

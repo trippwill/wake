@@ -96,7 +96,7 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 				// Retained financial rows and decisions do not depend on active access configuration.
 				if _, err := s.db.Exec(
 					`INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('report','connection','confirmations','acquire','synthetic','application/xml','2026-10-20T00:00:00Z','synthetic',X'00');
- INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id) VALUES('account',1,'Retained account','','connection','ibkr-flex','confirmations','ibkr','account','','U1','report');
+ INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account',1,'Retained account','','connection','ibkr-flex','ibkr','account','','U1','report');
  INSERT INTO operator_decisions VALUES('decision','activity','retained-id','name','Retained','','set','admin/test','2026-10-20T00:00:00Z','','','submission',X'00');
  INSERT INTO normalization_receipts VALUES('report','v1',X'7b7d');`,
 				); err != nil {
@@ -190,9 +190,13 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 						t.Fatal("unrepaired access resumed")
 					}
 
+					input, _ := provider.NewStream("confirmations", "ibkr-flex-confirmation-xml")
 					if err := recovered.Reconfigure(
 						ctx,
-						host.Connection{ID: "connection", Provider: "ibkr-flex", Settings: settings},
+						host.Connection{
+							ID: "connection", Provider: "ibkr-flex", Settings: settings,
+							Streams: []provider.Stream{input}, ResetStreams: []string{"confirmations"}, CanAcquire: true,
+						},
 					); err != nil {
 						t.Fatal(err)
 					}

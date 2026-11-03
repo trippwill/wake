@@ -1,7 +1,8 @@
 # Current coverage
 
-Wake supports one IBKR account with automatic Confirmation acquisition, financial
-review and attributable corrections to existing activity. This document owns
+Wake supports one IBKR account with automatic Confirmation acquisition, optional
+Activity acquisition for reported per-activity realized P&L, financial review and
+attributable corrections to existing activity. This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
 
@@ -14,7 +15,7 @@ The workflow is:
 2. Wake discovers the account information available through that connection.
 3. The operator selects one discovered account and confirms or edits its details.
 4. Wake creates the financial account and binds its reported account reference to
-   the connection, provider and Confirmation stream as its authoritative source.
+   the connection and provider as its authoritative financial source.
 5. Automatic synchronization and financial processing start for that account.
 
 Discovery may return several candidates; v0.1.0 activates one account. Discovery
@@ -22,8 +23,8 @@ does not create financial accounts or start ongoing history synchronization.
 The [domain vocabulary](../product/domain.md#account-source-authority) defines
 account identity, source authority and financial meaning.
 
-Each account has one designated authoritative `(connection, provider, stream)`
-for its financial activity. This does not designate IBKR as the instrument
+Each account has one designated authoritative connection and provider, bound to its
+qualified source-account reference. This does not designate IBKR as the instrument
 reference master or remove attributable operator corrections. OpenFIGI remains
 the primary instrument identity and naming reference.
 
@@ -31,11 +32,12 @@ the primary instrument identity and naming reference.
 
 | Area | Coverage |
 | --- | --- |
-| Acquisition | One IBKR account, one authoritative Confirmation stream, automatic acquisition, retained original reports, overlapping windows, restart and catch-up. |
+| Acquisition | One IBKR account, Confirmation and optional Activity queries sharing the same encrypted token; retained original reports, overlapping windows, restart and catch-up. |
 | Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
 | Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, charges and dates. |
 | Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
+| Realized P&L | Activity execution-level reported gains/losses and allocated costs linked to existing activity, with exact currencies, separate reporting dates, unknowns and source disagreement. No result calculation or lot reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
 | Reference data | Allocation-aware OpenFIGI lookup, bounded composite-parent completion, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Matching verified identities combine with retained aliases; conflicting choices require review. Refresh failures preserve established identity. |
@@ -58,10 +60,11 @@ Debt activity retains nominal face quantity and exact reported price without a
 quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
 charges remain separate; no combined settlement total is inferred.
 
-This pre-release identity and debt format requires explicit warehouse recreation on upgrade.
+This pre-release identity, debt and activity-result format requires explicit warehouse recreation
+on upgrade.
 Older warehouses fail closed and remain untouched; encrypted access seeds retain
 their independent format. Reacquire and confirm source history in the new warehouse.
-This selected deployment discards warehouse-only decisions and evidence; preserve
+Recreating a warehouse discards warehouse-only decisions and evidence; preserve
 any needed old warehouse before explicitly resetting. No automatic migration or
 historical updater is supplied by this change.
 
@@ -70,18 +73,35 @@ does not authorize an inferred stock delivery, cash payment or strategy. Family
 and market examples are representative, not rejection lists
 for otherwise interpretable records.
 
+The IBKR provider reads activity terms from Confirmation reports and per-activity
+realized results from an optional Activity query for the confirmed account. These
+are provider-owned report interpretations; they contribute to one accepted Activity
+model through the same typed activity-observation contract. Financial assertions
+may be partial; they do not require a complete execution row or a second P&L pipeline.
+Unmatched and incomplete observations remain retained and reviewable; later related
+evidence can establish their links or supply required terms. An ambiguous established
+link remains visible with conflict.
+Disabling the Activity query stops acquisition while preserving retained results.
+
+Activity trade-row P&L remains distinct from FX holding gains and from period totals.
+A result is not recomputed from proceeds, charges or an operator's corrected price.
+Source restatements without established revision semantics retain the baseline and
+disagreement. Competing enrichments of an originally unknown field remain unknown;
+operators can select reported fields without replacing omitted activity terms. Additional
+lot and position sections remain original evidence without financial contribution.
+
 ## Deferred coverage
 
 - Creation of new financial activity through manual-entry workflows.
-- Activity Flex acquisition and processing, including Activity-to-Confirmation
-  enrichment and summary/component reconciliation.
+- Activity contributions to trade terms and lifecycle outcomes, period P&L summaries,
+  dedicated Forex P/L Details and summary/component reconciliation.
 - Financial contributions from Confirmation order or symbol summaries. Preserve
   them in the original report; execution/booked rows supply financial activity.
 - Deposits, withdrawals, standalone fees, dividends, coupons, withholding and
   other non-trade cash activity absent from the Confirmation stream.
-- Securities transfers, reported lot/cost allocations, wash-sale adjustments and
+- Securities transfers, lot identities and allocations, wash-sale calculations and
   dedicated corporate-action processing, including Treasury-bill maturity events.
-- Positions, balances, NAV, reported or calculated P&L, and reconstruction of
+- Positions, balances, NAV, unrealized or calculated P&L, and reconstruction of
   holdings, cash, lots or missing lifecycle outcomes.
 - SnapTrade and other acquisition providers, multiple-account workflows, file
   imports, automatic source switching and peer-source reconciliation.

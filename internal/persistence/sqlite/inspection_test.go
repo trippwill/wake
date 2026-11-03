@@ -128,6 +128,8 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 					Progress:  provider.ProgressPhase(r.Observed),
 					Failure:   r.Failure,
 					Next:      r.Next,
+					Stream:    r.Stream,
+					Scheduled: r.Scheduled,
 				},
 			)
 		}
@@ -143,17 +145,15 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 				application.ProcessingStatus{
 					Artifact: r.ID,
 					Receipt:  r.ReceiptID, Retrieved: r.Retrieved, Hash: r.Hash, ComparisonPolicy: r.Policy,
-					Complete:         r.Processed == 1,
-					RequestedFrom:    r.RequestedFrom,
-					RequestedTo:      r.RequestedTo,
-					ReportedFrom:     r.ReportedFrom,
-					ReportedTo:       r.ReportedTo,
-					Failure:          r.ProcessingFailure,
-					TradeClaims:      r.TradeClaims,
-					LifecycleClaims:  r.LifecycleClaims,
-					ConversionClaims: r.ConversionClaims,
-					ExcludedRows:     r.ExcludedRows,
-					NeedsReview:      r.NeedsReview,
+					Complete:       r.Processed == 1,
+					RequestedFrom:  r.RequestedFrom,
+					RequestedTo:    r.RequestedTo,
+					ReportedFrom:   r.ReportedFrom,
+					ReportedTo:     r.ReportedTo,
+					Failure:        r.ProcessingFailure,
+					ActivityClaims: r.ActivityClaims,
+					ExcludedRows:   r.ExcludedRows,
+					NeedsReview:    r.NeedsReview,
 				},
 			)
 		}

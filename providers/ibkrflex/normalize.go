@@ -17,6 +17,10 @@ func (s *Source) Normalize(
 	artifact provider.Artifact,
 	sink provider.Claims,
 ) (provider.Result, error) {
+	if artifact.Format() == ActivityFormat {
+		return s.normalizeRealized(ctx, artifact, sink)
+	}
+
 	if artifact.Format() != ConfirmationFormat {
 		return provider.Result{}, provider.ErrUnavailable
 	}
@@ -95,11 +99,11 @@ func (s *Source) Normalize(
 				return sink.Reject(ctx, location(path), "invalid-currency-conversion")
 			}
 
-			if e = sink.PutConversion(ctx, c); e != nil {
+			if e = sink.PutActivity(ctx, c.Observation()); e != nil {
 				return e
 			}
 
-			counts.Conversions++
+			counts.Activities++
 
 			return nil
 		}
@@ -111,11 +115,11 @@ func (s *Source) Normalize(
 				return sink.Reject(ctx, location(path), "option-outcome-needs-review")
 			}
 
-			if e = sink.PutLifecycle(ctx, claim); e != nil {
+			if e = sink.PutActivity(ctx, claim.Observation()); e != nil {
 				return e
 			}
 
-			counts.Lifecycles++
+			counts.Activities++
 
 			return nil
 		}
@@ -126,11 +130,11 @@ func (s *Source) Normalize(
 			return sink.Reject(ctx, location(path), "invalid-security-execution")
 		}
 
-		if e = sink.PutTrade(ctx, claim); e != nil {
+		if e = sink.PutActivity(ctx, claim.Observation()); e != nil {
 			return e
 		}
 
-		counts.Trades++
+		counts.Activities++
 
 		return nil
 	})
