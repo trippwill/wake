@@ -27,8 +27,10 @@ import (
 	"github.com/a-h/templ"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
+	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/testbrowser"
@@ -37,7 +39,7 @@ import (
 )
 
 // The independent browser fixture exposes only a remote page of exact values.
-func polishGrid() templ.Component {
+func polishGrid(notes bool) templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
 		if err := PageHeader(
 			"Activity",
@@ -53,18 +55,25 @@ func polishGrid() templ.Component {
 			return err
 		}
 
-		if err := ListFilters(false).Render(ctx, w); err != nil {
-			return err
+		endpoint := "/test/grid-data"
+		if notes {
+			endpoint += "?notes=true"
 		}
 
-		return Grid("activity", "/test/grid-data", "Precision activity").Render(ctx, w)
+		return Grid("activity", endpoint, "Precision activity").Render(ctx, w)
 	})
 }
 
 func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 	params := r.URL.Query()
+
 	page, _ := strconv.Atoi(params.Get("page"))
 	size, _ := strconv.Atoi(params.Get("size"))
+
+	scope := application.ActivityScope
+	if params.Get("view") == "instruments" {
+		scope = application.InstrumentScope
+	}
 
 	query, err := application.NewListQuery(
 		application.ListOptions{
@@ -74,7 +83,7 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 			Sort:      params.Get("sort"),
 			Direction: params.Get("dir"),
 		},
-		application.ActivityScope,
+		scope,
 	)
 	if err != nil {
 		gridJSON(w, nil, err)
@@ -125,6 +134,11 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 				Reference: gridCell{Text: "provisional"},
 			},
 		)
+
+		if params.Get("notes") == "true" {
+			rows[len(rows)-1].Label.Note = "Trade"
+			rows[len(rows)-1].Price.Note = "Per share"
+		}
 	}
 
 	slices.SortFunc(rows, func(a, b activityGridRow) int {
@@ -134,7 +148,7 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 			av, _ := new(big.Rat).SetString(strings.TrimSuffix(a.Price.Text, " USD"))
 			bv, _ := new(big.Rat).SetString(strings.TrimSuffix(b.Price.Text, " USD"))
 			order = av.Cmp(bv)
-		case "label":
+		case "label", "name":
 			order = strings.Compare(a.Label.Text, b.Label.Text)
 		}
 
@@ -149,19 +163,32 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 		return order
 	})
 	matched := len(rows)
+
 	start := min(int(query.Offset()), matched)
 	end := min(start+options.PageSize, matched)
+
+	info := application.PageInfo{
+		Page:     options.Page,
+		PageSize: options.PageSize,
+		Total:    int64(count),
+		Matched:  int64(matched),
+	}
+	if scope == application.InstrumentScope {
+		instruments := make([]instrumentGridRow, 0, end-start)
+		for _, row := range rows[start:end] {
+			instruments = append(instruments, instrumentGridRow{
+				ID: row.ID, Name: row.Label, Kind: gridCell{Text: "Equity"}, State: row.Reference,
+			})
+		}
+
+		gridJSON(w, gridResult(instruments, info), nil)
+
+		return
+	}
+
 	gridJSON(
 		w,
-		gridResult(
-			rows[start:end],
-			application.PageInfo{
-				Page:     options.Page,
-				PageSize: options.PageSize,
-				Total:    int64(count),
-				Matched:  int64(matched),
-			},
-		),
+		gridResult(rows[start:end], info),
 		nil,
 	)
 }
@@ -295,6 +322,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	production, err := NewHandler(
+		auth,
+		Dependencies{Workflow: application.New(workspaceStore{}, nil, nil, nil, nil)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	identity := presentationInstrument(t)
 
 	bill, err := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryBill})
@@ -376,6 +411,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = pageRequest(r)
+		if r.URL.Path == "/activity" || r.URL.Path == "/grids/activity" || r.URL.Path == "/grids/instruments" {
+			production.ServeHTTP(w, r)
+			return
+		}
+
 		if strings.HasSuffix(r.URL.Path, "tabulator.min.js") && noGrid.Load() {
 			http.NotFound(w, r)
 			return
@@ -529,8 +569,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 			var component templ.Component
 			switch r.URL.Path {
-			case "/test/grid":
-				component = polishGrid()
+			case "/test/grid", "/test/dense-grid":
+				component = polishGrid(r.URL.Path == "/test/dense-grid")
+			case "/test/instruments":
+				component = Grid("instruments", "/test/grid-data?view=instruments", "Synthetic instruments")
 			case "/test/observations", "/instruments/synthetic-instrument":
 				component = polishObservations()
 			case "/test/correction", "/activity/synthetic-activity/correct":
@@ -639,10 +681,18 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		defer cancelStep()
 
 		if err := chromedp.Run(step, actions...); err != nil {
-			var location, body string
+			var location, body, grid string
 
-			_ = chromedp.Run(ctx, chromedp.Location(&location), chromedp.Text("body", &body, chromedp.ByQuery))
-			t.Fatal(err, location, body)
+			_ = chromedp.Run(
+				ctx,
+				chromedp.Location(&location),
+				chromedp.Text("body", &body, chromedp.ByQuery),
+				chromedp.Evaluate(
+					`JSON.stringify({ready:document.querySelector('[data-grid]')?.dataset.gridReady,size:window.Tabulator?.findTable('.tabulator')[0]?.getPageSize(),rows:document.querySelectorAll('.tabulator-row').length,choice:document.querySelector('.tabulator-page-size')?.value,active:document.activeElement.tagName})`,
+					&grid,
+				),
+			)
+			t.Fatal(err, location, grid, body)
 		}
 	}
 	assert := func(script, message string) {
@@ -657,7 +707,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			_ = chromedp.Run(
 				ctx,
 				chromedp.Evaluate(
-					`JSON.stringify({viewport:innerWidth,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth,body:document.body.scrollWidth,elements:[...document.querySelectorAll('body *')].map(n=>({tag:n.tagName,cls:n.className,text:n.textContent.slice(0,60),scroll:n.scrollWidth,client:n.clientWidth,right:n.getBoundingClientRect().right,width:n.getBoundingClientRect().width})).filter(n=>n.width&&(n.right>innerWidth+1||n.scroll>n.client+1)).slice(0,12)})`,
+					`JSON.stringify({viewport:innerWidth,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth,body:document.body.scrollWidth,grid:[...document.querySelectorAll('.wake-grid-header,.tabulator,.tabulator-header,.tabulator-tableholder,.tabulator-footer,.tabulator-row:nth-child(-n+6)')].map(n=>({cls:n.className,rect:n.getBoundingClientRect().toJSON()})),elements:[...document.querySelectorAll('body *')].map(n=>({tag:n.tagName,cls:n.className,text:n.textContent.slice(0,60),scroll:n.scrollWidth,client:n.clientWidth,right:n.getBoundingClientRect().right,width:n.getBoundingClientRect().width})).filter(n=>n.width&&(n.right>innerWidth+1||n.scroll>n.client+1)).slice(0,12)})`,
 					&overflow,
 				),
 			)
@@ -693,6 +743,309 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`!document.querySelector('table') && !window.privateInjection && document.querySelector('[data-grid-status]').textContent==='70 of 70 results'`,
 		"JSON grid or escaping",
 	)
+
+	visitGrid := func(path string, size, rows int) {
+		t.Helper()
+		check(
+			testbrowser.NewDocument(chromedp.Navigate(origin+path)),
+			chromedp.Poll(fmt.Sprintf(
+				`document.querySelector('[data-grid]')?.dataset.gridReady==='true' && document.querySelector('.tabulator-page-size')?.value==='%d' && document.querySelectorAll('.tabulator-row').length===%d`,
+				size,
+				rows,
+			), nil),
+		)
+	}
+	chooseSize := func(size, rows int) {
+		t.Helper()
+		check(
+			chromedp.Focus(".tabulator-page-size", chromedp.ByQuery),
+			chromedp.SetValue(".tabulator-page-size", strconv.Itoa(size), chromedp.ByQuery),
+			chromedp.Evaluate(
+				`document.querySelector('.tabulator-page-size').dispatchEvent(new Event('change',{bubbles:true}))`,
+				nil,
+			),
+			chromedp.Poll(fmt.Sprintf(
+				`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && document.querySelector('[data-grid]').dataset.gridReady==='true' && document.querySelectorAll('.tabulator-row').length===%d && document.querySelector('.tabulator-page-size').value==='%d'`,
+				rows,
+				size,
+			), nil),
+		)
+		assert(`document.activeElement.matches('.tabulator-page-size')`, "page-size change lost keyboard focus")
+	}
+
+	// Resize the same populated document across the former width and height breakpoints.
+	for _, theme := range []string{"light", "dark"} {
+		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
+
+		for _, size := range []int{50, 200} {
+			check(emulation.SetDeviceMetricsOverride(1280, 720, 1, false))
+			visitGrid("/test/dense-grid?size="+strconv.Itoa(size), size, min(size, 70))
+			check(chromedp.Evaluate(`window.resizedGrid=document.querySelector('[data-grid]')`, nil))
+
+			for _, viewport := range [][2]int64{{1280, 720}, {768, 640}, {768, 639}, {320, 700}, {390, 844}, {768, 639}, {768, 640}, {1280, 720}} {
+				width, height := viewport[0], viewport[1]
+				check(
+					emulation.SetDeviceMetricsOverride(width, height, 1, false),
+					chromedp.Poll(fmt.Sprintf(`(()=>{
+						const holder=document.querySelector('.tabulator-tableholder');
+						const grid=document.querySelector('[data-grid]').getBoundingClientRect();
+						const footer=document.querySelector('.tabulator-footer').getBoundingClientRect();
+						return innerWidth===%d && innerHeight===%d && holder.clientHeight>100 && holder.scrollHeight>holder.clientHeight && footer.bottom<=grid.bottom+1;
+					})()`, width, height), nil),
+					chromedp.Evaluate(`document.querySelector('[data-grid]').scrollIntoView({block:'start'})`, nil),
+				)
+				assert(`(()=>{
+					const grid=document.querySelector('[data-grid]');
+					const holder=grid.querySelector('.tabulator-tableholder');
+					const chrome=[...grid.querySelectorAll('[data-list-filters],.tabulator-header,.tabulator-footer')];
+					const positions=chrome.map(n=>n.getBoundingClientRect().top);
+					holder.scrollTop=holder.scrollHeight;
+					const last=holder.querySelector('.tabulator-row:last-child').getBoundingClientRect();
+					const bounds=holder.getBoundingClientRect();
+					const reachable=grid===window.resizedGrid && holder.scrollTop>0 && last.top>=bounds.top && last.bottom<=bounds.bottom+1 && chrome.every((n,i)=>Math.abs(n.getBoundingClientRect().top-positions[i])<1) && document.documentElement.scrollWidth<=innerWidth+1;
+					holder.scrollTop=0;
+					return reachable;
+				})()`, fmt.Sprintf("resizing clipped rows or moved fixed controls %s %d %dx%d", theme, size, width, height))
+
+				if height == 640 || height == 720 {
+					minimumRows := 4
+					if height == 720 {
+						minimumRows = 5
+					}
+
+					assert(fmt.Sprintf(`(()=>{
+						const holder=document.querySelector('.tabulator-tableholder');
+						const bounds=holder.getBoundingClientRect();
+						const ordinary=holder.querySelectorAll('.tabulator-row')[10];
+						holder.scrollTop+=ordinary.getBoundingClientRect().top-bounds.top;
+						return [...holder.querySelectorAll('.tabulator-row')].filter(row=>{
+							const r=row.getBoundingClientRect();
+							return r.top>=bounds.top && r.bottom<=Math.min(innerHeight,bounds.bottom);
+						}).length>=%d;
+					})()`, minimumRows), fmt.Sprintf("fixed header crowds out ordinary wrapped rows %s %dx%d", theme, width, height))
+				}
+
+				if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" && size == 50 {
+					var png []byte
+					check(chromedp.FullScreenshot(&png, 90))
+
+					//nolint:gosec // Caller-selected synthetic screenshot directory.
+					if err := os.MkdirAll(folder, 0o700); err != nil {
+						t.Fatal(err)
+					}
+
+					name := fmt.Sprintf("grid-resize-%s-%dx%d.png", theme, width, height)
+					//nolint:gosec // Caller-selected synthetic screenshot directory.
+					if err := os.WriteFile(filepath.Join(folder, name), png, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+		}
+
+		check(
+			chromedp.Focus(".wake-grid-help summary", chromedp.ByQuery),
+			chromedp.SendKeys(".wake-grid-help summary", "\r", chromedp.ByQuery),
+		)
+		assert(
+			`document.querySelector('.wake-grid-help').open && document.querySelector('.wake-grid-help').textContent.includes('Alt + arrow keys') && document.querySelector('.tabulator-tableholder').clientHeight>100`,
+			"table keyboard help is unavailable or crowds out the rows",
+		)
+		check(chromedp.SendKeys(".wake-grid-help summary", "\r", chromedp.ByQuery))
+		assert(
+			`!document.querySelector('.wake-grid-help').open && document.activeElement.matches('.wake-grid-help summary')`,
+			"closing table help lost focus",
+		)
+	}
+
+	check(emulation.SetDeviceMetricsOverride(1440, 1000, 1, false))
+
+	// Exercise the native selector, then carry its size through filtering and history.
+	visitGrid("/test/grid?size=50&q=investment&sort=price&dir=asc&page=2&selected=precision-025", 50, 20)
+	assert(
+		`(()=>{const s=document.querySelector('.tabulator-page-size');return s.getAttribute('aria-label')==='Rows per page' && s.labels[0]?.textContent==='Rows per page' && [...s.options].map(o=>o.value).join(',')==='10,25,50,100,200'})()`,
+		"page-size selector choices or label",
+	)
+	check(
+		chromedp.Focus(".tabulator-page-size", chromedp.ByQuery),
+		chromedp.SendKeys(".tabulator-page-size", kb.ArrowUp, chromedp.ByQuery),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===25 && new URL(location.href).searchParams.get('size')==='25' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	assert(
+		`(()=>{const q=new URL(location.href).searchParams;return q.get('page')==='1' && q.get('q')==='investment' && q.get('sort')==='price' && q.get('dir')==='asc' && !q.has('selected') && document.activeElement.matches('.tabulator-page-size')})()`,
+		"keyboard page-size change lost query state, focus, or retained the old page/selection",
+	)
+	check(
+		chromedp.Evaluate(`window.Tabulator.findTable('.tabulator')[0].setPage(2)`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+		chromedp.Evaluate(
+			`(()=>{const url=new URL(location.href);url.searchParams.set('selected','precision-025');history.replaceState(null,'',url);document.querySelector('[data-list-filters]').requestSubmit()})()`,
+			nil,
+		),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	chooseSize(100, 70)
+	check(
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('page')==='2' && new URL(location.href).searchParams.get('size')==='25' && document.querySelector('.tabulator-page-size').value==='25' && document.querySelectorAll('.tabulator-row').length===25 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	assert(
+		`new URL(location.href).searchParams.get('selected')==='precision-025'`,
+		"history size restoration cleared its selected record",
+	)
+	check(
+		chromedp.Evaluate(`history.forward()`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('size')==='100' && new URL(location.href).searchParams.get('page')==='1' && document.querySelectorAll('.tabulator-row').length===70 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	chooseSize(200, 70)
+	assert(
+		`new URL(location.href).searchParams.get('size')==='200'`,
+		"selected size did not reach the owning URL",
+	)
+	chooseSize(25, 25)
+	check(chromedp.Click("[data-grid-reset]", chromedp.ByQuery))
+	visitGrid("/test/grid", 25, 25)
+	assert(
+		`Object.keys(JSON.parse(localStorage.getItem('tabulator-wake-activity-page'))).join(',')==='paginationSize'`,
+		"page-size persistence also saved the page number",
+	)
+
+	// Each table type keeps its own preference, including observations' URL namespace.
+	visitGrid("/instruments/synthetic-instrument", 50, 2)
+	chooseSize(10, 2)
+	assert(
+		`new URL(location.href).searchParams.get('observations_size')==='10' && !new URL(location.href).searchParams.has('size')`,
+		"observation size escaped its namespace",
+	)
+	assert(
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.pathname==='/instruments/synthetic-instrument' && parent.searchParams.get('observations_size')==='10'})()`,
+		"evidence return link lost the selected observation page size",
+	)
+	visitGrid("/test/instruments", 50, 50)
+	chooseSize(100, 70)
+	visitGrid("/test/grid", 25, 25)
+	visitGrid("/instruments/synthetic-instrument", 10, 2)
+	visitGrid("/test/instruments", 100, 70)
+	visitGrid("/test/grid?size=200", 200, 70)
+
+	for _, saved := range []string{"invalid JSON", `{"paginationSize":201}`, `{"paginationSize":[25]}`} {
+		check(
+			chromedp.Evaluate(`localStorage.setItem('tabulator-wake-activity-page',`+strconv.Quote(saved)+`)`, nil),
+		)
+		visitGrid("/test/grid?size=invalid", 50, 50)
+	}
+
+	check(
+		chromedp.Evaluate(
+			`localStorage.setItem('tabulator-wake-activity-page','{"paginationSize":25,"paginationInitialPage":2}')`,
+			nil,
+		),
+	)
+	visitGrid("/test/grid?size=201", 25, 25)
+	assert(`new URL(location.href).searchParams.get('page')==='1'`, "saved preference restored a page number")
+
+	// Unsupported URL sizes must reach browser fallback through the production HTML route.
+	for _, kind := range []string{"activity", "instruments"} {
+		check(
+			chromedp.Evaluate(`localStorage.setItem('tabulator-wake-`+kind+`-page','{"paginationSize":25}')`, nil),
+		)
+
+		for _, size := range []string{"invalid", "201", "20"} {
+			visitGrid("/activity?view="+kind+"&size="+size, 25, 0)
+		}
+
+		check(chromedp.Evaluate(`localStorage.removeItem('tabulator-wake-`+kind+`-page')`, nil))
+		visitGrid("/activity?view="+kind+"&size=invalid", 50, 0)
+	}
+
+	// Block storage before initialization as well as while changing the control.
+	var blockedStorage cdppage.ScriptIdentifier
+
+	check(chromedp.ActionFunc(func(ctx context.Context) error {
+		var e error
+
+		blockedStorage, e = cdppage.AddScriptToEvaluateOnNewDocument(`
+			for(const method of ['getItem','setItem']) {
+				const original=Storage.prototype[method];
+				Storage.prototype[method]=function(key,...args) {
+					if(key.startsWith('tabulator-')) throw new DOMException('Blocked','SecurityError');
+					return original.call(this,key,...args);
+				};
+			}
+		`).Do(ctx)
+
+		return e
+	}))
+	visitGrid("/test/grid", 50, 50)
+	chooseSize(100, 70)
+
+	// Reset navigation retains the live size even when no browser preference can be saved.
+	for _, query := range []string{"kind=trade&state=accepted", "view=instruments&kind=equity&state=resolved"} {
+		visitGrid("/activity?"+query+"&q=investment&size=50&page=2&selected=one", 50, 0)
+		chooseSize(25, 0)
+		check(
+			testbrowser.NewDocument(chromedp.Click("[data-grid-reset-filters]", chromedp.ByQuery)),
+			chromedp.Poll(
+				`document.querySelector('[data-grid]')?.dataset.gridReady==='true' && document.querySelector('.tabulator-page-size')?.value==='25'`,
+				nil,
+			),
+		)
+		assert(
+			`(()=>{const q=new URL(location.href).searchParams;return location.pathname==='/activity' && q.get('size')==='25' && q.get('page')==='1' && ['q','kind','state','selected'].every(key=>!q.has(key)) && (document.querySelector('[data-grid]').dataset.grid==='instruments')===(q.get('view')==='instruments')})()`,
+			"resetting filters lost page size or retained filters/selection with blocked storage",
+		)
+	}
+
+	check(cdppage.RemoveScriptToEvaluateOnNewDocument(blockedStorage))
+	visitGrid("/test/grid?size=100", 100, 70)
+
+	refreshFailed.Store(true)
+	check(
+		chromedp.SetValue(".tabulator-page-size", "25", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('.tabulator-page-size').dispatchEvent(new Event('change',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+	)
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===70`,
+		"failed size request discarded the displayed rows",
+	)
+	refreshFailed.Store(false)
+	check(
+		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Poll(
+			`document.querySelectorAll('.tabulator-row').length===25 && new URL(location.href).searchParams.get('size')==='25' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			nil,
+		),
+	)
+	emptyGrid.Store(true)
+	chooseSize(10, 0)
+	emptyGrid.Store(false)
+	chooseSize(50, 50)
+	check(
+		chromedp.Evaluate(
+			`for(const kind of ['activity','instruments','observations']) localStorage.removeItem('tabulator-wake-'+kind+'-page')`,
+			nil,
+		),
+	)
+
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/reference-evidence")),
 		chromedp.WaitVisible("#original-content summary", chromedp.ByQuery),
@@ -1565,6 +1918,37 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					check(chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil))
 				}
 
+				if path == "/test/grid" {
+					check(chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil))
+					assert(
+						`(()=>{const s=document.querySelector('.tabulator-page-size');const r=s.getBoundingClientRect();const table=s.closest('.tabulator').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=table.top && r.bottom<=table.bottom && r.height>=40 && getComputedStyle(s).color===getComputedStyle(document.body).color})()`,
+						fmt.Sprintf("page-size control clipped or unthemed %s %d", theme, width),
+					)
+
+					if width == 1440 {
+						check(
+							chromedp.Evaluate(
+								`document.querySelector('[data-grid]').scrollIntoView({block:'start'})`,
+								nil,
+							),
+						)
+						assert(
+							`(()=>{const holder=document.querySelector('.tabulator-tableholder');const bounds=holder.getBoundingClientRect();return holder.clientHeight>512 && [...holder.querySelectorAll('.tabulator-row')].filter(row=>{const r=row.getBoundingClientRect();return r.top>=Math.max(0,bounds.top) && r.bottom<=Math.min(innerHeight,bounds.bottom)}).length>=10})()`,
+							fmt.Sprintf("desktop grid did not show more rows %s", theme),
+						)
+						check(chromedp.Evaluate(`
+							const holder=document.querySelector('.tabulator-tableholder');
+							window.gridChrome=[...document.querySelectorAll('[data-list-filters],.tabulator-header,.tabulator-footer')].map(n=>n.getBoundingClientRect().top);
+							holder.scrollTop=holder.scrollHeight;
+						`, nil))
+						assert(
+							`(()=>{const holder=document.querySelector('.tabulator-tableholder');const last=holder.querySelector('.tabulator-row:last-child').getBoundingClientRect();return holder.scrollTop>0 && last.bottom<=holder.getBoundingClientRect().bottom+1 && [...document.querySelectorAll('[data-list-filters],.tabulator-header,.tabulator-footer')].every((n,i)=>Math.abs(n.getBoundingClientRect().top-window.gridChrome[i])<1)})()`,
+							fmt.Sprintf("scrolling rows moved filters, headings or pagination %s", theme),
+						)
+						check(chromedp.Evaluate(`document.querySelector('.tabulator-tableholder').scrollTop=0`, nil))
+					}
+				}
+
 				if path == "/test/reference-evidence" {
 					check(
 						chromedp.Click("#original-content summary", chromedp.ByQuery),
@@ -1604,7 +1988,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					)
 				}
 
-				if width == 320 || width == 1440 {
+				if width == 320 || width == 1440 || path == "/test/grid" {
 					if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" {
 						var png []byte
 						check(chromedp.FullScreenshot(&png, 90))

@@ -93,6 +93,8 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - Implement, update affected docs, validate, and stage freely. Present the
   changed behavior, checks actually performed, material gaps, and how to try it.
   Use one Conventional Commit per logical change, explaining why.
+- Sign every commit, and verify GitHub recognizes its signature before requesting
+  merge.
 - Deliver coherent changes with meaningful functional verification. See the
   [development guide](.docs/engineering/development.md#browser-and-frontend-verification)
   for browser and frontend checks.

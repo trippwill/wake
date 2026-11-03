@@ -225,7 +225,7 @@ func gridPageRequest(r *http.Request, kind string) (*http.Request, error) {
 		}
 
 		if kind == "observations" {
-			for _, key := range []string{"q", "sort", "dir", "page"} {
+			for _, key := range []string{"q", "sort", "dir", "page", "size"} {
 				if values, ok := query[key]; ok {
 					query["observations_"+key] = values
 					query.Del(key)

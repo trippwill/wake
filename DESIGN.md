@@ -252,12 +252,22 @@ mask failed refreshes or sign-in requirements. Animate running work or meaningfu
 changes; keep unchanged and waiting/blocked states steady.
 
 Preserve drafts, focus/caret, selections and disclosures through live updates.
-Retain intentional filter, ordering and page state in URLs, and selected column
-layout preferences through Tabulator persistence. Exact pixel-scroll restoration
+Retain intentional filter, ordering, page and page-size state in URLs, and selected
+column layout and page-size preferences through Tabulator persistence. Remember
+page size separately for activity, instruments and retained observations in the
+current browser; a supported URL size takes precedence. Exact pixel-scroll restoration
 is unnecessary. Native submissions give pending feedback and prevent accidental
 duplicates. Financial history search, filtering, sorting and pagination operate on the complete
-matching warehouse set, with 50 rows per page by default. Bound other evidence
+matching warehouse set, with 50 rows per page by default and a Rows per page selector
+offering 10, 25, 50, 100 and 200. Bound other evidence
 views explicitly and clearly label any local interaction scope.
+Use compact vertical cell spacing and let grids grow with the viewport so more
+rows fit on screen, while keeping full values readable and scrolling local to the table.
+Keep filters, column headings and pagination visible while the current page's rows
+scroll beneath them, including after resizing the viewport. Compact the filter and
+status area, and disclose keyboard guidance on request, to preserve useful row space
+at laptop heights. On very short screens the table workspace may extend beyond the
+viewport; keep its rows and pagination reachable through their local and page scrollers.
 Use embedded htmx and its SSE extension for authenticated updates to independent
 source/status regions. Keep commands ordinary HTTP submissions. Tabulator owns
 interactive grid DOM and interactions, loading authenticated JSON and checking for
