@@ -17,6 +17,8 @@ type Querier interface {
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
 	ActivityObservation(ctx context.Context, arg ActivityObservationParams) (ExecutionObservation, error)
 	ActivitySelection(ctx context.Context, activityID string) (ActivitySelection, error)
+	// Traverse claim and qualified-reference nodes separately. UNION expands each
+	// shared reference once, rather than revisiting its entire claim set per claim.
 	ActivityToMatch(ctx context.Context, artifactID string) ([]ActivityToMatchRow, error)
 	AdminAccessSources(ctx context.Context) ([]Connection, error)
 	// SPDX-FileCopyrightText: 2026 trippwill

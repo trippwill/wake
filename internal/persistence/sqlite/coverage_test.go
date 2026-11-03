@@ -19,7 +19,7 @@ import (
 )
 
 // Synthetic reports use a disposable account, never operator data or credentials.
-func coverageStore(t *testing.T) *Store {
+func coverageStore(t testing.TB) *Store {
 	t.Helper()
 	s, _ := testStore(t)
 

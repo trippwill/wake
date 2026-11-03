@@ -179,16 +179,18 @@ func (q *Queries) ActivitySelection(ctx context.Context, activityID string) (Act
 }
 
 const activityToMatch = `-- name: ActivityToMatch :many
-WITH RECURSIVE seeds(claim_id,ordinal) AS (
- SELECT r.claim_id,r.ordinal FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=?1
+WITH RECURSIVE seeds(node,claim_id,ordinal,account_id,reference) AS (
+ SELECT 'claim' AS node,r.claim_id,r.ordinal,CAST(NULL AS TEXT) AS account_id,CAST(NULL AS TEXT) AS reference FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=?1
  UNION
- SELECT r.claim_id,r.ordinal FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id JOIN activity_references r ON r.account_id=e.account_id AND r.reference=e.reference WHERE o.artifact_id=?1
-), affected(claim_id,ordinal) AS (
- SELECT claim_id,ordinal FROM seeds
+ SELECT 'reference',NULL,NULL,e.account_id,e.reference FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id WHERE o.artifact_id=?1
+), affected(node,claim_id,ordinal,account_id,reference) AS (
+ SELECT node,claim_id,ordinal,account_id,reference FROM seeds
  UNION
- SELECT old.claim_id,old.ordinal FROM affected a JOIN activity_references current ON current.claim_id=a.claim_id AND current.ordinal=a.ordinal JOIN activity_references old ON old.account_id=current.account_id AND old.reference=current.reference
+ SELECT 'reference',NULL,NULL,r.account_id,r.reference FROM affected a JOIN activity_references r ON r.claim_id=a.claim_id AND r.ordinal=a.ordinal WHERE a.node='claim'
+ UNION
+ SELECT 'claim',r.claim_id,r.ordinal,NULL,NULL FROM affected a JOIN activity_references r ON r.account_id=a.account_id AND r.reference=a.reference WHERE a.node='reference'
 )
-SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id ORDER BY p.rowid
+SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id WHERE a.node='claim' ORDER BY p.rowid
 `
 
 type ActivityToMatchRow struct {
@@ -201,6 +203,8 @@ type ActivityToMatchRow struct {
 	Data       []byte
 }
 
+// Traverse claim and qualified-reference nodes separately. UNION expands each
+// shared reference once, rather than revisiting its entire claim set per claim.
 func (q *Queries) ActivityToMatch(ctx context.Context, artifactID string) ([]ActivityToMatchRow, error) {
 	rows, err := q.db.QueryContext(ctx, activityToMatch, artifactID)
 	if err != nil {

@@ -42,7 +42,7 @@ func workflowReport(rows string) string {
 	) + `</TradeConfirms></FlexStatement></FlexStatements></FlexQueryResponse>`
 }
 
-func testStore(t *testing.T) (*Store, string) {
+func testStore(t testing.TB) (*Store, string) {
 	t.Helper()
 
 	dir := t.TempDir()

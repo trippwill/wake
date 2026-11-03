@@ -115,7 +115,9 @@ units. Whole-activity constructors validate completeness and coupled invariants 
 when building an accepted projection.
 
 Qualified source references index pending activity observations and revisit the
-connected affected inputs when related evidence arrives. Native identity establishes
+connected affected inputs when related evidence arrives. Shared aliases expand once
+as reference nodes, keeping collection proportional to the reached evidence graph.
+Native identity establishes
 association; retained source assertions establish financial agreement independently
 of operator corrections. Several partial observations can jointly complete an
 activity. Unresolved identity, insufficient terms and conflicting evidence remain
