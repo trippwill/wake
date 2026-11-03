@@ -136,6 +136,7 @@ func activityList(v application.ActivityList) activityView {
 
 		a := r.Activity
 		name := known(item.InstrumentName)
+
 		row := activityItem{
 			ID:             r.ID,
 			Href:           "/activity/" + r.ID,
@@ -146,7 +147,13 @@ func activityList(v application.ActivityList) activityView {
 			Reference:      referenceLabel(item.Reference.Status, item.Reference.Authority),
 			State:          activityStatus(item.State),
 			FinancialState: item.State,
+			Realized:       known(""),
 		}
+		if a.ReportedRealizedPnL != nil {
+			row.Realized = publishedMoney(a.ReportedRealizedPnL.Amount)
+			row.RealizedConflict = a.ReportedRealizedPnL.Conflict
+		}
+
 		switch a.Family {
 		case "trade":
 			row.Href = "/executions/" + r.ID
@@ -263,7 +270,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		options.Kind = ""
 		options.State = ""
 		options.ObservationLabels = map[application.ObservationOutcome]string{}
-		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationCorroborated, application.ObservationAccepted} {
+		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIncomplete, application.ObservationIncompleteConflict, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationCorroborated, application.ObservationAccepted} {
 			options.ObservationLabels[outcome] = observationStatus(outcome)
 			if strings.Contains(strings.ToLower(observationStatus(outcome)), strings.ToLower(options.Search)) {
 				options.ObservationMatches = append(options.ObservationMatches, outcome)

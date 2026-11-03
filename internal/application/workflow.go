@@ -29,15 +29,16 @@ type (
 		Candidate provider.Candidate
 	}
 	WorkStatus struct {
-		Operation, Failure, Next string
-		Progress                 provider.ProgressPhase
+		Stream, Operation, Failure, Next string
+		Progress                         provider.ProgressPhase
+		Scheduled                        bool
 	}
 	ProcessingStatus struct {
-		Artifact, Failure                                                         string
-		Receipt, Retrieved, Hash, ComparisonPolicy                                string
-		TradeClaims, LifecycleClaims, ConversionClaims, ExcludedRows, NeedsReview int64
-		Complete                                                                  bool
-		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo                      string
+		Artifact, Failure, Stream                            string
+		Receipt, Retrieved, Hash, ComparisonPolicy           string
+		ActivityClaims, ExcludedRows, NeedsReview            int64
+		Complete                                             bool
+		RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
 	}
 	ConnectionView struct {
 		ID, Name, Provider                    string
@@ -54,7 +55,15 @@ type (
 	Store interface {
 		ResumeStorage(context.Context, int64, string, time.Time) error
 		Schedule(context.Context, host.WorkKey, bool) error
-		Confirm(context.Context, string, string, source.Reference, AccountDetails, bool) (Account, error)
+		Confirm(
+			context.Context,
+			string,
+			string,
+			source.Reference,
+			AccountDetails,
+			bool,
+			...provider.Stream,
+		) (Account, error)
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
 		PendingArtifacts(context.Context, time.Time, []string) ([]PendingArtifact, error)
@@ -197,7 +206,22 @@ func (w *Workflow) CreateConnection(
 	}
 
 	if registration.Discoverer() != nil {
-		for _, stream := range registration.Descriptor().Streams() {
+		connection, e := w.host.Connection(ctx, id)
+		if e != nil {
+			return id, e
+		}
+
+		configured, e := registration.ConfigureStreams(connection.Settings)
+		if e != nil {
+			return id, e
+		}
+
+		for _, configuration := range configured {
+			stream := configuration.Stream()
+			if !stream.CanDiscover() {
+				continue
+			}
+
 			if err = w.store.Schedule(
 				ctx,
 				host.WorkKey{Connection: id, Stream: stream.ID(), Operation: "discover"},
@@ -240,7 +264,9 @@ func (w *Workflow) UpdateConnection(
 		return err
 	}
 
-	return w.Retry(ctx, id)
+	w.notify()
+
+	return nil
 }
 
 func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
@@ -262,12 +288,22 @@ func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 		return err
 	}
 
-	for _, stream := range registration.Descriptor().Streams() {
+	configured, err := registration.ConfigureStreams(connection.Settings)
+	if err != nil {
+		return err
+	}
+
+	for _, configuration := range configured {
+		stream := configuration.Stream()
+
 		operation := "discover"
-		if view.Account.Connection() == id && view.Account.Stream() == stream.ID() &&
-			registration.Acquirer() != nil {
+		if view.Account.Connection() == id && registration.Acquirer() != nil {
 			operation = "acquire"
 		} else if registration.Discoverer() == nil {
+			continue
+		}
+
+		if operation == "discover" && !stream.CanDiscover() {
 			continue
 		}
 
@@ -303,7 +339,24 @@ func (w *Workflow) Confirm(
 		return Account{}, provider.ErrUnavailable
 	}
 
-	a, err := w.store.Confirm(ctx, id, artifact, ref, details, registration.Acquirer() != nil)
+	configured, err := registration.ConfigureStreams(connection.Settings)
+	if err != nil {
+		return Account{}, err
+	}
+
+	streams := make([]provider.Stream, 0, len(configured))
+	for _, configuration := range configured {
+		streams = append(streams, configuration.Stream())
+	}
+
+	a, err := w.store.Confirm(
+		ctx,
+		id,
+		artifact,
+		ref,
+		details,
+		registration.Acquirer() != nil,
+		streams...)
 	if err == nil {
 		w.notify()
 	}
@@ -693,7 +746,17 @@ func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor stri
 				continue
 			}
 
-			for _, stream := range registration.Descriptor().Streams() {
+			configured, e := registration.ConfigureStreams(connection.Settings)
+			if e != nil {
+				return e
+			}
+
+			for _, configuration := range configured {
+				stream := configuration.Stream()
+				if !stream.CanDiscover() {
+					continue
+				}
+
 				if err = w.store.Schedule(
 					ctx,
 					host.WorkKey{Connection: connection.ID, Stream: stream.ID(), Operation: "discover"},

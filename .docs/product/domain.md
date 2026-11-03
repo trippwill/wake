@@ -27,10 +27,16 @@ a different real account or instrument.
 
 ### Account source authority
 
-Each account has one operator-designated authoritative connection, provider and
-stream, bound to the reported source account. Discovering a candidate or installing
+Each account has one operator-designated authoritative connection and provider,
+bound to its qualified source-account reference. Discovering a candidate or installing
 a provider does not grant that authority. Account confirmation establishes the
 financial account and binding together; repeating it must not create another account.
+
+A source may deliver an activity's terms and reported results together or through
+several acquisition inputs and reports. Input names, report formats and query
+configuration do not define financial roles or additional authority. Claims must
+belong to the confirmed source account and establish their activity links before
+contributing. Disabling acquisition does not erase retained claims or accepted values.
 
 Source authority governs broker financial activity. OpenFIGI has a separate role
 for instrument identity/naming, and operator assertions remain attributable in their
@@ -160,6 +166,37 @@ from a later report is not cancellation. Explicit cancellation/replacement prese
 the original history. Core identity and operator-created trades do not require
 fabricated broker identifiers or reports.
 
+A normalized activity observation may report any supported subset of financial
+fields. Its validity does not require a complete execution, lifecycle event or
+currency conversion. Omitted fields make no assertion; explicitly unknown fields
+remain distinct from known values, including zero. Money retains currency, quantity
+retains its unit, and reported values retain their own dates and source attribution.
+
+Establish that observations concern the same event before combining their fields.
+Several compatible observations may collectively establish the terms required for
+an accepted activity; no single report must be complete. Until identity and required
+terms are established, keep observations pending without inventing an activity.
+Once accepted, later observations use the same financial field policies whether
+they supply price, charges, settlement information or reported realized P&L.
+
+Reported realized P&L belongs to the accepted activity. Retained source assertions
+support that value independently of the original activity terms. Gain/loss and
+allocated cost retain their own exact signed values, currencies and reporting dates;
+they need not use the trade's price currency or repeat its original terms. Missing
+amounts remain unknown; an explicit zero remains zero. A broker's
+allocated cost does not establish the identity or complete history of a lot, and
+reported P&L does not establish a user's tax treatment.
+
+Link a result through qualified source references and corroborating retained activity
+context. Keep unmatched results and ambiguous links visible without creating activity.
+An established link cannot silently move when another possible target appears.
+Select compatible source facts deterministically against a retained baseline; a later
+retrieval does not by itself establish a financial revision. Changed results retain
+dissent and permit attributable selection and release of reported fields. If a
+field was absent from the durable baseline and later enrichments compete, its
+automatic value remains unknown until an attributable selection resolves it.
+Corrections to accepted trade terms do not recalculate or rewrite reported P&L.
+
 ## Events, observations and continuity
 
 Activity records something that happened. A reported position, balance or valuation
@@ -188,8 +225,11 @@ those optional claims compete, the baseline remains visible with disagreement.
 
 An active operator decision controls only its selected fields or link. Superseding
 or releasing a decision appends attributable history; release returns that scope
-to the retained automatic selection. Selecting financial fields from an observation
-does not silently change instrument or listing identity. Decisions preserve dissent,
+to the retained automatic selection. Selecting an observation controls only the
+fields that it reports. Independent
+source selections coexist and can be released per field; omitted fields preserve
+other accepted values. Selecting financial fields from an observation does not
+silently change instrument or listing identity. Decisions preserve dissent,
 and stale forms must not overwrite decisions made after the form was read.
 
 Compatible observations contribute charge roles in a deterministic field/scope order. If combining

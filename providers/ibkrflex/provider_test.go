@@ -57,18 +57,31 @@ func (a *testAccess) DelayPacing(_ context.Context, _ string, _ provider.PacingS
 }
 
 type testClaims struct {
+	realized   []source.ActivityObservation
 	trades     []source.Trade
 	lifecycles []source.Lifecycle
 	rejected   []string
 	failure    error
 }
 
-func (c *testClaims) PutTrade(_ context.Context, t source.Trade) error {
+func (c *testClaims) PutActivity(_ context.Context, o source.ActivityObservation) error {
 	if c.failure != nil {
 		return c.failure
 	}
 
-	c.trades = append(c.trades, t)
+	if t, e := o.Trade(); e == nil {
+		c.trades = append(c.trades, t)
+	}
+
+	if l, e := o.Lifecycle(); e == nil {
+		c.lifecycles = append(c.lifecycles, l)
+	}
+
+	if _, ok := o.Field(source.FieldRealizedPnL); ok {
+		c.realized = append(c.realized, o)
+	} else if _, ok := o.Field(source.FieldReportedCostBasis); ok {
+		c.realized = append(c.realized, o)
+	}
 
 	return nil
 }
@@ -93,7 +106,7 @@ func TestConfirmationCoverageAndExactTerms(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(r.Descriptor().Streams()) != 1 || r.Descriptor().Streams()[0].ID() != Confirmations {
+	if len(r.Descriptor().Streams()) != 2 || r.Descriptor().Streams()[0].ID() != Confirmations {
 		t.Fatal("exposed deferred Activity capability")
 	}
 
@@ -121,7 +134,7 @@ func TestConfirmationCoverageAndExactTerms(t *testing.T) {
 			expected = 7
 		}
 
-		if len(claims.trades) != expected || result.Conversions() != 2 || result.Lifecycles() != 3 {
+		if len(claims.trades) != expected || result.Activities() != uint64(expected+5) {
 			t.Fatal("coverage", file, result.Counts())
 		}
 
@@ -326,17 +339,5 @@ func TestCatchupAndUnavailableRanges(t *testing.T) {
 		}
 	}
 }
-
-func (c *testClaims) PutLifecycle(_ context.Context, l source.Lifecycle) error {
-	if c.failure != nil {
-		return c.failure
-	}
-
-	c.lifecycles = append(c.lifecycles, l)
-
-	return nil
-}
-
-func (c *testClaims) PutConversion(_ context.Context, v source.Conversion) error { return c.failure }
 
 func (c *testClaims) PutCorrection(context.Context, source.Correction) error { return c.failure }

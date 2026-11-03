@@ -57,19 +57,19 @@ func (d AccountDetails) Currency() string {
 }
 
 type Account struct {
-	id, connection, provider, stream string
-	rule                             string
-	reference                        source.Reference
-	details                          AccountDetails
+	id, connection, provider string
+	rule                     string
+	reference                source.Reference
+	details                  AccountDetails
 }
 
 func NewAccount(
-	id, connection, provider, stream string,
+	id, connection, provider string,
 	reference source.Reference,
 	details AccountDetails,
 	rule string,
 ) (Account, error) {
-	if id == "" || connection == "" || provider == "" || stream == "" || reference.IsZero() ||
+	if id == "" || connection == "" || provider == "" || reference.IsZero() ||
 		details.name == "" || rule == "" {
 		return Account{}, ErrInvalid
 	}
@@ -78,7 +78,6 @@ func NewAccount(
 		id:         id,
 		connection: connection,
 		provider:   provider,
-		stream:     stream,
 		reference:  reference,
 		details:    details,
 		rule:       rule,
@@ -87,10 +86,15 @@ func NewAccount(
 func (a Account) ID() string                  { return a.id }
 func (a Account) Connection() string          { return a.connection }
 func (a Account) Provider() string            { return a.provider }
-func (a Account) Stream() string              { return a.stream }
 func (a Account) Reference() source.Reference { return a.reference }
 func (a Account) Details() AccountDetails     { return a.details }
 func (a Account) Rule() string                { return a.rule }
+
+// AuthorizesSource checks the confirmed financial source account. Acquisition
+// inputs and report formats retain provenance without defining this authority.
+func (a Account) AuthorizesSource(connection, provider string, account source.Reference) bool {
+	return a.connection == connection && a.provider == provider && a.reference == account
+}
 
 type ReferenceMetadata struct{ Allocation, Reason string }
 
@@ -194,8 +198,11 @@ func (e Execution) Rule() string         { return e.rule }
 func (e Execution) Terms() source.Trade  { return e.terms }
 
 type (
-	ActivityContext struct{ AccountName, InstrumentName string }
-	Observation     struct {
+	ActivityContext struct {
+		AccountName, InstrumentName string
+		Realized                    *PublishedRealizedPnL
+	}
+	Observation struct {
 		Artifact, Version, Location, Rule, Retrieved string
 		Outcome                                      ObservationOutcome
 	}

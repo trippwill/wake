@@ -109,7 +109,7 @@ func accountValue(row sqlc.Account) (application.Account, error) {
 		return application.Account{}, ErrCorrupt
 	}
 
-	return application.NewAccount(row.ID, row.ConnectionID, row.Provider, row.Stream, ref, details, row.Rule)
+	return application.NewAccount(row.ID, row.ConnectionID, row.Provider, ref, details, row.Rule)
 }
 
 func (s *Store) Confirm(
@@ -118,6 +118,7 @@ func (s *Store) Confirm(
 	ref source.Reference,
 	details application.AccountDetails,
 	acquire bool,
+	streams ...provider.Stream,
 ) (application.Account, error) {
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
@@ -180,7 +181,6 @@ func (s *Store) Confirm(
 		rand.Text(),
 		id,
 		c.Provider,
-		evidence.Stream,
 		ref,
 		details,
 		application.AuthorityRule,
@@ -198,7 +198,6 @@ func (s *Store) Confirm(
 			Currency:     details.Currency(),
 			ConnectionID: id,
 			Provider:     c.Provider,
-			Stream:       evidence.Stream,
 			Authority:    ref.Authority(),
 			Kind:         ref.Kind(),
 			Scope:        ref.Scope(),
@@ -210,17 +209,16 @@ func (s *Store) Confirm(
 	}
 
 	if acquire {
-		if err = q.EnsureWork(
-			ctx,
-			sqlc.EnsureWorkParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire"},
-		); err != nil {
-			return application.Account{}, err
+		if len(streams) == 0 {
+			origin, e := provider.NewStream(evidence.Stream, evidence.Format)
+			if e != nil {
+				return application.Account{}, e
+			}
+
+			streams = []provider.Stream{origin}
 		}
 
-		if err = q.SetScheduled(
-			ctx,
-			sqlc.SetScheduledParams{ConnectionID: id, Stream: a.Stream(), Operation: "acquire", Enabled: 1},
-		); err != nil {
+		if err = scheduleAcquisition(ctx, q, id, streams); err != nil {
 			return application.Account{}, err
 		}
 	}

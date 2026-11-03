@@ -410,9 +410,13 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 			return e
 		}
 
-		terms, e := decodeActivityTerms(row.Kind, data)
+		reported, e := reportedActivityInstrument(row.Kind, data)
 		if e != nil {
 			return e
+		}
+
+		if reported.Kind() == "" {
+			continue
 		}
 
 		root, e := q.Instrument(ctx, row.InstrumentID.String)
@@ -425,7 +429,6 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 			return e
 		}
 
-		reported := terms.Instrument()
 		if root.ReferenceFigi == "" && !baseline.Reported().Reference().IsZero() &&
 			!reported.Reference().IsZero() &&
 			baseline.Reported().Reference() != reported.Reference() {
@@ -618,15 +621,37 @@ func reportedRootClaim(row sqlc.RootCalculationInputsRow) (source.Instrument, er
 		return source.Instrument{}, err
 	}
 
-	terms, err := decodeActivityTerms(row.Kind, data)
+	claim, err := reportedActivityInstrument(row.Kind, data)
 	if err != nil {
 		return source.Instrument{}, err
 	}
 
-	claim := terms.Instrument()
 	if row.Role == "underlier" {
 		claim = claim.Option().Fields().Underlier
 	}
 
 	return claim, nil
+}
+
+func reportedActivityInstrument(kind string, data []byte) (source.Instrument, error) {
+	if kind == "activity" {
+		o, err := decodeObservation(data)
+		if err != nil {
+			return source.Instrument{}, err
+		}
+
+		f, ok := o.Field(source.FieldInstrument)
+		if !ok || !f.Known() {
+			return source.Instrument{}, nil
+		}
+
+		return f.Fields().Instrument, nil
+	}
+
+	terms, err := decodeActivityTerms(kind, data)
+	if err != nil {
+		return source.Instrument{}, err
+	}
+
+	return terms.Instrument(), nil
 }

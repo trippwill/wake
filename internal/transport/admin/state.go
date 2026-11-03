@@ -37,6 +37,10 @@ func observationStatus(outcome application.ObservationOutcome) string {
 	switch outcome {
 	case application.ObservationUnselected:
 		return "unselected account or source"
+	case application.ObservationIncompleteConflict:
+		return "incomplete activity terms conflict"
+	case application.ObservationIncomplete:
+		return "waiting for activity terms"
 	case application.ObservationIdentityReview:
 		return "identity needs review"
 	case application.ObservationNativeReview:

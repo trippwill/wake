@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -79,43 +81,56 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 
 	active := activeDecisions(rows)
 
-	old := active[f.Scope]
-	if f.Action == "release" && old.ID == "" {
-		return application.ErrInvalid
-	}
-
-	decisionID := rand.Text()
-	if err = q.PutDecision(
-		ctx,
-		sqlc.PutDecisionParams{
-			ID:         decisionID,
-			TargetKind: f.TargetKind,
-			TargetID:   f.TargetID,
-			Scope:      f.Scope,
-			Text:       f.Text,
-			Currency:   f.Currency,
-			Action:     f.Action,
-			Actor:      actor,
-			At:         at.UTC().Format(time.RFC3339Nano),
-			Rationale:  f.Rationale,
-			Supersedes: old.ID,
-			Submission: f.Submission,
-			Request:    request,
-		},
-	); err != nil {
+	fields, err := activityDecisionFields(ctx, q, f, active)
+	if err != nil {
 		return err
 	}
 
-	if err = q.SupersedeDecisions(
-		ctx,
-		sqlc.SupersedeDecisionsParams{
-			DecisionID: decisionID,
-			TargetKind: f.TargetKind,
-			TargetID:   f.TargetID,
-			Scope:      f.Scope,
-		},
-	); err != nil {
-		return err
+	for i, field := range fields {
+		old := active[field.Scope]
+		if field.Action == "release" && old.ID == "" {
+			return application.ErrInvalid
+		}
+
+		decisionID := rand.Text()
+
+		submission := f.Submission
+		if i > 0 {
+			submission = f.Submission + "/" + strconv.Itoa(i)
+		}
+
+		if err = q.PutDecision(
+			ctx,
+			sqlc.PutDecisionParams{
+				ID:         decisionID,
+				TargetKind: f.TargetKind,
+				TargetID:   f.TargetID,
+				Scope:      field.Scope,
+				Text:       field.Text,
+				Currency:   field.Currency,
+				Action:     field.Action,
+				Actor:      actor,
+				At:         at.UTC().Format(time.RFC3339Nano),
+				Rationale:  f.Rationale,
+				Supersedes: old.ID,
+				Submission: submission,
+				Request:    request,
+			},
+		); err != nil {
+			return err
+		}
+
+		if err = q.SupersedeDecisions(
+			ctx,
+			sqlc.SupersedeDecisionsParams{
+				DecisionID: decisionID,
+				TargetKind: f.TargetKind,
+				TargetID:   f.TargetID,
+				Scope:      field.Scope,
+			},
+		); err != nil {
+			return err
+		}
 	}
 
 	if f.TargetKind == "activity" {
@@ -247,6 +262,16 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 		out.Values["instrument"] = application.CorrectionValue{Value: row.InstrumentID.String}
 		out.Values["listing"] = application.CorrectionValue{Value: row.ListingID.String}
+
+		selectedRealized, e := publishedRealized(ctx, s.queries, id)
+		if e != nil {
+			return out, e
+		}
+
+		for key, value := range realizedComparison(selectedRealized) {
+			out.Values[key] = value
+		}
+
 		if account, e := s.queries.Account(ctx); e == nil {
 			out.AccountName = account.Name
 		}
@@ -273,7 +298,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 		}
 
 		for _, r := range inputs {
-			if r.Kind == row.Kind {
+			if r.Kind == "activity" {
 				values, err := comparisonValues(r.Kind, r.Data)
 				if err != nil {
 					return out, err
@@ -282,6 +307,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 				out.Candidates = append(
 					out.Candidates,
 					application.CorrectionCandidate{
+						Scope:  "observation",
 						Value:  observationKey(r),
 						Label:  observationLabel(r),
 						Fields: values,
@@ -529,6 +555,54 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 func observationLabel(r sqlc.RecordValue) string {
 	label := r.Kind
 	switch r.Kind {
+	case "activity":
+		if o, err := decodeObservation(r.Data); err == nil {
+			if terms, e := application.CompleteActivityTerms(o.Fields(), o.Fields().Fields); e == nil {
+				if data, e := encodeActivityTerms(terms); e == nil {
+					return observationLabel(
+						sqlc.RecordValue{Kind: string(terms.Kind()), Data: data, ArtifactID: r.ArtifactID},
+					)
+				}
+			}
+
+			label = "Partial activity evidence"
+
+			summaries := []string{}
+			for _, name := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldReportedCostBasis, source.FieldPrice, source.FieldQuantity, source.FieldSettlementDate, source.FieldNet, source.FieldGross} {
+				field, ok := o.Field(name)
+				if !ok || !field.Known() {
+					continue
+				}
+
+				f := field.Fields()
+				switch name {
+				case source.FieldRealizedPnL:
+					summaries = append(
+						summaries,
+						"Realized gain/loss "+f.Money.Amount()+" "+f.Money.Currency().String(),
+					)
+				case source.FieldReportedCostBasis:
+					summaries = append(summaries, "Allocated cost "+f.Money.Amount()+" "+f.Money.Currency().String())
+				case source.FieldPrice:
+					summaries = append(summaries, "Price "+f.Price.Amount()+" "+f.Price.Currency().String())
+				case source.FieldQuantity:
+					summaries = append(summaries, "Quantity "+f.Quantity.Value()+" "+f.QuantityUnit)
+				case source.FieldSettlementDate:
+					summaries = append(summaries, "Settlement "+f.Date.String())
+				default:
+					summaries = append(summaries, f.Money.Amount()+" "+f.Money.Currency().String())
+				}
+
+				if len(summaries) == 2 {
+					break
+				}
+			}
+
+			if len(summaries) > 0 {
+				label += " · " + strings.Join(summaries, " · ")
+			}
+		}
+
 	case "trade":
 		if t, err := decodeTrade(r.Data); err == nil {
 			f := t.Fields()

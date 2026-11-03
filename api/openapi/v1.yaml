@@ -516,6 +516,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        reported_realized_pnl:
+          $ref: '#/components/schemas/NullableRealizedPnL'
         instrument_id:
           type: string
           nullable: true
@@ -600,6 +602,7 @@ components:
         accrued_interest:
           $ref: '#/components/schemas/NullableMoney'
       required:
+      - reported_realized_pnl
       - instrument_id
       - listing_id
       - at
@@ -765,6 +768,18 @@ components:
       type: object
       additionalProperties: false
       properties:
+        reported_realized_pnl:
+          type: object
+          additionalProperties: false
+          properties:
+            rule:
+              type: string
+            selection:
+              type: string
+              enum: [automatic, operator]
+            conflict:
+              type: boolean
+          required: [rule, selection, conflict]
         identity:
           type: object
           nullable: true
@@ -979,6 +994,29 @@ components:
       - warehouse_id
       - version
       - resources
+    NullableRealizedPnL:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+      properties:
+        amount:
+          $ref: '#/components/schemas/NullableMoney'
+        cost_basis:
+          $ref: '#/components/schemas/NullableMoney'
+        report_date:
+          type: string
+          nullable: true
+        cost_basis_report_date:
+          type: string
+          nullable: true
+        conflict:
+          type: boolean
+        selection:
+          type: string
+          enum: [automatic, operator]
+      required: [amount, cost_basis, report_date, cost_basis_report_date, conflict, selection]
+
   parameters:
     id:
       name: id

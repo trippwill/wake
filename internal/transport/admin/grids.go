@@ -25,6 +25,7 @@ type activityGridRow struct {
 	Date      gridCell `json:"date"`
 	Quantity  gridCell `json:"quantity"`
 	Price     gridCell `json:"price"`
+	Realized  gridCell `json:"realized"`
 	State     gridCell `json:"state"`
 	Reference gridCell `json:"reference"`
 }
@@ -97,6 +98,12 @@ func activityGrid(ctx context.Context, data application.ActivityList) gridPage[a
 			reference.Text = notApplicableValue
 		}
 
+		realized := gridCell{Text: item.Realized}
+		if item.RealizedConflict {
+			realized.Note = "Reported result needs review"
+			realized.Tone = "review"
+		}
+
 		rows = append(
 			rows,
 			activityGridRow{
@@ -109,6 +116,7 @@ func activityGrid(ctx context.Context, data application.ActivityList) gridPage[a
 				Date:      gridCell{Text: item.Date},
 				Quantity:  gridCell{Text: item.Quantity},
 				Price:     gridCell{Text: item.Price, Note: item.Basis},
+				Realized:  realized,
 				State:     gridCell{Text: item.State, Tone: activityBadgeKind(item.FinancialState)},
 				Reference: reference,
 			},

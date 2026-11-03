@@ -64,6 +64,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		sort.Strings(values)
 		text("reported.relationships", strings.Join(values, "; "))
 	}
+
 	charges := func(items []source.Charge) {
 		rows := make([]string, 0, len(items))
 		for _, charge := range items {
@@ -120,7 +121,96 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		sort.Strings(components)
 		text("option.deliverables", strings.Join(components, "; "))
 	}
+	activity := func(o source.ActivityObservation) {
+		reportedCharges := []source.Charge{}
+		for _, field := range o.Fields().Fields {
+			f := field.Fields()
+			key := field.Key()
+			switch f.Name {
+			case source.FieldInstrument, source.FieldOrder, source.FieldTradeKind:
+				key = "reported." + key
+			case source.FieldSent, source.FieldReceived:
+				key += "_amount"
+			}
+
+			if !field.Known() {
+				values[key] = application.CorrectionValue{}
+				continue
+			}
+
+			switch f.Name {
+			case source.FieldGross,
+				source.FieldProceeds,
+				source.FieldNet,
+				source.FieldNetBillable,
+				source.FieldAccruedInterest,
+				source.FieldRealizedPnL,
+				source.FieldReportedCostBasis:
+				money(key, f.Money)
+
+				if f.Name == source.FieldRealizedPnL {
+					text("realized_report_date", optionalSourceDate(f.ReportedOn))
+				}
+
+				if f.Name == source.FieldReportedCostBasis {
+					text("cost_basis_report_date", optionalSourceDate(f.ReportedOn))
+				}
+			case source.FieldPrice, source.FieldRate:
+				price(key, f.Price)
+
+				v := values[key]
+				v.Unit = f.PriceBasis
+				if f.Name == source.FieldRate {
+					if base, ok := o.Field(source.FieldRateBase); ok && base.Known() {
+						v.Unit = "per " + base.Fields().Currency.String()
+					}
+				}
+
+				values[key] = v
+			case source.FieldQuantity:
+				values[key] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: f.QuantityUnit}
+			case source.FieldTradeDate, source.FieldSettlementDate:
+				text(key, f.Date.String())
+			case source.FieldExecutedAt:
+				text(key, f.Timestamp.String())
+			case source.FieldInstrument:
+				text("reported.instrument", comparisonInstrument(f.Instrument))
+
+				if f.Instrument.Kind() == source.Option {
+					option(f.Instrument.Option())
+				}
+			case source.FieldTradeKind:
+				text("reported.trade_kind", f.Text)
+			case source.FieldOrder:
+				text("reported.order", comparisonReference(f.Reference))
+			case source.FieldSent, source.FieldReceived:
+				values[key] = application.CorrectionValue{
+					Value: f.CurrencyAmount.Amount(), Currency: comparisonCurrency(f.CurrencyAmount.Currency()),
+				}
+			case source.FieldRateBase:
+				text(key, f.Currency.String())
+			case source.FieldCharge:
+				money(key, f.Charge.Money())
+				reportedCharges = append(reportedCharges, f.Charge)
+			case source.FieldRelationship:
+				text(key, comparisonReference(f.Relationship.Target()))
+			default:
+				text(key, f.Text)
+			}
+		}
+
+		if len(reportedCharges) > 0 {
+			charges(reportedCharges)
+		}
+	}
 	switch kind {
+	case "activity":
+		o, err := decodeObservation(data)
+		if err != nil {
+			return nil, err
+		}
+
+		activity(o)
 	case "trade":
 		t, err := decodeTrade(data)
 		if err != nil {
@@ -176,6 +266,8 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 			text("debt.payments_per_year", payments)
 		}
+
+		activity(t.Observation())
 	case "lifecycle":
 		l, err := decodeLifecycle(data)
 		if err != nil {
@@ -191,6 +283,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		text("trade_date", f.Date.String())
 		text("executed_at", f.At.String())
 		option(f.Instrument.Option())
+		activity(l.Observation())
 	case "conversion":
 		c, err := decodeConversion(data)
 		if err != nil {
@@ -223,6 +316,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		money("proceeds", f.Proceeds)
 		money("net", f.Net)
 		money("net_billable", f.NetWithBillable)
+		activity(c.Observation())
 	default:
 		return nil, application.ErrInvalid
 	}

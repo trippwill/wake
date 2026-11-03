@@ -126,6 +126,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			</section>
 		}
 	</section>
+	@ReportedRealized(d.Context.Realized)
 	if !d.Execution.Terms().Fields().Instrument.Option().IsZero() || !d.Execution.Terms().Fields().Instrument.Debt().IsZero() {
 		<section class="wake-card">
 			<h2>Contract terms</h2>@OptionFacts(d.Execution.Terms().Fields().Instrument.Option())
@@ -321,6 +322,7 @@ templ LifecyclePage(d application.LifecycleDetail) {
 	@Breadcrumbs("Option outcome")
 	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String())
 	@AcceptedDetailScope()
+	@ReportedRealized(d.Context.Realized)
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Reported option outcome</h2>
@@ -391,6 +393,7 @@ templ ConversionPage(d application.ConversionDetail) {
 	@Breadcrumbs("Currency conversion")
 	@PageHeader("Convert "+currencyText(d.Conversion.Terms().Fields().Sent.Currency())+" to "+currencyText(d.Conversion.Terms().Fields().Received.Currency()), d.Context.AccountName+" · "+d.Conversion.Terms().Fields().Date.String())
 	@AcceptedDetailScope()
+	@ReportedRealized(d.Context.Realized)
 	<section class="wake-card">
 		<div class="wake-card-heading">
 			<h2>Currency roles</h2>
@@ -459,8 +462,22 @@ func correctionPath(f application.CorrectionForm) string {
 	return "/activity/" + f.ID + "/correct"
 }
 func fieldLabel(s string) string {
+	if strings.HasPrefix(s, "evidence/") {
+		field := strings.TrimPrefix(s, "evidence/")
+		if field == "instrument" {
+			return "Source choice: reported instrument terms"
+		}
+		return "Source choice: " + fieldLabel(field)
+	}
+	if strings.HasPrefix(s, "charge/") {
+		return "Reported charge: " + strings.TrimPrefix(s, "charge/")
+	}
 	switch s {
-	case "reported.order":
+	case "family":
+		return "Activity family"
+	case "trade_kind":
+		return "Reported trade kind"
+	case "order", "reported.order":
 		return "Reported source order"
 	case "reported.event":
 		return "Reported source event"
@@ -514,6 +531,14 @@ func fieldLabel(s string) string {
 		return "Reported symbol"
 	case "kind":
 		return "Reported outcome"
+	case "realized_pnl":
+		return "Reported realized P&L"
+	case "reported_cost_basis":
+		return "Reported allocated cost"
+	case "realized_report_date":
+		return "P&L report date"
+	case "cost_basis_report_date":
+		return "Allocated cost report date"
 	case "observation":
 		return "Accepted fields from a reported observation"
 	case "reference":
@@ -661,7 +686,7 @@ templ CorrectionPage(csrf string, f application.CorrectionForm) {
 						@CandidateComparison(f, candidate)
 						<form method="post" action={ templ.SafeURL(taskURL(ctx, correctionPath(f))) } aria-label="Select retained evidence">
 							@DecisionMetadata(csrf, f)
-							<input type="hidden" name="action" value="set"/><input type="hidden" name="scope" value={ candidateScope(f) }/><input type="hidden" name="value" value={ candidate.Value }/>
+							<input type="hidden" name="action" value="set"/><input type="hidden" name="scope" value={ candidateScope(f, candidate) }/><input type="hidden" name="value" value={ candidate.Value }/>
 							<details open?={ f.Draft.Rationale!="" }><summary>Add a reason (optional)</summary><label for="candidate-rationale">Rationale</label><input class="input" id="candidate-rationale" name="rationale" value={ f.Draft.Rationale } maxlength="1024"/></details>
 							<button class="btn btn-primary" type="submit">
 								if f.Stale {
@@ -750,4 +775,19 @@ func referenceReasonText(reason string) string {
 	default:
 		return "Reference evidence needs review."
 	}
+}
+
+templ ReportedRealized(value *application.PublishedRealizedPnL) {
+	<section class="wake-card" data-reported-realized>
+		<h2>Reported realized P&amp;L</h2>
+		if value==nil {
+			<p>No reported realized P&amp;L is linked to this activity.</p>
+		} else {
+			if value.Conflict {
+				<p class="wake-notice">Reported results or their activity links disagree. Review the retained evidence.</p>
+			}
+			<dl><dt>Realized gain / loss</dt><dd>{ publishedMoney(value.Amount) }</dd><dt>Allocated cost</dt><dd>{ publishedMoney(value.CostBasis) }</dd><dt>P&amp;L report date</dt><dd>{ known(text(value.ReportDate)) }</dd><dt>Allocated cost report date</dt><dd>{ known(text(value.CostBasisReportDate)) }</dd></dl>
+			<p class="wake-help">Source-reported results retain their original costs and currency. Trade corrections do not recalculate these values.</p>
+		}
+	</section>
 }

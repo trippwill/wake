@@ -30,9 +30,12 @@ func TestFinancialCalculationIsDeterministicAndKeepsSourceDisagreement(t *testin
 
 	state, _ := NewActivityState(Cancelled, 0, AutomaticSelection)
 	in := ActivityCalculationInput{
-		Rule:        RetainedClaimsRule,
-		Baseline:    baseline,
-		Claims:      []ActivityClaim{{Key: "original", Terms: baseline}, {Key: "disputed", Terms: variant}},
+		Rule:     RetainedClaimsRule,
+		Baseline: baseline,
+		Claims: []ActivityClaim{
+			{Key: "original", Value: baseline.Observation()},
+			{Key: "disputed", Value: variant.Observation()},
+		},
 		Binding:     ActivityBinding{Instrument: "root"},
 		SourceState: state,
 		Decisions: []FieldSelection{

@@ -74,14 +74,14 @@ func (a Artifact) Equivalence() (string, string) {
 // Counts names each outcome so adding a supported claim kind cannot shift
 // positional arguments in a provider's report accounting.
 type Counts struct {
-	Rows, Trades, Lifecycles, Conversions, Corrections, Instruments, Rejected, Ignored uint64
+	Rows, Activities, Corrections, Instruments, Rejected, Ignored uint64
 }
 
 type Result struct{ counts Counts }
 
 func NewResult(counts Counts) (Result, error) {
 	remaining := counts.Rows
-	for _, n := range []uint64{counts.Trades, counts.Lifecycles, counts.Conversions, counts.Corrections, counts.Instruments, counts.Rejected, counts.Ignored} {
+	for _, n := range []uint64{counts.Activities, counts.Corrections, counts.Instruments, counts.Rejected, counts.Ignored} {
 		if n > remaining {
 			return Result{}, ErrInvalid
 		}
@@ -96,13 +96,11 @@ func NewResult(counts Counts) (Result, error) {
 	return Result{counts}, nil
 }
 func (r Result) Rows() uint64        { return r.counts.Rows }
-func (r Result) Trades() uint64      { return r.counts.Trades }
+func (r Result) Activities() uint64  { return r.counts.Activities }
 func (r Result) Instruments() uint64 { return r.counts.Instruments }
 func (r Result) Rejected() uint64    { return r.counts.Rejected }
 func (r Result) Ignored() uint64     { return r.counts.Ignored }
 func (r Result) Counts() Counts      { return r.counts }
-func (r Result) Lifecycles() uint64  { return r.counts.Lifecycles }
-func (r Result) Conversions() uint64 { return r.counts.Conversions }
 func (r Result) Corrections() uint64 { return r.counts.Corrections }
 
 // Rejection identifies an uninterpretable source row without retaining unsafe

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FlexQueryResponse type="AF" queryName="Synthetic activity realized results">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U0000001" fromDate="2026-07-13" toDate="2026-07-17">
+      <Trades>
+        <Trade accountId="U0000001" assetCategory="STK" conid="99001001" tradeID="900000003" ibExecID="0000F001.00000003.01.01" transactionID="synthetic-result-3" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="-0.250000000000" currency="USD" tradeDate="2026-07-15" reportDate="2026-07-17" fifoPnlRealized="12.34000000000000001" cost="-88.91086419725000000"/>
+      </Trades>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

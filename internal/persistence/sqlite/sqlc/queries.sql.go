@@ -28,7 +28,7 @@ func (q *Queries) AccessReadiness(ctx context.Context, connectionID string) (Acc
 }
 
 const account = `-- name: Account :one
-SELECT revision, id, singleton, name, currency, connection_id, provider, stream, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
+SELECT revision, id, singleton, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
 `
 
 func (q *Queries) Account(ctx context.Context) (Account, error) {
@@ -42,7 +42,6 @@ func (q *Queries) Account(ctx context.Context) (Account, error) {
 		&i.Currency,
 		&i.ConnectionID,
 		&i.Provider,
-		&i.Stream,
 		&i.Authority,
 		&i.Kind,
 		&i.Scope,
@@ -110,7 +109,7 @@ func (q *Queries) ActivityBase(ctx context.Context, activityID string) (Activity
 }
 
 const activityInputs = `-- name: ActivityInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid
 `
 
 func (q *Queries) ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
@@ -122,6 +121,95 @@ func (q *Queries) ActivityInputs(ctx context.Context, executionID sql.NullString
 	var items []RecordValue
 	for rows.Next() {
 		var i RecordValue
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.Kind,
+			&i.Data,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const activityObservation = `-- name: ActivityObservation :one
+SELECT artifact_id, version, location, execution_id, outcome, rule FROM execution_observations WHERE artifact_id=? AND version=? AND location=?
+`
+
+type ActivityObservationParams struct {
+	ArtifactID string
+	Version    string
+	Location   string
+}
+
+func (q *Queries) ActivityObservation(ctx context.Context, arg ActivityObservationParams) (ExecutionObservation, error) {
+	row := q.db.QueryRowContext(ctx, activityObservation, arg.ArtifactID, arg.Version, arg.Location)
+	var i ExecutionObservation
+	err := row.Scan(
+		&i.ArtifactID,
+		&i.Version,
+		&i.Location,
+		&i.ExecutionID,
+		&i.Outcome,
+		&i.Rule,
+	)
+	return i, err
+}
+
+const activitySelection = `-- name: ActivitySelection :one
+SELECT activity_id, baseline, selected FROM activity_selections WHERE activity_id=?
+`
+
+func (q *Queries) ActivitySelection(ctx context.Context, activityID string) (ActivitySelection, error) {
+	row := q.db.QueryRowContext(ctx, activitySelection, activityID)
+	var i ActivitySelection
+	err := row.Scan(&i.ActivityID, &i.Baseline, &i.Selected)
+	return i, err
+}
+
+const activityToMatch = `-- name: ActivityToMatch :many
+WITH RECURSIVE seeds(claim_id,ordinal) AS (
+ SELECT r.claim_id,r.ordinal FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=?1
+ UNION
+ SELECT r.claim_id,r.ordinal FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id JOIN activity_references r ON r.account_id=e.account_id AND r.reference=e.reference WHERE o.artifact_id=?1
+), affected(claim_id,ordinal) AS (
+ SELECT claim_id,ordinal FROM seeds
+ UNION
+ SELECT old.claim_id,old.ordinal FROM affected a JOIN activity_references current ON current.claim_id=a.claim_id AND current.ordinal=a.ordinal JOIN activity_references old ON old.account_id=current.account_id AND old.reference=current.reference
+)
+SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id ORDER BY p.rowid
+`
+
+type ActivityToMatchRow struct {
+	ArtifactID string
+	Version    string
+	Location   string
+	ClaimID    string
+	Ordinal    int64
+	Kind       string
+	Data       []byte
+}
+
+func (q *Queries) ActivityToMatch(ctx context.Context, artifactID string) ([]ActivityToMatchRow, error) {
+	rows, err := q.db.QueryContext(ctx, activityToMatch, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityToMatchRow
+	for rows.Next() {
+		var i ActivityToMatchRow
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Version,
@@ -218,7 +306,7 @@ func (q *Queries) ArtifactFailure(ctx context.Context, arg ArtifactFailureParams
 }
 
 const artifactInstrumentClaims = `-- name: ArtifactInstrumentClaims :many
-SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind IN ('trade','lifecycle') ORDER BY o.rowid
+SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind='activity' ORDER BY o.rowid
 `
 
 type ArtifactInstrumentClaimsRow struct {
@@ -422,18 +510,29 @@ func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCac
 }
 
 const calculationInputs = `-- name: CalculationInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid
 `
 
-func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
+type CalculationInputsRow struct {
+	ArtifactID  string
+	Version     string
+	Location    string
+	ClaimID     string
+	Ordinal     int64
+	Kind        string
+	Data        []byte
+	LinkOutcome string
+}
+
+func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error) {
 	rows, err := q.db.QueryContext(ctx, calculationInputs, executionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []RecordValue
+	var items []CalculationInputsRow
 	for rows.Next() {
-		var i RecordValue
+		var i CalculationInputsRow
 		if err := rows.Scan(
 			&i.ArtifactID,
 			&i.Version,
@@ -442,6 +541,7 @@ func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullStr
 			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
+			&i.LinkOutcome,
 		); err != nil {
 			return nil, err
 		}
@@ -959,6 +1059,15 @@ func (q *Queries) Descriptor(ctx context.Context, id string) (Connection, error)
 	var i Connection
 	err := row.Scan(&i.ID, &i.Provider, &i.Name)
 	return i, err
+}
+
+const disableAcquisition = `-- name: DisableAcquisition :exec
+UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='acquire'
+`
+
+func (q *Queries) DisableAcquisition(ctx context.Context, connectionID string) error {
+	_, err := q.db.ExecContext(ctx, disableAcquisition, connectionID)
+	return err
 }
 
 const disableDiscovery = `-- name: DisableDiscovery :exec
@@ -1883,7 +1992,7 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 }
 
 const pendingArtifacts = `-- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
 `
 
 type PendingArtifactsParams struct {
@@ -2024,17 +2133,16 @@ func (q *Queries) ProcessingComplete(ctx context.Context, arg ProcessingComplete
 }
 
 const processingStatuses = `-- name: ProcessingStatuses :many
-SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
- CAST(coalesce((SELECT json_extract(counts,'$.Trades') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS trade_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Lifecycles') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS lifecycle_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Conversions') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS conversion_claims,
+SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
  CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
- (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
+ (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
 `
 
 type ProcessingStatusesRow struct {
 	ID                string
+	Stream            string
 	ReceiptID         string
 	Retrieved         string
 	Hash              string
@@ -2045,9 +2153,7 @@ type ProcessingStatusesRow struct {
 	RequestedTo       string
 	ReportedFrom      string
 	ReportedTo        string
-	TradeClaims       int64
-	LifecycleClaims   int64
-	ConversionClaims  int64
+	ActivityClaims    int64
 	ExcludedRows      int64
 	NeedsReview       int64
 }
@@ -2063,6 +2169,7 @@ func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) (
 		var i ProcessingStatusesRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Stream,
 			&i.ReceiptID,
 			&i.Retrieved,
 			&i.Hash,
@@ -2073,9 +2180,7 @@ func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) (
 			&i.RequestedTo,
 			&i.ReportedFrom,
 			&i.ReportedTo,
-			&i.TradeClaims,
-			&i.LifecycleClaims,
-			&i.ConversionClaims,
+			&i.ActivityClaims,
 			&i.ExcludedRows,
 			&i.NeedsReview,
 		); err != nil {
@@ -2169,7 +2274,7 @@ func (q *Queries) ProjectInstrument(ctx context.Context, arg ProjectInstrumentPa
 }
 
 const putAccount = `-- name: PutAccount :exec
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?)
+INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?)
 `
 
 type PutAccountParams struct {
@@ -2178,7 +2283,6 @@ type PutAccountParams struct {
 	Currency     string
 	ConnectionID string
 	Provider     string
-	Stream       string
 	Authority    string
 	Kind         string
 	Scope        string
@@ -2194,7 +2298,6 @@ func (q *Queries) PutAccount(ctx context.Context, arg PutAccountParams) error {
 		arg.Currency,
 		arg.ConnectionID,
 		arg.Provider,
-		arg.Stream,
 		arg.Authority,
 		arg.Kind,
 		arg.Scope,
@@ -2236,6 +2339,48 @@ func (q *Queries) PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionR
 		arg.RequestedTo,
 		arg.ReportedFrom,
 		arg.ReportedTo,
+	)
+	return err
+}
+
+const putActivityBase = `-- name: PutActivityBase :exec
+INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutActivityBaseParams struct {
+	ActivityID   string
+	Data         []byte
+	InstrumentID sql.NullString
+	ListingID    sql.NullString
+}
+
+func (q *Queries) PutActivityBase(ctx context.Context, arg PutActivityBaseParams) error {
+	_, err := q.db.ExecContext(ctx, putActivityBase,
+		arg.ActivityID,
+		arg.Data,
+		arg.InstrumentID,
+		arg.ListingID,
+	)
+	return err
+}
+
+const putActivityReference = `-- name: PutActivityReference :exec
+INSERT INTO activity_references(claim_id,ordinal,account_id,reference) VALUES(?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutActivityReferenceParams struct {
+	ClaimID   string
+	Ordinal   int64
+	AccountID string
+	Reference string
+}
+
+func (q *Queries) PutActivityReference(ctx context.Context, arg PutActivityReferenceParams) error {
+	_, err := q.db.ExecContext(ctx, putActivityReference,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.AccountID,
+		arg.Reference,
 	)
 	return err
 }
@@ -3019,6 +3164,27 @@ func (q *Queries) Relationships(ctx context.Context, activityID string) ([]Relat
 	return items, nil
 }
 
+const relinkActivityObservation = `-- name: RelinkActivityObservation :exec
+UPDATE execution_observations SET execution_id=?1,outcome=?2 WHERE (artifact_id,version,location) IN (SELECT artifact_id,version,location FROM records WHERE claim_id=?3 AND ordinal=?4)
+`
+
+type RelinkActivityObservationParams struct {
+	ExecutionID sql.NullString
+	Outcome     string
+	ClaimID     string
+	Ordinal     int64
+}
+
+func (q *Queries) RelinkActivityObservation(ctx context.Context, arg RelinkActivityObservationParams) error {
+	_, err := q.db.ExecContext(ctx, relinkActivityObservation,
+		arg.ExecutionID,
+		arg.Outcome,
+		arg.ClaimID,
+		arg.Ordinal,
+	)
+	return err
+}
+
 const replaceSecret = `-- name: ReplaceSecret :exec
 INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?) ON CONFLICT(connection_id,key) DO UPDATE SET encrypted=excluded.encrypted
 `
@@ -3061,12 +3227,17 @@ func (q *Queries) ReportComparison(ctx context.Context, arg ReportComparisonPara
 	return artifact_id, err
 }
 
-const resetConnectionWork = `-- name: ResetConnectionWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?
+const resetStreamWork = `-- name: ResetStreamWork :exec
+UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=? AND stream=?
 `
 
-func (q *Queries) ResetConnectionWork(ctx context.Context, connectionID string) error {
-	_, err := q.db.ExecContext(ctx, resetConnectionWork, connectionID)
+type ResetStreamWorkParams struct {
+	ConnectionID string
+	Stream       string
+}
+
+func (q *Queries) ResetStreamWork(ctx context.Context, arg ResetStreamWorkParams) error {
+	_, err := q.db.ExecContext(ctx, resetStreamWork, arg.ConnectionID, arg.Stream)
 	return err
 }
 
@@ -3237,7 +3408,7 @@ func (q *Queries) RetireListing(ctx context.Context, id string) error {
 }
 
 const retryProcessing = `-- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream)
+UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id)
 `
 
 func (q *Queries) RetryProcessing(ctx context.Context, id string) (int64, error) {
@@ -3313,6 +3484,21 @@ func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveActivitySelection = `-- name: SaveActivitySelection :exec
+INSERT INTO activity_selections(activity_id,baseline,selected) VALUES(?,?,?) ON CONFLICT(activity_id) DO UPDATE SET baseline=excluded.baseline,selected=excluded.selected WHERE baseline<>excluded.baseline OR selected<>excluded.selected
+`
+
+type SaveActivitySelectionParams struct {
+	ActivityID string
+	Baseline   []byte
+	Selected   []byte
+}
+
+func (q *Queries) SaveActivitySelection(ctx context.Context, arg SaveActivitySelectionParams) error {
+	_, err := q.db.ExecContext(ctx, saveActivitySelection, arg.ActivityID, arg.Baseline, arg.Selected)
+	return err
 }
 
 const saveInstrumentSelection = `-- name: SaveInstrumentSelection :exec
@@ -3688,18 +3874,37 @@ func (q *Queries) WakeReference(ctx context.Context) error {
 }
 
 const workStatuses = `-- name: WorkStatuses :many
-SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure, failure_code FROM work WHERE connection_id=? ORDER BY operation
+SELECT work.connection_id, work.stream, work.operation, work.revision, work.state_version, work.state, work.next, work.observed, work.observed_completed, work.observed_total, work.acknowledged, work.acknowledged_completed, work.acknowledged_total, work.failure, work.failure_code, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation
 `
 
-func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work, error) {
+type WorkStatusesRow struct {
+	ConnectionID          string
+	Stream                string
+	Operation             string
+	Revision              int64
+	StateVersion          string
+	State                 []byte
+	Next                  string
+	Observed              string
+	ObservedCompleted     int64
+	ObservedTotal         int64
+	Acknowledged          string
+	AcknowledgedCompleted int64
+	AcknowledgedTotal     int64
+	Failure               string
+	FailureCode           string
+	Scheduled             bool
+}
+
+func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]WorkStatusesRow, error) {
 	rows, err := q.db.QueryContext(ctx, workStatuses, connectionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Work
+	var items []WorkStatusesRow
 	for rows.Next() {
-		var i Work
+		var i WorkStatusesRow
 		if err := rows.Scan(
 			&i.ConnectionID,
 			&i.Stream,
@@ -3716,6 +3921,7 @@ func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work
 			&i.AcknowledgedTotal,
 			&i.Failure,
 			&i.FailureCode,
+			&i.Scheduled,
 		); err != nil {
 			return nil, err
 		}

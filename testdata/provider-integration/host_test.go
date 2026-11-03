@@ -160,7 +160,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal(artifact, err)
 	}
 	result, err := f.host.Normalize(ctx, artifact, "v1")
-	if err != nil || result.Trades() != 1 || result.Rejected() != 1 {
+	if err != nil || result.Activities() != 1 || result.Rejected() != 1 {
 		t.Fatal(result, err)
 	}
 	records, err := f.store.Records(ctx, artifact, "v1")
@@ -168,10 +168,10 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal(len(records), err)
 	}
 	for _, record := range records {
-		if record.Kind != "trade" {
+		if record.Kind != "activity" {
 			continue
 		}
-		terms := record.Trade.Fields()
+		terms := observedTrade(t, record.Observation).Fields()
 		if terms.Quantity.Value() != "1.0000000000000000000000000001" || terms.Price.Amount() != "123.4500000000000000000000000001" || terms.ExecutedAt.String() != "2026-10-23T12:00:00.1200Z" || terms.Event.Scope() != "account-1" {
 			t.Fatal("normalized exact/source terms changed")
 		}
@@ -282,9 +282,9 @@ func (f normalizeFunc) Normalize(ctx context.Context, a provider.Artifact, c pro
 
 type swallowingSink struct{ provider.Claims }
 
-func (s swallowingSink) PutTrade(ctx context.Context, t source.Trade) error {
-	_ = s.Claims.PutTrade(ctx, t)
-	_ = s.Claims.PutTrade(ctx, t)
+func (s swallowingSink) PutActivity(ctx context.Context, t source.ActivityObservation) error {
+	_ = s.Claims.PutActivity(ctx, t)
+	_ = s.Claims.PutActivity(ctx, t)
 	return nil
 }
 func (s swallowingSink) Reject(ctx context.Context, location, reason string) error {
@@ -522,7 +522,7 @@ func TestInterruptedAttemptRecoveryAndCredentialFreeNormalization(t *testing.T) 
 		t.Fatal(err)
 	}
 	result, err := f.host.Normalize(context.Background(), artifact, "v1")
-	if err != nil || result.Trades() != 1 {
+	if err != nil || result.Activities() != 1 {
 		t.Fatal("normalization depended on credentials", result, err)
 	}
 }
@@ -580,10 +580,10 @@ func TestAdjustedOptionExternalClaimRoundTrip(t *testing.T) {
 		if err != nil {
 			return provider.Result{}, err
 		}
-		if err = c.PutTrade(ctx, trade); err != nil {
+		if err = c.PutActivity(ctx, trade.Observation()); err != nil {
 			return provider.Result{}, err
 		}
-		return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+		return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 	})
 	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
 	if err != nil {
@@ -601,7 +601,7 @@ func TestAdjustedOptionExternalClaimRoundTrip(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatal(records, err)
 	}
-	terms := records[0].Trade.Fields().Instrument.Option().Fields()
+	terms := observedTrade(t, records[0].Observation).Fields().Instrument.Option().Fields()
 	if terms.Strike.Amount() != "123.4500000000000000001" || terms.Multiplier.Value() != "10" || len(terms.Deliverables) != 2 || terms.Deliverables[0].Quantity().Value() != "12.5" || terms.Deliverables[1].Cash().Amount() != "0.75" || terms.EffectiveFrom.String() != "2026-10-01" {
 		t.Fatal("adjusted terms lost", terms)
 	}
@@ -614,10 +614,10 @@ func TestLifecycleExternalClaimRoundTrip(t *testing.T) {
 		if err != nil {
 			return provider.Result{}, err
 		}
-		if err = c.PutLifecycle(ctx, trade); err != nil {
+		if err = c.PutActivity(ctx, trade.Observation()); err != nil {
 			return provider.Result{}, err
 		}
-		return provider.NewResult(provider.Counts{Rows: 1, Lifecycles: 1})
+		return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 	})
 	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
 	if err != nil {
@@ -635,7 +635,7 @@ func TestLifecycleExternalClaimRoundTrip(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatal(records, err)
 	}
-	if records[0].Lifecycle.Fields().Kind != source.Exercise || len(records[0].Lifecycle.Fields().Relationships) != 1 {
+	if observedLifecycle(t, records[0].Observation).Fields().Kind != source.Exercise || len(observedLifecycle(t, records[0].Observation).Fields().Relationships) != 1 {
 		t.Fatal("lifecycle terms lost")
 	}
 }
@@ -649,10 +649,10 @@ func TestDebtExternalClaimRoundTrip(t *testing.T) {
 				if err != nil {
 					return provider.Result{}, err
 				}
-				if err = c.PutTrade(ctx, trade); err != nil {
+				if err = c.PutActivity(ctx, trade.Observation()); err != nil {
 					return provider.Result{}, err
 				}
-				return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+				return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 			})
 			r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
 			if err != nil {
@@ -670,8 +670,8 @@ func TestDebtExternalClaimRoundTrip(t *testing.T) {
 			if err != nil || len(records) != 1 {
 				t.Fatal(records, err)
 			}
-			terms := records[0].Trade.Fields()
-			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || records[0].Trade.PriceBasis() != "" || terms.AccruedInterest.Amount() != "-12.345" {
+			terms := observedTrade(t, records[0].Observation).Fields()
+			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || observedTrade(t, records[0].Observation).PriceBasis() != "" || terms.AccruedInterest.Amount() != "-12.345" {
 				t.Fatal("debt terms lost", terms)
 			}
 		})
@@ -685,10 +685,10 @@ func TestConversionExternalClaimRoundTrip(t *testing.T) {
 		if err != nil {
 			return provider.Result{}, err
 		}
-		if err = c.PutConversion(ctx, trade); err != nil {
+		if err = c.PutActivity(ctx, trade.Observation()); err != nil {
 			return provider.Result{}, err
 		}
-		return provider.NewResult(provider.Counts{Rows: 1, Conversions: 1})
+		return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 	})
 	r, err := provider.NewRegistration(base.Descriptor(), "v1", fixture.Provider{}, n, fixture.Provider{}, nil)
 	if err != nil {
@@ -706,7 +706,7 @@ func TestConversionExternalClaimRoundTrip(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatal(records, err)
 	}
-	terms := records[0].Conversion.Fields()
+	terms := observedConversion(t, records[0].Observation).Fields()
 	if terms.Sent.Amount() != "10.1234567890000000001" || terms.Received.Amount() != "" || terms.Charges[0].Money().Currency().String() != "GBP" {
 		t.Fatal("conversion roles lost", terms)
 	}
@@ -880,12 +880,12 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 	}
 	for range 2 {
 		result, err := f.host.Normalize(t.Context(), retainedID, registration.Version())
-		if err != nil || result.Trades() != 1 {
+		if err != nil || result.Activities() != 1 {
 			t.Fatal(result, err)
 		}
 	}
 	records, err := f.store.Records(t.Context(), retainedID, registration.Version())
-	if err != nil || len(records) != 1 || records[0].Trade.Fields().Location != "page:1/region:2/row:3" || records[0].Trade.Fields().Instrument.Option().Fields().Strike.Amount() != "123.4500000000000000001" {
+	if err != nil || len(records) != 1 || observedTrade(t, records[0].Observation).Fields().Location != "page:1/region:2/row:3" || observedTrade(t, records[0].Observation).Fields().Instrument.Option().Fields().Strike.Amount() != "123.4500000000000000001" {
 		t.Fatal("document source claims lost precision/provenance", records, err)
 	}
 	attempts, err := f.store.Attempts(t.Context(), retainedID)
@@ -1132,4 +1132,29 @@ func inspectProvider(t *testing.T, w *application.Workflow) (application.SourceP
 		page.Connections[index] = detail.Connection
 	}
 	return page, nil
+}
+
+func observedTrade(t testing.TB, o source.ActivityObservation) source.Trade {
+	t.Helper()
+	v, err := o.Trade()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+func observedLifecycle(t testing.TB, o source.ActivityObservation) source.Lifecycle {
+	t.Helper()
+	v, err := o.Lifecycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+func observedConversion(t testing.TB, o source.ActivityObservation) source.Conversion {
+	t.Helper()
+	v, err := o.Conversion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }

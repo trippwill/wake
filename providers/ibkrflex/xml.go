@@ -144,7 +144,7 @@ func inspectReport(
 	err := walk(ctx, body, func(path []node) error {
 		entry := path[len(path)-1]
 		if len(path) == 4 && path[1].name == "FlexStatements" && path[2].name == "FlexStatement" &&
-			(kind == "TCF" && entry.name == "TradeConfirms") {
+			(kind == "TCF" && entry.name == "TradeConfirms" || kind == "AF" && entry.name == "Trades") {
 			metadata.tradeSections++
 		}
 
@@ -175,8 +175,8 @@ func inspectReport(
 		}
 
 		if len(path) == 5 && path[1].name == "FlexStatements" && path[2].name == "FlexStatement" &&
-			path[3].name == "TradeConfirms" &&
-			entry.name == "TradeConfirm" &&
+			(kind == "TCF" && path[3].name == "TradeConfirms" && entry.name == "TradeConfirm" ||
+				kind == "AF" && path[3].name == "Trades" && entry.name == "Trade") &&
 			row != nil {
 			return row(path)
 		}

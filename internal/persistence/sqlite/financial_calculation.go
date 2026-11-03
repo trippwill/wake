@@ -10,6 +10,7 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -55,6 +56,13 @@ func loadActivityCalculation(
 		return in, err
 	}
 
+	selected, err := loadActivitySelection(ctx, q, row.ID)
+	if err != nil {
+		return in, err
+	}
+
+	in.BaselineFields = selected.Baseline
+
 	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
 	if err != nil {
 		return in, err
@@ -62,17 +70,24 @@ func loadActivityCalculation(
 
 	active := activeDecisions(rows)
 	if proposed != nil {
-		if proposed.Action == "release" {
-			if _, ok := active[proposed.Scope]; !ok {
-				return in, application.ErrInvalid
-			}
+		fields, e := activityDecisionFields(ctx, q, *proposed, active)
+		if e != nil {
+			return in, e
+		}
 
-			delete(active, proposed.Scope)
-		} else {
-			active[proposed.Scope] = sqlc.OperatorDecision{
-				Scope:    proposed.Scope,
-				Text:     proposed.Text,
-				Currency: proposed.Currency,
+		for _, field := range fields {
+			if field.Action == "release" {
+				if _, ok := active[field.Scope]; !ok {
+					return in, application.ErrInvalid
+				}
+
+				delete(active, field.Scope)
+			} else {
+				active[field.Scope] = sqlc.OperatorDecision{
+					Scope:    field.Scope,
+					Text:     field.Text,
+					Currency: field.Currency,
+				}
 			}
 		}
 	}
@@ -114,7 +129,12 @@ func loadActivityCalculation(
 			in.Decisions,
 			application.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
 		)
-		switch scope {
+		selectionScope := scope
+		if strings.HasPrefix(scope, "evidence/") {
+			selectionScope = "observation"
+		}
+
+		switch selectionScope {
 		case "observation":
 			var key [3]string
 			if json.Unmarshal([]byte(d.Text), &key) != nil {
@@ -139,12 +159,16 @@ func loadActivityCalculation(
 				return in, e
 			}
 
-			value, e := decodeActivityTerms(selected.Kind, data)
+			value, e := decodeObservation(data)
 			if e != nil {
 				return in, e
 			}
 
-			in.ObservationChoices = map[string]application.ActivityTerms{d.Text: value}
+			if in.ObservationChoices == nil {
+				in.ObservationChoices = map[string]source.ActivityObservation{}
+			}
+
+			in.ObservationChoices[d.Text] = value
 		case "instrument":
 			root, e := q.Instrument(ctx, d.Text)
 			if e != nil {
@@ -189,6 +213,10 @@ func projectActivity(
 func persistActivityCalculation(
 	ctx context.Context, q *sqlc.Queries, row sqlc.Execution, result application.ActivityCalculation,
 ) error {
+	if err := persistActivitySelection(ctx, q, row.ID, result.Fields); err != nil {
+		return err
+	}
+
 	var err error
 
 	if result.AutomaticListing && result.Binding.Instrument != "" && result.Binding.Listing == "" &&
@@ -440,6 +468,11 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 		return err
 	}
 
+	activityIDs, err := linkActivityObservations(ctx, q, artifact)
+	if err != nil {
+		return err
+	}
+
 	states, err := correctionStates(ctx, q)
 	if err != nil {
 		return err
@@ -451,6 +484,11 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 	}
 
 	affected := map[string]sqlc.Execution{}
+
+	for _, value := range activityIDs {
+		ids = append(ids, sql.NullString{String: value, Valid: true})
+	}
+
 	for _, id := range ids {
 		row, e := q.Execution(ctx, id.String)
 		if e != nil {
@@ -506,19 +544,33 @@ func retainedActivityClaims(
 	q *sqlc.Queries,
 	id string,
 ) ([]application.ActivityClaim, error) {
-	inputs, err := materializeRecords(q.CalculationInputs(ctx, sql.NullString{String: id, Valid: true}))
+	inputs, err := q.CalculationInputs(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return nil, err
 	}
 
 	claims := make([]application.ActivityClaim, 0, len(inputs))
 	for _, input := range inputs {
-		terms, e := decodeActivityTerms(input.Kind, input.Data)
+		data, e := claimData(input.Kind, input.Data, input.Location)
 		if e != nil {
 			return nil, e
 		}
 
-		claims = append(claims, application.ActivityClaim{Key: observationKey(input), Terms: terms})
+		value, e := decodeObservation(data)
+		if e != nil {
+			return nil, e
+		}
+
+		claims = append(
+			claims,
+			application.ActivityClaim{
+				Key: observationKey(
+					sqlc.RecordValue{ArtifactID: input.ArtifactID, Version: input.Version, Location: input.Location},
+				),
+				Value:        value,
+				LinkConflict: input.LinkOutcome == "native-review" || input.LinkOutcome == "kind-conflict",
+			},
+		)
 	}
 
 	return claims, nil

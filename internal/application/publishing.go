@@ -93,37 +93,53 @@ type PublishedDebt struct {
 	PaymentsPerYear *int    `json:"payments_per_year"`
 }
 type PublishedActivity struct {
-	Family          string                  `json:"family"`
-	AccountID       string                  `json:"account_id"`
-	InstrumentID    *string                 `json:"instrument_id"`
-	ListingID       *string                 `json:"listing_id"`
-	State           string                  `json:"state"`
-	Conflict        bool                    `json:"conflict"`
-	Date            string                  `json:"date"`
-	At              *string                 `json:"at"`
-	Order           *PublishedReference     `json:"order"`
-	Relationships   []PublishedRelationship `json:"relationships"`
-	TradeKind       *string                 `json:"trade_kind"`
-	Side            *string                 `json:"side"`
-	PositionEffect  *string                 `json:"position_effect"`
-	Quantity        *PublishedQuantity      `json:"quantity"`
-	Price           *PublishedMoney         `json:"price"`
-	PriceBasis      *string                 `json:"price_basis"`
-	SettlementDate  *string                 `json:"settlement_date"`
-	LifecycleKind   *string                 `json:"lifecycle_kind"`
-	Sent            *PublishedAmount        `json:"sent"`
-	Received        *PublishedAmount        `json:"received"`
-	RateBase        *string                 `json:"rate_base"`
-	Rate            *PublishedMoney         `json:"rate"`
-	Gross           *PublishedMoney         `json:"gross"`
-	Proceeds        *PublishedMoney         `json:"proceeds"`
-	Net             *PublishedMoney         `json:"net"`
-	NetWithBillable *PublishedMoney         `json:"net_with_billable"`
-	AccruedInterest *PublishedMoney         `json:"accrued_interest"`
-	Charges         []PublishedCharge       `json:"charges"`
+	ReportedRealizedPnL *PublishedRealizedPnL   `json:"reported_realized_pnl"`
+	Family              string                  `json:"family"`
+	AccountID           string                  `json:"account_id"`
+	InstrumentID        *string                 `json:"instrument_id"`
+	ListingID           *string                 `json:"listing_id"`
+	State               string                  `json:"state"`
+	Conflict            bool                    `json:"conflict"`
+	Date                string                  `json:"date"`
+	At                  *string                 `json:"at"`
+	Order               *PublishedReference     `json:"order"`
+	Relationships       []PublishedRelationship `json:"relationships"`
+	TradeKind           *string                 `json:"trade_kind"`
+	Side                *string                 `json:"side"`
+	PositionEffect      *string                 `json:"position_effect"`
+	Quantity            *PublishedQuantity      `json:"quantity"`
+	Price               *PublishedMoney         `json:"price"`
+	PriceBasis          *string                 `json:"price_basis"`
+	SettlementDate      *string                 `json:"settlement_date"`
+	LifecycleKind       *string                 `json:"lifecycle_kind"`
+	Sent                *PublishedAmount        `json:"sent"`
+	Received            *PublishedAmount        `json:"received"`
+	RateBase            *string                 `json:"rate_base"`
+	Rate                *PublishedMoney         `json:"rate"`
+	Gross               *PublishedMoney         `json:"gross"`
+	Proceeds            *PublishedMoney         `json:"proceeds"`
+	Net                 *PublishedMoney         `json:"net"`
+	NetWithBillable     *PublishedMoney         `json:"net_with_billable"`
+	AccruedInterest     *PublishedMoney         `json:"accrued_interest"`
+	Charges             []PublishedCharge       `json:"charges"`
 	// Terms retain the contract/issue terms used for this activity, independently of reference refresh.
 	Option *PublishedOption `json:"option"`
 	Debt   *PublishedDebt   `json:"debt"`
+}
+
+type PublishedRealizedPnL struct {
+	Amount              *PublishedMoney `json:"amount"`
+	CostBasis           *PublishedMoney `json:"cost_basis"`
+	ReportDate          *string         `json:"report_date"`
+	CostBasisReportDate *string         `json:"cost_basis_report_date"`
+	Conflict            bool            `json:"conflict"`
+	Selection           string          `json:"selection"`
+}
+
+type PublishedRealizedExplanation struct {
+	Rule      string `json:"rule"`
+	Selection string `json:"selection"`
+	Conflict  bool   `json:"conflict"`
 }
 type PublishedIdentity struct {
 	FIGI       *string `json:"figi"`
@@ -132,14 +148,15 @@ type PublishedIdentity struct {
 	Rule       string  `json:"rule"`
 }
 type Explanation struct {
-	Identity    *PublishedIdentity    `json:"identity"`
-	ID          string                `json:"id"`
-	Kind        string                `json:"kind"`
-	Revision    int64                 `json:"revision"`
-	Selection   string                `json:"selection"`
-	Conflict    bool                  `json:"conflict"`
-	Corrections []PublishedCorrection `json:"corrections"`
-	Decisions   []PublishedDecision   `json:"decisions"`
+	RealizedPnL *PublishedRealizedExplanation `json:"reported_realized_pnl,omitempty"`
+	Identity    *PublishedIdentity            `json:"identity"`
+	ID          string                        `json:"id"`
+	Kind        string                        `json:"kind"`
+	Revision    int64                         `json:"revision"`
+	Selection   string                        `json:"selection"`
+	Conflict    bool                          `json:"conflict"`
+	Corrections []PublishedCorrection         `json:"corrections"`
+	Decisions   []PublishedDecision           `json:"decisions"`
 }
 type PublishedCorrection struct {
 	Kind           string   `json:"kind"`

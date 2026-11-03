@@ -309,7 +309,7 @@ func sourceWork(v sourceView, c application.ConnectionView) []application.WorkSt
 
 	out := []application.WorkStatus{}
 	for _, w := range c.Work {
-		if w.Operation == operation {
+		if w.Operation == operation && w.Scheduled {
 			out = append(out, w)
 		}
 	}
@@ -389,8 +389,9 @@ func stringTitle(s string) string {
 }
 
 type activityItem struct {
-	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State string
-	FinancialState                                                                                  application.ActivityState
+	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State, Realized string
+	RealizedConflict                                                                                          bool
+	FinancialState                                                                                            application.ActivityState
 }
 
 func connectionByID(v sourceView, id string) (application.ConnectionView, bool) {
@@ -507,7 +508,11 @@ func correctionModeLabel(mode string) string {
 	}
 }
 
-func candidateScope(f application.CorrectionForm) string {
+func candidateScope(f application.CorrectionForm, candidate application.CorrectionCandidate) string {
+	if candidate.Scope != "" {
+		return candidate.Scope
+	}
+
 	if f.Kind == "instrument" {
 		return "reference"
 	}
@@ -623,4 +628,12 @@ func comparisonFields(f application.CorrectionForm, c application.CorrectionCand
 	sort.Strings(extra)
 
 	return append(fields, extra...)
+}
+
+func workLabel(work application.WorkStatus) string {
+	if work.Stream == "" {
+		return operationLabel(work.Operation)
+	}
+
+	return work.Stream + " · " + operationLabel(work.Operation)
 }

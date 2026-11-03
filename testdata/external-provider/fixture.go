@@ -19,6 +19,7 @@ func Register() (provider.Registration, error) {
 	if err != nil {
 		return provider.Registration{}, err
 	}
+	stream, _ = stream.WithDiscovery()
 	field, err := provider.NewField("api_secret", "API secret", provider.SecretField, true)
 	if err != nil {
 		return provider.Registration{}, err
@@ -110,6 +111,10 @@ func (Provider) Normalize(ctx context.Context, artifact provider.Artifact, sink 
 	if string(artifact.Content()) != "synthetic equity execution\n" {
 		return provider.Result{}, provider.ErrMalformed
 	}
+	return normalizeExecution(ctx, sink)
+}
+
+func normalizeExecution(ctx context.Context, sink provider.Claims, extra ...source.ActivityField) (provider.Result, error) {
 	account, _ := source.NewReference("fixture-broker", "account", "", "account-1")
 	instrumentRef, _ := source.NewReference("fixture-broker", "instrument", "", "equity-1")
 	event, _ := source.NewReference("fixture-broker", "trade", "account-1", "trade-1")
@@ -133,13 +138,19 @@ func (Provider) Normalize(ctx context.Context, artifact provider.Artifact, sink 
 	if err != nil {
 		return provider.Result{}, err
 	}
-	if err = sink.PutTrade(ctx, trade); err != nil {
+	fields := trade.Observation().Fields()
+	fields.Fields = append(fields.Fields, extra...)
+	activity, err := source.NewActivityObservation(fields)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	if err = sink.PutActivity(ctx, activity); err != nil {
 		return provider.Result{}, err
 	}
 	if err = sink.Reject(ctx, "line:2", "invalid-row"); err != nil {
 		return provider.Result{}, err
 	}
-	return provider.NewResult(provider.Counts{Rows: 3, Trades: 1, Instruments: 1, Rejected: 1})
+	return provider.NewResult(provider.Counts{Rows: 3, Activities: 1, Instruments: 1, Rejected: 1})
 }
 
 var _ provider.Acquirer = Provider{}
@@ -274,8 +285,8 @@ func (DocumentNormalizer) Normalize(ctx context.Context, artifact provider.Artif
 	if err != nil {
 		return provider.Result{}, err
 	}
-	if err = claims.PutTrade(ctx, trade); err != nil {
+	if err = claims.PutActivity(ctx, trade.Observation()); err != nil {
 		return provider.Result{}, err
 	}
-	return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+	return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 }

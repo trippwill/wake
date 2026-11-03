@@ -6,6 +6,7 @@ package application
 import (
 	"slices"
 	"sort"
+	"strings"
 
 	"go.trippwill.dev/wake/source"
 )
@@ -68,12 +69,13 @@ func (v ActivityTerms) Instrument() source.Instrument {
 // FinancialRule is an explicit implemented rule choice, not an update runner.
 type FinancialRule string
 
-const RetainedClaimsRule FinancialRule = "retained-claims-and-decisions/1"
+const RetainedClaimsRule FinancialRule = "retained-claims-and-decisions/2"
 
 type (
 	ActivityClaim struct {
-		Key   string
-		Terms ActivityTerms
+		Key          string
+		Value        source.ActivityObservation
+		LinkConflict bool
 	}
 	FieldSelection   struct{ Scope, Text, Currency string }
 	ActivityBinding  struct{ Instrument, Listing string }
@@ -85,10 +87,11 @@ type (
 )
 
 type ActivityCalculationInput struct {
+	BaselineFields     []source.ActivityField
 	Rule               FinancialRule
 	Baseline           ActivityTerms
 	Claims             []ActivityClaim
-	ObservationChoices map[string]ActivityTerms
+	ObservationChoices map[string]source.ActivityObservation
 	Binding            ActivityBinding
 	Links              CalculationLinks
 	Decisions          []FieldSelection
@@ -101,6 +104,7 @@ type CalculationExplanation struct {
 	AppliedScopes     []string
 }
 type ActivityCalculation struct {
+	Fields           ActivitySelection
 	Terms, Automatic ActivityTerms
 	Binding          ActivityBinding
 	State            ActivityState
@@ -116,19 +120,103 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 		return ActivityCalculation{}, ErrInvalid
 	}
 
-	selected, conflict, err := selectActivity(in.Baseline, in.Claims)
+	claims := slices.Clone(in.Claims)
+	extraKeys := make([]string, 0, len(in.ObservationChoices))
+	for key := range in.ObservationChoices {
+		extraKeys = append(extraKeys, key)
+	}
+
+	sort.Strings(extraKeys)
+
+	for _, key := range extraKeys {
+		found := false
+		for _, claim := range claims {
+			found = found || claim.Key == key
+		}
+
+		if !found {
+			claims = append(claims, ActivityClaim{Key: key, Value: in.ObservationChoices[key]})
+		}
+	}
+
+	choices := map[string]string{}
+	for _, d := range in.Decisions {
+		if strings.HasPrefix(d.Scope, "evidence/") {
+			choices[strings.TrimPrefix(d.Scope, "evidence/")] = d.Text
+		}
+
+		if d.Scope == "observation" {
+			var value source.ActivityObservation
+			for _, claim := range in.Claims {
+				if claim.Key == d.Text {
+					value = claim.Value
+				}
+			}
+
+			if value.IsZero() {
+				value = in.ObservationChoices[d.Text]
+			}
+
+			if value.IsZero() {
+				return ActivityCalculation{}, ErrInvalid
+			}
+
+			for _, field := range value.Fields().Fields {
+				choices[field.Key()] = d.Text
+			}
+		}
+	}
+
+	baseFields := in.BaselineFields
+	if len(baseFields) == 0 {
+		baseFields = in.Baseline.Observation().Fields().Fields
+	}
+
+	fields, err := SelectActivityFields(baseFields, claims, nil)
 	if err != nil {
 		return ActivityCalculation{}, err
 	}
 
+	selected, err := CompleteActivityTerms(in.Baseline.Observation().Fields(), fields.Fields)
+	conflict := len(fields.Conflicts) > 0
+	if err != nil {
+		selected = in.Baseline
+		conflict = true
+	}
+
+	chosen, err := SelectActivityFields(baseFields, claims, choices)
+	if err != nil {
+		return ActivityCalculation{}, err
+	}
+
+	terms, err := CompleteActivityTerms(in.Baseline.Observation().Fields(), chosen.Fields)
+	if err != nil {
+		if len(choices) > 0 {
+			return ActivityCalculation{}, ErrInvalid
+		}
+
+		terms = in.Baseline
+		conflict = true
+
+		chosen.Conflicts = append(chosen.Conflicts, "invariants")
+		retained := slices.Clone(baseFields)
+		for _, f := range chosen.Fields {
+			if f.Name() == source.FieldRealizedPnL || f.Name() == source.FieldReportedCostBasis {
+				retained = append(retained, f)
+			}
+		}
+
+		chosen.Fields = retained
+	}
+
 	out := ActivityCalculation{
-		Terms:            selected,
+		Terms:            terms,
 		Automatic:        selected,
+		Fields:           chosen,
 		Binding:          in.Binding,
 		Explanation:      CalculationExplanation{Rule: in.Rule, ConflictingClaims: conflict},
 		AutomaticListing: true,
 	}
-
 	decisions := slices.Clone(in.Decisions)
 	sort.Slice(decisions, func(i, j int) bool { return decisions[i].Scope < decisions[j].Scope })
 
@@ -140,33 +228,6 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 		if i > 0 && d.Scope == decisions[i-1].Scope {
 			return ActivityCalculation{}, ErrInvalid
 		}
-
-		if d.Scope != "observation" {
-			continue
-		}
-
-		found := false
-		for _, claim := range in.Claims {
-			if claim.Key == d.Text && claim.Terms.Kind() == in.Baseline.Kind() {
-				out.Terms = claim.Terms
-				found = true
-
-				break
-			}
-		}
-
-		if !found {
-			if choice, ok := in.ObservationChoices[d.Text]; ok && choice.Kind() == in.Baseline.Kind() {
-				out.Terms = choice
-				found = true
-			}
-		}
-
-		if !found {
-			return ActivityCalculation{}, ErrInvalid
-		}
-
-		out.Explanation.Observation = d.Text
 	}
 
 	for _, d := range decisions {
@@ -191,6 +252,10 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 			out.Binding.Listing = d.Text
 			out.AutomaticListing = false
 		default:
+			if strings.HasPrefix(d.Scope, "evidence/") {
+				continue
+			}
+
 			out.Terms, err = applyActivityField(out.Terms, d)
 			if err != nil {
 				return ActivityCalculation{}, err
@@ -218,56 +283,6 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 	out.State, err = NewActivityState(lifecycle, review, authority)
 
 	return out, err
-}
-
-func selectActivity(base ActivityTerms, claims []ActivityClaim) (ActivityTerms, bool, error) {
-	conflict := false
-	switch base.kind {
-	case TradeActivity:
-		values := []source.Trade{}
-		for _, claim := range claims {
-			if claim.Terms.kind != base.kind {
-				conflict = true
-				continue
-			}
-
-			values = append(values, claim.Terms.trade)
-		}
-
-		selected, disagreement, err := SelectTrades(base.trade, values)
-
-		return ActivityTerms{kind: base.kind, trade: selected}, conflict || disagreement, err
-	case LifecycleActivity:
-		values := []source.Lifecycle{}
-		for _, claim := range claims {
-			if claim.Terms.kind != base.kind {
-				conflict = true
-				continue
-			}
-
-			values = append(values, claim.Terms.lifecycle)
-		}
-
-		selected, disagreement, err := SelectLifecycles(base.lifecycle, values)
-
-		return ActivityTerms{kind: base.kind, lifecycle: selected}, conflict || disagreement, err
-	case ConversionActivity:
-		values := []source.Conversion{}
-		for _, claim := range claims {
-			if claim.Terms.kind != base.kind {
-				conflict = true
-				continue
-			}
-
-			values = append(values, claim.Terms.conversion)
-		}
-
-		selected, disagreement, err := SelectConversions(base.conversion, values)
-
-		return ActivityTerms{kind: base.kind, conversion: selected}, conflict || disagreement, err
-	}
-
-	return ActivityTerms{}, false, ErrInvalid
 }
 
 func applyActivityField(value ActivityTerms, d FieldSelection) (ActivityTerms, error) {
@@ -307,7 +322,7 @@ func SourceClaimOutcome(base, incoming ActivityTerms, prior []ActivityClaim) Obs
 	}
 
 	for _, claim := range prior {
-		if !compatibleActivityTerms(claim.Terms, incoming) {
+		if !CompatibleObservations(claim.Value, incoming.Observation()) {
 			return ObservationTermsConflict
 		}
 	}

@@ -89,6 +89,23 @@ func connectionAccess(
 		return view, err
 	}
 
+	if view.SettingsStored {
+		configured, e := q.Connection(ctx, connection.ID)
+		if e != nil {
+			return view, e
+		}
+
+		var values map[string]string
+		if json.Unmarshal(configured.Settings, &values) != nil {
+			return view, ErrCorrupt
+		}
+
+		view.Settings, err = provider.NewSettings(values)
+		if err != nil {
+			return view, ErrCorrupt
+		}
+	}
+
 	return view, nil
 }
 
@@ -113,9 +130,11 @@ func connectionStatus(
 			view.Work,
 			application.WorkStatus{
 				Operation: status.Operation,
+				Stream:    status.Stream,
 				Progress:  provider.ProgressPhase(status.Observed),
 				Failure:   status.Failure,
 				Next:      status.Next,
+				Scheduled: status.Scheduled,
 			},
 		)
 	}
@@ -130,6 +149,7 @@ func connectionStatus(
 			view.Processing,
 			application.ProcessingStatus{
 				Artifact:         r.ID,
+				Stream:           r.Stream,
 				Receipt:          r.ReceiptID,
 				Retrieved:        r.Retrieved,
 				Hash:             r.Hash,
@@ -140,9 +160,7 @@ func connectionStatus(
 				ReportedFrom:     r.ReportedFrom,
 				ReportedTo:       r.ReportedTo,
 				Failure:          r.ProcessingFailure,
-				TradeClaims:      r.TradeClaims,
-				LifecycleClaims:  r.LifecycleClaims,
-				ConversionClaims: r.ConversionClaims,
+				ActivityClaims:   r.ActivityClaims,
 				ExcludedRows:     r.ExcludedRows,
 				NeedsReview:      r.NeedsReview,
 			},
@@ -231,21 +249,6 @@ func (s *Store) SourceDetail(
 
 		out.Connection, err = connectionStatus(ctx, q, row, out.Account)
 		if err != nil {
-			return out, err
-		}
-
-		configured, err := q.Connection(ctx, id)
-		if err == nil {
-			var values map[string]string
-			if json.Unmarshal(configured.Settings, &values) != nil {
-				return out, ErrCorrupt
-			}
-
-			out.Connection.Settings, err = provider.NewSettings(values)
-			if err != nil {
-				return out, ErrCorrupt
-			}
-		} else if !errors.Is(err, sql.ErrNoRows) {
 			return out, err
 		}
 

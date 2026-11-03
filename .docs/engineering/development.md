@@ -111,6 +111,17 @@ and reacquiring history with the reusable encrypted access seed. There is no
 compatibility conversion, automatic updater or rebuild command. The general
 retained-history requirement above continues to apply to later changes.
 
+The partial-activity development format separates valid source assertions from
+complete accepted terms and replaces the unpublished P&L-specific claim format.
+Financial authority remains the confirmed connection, provider and source account;
+acquisition inputs describe protocol work and preserve provenance. The format changes
+normalized observations, pending associations and retained field-selection state.
+Old warehouses fail closed without modification. Operator deployment preserves any
+needed old evidence and decisions and explicitly recreates the warehouse under this
+pre-release format exception; there is no migration, automatic reset or conversion.
+The encrypted access format is unchanged. Supported-format history retains complete
+and partial observations, active decisions and exact values across replay and restart.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL

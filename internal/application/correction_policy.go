@@ -5,6 +5,7 @@ package application
 
 import (
 	"slices"
+	"strings"
 
 	"go.trippwill.dev/wake/source"
 )
@@ -149,7 +150,18 @@ func activityMask(kind ActivityKind) uint8 {
 }
 
 func ActivityFieldPolicy(kind ActivityKind, scope string) (FieldPolicy, bool) {
+	if strings.HasPrefix(scope, "evidence/") {
+		return FieldPolicy{
+			scope: scope,
+			kind:  ObservationCorrection,
+			kinds: tradeFields | lifecycleFields | conversionFields,
+		}, activityMask(
+			kind,
+		) != 0
+	}
+
 	p, ok := CorrectionFieldPolicy(scope)
+
 	return p, ok && p.kinds&activityMask(kind) != 0
 }
 

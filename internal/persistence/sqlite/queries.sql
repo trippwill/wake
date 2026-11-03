@@ -59,7 +59,7 @@ UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM 
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
-SELECT * FROM work WHERE connection_id=? ORDER BY operation;
+SELECT work.*, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation;
 -- name: DisableDiscovery :exec
 UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
 -- name: Account :one
@@ -67,7 +67,7 @@ SELECT * FROM accounts LIMIT 1;
 -- name: CandidateExists :one
 SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover');
 -- name: PutAccount :exec
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,stream,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?,?);
+INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?);
 -- name: CandidateProfiles :many
 SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
  SELECT candidates.*,receipt.sequence AS appearance,row_number() OVER (PARTITION BY candidates.authority,candidates.kind,candidates.scope,candidates.value ORDER BY receipt.sequence DESC) AS ranking
@@ -75,18 +75,16 @@ SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
  WHERE artifacts.connection_id=? AND receipt.operation='discover'
 ) WHERE ranking=1 ORDER BY appearance DESC,authority,kind,scope,value;
 -- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
+SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ArtifactProcessed :exec
 UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?;
 -- name: ArtifactFailure :exec
 UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?;
 -- name: ProcessingStatuses :many
-SELECT artifacts.id,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
- CAST(coalesce((SELECT json_extract(counts,'$.Trades') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS trade_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Lifecycles') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS lifecycle_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Conversions') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS conversion_claims,
+SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
  CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
- (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review')) AS needs_review
+ (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT target.* FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?;
@@ -164,8 +162,6 @@ SELECT execution_id FROM event_links WHERE account_id=? AND reference=? ORDER BY
 SELECT reference FROM event_links WHERE execution_id=? AND distinct_event=1;
 -- name: UpdateConnection :exec
 INSERT INTO access.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(name),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider;
--- name: ResetConnectionWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=?;
 
 -- name: SetUnderlier :exec
 UPDATE instruments SET underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND underlier_id IS NOT sqlc.narg(underlier_id);
@@ -186,7 +182,7 @@ INSERT INTO executions(kind,id,account_id,accepted,status,rule) VALUES('conversi
 -- name: ActivityBase :one
 SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
-SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? ORDER BY o.rowid;
+SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid;
 -- name: ProjectActivity :exec
 UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
 -- name: PutSourceCorrection :exec
@@ -228,7 +224,7 @@ UPDATE instruments SET reference_next=? WHERE id=?;
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING;
 
 -- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id AND accounts.stream=artifacts.stream);
+UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id);
 -- name: PutDescriptor :exec
 INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec
@@ -301,13 +297,13 @@ INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT e.i
 SELECT DISTINCT o.execution_id FROM execution_observations o JOIN records r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE o.artifact_id=? AND o.execution_id IS NOT NULL ORDER BY o.execution_id;
 
 -- name: CalculationInputs :many
-SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? ORDER BY o.rowid;
+SELECT record_values.*,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid;
 -- name: SelectedObservation :one
 SELECT record_values.* FROM record_values JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? AND o.artifact_id=? AND o.version=? AND o.location=?;
 
 
 -- name: ArtifactInstrumentClaims :many
-SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind IN ('trade','lifecycle') ORDER BY o.rowid;
+SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind='activity' ORDER BY o.rowid;
 -- name: PutInstrumentClaim :exec
 INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: ArtifactRootIDs :many
@@ -370,3 +366,32 @@ WITH bindings(id) AS (SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT alias
  SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT p.instrument_id FROM instrument_claims n JOIN instrument_claims p ON p.claim_id=n.claim_id AND p.ordinal=n.ordinal AND p.role='activity' WHERE n.instrument_id IN (SELECT id FROM bindings) AND n.role='underlier'
 )
 SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id;
+
+-- name: DisableAcquisition :exec
+UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='acquire';
+-- name: ResetStreamWork :exec
+UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=? AND stream=?;
+-- name: PutActivityReference :exec
+INSERT INTO activity_references(claim_id,ordinal,account_id,reference) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
+-- name: ActivityToMatch :many
+WITH RECURSIVE seeds(claim_id,ordinal) AS (
+ SELECT r.claim_id,r.ordinal FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=sqlc.arg(artifact_id)
+ UNION
+ SELECT r.claim_id,r.ordinal FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id JOIN activity_references r ON r.account_id=e.account_id AND r.reference=e.reference WHERE o.artifact_id=sqlc.arg(artifact_id)
+), affected(claim_id,ordinal) AS (
+ SELECT claim_id,ordinal FROM seeds
+ UNION
+ SELECT old.claim_id,old.ordinal FROM affected a JOIN activity_references current ON current.claim_id=a.claim_id AND current.ordinal=a.ordinal JOIN activity_references old ON old.account_id=current.account_id AND old.reference=current.reference
+)
+SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id ORDER BY p.rowid;
+-- name: RelinkActivityObservation :exec
+UPDATE execution_observations SET execution_id=sqlc.narg(execution_id),outcome=sqlc.arg(outcome) WHERE (artifact_id,version,location) IN (SELECT artifact_id,version,location FROM records WHERE claim_id=sqlc.arg(claim_id) AND ordinal=sqlc.arg(ordinal));
+-- name: ActivityObservation :one
+SELECT * FROM execution_observations WHERE artifact_id=? AND version=? AND location=?;
+-- name: ActivitySelection :one
+SELECT * FROM activity_selections WHERE activity_id=?;
+-- name: SaveActivitySelection :exec
+INSERT INTO activity_selections(activity_id,baseline,selected) VALUES(?,?,?) ON CONFLICT(activity_id) DO UPDATE SET baseline=excluded.baseline,selected=excluded.selected WHERE baseline<>excluded.baseline OR selected<>excluded.selected;
+
+-- name: PutActivityBase :exec
+INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;

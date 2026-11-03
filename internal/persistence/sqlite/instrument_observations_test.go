@@ -174,11 +174,11 @@ func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 			coupon,
 			claimNormalizer(
 				func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-					if e := claims.PutTrade(ctx, trade); e != nil {
+					if e := claims.PutActivity(ctx, trade.Observation()); e != nil {
 						return provider.Result{}, e
 					}
 
-					return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+					return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 				},
 			),
 		)
@@ -245,11 +245,11 @@ func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
 			multiplier,
 			claimNormalizer(
 				func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
-					if e := claims.PutTrade(ctx, trade); e != nil {
+					if e := claims.PutActivity(ctx, trade.Observation()); e != nil {
 						return provider.Result{}, e
 					}
 
-					return provider.NewResult(provider.Counts{Rows: 1, Trades: 1})
+					return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 				},
 			),
 		)

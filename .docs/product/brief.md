@@ -64,7 +64,7 @@ to consumers even when no new financial activity occurred.
 - **Reconciliation belongs in Wake.** Consumers should receive coherent financial
   views and an honest account of their uncertainty. Wake owns duplicate recognition,
   conflicting claims, and explainable resolution. Each account has one operator-
-  designated authoritative connection/provider/stream for financial activity.
+  designated authoritative connection/provider and qualified source account for financial activity.
   Instrument reference data and retained operator decisions have their own roles;
   source authority never erases evidence or uncertainty.
 - **Repeated work is safe.** Repeated acquisition, imports, interrupted work, and

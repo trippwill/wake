@@ -96,6 +96,43 @@ freshness and financial disagreement remain separate concerns. Individual failur
 must not stop unrelated work. The source/tests own exact state machines, pacing,
 transaction mechanics and storage layout.
 
+Providers own acquisition-input selection and configuration dependencies. They
+return enabled inputs with opaque configuration identities; the host compares those
+identities to reset only affected continuations. Discovery capability describes how
+a source account can be found, not which financial facts an input may contribute.
+Core code does not interpret provider field keys, query topology or report names.
+Account authority is bound to the connection, provider and qualified source account,
+while every input and report remains traceable provenance. Enabled acquisition and
+configuration changes are persisted atomically; disabling an input preserves history.
+
+Activity normalization emits immutable typed observations through one public writer.
+A record can contain complete terms, a partial set of terms, or only reported results.
+The supported field vocabulary is closed; provider-specific JSON and property names
+remain outside it. Source constructors validate individual assertions, presence and
+units. Whole-activity constructors validate completeness and coupled invariants only
+when building an accepted projection.
+
+Qualified source references index pending activity observations and revisit the
+connected affected inputs when related evidence arrives. Native identity establishes
+association; retained source assertions establish financial agreement independently
+of operator corrections. Several partial observations can jointly complete an
+activity. Unresolved identity, insufficient terms and conflicting evidence remain
+observable without publishing a fabricated financial resource.
+
+One deterministic calculation selects reported activity fields against a durable
+baseline and applies retained source selections and operator corrections. Missing
+fields do not erase prior evidence. Competing enrichments of an originally unknown
+field retain that unknown baseline with disagreement. Selecting partial evidence
+controls only its reported fields; independent selections coexist and release uses
+the same calculation as processing, preflight and saving. Reported gain and allocated
+cost retain independent currencies and reporting dates within this model. They are
+source facts and are not recalculated from corrected execution terms.
+
+Accepted fields, their selection provenance, decisions and publication commit
+atomically. Repeated known claims add appearances without financial recalculation
+or publication. Acquisition streams retain independent protocol state and failure
+handling without financial roles or separate result authority.
+
 ## User and consumer boundaries
 
 The admin console exposes understandable work, values, conflicts and next actions.

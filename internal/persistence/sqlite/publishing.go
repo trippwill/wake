@@ -402,6 +402,20 @@ func canonicalSnapshot(
 
 		why.Selection = row.Rule
 		why.Conflict = a.Conflict
+
+		a.ReportedRealizedPnL, err = publishedRealized(ctx, q, id)
+		if err != nil {
+			return out, why, err
+		}
+
+		if a.ReportedRealizedPnL != nil {
+			why.RealizedPnL = &application.PublishedRealizedExplanation{
+				Rule:      string(application.RetainedClaimsRule),
+				Selection: a.ReportedRealizedPnL.Selection,
+				Conflict:  a.ReportedRealizedPnL.Conflict,
+			}
+		}
+
 		switch row.Kind {
 		case "trade":
 			t, err := decodeTrade(row.Accepted)

@@ -4,7 +4,6 @@
 package persistence
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -109,11 +108,6 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 
 	q := s.queries.WithTx(tx)
 
-	previous, err := q.Connection(ctx, c.ID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-
 	descriptor, e := q.Descriptor(ctx, c.ID)
 	if e != nil || descriptor.Provider != c.Provider {
 		return ErrAssociation
@@ -130,10 +124,26 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return err
 	}
 
-	if previous.ID == "" || !bytes.Equal(previous.Settings, data) {
-		if err = q.ResetConnectionWork(ctx, c.ID); err != nil {
+	for _, stream := range c.ResetStreams {
+		if err = q.ResetStreamWork(
+			ctx,
+			sqlc.ResetStreamWorkParams{ConnectionID: c.ID, Stream: stream},
+		); err != nil {
 			return err
 		}
+	}
+
+	account, accountErr := q.Account(ctx)
+	if accountErr == nil && account.ConnectionID == c.ID {
+		if err = q.DisableAcquisition(ctx, c.ID); err != nil {
+			return err
+		}
+
+		if err = scheduleAcquisition(ctx, q, c.ID, c.Streams); err != nil {
+			return err
+		}
+	} else if accountErr != nil && !errors.Is(accountErr, sql.ErrNoRows) {
+		return accountErr
 	}
 
 	return s.accessUpdated(ctx, "connection_settings", s.commit(ctx, tx))

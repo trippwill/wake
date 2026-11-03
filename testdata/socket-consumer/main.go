@@ -219,8 +219,9 @@ var decimal = regexp.MustCompile(`^-?[0-9]+(?:\.[0-9]+)?$`)
 func validateScalars(value any) error {
 	switch v := value.(type) {
 	case map[string]any:
+		_, monetary := v["currency"]
 		for key, child := range v {
-			if child != nil && (key == "amount" || key == "multiplier" || key == "coupon" || key == "value" && v["unit"] != nil) {
+			if child != nil && (key == "amount" && monetary || key == "multiplier" || key == "coupon" || key == "value" && v["unit"] != nil) {
 				text, ok := child.(string)
 				if !ok || len(text) > 256 || !decimal.MatchString(text) {
 					return errors.New("protocol: invalid exact decimal")
@@ -458,6 +459,7 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			return errors.New("protocol: revision content differs")
 		}
 		var why struct {
+			RealizedPnL json.RawMessage   `json:"reported_realized_pnl"`
 			Identity    json.RawMessage   `json:"identity"`
 			ID          string            `json:"id"`
 			Kind        string            `json:"kind"`

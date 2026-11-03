@@ -15,6 +15,9 @@ type Querier interface {
 	AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
+	ActivityObservation(ctx context.Context, arg ActivityObservationParams) (ExecutionObservation, error)
+	ActivitySelection(ctx context.Context, activityID string) (ActivitySelection, error)
+	ActivityToMatch(ctx context.Context, artifactID string) ([]ActivityToMatchRow, error)
 	AdminAccessSources(ctx context.Context) ([]Connection, error)
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
@@ -45,7 +48,7 @@ type Querier interface {
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
-	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
+	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error)
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
@@ -67,6 +70,7 @@ type Querier interface {
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
 	Decisions(ctx context.Context, arg DecisionsParams) ([]DecisionsRow, error)
 	Descriptor(ctx context.Context, id string) (Connection, error)
+	DisableAcquisition(ctx context.Context, connectionID string) error
 	DisableDiscovery(ctx context.Context, connectionID string) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
 	EnsureInstrumentSelection(ctx context.Context, id string) error
@@ -116,6 +120,8 @@ type Querier interface {
 	ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error
 	PutAccount(ctx context.Context, arg PutAccountParams) error
 	PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionReceiptParams) error
+	PutActivityBase(ctx context.Context, arg PutActivityBaseParams) error
+	PutActivityReference(ctx context.Context, arg PutActivityReferenceParams) error
 	PutArtifact(ctx context.Context, arg PutArtifactParams) error
 	PutCandidate(ctx context.Context, arg PutCandidateParams) error
 	PutClaimProcessing(ctx context.Context, arg PutClaimProcessingParams) error
@@ -149,9 +155,10 @@ type Querier interface {
 	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
+	RelinkActivityObservation(ctx context.Context, arg RelinkActivityObservationParams) error
 	ReplaceSecret(ctx context.Context, arg ReplaceSecretParams) error
 	ReportComparison(ctx context.Context, arg ReportComparisonParams) (string, error)
-	ResetConnectionWork(ctx context.Context, connectionID string) error
+	ResetStreamWork(ctx context.Context, arg ResetStreamWorkParams) error
 	ResolveInstrument(ctx context.Context, arg ResolveInstrumentParams) error
 	ResourceAlias(ctx context.Context, arg ResourceAliasParams) (string, error)
 	RestartDiscovery(ctx context.Context, arg RestartDiscoveryParams) error
@@ -163,6 +170,7 @@ type Querier interface {
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
 	RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error)
+	SaveActivitySelection(ctx context.Context, arg SaveActivitySelectionParams) error
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
@@ -184,7 +192,7 @@ type Querier interface {
 	UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error
 	UpdateDescriptorName(ctx context.Context, arg UpdateDescriptorNameParams) error
 	WakeReference(ctx context.Context) error
-	WorkStatuses(ctx context.Context, connectionID string) ([]Work, error)
+	WorkStatuses(ctx context.Context, connectionID string) ([]WorkStatusesRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

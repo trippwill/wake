@@ -295,67 +295,80 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 
 func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing.T) {
 	s := coverageStore(t)
-	id := acquireClaimReport(t, s, singleClaimBody(equityRow("U1", "fill", "100")), false)
-	raw, err := s.queries.Records(t.Context(), sqlc.RecordsParams{ArtifactID: id, Version: ibkrflex.Version})
-	if err != nil || len(raw) != 1 {
-		t.Fatal(raw, err)
+	coverageReport(t, s, "meaning", equityRow("U1", "fill", "100"))
+
+	raw, err := s.queries.Records(
+		t.Context(),
+		sqlc.RecordsParams{ArtifactID: "meaning", Version: ibkrflex.Version},
+	)
+	if err != nil || len(raw) == 0 {
+		t.Fatal(err)
 	}
 
-	var original tradeData
+	var original observationData
 	if err = json.Unmarshal(raw[0].Data, &original); err != nil {
 		t.Fatal(err)
 	}
 
 	original.EventAliases = []refData{{"source", "event", "scope", "one"}, {"source", "event", "scope", "two"}}
-	original.Charges = []chargeData{
-		{Field: "b", Money: moneyData{Amount: "1.00", Currency: "USD"}},
-		{Field: "a", Money: moneyData{Amount: "2", Currency: "USD"}},
-	}
+	original.Fields = append(
+		original.Fields,
+		activityFieldData{
+			Name:   source.FieldCharge,
+			Charge: &chargeData{Field: "b", Scope: "total", Money: moneyData{Amount: "1.00", Currency: "USD"}},
+		},
+		activityFieldData{
+			Name:   source.FieldCharge,
+			Charge: &chargeData{Field: "a", Scope: "total", Money: moneyData{Amount: "2", Currency: "USD"}},
+		},
+	)
 	baseline, _ := json.Marshal(original)
 
-	canonical, err := claimKeyData("trade", baseline)
+	canonical, err := claimKeyData("activity", baseline)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	reordered := original
-	reordered.EventAliases = append([]refData(nil), original.EventAliases...)
+	reordered.EventAliases = slices.Clone(original.EventAliases)
 	slices.Reverse(reordered.EventAliases)
-
-	reordered.Charges = append([]chargeData(nil), original.Charges...)
-	slices.Reverse(reordered.Charges)
+	reordered.Fields = slices.Clone(original.Fields)
+	slices.Reverse(reordered.Fields)
+	reordered.Location = "different/path"
 	encoded, _ := json.Marshal(reordered)
 
-	same, err := claimKeyData("trade", encoded)
+	same, err := claimKeyData("activity", encoded)
 	if err != nil || !bytes.Equal(same, canonical) {
-		t.Fatal("set order changed source identity", err)
+		t.Fatal("structural order or locator changed source meaning", err)
 	}
 
-	for _, mutate := range []func(*tradeData){
-		func(d *tradeData) { d.Location = "different/path" },
+	for _, mutate := range []func(*observationData){
+		func(d *observationData) {
+			for i := range d.Fields {
+				if d.Fields[i].Name == source.FieldPrice {
+					d.Fields[i].Price.Amount = "100.0"
+				}
+			}
+		},
+		func(d *observationData) {
+			for i := range d.Fields {
+				if d.Fields[i].Name == source.FieldExecutedAt {
+					d.Fields[i].Timestamp = strings.Replace(d.Fields[i].Timestamp, ".120", ".12", 1)
+				}
+			}
+		},
+		func(d *observationData) { d.Event[2] = "other-scope" },
+		func(d *observationData) {
+			d.Fields = slices.DeleteFunc(d.Fields, func(f activityFieldData) bool { return f.Name == source.FieldNet })
+		},
+		func(d *observationData) { d.Fields = append(d.Fields, d.Fields[len(d.Fields)-1]) },
 	} {
 		changed := original
-		mutate(&changed)
-		encoded, _ = json.Marshal(changed)
-
-		same, err = claimKeyData("trade", encoded)
-		if err != nil || !bytes.Equal(same, canonical) {
-			t.Fatal("locator changed source identity", err)
-		}
-	}
-
-	for _, mutate := range []func(*tradeData){
-		func(d *tradeData) { d.Price = "100.0" },
-		func(d *tradeData) { d.ExecutedAt = strings.Replace(d.ExecutedAt, ".120", ".12", 1) },
-		func(d *tradeData) { d.Event[2] = "other-scope" },
-		func(d *tradeData) { d.Net = moneyData{} },
-		func(d *tradeData) { d.Charges = append(append([]chargeData(nil), d.Charges...), d.Charges[0]) },
-	} {
-		changed := original
+		changed.Fields = slices.Clone(original.Fields)
 		mutate(&changed)
 
 		encoded, _ = json.Marshal(changed)
-		next, e := claimKeyData("trade", encoded)
+		next, e := claimKeyData("activity", encoded)
 		if e != nil || bytes.Equal(next, canonical) {
 			t.Fatal("meaning or multiplicity lost", changed, e)
 		}
