@@ -519,6 +519,12 @@ type Option struct {
 	Strike *NullableMoney `json:"strike"`
 }
 
+// Publication defines model for Publication.
+type Publication struct {
+	Version     string `json:"version"`
+	WarehouseId string `json:"warehouse_id"`
+}
+
 // Quantity defines model for Quantity.
 type Quantity struct {
 	Unit  string `json:"unit"`

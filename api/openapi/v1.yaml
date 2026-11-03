@@ -4,8 +4,9 @@ info:
   version: 1.0.0
   description: GET-only HTTP over the private mode-0600 Unix socket, restricted to the daemon UID. GET
     /v1/snapshot returns the complete accepted resource set, warehouse identity and an opaque publication
-    version. Compare versions for equality only. ETag and If-None-Match support unchanged conditional
-    reads. Each response is materialized from one consistent read, released before client I/O. Validate
+    version. GET /v1/events streams coalesced publication notifications; reconnect announces current state.
+    Compare versions for equality only. ETag and If-None-Match support unchanged conditional
+    reads. Each finite response is materialized from one consistent read, released before client I/O. Validate
     the complete response before atomically replacing a mirror and its version. Failed downloads or writes
     preserve the previous mirror. A different warehouse installs a clearly reported new baseline. Individual
     resource lookups and revision-bound explanations remain available; a changed explanation revision
@@ -15,6 +16,38 @@ info:
     Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
     mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
 paths:
+  /v1/events:
+    get:
+      operationId: publicationEvents
+      description: |
+        Long-lived SSE notifications of current accepted publication. The server subscribes before
+        its initial metadata read. A publication event is sent immediately and after accepted changes;
+        bursts may coalesce. JSON data contains warehouse_id and the opaque snapshot version.
+        Compare versions for equality only. An event is a refresh hint, never an acknowledgement
+        that the client has synchronized. Fetch and validate a snapshot before committing a mirror
+        and its version. A fetched snapshot may already be newer than the notification.
+        Reconnects announce current publication; intermediate transitions are not replayed.
+        No SSE id fields are sent; Last-Event-ID is ignored and provides no replay semantics.
+        Comment heartbeats are sent every 15 seconds without reading storage. Consumers should
+        detect absent heartbeats and reconnect with bounded backoff. Stream errors after headers
+        close the connection. Disconnect and daemon shutdown release the subscription.
+        No query parameters or request body are accepted.
+      responses:
+        '200':
+          description: |
+            UTF-8 SSE frames: event: publication followed by data: containing a Publication
+            JSON object and a blank line. Colon-prefixed comment frames are heartbeats.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"opaque-version\"}\n\n"
+        '400':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
   /v1/accounts/{id}:
     get:
       operationId: getAccounts
@@ -248,6 +281,19 @@ paths:
           $ref: '#/components/responses/Error'
 components:
   schemas:
+    Publication:
+      type: object
+      additionalProperties: false
+      required: [warehouse_id, version]
+      properties:
+        warehouse_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        version:
+          type: string
+          minLength: 1
+          maxLength: 256
     Money:
       type: object
       additionalProperties: false

@@ -430,6 +430,9 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatalf("socket did not become ready; daemon logs:\n%s", logs.String())
 	}
 	statePath := filepath.Join(t.TempDir(), "mirror.db")
+
+	var eventOutput *socketTestLog
+
 	consume := func(assert bool) map[string]json.RawMessage {
 		t.Helper()
 
@@ -458,6 +461,41 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		var result map[string]json.RawMessage
 		if json.Unmarshal(stdout.Bytes(), &result) != nil {
 			t.Fatal("consumer output", stdout.String())
+		}
+
+		if eventOutput != nil {
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				// The follower may legitimately skip the one-shot consumer's version.
+				lines := strings.TrimSpace(eventOutput.String())
+
+				var installed struct {
+					Version string `json:"version"`
+				}
+
+				_ = json.Unmarshal([]byte(lines[strings.LastIndex(lines, "\n")+1:]), &installed)
+
+				request, e := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
+				if e != nil {
+					t.Fatal(e)
+				}
+
+				request.Header.Set("If-None-Match", `"`+installed.Version+`"`)
+
+				response, e := socketClient.Do(request)
+				if e == nil {
+					_ = response.Body.Close()
+					if response.StatusCode == http.StatusNotModified {
+						break
+					}
+				}
+
+				if time.Now().After(deadline) {
+					t.Fatal("SSE follower did not converge", eventOutput.String(), e)
+				}
+
+				time.Sleep(10 * time.Millisecond)
+			}
 		}
 
 		return result
@@ -494,6 +532,58 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 	start()
 	consume(true)
+
+	// Keep a separate process following across every correction, restart and reset.
+	var eventLogs socketTestLog
+
+	eventOutput = &socketTestLog{}
+	//nolint:gosec // Task-built independent consumer receives only a disposable socket and its own mirror.
+	eventFollower := exec.CommandContext(
+		ctx,
+		binary,
+		"--socket",
+		socket,
+		"--state",
+		filepath.Join(t.TempDir(), "events.db"),
+		"--follow",
+		"--interval",
+		"20ms",
+	)
+
+	eventFollower.Env = []string{"PATH=" + os.Getenv("PATH")}
+	eventFollower.Stdout = eventOutput
+
+	eventFollower.Stderr = &eventLogs
+	if err = eventFollower.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	eventDone := make(chan error, 1)
+	go func() { eventDone <- eventFollower.Wait() }()
+
+	defer func() {
+		_ = eventFollower.Process.Signal(os.Interrupt)
+		select {
+		case e := <-eventDone:
+			if e != nil {
+				t.Error("SSE follow failed", e, eventLogs.String())
+			}
+		case <-time.After(5 * time.Second):
+			_ = eventFollower.Process.Kill()
+
+			<-eventDone
+			t.Error("SSE follower did not stop")
+		}
+	}()
+
+	deadlineEvents := time.Now().Add(5 * time.Second)
+	for !strings.Contains(eventLogs.String(), "Following accepted publication events") {
+		if time.Now().After(deadlineEvents) {
+			t.Fatal("SSE follower did not connect", eventLogs.String())
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	before := mirror()
 	if len(before.Resources) < 25 {

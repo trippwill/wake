@@ -18,21 +18,23 @@ import (
 	"go.trippwill.dev/wake/internal/logging"
 )
 
-// FinancialReader is the socket adapter's finite accepted-state read dependency.
+// FinancialReader is the socket adapter's accepted-state read dependency.
 // Every result is materialized before transport I/O begins.
 type FinancialReader interface {
 	Snapshot(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
 	Resource(context.Context, string, string) (application.CanonicalResource, error)
 	Explanation(context.Context, string, string, int64) (application.Explanation, error)
+	SubscribePublications() (<-chan struct{}, func())
 }
 
 type handler struct {
-	reads  FinancialReader
-	logger *slog.Logger
+	reads    FinancialReader
+	logger   *slog.Logger
+	stopping <-chan struct{}
 }
 
-func NewHandler(reads FinancialReader, logger *slog.Logger) http.Handler {
-	return &handler{reads: reads, logger: logging.Component(logger, "socket")}
+func NewHandler(reads FinancialReader, stopping <-chan struct{}, logger *slog.Logger) http.Handler {
+	return &handler{reads: reads, stopping: stopping, logger: logging.Component(logger, "socket")}
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +68,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	endpoint := parts[1]
 	explanation := false
 	switch endpoint {
-	case "snapshot":
+	case "snapshot", "events":
 		if len(parts) != 2 {
 			h.failure(w, NotFound, http.StatusNotFound)
 			return
@@ -89,6 +91,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
+	}
+
+	if endpoint == "events" {
+		h.events(w, r)
+		return
 	}
 
 	var response any

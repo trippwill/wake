@@ -108,6 +108,7 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 		NewHandler(
 			reads{item: resource},
 			nil,
+			nil,
 		).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/"+resource.Kind+"/"+resource.ID, nil))
 
 		var value any
