@@ -172,10 +172,11 @@ runnable consumer checks.
 
 ## Canonical publishing and continuity
 
-The private Unix socket serves finite, bounded, read-only HTTP/JSON requests from
-the daemon's OS user. It publishes accepted accounts, instruments, listings and
-activity, with warehouse-local Wake identities and resource revisions. Financial
-values retain exact decimal text, including trailing scale; absent values are
+The private Unix socket serves bounded read-only HTTP/JSON reads and long-lived
+publication notifications from the daemon's OS user. It publishes accepted accounts,
+instruments, listings and activity, with warehouse-local Wake identities and resource
+revisions. Financial values retain exact decimal text, including trailing scale;
+absent values are
 explicitly unknown rather than zero. Numerically equal reports with different
 scale remain compatible, while the accepted selection keeps its retained text.
 Civil dates stay dates and timestamps retain their reported fractional precision.
@@ -202,6 +203,17 @@ an unchanged poll avoids loading resource bodies and returns no payload. Individ
 resource reads remain available. Explanation requests name the mirrored resource
 revision and fail visibly if it has changed.
 
+SSE publication notifications reduce refresh latency without changing snapshot
+consistency or mirror ownership. Subscription precedes the initial metadata read;
+only successful commits that advance accepted publication signal subscribers.
+Signals coalesce without waiting for clients. Each stream reads current publication
+metadata in a bounded transaction, releases it before I/O, and announces the opaque
+version and warehouse identity. Comment heartbeats do not read storage. Streams
+have bounded writes and join shutdown; ordinary reads keep their finite lifetimes.
+Reconnect announces current state without replaying intermediate transitions.
+Notifications never acknowledge a client's mirror: clients advance their saved
+version only with a complete validated snapshot, which may be newer than its hint.
+
 Consumers validate a complete snapshot before atomically replacing their mirror
 and version. They preserve the prior mirror on failed downloads, validation or
 writes. The independent acceptance consumer uses its own private SQLite transaction
@@ -209,6 +221,9 @@ for this replacement and skips writes for unchanged conditional reads. It retain
 exact scalar text and explicit unknowns, checks unique identities and resource
 links, and validates bodies against the published contract. It bounds downloads
 to 128 MiB and reports excess size as a failure without replacing its mirror.
+Its follow mode uses SSE, detects idle streams, and reconnects with bounded backoff.
+Stream reconnect preserves the mirror; snapshot validation or persistence errors
+fail visibly with the last successful mirror intact.
 
 Daemon restarts and access-store recovery preserve warehouse identity and accepted
 publication state. A different warehouse installs a clearly reported new baseline.

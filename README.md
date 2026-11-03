@@ -136,7 +136,8 @@ mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --
 
 The consumer validates a complete accepted snapshot and atomically saves its mirror
 and version in a private SQLite database. Repeat the command to synchronize, or use
-`socket-consumer:follow` to keep reading. Conditional reads skip unchanged snapshots.
+`socket-consumer:follow` to synchronize when SSE announces publication changes.
+Follow reconnects after stream interruptions; conditional reads skip unchanged snapshots.
 A different warehouse installs a clearly reported new baseline.
 
 An optional Activity Query ID on the same IBKR connection adds reported realized P&L

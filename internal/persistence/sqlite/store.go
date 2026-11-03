@@ -70,12 +70,14 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
-	db         *sql.DB
-	queries    *sqlc.Queries
-	owners     [2]*os.File
-	logger     *slog.Logger
-	closeOnce  sync.Once
-	closeError error
+	db                     *sql.DB
+	queries                *sqlc.Queries
+	owners                 [2]*os.File
+	logger                 *slog.Logger
+	closeOnce              sync.Once
+	closeError             error
+	publicationMu          sync.Mutex
+	publicationSubscribers map[chan struct{}]struct{}
 }
 
 type storeMetadata struct{ kind, version, id string }

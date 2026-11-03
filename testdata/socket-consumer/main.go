@@ -558,12 +558,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	path := flags.String("state", "", "private SQLite mirror path")
 	fixture := flags.String("assert", "", "JSON fixture assertions")
 	follow := flags.Bool("follow", false, "synchronize until interrupted")
-	interval := flags.Duration("interval", time.Second, "polling interval")
+	interval := flags.Duration("interval", time.Second, "initial event-stream reconnect delay")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *socket == "" || *path == "" || *interval <= 0 || flags.NArg() != 0 {
-		return errors.New("--socket and --state are required; interval must be positive")
+		return errors.New("--socket and --state are required; reconnect delay must be positive")
 	}
 	defer func() {
 		if *follow && ctx.Err() == context.Canceled && errors.Is(result, context.Canceled) {
@@ -582,13 +582,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 			case <-progressCtx.Done():
 				return
 			case <-ticker.C:
-				fmt.Fprintln(stderr, "Still synchronizing; waiting for socket work or next follow pass")
+				fmt.Fprintln(stderr, "Still synchronizing; waiting for socket work or publication events")
 			}
 		}
 	}()
 	defer func() { cancel(); <-done }()
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
+	transport := &http.Transport{ResponseHeaderTimeout: 5 * time.Second, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", *socket)
 	}}
 	defer transport.CloseIdleConnections()
 	c := client{http: &http.Client{Transport: transport, Timeout: 20 * time.Second}, base: "http://wake", stderr: stderr}
@@ -601,7 +601,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	if err != nil {
 		return err
 	}
-	for {
+	synchronize := func() error {
 		replaced, e := c.sync(ctx, &current, db)
 		if e != nil {
 			return e
@@ -622,15 +622,17 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		}{"synchronized", len(current.Resources), replaced, current.Version}); e != nil {
 			return e
 		}
-		if !*follow {
+		return nil
+	}
+	if err = synchronize(); err != nil || !*follow {
+		return err
+	}
+	return c.follow(ctx, *interval, func(p publication) error {
+		if p.WarehouseID == current.WarehouseID && p.Version == current.Version {
 			return nil
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(*interval):
-		}
-	}
+		return synchronize()
+	})
 }
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

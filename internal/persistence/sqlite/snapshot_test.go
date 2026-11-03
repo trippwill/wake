@@ -122,7 +122,7 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		socket.NewHandler(s, nil).ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
+		socket.NewHandler(s, nil, nil).ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
 	}()
 
 	select {
@@ -297,7 +297,7 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 
 func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
 	store := coverageStore(t)
-	handler := socket.NewHandler(store, nil)
+	handler := socket.NewHandler(store, nil, nil)
 	for _, test := range []struct {
 		condition string
 		status    int

@@ -137,6 +137,25 @@ func partialTrade(t testing.TB) source.Trade {
 
 func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.T) {
 	s := coverageStore(t)
+	// The fixture seeds an account directly; publish it before observing activity changes.
+	coverageReport(t, s, "account-baseline", "")
+
+	changes, unsubscribe := s.SubscribePublications()
+	defer unsubscribe()
+
+	assertPublication := func(want bool) {
+		t.Helper()
+
+		got := len(changes) != 0
+		if got != want {
+			t.Fatalf("accepted publication signal: got %t, want %t", got, want)
+		}
+
+		if got {
+			<-changes
+		}
+	}
+
 	full := partialTrade(t).Observation()
 	subject := full.Fields()
 	eur, _ := financial.ParseCurrency("EUR")
@@ -154,6 +173,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	second := partialObservation(t, subject, subject.Fields[3:]...)
 	processPartial(t, s, "gain-first", gain)
 	processPartial(t, s, "terms-first", first)
+	assertPublication(false)
 
 	if count := tableCount(t, s, "executions"); count != 0 {
 		t.Fatal("partial evidence fabricated activity", count)
@@ -167,6 +187,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	}
 
 	processPartial(t, s, "terms-second", second)
+	assertPublication(true)
 
 	rows, err := s.queries.Executions(t.Context())
 	if err != nil || len(rows) != 1 {
@@ -204,7 +225,9 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 		),
 	)
 	processPartial(t, s, "price-change", priceOnly)
+	assertPublication(true)
 	processPartial(t, s, "gain-change", gainOnly)
+	assertPublication(true)
 
 	choose := func(field, value string) {
 		form, e := s.CorrectionForm(t.Context(), "activity", id)
@@ -226,7 +249,9 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 		retainDecision(t, s, "activity", id, "observation", key, "", "set")
 	}
 	choose("price", newPrice.Amount())
+	assertPublication(true)
 	choose("realized_pnl", newGain.Amount())
+	assertPublication(true)
 
 	value = realizedActivity(t, s, id)
 	if value.Activity.Price.Amount != newPrice.Amount() ||
@@ -235,6 +260,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	}
 
 	retainDecision(t, s, "activity", id, "evidence/price", "", "", "release")
+	assertPublication(true)
 
 	value = realizedActivity(t, s, id)
 	if value.Activity.Price.Amount != "100.000000000001" ||
@@ -244,6 +270,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 
 	before, _ := snapshotState(t.Context(), s)
 	processPartial(t, s, "repeat-gain", gainOnly)
+	assertPublication(false)
 
 	after, _ := snapshotState(t.Context(), s)
 	if before.Version != after.Version || tableCount(t, s, "executions") != 1 {
@@ -253,6 +280,11 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 
 func TestPartialActivityCompletionRollsBackAndReplays(t *testing.T) {
 	s := coverageStore(t)
+	coverageReport(t, s, "account-baseline", "")
+
+	changes, unsubscribe := s.SubscribePublications()
+	defer unsubscribe()
+
 	full := partialTrade(t).Observation()
 	subject := full.Fields()
 	a := partialObservation(t, subject, subject.Fields[:3]...)
@@ -274,6 +306,10 @@ func TestPartialActivityCompletionRollsBackAndReplays(t *testing.T) {
 		t.Fatal("failed completion leaked accepted state")
 	}
 
+	if len(changes) != 0 {
+		t.Fatal("pending or rolled-back completion emitted a publication signal")
+	}
+
 	complete, err := s.queries.ProcessingComplete(
 		t.Context(),
 		sqlc.ProcessingCompleteParams{ArtifactID: "second", Version: partialVersion},
@@ -292,6 +328,10 @@ func TestPartialActivityCompletionRollsBackAndReplays(t *testing.T) {
 
 	if tableCount(t, s, "executions") != 1 {
 		t.Fatal("replay did not complete exactly once")
+	}
+
+	if len(changes) != 1 {
+		t.Fatal("committed completion did not notify subscribers")
 	}
 }
 

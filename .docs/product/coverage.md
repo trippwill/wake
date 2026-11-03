@@ -121,6 +121,10 @@ listings and activity snapshots, individual resources and revision-bound explana
 Each snapshot has warehouse identity and an opaque publication version. Conditional
 GET avoids unchanged downloads. Accepted source/operator corrections, conflicts and
 relevant reference/link changes advance publication; repeated known claims do not.
+SSE announces current publication on connection and after accepted changes. Bursts
+can coalesce; reconnects deliver current state without replay. Clients synchronize
+through complete snapshots and retain the prior mirror on failure. Notifications
+cover accepted financial state, independently of admin workflow status.
 Restarts and access-store recovery retain publication with an intact warehouse.
 Warehouse replacement establishes a clearly reported new baseline.
 
@@ -129,8 +133,9 @@ The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The indepen
 uses a separate process and actual private socket without Wake store access, internal
 application calls or upstream credentials. Its own transactional mirror retains the
 last complete validated snapshot on failed transfers or writes. Checks cover exact
-values, conditional reads, corrections/conflict raise/clear, restart, access recovery
-and warehouse replacement. In-process tests alone do not establish this boundary.
+values, conditional reads, SSE follow/reconnect, corrections/conflict raise/clear,
+restart, access recovery and warehouse replacement. In-process tests alone do not
+establish this boundary.
 
 ## Compatibility
 

@@ -171,7 +171,47 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	if changed {
+		s.notifyPublication()
+	}
+
+	return nil
+}
+
+// SubscribePublications coalesces committed accepted-state changes. Subscribe
+// before reading current publication metadata to avoid a missed transition.
+func (s *Store) SubscribePublications() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+
+	s.publicationMu.Lock()
+	if s.publicationSubscribers == nil {
+		s.publicationSubscribers = make(map[chan struct{}]struct{})
+	}
+
+	s.publicationSubscribers[ch] = struct{}{}
+	s.publicationMu.Unlock()
+
+	return ch, func() {
+		s.publicationMu.Lock()
+		delete(s.publicationSubscribers, ch)
+		s.publicationMu.Unlock()
+	}
+}
+
+func (s *Store) notifyPublication() {
+	s.publicationMu.Lock()
+	defer s.publicationMu.Unlock()
+
+	for ch := range s.publicationSubscribers {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func known(s string) *string {

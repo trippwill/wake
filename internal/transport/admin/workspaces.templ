@@ -454,7 +454,6 @@ templ ReviewQueue(view activityView) {
 templ ActivityRows(view activityView) {
 	<section class="wake-card" id="activity-rows">
 		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div></div>
-		@ListFilters(false)
 		@Grid("activity", "/grids/activity", "Financial activity")
 	</section>
 }
@@ -462,7 +461,6 @@ templ ActivityRows(view activityView) {
 templ InstrumentsView(view activityView) {
 	<section class="wake-card">
 		<h2>Instruments</h2>
-		@ListFilters(true)
 		@Grid("instruments", "/grids/instruments", "Instruments")
 	</section>
 }
@@ -505,7 +503,7 @@ templ ListFilters(instruments bool) {
 				}
 			</select>
 		</p>
-		<button class="btn" type="submit">Apply filters</button><a href={ templ.SafeURL(resetListURL(instruments)) }>Reset filters</a>
+		<button class="btn" type="submit">Apply filters</button><a href={ templ.SafeURL(resetListURL(instruments)) } data-grid-reset-filters>Reset filters</a>
 	</form>
 }
 
