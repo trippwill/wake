@@ -464,10 +464,61 @@ func CompleteActivityTerms(
 	return ActivityTerms{}, ErrIncomplete
 }
 
+type activityFieldGroup struct {
+	fields []source.ActivityField
+	chosen bool
+}
+
+// A conversion rate and its base currency form one constructor invariant. Other
+// assertions remain independent, including reporting amounts and charge roles.
+func groupActivityFields(fields []source.ActivityField, choices map[string]string) []activityFieldGroup {
+	groups := []activityFieldGroup{}
+	positions := map[string]int{}
+	for _, field := range fields {
+		key := field.Key()
+		if field.Name() == source.FieldRateBase {
+			key = string(source.FieldRate)
+		}
+
+		position, ok := positions[key]
+		if !ok {
+			position = len(groups)
+			positions[key] = position
+
+			groups = append(groups, activityFieldGroup{})
+		}
+
+		groups[position].fields = append(groups[position].fields, field)
+		if _, ok := choices[field.Key()]; ok {
+			groups[position].chosen = true
+		}
+	}
+
+	return groups
+}
+
+func overlayActivityFields(fields, values []source.ActivityField) []source.ActivityField {
+	result := slices.Clone(fields)
+	for _, value := range values {
+		position := slices.IndexFunc(
+			result,
+			func(field source.ActivityField) bool { return field.Key() == value.Key() },
+		)
+		if position < 0 {
+			result = append(result, value)
+		} else {
+			result[position] = value
+		}
+	}
+
+	return result
+}
+
 // completeActivitySelection keeps independently valid enrichments when an
-// automatic field cannot yet satisfy the complete-term constructors. Explicit
-// choices are validated together against the durable baseline; incomplete
-// automatic evidence remains reviewable without invalidating other choices.
+// automatic assertion cannot satisfy the complete-term constructors. Coupled
+// fields are evaluated together, including automatic companions of an explicit
+// choice. Unrelated incomplete evidence remains reviewable without invalidating
+// valid choices or discarding a complete coupled enrichment.
 func completeActivitySelection(
 	subject source.ActivityObservationInput,
 	baseline []source.ActivityField,
@@ -479,21 +530,11 @@ func completeActivitySelection(
 		return terms, nil
 	}
 
+	groups := groupActivityFields(selected.Fields, choices)
 	retained := slices.Clone(baseline)
-	replace := func(fields []source.ActivityField, value source.ActivityField) []source.ActivityField {
-		result := slices.Clone(fields)
-		for i, field := range result {
-			if field.Key() == value.Key() {
-				result[i] = value
-				return result
-			}
-		}
-
-		return append(result, value)
-	}
-	for _, field := range selected.Fields {
-		if _, ok := choices[field.Key()]; ok {
-			retained = replace(retained, field)
+	for _, group := range groups {
+		if group.chosen {
+			retained = overlayActivityFields(retained, group.fields)
 		}
 	}
 
@@ -502,16 +543,19 @@ func completeActivitySelection(
 		return ActivityTerms{}, ErrInvalid
 	}
 
-	for _, field := range selected.Fields {
-		if _, ok := choices[field.Key()]; ok {
+	for _, group := range groups {
+		if group.chosen {
 			continue
 		}
 
-		candidate := replace(retained, field)
+		candidate := overlayActivityFields(retained, group.fields)
 
 		complete, e := CompleteActivityTerms(subject, candidate)
 		if e != nil {
-			delete(selected.Sources, field.Key())
+			for _, field := range group.fields {
+				delete(selected.Sources, field.Key())
+			}
+
 			continue
 		}
 

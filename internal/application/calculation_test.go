@@ -7,6 +7,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
@@ -156,6 +157,97 @@ func TestIncompleteAutomaticRateDoesNotBlockIndependentEvidenceChoice(t *testing
 			in.Decisions = append(in.Decisions, FieldSelection{Scope: "evidence/rate", Text: "rate"})
 			if _, err = CalculateActivity(in); !errors.Is(err, ErrInvalid) {
 				t.Fatal("invalid explicit rate choice accepted", err)
+			}
+		})
+	}
+}
+
+func TestFallbackRetainsCoupledRateWhenIndependentChargeExceedsLimit(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	eur, _ := financial.ParseCurrency("EUR")
+	account, _ := source.NewReference("synthetic", "account", "", "one")
+	date, _ := financial.ParseDate("2026-10-20")
+	sent, _ := source.NewCurrencyAmount(usd, "10")
+	received, _ := source.NewCurrencyAmount(eur, "")
+
+	money, _ := financial.NewMoney("-1", usd)
+	charges := make([]source.Charge, 32)
+	for i := range charges {
+		var err error
+
+		charges[i], err = source.NewCharge("fee"+strconv.Itoa(i), "component", money)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	conversion, err := source.NewConversion(
+		source.ConversionInput{
+			Location: "synthetic",
+			Account:  account,
+			Date:     date,
+			Sent:     sent,
+			Received: received,
+			Charges:  charges,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseline, _ := ConversionTerms(conversion)
+	subject := baseline.Observation().Fields()
+	rate, _ := financial.NewPrice("0.9", eur)
+	extra, _ := source.NewCharge("overflow", "component", money)
+
+	overflow := asserted(t, source.ActivityFieldInput{Name: source.FieldCharge, Charge: extra})
+	claims := []ActivityClaim{
+		{
+			Key: "rates",
+			Value: observationWith(
+				t,
+				subject,
+				asserted(t, source.ActivityFieldInput{Name: source.FieldRate, Price: rate}),
+				asserted(t, source.ActivityFieldInput{Name: source.FieldRateBase, Currency: usd}),
+			),
+		},
+		{Key: "overflow", Value: observationWith(t, subject, overflow)},
+	}
+	state, _ := NewActivityState(Accepted, 0, AutomaticSelection)
+	for _, choice := range []string{"", "rate", "rate_base"} {
+		t.Run(choice, func(t *testing.T) {
+			in := ActivityCalculationInput{
+				Rule:        RetainedClaimsRule,
+				Baseline:    baseline,
+				SourceState: state,
+				Claims:      claims,
+			}
+			if choice != "" {
+				in.Decisions = []FieldSelection{{Scope: "evidence/" + choice, Text: "rates"}}
+			}
+
+			got, err := CalculateActivity(in)
+			if err != nil {
+				t.Fatal("independent overflow invalidated a valid rate unit", err)
+			}
+
+			terms := got.Terms.Conversion().Fields()
+			if terms.Rate.Amount() != "0.9" || terms.RateBase != usd ||
+				got.Automatic.Conversion().Fields().Rate.Amount() != "0.9" ||
+				len(terms.Charges) != 32 ||
+				!slices.Contains(got.Fields.Conflicts, "invariants") ||
+				len(got.Fields.Sources[overflow.Key()]) != 0 ||
+				slices.ContainsFunc(
+					got.Fields.Fields,
+					func(f source.ActivityField) bool { return f.Key() == overflow.Key() },
+				) {
+				t.Fatalf(
+					"rate %q, base %q, charges %d, conflicts %v",
+					terms.Rate.Amount(),
+					terms.RateBase.String(),
+					len(terms.Charges),
+					got.Fields.Conflicts,
+				)
 			}
 		})
 	}

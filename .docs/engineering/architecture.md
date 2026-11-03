@@ -128,8 +128,9 @@ field retain that unknown baseline with disagreement. Selecting partial evidence
 controls only its reported fields; independent selections coexist and release uses
 the same calculation as processing, preflight and saving. When automatic evidence
 cannot satisfy coupled term invariants, the calculation retains the complete durable
-baseline and independently valid enrichments with visible disagreement. Explicit
-evidence choices must form valid complete terms against that baseline; unrelated
+baseline and independently valid enrichments with visible disagreement. Coupled
+assertions, such as a conversion rate and its base currency, are evaluated together.
+Explicit evidence choices must form valid complete terms against that baseline; unrelated
 incomplete automatic evidence does not invalidate them. Reported gain and allocated
 cost retain independent currencies and reporting dates within this model. They are
 source facts and are not recalculated from corrected execution terms.
