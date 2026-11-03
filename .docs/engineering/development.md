@@ -235,11 +235,15 @@ results go to stdout; immediate/periodic progress and failures go to stderr. A
 warehouse change is explicitly reported after a validated new baseline commits.
 
 Follow mode subscribes to SSE publication notifications and conditionally synchronizes
-when the announced warehouse/version differs from its committed mirror. It keeps one
-snapshot synchronization active at a time; queued events or reconnect catch changes
+when the announced warehouse/version differs from its last fully synchronized
+publication. Completion includes optional lookup checks, fixture assertions and
+structured success output; an interrupted verification resumes even when the mirror
+has already committed that version. It keeps one snapshot synchronization active at
+a time; queued events or reconnect catch changes
 that arrive during a download. While following, stream and snapshot transport
 interruptions reconnect with exponential backoff capped at 30 seconds; `--interval`
-sets the initial reconnect delay. Missing complete frames for 45 seconds close an
+sets the initial reconnect delay. Only successful synchronization resets the delay.
+Missing complete frames for 45 seconds close an
 idle stream. Snapshot validation and mirror persistence failures terminate follow
 visibly while preserving the prior mirror. SSE carries refresh hints with no
 replay cursor; it does not acknowledge successful mirroring or expose admin work.

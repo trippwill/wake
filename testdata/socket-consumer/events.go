@@ -29,8 +29,10 @@ func (c *client) follow(ctx context.Context, delay time.Duration, synchronize fu
 			if !connected {
 				fmt.Fprintln(c.stderr, "Following accepted publication events")
 			}
-			connected = true
 			syncError = synchronize(p)
+			if syncError == nil {
+				connected = true
+			}
 			return syncError
 		})
 		var interruption transportError

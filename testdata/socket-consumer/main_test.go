@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -313,5 +315,96 @@ func TestOpenMirrorRejectsUnknownFilesWithoutWrites(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type followOutputFunc func([]byte) (int, error)
+
+func (f followOutputFunc) Write(data []byte) (int, error) { return f(data) }
+
+func TestFollowRetriesVerificationAfterMirrorCommit(t *testing.T) {
+	dir, err := os.MkdirTemp("", "wake-follow-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	socket := filepath.Join(dir, "wake.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var connections, conditional atomic.Int64
+	var interrupted atomic.Bool
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/events" {
+			if connections.Add(1) > 2 {
+				cancel()
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"two\"}\n\n")
+			return
+		}
+		version, revision, price := "one", 1, "1.0000"
+		if connections.Load() > 0 {
+			version, revision, price = "two", 2, "2.0000"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/snapshot" {
+			w.Header().Set("ETag", `"`+version+`"`)
+			if r.Header.Get("If-None-Match") == `"`+version+`"` {
+				conditional.Add(1)
+				w.WriteHeader(304)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(fixture(version, revision, price))
+			return
+		}
+		if connections.Load() > 0 && interrupted.CompareAndSwap(false, true) {
+			w.Header().Set("Content-Length", "1000")
+			_, _ = io.WriteString(w, "{")
+			return
+		}
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) < 3 {
+			t.Error("unexpected lookup", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		kind, id := parts[1], parts[2]
+		if kind == "accounts" {
+			revision = 1
+		}
+		if len(parts) == 4 && parts[3] == "explanation" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "kind": kind, "revision": revision, "identity": nil, "selection": "automatic", "conflict": false, "corrections": []any{}, "decisions": []any{}})
+			return
+		}
+		if kind == "accounts" {
+			_, _ = w.Write(account)
+		} else {
+			_, _ = w.Write(sample(revision, price))
+		}
+	}))
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+	path := filepath.Join(dir, "assertions.json")
+	checks, _ := json.Marshal([]assertion{{Kind: "activity", Path: "activity.quantity.value", Equals: "1.0000", Matches: 1}})
+	if err = os.WriteFile(path, checks, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	stdout := followOutputFunc(func(data []byte) (int, error) {
+		n, e := output.Write(data)
+		if bytes.Contains(data, []byte(`"version":"two"`)) {
+			cancel()
+		}
+		return n, e
+	})
+	err = run(ctx, []string{"--socket", socket, "--state", filepath.Join(dir, "mirror.db"), "--follow", "--interval", "1ms", "--assert", path}, stdout, io.Discard)
+	if err != nil || !interrupted.Load() || connections.Load() != 2 || conditional.Load() != 1 || strings.Count(output.String(), `"status":"synchronized"`) != 2 || !strings.Contains(output.String(), `"version":"two"`) {
+		t.Fatal("unfinished verification or success output was skipped", connections.Load(), conditional.Load(), output.String(), err)
 	}
 }

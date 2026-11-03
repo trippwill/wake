@@ -11,9 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -185,4 +187,36 @@ func TestPublicationFollowStopsOnSynchronizationFailure(t *testing.T) {
 			}
 		})
 	}
+}
+
+type eventTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f eventTransportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPublicationBackoffRequiresSuccessfulSynchronization(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n")), Request: r}, nil
+		})}, base: "http://wake", stderr: io.Discard}
+		start := time.Now()
+		times := []time.Duration{}
+		err := c.follow(ctx, time.Second, func(publication) error {
+			times = append(times, time.Since(start))
+			switch len(times) {
+			case 4:
+				return nil
+			case 6:
+				cancel()
+				return nil
+			default:
+				return transportError{errors.New("snapshot interrupted")}
+			}
+		})
+		want := []time.Duration{0, time.Second, 3 * time.Second, 7 * time.Second, 8 * time.Second, 10 * time.Second}
+		if !errors.Is(err, context.Canceled) || !slices.Equal(times, want) {
+			t.Fatal("unsuccessful snapshots reset reconnect delay", times, err)
+		}
+	})
 }

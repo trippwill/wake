@@ -607,6 +607,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	if err != nil {
 		return err
 	}
+	completed := publication{}
 	synchronize := func() error {
 		replaced, e := c.sync(ctx, &current, db)
 		if e != nil {
@@ -628,13 +629,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		}{"synchronized", len(current.Resources), replaced, current.Version}); e != nil {
 			return e
 		}
+		completed = publication{current.WarehouseID, current.Version}
 		return nil
 	}
 	if err = synchronize(); err != nil || !*follow {
 		return err
 	}
 	return c.follow(ctx, *interval, func(p publication) error {
-		if p.WarehouseID == current.WarehouseID && p.Version == current.Version {
+		if p == completed {
 			return nil
 		}
 		return synchronize()
