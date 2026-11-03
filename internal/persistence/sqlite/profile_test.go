@@ -195,7 +195,7 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 						ctx,
 						host.Connection{
 							ID: "connection", Provider: "ibkr-flex", Settings: settings,
-							Streams: []provider.Stream{input}, ResetStreams: []string{"confirmations"},
+							Streams: []provider.Stream{input}, ResetStreams: []string{"confirmations"}, CanAcquire: true,
 						},
 					); err != nil {
 						t.Fatal(err)

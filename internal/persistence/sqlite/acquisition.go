@@ -139,8 +139,10 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 			return err
 		}
 
-		if err = scheduleAcquisition(ctx, q, c.ID, c.Streams); err != nil {
-			return err
+		if c.CanAcquire {
+			if err = scheduleAcquisition(ctx, q, c.ID, c.Streams); err != nil {
+				return err
+			}
 		}
 	} else {
 		if accountErr != nil && !errors.Is(accountErr, sql.ErrNoRows) {
@@ -151,8 +153,10 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 			return err
 		}
 
-		if err = scheduleStreams(ctx, q, c.ID, c.Streams, "discover"); err != nil {
-			return err
+		if c.CanDiscover {
+			if err = scheduleStreams(ctx, q, c.ID, c.Streams, "discover"); err != nil {
+				return err
+			}
 		}
 	}
 

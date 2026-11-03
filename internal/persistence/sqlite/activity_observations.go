@@ -184,6 +184,8 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 	// observations are considered. This does not require a complete row to exist.
 	sort.SliceStable(pending, func(i, j int) bool { return pending[i].complete && !pending[j].complete })
 
+	subjects := newActivitySubjectIndex(pending)
+
 	affected := map[string]bool{}
 	for _, item := range pending {
 		f := item.value.Fields()
@@ -229,7 +231,8 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 			claims := []application.ActivityClaim{}
 			subject := f
 
-			for _, candidate := range pending {
+			for _, position := range subjects.candidates(item.value) {
+				candidate := pending[position]
 				if !candidate.ambiguous && compatibleSubjects(item.value, candidate.value) {
 					claims = append(
 						claims,

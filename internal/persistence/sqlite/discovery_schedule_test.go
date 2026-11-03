@@ -22,7 +22,13 @@ func TestReconfigureReconcilesEnabledDiscoveryStreams(t *testing.T) {
 	added, _ = added.WithDiscovery()
 	acquireOnly, _ := provider.NewStream("acquire-only", "synthetic-v1")
 
-	connection := host.Connection{ID: "synthetic", Provider: "synthetic", Name: "Synthetic", Settings: settings}
+	connection := host.Connection{
+		ID:          "synthetic",
+		Provider:    "synthetic",
+		Name:        "Synthetic",
+		Settings:    settings,
+		CanDiscover: true,
+	}
 	if err := s.Configure(ctx, connection, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -84,4 +90,11 @@ func TestReconfigureReconcilesEnabledDiscoveryStreams(t *testing.T) {
 	}
 
 	assertWork([]host.WorkKey{oldKey})
+
+	connection.CanDiscover = false
+	if err = s.Reconfigure(ctx, connection); err != nil {
+		t.Fatal(err)
+	}
+
+	assertWork([]host.WorkKey{})
 }

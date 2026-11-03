@@ -34,10 +34,11 @@ const (
 
 type (
 	Connection struct {
-		ID, Provider, Name string
-		Settings           provider.Settings
-		Streams            []provider.Stream
-		ResetStreams       []string
+		ID, Provider, Name      string
+		Settings                provider.Settings
+		Streams                 []provider.Stream
+		ResetStreams            []string
+		CanAcquire, CanDiscover bool
 	}
 	WorkKey    struct{ Connection, Stream, Operation string }
 	Checkpoint struct {
@@ -321,7 +322,10 @@ func (h *Host) UpdateSettings(ctx context.Context, id, name string, settings pro
 
 	connection.Settings = settings
 	connection.Name = name
+
 	connection.Streams = []provider.Stream{}
+	connection.CanAcquire = r.Acquirer() != nil
+	connection.CanDiscover = r.Discoverer() != nil
 	for _, configuration := range configured {
 		connection.Streams = append(connection.Streams, configuration.Stream())
 		unchanged := false

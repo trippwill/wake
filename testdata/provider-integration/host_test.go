@@ -930,6 +930,14 @@ func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T
 	if err = db.QueryRow("SELECT count(*) FROM scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
 		t.Fatal("discovery required an acquirer", scheduled, err)
 	}
+	settings, _ := provider.NewSettings(map[string]string{"tenant": "synthetic-tenant"})
+	if err = workflow.UpdateConnection(t.Context(), f.id, "Renamed discovery source", settings); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow("SELECT count(*) FROM scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
+		t.Fatal("settings update scheduled an unavailable acquirer", scheduled, err)
+	}
+
 }
 
 func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *testing.T) {
