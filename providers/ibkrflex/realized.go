@@ -133,7 +133,10 @@ func reportedRealized(row map[string]string, parent, loc string) (source.Activit
 		}
 
 		instrument, e := source.NewInstrument(
-			source.InstrumentInput{Kind: activityInstrumentKind(row["assetCategory"]), Reference: ref},
+			source.InstrumentInput{
+				Kind:      activityInstrumentKind(row["assetCategory"], row["subCategory"]),
+				Reference: ref,
+			},
 		)
 		if e != nil {
 			return source.ActivityObservation{}, e
@@ -217,13 +220,23 @@ func activityQuantityUnit(category string) string {
 	}
 }
 
-func activityInstrumentKind(category string) source.InstrumentKind {
+func activityInstrumentKind(category, subtype string) source.InstrumentKind {
 	switch category {
 	case "OPT":
 		return source.Option
 	case "BOND", "BILL":
 		return source.Debt
+	case "STK":
+		if subtype == "ETF" {
+			return source.Fund
+		}
+
+		if subtype != "" {
+			return source.Equity
+		}
+
+		return source.UnknownInstrument
 	default:
-		return source.Equity
+		return source.UnknownInstrument
 	}
 }

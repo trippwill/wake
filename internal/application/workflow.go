@@ -62,7 +62,7 @@ type (
 			source.Reference,
 			AccountDetails,
 			bool,
-			...provider.Stream,
+			[]provider.Stream,
 		) (Account, error)
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
@@ -356,7 +356,7 @@ func (w *Workflow) Confirm(
 		ref,
 		details,
 		registration.Acquirer() != nil,
-		streams...)
+		streams)
 	if err == nil {
 		w.notify()
 	}

@@ -118,7 +118,7 @@ func (s *Store) Confirm(
 	ref source.Reference,
 	details application.AccountDetails,
 	acquire bool,
-	streams ...provider.Stream,
+	streams []provider.Stream,
 ) (application.Account, error) {
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
@@ -172,11 +172,6 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	evidence, err := q.Retained(ctx, artifact)
-	if err != nil {
-		return application.Account{}, err
-	}
-
 	a, err := application.NewAccount(
 		rand.Text(),
 		id,
@@ -209,15 +204,6 @@ func (s *Store) Confirm(
 	}
 
 	if acquire {
-		if len(streams) == 0 {
-			origin, e := provider.NewStream(evidence.Stream, evidence.Format)
-			if e != nil {
-				return application.Account{}, e
-			}
-
-			streams = []provider.Stream{origin}
-		}
-
 		if err = scheduleAcquisition(ctx, q, id, streams); err != nil {
 			return application.Account{}, err
 		}

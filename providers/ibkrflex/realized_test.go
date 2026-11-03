@@ -18,6 +18,45 @@ import (
 
 const realizedRow = `<Trade accountId="U1" assetCategory="STK" conid="100" tradeID="trade" ibExecID="fill" transactionID="transaction" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="-0.0000000012300" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" cost="-99.00000000001" fifoPnlRealized="1.2300000000000000001"/>`
 
+func TestActivityPreservesReportedStockSubtype(t *testing.T) {
+	reg, err := Registration(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		subtype string
+		want    source.InstrumentKind
+	}{
+		{"ETF", source.Fund}, {"COMMON", source.Equity}, {"", source.UnknownInstrument},
+	} {
+		row := strings.Replace(
+			realizedRow,
+			`assetCategory="STK"`,
+			`assetCategory="STK" subCategory="`+tc.subtype+`"`,
+			1,
+		)
+
+		artifact, _ := provider.NewArtifact(
+			ActivityFormat,
+			"application/xml",
+			time.Now(),
+			[]byte(activityReport(row)),
+		)
+		claims := &testClaims{}
+		if _, err = reg.Normalizer().
+			Normalize(t.Context(), artifact, claims); err != nil ||
+			len(claims.realized) != 1 {
+			t.Fatal(claims, err)
+		}
+
+		instrument, _ := claims.realized[0].Field(source.FieldInstrument)
+		if instrument.Fields().Instrument.Kind() != tc.want {
+			t.Errorf("subtype %q: got %s, want %s", tc.subtype, instrument.Fields().Instrument.Kind(), tc.want)
+		}
+	}
+}
+
 func activityReport(rows string) string {
 	return `<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U1" fromDate="2026-10-20" toDate="2026-10-21"><Trades>` + rows + `</Trades><FIFOPerformanceSummaryInBase><FIFOPerformanceSummaryUnderlying totalRealizedPnl="999999"/></FIFOPerformanceSummaryInBase><OpenPositions><OpenPosition costBasisMoney="invalid"/></OpenPositions></FlexStatement></FlexStatements></FlexQueryResponse>`
 }

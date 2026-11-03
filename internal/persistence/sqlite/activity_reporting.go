@@ -34,17 +34,17 @@ func reportedRealizedFields(
 			out.Selection = string(application.OperatorSelection)
 		}
 
-		if !field.Known() {
-			continue
-		}
-
 		f := field.Fields()
 		if field.Name() == source.FieldRealizedPnL {
-			out.Amount = publicMoney(f.Money)
 			out.ReportDate = publicDate(f.ReportedOn)
+			if field.Known() {
+				out.Amount = publicMoney(f.Money)
+			}
 		} else {
-			out.CostBasis = publicMoney(f.Money)
 			out.CostBasisReportDate = publicDate(f.ReportedOn)
+			if field.Known() {
+				out.CostBasis = publicMoney(f.Money)
+			}
 		}
 	}
 

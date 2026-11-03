@@ -4,9 +4,12 @@
 package application
 
 import (
+	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -74,5 +77,86 @@ func TestFinancialCalculationIsDeterministicAndKeepsSourceDisagreement(t *testin
 	in.Rule = "unimplemented-rules"
 	if _, err = CalculateActivity(in); err == nil {
 		t.Fatal("unknown rule selection accepted")
+	}
+}
+
+func TestIncompleteAutomaticRateDoesNotBlockIndependentEvidenceChoice(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	eur, _ := financial.ParseCurrency("EUR")
+	account, _ := source.NewReference("synthetic", "account", "", "one")
+	date, _ := financial.ParseDate("2026-10-20")
+	sent, _ := source.NewCurrencyAmount(usd, "10")
+	received, _ := source.NewCurrencyAmount(eur, "")
+
+	conversion, err := source.NewConversion(
+		source.ConversionInput{
+			Location: "synthetic",
+			Account:  account,
+			Date:     date,
+			Sent:     sent,
+			Received: received,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseline, _ := ConversionTerms(conversion)
+	subject := baseline.Observation().Fields()
+	rate, _ := financial.NewPrice("0.9", eur)
+
+	money, _ := financial.NewMoney("1", usd)
+	rateClaim := ActivityClaim{
+		Key: "rate",
+		Value: observationWith(
+			t,
+			subject,
+			asserted(t, source.ActivityFieldInput{Name: source.FieldRate, Price: rate}),
+		),
+	}
+	for _, field := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldNet} {
+		t.Run(string(field), func(t *testing.T) {
+			choice := asserted(t, source.ActivityFieldInput{Name: field, Money: money})
+			state, _ := NewActivityState(Accepted, 0, AutomaticSelection)
+			in := ActivityCalculationInput{
+				Rule: RetainedClaimsRule, Baseline: baseline, SourceState: state,
+				Claims:    []ActivityClaim{rateClaim, {Key: "chosen", Value: observationWith(t, subject, choice)}},
+				Decisions: []FieldSelection{{Scope: "evidence/" + choice.Key(), Text: "chosen"}},
+			}
+
+			got, err := CalculateActivity(in)
+			if err != nil {
+				t.Fatal("independent choice blocked by incomplete rate", err)
+			}
+
+			if got.Terms.Conversion().Fields().Rate.Amount() != "" ||
+				!selectedField(t, got.Fields.Fields, field).Fields().Money.Equal(money) ||
+				!slices.Contains(got.Fields.Conflicts, "invariants") ||
+				len(got.Fields.Sources["rate"]) != 0 {
+				t.Fatal("invalid automatic rate or lost choice", got)
+			}
+
+			in.Claims = append(
+				in.Claims,
+				ActivityClaim{
+					Key: "base",
+					Value: observationWith(
+						t,
+						subject,
+						asserted(t, source.ActivityFieldInput{Name: source.FieldRateBase, Currency: usd}),
+					),
+				},
+			)
+			got, err = CalculateActivity(in)
+			if err != nil || got.Terms.Conversion().Fields().Rate.Amount() != "0.9" {
+				t.Fatal("completed rate was not adopted", got, err)
+			}
+
+			in.Claims = in.Claims[:2]
+			in.Decisions = append(in.Decisions, FieldSelection{Scope: "evidence/rate", Text: "rate"})
+			if _, err = CalculateActivity(in); !errors.Is(err, ErrInvalid) {
+				t.Fatal("invalid explicit rate choice accepted", err)
+			}
+		})
 	}
 }

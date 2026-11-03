@@ -16,10 +16,24 @@ func scheduleAcquisition(
 	connection string,
 	streams []provider.Stream,
 ) error {
+	return scheduleStreams(ctx, q, connection, streams, "acquire")
+}
+
+func scheduleStreams(
+	ctx context.Context,
+	q *sqlc.Queries,
+	connection string,
+	streams []provider.Stream,
+	operation string,
+) error {
 	for _, stream := range streams {
+		if operation == "discover" && !stream.CanDiscover() {
+			continue
+		}
+
 		if err := q.EnsureWork(
 			ctx,
-			sqlc.EnsureWorkParams{ConnectionID: connection, Stream: stream.ID(), Operation: "acquire"},
+			sqlc.EnsureWorkParams{ConnectionID: connection, Stream: stream.ID(), Operation: operation},
 		); err != nil {
 			return err
 		}
@@ -29,7 +43,7 @@ func scheduleAcquisition(
 			sqlc.SetScheduledParams{
 				ConnectionID: connection,
 				Stream:       stream.ID(),
-				Operation:    "acquire",
+				Operation:    operation,
 				Enabled:      1,
 			},
 		); err != nil {

@@ -547,7 +547,14 @@ func TestLatestDiscoveryProfileFollowsReceiptsWhenBodyIsReused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = s.Confirm(ctx, "synthetic", last, ref, details, true); err != nil {
+	if _, err = s.Confirm(ctx, "synthetic", last, ref, details, true, []provider.Stream{}); err != nil {
 		t.Fatal("repeated discovery could not be confirmed", err)
+	}
+
+	var scheduled int
+	if err = s.db.QueryRow(`SELECT count(*) FROM scheduled WHERE connection_id='synthetic' AND operation='acquire' AND enabled=1`).
+		Scan(&scheduled); err != nil ||
+		scheduled != 0 {
+		t.Fatal("disabled inputs were reenabled by confirmation", scheduled, err)
 	}
 }

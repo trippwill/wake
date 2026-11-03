@@ -142,8 +142,18 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		if err = scheduleAcquisition(ctx, q, c.ID, c.Streams); err != nil {
 			return err
 		}
-	} else if accountErr != nil && !errors.Is(accountErr, sql.ErrNoRows) {
-		return accountErr
+	} else {
+		if accountErr != nil && !errors.Is(accountErr, sql.ErrNoRows) {
+			return accountErr
+		}
+
+		if err = q.DisableDiscovery(ctx, c.ID); err != nil {
+			return err
+		}
+
+		if err = scheduleStreams(ctx, q, c.ID, c.Streams, "discover"); err != nil {
+			return err
+		}
 	}
 
 	return s.accessUpdated(ctx, "connection_settings", s.commit(ctx, tx))

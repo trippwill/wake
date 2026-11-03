@@ -143,7 +143,17 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			values, e := comparisonValues("trade", data)
+			kind := "trade"
+			if changed {
+				data, e = encodeObservation(trade.Observation())
+				if e != nil {
+					t.Fatal(e)
+				}
+
+				kind = "activity"
+			}
+
+			values, e := comparisonValues(kind, data)
 			if e != nil {
 				t.Fatal(e)
 			}

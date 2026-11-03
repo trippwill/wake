@@ -87,6 +87,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		text("charges", value)
 	}
+
 	option := func(value source.OptionTerms) {
 		f := value.Fields()
 		price("option.strike", f.Strike)
@@ -121,6 +122,22 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		sort.Strings(components)
 		text("option.deliverables", strings.Join(components, "; "))
 	}
+	debt := func(value source.DebtTerms) {
+		terms := value.Fields()
+		text("debt.coupon", terms.Coupon.Value())
+		text("debt.maturity", comparisonDate(terms.Maturity))
+		text("debt.type", string(terms.Type))
+		text("debt.currency", comparisonCurrency(terms.Currency))
+		text("debt.issue_date", comparisonDate(terms.IssueDate))
+		text("debt.dated_date", comparisonDate(terms.DatedDate))
+
+		payments := ""
+		if terms.PaymentsPerYear > 0 {
+			payments = strconv.Itoa(terms.PaymentsPerYear)
+		}
+
+		text("debt.payments_per_year", payments)
+	}
 	activity := func(o source.ActivityObservation) {
 		reportedCharges := []source.Charge{}
 		for _, field := range o.Fields().Fields {
@@ -131,6 +148,14 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				key = "reported." + key
 			case source.FieldSent, source.FieldReceived:
 				key += "_amount"
+			}
+
+			if f.Name == source.FieldRealizedPnL {
+				text("realized_report_date", optionalSourceDate(f.ReportedOn))
+			}
+
+			if f.Name == source.FieldReportedCostBasis {
+				text("cost_basis_report_date", optionalSourceDate(f.ReportedOn))
 			}
 
 			if !field.Known() {
@@ -147,14 +172,6 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				source.FieldRealizedPnL,
 				source.FieldReportedCostBasis:
 				money(key, f.Money)
-
-				if f.Name == source.FieldRealizedPnL {
-					text("realized_report_date", optionalSourceDate(f.ReportedOn))
-				}
-
-				if f.Name == source.FieldReportedCostBasis {
-					text("cost_basis_report_date", optionalSourceDate(f.ReportedOn))
-				}
 			case source.FieldPrice, source.FieldRate:
 				price(key, f.Price)
 
@@ -178,6 +195,10 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 				if f.Instrument.Kind() == source.Option {
 					option(f.Instrument.Option())
+				}
+
+				if f.Instrument.Kind() == source.Debt {
+					debt(f.Instrument.Debt())
 				}
 			case source.FieldTradeKind:
 				text("reported.trade_kind", f.Text)
@@ -250,21 +271,8 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			option(f.Instrument.Option())
 		}
 
-		if debt := f.Instrument.Debt(); f.Instrument.Kind() == source.Debt {
-			text("debt.coupon", debt.Fields().Coupon.Value())
-			text("debt.maturity", comparisonDate(debt.Fields().Maturity))
-			terms := debt.Fields()
-			text("debt.type", string(terms.Type))
-			text("debt.currency", comparisonCurrency(terms.Currency))
-			text("debt.issue_date", comparisonDate(terms.IssueDate))
-			text("debt.dated_date", comparisonDate(terms.DatedDate))
-
-			payments := ""
-			if terms.PaymentsPerYear > 0 {
-				payments = strconv.Itoa(terms.PaymentsPerYear)
-			}
-
-			text("debt.payments_per_year", payments)
+		if f.Instrument.Kind() == source.Debt {
+			debt(f.Instrument.Debt())
 		}
 
 		activity(t.Observation())

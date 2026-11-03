@@ -17,6 +17,62 @@ import (
 
 const partialVersion = "synthetic-partial/1"
 
+func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
+	s := coverageStore(t)
+	full := partialTrade(t).Observation()
+	processPartial(t, s, "baseline", full)
+
+	gainDate, _ := financial.ParseDate("2026-10-24")
+	costDate, _ := financial.ParseDate("2026-10-23")
+	unknown := partialObservation(
+		t,
+		full.Fields(),
+		partialField(
+			t,
+			source.ActivityFieldInput{Name: source.FieldRealizedPnL, Unknown: true, ReportedOn: gainDate},
+		),
+		partialField(
+			t,
+			source.ActivityFieldInput{Name: source.FieldReportedCostBasis, Unknown: true, ReportedOn: costDate},
+		),
+	)
+	processPartial(t, s, "dated-unknown", unknown)
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+
+	value := realizedActivity(t, s, id).Activity.ReportedRealizedPnL
+	if value == nil || value.Amount != nil || value.CostBasis != nil || value.ReportDate == nil ||
+		*value.ReportDate != gainDate.String() || value.CostBasisReportDate == nil || *value.CostBasisReportDate != costDate.String() {
+		t.Errorf("unknown monetary values erased reporting dates: %#v", value)
+	}
+
+	form, err := s.CorrectionForm(t.Context(), "activity", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, candidate := range form.Candidates {
+		if strings.HasPrefix(candidate.Label, "Partial activity evidence") {
+			found = true
+
+			if candidate.Fields["realized_report_date"].Value != gainDate.String() ||
+				candidate.Fields["cost_basis_report_date"].Value != costDate.String() {
+				t.Error("unknown monetary values erased candidate dates", candidate.Fields)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("dated unknown source candidate missing")
+	}
+}
+
 func retainPartial(t testing.TB, s *Store, id string, values ...source.ActivityObservation) {
 	t.Helper()
 

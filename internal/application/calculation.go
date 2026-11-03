@@ -177,36 +177,25 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 		return ActivityCalculation{}, err
 	}
 
-	selected, err := CompleteActivityTerms(in.Baseline.Observation().Fields(), fields.Fields)
-	conflict := len(fields.Conflicts) > 0
+	selected, err := completeActivitySelection(in.Baseline.Observation().Fields(), baseFields, &fields, nil)
 	if err != nil {
-		selected = in.Baseline
-		conflict = true
+		return ActivityCalculation{}, err
 	}
+
+	conflict := len(fields.Conflicts) > 0
 
 	chosen, err := SelectActivityFields(baseFields, claims, choices)
 	if err != nil {
 		return ActivityCalculation{}, err
 	}
 
-	terms, err := CompleteActivityTerms(in.Baseline.Observation().Fields(), chosen.Fields)
+	terms, err := completeActivitySelection(in.Baseline.Observation().Fields(), baseFields, &chosen, choices)
 	if err != nil {
-		if len(choices) > 0 {
-			return ActivityCalculation{}, ErrInvalid
-		}
+		return ActivityCalculation{}, err
+	}
 
-		terms = in.Baseline
+	if slices.Contains(chosen.Conflicts, "invariants") {
 		conflict = true
-
-		chosen.Conflicts = append(chosen.Conflicts, "invariants")
-		retained := slices.Clone(baseFields)
-		for _, f := range chosen.Fields {
-			if f.Name() == source.FieldRealizedPnL || f.Name() == source.FieldReportedCostBasis {
-				retained = append(retained, f)
-			}
-		}
-
-		chosen.Fields = retained
 	}
 
 	out := ActivityCalculation{

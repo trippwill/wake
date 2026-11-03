@@ -463,3 +463,64 @@ func CompleteActivityTerms(
 
 	return ActivityTerms{}, ErrIncomplete
 }
+
+// completeActivitySelection keeps independently valid enrichments when an
+// automatic field cannot yet satisfy the complete-term constructors. Explicit
+// choices are validated together against the durable baseline; incomplete
+// automatic evidence remains reviewable without invalidating other choices.
+func completeActivitySelection(
+	subject source.ActivityObservationInput,
+	baseline []source.ActivityField,
+	selected *ActivitySelection,
+	choices map[string]string,
+) (ActivityTerms, error) {
+	terms, err := CompleteActivityTerms(subject, selected.Fields)
+	if err == nil {
+		return terms, nil
+	}
+
+	retained := slices.Clone(baseline)
+	replace := func(fields []source.ActivityField, value source.ActivityField) []source.ActivityField {
+		result := slices.Clone(fields)
+		for i, field := range result {
+			if field.Key() == value.Key() {
+				result[i] = value
+				return result
+			}
+		}
+
+		return append(result, value)
+	}
+	for _, field := range selected.Fields {
+		if _, ok := choices[field.Key()]; ok {
+			retained = replace(retained, field)
+		}
+	}
+
+	terms, err = CompleteActivityTerms(subject, retained)
+	if err != nil {
+		return ActivityTerms{}, ErrInvalid
+	}
+
+	for _, field := range selected.Fields {
+		if _, ok := choices[field.Key()]; ok {
+			continue
+		}
+
+		candidate := replace(retained, field)
+
+		complete, e := CompleteActivityTerms(subject, candidate)
+		if e != nil {
+			delete(selected.Sources, field.Key())
+			continue
+		}
+
+		retained, terms = candidate, complete
+	}
+
+	sort.Slice(retained, func(i, j int) bool { return retained[i].Key() < retained[j].Key() })
+	selected.Fields = retained
+	selected.Conflicts = append(selected.Conflicts, "invariants")
+
+	return terms, nil
+}
