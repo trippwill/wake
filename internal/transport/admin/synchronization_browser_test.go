@@ -61,6 +61,17 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(view))),
 	)
 
+	mixed := fixtureOverview(fixtureView{Account: account, Connections: []application.ConnectionView{{
+		ID: "source", Name: "ibkr-flex", CanAcquire: true, Work: []application.WorkStatus{
+			{Stream: "activity", Operation: "acquire", Failure: "Source input unavailable", Scheduled: true},
+			{Stream: "confirmations", Operation: "acquire", Progress: "retained", Scheduled: true},
+		},
+	}}})
+	mux.Handle(
+		"GET /mixed",
+		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(mixed))),
+	)
+
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
@@ -77,6 +88,29 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	if err = chromedp.Run(ctx, testbrowser.NewDocument(chromedp.Navigate(server.URL)),
 		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery)); err != nil {
 		t.Fatal(err)
+	}
+
+	capture := func(name string) {
+		dir := os.Getenv("WAKE_SCREENSHOT_DIR")
+		if dir == "" {
+			return
+		}
+
+		var png []byte
+		if err = chromedp.Run(
+			ctx,
+			chromedp.Screenshot(`section[aria-labelledby="synchronization-title"]`, &png, chromedp.ByQuery),
+		); err != nil {
+			t.Fatal(err)
+		}
+		//nolint:gosec // Caller-selected synthetic screenshot directory and fixed filenames.
+		if err = os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		//nolint:gosec // Caller-selected synthetic screenshot directory and fixed filenames.
+		if err = os.WriteFile(filepath.Join(dir, name+".png"), png, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	for _, theme := range []string{"light", "dark"} {
@@ -99,26 +133,37 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 				t.Fatalf("%s at %dpx: stream rows overlap, overflow or lose their meaning: %v", theme, width, err)
 			}
 
-			if dir := os.Getenv("WAKE_SCREENSHOT_DIR"); dir != "" && (width == 1280 || width == 390) {
-				var png []byte
-				if err = chromedp.Run(
-					ctx,
-					chromedp.Screenshot(`section[aria-labelledby="synchronization-title"]`, &png, chromedp.ByQuery),
-				); err != nil {
-					t.Fatal(err)
-				}
-				//nolint:gosec // Caller-selected synthetic screenshot directory and fixed filenames.
-				if err = os.MkdirAll(dir, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				//nolint:gosec // Caller-selected synthetic screenshot directory and fixed filenames.
-				if err = os.WriteFile(
-					filepath.Join(dir, "synchronization-"+theme+"-"+strconv.FormatInt(width, 10)+".png"),
-					png,
-					0o600,
-				); err != nil {
-					t.Fatal(err)
-				}
+			if width == 1280 || width == 390 {
+				capture("synchronization-" + theme + "-" + strconv.FormatInt(width, 10))
+			}
+		}
+	}
+
+	if err = chromedp.Run(
+		ctx,
+		testbrowser.NewDocument(chromedp.Navigate(server.URL+"/mixed")),
+		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, theme := range []string{"light", "dark"} {
+		for _, width := range []int64{1280, 768, 390, 320} {
+			var valid bool
+			if err = chromedp.Run(ctx, emulation.SetDeviceMetricsOverride(width, 900, 1, false),
+				chromedp.Evaluate(`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme), nil),
+				chromedp.Evaluate(`(()=>{
+     const rows=Array.from(document.querySelectorAll('.wake-sync-work > div'));
+     return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===2&&
+      rows[0].querySelector('dt').textContent.trim()==='Activity'&&rows[0].querySelector('dd').textContent.includes('failed')&&
+      rows[0].querySelector('dd').textContent.includes('Source input unavailable')&&
+      rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].querySelector('dd').textContent==='Evidence retained';
+    })()`, &valid)); err != nil || !valid {
+				t.Fatalf("%s at %dpx: a failed stream hid healthy progress: %v", theme, width, err)
+			}
+
+			if width == 1280 || width == 390 {
+				capture("synchronization-mixed-" + theme + "-" + strconv.FormatInt(width, 10))
 			}
 		}
 	}

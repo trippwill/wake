@@ -97,8 +97,6 @@ templ DashboardOverview(view overviewView) {
 						<div>
 							if c.MissingAccess {
 								@StateBadge("Access review required")
-							} else if connectionFailure(view.sourceView,c) {
-								@StateBadge("failed")
 							} else if view.Storage.Paused {
 								@StateBadge("paused")
 							} else {
@@ -112,7 +110,14 @@ templ DashboardOverview(view overviewView) {
 													{ stringTitle(work.Stream) }
 												}
 											</dt>
-											<dd>{ progressLabel(work.Progress) }</dd>
+											<dd>
+												if work.Failure!="" {
+													@StateBadge("failed")
+													<span class="wake-help">{ work.Failure }</span>
+												} else {
+													{ progressLabel(work.Progress) }
+												}
+											</dd>
 										</div>
 									}
 								</dl>
