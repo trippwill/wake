@@ -104,6 +104,8 @@ Core code does not interpret provider field keys, query topology or report names
 Account authority is bound to the connection, provider and qualified source account,
 while every input and report remains traceable provenance. Enabled acquisition and
 configuration changes are persisted atomically; disabling an input preserves history.
+Account confirmation schedules work from the same committed configuration snapshot;
+concurrent settings edits cannot restore removed inputs or omit newly enabled ones.
 
 Activity normalization emits immutable typed observations through one public writer.
 A record can contain complete terms, a partial set of terms, or only reported results.

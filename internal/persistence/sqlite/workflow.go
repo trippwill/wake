@@ -4,9 +4,11 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -114,12 +116,18 @@ func accountValue(row sqlc.Account) (application.Account, error) {
 
 func (s *Store) Confirm(
 	ctx context.Context,
-	id, artifact string,
+	connection host.Connection,
+	artifact string,
 	ref source.Reference,
 	details application.AccountDetails,
-	acquire bool,
-	streams []provider.Stream,
 ) (application.Account, error) {
+	id := connection.ID
+
+	settings, err := json.Marshal(connection.Settings.Values())
+	if err != nil {
+		return application.Account{}, err
+	}
+
 	if details.Name() == "" || ref.IsZero() {
 		return application.Account{}, application.ErrInvalid
 	}
@@ -172,6 +180,10 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
+	if c.Provider != connection.Provider || !bytes.Equal(c.Settings, settings) {
+		return application.Account{}, application.ErrConnectionChanged
+	}
+
 	a, err := application.NewAccount(
 		rand.Text(),
 		id,
@@ -203,8 +215,8 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if acquire {
-		if err = scheduleAcquisition(ctx, q, id, streams); err != nil {
+	if connection.CanAcquire {
+		if err = scheduleAcquisition(ctx, q, id, connection.Streams); err != nil {
 			return application.Account{}, err
 		}
 	}

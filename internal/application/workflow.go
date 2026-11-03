@@ -57,12 +57,10 @@ type (
 		Schedule(context.Context, host.WorkKey, bool) error
 		Confirm(
 			context.Context,
-			string,
+			host.Connection,
 			string,
 			source.Reference,
 			AccountDetails,
-			bool,
-			[]provider.Stream,
 		) (Account, error)
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
@@ -329,6 +327,22 @@ func (w *Workflow) Confirm(
 	ctx, finishLog := logging.Start(ctx, w.logger, "account_confirm")
 	defer func() { finishLog(resultErr) }()
 
+	for range 3 {
+		account, err := w.confirmAccount(ctx, id, artifact, ref, details)
+		if !errors.Is(err, ErrConnectionChanged) {
+			return account, err
+		}
+	}
+
+	return Account{}, ErrConnectionChanged
+}
+
+func (w *Workflow) confirmAccount(
+	ctx context.Context,
+	id, artifact string,
+	ref source.Reference,
+	details AccountDetails,
+) (Account, error) {
 	connection, err := w.host.Connection(ctx, id)
 	if err != nil {
 		return Account{}, err
@@ -344,19 +358,13 @@ func (w *Workflow) Confirm(
 		return Account{}, err
 	}
 
-	streams := make([]provider.Stream, 0, len(configured))
+	connection.Streams = make([]provider.Stream, 0, len(configured))
+	connection.CanAcquire = registration.Acquirer() != nil
 	for _, configuration := range configured {
-		streams = append(streams, configuration.Stream())
+		connection.Streams = append(connection.Streams, configuration.Stream())
 	}
 
-	a, err := w.store.Confirm(
-		ctx,
-		id,
-		artifact,
-		ref,
-		details,
-		registration.Acquirer() != nil,
-		streams)
+	a, err := w.store.Confirm(ctx, connection, artifact, ref, details)
 	if err == nil {
 		w.notify()
 	}

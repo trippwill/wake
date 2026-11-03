@@ -547,7 +547,19 @@ func TestLatestDiscoveryProfileFollowsReceiptsWhenBodyIsReused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = s.Confirm(ctx, "synthetic", last, ref, details, true, []provider.Stream{}); err != nil {
+	if _, err = s.Confirm(
+		ctx,
+		host.Connection{
+			ID:         "synthetic",
+			Provider:   "ibkr-flex",
+			Settings:   confirmationSettings("123"),
+			CanAcquire: true,
+			Streams:    []provider.Stream{},
+		},
+		last,
+		ref,
+		details,
+	); err != nil {
 		t.Fatal("repeated discovery could not be confirmed", err)
 	}
 

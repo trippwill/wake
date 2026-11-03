@@ -18,10 +18,11 @@ type Error string
 func (e Error) Error() string { return string(e) }
 
 const (
-	ErrInvalid      Error = "invalid account details"
-	ErrAccountLimit Error = "one account is already activated"
-	ErrAccessReview Error = "repair missing connection access and review the reference setting before resuming upstream work"
-	ErrCandidate    Error = "account was not discovered through this connection"
+	ErrInvalid           Error = "invalid account details"
+	ErrAccountLimit      Error = "one account is already activated"
+	ErrAccessReview      Error = "repair missing connection access and review the reference setting before resuming upstream work"
+	ErrCandidate         Error = "account was not discovered through this connection"
+	ErrConnectionChanged Error = "connection settings changed; retry confirmation"
 )
 
 type AccountDetails struct {
