@@ -85,8 +85,8 @@ templ DashboardOverview(view overviewView) {
 			</section>
 		</div>
 	}
-	<section class="wake-card">
-		<h2>Synchronization</h2>
+	<section class="wake-card" aria-labelledby="synchronization-title">
+		<h2 id="synchronization-title">Synchronization</h2>
 		if len(view.Connections)==0 {
 			<p>No connections configured.</p>
 		} else {
@@ -94,7 +94,7 @@ templ DashboardOverview(view overviewView) {
 				for _,c:=range view.Connections {
 					<li>
 						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a>
-						<span>
+						<div>
 							if c.MissingAccess {
 								@StateBadge("Access review required")
 							} else if connectionFailure(view.sourceView,c) {
@@ -102,11 +102,22 @@ templ DashboardOverview(view overviewView) {
 							} else if view.Storage.Paused {
 								@StateBadge("paused")
 							} else {
-								for _,work:=range sourceWork(view.sourceView,c) {
-									<span>{ workLabel(work) }: { progressLabel(work.Progress) }</span>
-								}
+								<dl class="wake-sync-work">
+									for _,work:=range sourceWork(view.sourceView,c) {
+										<div>
+											<dt>
+												if work.Stream=="" || work.Operation=="discover" {
+													{ workLabel(work) }
+												} else {
+													{ stringTitle(work.Stream) }
+												}
+											</dt>
+											<dd>{ progressLabel(work.Progress) }</dd>
+										</div>
+									}
+								</dl>
 							}
-						</span>
+						</div>
 					</li>
 				}
 			</ul>
