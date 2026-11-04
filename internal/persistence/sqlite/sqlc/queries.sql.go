@@ -752,6 +752,45 @@ func (q *Queries) ClaimProcessing(ctx context.Context, arg ClaimProcessingParams
 	return i, err
 }
 
+const claimRootIDs = `-- name: ClaimRootIDs :many
+WITH RECURSIVE affected(instrument_id) AS (
+ SELECT selected.instrument_id FROM instrument_claims selected WHERE selected.claim_id=?1 AND selected.ordinal=?2
+ UNION
+ SELECT parent.instrument_id FROM affected
+ JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
+ JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+)
+SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id
+`
+
+type ClaimRootIDsParams struct {
+	ClaimID string
+	Ordinal int64
+}
+
+func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, claimRootIDs, arg.ClaimID, arg.Ordinal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var instrument_id string
+		if err := rows.Scan(&instrument_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instrument_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const competingFIGI = `-- name: CompetingFIGI :many
 SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
 JOIN (

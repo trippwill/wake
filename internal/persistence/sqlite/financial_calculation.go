@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -219,6 +220,13 @@ func persistActivityCalculation(
 
 	var err error
 
+	if row.Kind == "cash" {
+		result.Binding.Instrument, err = selectedCashInstrument(ctx, q, row.ID, result)
+		if err != nil {
+			return err
+		}
+	}
+
 	if result.AutomaticListing && result.Binding.Instrument != "" && result.Binding.Listing == "" &&
 		row.Kind == "trade" {
 		result.Binding.Listing, err = acceptListing(
@@ -253,6 +261,135 @@ func persistActivityCalculation(
 			ListingID: sql.NullString{String: result.Binding.Listing, Valid: result.Binding.Listing != ""},
 		},
 	)
+}
+
+// Evidence choices bind accepted cash terms without replacing the automatic base.
+func selectedCashInstrument(
+	ctx context.Context,
+	q *sqlc.Queries,
+	activity string,
+	result application.ActivityCalculation,
+) (string, error) {
+	if !slices.Contains(result.Fields.OperatorFields, "instrument") ||
+		slices.Contains(result.Explanation.AppliedScopes, "instrument") {
+		return result.Binding.Instrument, nil
+	}
+
+	for _, field := range result.Fields.Fields {
+		if field.Name() != source.FieldInstrument || !field.Known() {
+			continue
+		}
+
+		support := result.Fields.Sources[field.Key()]
+
+		var origin [3]string
+		if len(support) == 0 || json.Unmarshal([]byte(support[0]), &origin) != nil {
+			return "", ErrCorrupt
+		}
+
+		record, err := q.SelectedObservation(
+			ctx,
+			sqlc.SelectedObservationParams{
+				ExecutionID: sql.NullString{String: activity, Valid: true},
+				ArtifactID:  origin[0],
+				Version:     origin[1],
+				Location:    origin[2],
+			},
+		)
+		if err != nil {
+			return "", err
+		}
+
+		canonical, err := q.ClaimProcessing(
+			ctx,
+			sqlc.ClaimProcessingParams{ClaimID: record.ClaimID, Ordinal: record.Ordinal},
+		)
+		if err != nil {
+			return "", err
+		}
+
+		instrument, _, err := acceptInstrument(
+			ctx,
+			q,
+			canonical.ArtifactID,
+			canonical.Location,
+			field.Fields().Instrument,
+			"",
+		)
+		if err != nil {
+			return "", err
+		}
+
+		claims := []sqlc.ClaimRootIDsParams{}
+		for _, key := range support {
+			var appearance [3]string
+			if json.Unmarshal([]byte(key), &appearance) != nil {
+				return "", ErrCorrupt
+			}
+
+			contributor, e := q.SelectedObservation(
+				ctx,
+				sqlc.SelectedObservationParams{
+					ExecutionID: sql.NullString{String: activity, Valid: true},
+					ArtifactID:  appearance[0],
+					Version:     appearance[1],
+					Location:    appearance[2],
+				},
+			)
+			if e != nil {
+				return "", e
+			}
+
+			if e = q.PutInstrumentClaim(
+				ctx,
+				sqlc.PutInstrumentClaimParams{
+					InstrumentID: instrument,
+					ClaimID:      contributor.ClaimID,
+					Ordinal:      contributor.Ordinal,
+					Role:         "activity",
+				},
+			); e != nil {
+				return "", e
+			}
+
+			claims = append(
+				claims,
+				sqlc.ClaimRootIDsParams{ClaimID: contributor.ClaimID, Ordinal: contributor.Ordinal},
+			)
+		}
+
+		if field.Fields().Instrument.Kind() == source.Option {
+			if err = bindUnderlierInstrumentClaims(ctx, q, []string{instrument}); err != nil {
+				return "", fmt.Errorf("selected cash underlier claims: %w", err)
+			}
+		}
+
+		seen := map[string]bool{}
+		roots := []string{}
+		for _, claim := range claims {
+			ids, e := q.ClaimRootIDs(ctx, claim)
+			if e != nil {
+				return "", e
+			}
+
+			for _, id := range ids {
+				if !seen[id] {
+					roots = append(roots, id)
+					seen[id] = true
+				}
+			}
+		}
+
+		sort.Strings(roots)
+
+		if err = projectRoots(ctx, q, roots); err != nil {
+			return "", fmt.Errorf("selected cash instrument roots: %w", err)
+		}
+
+		return instrument, nil
+	}
+
+	return "", nil
 }
 
 func loadInstrumentCalculation(

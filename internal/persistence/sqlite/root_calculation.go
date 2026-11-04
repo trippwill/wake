@@ -453,6 +453,10 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 		}
 	}
 
+	return bindUnderlierInstrumentClaims(ctx, q, parents)
+}
+
+func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents []string) error {
 	phase := newRootPhase(q)
 
 	targets, err := phase.targets(ctx, parents)

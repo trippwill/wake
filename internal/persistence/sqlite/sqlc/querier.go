@@ -57,6 +57,7 @@ type Querier interface {
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
 	ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error)
+	ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
 	ConflictExecution(ctx context.Context, id string) error
 	Connection(ctx context.Context, id string) (AccessConfiguration, error)

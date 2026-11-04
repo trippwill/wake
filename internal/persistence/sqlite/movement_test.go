@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +100,274 @@ func movementReport(section, rows string) string {
 }
 
 const cashRow = `<CashTransaction accountId="U1" transactionID="cash1" actionID="action1" levelOfDetail="DETAIL" type="Dividends" amount="12.34000000000000001" currency="USD" dateTime="2026-10-20" reportDate="2026-10-21" availableForTradingDate="2026-10-23" description="Synthetic dividend"/>`
+
+func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
+	for _, automatic := range []bool{false, true} {
+		for _, scope := range []string{"evidence/instrument", "observation"} {
+			t.Run(map[bool]string{false: "unresolved/", true: "automatic/"}[automatic]+scope, func(t *testing.T) {
+				s := coverageStore(t)
+				acquireRealized(t, s, movementReport("CashTransactions", cashRow))
+				rows, _ := s.queries.Executions(t.Context())
+				id := rows[0].ID
+				retainDecision(t, s, "activity", id, "cash_amount", "13.0000", "USD", "set")
+
+				a := strings.Replace(
+					cashRow,
+					"<CashTransaction ",
+					`<CashTransaction assetCategory="STK" subCategory="COMMON" conid="100" symbol="A" `,
+					1,
+				)
+				if automatic {
+					acquireRealized(t, s, movementReport("CashTransactions", a))
+				}
+
+				b := strings.NewReplacer(`conid="100"`, `conid="101"`, `symbol="A"`, `symbol="B"`).Replace(a)
+				artifact := acquireRealized(t, s, movementReport("CashTransactions", a+b))
+				base, _ := s.queries.ActivityBase(t.Context(), id)
+				automaticID := base.InstrumentID.String
+
+				records, err := s.Records(t.Context(), artifact, ibkrflex.Version)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				key := ""
+				for _, record := range records {
+					field, ok := record.Observation.Field(source.FieldInstrument)
+					if ok && field.Fields().Instrument.Reference().Value() == "101" {
+						data, _ := json.Marshal([3]string{artifact, ibkrflex.Version, record.Location})
+						key = string(data)
+					}
+				}
+
+				if key == "" {
+					t.Fatal("selected source evidence missing")
+				}
+
+				form, err := s.CorrectionForm(t.Context(), "activity", id)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				d, err := application.NewDecision(
+					application.DecisionInput{
+						TargetKind:       "activity",
+						TargetID:         id,
+						Scope:            scope,
+						Text:             key,
+						Action:           "set",
+						Submission:       "select-cash-instrument",
+						ExpectedRevision: form.Revision,
+						Rationale:        "Choose retained contract B",
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				before, _ := snapshotState(t.Context(), s)
+				roots := tableCount(t, s, "instruments")
+				if err = s.CheckCorrection(t.Context(), d); err != nil {
+					t.Fatal(err)
+				}
+
+				after, _ := snapshotState(t.Context(), s)
+				if before.Version != after.Version || tableCount(t, s, "instruments") != roots {
+					t.Fatal("preflight materialized an instrument")
+				}
+
+				if !automatic && scope == "evidence/instrument" {
+					if _, err = s.db.Exec(
+						`CREATE TRIGGER fail_selected_cash BEFORE UPDATE ON executions WHEN NEW.instrument_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'synthetic binding failure'); END`,
+					); err != nil {
+						t.Fatal(err)
+					}
+
+					if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err == nil {
+						t.Fatal("failed binding was accepted")
+					}
+
+					after, _ = snapshotState(t.Context(), s)
+					if after.Version != before.Version || tableCount(t, s, "instruments") != roots {
+						t.Fatal("failed selection leaked a root or publication")
+					}
+
+					if _, err = s.db.Exec(`DROP TRIGGER fail_selected_cash`); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+
+				value := realizedActivity(t, s, id).Activity
+				if value.InstrumentID == nil || value.Cash.Amount.Amount != "13.0000" {
+					t.Fatal("evidence did not bind the posting or lost another decision", value)
+				}
+
+				root, err := s.queries.Instrument(t.Context(), *value.InstrumentID)
+				if err != nil || root.Ticker != "B" {
+					t.Fatal("selected a different instrument", root, err)
+				}
+
+				base, _ = s.queries.ActivityBase(t.Context(), id)
+				if base.InstrumentID.String != automaticID {
+					t.Fatal("operator choice replaced the automatic baseline")
+				}
+
+				before, _ = snapshotState(t.Context(), s)
+				if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+
+				after, _ = snapshotState(t.Context(), s)
+				if before.Version != after.Version {
+					t.Fatal("repeated selection republished")
+				}
+
+				if automatic {
+					retainDecision(t, s, "activity", id, "instrument", automaticID, "", "set")
+
+					if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != automaticID {
+						t.Fatal("evidence displaced an explicit link decision")
+					}
+
+					retainDecision(t, s, "activity", id, "instrument", "", "", "release")
+
+					if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != root.ID {
+						t.Fatal("link release lost active instrument evidence")
+					}
+				}
+
+				retainDecision(t, s, "activity", id, scope, "", "", "release")
+
+				value = realizedActivity(t, s, id).Activity
+				if automaticID == "" && value.InstrumentID != nil ||
+					automaticID != "" && (value.InstrumentID == nil || *value.InstrumentID != automaticID) ||
+					value.Cash.Amount.Amount != "13.0000" {
+					t.Fatal("release did not restore automatic binding and independent decisions", value)
+				}
+			})
+		}
+	}
+}
+
+func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) {
+	s := coverageStore(t)
+	artifact := acquireRealized(t, s, movementReport("CashTransactions", cashRow))
+
+	records, err := s.Records(t.Context(), artifact, ibkrflex.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cash, err := records[0].Observation.CashActivity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, _ := s.queries.Executions(t.Context())
+	id := rows[0].ID
+
+	for _, name := range []string{"A", "B"} {
+		underlierRef, _ := source.NewReference("synthetic", "instrument", "", "underlier-"+name)
+		underlier, _ := source.NewInstrument(
+			source.InstrumentInput{Kind: source.Equity, Reference: underlierRef, Ticker: "U" + name},
+		)
+		terms, _ := source.NewOptionTerms(source.OptionInput{Underlier: underlier})
+		ref, _ := source.NewReference("synthetic", "instrument", "", "option-"+name)
+		instrument, _ := source.NewInstrument(
+			source.InstrumentInput{Kind: source.Option, Reference: ref, Ticker: "O" + name, Option: terms},
+		)
+
+		fields := cash.Fields()
+		fields.Instrument = instrument
+		fields.Location = "selected-option"
+		if name == "B" {
+			partialInstrument, _ := source.NewInstrument(
+				source.InstrumentInput{Kind: source.Option, Reference: ref, Ticker: "O" + name},
+			)
+			fields.Instrument = partialInstrument
+
+			partial, e := source.NewCashActivity(fields)
+			if e != nil {
+				t.Fatal(e)
+			}
+
+			processPartial(t, s, "option-B-partial", partial.Observation())
+
+			fields.Instrument = instrument
+		}
+
+		value, e := source.NewCashActivity(fields)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		processPartial(t, s, "option-"+name, value.Observation())
+	}
+
+	base, _ := s.queries.ActivityBase(t.Context(), id)
+
+	records, err = s.Records(t.Context(), "option-B-partial", partialVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key, _ := json.Marshal([3]string{"option-B-partial", partialVersion, records[0].Location})
+
+	form, err := s.CorrectionForm(t.Context(), "activity", id)
+	if err != nil {
+		t.Fatal("form", err)
+	}
+
+	decision, err := application.NewDecision(
+		application.DecisionInput{
+			TargetKind:       "activity",
+			TargetID:         id,
+			Scope:            "evidence/instrument",
+			Text:             string(key),
+			Action:           "set",
+			Submission:       "select-option-instrument",
+			ExpectedRevision: form.Revision,
+			Rationale:        "Choose retained option B",
+		},
+	)
+	if err != nil {
+		t.Fatal("decision", err)
+	}
+
+	if err = s.CheckCorrection(t.Context(), decision); err != nil {
+		t.Fatal("preflight", err)
+	}
+
+	if err = s.SaveDecision(t.Context(), decision, "synthetic", time.Now()); err != nil {
+		t.Fatal("save", err)
+	}
+
+	selected := realizedActivity(t, s, id).Activity.InstrumentID
+	if selected == nil {
+		t.Fatal("selected option was not bound")
+	}
+
+	root, err := s.queries.Instrument(t.Context(), *selected)
+	if err != nil || root.Ticker != "OB" || !root.UnderlierID.Valid {
+		t.Fatal("selected option lost its underlier", root, err)
+	}
+
+	underlier, err := s.queries.Instrument(t.Context(), root.UnderlierID.String)
+	if err != nil || underlier.Ticker != "UB" {
+		t.Fatal("selected nested instrument was not projected", underlier, err)
+	}
+
+	retainDecision(t, s, "activity", id, "evidence/instrument", "", "", "release")
+
+	value := realizedActivity(t, s, id).Activity
+	if value.InstrumentID == nil || *value.InstrumentID != base.InstrumentID.String {
+		t.Fatal("release did not restore the original automatic option", value)
+	}
+}
 
 func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 	s := coverageStore(t)

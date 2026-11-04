@@ -353,7 +353,8 @@ func selectActivityField(
 			found = true
 
 			candidate := claim.value
-			if candidate.Name() == source.FieldInstrument && candidate.Known() && selected.Known() {
+			if candidate.Name() == source.FieldInstrument && candidate.Known() && selected.Known() &&
+				CompatibleActivityFields(candidate, selected) {
 				f := candidate.Fields()
 
 				value, err := EnrichInstrument(f.Instrument, selected.Fields().Instrument)
@@ -370,12 +371,14 @@ func selectActivityField(
 			}
 
 			selected = candidate
-			if candidate.Name() != source.FieldInstrument {
-				support = nil
-			}
-
-			if !slices.Contains(support, choice) {
-				support = append(support, choice)
+			support = []string{choice}
+			if candidate.Name() == source.FieldInstrument && candidate.Known() {
+				for _, prior := range claims {
+					if prior.key != choice && prior.value.Known() && CompatibleActivityFields(candidate, prior.value) &&
+						!slices.Contains(support, prior.key) {
+						support = append(support, prior.key)
+					}
+				}
 			}
 
 			break
