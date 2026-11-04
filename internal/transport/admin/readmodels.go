@@ -148,6 +148,7 @@ func activityList(v application.ActivityList) activityView {
 			State:          activityStatus(item.State),
 			FinancialState: item.State,
 			Realized:       known(""),
+			Amount:         notApplicableValue,
 		}
 		if a.ReportedRealizedPnL != nil {
 			row.Realized = publishedMoney(a.ReportedRealizedPnL.Amount)
@@ -155,6 +156,10 @@ func activityList(v application.ActivityList) activityView {
 		}
 
 		switch a.Family {
+		case "cash":
+			row.Label = activityLabel(a, name)
+			row.Amount = publishedMoney(&a.Cash.Amount)
+			row.Quantity, row.Price, row.Realized = notApplicableValue, notApplicableValue, notApplicableValue
 		case "trade":
 			row.Href = "/executions/" + r.ID
 			row.Label = activityLabel(a, name)
@@ -165,6 +170,14 @@ func activityList(v application.ActivityList) activityView {
 
 			row.Price = publishedMoney(a.Price)
 			row.Basis = text(a.PriceBasis)
+		case "security-transfer":
+			row.Label = activityLabel(a, name)
+			if a.Quantity != nil {
+				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
+			}
+
+			row.Price = publishedMoney(a.Transfer.Price)
+			row.Basis = "reported transfer price"
 		case "lifecycle":
 			row.Label = activityLabel(a, name)
 			row.Price = notApplicableValue
@@ -299,7 +312,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		if scope == application.ActivityScope || scope == application.ReviewScope {
 			options.ActivityText = activitySearchText()
 
-			for kind, label := range map[application.ActivityKind]string{application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
+			for kind, label := range map[application.ActivityKind]string{application.CashActivity: "Cash", application.SecurityTransferActivity: "Security transfer", application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
 				if strings.Contains(strings.ToLower(label), search) ||
 					strings.Contains(strings.ToLower(activityKindLabel(string(kind))), search) {
 					options.KindMatches = append(options.KindMatches, kind)
@@ -349,6 +362,10 @@ func pageURL(ctx context.Context, n int) string {
 func pageHasNext(p application.PageInfo) bool { return int64(p.Page)*int64(p.PageSize) < p.Matched }
 
 func activityKindLabel(kind string) string {
+	if kind == "security-transfer" {
+		return "Security transfer"
+	}
+
 	if kind == "lifecycle" {
 		return "Option outcome"
 	}
@@ -358,8 +375,20 @@ func activityKindLabel(kind string) string {
 
 func activityLabel(a *application.PublishedActivity, name string) string {
 	switch a.Family {
+	case "cash":
+		if a.Cash != nil {
+			return stringTitle(
+				strings.ReplaceAll(a.Cash.Category, "-", " "),
+			) + " · " + known(
+				text(a.Cash.Description),
+			)
+		}
 	case "trade":
 		return stringTitle(text(a.Side)) + " " + name
+	case "security-transfer":
+		if a.Transfer != nil {
+			return "Transfer " + a.Transfer.Direction + " · " + name
+		}
 	case "lifecycle":
 		return stringTitle(text(a.LifecycleKind)) + lifecycleLabelSeparator + name
 	case "conversion":

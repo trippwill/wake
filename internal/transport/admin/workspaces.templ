@@ -498,7 +498,7 @@ templ ListFilters(instruments bool) {
 						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ activityKindLabel(v) }</option>
 					}
 				} else {
-					for _,v:=range []string{"trade","lifecycle","conversion"} {
+					for _,v:=range []string{"trade","lifecycle","conversion","security-transfer","cash"} {
 						<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ activityKindLabel(v) }</option>
 					}
 				}

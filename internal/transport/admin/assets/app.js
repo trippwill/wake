@@ -310,6 +310,7 @@
       ["date", "Date"],
       ["quantity", "Quantity / currency roles"],
       ["price", "Price / rate"],
+      ["amount", "Cash amount"],
       ["realized", "Reported realized P&L"],
       ["state", "Activity state"],
       ["reference", "Reference identity"],

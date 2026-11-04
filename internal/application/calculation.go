@@ -14,9 +14,11 @@ import (
 type ActivityKind string
 
 const (
-	TradeActivity      ActivityKind = "trade"
-	LifecycleActivity  ActivityKind = "lifecycle"
-	ConversionActivity ActivityKind = "conversion"
+	TradeActivity            ActivityKind = "trade"
+	LifecycleActivity        ActivityKind = "lifecycle"
+	ConversionActivity       ActivityKind = "conversion"
+	SecurityTransferActivity ActivityKind = "security-transfer"
+	CashActivity             ActivityKind = "cash"
 )
 
 // ActivityTerms is a sealed financial value. Source and accepted identities remain
@@ -26,6 +28,8 @@ type ActivityTerms struct {
 	trade      source.Trade
 	lifecycle  source.Lifecycle
 	conversion source.Conversion
+	transfer   source.SecurityTransfer
+	cash       source.CashActivity
 }
 
 func TradeTerms(v source.Trade) (ActivityTerms, error) {
@@ -51,14 +55,36 @@ func ConversionTerms(v source.Conversion) (ActivityTerms, error) {
 
 	return ActivityTerms{kind: ConversionActivity, conversion: v}, nil
 }
-func (v ActivityTerms) Kind() ActivityKind            { return v.kind }
-func (v ActivityTerms) Trade() source.Trade           { return v.trade }
-func (v ActivityTerms) Lifecycle() source.Lifecycle   { return v.lifecycle }
-func (v ActivityTerms) Conversion() source.Conversion { return v.conversion }
+
+func SecurityTransferTerms(v source.SecurityTransfer) (ActivityTerms, error) {
+	if _, err := source.NewSecurityTransfer(v.Fields()); err != nil {
+		return ActivityTerms{}, err
+	}
+
+	return ActivityTerms{kind: SecurityTransferActivity, transfer: v}, nil
+}
+
+func CashTerms(v source.CashActivity) (ActivityTerms, error) {
+	if _, err := source.NewCashActivity(v.Fields()); err != nil {
+		return ActivityTerms{}, err
+	}
+
+	return ActivityTerms{kind: CashActivity, cash: v}, nil
+}
+func (v ActivityTerms) Cash() source.CashActivity                 { return v.cash }
+func (v ActivityTerms) SecurityTransfer() source.SecurityTransfer { return v.transfer }
+func (v ActivityTerms) Kind() ActivityKind                        { return v.kind }
+func (v ActivityTerms) Trade() source.Trade                       { return v.trade }
+func (v ActivityTerms) Lifecycle() source.Lifecycle               { return v.lifecycle }
+func (v ActivityTerms) Conversion() source.Conversion             { return v.conversion }
 func (v ActivityTerms) Instrument() source.Instrument {
 	switch v.kind {
 	case TradeActivity:
 		return v.trade.Fields().Instrument
+	case CashActivity:
+		return v.cash.Fields().Instrument
+	case SecurityTransferActivity:
+		return v.transfer.Fields().Instrument
 	case LifecycleActivity:
 		return v.lifecycle.Fields().Instrument
 	}
@@ -141,8 +167,8 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 
 	choices := map[string]string{}
 	for _, d := range in.Decisions {
-		if strings.HasPrefix(d.Scope, "evidence/") {
-			choices[strings.TrimPrefix(d.Scope, "evidence/")] = d.Text
+		if after, ok := strings.CutPrefix(d.Scope, "evidence/"); ok {
+			choices[after] = d.Text
 		}
 
 		if d.Scope == "observation" {
@@ -287,6 +313,20 @@ func applyActivityField(value ActivityTerms, d FieldSelection) (ActivityTerms, e
 		out.trade, err = ApplyTradeField(value.trade, d.Scope, d.Text, d.Currency)
 	case LifecycleActivity:
 		out.lifecycle, err = ApplyLifecycleField(value.lifecycle, d.Scope, d.Text, d.Currency)
+	case CashActivity:
+		var observation source.ActivityObservation
+
+		observation, err = applyMovementField(value.Observation(), d)
+		if err == nil {
+			out.cash, err = observation.CashActivity()
+		}
+	case SecurityTransferActivity:
+		var observation source.ActivityObservation
+
+		observation, err = applyMovementField(value.Observation(), d)
+		if err == nil {
+			out.transfer, err = observation.SecurityTransfer()
+		}
 	case ConversionActivity:
 		out.conversion, err = ApplyConversionField(value.conversion, d.Scope, d.Text, d.Currency)
 	default:
@@ -329,6 +369,8 @@ func compatibleActivityTerms(a, b ActivityTerms) bool {
 		return Compatible(a.trade, b.trade)
 	case LifecycleActivity:
 		return CompatibleLifecycle(a.lifecycle, b.lifecycle)
+	case SecurityTransferActivity, CashActivity:
+		return CompatibleObservations(a.Observation(), b.Observation())
 	case ConversionActivity:
 		return CompatibleConversion(a.conversion, b.conversion)
 	default:

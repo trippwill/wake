@@ -558,10 +558,78 @@ components:
       - ticker
       - currency
       - figi
+    Transfer:
+      type: object
+      additionalProperties: false
+      properties:
+        delivering_broker:
+          type: string
+          nullable: true
+        direction:
+          type: string
+          enum: [in, out]
+        method:
+          type: string
+          nullable: true
+        company:
+          type: string
+          nullable: true
+        counterparty_account:
+          type: string
+          nullable: true
+        counterparty_name:
+          type: string
+          nullable: true
+        report_date:
+          type: string
+          nullable: true
+        price:
+          $ref: '#/components/schemas/NullableMoney'
+        position_value:
+          $ref: '#/components/schemas/NullableMoney'
+        reported_cost:
+          $ref: '#/components/schemas/NullableMoney'
+        reported_pnl:
+          $ref: '#/components/schemas/NullableMoney'
+      required: [delivering_broker, direction, method, company, counterparty_account, counterparty_name, report_date, price, position_value, reported_cost, reported_pnl]
+    Cash:
+      type: object
+      additionalProperties: false
+      properties:
+        available_for_trading_date:
+          type: string
+          nullable: true
+        category:
+          type: string
+          enum: [funding, transfer, dividend, payment-in-lieu, interest, withholding, fee, tax, adjustment, other]
+        amount:
+          $ref: '#/components/schemas/Money'
+        reported_type:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        code:
+          type: string
+          nullable: true
+        report_date:
+          type: string
+          nullable: true
+        ex_date:
+          type: string
+          nullable: true
+        action:
+          $ref: '#/components/schemas/NullableReference'
+      required: [available_for_trading_date, category, amount, reported_type, description, code, report_date, ex_date, action]
     Activity:
       type: object
       additionalProperties: false
       properties:
+        cash:
+          $ref: '#/components/schemas/Cash'
+        transfer:
+          $ref: '#/components/schemas/Transfer'
         reported_realized_pnl:
           $ref: '#/components/schemas/NullableRealizedPnL'
         instrument_id:
@@ -601,6 +669,8 @@ components:
           - trade
           - lifecycle
           - conversion
+          - security-transfer
+          - cash
         account_id:
           type: string
         state:
@@ -679,7 +749,7 @@ components:
       - net
       - net_with_billable
       - accrued_interest
-      description: Selected trade, option outcome or reported FX conversion. Civil dates stay YYYY-MM-DD;
+      description: Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD;
         at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary
         roles are reported, never recomputed. Trade option/debt terms describe that activity independently
         of later reference refresh.
@@ -814,6 +884,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        cash:
+          $ref: '#/components/schemas/Cash'
+        transfer:
+          $ref: '#/components/schemas/Transfer'
         reported_realized_pnl:
           type: object
           additionalProperties: false

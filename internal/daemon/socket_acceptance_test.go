@@ -630,6 +630,33 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("incomplete independent mirror", len(before.Resources))
 	}
 
+	movements := map[string]bool{}
+	for _, r := range before.Resources {
+		if r.Activity == nil {
+			continue
+		}
+
+		if r.Activity.Transfer != nil {
+			if r.Activity.Transfer.Direction != "out" || r.Activity.Quantity.Value != "2.00000000001" {
+				t.Fatal("socket transfer terms", r)
+			}
+
+			movements["security-transfer"] = true
+		}
+
+		if r.Activity.Cash != nil {
+			if r.Activity.Cash.Amount.Amount != "7.89000000001" || r.Activity.Cash.Amount.Currency != "USD" {
+				t.Fatal("socket cash terms", r)
+			}
+
+			movements["cash"] = true
+		}
+	}
+
+	if len(movements) != 2 {
+		t.Fatal("independent socket mirror omitted movements", movements)
+	}
+
 	debtCount := 0
 	for _, r := range before.Resources {
 		if r.Activity == nil || r.Activity.Quantity == nil || r.Activity.Quantity.Unit != "nominal" {
@@ -775,7 +802,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 			}
 		}
 
-		if count == 18 {
+		if count == 20 {
 			installed = true
 			break
 		}

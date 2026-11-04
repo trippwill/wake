@@ -249,15 +249,29 @@ func (s *Store) PendingWork(ctx context.Context, now time.Time) ([]host.WorkKey,
 func (s *Store) PendingArtifacts(
 	ctx context.Context,
 	now time.Time,
-	providers []string,
+	providers map[string]string,
 ) ([]application.PendingArtifact, error) {
 	if len(providers) == 0 {
 		return nil, nil
 	}
 
+	versions, err := json.Marshal(providers)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = s.queries.QueueInterpretations(ctx, string(versions)); err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(providers))
+	for name := range providers {
+		names = append(names, name)
+	}
+
 	rows, err := s.queries.PendingArtifacts(
 		ctx,
-		sqlc.PendingArtifactsParams{Now: now.UTC().Format(time.RFC3339Nano), Providers: providers},
+		sqlc.PendingArtifactsParams{Now: now.UTC().Format(time.RFC3339Nano), Providers: names},
 	)
 	if err != nil {
 		return nil, err

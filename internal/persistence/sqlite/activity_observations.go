@@ -402,7 +402,7 @@ func createActivity(
 		currency = terms.Trade().Fields().Price.Currency().String()
 	}
 
-	if terms.Kind() != application.ConversionActivity {
+	if terms.Instrument().Kind() != "" {
 		instrument, listing, err = acceptInstrument(ctx, q, artifact, location, terms.Instrument(), currency)
 		if err != nil {
 			return "", err
@@ -415,6 +415,18 @@ func createActivity(
 	}
 
 	switch terms.Kind() {
+	case application.SecurityTransferActivity, application.CashActivity:
+		err = q.PutMovementActivity(
+			ctx,
+			sqlc.PutMovementActivityParams{
+				Kind:         string(terms.Kind()),
+				ID:           id,
+				AccountID:    account,
+				InstrumentID: sql.NullString{String: instrument, Valid: instrument != ""},
+				Accepted:     data,
+				Rule:         application.RepeatRule,
+			},
+		)
 	case application.TradeActivity:
 		err = q.PutExecution(
 			ctx,

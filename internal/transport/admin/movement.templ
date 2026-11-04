@@ -1,0 +1,63 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import (
+	"go.trippwill.dev/wake/internal/application"
+	"strings"
+)
+
+templ MovementPage(r application.CanonicalResource, name string) {
+	@Breadcrumbs(activityKindLabel(r.Activity.Family))
+	@PageHeader(activityLabel(r.Activity, name), r.Activity.Date)
+	@AcceptedDetailScope()
+	<section class="wake-card">
+		<div class="wake-card-heading"><h2>Accepted activity</h2><a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+r.ID+"/correct")) }>Correct accepted data</a></div>
+		<dl>
+			<dt>State</dt>
+			<dd>{ r.Activity.State }</dd>
+			if r.Activity.Conflict {
+				<dt>Review</dt>
+				<dd>Conflicting source claims</dd>
+			}
+			<dt>Reported date</dt>
+			<dd>{ r.Activity.Date }</dd>
+			<dt>Reported time</dt>
+			<dd>{ known(text(r.Activity.At)) }</dd>
+			<dt>Reported settlement date</dt>
+			<dd>{ known(text(r.Activity.SettlementDate)) }</dd>
+		</dl>
+		if r.Activity.InstrumentID != nil {
+			<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+text(r.Activity.InstrumentID))) }>Inspect instrument</a>
+		}
+		if c:=r.Activity.Cash;c!=nil {
+			<dl><dt>Cash category</dt><dd>{ stringTitle(strings.ReplaceAll(c.Category,"-"," ")) }</dd><dt>Cash amount</dt><dd>{ publishedMoney(&c.Amount) }</dd><dt>Reported type</dt><dd>{ known(text(c.ReportedType)) }</dd><dt>Description</dt><dd>{ known(text(c.Description)) }</dd><dt>Source code</dt><dd>{ known(text(c.Code)) }</dd><dt>Report date</dt><dd>{ known(text(c.ReportDate)) }</dd><dt>Ex date</dt><dd>{ known(text(c.ExDate)) }</dd><dt>Reported available for trading</dt><dd>{ known(text(c.AvailableForTradingDate)) }</dd></dl>
+			if c.Action != nil {
+				<p>Reported action group: { c.Action.Value }</p>
+			}
+		}
+		if t := r.Activity.Transfer; t != nil {
+			<dl><dt>Direction</dt><dd>{ t.Direction }</dd><dt>Quantity</dt><dd>{ r.Activity.Quantity.Value } { r.Activity.Quantity.Unit }</dd><dt>Transfer method</dt><dd>{ known(text(t.Method)) }</dd><dt>Report date</dt><dd>{ known(text(t.ReportDate)) }</dd><dt>Reported transfer company</dt><dd>{ known(text(t.Company)) }</dd><dt>Delivering broker</dt><dd>{ known(text(t.DeliveringBroker)) }</dd><dt>Counterparty account</dt><dd>{ known(text(t.CounterpartyAccount)) }</dd><dt>Counterparty name</dt><dd>{ known(text(t.CounterpartyName)) }</dd><dt>Transfer price</dt><dd>{ publishedMoney(t.Price) }</dd><dt>Position value</dt><dd>{ publishedMoney(t.PositionValue) }</dd><dt>Reported aggregate cost</dt><dd>{ publishedMoney(t.ReportedCost) }</dd><dt>Reported P&amp;L</dt><dd>{ publishedMoney(t.ReportedPnL) }</dd></dl>
+			<p class="wake-help">Reported transfer valuations and costs do not establish a purchase, transferred lots or a cash payment.</p>
+		}
+	</section>
+	if len(r.Activity.Relationships)>0 {
+		<section class="wake-card">
+			<h2>Related activity</h2>
+			for _, link := range r.Activity.Relationships {
+				<p>
+					{ link.Kind }
+					if link.TargetID != nil {
+						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+text(link.TargetID))) }>Inspect related activity</a>
+					} else {
+						<span>Awaiting related evidence</span>
+					}
+				</p>
+			}
+		</section>
+	}
+	<details class="wake-card">
+		<summary>Retained observations and rules</summary>@ObservationHistory("activity", r.ID)
+	</details>
+}

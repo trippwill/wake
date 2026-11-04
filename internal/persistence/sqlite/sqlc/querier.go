@@ -138,6 +138,7 @@ type Querier interface {
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
 	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
 	PutListing(ctx context.Context, arg PutListingParams) error
+	PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error
 	PutObservation(ctx context.Context, arg PutObservationParams) error
 	PutRecord(ctx context.Context, arg PutRecordParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
@@ -148,6 +149,7 @@ type Querier interface {
 	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
+	QueueInterpretations(ctx context.Context, dollar_1 string) error
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)

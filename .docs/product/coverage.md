@@ -1,7 +1,8 @@
 # Current coverage
 
 Wake supports one IBKR account with automatic Confirmation acquisition, optional
-Activity acquisition for reported per-activity realized P&L, financial review and
+Activity acquisition for security transfers, non-trade cash postings and reported
+per-activity realized P&L, financial review and
 attributable corrections to existing activity. This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
@@ -36,7 +37,9 @@ the primary instrument identity and naming reference.
 | Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
 | Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, charges and dates. |
 | Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
+| Security transfers | Reported inbound/outbound security movements, separate transfer valuations and aggregate reported costs, counterparty details and exact quantities. Transfer lots remain evidence. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
+| Non-trade cash | Detailed funding, cash transfers, dividends, payments in lieu, broker/bond interest, withholding, fees, sales taxes and explicit adjustments. Separate signed postings, optional instruments, source action groups and explicit tax relationships. |
 | Realized P&L | Activity execution-level reported gains/losses and allocated costs linked to existing activity, with exact currencies, separate reporting dates, unknowns and source disagreement. No result calculation or lot reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
@@ -74,7 +77,8 @@ and market examples are representative, not rejection lists
 for otherwise interpretable records.
 
 The IBKR provider reads activity terms from Confirmation reports and per-activity
-realized results from an optional Activity query for the confirmed account. These
+realized results, transfers and cash postings from an optional Activity query for
+the confirmed account. These
 are provider-owned report interpretations; they contribute to one accepted Activity
 model through the same typed activity-observation contract. Financial assertions
 may be partial; they do not require a complete execution row or a second P&L pipeline.
@@ -90,6 +94,18 @@ disagreement. Competing enrichments of an originally unknown field remain unknow
 operators can select reported fields without replacing omitted activity terms. Additional
 lot and position sections remain original evidence without financial contribution.
 
+Transfer lot rows and cash summaries do not create additional activity. Cash postings
+retain signed values, including refunds and explicit zeros. Shared action references
+group postings without merging their identities; tax references resolve when related
+postings arrive. Explicit trade-linked bond-interest rows support the trade's accrued
+interest rather than creating another non-trade payment. Missing targets stay pending.
+There is no net-income, cash-balance or lot reconstruction.
+
+Retained acquired reports are automatically queued when their provider interpretation
+version changes. Bounded processing preserves identities and decisions, commits each
+report atomically and exposes unfinished processing and retries independently of
+acquisition success. No fresh report or warehouse reset is required.
+
 ## Deferred coverage
 
 - Creation of new financial activity through manual-entry workflows.
@@ -97,9 +113,7 @@ lot and position sections remain original evidence without financial contributio
   dedicated Forex P/L Details and summary/component reconciliation.
 - Financial contributions from Confirmation order or symbol summaries. Preserve
   them in the original report; execution/booked rows supply financial activity.
-- Deposits, withdrawals, standalone fees, dividends, coupons, withholding and
-  other non-trade cash activity absent from the Confirmation stream.
-- Securities transfers, lot identities and allocations, wash-sale calculations and
+- Lot identities and allocations, wash-sale calculations and
   dedicated corporate-action processing, including Treasury-bill maturity events.
 - Positions, balances, NAV, unrealized or calculated P&L, and reconstruction of
   holdings, cash, lots or missing lifecycle outcomes.
@@ -167,7 +181,9 @@ Processing, correction preflight, saved decisions and releases share determinist
 financial calculations. Synthetic proofs cover exact decimal and timestamp
 precision, source disagreement, read-only checks, decision release and transaction
 rollback. The retained-history contribution requirement remains in the
-[development guide](../engineering/development.md); there is no automatic updater.
+[development guide](../engineering/development.md). Provider interpretation versions
+automatically queue retained reports; changed core calculation rules still require
+an explicit historical update procedure.
 
 Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each
 replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group

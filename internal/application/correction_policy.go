@@ -53,10 +53,36 @@ const (
 	lifecycleFields
 	conversionFields
 	instrumentFields
+	transferFields
+	cashFields
 )
 
 var correctionPolicies = []FieldPolicy{
-	{"quantity", DecimalCorrection, false, PositiveDecimal, 256, tradeFields | lifecycleFields, ""},
+	{"delivering_broker", TextCorrection, true, SignedDecimal, 1024, transferFields, ""},
+	{"available_for_trading_date", DateCorrection, true, SignedDecimal, 2048, cashFields, ""},
+	{"cash_category", ChoiceCorrection, false, SignedDecimal, 128, cashFields, ""},
+	{"cash_amount", MoneyCorrection, false, SignedDecimal, 256, cashFields, ""},
+	{"description", TextCorrection, true, SignedDecimal, 1024, cashFields, ""},
+	{"ex_date", DateCorrection, true, SignedDecimal, 2048, cashFields, ""},
+	{"direction", ChoiceCorrection, false, SignedDecimal, 32, transferFields, ""},
+	{"transfer_method", TextCorrection, true, SignedDecimal, 1024, transferFields, ""},
+	{"transfer_company", TextCorrection, true, SignedDecimal, 1024, transferFields, ""},
+	{"counterparty_account", TextCorrection, true, SignedDecimal, 1024, transferFields, ""},
+	{"counterparty_name", TextCorrection, true, SignedDecimal, 1024, transferFields, ""},
+	{"report_date", DateCorrection, true, SignedDecimal, 2048, transferFields | cashFields, ""},
+	{"transfer_price", MoneyCorrection, true, SignedDecimal, 256, transferFields, ""},
+	{"position_value", MoneyCorrection, true, SignedDecimal, 256, transferFields, ""},
+	{"transfer_cost", MoneyCorrection, true, SignedDecimal, 256, transferFields, ""},
+	{"transfer_pnl", MoneyCorrection, true, SignedDecimal, 256, transferFields, ""},
+	{
+		"quantity",
+		DecimalCorrection,
+		false,
+		PositiveDecimal,
+		256,
+		tradeFields | lifecycleFields | transferFields,
+		"",
+	},
 	{"price", MoneyCorrection, false, SignedDecimal, 256, tradeFields, ""},
 	{"side", ChoiceCorrection, false, SignedDecimal, 2048, tradeFields, ""},
 	{
@@ -65,7 +91,7 @@ var correctionPolicies = []FieldPolicy{
 		false,
 		SignedDecimal,
 		2048,
-		tradeFields | lifecycleFields | conversionFields,
+		tradeFields | lifecycleFields | transferFields | cashFields | conversionFields,
 		"",
 	},
 	{
@@ -74,10 +100,18 @@ var correctionPolicies = []FieldPolicy{
 		true,
 		SignedDecimal,
 		2048,
-		tradeFields | lifecycleFields | conversionFields,
+		tradeFields | lifecycleFields | transferFields | cashFields | conversionFields,
 		"",
 	},
-	{"settlement_date", DateCorrection, true, SignedDecimal, 2048, tradeFields, ""},
+	{
+		"settlement_date",
+		DateCorrection,
+		true,
+		SignedDecimal,
+		2048,
+		tradeFields | transferFields | cashFields,
+		"",
+	},
 	{"gross", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
 	{"proceeds", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
 	{"net", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
@@ -90,7 +124,7 @@ var correctionPolicies = []FieldPolicy{
 		false,
 		NonnegativeDecimal,
 		256,
-		tradeFields | lifecycleFields,
+		tradeFields | lifecycleFields | transferFields,
 		source.Option,
 	},
 	{
@@ -99,14 +133,38 @@ var correctionPolicies = []FieldPolicy{
 		true,
 		PositiveDecimal,
 		256,
-		tradeFields | lifecycleFields,
+		tradeFields | lifecycleFields | transferFields,
 		source.Option,
 	},
-	{"option.right", ChoiceCorrection, true, SignedDecimal, 2048, tradeFields | lifecycleFields, source.Option},
-	{"option.expiry", DateCorrection, true, SignedDecimal, 2048, tradeFields | lifecycleFields, source.Option},
+	{
+		"option.right",
+		ChoiceCorrection,
+		true,
+		SignedDecimal,
+		2048,
+		tradeFields | lifecycleFields | transferFields,
+		source.Option,
+	},
+	{
+		"option.expiry",
+		DateCorrection,
+		true,
+		SignedDecimal,
+		2048,
+		tradeFields | lifecycleFields | transferFields,
+		source.Option,
+	},
 	{"debt.coupon", DecimalCorrection, true, NonnegativeDecimal, 256, tradeFields, source.Debt},
 	{"debt.maturity", DateCorrection, true, SignedDecimal, 2048, tradeFields, source.Debt},
-	{"instrument", LinkCorrection, false, SignedDecimal, 2048, tradeFields | lifecycleFields, ""},
+	{
+		"instrument",
+		LinkCorrection,
+		false,
+		SignedDecimal,
+		2048,
+		tradeFields | lifecycleFields | transferFields | cashFields,
+		"",
+	},
 	{"listing", LinkCorrection, true, SignedDecimal, 2048, tradeFields, ""},
 	{"kind", ChoiceCorrection, false, SignedDecimal, 2048, lifecycleFields, ""},
 	{"sent_amount", DecimalCorrection, true, NonnegativeDecimal, 256, conversionFields, ""},
@@ -122,7 +180,7 @@ var correctionPolicies = []FieldPolicy{
 		false,
 		SignedDecimal,
 		2048,
-		tradeFields | lifecycleFields | conversionFields,
+		tradeFields | lifecycleFields | transferFields | cashFields | conversionFields,
 		"",
 	},
 }
@@ -138,6 +196,10 @@ func CorrectionFieldPolicy(scope string) (FieldPolicy, bool) {
 
 func activityMask(kind ActivityKind) uint8 {
 	switch kind {
+	case CashActivity:
+		return cashFields
+	case SecurityTransferActivity:
+		return transferFields
 	case TradeActivity:
 		return tradeFields
 	case LifecycleActivity:
@@ -154,7 +216,7 @@ func ActivityFieldPolicy(kind ActivityKind, scope string) (FieldPolicy, bool) {
 		return FieldPolicy{
 			scope: scope,
 			kind:  ObservationCorrection,
-			kinds: tradeFields | lifecycleFields | conversionFields,
+			kinds: tradeFields | lifecycleFields | transferFields | cashFields | conversionFields,
 		}, activityMask(
 			kind,
 		) != 0
@@ -168,6 +230,10 @@ func ActivityFieldPolicy(kind ActivityKind, scope string) (FieldPolicy, bool) {
 func EditableActivityFields(kind ActivityKind, family source.InstrumentKind) []FieldPolicy {
 	out := []FieldPolicy{}
 	for _, p := range correctionPolicies {
+		if p.scope == "instrument" && family == "" {
+			continue
+		}
+
 		if p.kinds&activityMask(kind) != 0 && p.kind != ObservationCorrection &&
 			(p.family == "" || p.family == family) {
 			out = append(out, p)

@@ -277,6 +277,13 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 		}
 
 		switch row.Kind {
+		case "security-transfer", "cash":
+			terms, e := decodeActivityTerms(row.Kind, row.Accepted)
+			if e != nil {
+				return out, e
+			}
+
+			family = terms.Instrument().Kind()
 		case "trade":
 			t, e := decodeTrade(row.Accepted)
 			if e != nil {
@@ -555,6 +562,24 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 func observationLabel(r sqlc.RecordValue) string {
 	label := r.Kind
 	switch r.Kind {
+	case "security-transfer":
+		if o, err := decodeObservation(r.Data); err == nil {
+			if v, e := o.SecurityTransfer(); e == nil {
+				f := v.Fields()
+				label = f.Date.String() + " · Transfer " + string(f.Direction) + " · " + f.Quantity.Value()
+			}
+		}
+	case "cash":
+		if o, err := decodeObservation(r.Data); err == nil {
+			if v, e := o.CashActivity(); e == nil {
+				f := v.Fields()
+				label = f.Date.String() + " · " + string(
+					f.Category,
+				) + " · " + f.Amount.Amount() + " " + f.Amount.Currency().
+					String()
+			}
+		}
+
 	case "activity":
 		if o, err := decodeObservation(r.Data); err == nil {
 			if terms, e := application.CompleteActivityTerms(o.Fields(), o.Fields().Fields); e == nil {

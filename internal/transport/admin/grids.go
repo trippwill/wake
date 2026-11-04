@@ -23,6 +23,7 @@ type activityGridRow struct {
 	ID        string   `json:"id"`
 	Label     gridCell `json:"label"`
 	Date      gridCell `json:"date"`
+	Amount    gridCell `json:"amount"`
 	Quantity  gridCell `json:"quantity"`
 	Price     gridCell `json:"price"`
 	Realized  gridCell `json:"realized"`
@@ -115,6 +116,7 @@ func activityGrid(ctx context.Context, data application.ActivityList) gridPage[a
 				},
 				Date:      gridCell{Text: item.Date},
 				Quantity:  gridCell{Text: item.Quantity},
+				Amount:    gridCell{Text: item.Amount},
 				Price:     gridCell{Text: item.Price, Note: item.Basis},
 				Realized:  realized,
 				State:     gridCell{Text: item.State, Tone: activityBadgeKind(item.FinancialState)},

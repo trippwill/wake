@@ -468,3 +468,12 @@ source-established link.
 
 Publishing resolves source-correction endpoints only for corrections related to the activity being
 published, within the same transaction.
+
+Security transfers and non-trade cash postings use the same typed partial-observation,
+identity, financial calculation and decision paths as existing activity. Cash can be
+account-level without an instrument. Grouping references do not establish event
+identity; transfer valuations and trade components retain separate financial roles.
+Pending processing compares retained acquisition receipts with the registered
+interpretation version, queues outdated reports without changing their evidence,
+and reuses bounded retries and transactional publication. No new acquisition or
+warehouse recreation is required to apply the added interpretations.

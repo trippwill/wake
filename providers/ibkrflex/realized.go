@@ -30,6 +30,76 @@ func (s *Source) normalizeRealized(
 
 		counts.Rows++
 		row := path[len(path)-1].attributes
+		switch path[3].name {
+		case "Transfers":
+			if path[len(path)-1].name != "Transfer" || row["levelOfDetail"] != "TRANSFER" {
+				counts.Ignored++
+				return nil
+			}
+
+			claims, e := transferActivities(row, path[2].attributes["accountId"], location(path))
+			if e != nil {
+				counts.Rejected++
+				return sink.Reject(ctx, location(path), "invalid-transfer")
+			}
+
+			if len(claims) == 0 {
+				counts.Ignored++
+				return nil
+			}
+
+			for i, claim := range claims {
+				if i > 0 {
+					counts.Rows++
+				}
+
+				if counts.Rows > 100000 {
+					return provider.ErrLimit
+				}
+
+				if e = sink.PutActivity(ctx, claim); e != nil {
+					return e
+				}
+
+				counts.Activities++
+			}
+
+			return nil
+		case "CashTransactions", "SalesTaxes":
+			if path[3].name == "CashTransactions" && row["levelOfDetail"] != "DETAIL" {
+				counts.Ignored++
+				return nil
+			}
+
+			var (
+				claim source.ActivityObservation
+				e     error
+			)
+			if path[3].name == "SalesTaxes" {
+				claim, e = cashPostingAs(
+					salesTaxRow(row),
+					path[2].attributes["accountId"],
+					location(path),
+					source.CashTax,
+				)
+			} else {
+				claim, e = cashPosting(row, path[2].attributes["accountId"], location(path))
+			}
+
+			if e != nil {
+				counts.Rejected++
+				return sink.Reject(ctx, location(path), "invalid-cash-posting")
+			}
+
+			if e = sink.PutActivity(ctx, claim); e != nil {
+				return e
+			}
+
+			counts.Activities++
+
+			return nil
+		}
+
 		if row["levelOfDetail"] != "EXECUTION" || row["fifoPnlRealized"] == "" && row["cost"] == "" {
 			counts.Ignored++
 			return nil
@@ -53,7 +123,7 @@ func (s *Source) normalizeRealized(
 		return provider.Result{}, err
 	}
 
-	if metadata.tradeSections == 0 {
+	if metadata.activitySections == 0 {
 		if err = sink.Reject(ctx, "/FlexQueryResponse[1]", "trade-section-not-reported"); err != nil {
 			return provider.Result{}, err
 		}

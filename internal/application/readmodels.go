@@ -93,9 +93,9 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		return ListQuery{}, ErrInvalid
 	}
 
-	sorts := []string{"date", "label", "quantity", "price", "realized", "state", "reference"}
+	sorts := []string{"date", "label", "quantity", "price", "amount", "realized", "state", "reference"}
 	states := []string{"", "accepted", "cancelled", "superseded", "review"}
-	kinds := []string{"", "trade", "lifecycle", "conversion"}
+	kinds := []string{"", "trade", "lifecycle", "conversion", "security-transfer", "cash"}
 	if scope == InstrumentScope {
 		sorts = []string{"name", "ticker", "kind", "state"}
 		states = []string{
@@ -140,7 +140,16 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	for _, kind := range options.KindMatches {
 		if scope != ActivityScope && scope != ReviewScope ||
-			!slices.Contains([]ActivityKind{TradeActivity, LifecycleActivity, ConversionActivity}, kind) {
+			!slices.Contains(
+				[]ActivityKind{
+					TradeActivity,
+					LifecycleActivity,
+					ConversionActivity,
+					SecurityTransferActivity,
+					CashActivity,
+				},
+				kind,
+			) {
 			return ListQuery{}, ErrInvalid
 		}
 	}
@@ -284,6 +293,7 @@ type (
 		ActivityCount, InstrumentCount int64
 	}
 	ReadQueries interface {
+		Resource(context.Context, string, string) (CanonicalResource, error)
 		Prerequisites(context.Context) (Prerequisites, error)
 		SourcePage(context.Context, ListQuery) (SourcePage, error)
 		SourceAccessPage(context.Context, ListQuery) (SourcePage, error)

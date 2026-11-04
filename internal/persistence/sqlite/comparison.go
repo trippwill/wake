@@ -164,7 +164,11 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			}
 
 			switch f.Name {
-			case source.FieldGross,
+			case source.FieldCashAmount,
+				source.FieldPositionValue,
+				source.FieldTransferCost,
+				source.FieldTransferPnL,
+				source.FieldGross,
 				source.FieldProceeds,
 				source.FieldNet,
 				source.FieldNetBillable,
@@ -172,7 +176,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				source.FieldRealizedPnL,
 				source.FieldReportedCostBasis:
 				money(key, f.Money)
-			case source.FieldPrice, source.FieldRate:
+			case source.FieldPrice, source.FieldRate, source.FieldTransferPrice:
 				price(key, f.Price)
 
 				v := values[key]
@@ -186,7 +190,11 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				values[key] = v
 			case source.FieldQuantity:
 				values[key] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: f.QuantityUnit}
-			case source.FieldTradeDate, source.FieldSettlementDate:
+			case source.FieldTradeDate,
+				source.FieldSettlementDate,
+				source.FieldReportDate,
+				source.FieldExDate,
+				source.FieldAvailableForTradingDate:
 				text(key, f.Date.String())
 			case source.FieldExecutedAt:
 				text(key, f.Timestamp.String())
@@ -202,6 +210,8 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				}
 			case source.FieldTradeKind:
 				text("reported.trade_kind", f.Text)
+			case source.FieldCashAction:
+				text(key, comparisonReference(f.Reference))
 			case source.FieldOrder:
 				text("reported.order", comparisonReference(f.Reference))
 			case source.FieldSent, source.FieldReceived:
@@ -225,6 +235,13 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		}
 	}
 	switch kind {
+	case "security-transfer", "cash":
+		o, err := decodeObservation(data)
+		if err != nil {
+			return nil, err
+		}
+
+		activity(o)
 	case "activity":
 		o, err := decodeObservation(data)
 		if err != nil {

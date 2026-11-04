@@ -316,8 +316,11 @@ Typed field policies own applicability, value kinds, optionality and scalar boun
 editor labels and help remain in presentation. Reuse the retained activity codecs
 and encode the authoritative published read model directly. Include constructor,
 exact-text, disagreement, release and rollback cases when changing these rules.
-The retained-data update requirement above still applies; the shared calculation
-does not provide an automatic historical updater.
+The retained-data update requirement above still applies. A provider interpretation
+version change automatically queues retained acquired reports for bounded processing,
+including reports whose bodies have not changed. Changed core calculation rules
+still need an explicit historical update procedure; the shared calculation alone
+does not supply that updater.
 
 ## Provider extensions
 

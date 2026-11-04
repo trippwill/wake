@@ -272,7 +272,7 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 		t.Fatal(id, same, err)
 	}
 
-	pending, err := s.PendingArtifacts(ctx, time.Now(), []string{"ibkr-flex"})
+	pending, err := s.PendingArtifacts(ctx, time.Now(), map[string]string{"ibkr-flex": ibkrflex.Version})
 	if err != nil || len(pending) != 1 || pending[0].ID != id {
 		t.Fatal("first discovery operation hid acquired body", pending, err)
 	}

@@ -2737,6 +2737,31 @@ func (q *Queries) PutListing(ctx context.Context, arg PutListingParams) error {
 	return err
 }
 
+const putMovementActivity = `-- name: PutMovementActivity :exec
+INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES(?,?,?,?,?,'accepted',?)
+`
+
+type PutMovementActivityParams struct {
+	Kind         string
+	ID           string
+	AccountID    string
+	InstrumentID sql.NullString
+	Accepted     []byte
+	Rule         string
+}
+
+func (q *Queries) PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error {
+	_, err := q.db.ExecContext(ctx, putMovementActivity,
+		arg.Kind,
+		arg.ID,
+		arg.AccountID,
+		arg.InstrumentID,
+		arg.Accepted,
+		arg.Rule,
+	)
+	return err
+}
+
 const putObservation = `-- name: PutObservation :exec
 INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) VALUES(?,?,?,?,?,?)
 `
@@ -2945,6 +2970,17 @@ type QualifyInstrumentParams struct {
 
 func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error {
 	_, err := q.db.ExecContext(ctx, qualifyInstrument, arg.SourceKey, arg.ID)
+	return err
+}
+
+const queueInterpretations = `-- name: QueueInterpretations :exec
+UPDATE artifacts SET processed=0
+WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
+AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value))
+`
+
+func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) error {
+	_, err := q.db.ExecContext(ctx, queueInterpretations, dollar_1)
 	return err
 }
 

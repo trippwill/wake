@@ -5,6 +5,12 @@
       <Trades>
         <Trade accountId="U0000001" assetCategory="STK" conid="99001001" tradeID="900000003" ibExecID="0000F001.00000003.01.01" transactionID="synthetic-result-3" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="-0.250000000000" currency="USD" tradeDate="2026-07-15" reportDate="2026-07-17" fifoPnlRealized="12.34000000000000001" cost="-88.91086419725000000"/>
       </Trades>
+      <Transfers>
+        <Transfer transactionID="synthetic-transfer" assetCategory="STK" subCategory="COMMON" conid="99001001" currency="USD" levelOfDetail="TRANSFER" type="ACATS" direction="OUT" quantity="-2.00000000001" date="2026-07-16" transferPrice="123.45000000001"/>
+      </Transfers>
+      <CashTransactions>
+        <CashTransaction transactionID="synthetic-cash" levelOfDetail="DETAIL" type="Dividends" amount="7.89000000001" currency="USD" dateTime="2026-07-16" description="Synthetic socket dividend"/>
+      </CashTransactions>
     </FlexStatement>
   </FlexStatements>
 </FlexQueryResponse>

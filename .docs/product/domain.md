@@ -143,6 +143,23 @@ meanings. An order groups fills or legs; it does not merge their identities.
 Reported lifecycle relationships do not authorize invented stock deliveries or cash.
 An expiry date alone does not establish an outcome.
 
+A security transfer records an inbound or outbound movement of an instrument. Its
+quantity and direction do not establish a purchase, sale, cash payment or another
+Wake account. Reported transfer price, position value, aggregate cost and P&L retain
+their own roles; they do not establish transferred lot identities or tax basis.
+Counterparty details are source claims, not account identity decisions.
+
+A non-trade cash activity is one reported account posting, with an exact signed
+amount and currency. Funding, transfers, dividends, payments in lieu, interest,
+withholding, fees, taxes and adjustments retain their distinct reported meanings.
+Refunds and reversals keep their reported signs; an opposite amount alone is not a
+cancellation instruction. An instrument may be absent for account-level postings.
+Shared source action references group entries without merging them. Explicit tax
+relationships preserve separate postings; missing targets remain unresolved.
+A cash row explicitly describing a trade component supports that trade's financial
+role rather than establishing another independent non-trade event. Reported
+postings and attached trade terms are not a calculated cash ledger.
+
 A cash asset identifies account and currency without asserting a balance. FX activity
 preserves reported currencies and amount roles; missing legs stay missing. Attached
 charges retain their reporting scope. A summary fee is not copied onto each fill.
