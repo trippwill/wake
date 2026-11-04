@@ -100,6 +100,88 @@ func movementReport(section, rows string) string {
 
 const cashRow = `<CashTransaction accountId="U1" transactionID="cash1" actionID="action1" levelOfDetail="DETAIL" type="Dividends" amount="12.34000000000000001" currency="USD" dateTime="2026-10-20" reportDate="2026-10-21" availableForTradingDate="2026-10-23" description="Synthetic dividend"/>`
 
+func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
+	s := coverageStore(t)
+	acquireRealized(
+		t,
+		s,
+		movementReport("Transfers", strings.Replace(transferRow, `direction="IN"`, `direction="OUT"`, 1)),
+	)
+	cash := strings.NewReplacer(`type="Dividends"`, `type="Payment In Lieu Of Dividends"`, "Synthetic dividend", "Synthetic distribution").
+		Replace(cashRow)
+	acquireRealized(t, s, movementReport("CashTransactions", cash))
+
+	for _, tc := range []struct {
+		search string
+		want   int
+	}{
+		{"Transfer out", 1},
+		{"Transfer out · Synthetic security", 1},
+		{"Transfer in", 0},
+		{"Payment in lieu · Synthetic distribution", 1},
+		{"payment in lieu", 1},
+		{"Payment in lieu · Unreported", 0},
+	} {
+		query, _ := application.NewListQuery(application.ListOptions{
+			Search: tc.search,
+			ActivityText: application.ActivityText{
+				Unknown:            "Unknown",
+				LifecycleSeparator: " · ",
+				MovementSeparator:  " · ",
+				TransferPrefix:     "Transfer ",
+			},
+		}, application.ActivityScope)
+		list, err := s.ActivityList(t.Context(), query)
+		if err != nil || len(list.Items) != tc.want || list.Matched != int64(tc.want) {
+			t.Errorf("rendered label %q: %d rows, %d matched, %v", tc.search, len(list.Items), list.Matched, err)
+		}
+	}
+}
+
+func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
+	for _, tc := range []struct{ family, contract, trade string }{
+		{"debt", "debt-1", syntheticDebt}, {"option", "200", syntheticOption},
+	} {
+		for _, cashFirst := range []bool{false, true} {
+			t.Run(
+				tc.family+map[bool]string{false: "/trade-first", true: "/cash-first"}[cashFirst],
+				func(t *testing.T) {
+					s := coverageStore(t)
+					cash := strings.Replace(
+						cashRow,
+						"<CashTransaction ",
+						`<CashTransaction conid="`+tc.contract+`" `,
+						1,
+					)
+					if cashFirst {
+						acquireRealized(t, s, movementReport("CashTransactions", cash))
+					}
+
+					coverageReport(t, s, "typed-instrument", tc.trade)
+
+					if !cashFirst {
+						acquireRealized(t, s, movementReport("CashTransactions", cash))
+					}
+
+					rows, err := s.queries.Executions(t.Context())
+					if err != nil || len(rows) != 2 {
+						t.Fatal(rows, err)
+					}
+
+					if !rows[0].InstrumentID.Valid || rows[0].InstrumentID != rows[1].InstrumentID {
+						t.Fatal("shared contract split roots", rows)
+					}
+
+					root, err := s.queries.Instrument(t.Context(), rows[0].InstrumentID.String)
+					if err != nil || root.Kind != tc.family || root.ReferenceStatus == "conflict" {
+						t.Fatal("unclassified cash contradicted known family", root, err)
+					}
+				},
+			)
+		}
+	}
+}
+
 func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 	for _, ambiguous := range []bool{false, true} {
 		t.Run(map[bool]string{false: "compatible", true: "ambiguous"}[ambiguous], func(t *testing.T) {

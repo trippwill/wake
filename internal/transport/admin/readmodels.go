@@ -13,6 +13,8 @@ import (
 
 const (
 	lifecycleLabelSeparator   = " · "
+	movementLabelSeparator    = " · "
+	transferLabelPrefix       = "Transfer "
 	notApplicableValue        = "Not applicable"
 	unknownValue              = "Unknown"
 	conversionPairSeparator   = " → "
@@ -26,6 +28,8 @@ func activitySearchText() application.ActivityText {
 	return application.ActivityText{
 		Unknown:            unknownValue,
 		LifecycleSeparator: lifecycleLabelSeparator,
+		MovementSeparator:  movementLabelSeparator,
+		TransferPrefix:     transferLabelPrefix,
 		ConversionPrefix:   conversionLabelPrefix,
 		PairSeparator:      conversionPairSeparator,
 		AmountSeparator:    conversionAmountSeparator,
@@ -379,7 +383,7 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 		if a.Cash != nil {
 			return stringTitle(
 				strings.ReplaceAll(a.Cash.Category, "-", " "),
-			) + " · " + known(
+			) + movementLabelSeparator + known(
 				text(a.Cash.Description),
 			)
 		}
@@ -387,7 +391,7 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 		return stringTitle(text(a.Side)) + " " + name
 	case "security-transfer":
 		if a.Transfer != nil {
-			return "Transfer " + a.Transfer.Direction + " · " + name
+			return transferLabelPrefix + a.Transfer.Direction + movementLabelSeparator + name
 		}
 	case "lifecycle":
 		return stringTitle(text(a.LifecycleKind)) + lifecycleLabelSeparator + name

@@ -41,6 +41,8 @@ type (
 	ActivityText struct {
 		Unknown            string `json:"unknown"`
 		LifecycleSeparator string `json:"lifecycle_separator"`
+		MovementSeparator  string `json:"movement_separator"`
+		TransferPrefix     string `json:"transfer_prefix"`
 		ConversionPrefix   string `json:"conversion_prefix"`
 		PairSeparator      string `json:"pair_separator"`
 		AmountSeparator    string `json:"amount_separator"`
