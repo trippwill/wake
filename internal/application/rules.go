@@ -161,7 +161,14 @@ func CompatibleConversion(a, b source.Conversion) bool {
 }
 
 func CompatibleInstrument(a, b source.Instrument) bool {
-	if !CompatibleInstrumentKind(a.Kind(), b.Kind()) ||
+	kindCompatible := CompatibleInstrumentKind(a.Kind(), b.Kind())
+	// A shared qualified identity can classify an otherwise unclassified claim.
+	if !a.Reference().IsZero() && a.Reference() == b.Reference() &&
+		(a.Kind() == source.UnknownInstrument || b.Kind() == source.UnknownInstrument) {
+		kindCompatible = true
+	}
+
+	if !kindCompatible ||
 		(!a.Reference().IsZero() && !b.Reference().IsZero() && a.Reference() != b.Reference()) {
 		return false
 	}

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -219,6 +220,13 @@ func persistActivityCalculation(
 
 	var err error
 
+	if row.Kind == "cash" {
+		result.Binding.Instrument, err = selectedCashInstrument(ctx, q, row.ID, result)
+		if err != nil {
+			return err
+		}
+	}
+
 	if result.AutomaticListing && result.Binding.Instrument != "" && result.Binding.Listing == "" &&
 		row.Kind == "trade" {
 		result.Binding.Listing, err = acceptListing(
@@ -253,6 +261,135 @@ func persistActivityCalculation(
 			ListingID: sql.NullString{String: result.Binding.Listing, Valid: result.Binding.Listing != ""},
 		},
 	)
+}
+
+// Evidence choices bind accepted cash terms without replacing the automatic base.
+func selectedCashInstrument(
+	ctx context.Context,
+	q *sqlc.Queries,
+	activity string,
+	result application.ActivityCalculation,
+) (string, error) {
+	if !slices.Contains(result.Fields.OperatorFields, "instrument") ||
+		slices.Contains(result.Explanation.AppliedScopes, "instrument") {
+		return result.Binding.Instrument, nil
+	}
+
+	for _, field := range result.Fields.Fields {
+		if field.Name() != source.FieldInstrument || !field.Known() {
+			continue
+		}
+
+		support := result.Fields.Sources[field.Key()]
+
+		var origin [3]string
+		if len(support) == 0 || json.Unmarshal([]byte(support[0]), &origin) != nil {
+			return "", ErrCorrupt
+		}
+
+		record, err := q.SelectedObservation(
+			ctx,
+			sqlc.SelectedObservationParams{
+				ExecutionID: sql.NullString{String: activity, Valid: true},
+				ArtifactID:  origin[0],
+				Version:     origin[1],
+				Location:    origin[2],
+			},
+		)
+		if err != nil {
+			return "", err
+		}
+
+		canonical, err := q.ClaimProcessing(
+			ctx,
+			sqlc.ClaimProcessingParams{ClaimID: record.ClaimID, Ordinal: record.Ordinal},
+		)
+		if err != nil {
+			return "", err
+		}
+
+		instrument, _, err := acceptInstrument(
+			ctx,
+			q,
+			canonical.ArtifactID,
+			canonical.Location,
+			field.Fields().Instrument,
+			"",
+		)
+		if err != nil {
+			return "", err
+		}
+
+		claims := []sqlc.ClaimRootIDsParams{}
+		for _, key := range support {
+			var appearance [3]string
+			if json.Unmarshal([]byte(key), &appearance) != nil {
+				return "", ErrCorrupt
+			}
+
+			contributor, e := q.SelectedObservation(
+				ctx,
+				sqlc.SelectedObservationParams{
+					ExecutionID: sql.NullString{String: activity, Valid: true},
+					ArtifactID:  appearance[0],
+					Version:     appearance[1],
+					Location:    appearance[2],
+				},
+			)
+			if e != nil {
+				return "", e
+			}
+
+			if e = q.PutInstrumentClaim(
+				ctx,
+				sqlc.PutInstrumentClaimParams{
+					InstrumentID: instrument,
+					ClaimID:      contributor.ClaimID,
+					Ordinal:      contributor.Ordinal,
+					Role:         "activity",
+				},
+			); e != nil {
+				return "", e
+			}
+
+			claims = append(
+				claims,
+				sqlc.ClaimRootIDsParams{ClaimID: contributor.ClaimID, Ordinal: contributor.Ordinal},
+			)
+		}
+
+		if field.Fields().Instrument.Kind() == source.Option {
+			if err = bindUnderlierInstrumentClaims(ctx, q, []string{instrument}); err != nil {
+				return "", fmt.Errorf("selected cash underlier claims: %w", err)
+			}
+		}
+
+		seen := map[string]bool{}
+		roots := []string{}
+		for _, claim := range claims {
+			ids, e := q.ClaimRootIDs(ctx, claim)
+			if e != nil {
+				return "", e
+			}
+
+			for _, id := range ids {
+				if !seen[id] {
+					roots = append(roots, id)
+					seen[id] = true
+				}
+			}
+		}
+
+		sort.Strings(roots)
+
+		if err = projectRoots(ctx, q, roots); err != nil {
+			return "", fmt.Errorf("selected cash instrument roots: %w", err)
+		}
+
+		return instrument, nil
+	}
+
+	return "", nil
 }
 
 func loadInstrumentCalculation(
@@ -461,6 +598,70 @@ func persistInstrumentCalculation(
 	)
 }
 
+// A cash posting can establish financial terms before its optional instrument.
+// Bind only compatible automatic evidence; operator decisions remain independent.
+func bindCashInstrument(ctx context.Context, q *sqlc.Queries, row sqlc.Execution) (sqlc.Execution, error) {
+	if row.Kind != "cash" {
+		return row, nil
+	}
+
+	base, err := q.ActivityBase(ctx, row.ID)
+	if err != nil || base.InstrumentID.Valid {
+		return row, err
+	}
+
+	claims, err := retainedActivityClaims(ctx, q, row.ID)
+	if err != nil {
+		return row, err
+	}
+
+	previous, err := loadActivitySelection(ctx, q, row.ID)
+	if err != nil {
+		return row, err
+	}
+
+	selected, err := application.SelectActivityFields(previous.Baseline, claims, nil)
+	if err != nil {
+		return row, err
+	}
+
+	for _, conflict := range selected.Conflicts {
+		if conflict == "identity" || conflict == "family" || conflict == "instrument" {
+			return row, nil
+		}
+	}
+
+	for _, field := range selected.Fields {
+		if field.Name() != source.FieldInstrument || !field.Known() {
+			continue
+		}
+
+		support := selected.Sources[field.Key()]
+
+		var origin [3]string
+		if len(support) == 0 || json.Unmarshal([]byte(support[0]), &origin) != nil {
+			return row, ErrCorrupt
+		}
+
+		instrument, _, err := acceptInstrument(ctx, q, origin[0], origin[2], field.Fields().Instrument, "")
+		if err != nil {
+			return row, err
+		}
+
+		row.InstrumentID = sql.NullString{String: instrument, Valid: true}
+		if err = q.BindActivityInstrument(
+			ctx,
+			sqlc.BindActivityInstrumentParams{ActivityID: row.ID, InstrumentID: row.InstrumentID},
+		); err != nil {
+			return row, err
+		}
+
+		return row, nil
+	}
+
+	return row, nil
+}
+
 // Recalculate only groups reached by genuinely new claims or changed source
 // correction state. Known appearances keep provenance without revisiting terms.
 func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) error {
@@ -525,6 +726,15 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 	}
 
 	sort.Strings(ordered)
+
+	for _, id := range ordered {
+		row, e := bindCashInstrument(ctx, q, affected[id])
+		if e != nil {
+			return e
+		}
+
+		affected[id] = row
+	}
 
 	if err = projectArtifactRoots(ctx, q, artifact); err != nil {
 		return err

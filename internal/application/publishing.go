@@ -92,7 +92,33 @@ type PublishedDebt struct {
 	Coupon          *string `json:"coupon"`
 	PaymentsPerYear *int    `json:"payments_per_year"`
 }
+type PublishedTransfer struct {
+	DeliveringBroker    *string         `json:"delivering_broker"`
+	Direction           string          `json:"direction"`
+	Method              *string         `json:"method"`
+	Company             *string         `json:"company"`
+	CounterpartyAccount *string         `json:"counterparty_account"`
+	CounterpartyName    *string         `json:"counterparty_name"`
+	ReportDate          *string         `json:"report_date"`
+	Price               *PublishedMoney `json:"price"`
+	PositionValue       *PublishedMoney `json:"position_value"`
+	ReportedCost        *PublishedMoney `json:"reported_cost"`
+	ReportedPnL         *PublishedMoney `json:"reported_pnl"`
+}
+type PublishedCash struct {
+	AvailableForTradingDate *string             `json:"available_for_trading_date"`
+	Category                string              `json:"category"`
+	Amount                  PublishedMoney      `json:"amount"`
+	ReportedType            *string             `json:"reported_type"`
+	Description             *string             `json:"description"`
+	Code                    *string             `json:"code"`
+	ReportDate              *string             `json:"report_date"`
+	ExDate                  *string             `json:"ex_date"`
+	Action                  *PublishedReference `json:"action"`
+}
 type PublishedActivity struct {
+	Cash                *PublishedCash          `json:"cash,omitempty"`
+	Transfer            *PublishedTransfer      `json:"transfer,omitempty"`
 	ReportedRealizedPnL *PublishedRealizedPnL   `json:"reported_realized_pnl"`
 	Family              string                  `json:"family"`
 	AccountID           string                  `json:"account_id"`

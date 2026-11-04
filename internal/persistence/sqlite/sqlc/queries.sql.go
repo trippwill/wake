@@ -310,7 +310,7 @@ func (q *Queries) ArtifactFailure(ctx context.Context, arg ArtifactFailureParams
 }
 
 const artifactInstrumentClaims = `-- name: ArtifactInstrumentClaims :many
-SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind='activity' ORDER BY o.rowid
+SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.execution_id IN (SELECT affected.execution_id FROM execution_observations affected WHERE affected.artifact_id=?) AND r.kind='activity' ORDER BY o.rowid
 `
 
 type ArtifactInstrumentClaimsRow struct {
@@ -408,7 +408,9 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 
 const artifactRootIDs = `-- name: ArtifactRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
- SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?
+ SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?1
+ UNION
+ SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=?1 AND b.instrument_id IS NOT NULL
  UNION
  SELECT parent.instrument_id FROM affected
  JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
@@ -471,6 +473,20 @@ func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]Attempt, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const bindActivityInstrument = `-- name: BindActivityInstrument :exec
+UPDATE activity_bases SET instrument_id=?1 WHERE activity_id=?2 AND instrument_id IS NULL
+`
+
+type BindActivityInstrumentParams struct {
+	InstrumentID sql.NullString
+	ActivityID   string
+}
+
+func (q *Queries) BindActivityInstrument(ctx context.Context, arg BindActivityInstrumentParams) error {
+	_, err := q.db.ExecContext(ctx, bindActivityInstrument, arg.InstrumentID, arg.ActivityID)
+	return err
 }
 
 const cacheReference = `-- name: CacheReference :exec
@@ -734,6 +750,45 @@ func (q *Queries) ClaimProcessing(ctx context.Context, arg ClaimProcessingParams
 	var i ClaimProcessingRow
 	err := row.Scan(&i.ArtifactID, &i.Version, &i.Location)
 	return i, err
+}
+
+const claimRootIDs = `-- name: ClaimRootIDs :many
+WITH RECURSIVE affected(instrument_id) AS (
+ SELECT selected.instrument_id FROM instrument_claims selected WHERE selected.claim_id=?1 AND selected.ordinal=?2
+ UNION
+ SELECT parent.instrument_id FROM affected
+ JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
+ JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+)
+SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id
+`
+
+type ClaimRootIDsParams struct {
+	ClaimID string
+	Ordinal int64
+}
+
+func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, claimRootIDs, arg.ClaimID, arg.Ordinal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var instrument_id string
+		if err := rows.Scan(&instrument_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instrument_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
@@ -2737,6 +2792,31 @@ func (q *Queries) PutListing(ctx context.Context, arg PutListingParams) error {
 	return err
 }
 
+const putMovementActivity = `-- name: PutMovementActivity :exec
+INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES(?,?,?,?,?,'accepted',?)
+`
+
+type PutMovementActivityParams struct {
+	Kind         string
+	ID           string
+	AccountID    string
+	InstrumentID sql.NullString
+	Accepted     []byte
+	Rule         string
+}
+
+func (q *Queries) PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error {
+	_, err := q.db.ExecContext(ctx, putMovementActivity,
+		arg.Kind,
+		arg.ID,
+		arg.AccountID,
+		arg.InstrumentID,
+		arg.Accepted,
+		arg.Rule,
+	)
+	return err
+}
+
 const putObservation = `-- name: PutObservation :exec
 INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) VALUES(?,?,?,?,?,?)
 `
@@ -2945,6 +3025,17 @@ type QualifyInstrumentParams struct {
 
 func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error {
 	_, err := q.db.ExecContext(ctx, qualifyInstrument, arg.SourceKey, arg.ID)
+	return err
+}
+
+const queueInterpretations = `-- name: QueueInterpretations :exec
+UPDATE artifacts SET processed=0
+WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
+AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value))
+`
+
+func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) error {
+	_, err := q.db.ExecContext(ctx, queueInterpretations, dollar_1)
 	return err
 }
 

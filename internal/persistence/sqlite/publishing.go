@@ -457,6 +457,52 @@ func canonicalSnapshot(
 		}
 
 		switch row.Kind {
+		case "cash":
+			terms, e := decodeActivityTerms(row.Kind, row.Accepted)
+			if e != nil {
+				return out, why, e
+			}
+
+			f := terms.Cash().Fields()
+			a.Date, a.At, a.SettlementDate = f.Date.String(), known(f.At.String()), publicDate(f.SettlementDate)
+			a.Cash = &application.PublishedCash{
+				AvailableForTradingDate: publicDate(f.AvailableForTradingDate),
+				Category:                string(f.Category),
+				Amount:                  *publicMoney(f.Amount),
+				ReportedType:            known(f.ReportedType),
+				Description:             known(f.Description),
+				Code:                    known(f.Code),
+				ReportDate:              publicDate(f.ReportDate),
+				ExDate:                  publicDate(f.ExDate),
+				Action:                  publicReference(f.Action),
+			}
+		case "security-transfer":
+			terms, e := decodeActivityTerms(row.Kind, row.Accepted)
+			if e != nil {
+				return out, why, e
+			}
+
+			f := terms.SecurityTransfer().Fields()
+			a.Date, a.At, a.SettlementDate = f.Date.String(), known(f.At.String()), publicDate(f.SettlementDate)
+			a.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: ""}
+			if field, ok := terms.Observation().Field(source.FieldQuantity); ok {
+				a.Quantity.Unit = field.Fields().QuantityUnit
+			}
+
+			a.Transfer = &application.PublishedTransfer{
+				DeliveringBroker:    known(f.DeliveringBroker),
+				Direction:           string(f.Direction),
+				Method:              known(f.Method),
+				Company:             known(f.Company),
+				CounterpartyAccount: known(f.CounterpartyAccount),
+				CounterpartyName:    known(f.CounterpartyName),
+				ReportDate:          publicDate(f.ReportDate),
+				Price:               publicPrice(f.TransferPrice),
+				PositionValue:       publicMoney(f.PositionValue),
+				ReportedCost:        publicMoney(f.ReportedCost),
+				ReportedPnL:         publicMoney(f.ReportedPnL),
+			}
+			a.Option, a.Debt = publicOption(f.Instrument.Option()), publicDebt(f.Instrument.Debt())
 		case "trade":
 			t, err := decodeTrade(row.Accepted)
 			if err != nil {

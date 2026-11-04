@@ -13,6 +13,59 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+func TestInstrumentEvidenceChoiceKeepsOnlyCompatibleSupport(t *testing.T) {
+	subject := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation().Fields()
+
+	ref, _ := source.NewReference("synthetic", "instrument", "", "contract")
+	fields := []source.ActivityField{}
+	underliers := []source.Instrument{}
+	for _, name := range []string{"A", "B"} {
+		underlierRef, _ := source.NewReference("synthetic", "instrument", "", name)
+		identifier, _ := source.NewIdentifier(source.ISIN, "SYNTHETIC-"+name, "isin")
+		underlier, _ := source.NewInstrument(
+			source.InstrumentInput{
+				Kind:        source.Equity,
+				Reference:   underlierRef,
+				Identifiers: []source.Identifier{identifier},
+			},
+		)
+		option, _ := source.NewOptionTerms(source.OptionInput{Underlier: underlier})
+		instrument, _ := source.NewInstrument(
+			source.InstrumentInput{Kind: source.Option, Reference: ref, Option: option},
+		)
+		fields = append(
+			fields,
+			asserted(t, source.ActivityFieldInput{Name: source.FieldInstrument, Instrument: instrument}),
+		)
+		underliers = append(underliers, underlier)
+	}
+
+	claims := []ActivityClaim{
+		{Key: "A", Value: observationWith(t, subject, fields[0])},
+		{Key: "B", Value: observationWith(t, subject, fields[1])},
+	}
+	for _, baseline := range [][]source.ActivityField{nil, {fields[0]}} {
+		selected, err := SelectActivityFields(baseline, claims, map[string]string{"instrument": "B"})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got := selectedField(
+			t,
+			selected.Fields,
+			source.FieldInstrument,
+		).Fields().
+			Instrument.Option().
+			Fields().
+			Underlier
+		if got.Reference() != underliers[1].Reference() ||
+			!slices.Equal(got.Identifiers(), underliers[1].Identifiers()) ||
+			!slices.Equal(selected.Sources["instrument"], []string{"B"}) {
+			t.Fatal("chosen evidence inherited incompatible instrument terms or provenance", got, selected.Sources)
+		}
+	}
+}
+
 func TestConflictingEnrichmentsRetainEverySelectableSource(t *testing.T) {
 	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation()
 	usd, _ := financial.ParseCurrency("USD")

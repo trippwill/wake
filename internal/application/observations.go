@@ -27,6 +27,10 @@ func (v ActivityTerms) Observation() source.ActivityObservation {
 		return v.trade.Observation()
 	case LifecycleActivity:
 		return v.lifecycle.Observation()
+	case CashActivity:
+		return v.cash.Observation()
+	case SecurityTransferActivity:
+		return v.transfer.Observation()
 	case ConversionActivity:
 		return v.conversion.Observation()
 	}
@@ -47,7 +51,11 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 
 	x, y := a.Fields(), b.Fields()
 	switch a.Name() {
-	case source.FieldGross,
+	case source.FieldCashAmount,
+		source.FieldPositionValue,
+		source.FieldTransferCost,
+		source.FieldTransferPnL,
+		source.FieldGross,
 		source.FieldProceeds,
 		source.FieldNet,
 		source.FieldNetBillable,
@@ -55,7 +63,7 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 		source.FieldRealizedPnL,
 		source.FieldReportedCostBasis:
 		return x.Money.Equal(y.Money)
-	case source.FieldPrice, source.FieldRate:
+	case source.FieldPrice, source.FieldRate, source.FieldTransferPrice:
 		return x.Price.Equal(y.Price) &&
 			(x.PriceBasis == "" || y.PriceBasis == "" || x.PriceBasis == y.PriceBasis)
 	case source.FieldQuantity:
@@ -345,7 +353,8 @@ func selectActivityField(
 			found = true
 
 			candidate := claim.value
-			if candidate.Name() == source.FieldInstrument && candidate.Known() && selected.Known() {
+			if candidate.Name() == source.FieldInstrument && candidate.Known() && selected.Known() &&
+				CompatibleActivityFields(candidate, selected) {
 				f := candidate.Fields()
 
 				value, err := EnrichInstrument(f.Instrument, selected.Fields().Instrument)
@@ -362,12 +371,14 @@ func selectActivityField(
 			}
 
 			selected = candidate
-			if candidate.Name() != source.FieldInstrument {
-				support = nil
-			}
-
-			if !slices.Contains(support, choice) {
-				support = append(support, choice)
+			support = []string{choice}
+			if candidate.Name() == source.FieldInstrument && candidate.Known() {
+				for _, prior := range claims {
+					if prior.key != choice && prior.value.Known() && CompatibleActivityFields(candidate, prior.value) &&
+						!slices.Contains(support, prior.key) {
+						support = append(support, prior.key)
+					}
+				}
 			}
 
 			break
@@ -452,6 +463,20 @@ func CompleteActivityTerms(
 		}
 
 		return LifecycleTerms(v)
+	case "cash":
+		v, e := o.CashActivity()
+		if e != nil {
+			return ActivityTerms{}, ErrIncomplete
+		}
+
+		return CashTerms(v)
+	case "security-transfer":
+		v, e := o.SecurityTransfer()
+		if e != nil {
+			return ActivityTerms{}, ErrIncomplete
+		}
+
+		return SecurityTransferTerms(v)
 	case "conversion":
 		v, e := o.Conversion()
 		if e != nil {

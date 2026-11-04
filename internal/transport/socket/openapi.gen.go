@@ -29,19 +29,25 @@ func (e AccountResourceKind) Valid() bool {
 
 // Defines values for ActivityFamily.
 const (
-	Conversion ActivityFamily = "conversion"
-	Lifecycle  ActivityFamily = "lifecycle"
-	Trade      ActivityFamily = "trade"
+	ActivityFamilyCash             ActivityFamily = "cash"
+	ActivityFamilyConversion       ActivityFamily = "conversion"
+	ActivityFamilyLifecycle        ActivityFamily = "lifecycle"
+	ActivityFamilySecurityTransfer ActivityFamily = "security-transfer"
+	ActivityFamilyTrade            ActivityFamily = "trade"
 )
 
 // Valid indicates whether the value is a known member of the ActivityFamily enum.
 func (e ActivityFamily) Valid() bool {
 	switch e {
-	case Conversion:
+	case ActivityFamilyCash:
 		return true
-	case Lifecycle:
+	case ActivityFamilyConversion:
 		return true
-	case Trade:
+	case ActivityFamilyLifecycle:
+		return true
+	case ActivityFamilySecurityTransfer:
+		return true
+	case ActivityFamilyTrade:
 		return true
 	default:
 		return false
@@ -78,6 +84,48 @@ const (
 func (e ActivityResourceKind) Valid() bool {
 	switch e {
 	case ActivityResourceKindActivity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CashCategory.
+const (
+	CashCategoryAdjustment    CashCategory = "adjustment"
+	CashCategoryDividend      CashCategory = "dividend"
+	CashCategoryFee           CashCategory = "fee"
+	CashCategoryFunding       CashCategory = "funding"
+	CashCategoryInterest      CashCategory = "interest"
+	CashCategoryOther         CashCategory = "other"
+	CashCategoryPaymentInLieu CashCategory = "payment-in-lieu"
+	CashCategoryTax           CashCategory = "tax"
+	CashCategoryTransfer      CashCategory = "transfer"
+	CashCategoryWithholding   CashCategory = "withholding"
+)
+
+// Valid indicates whether the value is a known member of the CashCategory enum.
+func (e CashCategory) Valid() bool {
+	switch e {
+	case CashCategoryAdjustment:
+		return true
+	case CashCategoryDividend:
+		return true
+	case CashCategoryFee:
+		return true
+	case CashCategoryFunding:
+		return true
+	case CashCategoryInterest:
+		return true
+	case CashCategoryOther:
+		return true
+	case CashCategoryPaymentInLieu:
+		return true
+	case CashCategoryTax:
+		return true
+	case CashCategoryTransfer:
+		return true
+	case CashCategoryWithholding:
 		return true
 	default:
 		return false
@@ -246,6 +294,24 @@ func (e NullableRealizedPnLSelection) Valid() bool {
 	}
 }
 
+// Defines values for TransferDirection.
+const (
+	In  TransferDirection = "in"
+	Out TransferDirection = "out"
+)
+
+// Valid indicates whether the value is a known member of the TransferDirection enum.
+func (e TransferDirection) Valid() bool {
+	switch e {
+	case In:
+		return true
+	case Out:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account defines model for Account.
 type Account struct {
 	Currency *string `json:"currency"`
@@ -263,13 +329,14 @@ type AccountResource struct {
 // AccountResourceKind defines model for AccountResource.Kind.
 type AccountResourceKind string
 
-// Activity Selected trade, option outcome or reported FX conversion. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
+// Activity Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
 type Activity struct {
 	AccountId string `json:"account_id"`
 
 	// AccruedInterest Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	AccruedInterest *NullableMoney `json:"accrued_interest"`
 	At              *string        `json:"at"`
+	Cash            *Cash          `json:"cash,omitempty"`
 	Charges         []Charge       `json:"charges"`
 	Conflict        bool           `json:"conflict"`
 	Date            string         `json:"date"`
@@ -322,6 +389,7 @@ type Activity struct {
 	Side           *string         `json:"side"`
 	State          ActivityState   `json:"state"`
 	TradeKind      *string         `json:"trade_kind"`
+	Transfer       *Transfer       `json:"transfer,omitempty"`
 }
 
 // ActivityFamily defines model for Activity.Family.
@@ -332,7 +400,7 @@ type ActivityState string
 
 // ActivityResource defines model for ActivityResource.
 type ActivityResource struct {
-	// Activity Selected trade, option outcome or reported FX conversion. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
+	// Activity Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
 	Activity Activity             `json:"activity"`
 	Id       string               `json:"id"`
 	Kind     ActivityResourceKind `json:"kind"`
@@ -347,6 +415,25 @@ type Amount struct {
 	Amount   *string `json:"amount"`
 	Currency string  `json:"currency"`
 }
+
+// Cash defines model for Cash.
+type Cash struct {
+	// Action Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Action *NullableReference `json:"action"`
+
+	// Amount Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Amount                  Money        `json:"amount"`
+	AvailableForTradingDate *string      `json:"available_for_trading_date"`
+	Category                CashCategory `json:"category"`
+	Code                    *string      `json:"code"`
+	Description             *string      `json:"description"`
+	ExDate                  *string      `json:"ex_date"`
+	ReportDate              *string      `json:"report_date"`
+	ReportedType            *string      `json:"reported_type"`
+}
+
+// CashCategory defines model for Cash.Category.
+type CashCategory string
 
 // Charge defines model for Charge.
 type Charge struct {
@@ -406,6 +493,7 @@ type ErrorCode string
 
 // Explanation Compact accepted selection, active operator choices and source correction/conflict state for this exact resource revision. No raw reports, private evidence traversal, credentials or configuration.
 type Explanation struct {
+	Cash        *Cash        `json:"cash,omitempty"`
 	Conflict    bool         `json:"conflict"`
 	Corrections []Correction `json:"corrections"`
 	Decisions   []Decision   `json:"decisions"`
@@ -422,8 +510,9 @@ type Explanation struct {
 		Rule      string                                  `json:"rule"`
 		Selection ExplanationReportedRealizedPnlSelection `json:"selection"`
 	} `json:"reported_realized_pnl,omitempty"`
-	Revision  int64  `json:"revision"`
-	Selection string `json:"selection"`
+	Revision  int64     `json:"revision"`
+	Selection string    `json:"selection"`
+	Transfer  *Transfer `json:"transfer,omitempty"`
 }
 
 // ExplanationReportedRealizedPnlSelection defines model for Explanation.ReportedRealizedPnl.Selection.
@@ -615,6 +704,32 @@ type Relationship struct {
 type Resource struct {
 	union json.RawMessage
 }
+
+// Transfer defines model for Transfer.
+type Transfer struct {
+	Company             *string           `json:"company"`
+	CounterpartyAccount *string           `json:"counterparty_account"`
+	CounterpartyName    *string           `json:"counterparty_name"`
+	DeliveringBroker    *string           `json:"delivering_broker"`
+	Direction           TransferDirection `json:"direction"`
+	Method              *string           `json:"method"`
+
+	// PositionValue Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	PositionValue *NullableMoney `json:"position_value"`
+
+	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Price      *NullableMoney `json:"price"`
+	ReportDate *string        `json:"report_date"`
+
+	// ReportedCost Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	ReportedCost *NullableMoney `json:"reported_cost"`
+
+	// ReportedPnl Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	ReportedPnl *NullableMoney `json:"reported_pnl"`
+}
+
+// TransferDirection defines model for Transfer.Direction.
+type TransferDirection string
 
 // Id defines model for id.
 type Id = string

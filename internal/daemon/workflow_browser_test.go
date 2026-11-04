@@ -91,7 +91,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			if r.URL.Query().Get("q") == "realized-generation" {
 				_, _ = fmt.Fprint(
 					w,
-					`<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><Trades><Trade accountId="U-SYNTHETIC" assetCategory="STK" conid="123" tradeID="trade-1" ibExecID="fill-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="0.125" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" fifoPnlRealized="12.34000000000000001" cost="-100.0000"/></Trades></FlexStatement></FlexStatements></FlexQueryResponse>`,
+					`<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><Trades><Trade accountId="U-SYNTHETIC" assetCategory="STK" conid="123" tradeID="trade-1" ibExecID="fill-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="0.125" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" fifoPnlRealized="12.34000000000000001" cost="-100.0000"/></Trades><Transfers><Transfer transactionID="transfer-browser" assetCategory="STK" subCategory="COMMON" conid="123" currency="USD" levelOfDetail="TRANSFER" type="ACATS" direction="IN" quantity="3.00000000001" date="2026-10-20" transferPrice="100.0000"/></Transfers><CashTransactions><CashTransaction transactionID="cash-browser" levelOfDetail="DETAIL" type="Dividends" amount="7.89000000001" currency="USD" dateTime="2026-10-20" description="Synthetic browser dividend"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`,
 				)
 
 				return
@@ -1088,5 +1088,46 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	if !ok {
 		t.Fatal("reported P&L selection failed")
+	}
+
+	for _, item := range []struct{ kind, want, scope, value string }{
+		{"security-transfer", "3.00000000001", "direction", "out"},
+		{"cash", "7.89000000001 USD", "cash_amount", "8.00000000001"},
+	} {
+		check(
+			newDocument(chromedp.Navigate(origin+"/activity?kind="+item.kind)),
+			chromedp.WaitVisible(`.tabulator-row a[href^="/activity/"]`, chromedp.ByQuery),
+			newDocument(chromedp.Click(`.tabulator-row a[href^="/activity/"]`, chromedp.ByQuery)),
+		)
+		check(chromedp.Evaluate(`document.body.textContent.includes(`+strconv.Quote(item.want)+`)`, &ok))
+
+		if !ok {
+			t.Fatal("movement detail lost reported amount", item.kind)
+		}
+
+		capture(item.kind + "-detail")
+		check(newDocument(chromedp.Click(`a[href*="/correct"]`, chromedp.ByQuery)))
+		check(
+			chromedp.SetValue("#decision-scope", item.scope, chromedp.ByQuery),
+			chromedp.Evaluate(
+				`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
+				nil,
+			),
+			chromedp.WaitVisible("#decision-value", chromedp.ByQuery),
+			chromedp.SetValue("#decision-value", item.value, chromedp.ByQuery),
+			chromedp.Evaluate(
+				`document.querySelector('#decision-value').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#decision-value').dispatchEvent(new Event('change',{bubbles:true}))`,
+				nil,
+			),
+			chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil),
+			newDocument(chromedp.Click(`form[data-correction] button[type="submit"]`, chromedp.ByQuery)),
+			chromedp.Evaluate(`!document.body.textContent.includes('Correction not saved')`, &ok),
+		)
+
+		if !ok {
+			t.Fatal("movement correction failed", item.kind)
+		}
+
+		capture(item.kind + "-correction")
 	}
 }

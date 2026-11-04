@@ -471,6 +471,33 @@ func registerWorkflowRoutes(
 	})
 
 	gate("GET /activity/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		if d, err := workflow.Resource(
+			r.Context(),
+			"activity",
+			r.PathValue("id"),
+		); err == nil && d.Activity != nil &&
+			(d.Activity.Family == "security-transfer" || d.Activity.Family == "cash") {
+			name := "Security"
+			if d.Activity.InstrumentID != nil {
+				if instrument, e := workflow.Resource(
+					r.Context(),
+					"instruments",
+					*d.Activity.InstrumentID,
+				); e == nil &&
+					instrument.Instrument != nil {
+					name = known(text(instrument.Instrument.Name))
+					if instrument.Instrument.Name == nil {
+						name = known(text(instrument.Instrument.Ticker))
+					}
+				}
+			}
+
+			templ.Handler(SectionShell(activityKindLabel(d.Activity.Family), csrf, "Activity", MovementPage(d, name))).
+				ServeHTTP(w, r)
+
+			return
+		}
+
 		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
 			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d))).
 				ServeHTTP(w, r)

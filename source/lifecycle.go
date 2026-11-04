@@ -21,6 +21,9 @@ type RelationshipKind string
 const (
 	LifecycleLink    RelationshipKind = "lifecycle"
 	StockBookingLink RelationshipKind = "stock-booking"
+	TaxLink          RelationshipKind = "tax-on"
+	TransferLink     RelationshipKind = "transfer"
+	RelatedTradeLink RelationshipKind = "related-trade"
 )
 
 type Relationship struct {
@@ -29,7 +32,8 @@ type Relationship struct {
 }
 
 func NewRelationship(kind RelationshipKind, target Reference) (Relationship, error) {
-	if (kind != LifecycleLink && kind != StockBookingLink) || target.IsZero() {
+	if (kind != LifecycleLink && kind != StockBookingLink && kind != TaxLink && kind != TransferLink && kind != RelatedTradeLink) ||
+		target.IsZero() {
 		return Relationship{}, ErrInvalidTrade
 	}
 

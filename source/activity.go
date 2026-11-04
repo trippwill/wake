@@ -16,31 +16,50 @@ const ErrInvalidActivity Error = "invalid activity observation"
 type ActivityFieldName string
 
 const (
-	FieldFamily            ActivityFieldName = "family"
-	FieldKind              ActivityFieldName = "kind"
-	FieldTradeKind         ActivityFieldName = "trade_kind"
-	FieldSide              ActivityFieldName = "side"
-	FieldPositionEffect    ActivityFieldName = "position_effect"
-	FieldQuantity          ActivityFieldName = "quantity"
-	FieldPrice             ActivityFieldName = "price"
-	FieldRate              ActivityFieldName = "rate"
-	FieldRateBase          ActivityFieldName = "rate_base"
-	FieldInstrument        ActivityFieldName = "instrument"
-	FieldOrder             ActivityFieldName = "order"
-	FieldTradeDate         ActivityFieldName = "trade_date"
-	FieldExecutedAt        ActivityFieldName = "executed_at"
-	FieldSettlementDate    ActivityFieldName = "settlement_date"
-	FieldSent              ActivityFieldName = "sent"
-	FieldReceived          ActivityFieldName = "received"
-	FieldCharge            ActivityFieldName = "charge"
-	FieldRelationship      ActivityFieldName = "relationship"
-	FieldGross             ActivityFieldName = "gross"
-	FieldProceeds          ActivityFieldName = "proceeds"
-	FieldNet               ActivityFieldName = "net"
-	FieldNetBillable       ActivityFieldName = "net_billable"
-	FieldAccruedInterest   ActivityFieldName = "accrued_interest"
-	FieldRealizedPnL       ActivityFieldName = "realized_pnl"
-	FieldReportedCostBasis ActivityFieldName = "reported_cost_basis"
+	FieldDeliveringBroker        ActivityFieldName = "delivering_broker"
+	FieldAvailableForTradingDate ActivityFieldName = "available_for_trading_date"
+	FieldCashCategory            ActivityFieldName = "cash_category"
+	FieldCashAmount              ActivityFieldName = "cash_amount"
+	FieldExDate                  ActivityFieldName = "ex_date"
+	FieldReportedType            ActivityFieldName = "reported_type"
+	FieldDescription             ActivityFieldName = "description"
+	FieldSourceCode              ActivityFieldName = "source_code"
+	FieldCashAction              ActivityFieldName = "cash_action"
+	FieldDirection               ActivityFieldName = "direction"
+	FieldReportDate              ActivityFieldName = "report_date"
+	FieldTransferMethod          ActivityFieldName = "transfer_method"
+	FieldTransferCompany         ActivityFieldName = "transfer_company"
+	FieldCounterpartyAccount     ActivityFieldName = "counterparty_account"
+	FieldCounterpartyName        ActivityFieldName = "counterparty_name"
+	FieldTransferPrice           ActivityFieldName = "transfer_price"
+	FieldPositionValue           ActivityFieldName = "position_value"
+	FieldTransferCost            ActivityFieldName = "transfer_cost"
+	FieldTransferPnL             ActivityFieldName = "transfer_pnl"
+	FieldFamily                  ActivityFieldName = "family"
+	FieldKind                    ActivityFieldName = "kind"
+	FieldTradeKind               ActivityFieldName = "trade_kind"
+	FieldSide                    ActivityFieldName = "side"
+	FieldPositionEffect          ActivityFieldName = "position_effect"
+	FieldQuantity                ActivityFieldName = "quantity"
+	FieldPrice                   ActivityFieldName = "price"
+	FieldRate                    ActivityFieldName = "rate"
+	FieldRateBase                ActivityFieldName = "rate_base"
+	FieldInstrument              ActivityFieldName = "instrument"
+	FieldOrder                   ActivityFieldName = "order"
+	FieldTradeDate               ActivityFieldName = "trade_date"
+	FieldExecutedAt              ActivityFieldName = "executed_at"
+	FieldSettlementDate          ActivityFieldName = "settlement_date"
+	FieldSent                    ActivityFieldName = "sent"
+	FieldReceived                ActivityFieldName = "received"
+	FieldCharge                  ActivityFieldName = "charge"
+	FieldRelationship            ActivityFieldName = "relationship"
+	FieldGross                   ActivityFieldName = "gross"
+	FieldProceeds                ActivityFieldName = "proceeds"
+	FieldNet                     ActivityFieldName = "net"
+	FieldNetBillable             ActivityFieldName = "net_billable"
+	FieldAccruedInterest         ActivityFieldName = "accrued_interest"
+	FieldRealizedPnL             ActivityFieldName = "realized_pnl"
+	FieldReportedCostBasis       ActivityFieldName = "reported_cost_basis"
 )
 
 // ActivityFieldInput is a closed typed assertion. Only the payload belonging to
@@ -71,7 +90,34 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 	valid := false
 	switch f.Name {
 	case FieldFamily:
-		valid = f.Unknown || (f.Text == "trade" || f.Text == "lifecycle" || f.Text == "conversion")
+		valid = f.Unknown ||
+			(f.Text == "trade" || f.Text == "lifecycle" || f.Text == "conversion" || f.Text == "security-transfer" || f.Text == "cash")
+		if !f.Unknown {
+			expected.Text = f.Text
+		}
+	case FieldCashCategory:
+		valid = f.Unknown || validCashCategory(CashCategory(f.Text))
+		if !f.Unknown {
+			expected.Text = f.Text
+		}
+	case FieldCashAction:
+		valid = f.Unknown || !f.Reference.IsZero()
+		if !f.Unknown {
+			expected.Reference = f.Reference
+		}
+	case FieldDirection:
+		valid = f.Unknown || f.Text == string(TransferIn) || f.Text == string(TransferOut)
+		if !f.Unknown {
+			expected.Text = f.Text
+		}
+	case FieldDeliveringBroker, FieldTransferMethod,
+		FieldTransferCompany,
+		FieldCounterpartyAccount,
+		FieldCounterpartyName,
+		FieldReportedType,
+		FieldDescription,
+		FieldSourceCode:
+		valid = f.Unknown || validText(f.Text, 1024)
 		if !f.Unknown {
 			expected.Text = f.Text
 		}
@@ -102,6 +148,11 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Quantity = f.Quantity
 			expected.QuantityUnit = f.QuantityUnit
+		}
+	case FieldTransferPrice:
+		valid = f.Unknown || f.Price.Amount() != ""
+		if !f.Unknown {
+			expected.Price = f.Price
 		}
 	case FieldPrice:
 		if !f.Unknown {
@@ -143,7 +194,7 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Timestamp = f.Timestamp
 		}
-	case FieldSettlementDate:
+	case FieldSettlementDate, FieldReportDate, FieldExDate, FieldAvailableForTradingDate:
 		valid = f.Unknown || (!f.Date.IsZero())
 		if !f.Unknown {
 			expected.Date = f.Date
@@ -168,7 +219,7 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Relationship = f.Relationship
 		}
-	case FieldGross:
+	case FieldGross, FieldPositionValue, FieldTransferCost, FieldTransferPnL, FieldCashAmount:
 		valid = f.Unknown || (f.Money.Amount() != "")
 		if !f.Unknown {
 			expected.Money = f.Money
@@ -465,14 +516,40 @@ func priceBasis(kind InstrumentKind) string {
 
 func activityFieldApplies(family string, name ActivityFieldName) bool {
 	switch name {
-	case FieldTradeKind, FieldSide, FieldPositionEffect, FieldPrice, FieldSettlementDate, FieldAccruedInterest:
+	case FieldDeliveringBroker, FieldDirection,
+		FieldTransferMethod,
+		FieldTransferCompany,
+		FieldCounterpartyAccount,
+		FieldCounterpartyName,
+		FieldTransferPrice,
+		FieldPositionValue,
+		FieldTransferCost,
+		FieldTransferPnL:
+		return family == "security-transfer"
+	case FieldAvailableForTradingDate, FieldCashCategory,
+		FieldCashAmount,
+		FieldExDate,
+		FieldReportedType,
+		FieldDescription,
+		FieldSourceCode,
+		FieldCashAction:
+		return family == "cash"
+	case FieldReportDate:
+		return family == "security-transfer" || family == "cash"
+	case FieldSettlementDate:
+		return family == "trade" || family == "security-transfer" || family == "cash"
+	case FieldTradeKind, FieldSide, FieldPositionEffect, FieldPrice, FieldAccruedInterest:
 		return family == "trade"
+	case FieldOrder:
+		return family == "trade" || family == "lifecycle" || family == "conversion"
 	case FieldKind:
 		return family == "lifecycle"
 	case FieldRate, FieldRateBase, FieldSent, FieldReceived:
 		return family == "conversion"
-	case FieldInstrument, FieldQuantity, FieldRelationship:
-		return family == "trade" || family == "lifecycle"
+	case FieldInstrument, FieldRelationship:
+		return family == "trade" || family == "lifecycle" || family == "security-transfer" || family == "cash"
+	case FieldQuantity:
+		return family == "trade" || family == "lifecycle" || family == "security-transfer"
 	case FieldGross, FieldProceeds, FieldNet, FieldNetBillable, FieldCharge:
 		return family == "trade" || family == "conversion"
 	}
@@ -482,7 +559,7 @@ func activityFieldApplies(family string, name ActivityFieldName) bool {
 
 func (f ActivityField) AppliesTo(family string) bool {
 	switch family {
-	case "trade", "lifecycle", "conversion":
+	case "trade", "lifecycle", "conversion", "security-transfer", "cash":
 		return activityFieldApplies(family, f.Name())
 	default:
 		return false

@@ -64,7 +64,7 @@ type (
 		) (Account, error)
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
-		PendingArtifacts(context.Context, time.Time, []string) ([]PendingArtifact, error)
+		PendingArtifacts(context.Context, time.Time, map[string]string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
 		ProcessingFailure(context.Context, string, time.Time) error
 		ExecutionDetail(context.Context, string) (ExecutionDetail, error)
@@ -592,10 +592,10 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	providers := []string{}
+	providers := map[string]string{}
 	for _, registration := range w.Providers() {
 		if registration.Normalizer() != nil {
-			providers = append(providers, registration.Descriptor().ID())
+			providers[registration.Descriptor().ID()] = registration.Version()
 		}
 	}
 
@@ -805,4 +805,8 @@ type (
 // CheckCorrection checks an edit without retaining a decision or scheduling work.
 func (w *Workflow) CheckCorrection(ctx context.Context, d Decision) error {
 	return w.store.CheckCorrection(ctx, d)
+}
+
+func (w *Workflow) Resource(ctx context.Context, kind, id string) (CanonicalResource, error) {
+	return w.store.Resource(ctx, kind, id)
 }

@@ -3047,7 +3047,7 @@ func ListFilters(instruments bool) templ.Component {
 				}
 			}
 		} else {
-			for _, v := range []string{"trade", "lifecycle", "conversion"} {
+			for _, v := range []string{"trade", "lifecycle", "conversion", "security-transfer", "cash"} {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

@@ -132,6 +132,7 @@ type reportMetadata struct {
 	lastFrom, lastTo string
 	statements       int
 	tradeSections    int
+	activitySections int
 }
 
 func inspectReport(
@@ -146,6 +147,13 @@ func inspectReport(
 		if len(path) == 4 && path[1].name == "FlexStatements" && path[2].name == "FlexStatement" &&
 			(kind == "TCF" && entry.name == "TradeConfirms" || kind == "AF" && entry.name == "Trades") {
 			metadata.tradeSections++
+			metadata.activitySections++
+		}
+
+		if len(path) == 4 && kind == "AF" && path[1].name == "FlexStatements" &&
+			path[2].name == "FlexStatement" &&
+			(entry.name == "Transfers" || entry.name == "CashTransactions" || entry.name == "SalesTaxes") {
+			metadata.activitySections++
 		}
 
 		if len(path) == 1 && (entry.name != "FlexQueryResponse" || entry.attributes["type"] != kind) {
@@ -176,7 +184,7 @@ func inspectReport(
 
 		if len(path) == 5 && path[1].name == "FlexStatements" && path[2].name == "FlexStatement" &&
 			(kind == "TCF" && path[3].name == "TradeConfirms" && entry.name == "TradeConfirm" ||
-				kind == "AF" && path[3].name == "Trades" && entry.name == "Trade") &&
+				kind == "AF" && (path[3].name == "Trades" && entry.name == "Trade" || path[3].name == "Transfers" && (entry.name == "Transfer" || entry.name == "TransferLot") || path[3].name == "CashTransactions" && entry.name == "CashTransaction" || path[3].name == "SalesTaxes" && entry.name == "SalesTax")) &&
 			row != nil {
 			return row(path)
 		}

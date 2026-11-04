@@ -140,10 +140,11 @@ and version in a private SQLite database. Repeat the command to synchronize, or 
 Follow reconnects after stream interruptions; conditional reads skip unchanged snapshots.
 A different warehouse installs a clearly reported new baseline.
 
-An optional Activity Query ID on the same IBKR connection adds reported realized P&L
-and allocated cost to individual activities. It shares the encrypted Flex token.
+An optional Activity Query ID on the same IBKR connection adds security transfers,
+non-trade cash postings, and reported realized P&L and allocated cost for individual
+activities. It shares the encrypted Flex token.
 Inspect the values on activity detail pages and compare retained P&L evidence through
-"Correct accepted data". See [IBKR setup](.docs/providers/ibkr-flex.md#optional-reported-realized-pl)
+"Correct accepted data". See [IBKR setup](.docs/providers/ibkr-flex.md#optional-activity-query)
 for query fields and reporting limits.
 
 ## Contribute

@@ -76,6 +76,12 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 	case application.ChoiceCorrection:
 		c.Kind, c.Hint = "choice", "Choose the intended financial meaning."
 		switch field {
+		case "cash_category":
+			for _, v := range []string{"funding", "transfer", "dividend", "payment-in-lieu", "interest", "withholding", "fee", "tax", "adjustment", "other"} {
+				c.Choices = append(c.Choices, correctionChoice{v, stringTitle(strings.ReplaceAll(v, "-", " "))})
+			}
+		case "direction":
+			c.Choices = []correctionChoice{{"in", "In"}, {"out", "Out"}}
 		case "side":
 			c.Choices = []correctionChoice{{"buy", "Buy"}, {"sell", "Sell"}}
 		case "kind":

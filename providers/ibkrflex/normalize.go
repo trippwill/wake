@@ -156,100 +156,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 		return source.TradeInput{}, err
 	}
 
-	var native source.Reference
-	if id := nativeValue(row["conid"]); id != "" {
-		native, err = source.NewReference("ibkr", "contract-id", "", id)
-		if err != nil {
-			return source.TradeInput{}, err
-		}
-	}
-
-	ids := []source.Identifier{}
-	for _, entry := range []struct {
-		field string
-		kind  source.IdentifierKind
-	}{{"isin", source.ISIN}, {"cusip", source.CUSIP}, {"sedol", source.SEDOL}, {"figi", reportedFIGIKind(row["assetCategory"])}} {
-		if row[entry.field] == "" {
-			continue
-		}
-
-		id, e := source.NewIdentifier(entry.kind, row[entry.field], entry.field)
-		if e != nil {
-			return source.TradeInput{}, e
-		}
-
-		ids = append(ids, id)
-	}
-
-	if value := row["securityID"]; value != "" {
-		kind := source.IdentifierKind(strings.ToLower(row["securityIDType"]))
-		if kind == "figi" {
-			kind = reportedFIGIKind(row["assetCategory"])
-		} else if kind != source.ISIN && kind != source.CUSIP && kind != source.SEDOL {
-			kind = ""
-		}
-
-		if kind != "" {
-			id, e := source.NewIdentifier(kind, value, "securityID")
-			if e != nil {
-				return source.TradeInput{}, e
-			}
-
-			ids = append(ids, id)
-		}
-	}
-
-	kind := source.Equity
-	if row["subCategory"] == "ETF" {
-		kind = source.Fund
-	}
-
-	option := source.OptionTerms{}
-	if row["assetCategory"] == "OPT" {
-		kind = source.Option
-
-		option, err = optionTerms(row)
-		if err != nil {
-			return source.TradeInput{}, err
-		}
-
-		if id, ok := occIdentifier(row["symbol"], option); ok {
-			ids = append(ids, id)
-		}
-	}
-
-	debt := source.DebtTerms{}
-	if row["assetCategory"] == "BOND" || row["assetCategory"] == "BILL" {
-		kind = source.Debt
-
-		c, e := financial.ParseCurrency(row["currency"])
-		if e != nil {
-			return source.TradeInput{}, e
-		}
-
-		d := source.DebtInput{Currency: c}
-		if row["assetCategory"] == "BILL" && row["issuerCountryCode"] == "US" {
-			d.Type = source.TreasuryBill
-		}
-
-		debt, err = source.NewDebtTerms(d)
-		if err != nil {
-			return source.TradeInput{}, err
-		}
-	}
-
-	instrument, err := source.NewInstrument(
-		source.InstrumentInput{
-			Reference:   native,
-			Kind:        kind,
-			Ticker:      row["symbol"],
-			Name:        row["description"],
-			Venue:       row["listingExchange"],
-			Identifiers: ids,
-			Option:      option,
-			Debt:        debt,
-		},
-	)
+	instrument, err := rowInstrument(row)
 	if err != nil {
 		return source.TradeInput{}, err
 	}
@@ -685,4 +592,119 @@ func sourceCorrection(row map[string]string, parent, loc string) (source.Correct
 	c, err := source.NewCorrection(f)
 
 	return c, true, err
+}
+
+func rowInstrument(row map[string]string) (source.Instrument, error) {
+	native, ids, err := rowSecurityReferences(row)
+	if err != nil {
+		return source.Instrument{}, err
+	}
+
+	kind := source.Equity
+	if row["subCategory"] == "ETF" {
+		kind = source.Fund
+	}
+
+	option := source.OptionTerms{}
+	if row["assetCategory"] == "OPT" {
+		kind = source.Option
+
+		option, err = optionTerms(row)
+		if err != nil {
+			return source.Instrument{}, err
+		}
+
+		if id, ok := occIdentifier(row["symbol"], option); ok {
+			ids = append(ids, id)
+		}
+	}
+
+	debt := source.DebtTerms{}
+	if row["assetCategory"] == "BOND" || row["assetCategory"] == "BILL" {
+		kind = source.Debt
+
+		c, e := financial.ParseCurrency(row["currency"])
+		if e != nil {
+			return source.Instrument{}, e
+		}
+
+		d := source.DebtInput{Currency: c}
+		if row["assetCategory"] == "BILL" && row["issuerCountryCode"] == "US" {
+			d.Type = source.TreasuryBill
+		}
+
+		debt, err = source.NewDebtTerms(d)
+		if err != nil {
+			return source.Instrument{}, err
+		}
+	}
+
+	instrument, err := source.NewInstrument(
+		source.InstrumentInput{
+			Reference:   native,
+			Kind:        kind,
+			Ticker:      row["symbol"],
+			Name:        row["description"],
+			Venue:       row["listingExchange"],
+			Identifiers: ids,
+			Option:      option,
+			Debt:        debt,
+		},
+	)
+	if err != nil {
+		return source.Instrument{}, err
+	}
+
+	return instrument, nil
+}
+
+// Security references have the same reported allocation across Activity sections.
+func rowSecurityReferences(row map[string]string) (source.Reference, []source.Identifier, error) {
+	var (
+		err    error
+		native source.Reference
+	)
+	if id := nativeValue(row["conid"]); id != "" {
+		native, err = source.NewReference("ibkr", "contract-id", "", id)
+		if err != nil {
+			return source.Reference{}, nil, err
+		}
+	}
+
+	ids := []source.Identifier{}
+	for _, entry := range []struct {
+		field string
+		kind  source.IdentifierKind
+	}{{"isin", source.ISIN}, {"cusip", source.CUSIP}, {"sedol", source.SEDOL}, {"figi", reportedFIGIKind(row["assetCategory"])}} {
+		if row[entry.field] == "" {
+			continue
+		}
+
+		id, e := source.NewIdentifier(entry.kind, row[entry.field], entry.field)
+		if e != nil {
+			return source.Reference{}, nil, e
+		}
+
+		ids = append(ids, id)
+	}
+
+	if value := row["securityID"]; value != "" {
+		kind := source.IdentifierKind(strings.ToLower(row["securityIDType"]))
+		if kind == "figi" {
+			kind = reportedFIGIKind(row["assetCategory"])
+		} else if kind != source.ISIN && kind != source.CUSIP && kind != source.SEDOL {
+			kind = ""
+		}
+
+		if kind != "" {
+			id, e := source.NewIdentifier(kind, value, "securityID")
+			if e != nil {
+				return source.Reference{}, nil, e
+			}
+
+			ids = append(ids, id)
+		}
+	}
+
+	return native, ids, nil
 }

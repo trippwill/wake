@@ -295,7 +295,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?q=Conversion", "Convert EUR"},
 		{"/activity?q=Unknown", "4 of 4 results"},
 		{"/activity?q=unkn", "4 of 4 results"},
-		{"/activity?q=Not+applicable", "2 of 4 results"},
+		{"/activity?q=Not+applicable", "4 of 4 results"}, // Every row now has an inapplicable Cash amount cell.
 		{"/activity?q=Unknown+USD+received", "1 of 4 results"},
 		{"/activity?q=Unknown+USD", "1 of 4 results"},
 		{"/activity?q=Unknown+EUR+sent", "0 of 4 results"},

@@ -1,7 +1,8 @@
 # Set up IBKR Flex
 
 The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account,
-with an optional Activity Flex query for reported realized P&L on individual activities.
+with an optional Activity Flex query for transfers, non-trade cash postings and
+reported realized P&L on individual activities.
 
 ## Prepare access and the query
 
@@ -27,15 +28,61 @@ timezone on timestamps; a missing time remains unknown. Account currency comes
 from available profile metadata or operator confirmation, never from a trade's
 currency.
 
-## Optional reported realized P&L
+## Optional Activity query
 
-Create a saved Activity Flex query with XML output for the same account, then add its
-Activity Query ID to the existing Wake connection. Both queries use the connection's
-encrypted Flex Web Service token; a second token or connection is unnecessary. Adding
-the query enables acquisition of reported results for the already confirmed source
-account. The IBKR provider keeps Confirmation trade interpretation and Activity
-result interpretation separate; both contribute to the same core Activity. Remove
-the Activity Query ID to stop its acquisition; retained results remain available.
+Create a saved Activity Flex query with XML output for the same account, then add
+its Activity Query ID to the existing Wake connection. Both queries use the same
+encrypted Flex Web Service token. The provider interprets each report section and
+contributes to the shared core Activity model. Removing the Activity Query ID stops
+its acquisition while preserving retained results and activity.
+
+Include Transfers at TRANSFER detail for inbound/outbound security movements,
+including source account and transaction ID, instrument references, direction,
+quantity, transfer date, report/settlement dates, transfer method, delivering broker
+and reported counterparty details.
+Reported transfer price, position value, aggregate cost and P&L stay separate.
+LOT detail remains original evidence and does not create additional movements.
+See IBKR's [Transfers reference](https://www.ibkrguides.com/reportingreference/reportguide/transfersfq.htm).
+Transfer-only reports do not require a Trades section. Missing sections establish
+no coverage; an included empty section reports no rows for its returned window.
+
+Upgraded interpretations automatically queue retained acquired reports for bounded,
+repeat-safe processing without refetching. Inspect processing progress and failures;
+existing activity identities and operator decisions remain in place.
+
+### Non-trade cash postings
+
+Include Cash Transactions at DETAIL level, including account, transaction ID,
+amount/currency, type, description, posting/report/settlement/ex dates and the
+reported available-for-trading date, instrument identifiers when
+available, action ID and any trade reference. SUMMARY rows remain evidence without
+another financial contribution. See the
+[Cash Transactions reference](https://www.ibkrguides.com/reportingreference/reportguide/cash%20transactionsfq.htm).
+Include Sales Taxes with transaction ID, taxable
+transaction ID, date, signed amount and currency for separately reported tax postings.
+
+Unsupported identifier schemes remain in evidence. When no supported instrument
+reference or reported symbol is available, an otherwise complete cash posting is
+accepted without an instrument link.
+
+Cash deposits/withdrawals, dividends, payments in lieu, interest, withholding,
+standalone fees and adjustments retain their signed reported amounts and types.
+Unfamiliar types remain other reported cash. Shared action IDs are grouping references,
+not posting identities. Other explicit trade references relate a posting to its
+trade without becoming event aliases or proving a shared monetary component.
+Explicit taxable-transaction links resolve as their targets
+arrive. Transfer cash amounts create cash activity only when nonzero, and remain
+separate from securities quantities and transfer valuations. Cash Transactions and
+Transfers use the same qualified cash transaction references for overlapping claims.
+
+An explicitly trade-linked Bond Interest Paid/Received row contributes accrued
+interest to that trade instead of another non-trade event; an unmatched trade
+reference remains pending. Neither a payment description nor matching amounts
+establish that link. Zeroes on genuine detailed postings remain exact zeroes.
+No posting, summary, interest-accrual or dividend-accrual section establishes a
+calculated cash balance, net income, holdings or tax treatment.
+
+### Reported realized P&L
 
 Include execution-level Trades with source account, contract, trade and execution
 references, quantities, currencies, trade/report dates, Cost Basis and Realized PNL.

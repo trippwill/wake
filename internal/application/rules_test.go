@@ -9,6 +9,25 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+func TestUnclassifiedDebtAndOptionClaimsRequireSharedQualifiedIdentity(t *testing.T) {
+	ref, _ := source.NewReference("synthetic", "instrument", "", "one")
+	other, _ := source.NewReference("synthetic", "instrument", "", "two")
+	for _, kind := range []source.InstrumentKind{source.Debt, source.Option} {
+		for _, candidate := range []source.Reference{ref, other, {}} {
+			a, _ := source.NewInstrument(source.InstrumentInput{Kind: source.UnknownInstrument, Reference: ref})
+			b, _ := source.NewInstrument(source.InstrumentInput{Kind: kind, Reference: candidate, Ticker: "SYN"})
+			want := candidate == ref
+			if CompatibleInstrument(a, b) != want || CompatibleInstrument(b, a) != want {
+				t.Errorf("unclassified %s with reference %v: want %v", kind, candidate, want)
+			}
+		}
+
+		if CompatibleInstrumentKind(source.UnknownInstrument, kind) {
+			t.Fatal("unclassified family weakened identity-independent family matching")
+		}
+	}
+}
+
 func TestInstrumentCompatibilityIsSymmetricForCompetingIdentifiers(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "instrument", "", "1")
 	x, _ := source.NewIdentifier(source.ISIN, "SYNTHETIC-X", "isin")

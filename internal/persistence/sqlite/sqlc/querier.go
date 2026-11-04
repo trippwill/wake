@@ -48,6 +48,7 @@ type Querier interface {
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
+	BindActivityInstrument(ctx context.Context, arg BindActivityInstrumentParams) error
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
 	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error)
@@ -56,6 +57,7 @@ type Querier interface {
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
 	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
 	ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error)
+	ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
 	ConflictExecution(ctx context.Context, id string) error
 	Connection(ctx context.Context, id string) (AccessConfiguration, error)
@@ -138,6 +140,7 @@ type Querier interface {
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
 	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
 	PutListing(ctx context.Context, arg PutListingParams) error
+	PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error
 	PutObservation(ctx context.Context, arg PutObservationParams) error
 	PutRecord(ctx context.Context, arg PutRecordParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
@@ -148,6 +151,7 @@ type Querier interface {
 	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
+	QueueInterpretations(ctx context.Context, dollar_1 string) error
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)

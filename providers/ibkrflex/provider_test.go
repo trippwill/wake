@@ -57,6 +57,7 @@ func (a *testAccess) DelayPacing(_ context.Context, _ string, _ provider.PacingS
 }
 
 type testClaims struct {
+	activities []source.ActivityObservation
 	realized   []source.ActivityObservation
 	trades     []source.Trade
 	lifecycles []source.Lifecycle
@@ -68,6 +69,8 @@ func (c *testClaims) PutActivity(_ context.Context, o source.ActivityObservation
 	if c.failure != nil {
 		return c.failure
 	}
+
+	c.activities = append(c.activities, o)
 
 	if t, e := o.Trade(); e == nil {
 		c.trades = append(c.trades, t)

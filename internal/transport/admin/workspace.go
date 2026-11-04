@@ -389,9 +389,9 @@ func stringTitle(s string) string {
 }
 
 type activityItem struct {
-	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Price, Basis, State, Realized string
-	RealizedConflict                                                                                          bool
-	FinancialState                                                                                            application.ActivityState
+	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Amount, Price, Basis, State, Realized string
+	RealizedConflict                                                                                                  bool
+	FinancialState                                                                                                    application.ActivityState
 }
 
 func connectionByID(v sourceView, id string) (application.ConnectionView, bool) {
