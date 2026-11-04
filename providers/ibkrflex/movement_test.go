@@ -98,6 +98,7 @@ func TestCashUnsupportedSecurityIdentifiersLeaveFinancialTermsAvailable(t *testi
 	}{
 		{"unsupported-only", `securityID="synthetic-local" securityIDType="LOCAL"`, "", "", 0, false},
 		{"untyped-only", `securityID="synthetic-local"`, "", "", 0, false},
+		{"symbol-only", `symbol="SYN"`, "", "SYN", 0, true},
 		{"native-reference", `securityID="synthetic-local" securityIDType="LOCAL" conid="100"`, "100", "", 0, true},
 		{"reported-symbol", `securityID="synthetic-local" securityIDType="LOCAL" symbol="SYN"`, "", "SYN", 0, true},
 		{"supported-identifier", `securityID="US0378331005" securityIDType="ISIN"`, "", "", 1, true},

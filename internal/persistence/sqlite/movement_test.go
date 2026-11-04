@@ -640,8 +640,15 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 }
 
 func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
-	for _, ambiguous := range []bool{false, true} {
-		t.Run(map[bool]string{false: "compatible", true: "ambiguous"}[ambiguous], func(t *testing.T) {
+	for _, tc := range []struct {
+		name, attributes string
+		ambiguous        bool
+	}{
+		{"compatible", `assetCategory="STK" subCategory="COMMON" conid="100" symbol="TEST" `, false},
+		{"symbol-only", `symbol="TEST" `, false},
+		{"ambiguous", `assetCategory="STK" subCategory="COMMON" conid="100" symbol="TEST" `, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			s := coverageStore(t)
 			acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 			rows, _ := s.queries.Executions(t.Context())
@@ -651,10 +658,10 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 			enriched := strings.Replace(
 				cashRow,
 				"<CashTransaction ",
-				`<CashTransaction assetCategory="STK" subCategory="COMMON" conid="100" symbol="TEST" `,
+				`<CashTransaction `+tc.attributes,
 				1,
 			)
-			if ambiguous {
+			if tc.ambiguous {
 				enriched += strings.Replace(enriched, `conid="100"`, `conid="101"`, 1)
 			}
 
@@ -666,7 +673,7 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 				t.Fatal("enrichment changed posting identity or decision", rows, value)
 			}
 
-			if ambiguous {
+			if tc.ambiguous {
 				if value.InstrumentID != nil || !value.Conflict || tableCount(t, s, "instruments") != 0 {
 					t.Fatal("ambiguous instruments established an automatic link", value)
 				}

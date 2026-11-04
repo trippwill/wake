@@ -128,7 +128,7 @@ func cashPostingAs(
 
 	if nativeValue(row["conid"]) != "" || row["isin"] != "" || row["cusip"] != "" || row["sedol"] != "" ||
 		row["figi"] != "" ||
-		row["securityID"] != "" {
+		row["securityID"] != "" || row["symbol"] != "" {
 		ref, ids, e := rowSecurityReferences(row)
 		if e != nil {
 			return source.ActivityObservation{}, e
