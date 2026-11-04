@@ -250,7 +250,7 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 		case "observation":
 		case "instrument":
 			family, ok := in.Links.Instruments[d.Text]
-			if !ok || in.Binding.Instrument == "" || family != in.Links.OriginalFamily {
+			if !ok || in.Links.OriginalFamily == "" || family != in.Links.OriginalFamily {
 				return ActivityCalculation{}, ErrInvalid
 			}
 

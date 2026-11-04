@@ -226,18 +226,21 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 					t.Fatal("repeated selection republished")
 				}
 
-				if automatic {
-					retainDecision(t, s, "activity", id, "instrument", automaticID, "", "set")
+				explicitID := automaticID
+				if explicitID == "" {
+					explicitID = root.ID
+				}
 
-					if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != automaticID {
-						t.Fatal("evidence displaced an explicit link decision")
-					}
+				retainDecision(t, s, "activity", id, "instrument", explicitID, "", "set")
 
-					retainDecision(t, s, "activity", id, "instrument", "", "", "release")
+				if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != explicitID {
+					t.Fatal("evidence displaced an explicit link decision")
+				}
 
-					if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != root.ID {
-						t.Fatal("link release lost active instrument evidence")
-					}
+				retainDecision(t, s, "activity", id, "instrument", "", "", "release")
+
+				if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != root.ID {
+					t.Fatal("link release lost active instrument evidence")
 				}
 
 				retainDecision(t, s, "activity", id, scope, "", "", "release")
