@@ -110,6 +110,17 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 	cash := strings.NewReplacer(`type="Dividends"`, `type="Payment In Lieu Of Dividends"`, "Synthetic dividend", "Synthetic distribution").
 		Replace(cashRow)
 	acquireRealized(t, s, movementReport("CashTransactions", cash))
+	acquireRealized(
+		t,
+		s,
+		movementReport(
+			"CashTransactions",
+			strings.Replace(cash, `amount="12.34000000000000001"`, `amount="13"`, 1),
+		),
+	)
+	transfer := strings.NewReplacer(`direction="IN"`, `direction="OUT"`, `quantity="12.0000000000001"`, `quantity="13"`).
+		Replace(transferRow)
+	acquireRealized(t, s, movementReport("Transfers", transfer))
 
 	for _, tc := range []struct {
 		search string
@@ -120,6 +131,7 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 		{"Transfer in", 0},
 		{"Payment in lieu · Synthetic distribution", 1},
 		{"payment in lieu", 1},
+		{"Synthetic distribution", 1},
 		{"Payment in lieu · Unreported", 0},
 	} {
 		query, _ := application.NewListQuery(application.ListOptions{
@@ -135,6 +147,133 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 		if err != nil || len(list.Items) != tc.want || list.Matched != int64(tc.want) {
 			t.Errorf("rendered label %q: %d rows, %d matched, %v", tc.search, len(list.Items), list.Matched, err)
 		}
+
+		reviewQuery, _ := application.NewListQuery(
+			application.ListOptions{Search: tc.search, ActivityText: query.Options().ActivityText},
+			application.ReviewScope,
+		)
+		review, err := s.ReviewList(t.Context(), reviewQuery)
+		if err != nil || len(review.Items) != tc.want || review.Matched != int64(tc.want) {
+			t.Errorf("review label %q: %d rows, %d matched, %v", tc.search, len(review.Items), review.Matched, err)
+		}
+	}
+
+	unknown := strings.NewReplacer(`transactionID="cash1"`, `transactionID="unknown-description"`, `description="Synthetic distribution"`, `description=""`).
+		Replace(cash)
+	acquireRealized(t, s, movementReport("CashTransactions", unknown))
+	acquireRealized(
+		t,
+		s,
+		movementReport(
+			"CashTransactions",
+			strings.Replace(unknown, `amount="12.34000000000000001"`, `amount="13"`, 1),
+		),
+	)
+
+	options := application.ListOptions{
+		Search:         "Unknown",
+		DisplayMatches: application.DisplayMatches{MissingValues: true},
+	}
+	for _, scope := range []application.ListScope{application.ActivityScope, application.ReviewScope} {
+		query, _ := application.NewListQuery(options, scope)
+		if scope == application.ReviewScope {
+			list, err := s.ReviewList(t.Context(), query)
+			if err != nil || list.Matched != 1 {
+				t.Fatal("review Unknown search used an invisible instrument name", list.Matched, err)
+			}
+		} else {
+			list, err := s.ActivityList(t.Context(), query)
+			if err != nil || list.Matched != 2 {
+				t.Fatal("activity Unknown search omitted the cash description", list.Matched, err)
+			}
+		}
+	}
+}
+
+func TestMovementListUsesDisplayedLabelsAndPlaceholders(t *testing.T) {
+	s := coverageStore(t)
+	sell := strings.NewReplacer(`buySell="BUY"`, `buySell="SELL"`, `conid="100"`, `conid="300"`).
+		Replace(equityRow("U1", "sell", "10"))
+	coverageReport(t, s, "sell", sell)
+
+	for _, name := range []string{"alpha", "Zulu"} {
+		cash := strings.NewReplacer(`transactionID="cash1"`, `transactionID="cash-`+name+`"`, `type="Dividends"`, `type="Other Fees"`, "Synthetic dividend", name).
+			Replace(cashRow)
+		acquireRealized(t, s, movementReport("CashTransactions", cash))
+	}
+
+	for i, name := range []string{"Synthetic security", "alpha", "Zulu"} {
+		row := strings.NewReplacer(`transactionID="transfer1"`, `transactionID="transfer-`+name+`"`, `conid="100"`, `conid="10`+string(rune('0'+i))+`"`, "Synthetic security", name).
+			Replace(transferRow)
+		if i > 0 {
+			row = strings.Replace(row, `direction="IN"`, `direction="OUT"`, 1)
+		}
+
+		acquireRealized(t, s, movementReport("Transfers", row))
+	}
+
+	want := []string{
+		"cash/alpha",
+		"cash/Zulu",
+		"trade/sell",
+		"security-transfer/in/Synthetic security",
+		"security-transfer/out/alpha",
+		"security-transfer/out/Zulu",
+	}
+	for _, direction := range []string{"asc", "desc"} {
+		query, _ := application.NewListQuery(
+			application.ListOptions{
+				Sort:      "label",
+				Direction: direction,
+				ActivityText: application.ActivityText{
+					Unknown:           "Unknown",
+					MovementSeparator: " · ",
+					TransferPrefix:    "Transfer ",
+				},
+			},
+			application.ActivityScope,
+		)
+
+		list, err := s.ActivityList(t.Context(), query)
+		if err != nil || len(list.Items) != len(want) {
+			t.Fatal(list, err)
+		}
+
+		for i, item := range list.Items {
+			a := item.Resource.Activity
+			label := a.Family
+			switch a.Family {
+			case "cash":
+				label += "/" + *a.Cash.Description
+			case "trade":
+				label += "/" + *a.Side
+			case "security-transfer":
+				label += "/" + a.Transfer.Direction + "/" + item.InstrumentName
+			}
+
+			position := i
+			if direction == "desc" {
+				position = len(want) - 1 - i
+			}
+
+			if label != want[position] {
+				t.Errorf("%s row %d: %q, want %q", direction, i, label, want[position])
+			}
+		}
+	}
+
+	query, _ := application.NewListQuery(
+		application.ListOptions{
+			Search:         "not applicable",
+			DisplayMatches: application.DisplayMatches{InapplicableValues: true},
+			PageSize:       2,
+		},
+		application.ActivityScope,
+	)
+
+	list, err := s.ActivityList(t.Context(), query)
+	if err != nil || list.Matched != 6 || len(list.Items) != 2 {
+		t.Fatal("visible Not applicable cells missing", list, err)
 	}
 }
 
