@@ -133,18 +133,21 @@ func cashPostingAs(
 		if e != nil {
 			return source.ActivityObservation{}, e
 		}
-		// A posting description and currency do not describe an instrument's name or issue terms.
-		f.Instrument, err = source.NewInstrument(
-			source.InstrumentInput{
-				Reference:   ref,
-				Identifiers: ids,
-				Kind:        activityInstrumentKind(row["assetCategory"], row["subCategory"]),
-				Ticker:      row["symbol"],
-				Venue:       row["listingExchange"],
-			},
-		)
-		if err != nil {
-			return source.ActivityObservation{}, err
+
+		if !ref.IsZero() || len(ids) > 0 || row["symbol"] != "" {
+			// A posting description and currency do not describe an instrument's name or issue terms.
+			f.Instrument, err = source.NewInstrument(
+				source.InstrumentInput{
+					Reference:   ref,
+					Identifiers: ids,
+					Kind:        activityInstrumentKind(row["assetCategory"], row["subCategory"]),
+					Ticker:      row["symbol"],
+					Venue:       row["listingExchange"],
+				},
+			)
+			if err != nil {
+				return source.ActivityObservation{}, err
+			}
 		}
 	}
 

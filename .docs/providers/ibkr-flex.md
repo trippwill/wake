@@ -61,6 +61,10 @@ another financial contribution. See the
 Include Sales Taxes with transaction ID, taxable
 transaction ID, date, signed amount and currency for separately reported tax postings.
 
+Unsupported identifier schemes remain in evidence. When no supported instrument
+reference or reported symbol is available, an otherwise complete cash posting is
+accepted without an instrument link.
+
 Cash deposits/withdrawals, dividends, payments in lieu, interest, withholding,
 standalone fees and adjustments retain their signed reported amounts and types.
 Unfamiliar types remain other reported cash. Shared action IDs are grouping references,

@@ -89,6 +89,50 @@ func TestActivityCashDetailAndTaxRowsExcludeSummaries(t *testing.T) {
 	}
 }
 
+func TestCashUnsupportedSecurityIdentifiersLeaveFinancialTermsAvailable(t *testing.T) {
+	reg, _ := Registration(Options{})
+	for _, tc := range []struct {
+		name, attributes, reference, ticker string
+		identifiers                         int
+		instrument                          bool
+	}{
+		{"unsupported-only", `securityID="synthetic-local" securityIDType="LOCAL"`, "", "", 0, false},
+		{"untyped-only", `securityID="synthetic-local"`, "", "", 0, false},
+		{"native-reference", `securityID="synthetic-local" securityIDType="LOCAL" conid="100"`, "100", "", 0, true},
+		{"reported-symbol", `securityID="synthetic-local" securityIDType="LOCAL" symbol="SYN"`, "", "SYN", 0, true},
+		{"supported-identifier", `securityID="US0378331005" securityIDType="ISIN"`, "", "", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U1"><CashTransactions><CashTransaction ` +
+				tc.attributes + ` transactionID="cash1" type="Dividends" amount="12.34000000000000001" currency="USD" dateTime="2026-10-20" levelOfDetail="DETAIL"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`
+			artifact, _ := provider.NewArtifact(ActivityFormat, "application/xml", time.Now(), []byte(body))
+
+			sink := &testClaims{}
+			result, err := reg.Normalizer().Normalize(t.Context(), artifact, sink)
+			if err != nil || result.Counts().Activities != 1 || result.Rejected() != 0 ||
+				len(sink.activities) != 1 {
+				t.Fatal("complete cash posting rejected", result, err)
+			}
+
+			value, err := sink.activities[0].CashActivity()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			f := value.Fields()
+			if f.Amount.Amount() != "12.34000000000000001" || f.Category != source.CashDividend ||
+				f.Date.String() != "2026-10-20" || f.Instrument.Reference().Value() != tc.reference ||
+				f.Instrument.Ticker() != tc.ticker || len(f.Instrument.Identifiers()) != tc.identifiers {
+				t.Fatal("cash or supported instrument terms changed", f)
+			}
+
+			if _, present := sink.activities[0].Field(source.FieldInstrument); present != tc.instrument {
+				t.Fatal("unsupported identifier established an instrument", f.Instrument)
+			}
+		})
+	}
+}
+
 func TestSecurityTransferDirectionUnitsAndMixedCash(t *testing.T) {
 	row := map[string]string{
 		"accountId":     "U1",
