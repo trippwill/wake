@@ -295,6 +295,15 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			family = source.Option
 		}
 
+		if row.InstrumentID.Valid {
+			root, e := s.queries.Instrument(ctx, row.InstrumentID.String)
+			if e != nil {
+				return out, e
+			}
+
+			family = source.InstrumentKind(root.Kind)
+		}
+
 		for _, policy := range application.EditableActivityFields(application.ActivityKind(row.Kind), family) {
 			out.Fields = append(out.Fields, policy.Scope())
 		}

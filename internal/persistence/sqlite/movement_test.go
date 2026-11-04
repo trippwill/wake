@@ -587,6 +587,52 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 					if err != nil || root.Kind != tc.family || root.ReferenceStatus == "conflict" {
 						t.Fatal("unclassified cash contradicted known family", root, err)
 					}
+
+					var cashID string
+					for _, row := range rows {
+						if row.Kind == "cash" {
+							cashID = row.ID
+						}
+					}
+
+					form, err := s.CorrectionForm(t.Context(), "activity", cashID)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					found := false
+					for _, link := range form.Links {
+						if link.Scope == "instrument" && link.Value == root.ID {
+							found = true
+						}
+					}
+
+					if !found {
+						t.Fatal("bound instrument family missing from correction choices", form.Links)
+					}
+
+					decision, err := application.NewDecision(application.DecisionInput{
+						TargetKind: "activity", TargetID: cashID, Scope: "instrument", Text: root.ID,
+						Action: "set", Submission: "unclassified-link", ExpectedRevision: form.Revision,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					if err = s.CheckCorrection(t.Context(), decision); err != nil {
+						t.Fatal("offered link failed preflight", err)
+					}
+
+					if err = s.SaveDecision(t.Context(), decision, "synthetic", time.Now()); err != nil {
+						t.Fatal(err)
+					}
+
+					retainDecision(t, s, "activity", cashID, "instrument", "", "", "release")
+
+					value := realizedActivity(t, s, cashID).Activity
+					if value.InstrumentID == nil || *value.InstrumentID != root.ID {
+						t.Fatal("release lost the original family binding", value)
+					}
 				},
 			)
 		}
