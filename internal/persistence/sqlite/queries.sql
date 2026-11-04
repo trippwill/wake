@@ -303,12 +303,14 @@ SELECT record_values.* FROM record_values JOIN execution_observations o USING(ar
 
 
 -- name: ArtifactInstrumentClaims :many
-SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=? AND r.kind='activity' ORDER BY o.rowid;
+SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.execution_id IN (SELECT affected.execution_id FROM execution_observations affected WHERE affected.artifact_id=?) AND r.kind='activity' ORDER BY o.rowid;
 -- name: PutInstrumentClaim :exec
 INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: ArtifactRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
- SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?
+ SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=sqlc.arg(artifact_id)
+ UNION
+ SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=sqlc.arg(artifact_id) AND b.instrument_id IS NOT NULL
  UNION
  SELECT parent.instrument_id FROM affected
  JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
@@ -399,6 +401,9 @@ INSERT INTO activity_selections(activity_id,baseline,selected) VALUES(?,?,?) ON 
 
 -- name: PutActivityBase :exec
 INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
+
+-- name: BindActivityInstrument :exec
+UPDATE activity_bases SET instrument_id=sqlc.arg(instrument_id) WHERE activity_id=sqlc.arg(activity_id) AND instrument_id IS NULL;
 
 -- name: PutMovementActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES(?,?,?,?,?,'accepted',?);

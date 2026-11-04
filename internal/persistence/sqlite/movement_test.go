@@ -100,6 +100,69 @@ func movementReport(section, rows string) string {
 
 const cashRow = `<CashTransaction accountId="U1" transactionID="cash1" actionID="action1" levelOfDetail="DETAIL" type="Dividends" amount="12.34000000000000001" currency="USD" dateTime="2026-10-20" reportDate="2026-10-21" availableForTradingDate="2026-10-23" description="Synthetic dividend"/>`
 
+func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
+	for _, ambiguous := range []bool{false, true} {
+		t.Run(map[bool]string{false: "compatible", true: "ambiguous"}[ambiguous], func(t *testing.T) {
+			s := coverageStore(t)
+			acquireRealized(t, s, movementReport("CashTransactions", cashRow))
+			rows, _ := s.queries.Executions(t.Context())
+			id := rows[0].ID
+			retainDecision(t, s, "activity", id, "cash_amount", "13.0000", "USD", "set")
+
+			enriched := strings.Replace(
+				cashRow,
+				"<CashTransaction ",
+				`<CashTransaction assetCategory="STK" subCategory="COMMON" conid="100" symbol="TEST" `,
+				1,
+			)
+			if ambiguous {
+				enriched += strings.Replace(enriched, `conid="100"`, `conid="101"`, 1)
+			}
+
+			acquireRealized(t, s, movementReport("CashTransactions", enriched))
+
+			rows, _ = s.queries.Executions(t.Context())
+			value := realizedActivity(t, s, id).Activity
+			if len(rows) != 1 || rows[0].ID != id || value.Cash.Amount.Amount != "13.0000" {
+				t.Fatal("enrichment changed posting identity or decision", rows, value)
+			}
+
+			if ambiguous {
+				if value.InstrumentID != nil || !value.Conflict || tableCount(t, s, "instruments") != 0 {
+					t.Fatal("ambiguous instruments established an automatic link", value)
+				}
+
+				return
+			}
+
+			if value.InstrumentID == nil || tableCount(t, s, "instrument_claims") == 0 {
+				t.Fatal("later instrument evidence was not bound", value)
+			}
+
+			instrument, err := s.Resource(t.Context(), "instruments", *value.InstrumentID)
+			if err != nil || instrument.Instrument == nil || instrument.Instrument.Ticker == nil ||
+				*instrument.Instrument.Ticker != "TEST" {
+				t.Fatal("instrument claims were not published", instrument, err)
+			}
+
+			before, _ := snapshotState(t.Context(), s)
+			acquireRealized(t, s, movementReport("CashTransactions", enriched))
+
+			after, _ := snapshotState(t.Context(), s)
+			if before.Version != after.Version {
+				t.Fatal("repeated enrichment republished")
+			}
+
+			retainDecision(t, s, "activity", id, "cash_amount", "", "", "release")
+
+			value = realizedActivity(t, s, id).Activity
+			if value.InstrumentID == nil || value.Cash.Amount.Amount != "12.34000000000000001" {
+				t.Fatal("release lost the enriched link or original amount", value)
+			}
+		})
+	}
+}
+
 func TestCashPostingsStayDistinctAndResolveTaxRelationships(t *testing.T) {
 	s := coverageStore(t)
 	tax := `<SalesTax accountId="U1" transactionID="tax1" taxableTransactionID="cash1" salesTax="-0.2300" currency="USD" date="2026-10-20"/>`
@@ -339,5 +402,19 @@ func TestSecurityTransfersReconcileCorrectAndPublish(t *testing.T) {
 	list, err := s.ActivityList(t.Context(), q)
 	if err != nil || len(list.Items) != 1 {
 		t.Fatal(list, err)
+	}
+
+	for _, search := range []string{"123.4500 USD", "123.4500 EUR"} {
+		query, _ := application.NewListQuery(application.ListOptions{Search: search}, application.ActivityScope)
+		list, err = s.ActivityList(t.Context(), query)
+
+		want := 0
+		if search == "123.4500 USD" {
+			want = 1
+		}
+
+		if err != nil || len(list.Items) != want || list.Matched != int64(want) {
+			t.Fatal("transfer price search lost amount/currency or count consistency", search, list, err)
+		}
 	}
 }

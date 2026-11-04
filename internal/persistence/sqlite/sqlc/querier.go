@@ -48,6 +48,7 @@ type Querier interface {
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
+	BindActivityInstrument(ctx context.Context, arg BindActivityInstrumentParams) error
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
 	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error)

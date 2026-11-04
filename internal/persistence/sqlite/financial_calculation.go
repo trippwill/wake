@@ -461,6 +461,70 @@ func persistInstrumentCalculation(
 	)
 }
 
+// A cash posting can establish financial terms before its optional instrument.
+// Bind only compatible automatic evidence; operator decisions remain independent.
+func bindCashInstrument(ctx context.Context, q *sqlc.Queries, row sqlc.Execution) (sqlc.Execution, error) {
+	if row.Kind != "cash" {
+		return row, nil
+	}
+
+	base, err := q.ActivityBase(ctx, row.ID)
+	if err != nil || base.InstrumentID.Valid {
+		return row, err
+	}
+
+	claims, err := retainedActivityClaims(ctx, q, row.ID)
+	if err != nil {
+		return row, err
+	}
+
+	previous, err := loadActivitySelection(ctx, q, row.ID)
+	if err != nil {
+		return row, err
+	}
+
+	selected, err := application.SelectActivityFields(previous.Baseline, claims, nil)
+	if err != nil {
+		return row, err
+	}
+
+	for _, conflict := range selected.Conflicts {
+		if conflict == "identity" || conflict == "family" || conflict == "instrument" {
+			return row, nil
+		}
+	}
+
+	for _, field := range selected.Fields {
+		if field.Name() != source.FieldInstrument || !field.Known() {
+			continue
+		}
+
+		support := selected.Sources[field.Key()]
+
+		var origin [3]string
+		if len(support) == 0 || json.Unmarshal([]byte(support[0]), &origin) != nil {
+			return row, ErrCorrupt
+		}
+
+		instrument, _, err := acceptInstrument(ctx, q, origin[0], origin[2], field.Fields().Instrument, "")
+		if err != nil {
+			return row, err
+		}
+
+		row.InstrumentID = sql.NullString{String: instrument, Valid: true}
+		if err = q.BindActivityInstrument(
+			ctx,
+			sqlc.BindActivityInstrumentParams{ActivityID: row.ID, InstrumentID: row.InstrumentID},
+		); err != nil {
+			return row, err
+		}
+
+		return row, nil
+	}
+
+	return row, nil
+}
+
 // Recalculate only groups reached by genuinely new claims or changed source
 // correction state. Known appearances keep provenance without revisiting terms.
 func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) error {
@@ -525,6 +589,15 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 	}
 
 	sort.Strings(ordered)
+
+	for _, id := range ordered {
+		row, e := bindCashInstrument(ctx, q, affected[id])
+		if e != nil {
+			return e
+		}
+
+		affected[id] = row
+	}
 
 	if err = projectArtifactRoots(ctx, q, artifact); err != nil {
 		return err
