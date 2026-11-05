@@ -46,6 +46,19 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 		return Publication{WarehouseId: read.Snapshot.WarehouseID, Version: read.Snapshot.Version}, err
 	}
 
+	positionMetadata := func() ([]application.PositionsPublication, error) {
+		readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		return h.reads.PositionsPublications(readCtx)
+	}
+
+	currentPositions, err := positionMetadata()
+	if err != nil {
+		h.failure(w, InternalError, http.StatusInternalServerError)
+		return
+	}
+
 	current, err := publication()
 	if err != nil {
 		h.failure(w, InternalError, http.StatusInternalServerError)
@@ -82,6 +95,20 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	announcePositions := func(p application.PositionsPublication) error {
+		data, e := json.Marshal(p)
+		if e != nil {
+			return e
+		}
+
+		return write("event: positions\ndata: " + string(data) + "\n\n")
+	}
+	for _, p := range currentPositions {
+		if announcePositions(p) != nil {
+			return
+		}
+	}
+
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
@@ -95,15 +122,31 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if next == current {
-				continue
+			if next != current {
+				if announce(next) != nil {
+					return
+				}
+
+				current = next
 			}
 
-			if announce(next) != nil {
+			nextPositions, e := positionMetadata()
+			if e != nil {
 				return
 			}
 
-			current = next
+			for _, p := range nextPositions {
+				same := false
+				for _, prior := range currentPositions {
+					same = same || prior == p
+				}
+
+				if !same && announcePositions(p) != nil {
+					return
+				}
+			}
+
+			currentPositions = nextPositions
 		case <-ticker.C:
 			if write(": keepalive\n\n") != nil {
 				return

@@ -13,14 +13,15 @@ info:
     returns stale_revision. Current-state synchronization does not retain intermediate delivery transitions.
     Retired instrument/listing lookups redirect to their current IDs; explanations for retired IDs
     return stale_revision. Instrument resources describe identity; financial terms belong to activity.
-    Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
+    Reported account positions have a separate versioned read and positions events, and are excluded
+    from the financial snapshot. Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
     mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
 paths:
   /v1/events:
     get:
       operationId: publicationEvents
       description: |
-        Long-lived SSE notifications of current accepted publication. The server subscribes before
+        Long-lived SSE notifications of independently versioned financial views. The server subscribes before
         its initial metadata read. A publication event is sent immediately and after accepted changes;
         bursts may coalesce. JSON data contains warehouse_id and the opaque snapshot version.
         Compare versions for equality only. An event is a refresh hint, never an acknowledgement
@@ -31,6 +32,14 @@ paths:
         Comment heartbeats are sent every 15 seconds without reading storage. Consumers should
         detect absent heartbeats and reconnect with bounded backoff. Stream errors after headers
         close the connection. Disconnect and daemon shutdown release the subscription.
+        A separate event: positions carries a PositionsPublication object for each account's
+        positions view. Current positions metadata is announced on connection/reconnect, including
+        unavailable views; changes to position content or availability produce refresh hints.
+        Positions-only changes do not emit publication events. Shared identity changes may affect
+        both views. Each event type has its own version; never compare versions across views.
+        Consumers uninterested in an event type ignore it. Positions hints have the same coalescing,
+        heartbeat and no-replay semantics. Fetch positions conditionally before acknowledging its
+        version; a response may already be newer than the hint.
         No query parameters or request body are accepted.
       responses:
         '200':
@@ -43,6 +52,52 @@ paths:
                 type: string
               example: "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"opaque-version\"}\n\n"
         '400':
+          $ref: '#/components/responses/Error'
+        '405':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /v1/accounts/{id}/positions:
+    get:
+      operationId: accountPositions
+      description: |
+        Latest accepted reported position set for one account, independently versioned and excluded
+        from the financial snapshot. One effective time applies to the entire set. Date-only evidence
+        has a null timestamp. Quantities are signed (positive long, negative short); costs are reported
+        aggregate amounts in their original currency. No holdings or cost reconstruction is performed.
+        An available empty set is []; unavailable rows are null with an explicit reason. Newer
+        unusable evidence withholds the set without falling back to older positions. Acquisition
+        failures alone do not erase established state. Source generation/retrieval times do not
+        establish revision authority. Resolve instrument IDs through the existing resource lookups.
+        The opaque version is scoped to this warehouse and account. Compare for equality only;
+        ETag/If-None-Match apply to available and unavailable views. Unknown/duplicate parameters,
+        request bodies and mutation methods are rejected. Reads are materialized before client I/O.
+      parameters:
+      - $ref: '#/components/parameters/id'
+      - in: header
+        name: If-None-Match
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Current available or unavailable position view
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PositionsView'
+        '304':
+          description: This account's positions view is unchanged
+          headers:
+            ETag:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
         '405':
           $ref: '#/components/responses/Error'
@@ -281,6 +336,108 @@ paths:
           $ref: '#/components/responses/Error'
 components:
   schemas:
+    PositionsPublication:
+      type: object
+      additionalProperties: false
+      required: [warehouse_id, account_id, version]
+      properties:
+        warehouse_id:
+          type: string
+          minLength: 1
+        account_id:
+          type: string
+          minLength: 1
+        version:
+          type: string
+          minLength: 1
+    Position:
+      type: object
+      additionalProperties: false
+      required: [instrument_id, quantity, side, cost_basis, option, debt]
+      properties:
+        instrument_id:
+          type: string
+          minLength: 1
+        quantity:
+          $ref: '#/components/schemas/Quantity'
+        side:
+          type: string
+          enum: [long, short]
+        cost_basis:
+          $ref: '#/components/schemas/NullableMoney'
+        option:
+          $ref: '#/components/schemas/NullableOption'
+        debt:
+          $ref: '#/components/schemas/NullableDebt'
+    PositionsView:
+      type: object
+      additionalProperties: false
+      required: [warehouse_id, account_id, version, status, as_of, reason, positions]
+      oneOf:
+      - type: object
+        properties:
+          status:
+            type: string
+            enum: [available]
+          as_of:
+            type: object
+          reason:
+            type: string
+            nullable: true
+            enum: [null]
+          positions:
+            type: array
+            items:
+              $ref: '#/components/schemas/Position'
+      - type: object
+        properties:
+          status:
+            type: string
+            enum: [unavailable]
+          reason:
+            type: string
+          positions:
+            type: array
+            nullable: true
+            enum: [null]
+            items:
+              $ref: '#/components/schemas/Position'
+      properties:
+        warehouse_id:
+          type: string
+          minLength: 1
+        account_id:
+          type: string
+          minLength: 1
+        version:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [available, unavailable]
+        as_of:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [date, at]
+          properties:
+            date:
+              type: string
+              format: date
+            at:
+              type: string
+              format: date-time
+              nullable: true
+        reason:
+          type: string
+          nullable: true
+          enum: [not_reported, incomplete, conflict, identity_unresolved]
+        positions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Position'
+      description: Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. Effective time may be unknown when unavailable.
     Publication:
       type: object
       additionalProperties: false

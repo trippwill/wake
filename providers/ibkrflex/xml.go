@@ -152,7 +152,7 @@ func inspectReport(
 
 		if len(path) == 4 && kind == "AF" && path[1].name == "FlexStatements" &&
 			path[2].name == "FlexStatement" &&
-			(entry.name == "Transfers" || entry.name == "CashTransactions" || entry.name == "SalesTaxes") {
+			(entry.name == "Transfers" || entry.name == "CashTransactions" || entry.name == "SalesTaxes" || entry.name == "OpenPositions") {
 			metadata.activitySections++
 		}
 

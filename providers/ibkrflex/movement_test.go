@@ -268,7 +268,7 @@ func TestActivityAbsentAndEmptySectionsRemainDistinct(t *testing.T) {
 		}
 
 		if section == "Unrelated" && r.Rejected() != 1 ||
-			section != "Unrelated" && (r.Rows() != 0 || r.Rejected() != 0) {
+			section != "Unrelated" && (r.Rows() != 1 || r.Counts().PositionSets != 1 || r.Rejected() != 0) {
 			t.Fatal(section, r)
 		}
 	}

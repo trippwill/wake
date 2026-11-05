@@ -116,6 +116,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	}
 
 	changed := false
+	positionParents := []string{}
 	for _, record := range records {
 		previous, knownErr := q.ClaimProcessing(
 			ctx,
@@ -170,6 +171,91 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 			return err
 		}
 
+		if record.Kind == "positions" {
+			f := record.PositionSet.Fields()
+			if account.AuthorizesSource(retained.Connection, retained.Provider, f.Account) {
+				date := ""
+				if !f.Date.IsZero() {
+					date = f.Date.String()
+				}
+
+				reference := ""
+				if !f.Reference.IsZero() {
+					reference = referenceKey(f.Reference)
+				}
+
+				supersedes := []string{}
+				for _, r := range f.Supersedes {
+					supersedes = append(supersedes, referenceKey(r))
+				}
+
+				revisionData, e := json.Marshal(supersedes)
+				if e != nil {
+					return e
+				}
+
+				if err = q.PutPositionSet(
+					ctx,
+					sqlc.PutPositionSetParams{
+						ClaimID:         record.ClaimID,
+						AccountID:       account.ID(),
+						EffectiveDate:   date,
+						SourceReference: reference,
+						Supersedes:      string(revisionData),
+					},
+				); err != nil {
+					return err
+				}
+			}
+
+			continue
+		}
+
+		if record.Kind == "position-instrument" {
+			f := record.PositionInstrument
+
+			ref, e := f.Account.reference()
+			if e != nil {
+				return e
+			}
+
+			if account.AuthorizesSource(retained.Connection, retained.Provider, ref) {
+				i, e := f.Instrument.instrument()
+				if e != nil {
+					return e
+				}
+
+				root, _, e := acceptInstrument(ctx, q, id, record.Location, i, "")
+				if e != nil {
+					return e
+				}
+
+				if e = q.PutPositionBinding(
+					ctx,
+					sqlc.PutPositionBindingParams{ClaimID: record.ClaimID, AccountID: account.ID(), InstrumentID: root},
+				); e != nil {
+					return e
+				}
+
+				if e = q.PutInstrumentClaim(
+					ctx,
+					sqlc.PutInstrumentClaimParams{
+						InstrumentID: root,
+						ClaimID:      record.ClaimID,
+						Ordinal:      record.Ordinal,
+						Role:         "activity",
+					},
+				); e != nil {
+					return e
+				}
+
+				positionParents = append(positionParents, root)
+				changed = true
+			}
+
+			continue
+		}
+
 		changed = changed || record.Kind != "rejected" && record.Kind != "instrument"
 		if !record.Observation.IsZero() {
 			if err = admitActivity(ctx, q, account, retained, version, record); err != nil {
@@ -200,6 +286,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 
 			continue
 		}
+	}
+
+	if err = bindUnderlierInstrumentClaims(ctx, q, positionParents); err != nil {
+		return err
 	}
 
 	if changed {

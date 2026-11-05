@@ -63,6 +63,7 @@ type testClaims struct {
 	lifecycles []source.Lifecycle
 	rejected   []string
 	failure    error
+	positions  []source.PositionSetObservation
 }
 
 func (c *testClaims) PutActivity(_ context.Context, o source.ActivityObservation) error {
@@ -91,6 +92,16 @@ func (c *testClaims) PutActivity(_ context.Context, o source.ActivityObservation
 
 func (c *testClaims) PutInstrument(context.Context, source.InstrumentObservation) error {
 	return c.failure
+}
+
+func (c *testClaims) PutPositionSet(_ context.Context, o source.PositionSetObservation) error {
+	if c.failure != nil {
+		return c.failure
+	}
+
+	c.positions = append(c.positions, o)
+
+	return nil
 }
 
 func (c *testClaims) Reject(_ context.Context, _, reason string) error {

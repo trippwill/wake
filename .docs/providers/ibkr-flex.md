@@ -2,7 +2,7 @@
 
 The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account,
 with an optional Activity Flex query for transfers, non-trade cash postings and
-reported realized P&L on individual activities.
+reported realized P&L on individual activities, and reported open positions.
 
 ## Prepare access and the query
 
@@ -92,7 +92,7 @@ activity can lack an execution ID. Preserve the signed allocated cost and gain/l
 Wake does not recompute either or subtract charges a second time. IBKR documents the
 [Activity Trades fields](https://www.ibkrguides.com/reportingreference/reportguide/tradesfq.htm).
 
-Only execution-level activity results contribute. Closed-lot rows, positions, period
+Only execution-level activity results contribute realized P&L. Closed-lot rows, period
 summaries and dedicated Forex P/L Details remain outside this interpretation. Extra
 sections remain in the original evidence. In particular, an FX conversion trade's
 reported result does not establish the realized gain on currency holdings.
@@ -114,6 +114,24 @@ does not establish revision authority. Select or release retained fields through
 the activity's correction workflow; choosing partial evidence preserves omitted
 terms. Correcting a trade's price or quantity does not
 recalculate the broker's result or its allocated cost.
+
+### Reported open positions
+
+Include Open Positions at SUMMARY detail for the whole confirmed account, without
+instrument or model filters. Include account and contract references, asset class,
+quantity (`position`), currency, report date, side, available contract terms and
+Cost Basis Money (`costBasisMoney`) when needed. Wake preserves the reported aggregate
+cost, including explicit zero, without deriving it from prices or lots. See IBKR's
+[Open Positions reference](https://www.ibkrguides.com/reportingreference/reportguide/open%20positionsfq.htm).
+
+Summary rows establish one common reported date; an explicitly empty section uses the
+statement end date. Missing sections establish no position coverage. LOT rows never
+add quantities; a lot-only populated section cannot establish the summary set. Malformed
+rows, mixed report dates, model partitions or unsupported asset families withhold the
+whole set. This adapter supports the existing equity/ETF, option and debt families.
+Generation and retrieval times do not select between conflicting same-date sets.
+Positions use the Activity acquisition cadence and their own client version and event;
+they do not establish live holdings, market values or unrealized P&L.
 
 ## Connection and processing boundaries
 

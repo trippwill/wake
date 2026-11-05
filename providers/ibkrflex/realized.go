@@ -132,6 +132,10 @@ func (s *Source) normalizeRealized(
 		counts.Rejected++
 	}
 
+	if err = normalizePositions(ctx, body, sink, &counts); err != nil {
+		return provider.Result{}, err
+	}
+
 	return provider.NewResult(counts)
 }
 

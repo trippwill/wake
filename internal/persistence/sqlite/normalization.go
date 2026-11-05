@@ -306,6 +306,8 @@ type Record struct {
 	Correction             source.Correction
 	Instrument             source.InstrumentObservation
 	Observation            source.ActivityObservation
+	PositionSet            source.PositionSetObservation
+	PositionInstrument     positionInstrumentData
 }
 
 func (s *Store) Records(ctx context.Context, id, version string) ([]Record, error) {
@@ -318,6 +320,10 @@ func (s *Store) Records(ctx context.Context, id, version string) ([]Record, erro
 	for _, row := range rows {
 		record := Record{Location: row.Location, Kind: row.Kind, ClaimID: row.ClaimID, Ordinal: row.Ordinal}
 		switch row.Kind {
+		case "positions":
+			record.PositionSet, err = decodePositionSet(row.Data)
+		case "position-instrument":
+			err = json.Unmarshal(row.Data, &record.PositionInstrument)
 		case "activity":
 			record.Observation, err = decodeObservation(row.Data)
 			if err == nil && record.Observation.Fields().Location != row.Location {

@@ -1,0 +1,41 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package application
+
+type PositionTime struct {
+	Date string  `json:"date"`
+	At   *string `json:"at"`
+}
+
+type PublishedPosition struct {
+	InstrumentID string            `json:"instrument_id"`
+	Quantity     PublishedQuantity `json:"quantity"`
+	Side         string            `json:"side"`
+	CostBasis    *PublishedMoney   `json:"cost_basis"`
+	Option       *PublishedOption  `json:"option"`
+	Debt         *PublishedDebt    `json:"debt"`
+}
+
+// PositionsView replaces one account's complete current reported position set.
+// Unavailable rows are null; an available empty set contains an empty array.
+type PositionsView struct {
+	WarehouseID string              `json:"warehouse_id"`
+	AccountID   string              `json:"account_id"`
+	Version     string              `json:"version"`
+	Status      string              `json:"status"`
+	AsOf        *PositionTime       `json:"as_of"`
+	Reason      *string             `json:"reason"`
+	Positions   []PublishedPosition `json:"positions"`
+}
+
+type PositionsRead struct {
+	View      PositionsView
+	Unchanged bool
+}
+
+type PositionsPublication struct {
+	WarehouseID string `json:"warehouse_id"`
+	AccountID   string `json:"account_id"`
+	Version     string `json:"version"`
+}

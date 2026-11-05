@@ -179,6 +179,16 @@ help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the soc
 interface; [development guidance](development.md#socket-consumer-acceptance) provides
 runnable consumer checks.
 
+Reported positions use a separate complete account-set projection with its own durable
+publication version. Source interpretation contributes typed immutable sets and instrument
+claims; deterministic financial selection uses effective time, account source authority and
+explicit revision relationships. Set content, availability and version commit atomically.
+Position publication remains independent of activity snapshots; both reuse canonical
+instrument identities. Identity combinations invalidate affected position projections.
+The shared event stream carries independent refresh hints for each view, and finite position
+reads release storage transactions before client I/O. Source protocols and report-generation
+metadata do not define the consumer contract.
+
 ## Canonical publishing and continuity
 
 The private Unix socket serves bounded read-only HTTP/JSON reads and long-lived
@@ -214,7 +224,7 @@ revision and fail visibly if it has changed.
 
 SSE publication notifications reduce refresh latency without changing snapshot
 consistency or mirror ownership. Subscription precedes the initial metadata read;
-only successful commits that advance accepted publication signal subscribers.
+only successful commits that advance a financial view signal subscribers.
 Signals coalesce without waiting for clients. Each stream reads current publication
 metadata in a bounded transaction, releases it before I/O, and announces the opaque
 version and warehouse identity. Comment heartbeats do not read storage. Streams

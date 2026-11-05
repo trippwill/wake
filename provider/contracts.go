@@ -69,6 +69,9 @@ type Access interface {
 // its commit boundary and retains artifact/location/version provenance.
 // Calls are sequential; a normalizer must not retain the sink after returning.
 type Claims interface {
+	// PutPositionSet also contributes each row's instrument claim. Counts include
+	// one PositionSets row plus one Instruments row per reported position.
+	PutPositionSet(context.Context, source.PositionSetObservation) error
 	PutActivity(context.Context, source.ActivityObservation) error
 	PutCorrection(context.Context, source.Correction) error
 	PutInstrument(context.Context, source.InstrumentObservation) error

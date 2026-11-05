@@ -236,3 +236,23 @@ func TestRetiredResourceRedirectStaysWithinResourcePath(t *testing.T) {
 		}
 	}
 }
+
+func (s reads) Positions(
+	_ context.Context,
+	id string,
+	c application.SnapshotCondition,
+) (application.PositionsRead, error) {
+	v := application.PositionsView{
+		WarehouseID: "warehouse",
+		AccountID:   id,
+		Version:     "positions-version",
+		Status:      "unavailable",
+		Reason:      new("not_reported"),
+	}
+
+	return application.PositionsRead{View: v, Unchanged: c.Matches(v.Version)}, s.err
+}
+
+func (s reads) PositionsPublications(context.Context) ([]application.PositionsPublication, error) {
+	return nil, s.err
+}

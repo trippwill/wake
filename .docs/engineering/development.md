@@ -269,6 +269,20 @@ disconnect cleanup, finite metadata reads, heartbeat lifetime and joined shutdow
 Consumer checks cover interrupted responses, malformed/incomplete protocol, failed
 persistence and fixture assertions.
 
+The independent consumer also reads reported positions without downloading an activity
+snapshot or opening a Wake store. It resolves instrument IDs through resource lookups,
+validates availability and exact values, and checks conditional reads. Use a Wake account ID:
+
+```sh
+mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --positions-account ACCOUNT_ID
+mise run socket-consumer:follow -- --socket /absolute/private/runtime/wake.sock --positions-account ACCOUNT_ID
+```
+
+This mode prints complete validated position views. Its in-memory baseline is replaced
+only after response and lookup validation; it does not create a persistent positions mirror.
+The separate-process socket proof exercises positions reads and initial/reconnect events
+against a disposable real daemon alongside the activity consumer checks.
+
 For a manual review, start a disposable configured Wake instance with synthetic
 history, then use its actual socket path and an existing directory for client state:
 

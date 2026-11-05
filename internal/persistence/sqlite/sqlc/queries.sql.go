@@ -2141,6 +2141,38 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 	return items, nil
 }
 
+const positionBindings = `-- name: PositionBindings :many
+SELECT c.data,CAST(coalesce(a.target_id,p.instrument_id) AS TEXT) AS instrument_id FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE p.account_id=? ORDER BY p.rowid
+`
+
+type PositionBindingsRow struct {
+	Data         []byte
+	InstrumentID string
+}
+
+func (q *Queries) PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error) {
+	rows, err := q.db.QueryContext(ctx, positionBindings, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PositionBindingsRow
+	for rows.Next() {
+		var i PositionBindingsRow
+		if err := rows.Scan(&i.Data, &i.InstrumentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const processingComplete = `-- name: ProcessingComplete :one
 SELECT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=?1) AS complete FROM artifacts WHERE artifacts.id=?2
 `
@@ -2804,6 +2836,44 @@ func (q *Queries) PutObservation(ctx context.Context, arg PutObservationParams) 
 		arg.ExecutionID,
 		arg.Outcome,
 		arg.Rule,
+	)
+	return err
+}
+
+const putPositionBinding = `-- name: PutPositionBinding :exec
+INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutPositionBindingParams struct {
+	ClaimID      string
+	AccountID    string
+	InstrumentID string
+}
+
+func (q *Queries) PutPositionBinding(ctx context.Context, arg PutPositionBindingParams) error {
+	_, err := q.db.ExecContext(ctx, putPositionBinding, arg.ClaimID, arg.AccountID, arg.InstrumentID)
+	return err
+}
+
+const putPositionSet = `-- name: PutPositionSet :exec
+INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,supersedes) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING
+`
+
+type PutPositionSetParams struct {
+	ClaimID         string
+	AccountID       string
+	EffectiveDate   string
+	SourceReference string
+	Supersedes      string
+}
+
+func (q *Queries) PutPositionSet(ctx context.Context, arg PutPositionSetParams) error {
+	_, err := q.db.ExecContext(ctx, putPositionSet,
+		arg.ClaimID,
+		arg.AccountID,
+		arg.EffectiveDate,
+		arg.SourceReference,
+		arg.Supersedes,
 	)
 	return err
 }

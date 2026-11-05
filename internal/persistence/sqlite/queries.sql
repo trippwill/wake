@@ -420,3 +420,10 @@ INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VA
 UPDATE artifacts SET processed=0
 WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
 AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value));
+
+-- name: PutPositionSet :exec
+INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,supersedes) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING;
+-- name: PutPositionBinding :exec
+INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+-- name: PositionBindings :many
+SELECT c.data,CAST(coalesce(a.target_id,p.instrument_id) AS TEXT) AS instrument_id FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE p.account_id=? ORDER BY p.rowid;

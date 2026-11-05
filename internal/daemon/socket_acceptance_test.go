@@ -573,6 +573,78 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	start()
 	consume(true)
 
+	// A separate positions-only client receives no activity snapshot, private store paths,
+	// provider protocol or credentials. Its first output follows the initial SSE hint.
+	accountID := ""
+	for _, resource := range mirror().Resources {
+		if resource.Kind == "accounts" {
+			accountID = resource.ID
+		}
+	}
+
+	var positionLogs, positionOutput socketTestLog
+	//nolint:gosec // Task-built independent consumer receives only the disposable socket and public account ID.
+	positionsClient := exec.CommandContext(
+		ctx,
+		binary,
+		"--socket",
+		socket,
+		"--positions-account",
+		accountID,
+		"--follow",
+	)
+
+	positionsClient.Env = []string{"PATH=" + os.Getenv("PATH")}
+	positionsClient.Stdout = &positionOutput
+
+	positionsClient.Stderr = &positionLogs
+	if e = positionsClient.Start(); e != nil {
+		t.Fatal(e)
+	}
+
+	positionsDone := make(chan error, 1)
+	go func() { positionsDone <- positionsClient.Wait() }()
+
+	positionDeadline := time.Now().Add(10 * time.Second)
+	for strings.TrimSpace(positionOutput.String()) == "" && time.Now().Before(positionDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	_ = positionsClient.Process.Signal(os.Interrupt)
+	select {
+	case e = <-positionsDone:
+		if e != nil {
+			t.Fatal(e, positionLogs.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = positionsClient.Process.Kill()
+
+		t.Fatal("positions client failed to stop")
+	}
+
+	var positions struct {
+		Status string `json:"status"`
+		AsOf   struct {
+			Date string  `json:"date"`
+			At   *string `json:"at"`
+		} `json:"as_of"`
+		Positions []struct {
+			Quantity struct {
+				Value string `json:"value"`
+			} `json:"quantity"`
+			CostBasis struct {
+				Amount string `json:"amount"`
+			} `json:"cost_basis"`
+		} `json:"positions"`
+	}
+	if e = json.Unmarshal(
+		[]byte(strings.TrimSpace(positionOutput.String())),
+		&positions,
+	); e != nil || positions.Status != "available" || positions.AsOf.Date != "2026-07-17" || positions.AsOf.At != nil || len(positions.Positions) != 1 || positions.Positions[0].Quantity.Value != "-2.00000000000000100" ||
+		positions.Positions[0].CostBasis.Amount != "0.0000" {
+		t.Fatal("positions-only consumer", positionOutput.String(), positionLogs.String(), e)
+	}
+
 	// Keep a separate process following across every correction, restart and reset.
 	var eventLogs socketTestLog
 
