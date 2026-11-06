@@ -393,8 +393,11 @@ func samePositionTerms(a, b source.Instrument) bool {
 
 	left, leftErr := EnrichInstrument(a, b)
 	right, rightErr := EnrichInstrument(b, a)
+	selfA, selfAErr := EnrichInstrument(a, a)
+	selfB, selfBErr := EnrichInstrument(b, b)
 
-	return leftErr == nil && rightErr == nil && reflect.DeepEqual(left, a) && reflect.DeepEqual(right, b)
+	return leftErr == nil && rightErr == nil && selfAErr == nil && selfBErr == nil &&
+		reflect.DeepEqual(left, selfA) && reflect.DeepEqual(right, selfB)
 }
 
 func mergePositionRow(prior, next source.Position) (source.Position, bool) {

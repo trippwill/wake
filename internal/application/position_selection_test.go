@@ -424,3 +424,52 @@ func TestPositionPairingExhaustionWithholdsPossibleAndIncompatibleSets(t *testin
 		})
 	}
 }
+
+func TestPositionPairingIgnoresIdentifierOrder(t *testing.T) {
+	isin, _ := source.NewIdentifier(source.ISIN, "SYNTHETIC-ISIN", "isin")
+	cusip, _ := source.NewIdentifier(source.CUSIP, "SYNTHETIC-CUSIP", "cusip")
+	set := func(identifiers []source.Identifier, cost string) PositionCandidate {
+		t.Helper()
+
+		c := positionCandidate(t, "2026-11-03", "", "10", cost, "")
+		f := c.Observation.Fields()
+		fields := f.Positions[0].Instrument().Fields()
+		fields.Identifiers = identifiers
+
+		instrument, err := source.NewInstrument(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		p, _ := source.NewPosition(instrument, f.Positions[0].Quantity(), f.Positions[0].CostBasis())
+		f.Positions = nil
+		c.InstrumentIDs = nil
+		for range 9 {
+			f.Positions = append(f.Positions, p)
+			c.InstrumentIDs = append(c.InstrumentIDs, "instrument")
+		}
+
+		c.Observation, _ = source.NewPositionSetObservation(f)
+
+		return c
+	}
+
+	base := set([]source.Identifier{isin, cusip}, "")
+	next := set([]source.Identifier{cusip, isin}, "1.0000")
+	for _, inputs := range [][]PositionCandidate{{base, next}, {next, base}} {
+		got := selectPositions(t, inputs)
+		if got.Reason != "" || len(got.Source.Positions) != 9 {
+			t.Fatal("identifier order exhausted equivalent-row matching", got)
+		}
+
+		for _, p := range got.Source.Positions {
+			if p.CostBasis().Amount() != "1.0000" {
+				t.Fatal("lost reported cost", p)
+			}
+		}
+	}
+
+	if base.Observation.Fields().Positions[0].Instrument().Identifiers()[0] != isin {
+		t.Fatal("comparison changed retained identifier order")
+	}
+}
