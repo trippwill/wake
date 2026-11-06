@@ -28,8 +28,29 @@ templ Overview(csrf, path string, status Status, cfg config.Config) {
 templ OverviewBody(path string, status Status, cfg config.Config) {
 	@PageHeader(pageTitle(path), "Installation health, effective configuration and maintenance.")
 	@SystemNavigation(systemView(path))
-	if path=="/configuration" {
-		<section class="wake-card"><h2>Effective storage and runtime configuration</h2><dl><dt>Warehouse database</dt><dd>{ cfg.Storage.WarehousePath }</dd><dt>Connections database</dt><dd>{ cfg.Storage.ConnectionsPath }</dd><dt>Runtime directory</dt><dd>{ cfg.Paths.RuntimeDir }</dd><dt>Admin authentication</dt><dd>{ cfg.Admin.AuthMode }</dd></dl><a href="/connections">Manage source and reference access</a></section>
+	if path=="/system/configuration" {
+		<section class="wake-card">
+			<h2>Effective storage and runtime configuration</h2>
+			<dl>
+				<dt>Configuration file</dt>
+				<dd>
+					if cfg.Paths.ConfigFile != "" {
+						{ cfg.Paths.ConfigFile }
+					} else {
+						None · No TOML file loaded at startup.
+					}
+				</dd>
+				<dt>Warehouse database</dt>
+				<dd>{ cfg.Storage.WarehousePath }</dd>
+				<dt>Connections database</dt>
+				<dd>{ cfg.Storage.ConnectionsPath }</dd>
+				<dt>Runtime directory</dt>
+				<dd>{ cfg.Paths.RuntimeDir }</dd>
+				<dt>Admin authentication</dt>
+				<dd>{ cfg.Admin.AuthMode }</dd>
+			</dl>
+			<a href="/connections">Manage source and reference access</a>
+		</section>
 	} else {
 		<section class="wake-card">
 			<h2>Daemon status</h2>
@@ -45,14 +66,16 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 						Unavailable · Run wake setup to provision a master key.
 					}
 				</dd>
+				<dt>Financial database size</dt>
+				<dd>{ warehouseSizeText(status.WarehouseBytes) }</dd>
 			</dl>
+			<p class="wake-help">Warehouse file, including retained reports. Excludes encrypted access storage and temporary journals.</p>
 			<p class="wake-help">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p>
 		</section>
-		<section class="wake-card"><h2>Operator workspaces</h2><div class="wake-actions"><a href="/activity">Inspect financial activity</a><a href="/connections">Inspect source synchronization</a></div></section>
 	}
 }
 
 templ ErrorPage(title, message string) {
 	@PageHeader(title, message)
-	<section class="wake-card"><h2>Choose a next step</h2><p>Return to your workspace or inspect daemon status before retrying.</p><div class="wake-actions"><a href={ templ.SafeURL(returnURL(ctx)) }>Return to previous work</a><a href="/status">Inspect daemon status</a></div></section>
+	<section class="wake-card"><h2>Choose a next step</h2><p>Return to your workspace or inspect daemon status before retrying.</p><div class="wake-actions"><a href={ templ.SafeURL(returnURL(ctx)) } data-return>Return to previous work</a><a href="/system">Inspect daemon status</a></div></section>
 }

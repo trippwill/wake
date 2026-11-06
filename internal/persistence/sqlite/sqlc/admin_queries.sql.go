@@ -418,7 +418,16 @@ func (q *Queries) AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRo
 }
 
 const adminObservationCount = `-- name: AdminObservationCount :one
-SELECT (SELECT count(*) FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2))) AS total,count(*) AS matched FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1 OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome))
+SELECT (SELECT count(*) FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id WHERE (?1='activity' AND o.execution_id=?2
+ OR ?1='artifact' AND o.artifact_id=?2
+ OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN
+ (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2))) AS total,
+count(*) AS matched FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id
+WHERE (?1='activity' AND o.execution_id=?2
+ OR ?1='artifact' AND o.artifact_id=?2
+ OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN
+ (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1
+ OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome))
 `
 
 type AdminObservationCountParams struct {
@@ -447,7 +456,25 @@ func (q *Queries) AdminObservationCount(ctx context.Context, arg AdminObservatio
 
 const adminObservationRows = `-- name: AdminObservationRows :many
 WITH ordering AS (SELECT CAST(?7 AS TEXT) AS sort_field,CAST(?8 AS TEXT) AS direction,CAST(?9 AS TEXT) AS outcome_labels)
-SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,a.retrieved FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id CROSS JOIN ordering LEFT JOIN json_each(ordering.outcome_labels) labels ON labels.key=o.outcome WHERE (?1='activity' AND o.execution_id=?2 OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN(SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1 OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome)) ORDER BY CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,CASE WHEN sort_field='report' AND direction='desc' THEN a.retrieved END COLLATE wake_instant desc,CASE WHEN sort_field='outcome' AND direction='asc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE asc,CASE WHEN sort_field='outcome' AND direction='desc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE desc,CASE WHEN sort_field='location' AND direction='asc' THEN o.location END asc,CASE WHEN sort_field='location' AND direction='desc' THEN o.location END desc,CASE WHEN sort_field='rule' AND direction='asc' THEN o.rule || ' ' || char(183) || ' ' || o.version END asc,CASE WHEN sort_field='rule' AND direction='desc' THEN o.rule || ' ' || char(183) || ' ' || o.version END desc,o.artifact_id,o.version,o.location LIMIT ?6 OFFSET ?5
+SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,o.execution_id,a.retrieved
+FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id CROSS JOIN ordering
+LEFT JOIN json_each(ordering.outcome_labels) labels ON labels.key=o.outcome
+WHERE (?1='activity' AND o.execution_id=?2
+ OR ?1='artifact' AND o.artifact_id=?2
+ OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN
+ (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1
+ OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome))
+ORDER BY CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,
+CASE WHEN sort_field='report' AND direction='desc' THEN a.retrieved END COLLATE wake_instant desc,
+CASE WHEN sort_field='outcome' AND direction='asc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE asc,
+CASE WHEN sort_field='outcome' AND direction='desc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE desc,
+CASE WHEN sort_field='activity' AND direction='asc' THEN o.execution_id END asc,
+CASE WHEN sort_field='activity' AND direction='desc' THEN o.execution_id END desc,
+CASE WHEN sort_field='location' AND direction='asc' THEN o.location END asc,
+CASE WHEN sort_field='location' AND direction='desc' THEN o.location END desc,
+CASE WHEN sort_field='rule' AND direction='asc' THEN o.rule || ' ' || char(183) || ' ' || o.version END asc,
+CASE WHEN sort_field='rule' AND direction='desc' THEN o.rule || ' ' || char(183) || ' ' || o.version END desc,
+o.artifact_id,o.version,o.location LIMIT ?6 OFFSET ?5
 `
 
 type AdminObservationRowsParams struct {
@@ -463,12 +490,13 @@ type AdminObservationRowsParams struct {
 }
 
 type AdminObservationRowsRow struct {
-	ArtifactID string
-	Version    string
-	Location   string
-	Rule       string
-	Outcome    string
-	Retrieved  string
+	ArtifactID  string
+	Version     string
+	Location    string
+	Rule        string
+	Outcome     string
+	ExecutionID sql.NullString
+	Retrieved   string
 }
 
 func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservationRowsParams) ([]AdminObservationRowsRow, error) {
@@ -496,6 +524,7 @@ func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservation
 			&i.Location,
 			&i.Rule,
 			&i.Outcome,
+			&i.ExecutionID,
 			&i.Retrieved,
 		); err != nil {
 			return nil, err

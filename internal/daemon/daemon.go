@@ -28,9 +28,21 @@ import (
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
-type shell struct{ status admin.Status }
+type shell struct {
+	status        admin.Status
+	warehouseSize func() (int64, error)
+}
 
-func (s shell) Status(context.Context) (admin.Status, error) { return s.status, nil }
+func (s shell) Status(context.Context) (admin.Status, error) {
+	status := s.status
+	if s.warehouseSize != nil {
+		if size, err := s.warehouseSize(); err == nil {
+			status.WarehouseBytes = &size
+		}
+	}
+
+	return status, nil
+}
 
 func Run(
 	ctx context.Context,
@@ -223,7 +235,11 @@ func run(
 			auth,
 			admin.Dependencies{
 				Queries: shell{
-					admin.Status{CredentialProtection: protected, StartedAt: time.Now().UTC().Format(time.RFC3339)},
+					status: admin.Status{
+						CredentialProtection: protected,
+						StartedAt:            time.Now().UTC().Format(time.RFC3339),
+					},
+					warehouseSize: store.WarehouseSize,
 				},
 				Config:   cfg,
 				Workflow: workflow,

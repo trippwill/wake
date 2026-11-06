@@ -18,7 +18,8 @@ import (
 
 type gridReadStore struct {
 	workspaceStore
-	failure error
+	failure  error
+	location string
 }
 
 func (s gridReadStore) ActivityList(
@@ -33,16 +34,22 @@ func (s gridReadStore) ObservationList(
 	_, _ string,
 	query application.ListQuery,
 ) (application.ObservationList, error) {
+	location := s.location
+	if location == "" {
+		location = "row[2]&field=value"
+	}
+
 	return application.ObservationList{
 		PageInfo: application.PageInfo{Total: 3, Matched: 2, Page: 1, PageSize: query.Options().PageSize},
 		Items: []application.Observation{
 			{
-				Artifact:  "synthetic-report",
-				Version:   "rule-v1",
-				Location:  "row[2]&field=value",
-				Rule:      "synthetic-rule",
-				Retrieved: "2026-10-31T10:00:00.120Z",
-				Outcome:   application.ObservationAccepted,
+				Artifact:   "synthetic-report",
+				ActivityID: "synthetic-activity",
+				Version:    "rule-v1",
+				Location:   location,
+				Rule:       "synthetic-rule",
+				Retrieved:  "2026-10-31T10:00:00.120Z",
+				Outcome:    application.ObservationAccepted,
 			},
 			{
 				Artifact:  "synthetic-report",
@@ -71,16 +78,22 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 	session := httptest.NewRecorder()
 	auth.issue(session)
 
+	longLocation := strings.Repeat("/r[1]", 200)
+
 	for _, tc := range []struct {
-		name, route string
-		status      int
-		failure     error
+		name, route, location string
+		status                int
+		failure               error
 	}{
 		{name: "empty activity", route: "/grids/activity", status: 200},
 		{name: "empty instruments", route: "/grids/instruments", status: 200},
 		{name: "activity appearances", route: "/grids/observations?subject=activity&id=one", status: 200},
 		{name: "instrument appearances", route: "/grids/observations?subject=instrument&id=two", status: 200},
-		{name: "untrusted page", route: "/grids/activity?page_url=https://outside.invalid/activity", status: 400},
+		{name: "artifact appearances", route: "/grids/observations?subject=artifact&id=report", status: 200},
+		{name: "navigation context is ignored", route: "/grids/activity?origin=https://outside.invalid&parent=//outside.invalid&page_url=https://outside.invalid/activity", status: 200},
+		{name: "maximum artifact location", route: "/grids/observations?subject=artifact&id=report", location: strings.Repeat("/[", 512), status: 200},
+		{name: "long artifact location", route: "/grids/observations?subject=artifact&id=report", location: longLocation, status: 200},
+		{name: "removed reference ordering", route: "/grids/observations?subject=artifact&id=report&sort=referenced", status: 400},
 		{name: "invalid page", route: "/grids/activity?page=abc", status: 400},
 		{name: "invalid size", route: "/grids/instruments?size=abc", status: 400},
 		{name: "unbounded size", route: "/grids/activity?size=201", status: 400},
@@ -89,7 +102,13 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 		{name: "unavailable store", route: "/grids/activity", status: 503, failure: errors.New("synthetic-private-storage-diagnostic")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			workflow := application.New(gridReadStore{failure: tc.failure}, nil, nil, nil, nil)
+			workflow := application.New(
+				gridReadStore{failure: tc.failure, location: tc.location},
+				nil,
+				nil,
+				nil,
+				nil,
+			)
 
 			handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
 			if err != nil {
@@ -137,27 +156,33 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 				return
 			}
 
+			location := tc.location
+			if location == "" {
+				location = "row[2]&field=value"
+			}
+
 			if len(page.Data) != 2 || page.LastRow != 2 || page.Total != 3 || page.Data[0].ID == page.Data[1].ID ||
 				page.Data[0].Report.Text != "2026-10-31T10:00:00.120Z" ||
-				page.Data[0].Location.Text != "row[2]&field=value" ||
+				page.Data[0].Location.Text != location ||
 				page.Data[0].Rule.Text != "synthetic-rule · rule-v1" {
 				t.Fatal(page)
 			}
 
 			link, err := url.Parse(page.Data[0].Report.Href)
 			if err != nil || link.Path != "/evidence/synthetic-report" ||
-				link.Query().Get("location") != "row[2]&field=value" {
+				link.RawQuery != "" {
 				t.Fatal(link, err)
 			}
 
-			expected := "/activity/one"
-			if strings.Contains(tc.route, "instrument") {
-				expected = "/instruments/two"
+			if strings.Contains(tc.route, "subject=artifact") {
+				if page.Data[0].Activity.Href == "" ||
+					page.Data[1].Activity.Text != "Not linked" {
+					t.Fatal("report observation links or context missing", page)
+				}
 			}
 
-			parent, err := url.Parse(link.Query().Get("parent"))
-			if err != nil || parent.Path != expected {
-				t.Fatal("grid endpoint leaked into return destination", link, err)
+			if len(link.Query()) != 0 || page.Data[0].Activity.Href != "/activity/synthetic-activity" {
+				t.Fatal("grid links contain navigation transport", link, page.Data[0].Activity)
 			}
 		})
 	}

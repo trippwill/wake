@@ -13,7 +13,7 @@ templ MovementPage(r application.CanonicalResource, name string) {
 	@PageHeader(activityLabel(r.Activity, name), r.Activity.Date)
 	@AcceptedDetailScope()
 	<section class="wake-card">
-		<div class="wake-card-heading"><h2>Accepted activity</h2><a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+r.ID+"/correct")) }>Correct accepted data</a></div>
+		<div class="wake-card-heading"><h2>Accepted activity</h2><a class="btn" href={ templ.SafeURL("/activity/" + r.ID + "/correct") }>Correct accepted data</a></div>
 		<dl>
 			<dt>State</dt>
 			<dd>{ r.Activity.State }</dd>
@@ -29,7 +29,7 @@ templ MovementPage(r application.CanonicalResource, name string) {
 			<dd>{ known(text(r.Activity.SettlementDate)) }</dd>
 		</dl>
 		if r.Activity.InstrumentID != nil {
-			<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+text(r.Activity.InstrumentID))) }>Inspect instrument</a>
+			<a href={ templ.SafeURL("/instruments/" + text(r.Activity.InstrumentID)) }>Inspect instrument</a>
 		}
 		if c:=r.Activity.Cash;c!=nil {
 			<dl><dt>Cash category</dt><dd>{ stringTitle(strings.ReplaceAll(c.Category,"-"," ")) }</dd><dt>Cash amount</dt><dd>{ publishedMoney(&c.Amount) }</dd><dt>Reported type</dt><dd>{ known(text(c.ReportedType)) }</dd><dt>Description</dt><dd>{ known(text(c.Description)) }</dd><dt>Source code</dt><dd>{ known(text(c.Code)) }</dd><dt>Report date</dt><dd>{ known(text(c.ReportDate)) }</dd><dt>Ex date</dt><dd>{ known(text(c.ExDate)) }</dd><dt>Reported available for trading</dt><dd>{ known(text(c.AvailableForTradingDate)) }</dd></dl>
@@ -49,7 +49,7 @@ templ MovementPage(r application.CanonicalResource, name string) {
 				<p>
 					{ link.Kind }
 					if link.TargetID != nil {
-						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+text(link.TargetID))) }>Inspect related activity</a>
+						<a href={ templ.SafeURL("/activity/" + text(link.TargetID)) }>Inspect related activity</a>
 					} else {
 						<span>Awaiting related evidence</span>
 					}

@@ -4,11 +4,9 @@
 package admin
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 
 	"go.trippwill.dev/wake/internal/application"
 )
@@ -43,6 +41,7 @@ type observationGridRow struct {
 	Outcome  gridCell `json:"outcome"`
 	Location gridCell `json:"location"`
 	Rule     gridCell `json:"rule"`
+	Activity gridCell `json:"activity"`
 }
 type gridPage[T any] struct {
 	Data     []T   `json:"data"`
@@ -88,13 +87,13 @@ func gridJSON(w http.ResponseWriter, data any, err error) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func activityGrid(ctx context.Context, data application.ActivityList) gridPage[activityGridRow] {
+func activityGrid(data application.ActivityList) gridPage[activityGridRow] {
 	view := activityList(data)
 	rows := make([]activityGridRow, 0, len(view.Items))
 	for _, item := range view.Items {
 		reference := gridCell{Text: item.Reference}
 		if item.InstrumentID != "" {
-			reference.Href = navURL(ctx, "/instruments/"+item.InstrumentID)
+			reference.Href = "/instruments/" + item.InstrumentID
 		} else {
 			reference.Text = notApplicableValue
 		}
@@ -111,7 +110,7 @@ func activityGrid(ctx context.Context, data application.ActivityList) gridPage[a
 				ID: item.ID,
 				Label: gridCell{
 					Text: item.Label,
-					Href: navURL(ctx, item.Href),
+					Href: item.Href,
 					Note: activityKindLabel(item.Kind),
 				},
 				Date:      gridCell{Text: item.Date},
@@ -128,7 +127,7 @@ func activityGrid(ctx context.Context, data application.ActivityList) gridPage[a
 	return gridResult(rows, data.PageInfo)
 }
 
-func instrumentGrid(ctx context.Context, data application.InstrumentList) gridPage[instrumentGridRow] {
+func instrumentGrid(data application.InstrumentList) gridPage[instrumentGridRow] {
 	view := instrumentList(data)
 	rows := make([]instrumentGridRow, 0, len(view.Instruments))
 	for _, item := range view.Instruments {
@@ -136,7 +135,7 @@ func instrumentGrid(ctx context.Context, data application.InstrumentList) gridPa
 			rows,
 			instrumentGridRow{
 				ID:     item.ID,
-				Name:   gridCell{Text: item.Name, Href: navURL(ctx, "/instruments/"+item.ID)},
+				Name:   gridCell{Text: item.Name, Href: "/instruments/" + item.ID},
 				Kind:   gridCell{Text: item.Kind},
 				Ticker: gridCell{Text: item.Ticker},
 				State: gridCell{
@@ -150,9 +149,16 @@ func instrumentGrid(ctx context.Context, data application.InstrumentList) gridPa
 	return gridResult(rows, data.PageInfo)
 }
 
-func observationGrid(ctx context.Context, data application.ObservationList) gridPage[observationGridRow] {
+func observationGrid(data application.ObservationList) gridPage[observationGridRow] {
 	rows := make([]observationGridRow, 0, len(data.Items))
 	for _, row := range data.Items {
+		activity := gridCell{Text: "Not linked"}
+		if row.ActivityID != "" {
+			activity = gridCell{Text: "Inspect related activity", Href: "/activity/" + row.ActivityID}
+		}
+
+		outcome := gridCell{Text: observationStatus(row.Outcome), Tone: observationBadgeKind(row.Outcome)}
+
 		rows = append(
 			rows,
 			observationGridRow{
@@ -160,11 +166,12 @@ func observationGrid(ctx context.Context, data application.ObservationList) grid
 				Report: gridCell{
 					Text: row.Retrieved,
 					Note: row.Artifact,
-					Href: navURL(ctx, "/evidence/"+row.Artifact) + "&location=" + url.QueryEscape(row.Location),
+					Href: "/evidence/" + row.Artifact,
 				},
-				Outcome:  gridCell{Text: observationStatus(row.Outcome), Tone: observationBadgeKind(row.Outcome)},
+				Outcome:  outcome,
 				Location: gridCell{Text: row.Location},
 				Rule:     gridCell{Text: row.Rule + " · " + row.Version},
+				Activity: activity,
 			},
 		)
 	}
@@ -178,13 +185,7 @@ func registerGridRoutes(
 ) {
 	for _, kind := range []string{"activity", "instruments", "observations"} {
 		gate("GET /grids/"+kind, func(w http.ResponseWriter, r *http.Request, _ string) {
-			var err error
-
-			r, err = gridPageRequest(r, kind)
-			if err != nil {
-				gridJSON(w, nil, err)
-				return
-			}
+			r = pageRequest(r)
 
 			scope := application.ActivityScope
 			if kind == "instruments" {
@@ -204,10 +205,10 @@ func registerGridRoutes(
 			switch kind {
 			case "activity":
 				data, err := workflow.ActivityList(r.Context(), query)
-				gridJSON(w, activityGrid(r.Context(), data), err)
+				gridJSON(w, activityGrid(data), err)
 			case "instruments":
 				data, err := workflow.InstrumentList(r.Context(), query)
-				gridJSON(w, instrumentGrid(r.Context(), data), err)
+				gridJSON(w, instrumentGrid(data), err)
 			case "observations":
 				data, err := workflow.ObservationList(
 					r.Context(),
@@ -215,52 +216,8 @@ func registerGridRoutes(
 					r.URL.Query().Get("id"),
 					query,
 				)
-				gridJSON(w, observationGrid(r.Context(), data), err)
+				gridJSON(w, observationGrid(data), err)
 			}
 		})
 	}
-}
-
-// Grid reads carry the owning page's navigation context, rather than treating an
-// internal JSON URL as the page to return to after inspecting a linked record.
-func gridPageRequest(r *http.Request, kind string) (*http.Request, error) {
-	r = pageRequest(r)
-	owner := r.URL.Query().Get("page_url")
-	if owner == "" {
-		path := "/activity"
-
-		query := r.URL.Query()
-		if kind == "instruments" {
-			query.Set("view", "instruments")
-		}
-
-		if kind == "observations" {
-			for _, key := range []string{"q", "sort", "dir", "page", "size"} {
-				if values, ok := query[key]; ok {
-					query["observations_"+key] = values
-					query.Del(key)
-				}
-			}
-
-			if query.Get("subject") == "activity" {
-				path = "/activity/" + url.PathEscape(query.Get("id"))
-			}
-
-			if query.Get("subject") == "instrument" {
-				path = "/instruments/" + url.PathEscape(query.Get("id"))
-			}
-		}
-
-		owner = path + "?" + query.Encode()
-	}
-
-	owner = localDestination(owner)
-	if owner == "" {
-		return nil, application.ErrInvalid
-	}
-
-	state := page(r.Context())
-	state.URL = owner
-
-	return r.WithContext(context.WithValue(r.Context(), pageKey{}, state)), nil
 }

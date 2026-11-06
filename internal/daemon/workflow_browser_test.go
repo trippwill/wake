@@ -300,7 +300,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		),
 	)
 	navigate(chromedp.Click(`form[action="/connections"] button[type="submit"]`, chromedp.ByQuery))
-	check(chromedp.WaitVisible("#workflow-progress", chromedp.ByQuery))
+	check(
+		chromedp.WaitVisible("#workflow-progress", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`history.state.wakeNavigation.workspace==='/connections'&&history.state.wakeNavigation.trail[0]==='/connections'&&new URL(document.querySelector('[data-return]').href).pathname==='/connections'`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("source creation lost its return context across the form redirect")
+	}
 
 	var connectionPath string
 	check(chromedp.Location(&connectionPath))
@@ -346,6 +356,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			nil,
 		),
 	)
+	check(
+		chromedp.Evaluate(
+			`history.state.wakeNavigation.workspace==='/activity'&&history.state.wakeNavigation.trail.length===0&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/activity'`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("account confirmation retained Connections context on Activity")
+	}
+
 	clock.Add(6)
 
 	select {
@@ -402,7 +423,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		),
 	)
 	check(
-		newDocument(chromedp.Navigate(origin+"/activity?view=instruments")),
+		newDocument(chromedp.Navigate(origin+"/instruments")),
 		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
 		chromedp.Poll(
 			`document.querySelector('.tabulator-col[tabulator-field="name"]').getAttribute('aria-sort')==='ascending'`,
@@ -442,12 +463,21 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("execution inspection lost precision")
 	}
 
+	var directActivity string
+	check(
+		chromedp.Evaluate(`location.href.split('?')[0].replace('/executions/','/activity/')`, &directActivity),
+	)
+
 	check(
 		chromedp.Click(`//summary[text()='Retained observations and acceptance rules']`, chromedp.BySearch),
 		newDocument(chromedp.Click(`.tabulator a[href^="/evidence/"]`, chromedp.ByQuery)),
 		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-variant="artifact"]')?.dataset.gridReady==='true'`,
+			nil,
+		),
 		chromedp.Evaluate(
-			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger')`,
+			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger') && !new URL(location.href).searchParams.has('location') && document.querySelector('.tabulator-row a[href^="/activity/"]')!==null`,
 			&ok,
 		),
 	)
@@ -521,8 +551,8 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("list context lost on browser history")
 	}
 
-	// A directly opened detail has no list-origin parameter. Evidence navigation
-	// must still return through the detail to Activity rather than a self-loop.
+	// Direct instrument links start in Instruments and return through their own
+	// detail when inspecting evidence.
 	check(
 		newDocument(chromedp.Navigate(strings.Split(directInstrument, "?")[0])),
 		chromedp.Poll(
@@ -533,7 +563,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
 		newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
 		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
-		chromedp.Evaluate(`new URL(document.querySelector('[data-return]').href).pathname==='/activity'`, &ok),
+		chromedp.Evaluate(
+			`new URL(document.querySelector('[data-return]').href).pathname==='/instruments' && document.querySelector('[data-return]').textContent.includes('Instruments')`,
+			&ok,
+		),
 	)
 
 	if !ok {
@@ -542,8 +575,136 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	check(
 		newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
-		chromedp.WaitVisible("#activity-rows", chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-grid="instruments"]`, chromedp.ByQuery),
 	)
+
+	for _, detail := range []string{directActivity, directInstrument} {
+		root := "/activity"
+		if strings.Contains(detail, "/instruments/") {
+			root = "/instruments"
+		}
+
+		check(
+			newDocument(chromedp.Navigate(strings.Split(detail, "?")[0]+"/correct?mode=decisions")),
+			chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`new URL(document.querySelector('[data-return]').href).pathname===`+strconv.Quote(
+					root,
+				)+`&&history.state.wakeNavigation.trail.length===0`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("direct correction created a return loop", detail)
+		}
+
+		check(
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(`location.pathname===`+strconv.Quote(root), &ok),
+		)
+
+		if !ok {
+			t.Fatal("direct correction failed to return to its workspace", detail)
+		}
+	}
+
+	for _, target := range []string{"/review", "/instruments?state=gaps"} {
+		check(
+			newDocument(chromedp.Navigate(origin+"/")),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			newDocument(chromedp.Click(`main a[href="`+target+`"]`, chromedp.ByQuery)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`history.state.wakeNavigation.workspace===location.pathname&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')===location.pathname&&(location.pathname!=='/instruments'||new URL(location.href).searchParams.get('state')==='gaps')`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("Overview workspace link lost navigation or filters", target)
+		}
+	}
+
+	for _, workspace := range []string{"instruments", "review"} {
+		root := "/" + workspace + "?q=REFERENCE+EQUITY&sort=name&dir=asc&page=1&size=25"
+		check(
+			newDocument(chromedp.Navigate(origin+root)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`(()=>{const link=document.createElement('a');link.id='navigation-proof';link.href=`+strconv.Quote(
+					strings.Split(directInstrument, "?")[0],
+				)+`;link.textContent='Inspect reference instrument';document.body.append(link)})()`,
+				nil,
+			),
+			newDocument(chromedp.Click("#navigation-proof", chromedp.ByQuery)),
+			chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
+			newDocument(chromedp.Click(`.tabulator a[href^="/evidence/"]`, chromedp.ByQuery)),
+			chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
+			newDocument(chromedp.Reload()),
+			chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
+			chromedp.Evaluate(
+				`(()=>{const workspace=new URL(document.querySelector('.wake-nav-link[aria-current="page"]').href);return workspace.pathname===`+strconv.Quote(
+					"/"+workspace,
+				)+`&&document.querySelector('[data-parent-breadcrumb] a').textContent==='Instrument'&&!['origin','parent','page_url'].some(key=>new URL(location.href).searchParams.has(key))})()`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("workspace or return trail lost on report reload", workspace)
+		}
+
+		if workspace == "review" {
+			var resource string
+			check(chromedp.Location(&resource))
+
+			document, closeDocument := chromedp.NewContext(ctx)
+			step, stopStep := context.WithTimeout(document, 20*time.Second)
+			err := chromedp.Run(
+				step,
+				newDocument(chromedp.Navigate(resource)),
+				chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+				chromedp.Evaluate(
+					`history.replaceState({wakeNavigation:{workspace:'https://outside.invalid',trail:['javascript:invalid']}},'');sessionStorage.setItem('wake.navigation.pending','invalid JSON')`,
+					nil,
+				),
+				newDocument(chromedp.Reload()),
+				chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+				chromedp.Evaluate(
+					`new URL(document.querySelector('[data-return]').href).pathname==='/activity'&&!new URL(document.querySelector('[data-return]').href).search&&document.querySelector('[data-parent-breadcrumb]').hidden`,
+					&ok,
+				),
+			)
+
+			stopStep()
+			closeDocument()
+
+			if err != nil || !ok {
+				t.Fatal("new tab or malformed history lost the canonical fallback", err, ok)
+			}
+		}
+
+		check(
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`(()=>{const q=new URL(location.href).searchParams;return location.pathname===`+strconv.Quote(
+					"/"+workspace,
+				)+`&&q.get('q')==='REFERENCE EQUITY'&&q.get('size')==='25'})()`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("return to originating workspace lost view parameters", workspace)
+		}
+	}
 
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),
@@ -746,7 +907,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(`//li[contains(.,"Browser field correction")]`, chromedp.BySearch),
 		chromedp.WaitVisible(`form[aria-label^="Release "]`, chromedp.ByQuery),
 		chromedp.Evaluate(
-			`document.body.textContent.includes('Active decisions')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/local/')`,
+			`document.body.textContent.includes('Active decisions')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/local/')&&history.state.wakeNavigation.trail.length>0&&new URL(document.querySelector('[data-return]').href).pathname.startsWith('/executions/')&&!new URL(location.href).searchParams.has('origin')&&!new URL(location.href).searchParams.has('parent')`,
 			&ok,
 		),
 	)

@@ -8,6 +8,8 @@ templ Shell(title string, csrf string, content templ.Component) {
 }
 
 templ SectionShell(title string, csrf string, section string, content templ.Component) {
+	{{ contextual := section == "Activity" }}
+	{{ section = workspaceSection(ctx, section) }}
 	if page(ctx).Fragment {
 		@WorkspaceContent(csrf, content)
 	} else {
@@ -32,7 +34,7 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 				<script defer src="/assets/vendor/tabulator-6.3.1/tabulator.min.js"></script>
 				<script defer src="/assets/app.js"></script>
 			</head>
-			<body data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
+			<body data-contextual-workspace?={ contextual } data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
 				<a class="wake-skip" href="#main-content">Skip to content</a>
 				<div class="wake-app">
 					<aside class="wake-sidebar" data-navigation>
@@ -40,7 +42,6 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 							<a class="wake-brand" href="/">
 								<img class="wake-logo-light" src="/assets/brand/wake-logo.svg" width="143" height="45" alt="Wake"/>
 								<img class="wake-logo-dark" src="/assets/brand/wake-logo-reversed.svg" width="143" height="45" alt="Wake"/>
-								<span>Financial evidence</span>
 							</a>
 							if csrf!="" {
 								<button class="btn btn-sm wake-menu-toggle" type="button" aria-expanded="true" aria-controls="main-navigation" hidden>Menu</button>
@@ -54,14 +55,20 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 										@SidebarLink("Overview", "/", "overview", section == "Overview")
 									</li>
 									<li>
-										@SidebarLink("Activity", "/activity", "overview", section == "Activity")
+										@SidebarLink("Activity", "/activity", "trades", section == "Activity")
 									</li>
 									<li>
-										@SidebarLink("Connections", "/connections", "configuration", section == "Connections")
+										@SidebarLink("Instruments", "/instruments", "instruments", section == "Instruments")
+									</li>
+									<li>
+										@SidebarLink("Needs review", "/review", "review", section == "Needs review")
 									</li>
 									<li class="menu-title">Administration</li>
 									<li>
-										@SidebarLink("System", "/status", "configuration", section == "System" || section == "Daemon status" || section == "Configuration")
+										@SidebarLink("Connections", "/connections", "connections", section == "Connections")
+									</li>
+									<li>
+										@SidebarLink("System", "/system", "configuration", section == "System" || section == "Daemon status" || section == "Configuration")
 									</li>
 								</ul>
 							</nav>

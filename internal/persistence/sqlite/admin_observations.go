@@ -21,7 +21,7 @@ func (s *Store) ObservationList(
 	options := query.Options()
 	if query.Scope() != application.ObservationScope || options.Page < 1 || options.PageSize < 1 || id == "" ||
 		len(id) > 256 ||
-		kind != "activity" && kind != "instrument" {
+		kind != "activity" && kind != "instrument" && kind != "artifact" {
 		return application.ObservationList{}, application.ErrInvalid
 	}
 
@@ -32,10 +32,13 @@ func (s *Store) ObservationList(
 		out := application.ObservationList{Items: []application.Observation{}}
 
 		var err error
-		if kind == "activity" {
+		switch kind {
+		case "activity":
 			_, err = q.Execution(ctx, id)
-		} else {
+		case "instrument":
 			_, err = q.Instrument(ctx, id)
+		case "artifact":
+			_, err = q.ArtifactProvider(ctx, id)
 		}
 
 		if errors.Is(err, sql.ErrNoRows) {
@@ -83,12 +86,13 @@ func (s *Store) ObservationList(
 			out.Items = append(
 				out.Items,
 				application.Observation{
-					Artifact:  row.ArtifactID,
-					Version:   row.Version,
-					Location:  row.Location,
-					Rule:      row.Rule,
-					Retrieved: row.Retrieved,
-					Outcome:   application.ObservationOutcome(row.Outcome),
+					Artifact:   row.ArtifactID,
+					Version:    row.Version,
+					Location:   row.Location,
+					Rule:       row.Rule,
+					Retrieved:  row.Retrieved,
+					Outcome:    application.ObservationOutcome(row.Outcome),
+					ActivityID: row.ExecutionID.String,
 				},
 			)
 		}

@@ -352,40 +352,6 @@ func (q *Queries) ArtifactInstrumentClaims(ctx context.Context, artifactID strin
 	return items, nil
 }
 
-const artifactObservations = `-- name: ArtifactObservations :many
-SELECT artifact_id, version, location, execution_id, outcome, rule FROM execution_observations WHERE artifact_id=? ORDER BY rowid
-`
-
-func (q *Queries) ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error) {
-	rows, err := q.db.QueryContext(ctx, artifactObservations, artifactID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ExecutionObservation
-	for rows.Next() {
-		var i ExecutionObservation
-		if err := rows.Scan(
-			&i.ArtifactID,
-			&i.Version,
-			&i.Location,
-			&i.ExecutionID,
-			&i.Outcome,
-			&i.Rule,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const artifactProcessed = `-- name: ArtifactProcessed :exec
 UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?
 `

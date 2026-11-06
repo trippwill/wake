@@ -79,7 +79,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			<h2>Financial summary</h2>
 			<div class="wake-actions">
 				@ActivityBadge(d.Execution.State())
-				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Execution.ID()+"/correct")) }>Correct accepted data</a>
+				<a class="btn" href={ templ.SafeURL("/activity/" + d.Execution.ID() + "/correct") }>Correct accepted data</a>
 			</div>
 		</div>
 		<dl>
@@ -101,7 +101,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			<dt>Execution time (reported precision)</dt>
 			<dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd>
 		</dl>
-		<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Execution.Instrument())) }>Inspect instrument</a>
+		<a href={ templ.SafeURL("/instruments/" + d.Execution.Instrument()) }>Inspect instrument</a>
 	</section>
 	<section class="wake-card">
 		<h2>Monetary terms</h2>
@@ -154,7 +154,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 			<h2>Instrument identity</h2>
 			<div class="wake-actions">
 				@InstrumentBadge(d.Instrument)
-				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Instrument.ID()+"/correct")) }>Correct instrument data</a>
+				<a class="btn" href={ templ.SafeURL("/instruments/" + d.Instrument.ID() + "/correct") }>Correct instrument data</a>
 			</div>
 		</div>
 		<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd></dl>
@@ -162,7 +162,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 			<p>
 				Underlier:
 				if d.Underlier!="" {
-					<a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Underlier)) }>Inspect linked underlier</a>
+					<a href={ templ.SafeURL("/instruments/" + d.Underlier) }>Inspect linked underlier</a>
 				} else {
 					Unknown
 				}
@@ -211,7 +211,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 				</li>
 			}
 			for _,attempt:=range d.References {
-				<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL(navURL(ctx, "/reference-evidence/"+attempt.Evidence)) }>OpenFIGI mapping evidence</a></li>
+				<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL("/reference-evidence/" + attempt.Evidence) }>OpenFIGI mapping evidence</a></li>
 			}
 		</ul>
 		<p>Wake instrument identity: { d.Instrument.ID() }</p>
@@ -309,7 +309,7 @@ templ RelationshipLinks(links []application.Relationship) {
 			<li>
 				{ link.Kind } · { link.Target }
 				if link.TargetID!="" {
-					<a href={ templ.SafeURL(navURL(ctx, "/activity/"+link.TargetID)) }>Inspect related activity</a>
+					<a href={ templ.SafeURL("/activity/" + link.TargetID) }>Inspect related activity</a>
 				} else {
 					<span>Endpoint unresolved</span>
 				}
@@ -328,10 +328,10 @@ templ LifecyclePage(d application.LifecycleDetail) {
 			<h2>Reported option outcome</h2>
 			<div class="wake-actions">
 				@ActivityBadge(d.Lifecycle.State())
-				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Lifecycle.ID()+"/correct")) }>Correct accepted data</a>
+				<a class="btn" href={ templ.SafeURL("/activity/" + d.Lifecycle.ID() + "/correct") }>Correct accepted data</a>
 			</div>
 		</div>
-		<dl><dt>Quantity (contracts)</dt><dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd><dt>Reported date</dt><dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd><dt>Reported time</dt><dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd></dl><a href={ templ.SafeURL(navURL(ctx, "/instruments/"+d.Lifecycle.Instrument())) }>Inspect option contract</a>
+		<dl><dt>Quantity (contracts)</dt><dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd><dt>Reported date</dt><dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd><dt>Reported time</dt><dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd></dl><a href={ templ.SafeURL("/instruments/" + d.Lifecycle.Instrument()) }>Inspect option contract</a>
 	</section>
 	<section class="wake-card">
 		<h2>Contract terms</h2>@OptionFacts(d.Lifecycle.Terms().Fields().Instrument.Option())
@@ -399,7 +399,7 @@ templ ConversionPage(d application.ConversionDetail) {
 			<h2>Currency roles</h2>
 			<div class="wake-actions">
 				@ActivityBadge(d.Conversion.State())
-				<a class="btn" href={ templ.SafeURL(navURL(ctx, "/activity/"+d.Conversion.ID()+"/correct")) }>Correct accepted data</a>
+				<a class="btn" href={ templ.SafeURL("/activity/" + d.Conversion.ID() + "/correct") }>Correct accepted data</a>
 			</div>
 		</div>
 		<dl>
@@ -442,12 +442,12 @@ templ CorrectionReviews(rows []application.CorrectionReview) {
 				<li>
 					{ stringTitle(r.Kind) } · { correctionStatus(r.Status) }<details><summary>Reported source references</summary><p>{ r.Target }</p></details>
 					for _,id:=range r.TargetIDs {
-						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+id)) }>Original activity</a>
+						<a href={ templ.SafeURL("/activity/" + id) }>Original activity</a>
 					}
 					for _,id:=range r.ReplacementIDs {
-						<a href={ templ.SafeURL(navURL(ctx, "/activity/"+id)) }>Replacement activity</a>
+						<a href={ templ.SafeURL("/activity/" + id) }>Replacement activity</a>
 					}
-					<a href={ templ.SafeURL(navURL(ctx, "/evidence/"+r.Artifact)) }>Source instruction</a>
+					<a href={ templ.SafeURL("/evidence/" + r.Artifact) }>Source instruction</a>
 				</li>
 			}
 		</ul>
@@ -642,7 +642,7 @@ templ CorrectionPage(csrf string, f application.CorrectionForm) {
 			<h2>Correct a field or link</h2>
 			<p class="wake-help">Your correction remains active until you replace or release it. Original evidence stays intact.</p>
 			<form method="get" action={ templ.SafeURL(correctionPath(f)) } data-field-picker>
-				<input type="hidden" name="mode" value="field"/><input type="hidden" name="origin" value={ origin(ctx) }/><input type="hidden" name="parent" value={ page(ctx).Query.Get("parent") }/>
+				<input type="hidden" name="mode" value="field"/>
 				<p>
 					<label for="decision-scope">What do you want to correct?</label>
 					<select class="select" id="decision-scope" name="field" required>
@@ -702,7 +702,7 @@ templ CorrectionPage(csrf string, f application.CorrectionForm) {
 				<p>No retained candidates are available for this item.</p>
 			} else {
 				<form method="get" action={ templ.SafeURL(correctionPath(f)) } aria-label="Compare retained evidence" data-candidate-compare>
-					<input type="hidden" name="mode" value="evidence"/><input type="hidden" name="origin" value={ origin(ctx) }/><input type="hidden" name="parent" value={ page(ctx).Query.Get("parent") }/>
+					<input type="hidden" name="mode" value="evidence"/>
 					<p>
 						<label for="decision-candidate">Retained candidate</label>
 						<select class="select" id="decision-candidate" name="candidate" required>

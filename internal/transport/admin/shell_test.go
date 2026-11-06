@@ -31,7 +31,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 	auth.issue(w)
 
 	cookie := w.Result().Cookies()[0]
-	for _, path := range []string{"/", "/configuration", "/status", "/trades", "/documents", "/connections", "/processing"} {
+	for _, path := range []string{"/", "/system/configuration", "/system", "/trades", "/documents", "/connections", "/processing"} {
 		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil)
 		r.AddCookie(cookie)
 
@@ -39,7 +39,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 		h.ServeHTTP(w, r)
 
 		want := http.StatusOK
-		if path != "/" && path != "/configuration" && path != "/status" {
+		if path != "/" && path != "/system/configuration" && path != "/system" {
 			want = http.StatusNotFound
 		}
 
@@ -48,13 +48,13 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 		}
 
 		if want == http.StatusOK {
-			for _, destination := range []string{"/", "/activity", "/connections", "/status", "/configuration"} {
+			for _, destination := range []string{"/", "/activity", "/connections", "/system", "/system/configuration"} {
 				if !strings.Contains(w.Body.String(), `href="`+destination+`"`) {
 					t.Errorf("%s has no navigation to %s", path, destination)
 				}
 			}
 
-			if path == "/configuration" {
+			if path == "/system/configuration" {
 				for _, text := range []string{"Configuration", "Manage source and reference access"} {
 					if !strings.Contains(w.Body.String(), text) {
 						t.Errorf("configuration page missing %q", text)

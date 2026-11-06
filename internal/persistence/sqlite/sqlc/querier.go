@@ -43,7 +43,6 @@ type Querier interface {
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
-	ArtifactObservations(ctx context.Context, artifactID string) ([]ExecutionObservation, error)
 	ArtifactProcessed(ctx context.Context, id string) error
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)

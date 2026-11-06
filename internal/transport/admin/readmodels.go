@@ -238,7 +238,7 @@ func reviewItems(v application.ReviewList) []reviewItem {
 			item.Href = "/instruments/" + r.ID + "/correct?mode=evidence"
 		case application.ReviewInstruction:
 			item.Label = stringTitle(r.Name) + " instruction"
-			item.Href = "/evidence/" + r.Artifact + "?location=" + url.QueryEscape(r.Location)
+			item.Href = "/evidence/" + r.Artifact
 		case application.ReviewIdentity:
 			item.Href = "/evidence/" + r.Artifact
 		}

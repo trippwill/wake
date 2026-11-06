@@ -793,10 +793,8 @@ type (
 		ID, Operation, Retrieved, Hash, Policy, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
 		Equivalent                                                                                   bool
 	}
-	EvidenceObservation struct{ ActivityID, Location, Outcome, Rule, Version string }
-	EvidenceContext     struct {
+	EvidenceContext struct {
 		ConnectionName, Operation, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
-		Observations                                                                    []EvidenceObservation
 		Receipts                                                                        []AcquisitionReceipt
 		ReceiptCount                                                                    int64
 	}

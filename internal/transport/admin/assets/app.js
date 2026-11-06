@@ -2,6 +2,311 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 (() => {
+  const localAddress = (value) => {
+    if (
+      typeof value !== "string" ||
+      !value ||
+      value.length > 8192 ||
+      /[\\\r\n]/.test(value)
+    )
+      return null;
+    try {
+      const url = new URL(value, location.href);
+      return url.origin === location.origin ? url.pathname + url.search : null;
+    } catch {
+      return null;
+    }
+  };
+  const workspaceLinks = [...document.querySelectorAll(".wake-nav-link")];
+  const workspaceAddresses = workspaceLinks.map((link) =>
+    localAddress(link.href),
+  );
+  const defaultWorkspace = localAddress(
+    workspaceLinks.find((link) => link.getAttribute("aria-current") === "page")
+      ?.href || "/activity",
+  );
+  const resourceKey = (address) => {
+    const url = new URL(address, location.href);
+    return url.pathname;
+  };
+  const navigationLabel = (address) => {
+    const url = new URL(address, location.href);
+    const workspace = workspaceLinks.find(
+      (link) => resourceKey(link.href) === resourceKey(address),
+    );
+    if (workspace) return workspace.textContent.trim();
+    if (url.pathname.startsWith("/instruments/")) return "Instrument";
+    if (/^\/(reference-)?evidence\//.test(url.pathname))
+      return "Supporting evidence";
+    if (url.pathname.startsWith("/connections/")) return "Connections";
+    if (url.pathname.startsWith("/system/")) return "System";
+    return "Activity detail";
+  };
+  const readNavigation = (value) => {
+    if (
+      !value ||
+      !workspaceAddresses.includes(value.workspace) ||
+      !Array.isArray(value.trail) ||
+      value.trail.length > 16
+    )
+      return null;
+    const trail = value.trail.map(localAddress);
+    return trail.every(Boolean) ? { workspace: value.workspace, trail } : null;
+  };
+  let navigation = { workspace: defaultWorkspace, trail: [] };
+  let navigationRevision = 0;
+  let navigationIntent = 0;
+  let navigationPending = false;
+  let navigationReady = Promise.resolve();
+  const canonicalParents = new WeakMap();
+  const navigationState = () => ({
+    ...history.state,
+    wakeNavigation: navigation,
+  });
+  let navigationAddress = location.href;
+  const updateHistory = (url = location.href, push = false) => {
+    history[push ? "pushState" : "replaceState"](navigationState(), "", url);
+    navigationAddress = location.href;
+  };
+  const renderNavigation = () => {
+    const previous = navigation.trail.at(-1);
+    const root =
+      navigation.trail.find(
+        (address) => resourceKey(address) === resourceKey(navigation.workspace),
+      ) || navigation.workspace;
+    for (const link of document.querySelectorAll("[data-return]")) {
+      if (!link.dataset.defaultReturn) link.dataset.defaultReturn = link.href;
+      link.href = previous || link.dataset.defaultReturn;
+      link.textContent = `Return to ${navigationLabel(link.href)}`;
+    }
+    for (const breadcrumbs of document.querySelectorAll("[data-breadcrumbs]")) {
+      const workspace = breadcrumbs.querySelector(
+        "[data-workspace-breadcrumb] a",
+      );
+      workspace.href = root;
+      workspace.textContent = navigationLabel(root);
+      const parent = breadcrumbs.querySelector("[data-parent-breadcrumb]");
+      const link = parent.querySelector("a");
+      if (!canonicalParents.has(parent))
+        canonicalParents.set(parent, {
+          hidden: parent.hidden,
+          href: link.href,
+          label: link.textContent,
+        });
+      const canonical = canonicalParents.get(parent);
+      parent.hidden = previous
+        ? resourceKey(previous) === resourceKey(root)
+        : canonical.hidden;
+      link.href = previous || canonical.href;
+      link.textContent = previous ? navigationLabel(previous) : canonical.label;
+    }
+    if (document.body.hasAttribute("data-contextual-workspace")) {
+      for (const link of workspaceLinks) {
+        if (localAddress(link.href) === navigation.workspace)
+          link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      }
+    }
+  };
+  const restoreNavigationEntry = async () => {
+    const revision = ++navigationRevision;
+    const arrived = localAddress(location.href);
+    let restored = readNavigation(history.state?.wakeNavigation);
+    try {
+      const pending = JSON.parse(
+        sessionStorage.getItem("wake.navigation.pending"),
+      );
+      sessionStorage.removeItem("wake.navigation.pending");
+      if (
+        !restored &&
+        pending?.from === localAddress(document.referrer) &&
+        readNavigation(pending.navigation)
+      ) {
+        let matches = !pending.to || pending.to === arrived;
+        const target = localAddress(pending.to);
+        const instrumentPath = /^\/instruments\/[^/]+(\/correct)?$/;
+        if (
+          !matches &&
+          target &&
+          instrumentPath.test(resourceKey(target)) &&
+          instrumentPath.test(resourceKey(arrived)) &&
+          resourceKey(target).endsWith("/correct") ===
+            resourceKey(arrived).endsWith("/correct")
+        ) {
+          // Verify alias redirects through the existing authenticated resource route.
+          navigationPending = true;
+          const response = await fetch(target, {
+            method: "HEAD",
+            credentials: "same-origin",
+            signal: AbortSignal.timeout(8000),
+          });
+          matches = response.ok && localAddress(response.url) === arrived;
+        }
+        if (matches) restored = readNavigation(pending.navigation);
+      }
+    } catch {
+      // Storage or redirect-verification failures keep canonical navigation usable.
+    }
+    if (revision !== navigationRevision) return;
+    const workspace = workspaceAddresses.find(
+      (address) => resourceKey(address) === resourceKey(arrived),
+    );
+    navigation = workspace
+      ? { workspace, trail: [] }
+      : restored || { workspace: defaultWorkspace, trail: [] };
+    const self = navigation.trail.findIndex(
+      (address) => resourceKey(address) === resourceKey(location.href),
+    );
+    if (self !== -1) navigation.trail = navigation.trail.slice(0, self);
+    updateHistory();
+    renderNavigation();
+  };
+  const restoreNavigation = () => {
+    navigationIntent++;
+    navigationPending = false;
+    const ready = restoreNavigationEntry();
+    navigationReady = ready;
+    ready.then(() => {
+      if (navigationReady === ready) navigationPending = false;
+    });
+  };
+  const rememberNavigation = (target, submission = false) => {
+    const destination = localAddress(target);
+    if (
+      !destination ||
+      new URL(destination, location.href).pathname === "/login"
+    )
+      return;
+    navigationRevision++;
+    const current = localAddress(location.href);
+    let next = {
+      workspace: navigation.workspace,
+      trail: [...navigation.trail],
+    };
+    const previous = next.trail.indexOf(destination);
+    const canonicalBack =
+      !next.trail.length &&
+      resourceKey(current).endsWith("/correct") &&
+      resourceKey(destination) ===
+        resourceKey(current).slice(0, -"/correct".length);
+    const workspace = workspaceAddresses.find(
+      (address) => resourceKey(address) === resourceKey(destination),
+    );
+    if (!submission && workspace) next = { workspace, trail: [] };
+    else if (!submission && previous !== -1)
+      next.trail = next.trail.slice(0, previous);
+    else if (
+      !submission &&
+      !canonicalBack &&
+      resourceKey(current) !== resourceKey(destination)
+    ) {
+      next.trail.push(current);
+      if (next.trail.length > 16) next.trail.splice(1, 1);
+    }
+    try {
+      sessionStorage.setItem(
+        "wake.navigation.pending",
+        JSON.stringify({
+          from: current,
+          to: submission ? null : destination,
+          navigation: next,
+        }),
+      );
+    } catch {
+      // Resource links keep their canonical destinations without tab storage.
+    }
+  };
+  restoreNavigation();
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) restoreNavigation();
+    else updateHistory();
+  });
+  const restoreLocation = (event) => {
+    const previous = new URL(navigationAddress);
+    const current = new URL(location.href);
+    const fragment =
+      current.pathname === previous.pathname &&
+      current.search === previous.search &&
+      current.href !== previous.href;
+    if (
+      fragment ||
+      (navigationPending && current.pathname === previous.pathname)
+    ) {
+      if (fragment) event.wakeFragmentNavigation = true;
+      updateHistory();
+      renderNavigation();
+    } else if (event.type === "popstate") restoreNavigation();
+  };
+  window.addEventListener("popstate", restoreLocation);
+  window.addEventListener("hashchange", restoreLocation);
+  document.addEventListener("htmx:afterSettle", renderNavigation);
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest("a[href]");
+    if (
+      !link ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey ||
+      link.hasAttribute("download") ||
+      (link.target && link.target !== "_self")
+    )
+      return;
+    const intent = ++navigationIntent;
+    if (
+      link.href.includes("#") &&
+      localAddress(link.href) === localAddress(location.href)
+    )
+      return;
+    const deferred = navigationPending && !!localAddress(link.href);
+    if (deferred) {
+      event.preventDefault();
+      link.setAttribute("aria-busy", "true");
+      await navigationReady;
+      link.removeAttribute("aria-busy");
+      if (intent !== navigationIntent || !link.isConnected) return;
+    }
+    if (location.pathname === "/activity") {
+      const record = link.closest("[data-record]")?.dataset.record;
+      if (record) {
+        const current = new URL(location.href);
+        current.searchParams.set("selected", record);
+        updateHistory(current);
+      }
+    }
+    rememberNavigation(link.href);
+    if (deferred) location.assign(link.href);
+  });
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (
+      event.defaultPrevented ||
+      form.matches("[data-list-filters],[data-observation-filters]")
+    )
+      return;
+    const intent = ++navigationIntent;
+    if (navigationPending) {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const inert = form.inert;
+      form.inert = true;
+      form.setAttribute("aria-busy", "true");
+      await navigationReady;
+      form.inert = inert;
+      form.removeAttribute("aria-busy");
+      if (intent !== navigationIntent || !form.isConnected) return;
+      if (submitter) form.requestSubmit(submitter);
+      else form.requestSubmit();
+      return;
+    }
+    const target = new URL(form.action, location.href);
+    if (form.method.toLowerCase() === "get")
+      target.search = new URLSearchParams(new FormData(form)).toString();
+    rememberNavigation(target.href, form.method.toLowerCase() === "post");
+  });
+
   const toggle = document.querySelector(".wake-menu-toggle");
   const nav = document.querySelector("#main-navigation");
   if (toggle && nav) {
@@ -178,7 +483,7 @@
       if (!template) {
         const url = new URL(location.href);
         url.searchParams.delete("field");
-        history.replaceState(null, "", url);
+        updateHistory(url);
         return;
       }
       host.append(template.content.cloneNode(true));
@@ -269,7 +574,7 @@
       }
       const url = new URL(location.href);
       url.searchParams.set("field", scope.value);
-      history.replaceState(null, "", url);
+      updateHistory(url);
       check();
     };
     form.addEventListener("input", (event) => {
@@ -328,8 +633,12 @@
       ["rule", "Acceptance rule / version"],
     ],
   };
-  const gridParameter = (region, name) =>
-    region.dataset.grid === "observations" ? `observations_${name}` : name;
+  const gridDefaultSort = (region) =>
+    region.dataset.grid === "activity"
+      ? "date"
+      : region.dataset.grid === "instruments"
+        ? "name"
+        : "report";
   const selectedTextWithin = (region) => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed) return false;
@@ -380,27 +689,43 @@
       }
       try {
         const kind = region.dataset.grid;
+        const artifact = region.dataset.gridVariant === "artifact";
+        const preferenceKey = (id, type) =>
+          `${id}${artifact && type === "columns" ? "-artifact" : ""}-${type}`;
+        const emptyState = document.createElement("span");
+        emptyState.textContent = "No matching records.";
         const params = new URL(location.href).searchParams;
-        const initialSort =
-          params.get(gridParameter(region, "sort")) ||
-          (kind === "activity"
-            ? "date"
-            : kind === "instruments"
-              ? "name"
-              : "report");
+        const initialSort = params.get("sort") || gridDefaultSort(region);
         const initialDirection =
-          params.get(gridParameter(region, "dir")) ||
-          (kind === "instruments" ? "asc" : "desc");
+          params.get("dir") || (kind === "instruments" ? "asc" : "desc");
         const element = region.querySelector("[data-grid-table]");
-        const createColumns = () =>
-          gridColumns[kind].map(([field, title]) => ({
+        const createColumns = () => {
+          const definitions = artifact
+            ? [
+                ["outcome", "Outcome"],
+                ["activity", "Related activity"],
+                ["location", "Source location"],
+                ["rule", "Acceptance rule / version"],
+              ]
+            : gridColumns[kind];
+          const columns = definitions.map(([field, title]) => ({
             field,
             title,
             minWidth: 130,
+            widthGrow: artifact && field === "location" ? 2 : 1,
             headerWordWrap: true,
             variableHeight: true,
             formatter: gridCell,
           }));
+          if (artifact)
+            columns.push({
+              field: "report",
+              title: "Report",
+              visible: false,
+              headerSort: false,
+            });
+          return columns;
+        };
         const state = {
           table: null,
           check: null,
@@ -457,16 +782,14 @@
           const target = new URL(url, location.href);
           const current = new URL(location.href);
           for (const key of ["q", "kind", "state"])
-            if (current.searchParams.has(gridParameter(region, key)))
-              target.searchParams.set(
-                key,
-                current.searchParams.get(gridParameter(region, key)),
-              );
-          const sort = parameters.sort?.[0];
-          if (sort) {
-            target.searchParams.set("sort", sort.field);
-            target.searchParams.set("dir", sort.dir);
-          }
+            if (current.searchParams.has(key))
+              target.searchParams.set(key, current.searchParams.get(key));
+          const sort = parameters.sort?.[0] || {
+            field: gridDefaultSort(region),
+            dir: kind === "instruments" ? "asc" : "desc",
+          };
+          target.searchParams.set("sort", sort.field);
+          target.searchParams.set("dir", sort.dir);
           target.searchParams.set("page", String(parameters.page || 1));
           target.searchParams.set("size", String(parameters.size || 50));
           const resetFilters = region.querySelector(
@@ -481,19 +804,7 @@
             resetFilters.href = destination.href;
           }
           for (const key of ["sort", "dir", "page", "size"])
-            current.searchParams.set(
-              gridParameter(region, key),
-              target.searchParams.get(key),
-            );
-          if (current.searchParams.has("origin"))
-            target.searchParams.set(
-              "origin",
-              current.searchParams.get("origin"),
-            );
-          target.searchParams.set(
-            "page_url",
-            current.pathname + current.search,
-          );
+            current.searchParams.set(key, target.searchParams.get(key));
           const timeout = setTimeout(() => controller.abort(), 8000);
           try {
             const response = await fetch(target, {
@@ -523,9 +834,14 @@
               );
             if (sequence !== state.sequence)
               throw new Error("Superseded table request");
+            if (artifact)
+              emptyState.textContent =
+                result.total === 0
+                  ? "No financial observations are attached to this report."
+                  : "No matching records.";
             if (!background) {
               state.installing = result;
-              history.replaceState(null, "", current);
+              updateHistory(current);
             }
             return result;
           } catch (error) {
@@ -554,12 +870,9 @@
           columns: createColumns(),
           pagination: true,
           paginationMode: "remote",
-          paginationSize:
-            gridPageSize(params.get(gridParameter(region, "size"))) || 50,
+          paginationSize: gridPageSize(params.get("size")) || 50,
           paginationSizeSelector: [...gridPageSizes],
-          paginationInitialPage: Number(
-            params.get(gridParameter(region, "page")) || 1,
-          ),
+          paginationInitialPage: Number(params.get("page") || 1),
           sortMode: "remote",
           filterMode: "remote",
           initialSort: [{ column: initialSort, dir: initialDirection }],
@@ -570,13 +883,13 @@
           persistenceMode: "local",
           persistenceReaderFunc: (id, type) => {
             if (type === "page") {
-              const size = gridPageSize(
-                params.get(gridParameter(region, "size")),
-              );
+              const size = gridPageSize(params.get("size"));
               if (size) return { paginationSize: size };
             }
             try {
-              const saved = JSON.parse(localStorage.getItem(`${id}-${type}`));
+              const saved = JSON.parse(
+                localStorage.getItem(preferenceKey(id, type)),
+              );
               if (type === "page") {
                 const size = gridPageSize(saved?.paginationSize);
                 return size ? { paginationSize: size } : false;
@@ -589,12 +902,15 @@
           persistenceWriterFunc: (id, type, data) => {
             if (type === "page" && !gridPageSize(data.paginationSize)) return;
             try {
-              localStorage.setItem(`${id}-${type}`, JSON.stringify(data));
+              localStorage.setItem(
+                preferenceKey(id, type),
+                JSON.stringify(data),
+              );
             } catch {
               // Browser preferences must not block table interactions.
             }
           },
-          placeholder: "No matching records.",
+          placeholder: emptyState,
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: requestData,
           rowFormatter: (row) => {
@@ -611,7 +927,7 @@
           if (!changed || state.restoring) return;
           const url = new URL(location.href);
           url.searchParams.delete("selected");
-          history.replaceState(null, "", url);
+          updateHistory(url);
         });
         const readPage = (background) =>
           requestData(
@@ -809,14 +1125,15 @@
     if (!state) return;
     const url = new URL(location.href);
     for (const [key, value] of new FormData(form))
-      url.searchParams.set(gridParameter(region, key), value);
-    url.searchParams.set(gridParameter(region, "page"), "1");
+      url.searchParams.set(key, value);
+    url.searchParams.set("page", "1");
     url.searchParams.delete("selected");
-    history.pushState(null, "", url);
+    updateHistory(url, true);
     state.table.setData().catch(() => {});
   });
 
-  window.addEventListener("popstate", () => {
+  window.addEventListener("popstate", (event) => {
+    if (event.wakeFragmentNavigation) return;
     const params = new URL(location.href).searchParams;
     for (const [region, state] of grids) {
       const form =
@@ -824,44 +1141,24 @@
         document.querySelector("[data-list-filters]");
       for (const control of form?.querySelectorAll("[name]") || []) {
         if (["q", "kind", "state"].includes(control.name))
-          control.value = params.get(gridParameter(region, control.name)) || "";
+          control.value = params.get(control.name) || "";
       }
       const kind = region.dataset.grid;
-      const field =
-        params.get(gridParameter(region, "sort")) ||
-        (kind === "activity"
-          ? "date"
-          : kind === "instruments"
-            ? "name"
-            : "report");
+      const field = params.get("sort") || gridDefaultSort(region);
       const dir =
-        params.get(gridParameter(region, "dir")) ||
-        (kind === "instruments" ? "asc" : "desc");
+        params.get("dir") || (kind === "instruments" ? "asc" : "desc");
       state.selectionRestored = false;
       state.restoring = true;
       const size =
-        gridPageSize(params.get(gridParameter(region, "size"))) ||
+        gridPageSize(params.get("size")) ||
         gridPageSize(state.table.getPageSize()) ||
         50;
       if (state.table.getPageSize() !== size)
         state.table.setPageSize(size).catch(() => {});
       state.table.setSort(field, dir);
-      state.table
-        .setPage(Number(params.get(gridParameter(region, "page")) || 1))
-        .catch(() => {});
+      state.table.setPage(Number(params.get("page") || 1)).catch(() => {});
       state.restoring = false;
     }
-  });
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest("[data-grid] [data-record] a[href]");
-    if (!link || location.pathname !== "/activity") return;
-    const target = new URL(link.href, location.href);
-    if (target.origin !== location.origin) return;
-    const source = new URL(location.href);
-    const record = link.closest("[data-record]")?.dataset.record;
-    if (record) source.searchParams.set("selected", record);
-    target.searchParams.set("origin", source.pathname + source.search);
-    link.href = target.pathname + target.search;
   });
 
   const focusScrollableTables = () => {
@@ -964,7 +1261,7 @@
     if (checking || expired || document.hidden) return;
     checking = true;
     htmx
-      .ajax("GET", "/status/contact", {
+      .ajax("GET", "/system/contact", {
         source: document.body,
         target: document.body,
         swap: "none",
@@ -1004,7 +1301,7 @@
       expire();
       return;
     }
-    if (path === "/status/contact") {
+    if (path === "/system/contact") {
       setContact(
         detail.successful ? "connected" : "stale",
         detail.successful

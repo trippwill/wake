@@ -204,8 +204,8 @@ type (
 		Realized                    *PublishedRealizedPnL
 	}
 	Observation struct {
-		Artifact, Version, Location, Rule, Retrieved string
-		Outcome                                      ObservationOutcome
+		Artifact, Version, Location, Rule, Retrieved, ActivityID string
+		Outcome                                                  ObservationOutcome
 	}
 	ExecutionDetail struct {
 		Context       ActivityContext

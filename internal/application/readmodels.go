@@ -122,7 +122,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	if scope == ObservationScope {
-		sorts = []string{"report", "outcome", "location", "rule"}
+		sorts = []string{"report", "outcome", "location", "rule", "activity"}
 		states = []string{""}
 		kinds = []string{""}
 	}

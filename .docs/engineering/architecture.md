@@ -428,6 +428,10 @@ applies the update through an explicit refresh action; HTML does not duplicate r
 Queries filter, order and page the complete matching set,
 with 50 rows per page by default and exact decimal ordering. URLs retain intentional
 filter and page state; native column persistence retains layout preferences.
+Resource links and grid requests carry no referring-page or navigation-ancestry
+parameters. The browser owns a bounded, tab-local return trail and history-entry
+context, including through ordinary form submissions. Direct resource reads use
+canonical navigation fallbacks. Navigation metadata stores no financial page HTML.
 Source/status regions retain focused htmx updates. Accepted detail pages are explicit
 reads with a refresh action, while retained observations update independently.
 Editable forms preserve drafts, selection and focus while work runs.

@@ -410,11 +410,16 @@ func TestCorrectionComparisonRetainsExactTypedValues(t *testing.T) {
 	}
 
 	evidence, err := s.EvidenceContext(context.Background(), "comparison")
-	if err != nil || evidence.Operation != "acquire" || len(evidence.Observations) < 3 {
+	if err != nil || evidence.Operation != "acquire" {
 		t.Fatal("retained evidence lost context without active access", evidence, err)
 	}
 
-	for _, o := range evidence.Observations {
+	observations := observationRowsForTest(t, s, "artifact", "comparison")
+	if len(observations) < 3 {
+		t.Fatal("retained observations lost", observations)
+	}
+
+	for _, o := range observations {
 		if o.Location == "" || o.Rule == "" {
 			t.Fatal("observation lost source trace", o)
 		}
