@@ -660,6 +660,18 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 			f.Positions = append(f.Positions, p)
 		}
 
+		// A separate quantity group has a cheap, definite conflict. Its ordering
+		// relative to the expensive group must not change the published reason.
+		otherQuantity, _ := financial.NewQuantity("20")
+
+		otherCost, _ := financial.NewMoney("1", usd)
+		if id == "ambiguous-duplicates" {
+			otherCost, _ = financial.NewMoney("2", usd)
+		}
+
+		other, _ := source.NewPosition(instrument, otherQuantity, otherCost)
+		f.Positions = append(f.Positions, other)
+
 		coverageClaims(
 			t,
 			s,
@@ -675,7 +687,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 						return provider.Result{}, err
 					}
 
-					return provider.NewResult(provider.Counts{Rows: 10, PositionSets: 1, Instruments: 9})
+					return provider.NewResult(provider.Counts{Rows: 11, PositionSets: 1, Instruments: 10})
 				},
 			),
 		)
@@ -683,7 +695,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 	admit("reported-duplicates", []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"})
 
 	before := readPositions(t, s)
-	if before.Status != "available" || len(before.Positions) != 9 {
+	if before.Status != "available" || len(before.Positions) != 10 {
 		t.Fatal(before)
 	}
 
@@ -695,5 +707,31 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 		after.AsOf.Date != "2026-11-02" ||
 		after.Version == before.Version {
 		t.Fatal("pairing exhaustion published partial rows or an older fallback", after)
+	}
+
+	changes, remove := s.SubscribePublications()
+	defer remove()
+
+	for range 32 {
+		tx, err := s.db.BeginTx(t.Context(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO positions_dirty VALUES('account')`); err != nil {
+			t.Fatal(err)
+		}
+
+		if err = s.commit(t.Context(), tx); err != nil {
+			t.Fatal(err)
+		}
+
+		if v := readPositions(
+			t,
+			s,
+		); v.Version != after.Version || *v.Reason != "incomplete" ||
+			len(changes) != 0 {
+			t.Fatal("identical evidence changed reason/version or emitted an event", v, len(changes))
+		}
 	}
 }

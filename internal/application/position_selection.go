@@ -4,6 +4,7 @@
 package application
 
 import (
+	"cmp"
 	"context"
 	"reflect"
 	"slices"
@@ -193,10 +194,19 @@ func mergePositionSets(
 		return rowKey{id, positionNumber(p.Quantity().Value()), p.Unit()}
 	}
 	indexes := map[rowKey][]int{}
+	keys := []rowKey{}
 	for i, p := range base.Source.Positions {
 		k := key(base.InstrumentIDs[i], p)
+		if _, exists := indexes[k]; !exists {
+			keys = append(keys, k)
+		}
+
 		indexes[k] = append(indexes[k], i)
 	}
+
+	slices.SortFunc(keys, func(a, b rowKey) int {
+		return cmp.Or(cmp.Compare(a.id, b.id), cmp.Compare(a.quantity, b.quantity), cmp.Compare(a.unit, b.unit))
+	})
 
 	reports := make([]map[rowKey][]source.Position, 0, len(candidates))
 	for _, c := range candidates {
@@ -218,11 +228,12 @@ func mergePositionSets(
 		reports = append(reports, groups)
 	}
 
-	for k, rows := range indexes {
+	for _, k := range keys {
 		if search.ctx.Err() != nil {
 			return false
 		}
 
+		rows := indexes[k]
 		initial := make([]source.Position, 0, len(rows))
 		for _, i := range rows {
 			initial = append(initial, base.Source.Positions[i])
