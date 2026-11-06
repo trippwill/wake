@@ -128,6 +128,7 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 				PaymentsPerYear: new(0),
 			},
 		},
+		"debt",
 	)
 
 	b, _ = json.Marshal(debt)
@@ -173,6 +174,24 @@ func TestPositionsGridAvailability(t *testing.T) {
 	); got.Positions.SourceLabel != "Set up an account" ||
 		got.Positions.Account != "No account confirmed" {
 		t.Fatal(got)
+	}
+}
+
+func TestPositionsGridDistinguishesMissingAndInapplicableContractTerms(t *testing.T) {
+	for _, kind := range []string{"equity", "fund", "option", "debt"} {
+		data := positionsFixture(t)
+		data.Items[1].Kind = kind
+		data.Items[1].Position.Option = nil
+		data.Items[1].Position.Debt = nil
+
+		want := notApplicableValue
+		if kind == "option" || kind == "debt" {
+			want = "Not provided"
+		}
+
+		if got := positionsGrid(data).Data[1].Terms; got.Text != want || len(got.Details) != 0 {
+			t.Fatal("missing applicable terms were labeled inapplicable", kind, got)
+		}
 	}
 }
 

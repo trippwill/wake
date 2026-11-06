@@ -102,7 +102,7 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 				Side:     gridCell{Text: stringTitle(p.Side)},
 				Quantity: gridCell{Text: p.Quantity.Value + " " + p.Quantity.Unit},
 				Cost:     gridCell{Text: cost},
-				Terms:    positionTerms(p),
+				Terms:    positionTerms(p, item.Kind),
 			},
 		)
 	}
@@ -113,8 +113,12 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 	return out
 }
 
-func positionTerms(p application.PublishedPosition) gridCell {
+func positionTerms(p application.PublishedPosition, kind string) gridCell {
 	out := gridCell{Text: notApplicableValue}
+	if kind == "option" || kind == "debt" {
+		out.Text = "Not provided"
+	}
+
 	add := func(label, value string) {
 		out.Details = append(out.Details, gridFact{Label: label, Value: provided(value)})
 	}
