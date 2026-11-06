@@ -717,6 +717,13 @@
             variableHeight: true,
             formatter: gridCell,
           }));
+          if (artifact)
+            columns.push({
+              field: "report",
+              title: "Report",
+              visible: false,
+              headerSort: false,
+            });
           return columns;
         };
         const state = {
@@ -777,11 +784,12 @@
           for (const key of ["q", "kind", "state"])
             if (current.searchParams.has(key))
               target.searchParams.set(key, current.searchParams.get(key));
-          const sort = parameters.sort?.[0];
-          if (sort) {
-            target.searchParams.set("sort", sort.field);
-            target.searchParams.set("dir", sort.dir);
-          }
+          const sort = parameters.sort?.[0] || {
+            field: gridDefaultSort(region),
+            dir: kind === "instruments" ? "asc" : "desc",
+          };
+          target.searchParams.set("sort", sort.field);
+          target.searchParams.set("dir", sort.dir);
           target.searchParams.set("page", String(parameters.page || 1));
           target.searchParams.set("size", String(parameters.size || 50));
           const resetFilters = region.querySelector(

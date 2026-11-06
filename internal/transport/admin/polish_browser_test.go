@@ -1004,6 +1004,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		testbrowser.NewDocument(chromedp.Click("#fragment-report", chromedp.ByQuery)),
 		chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
 		chromedp.Evaluate(`window.fragmentContext=JSON.stringify(history.state.wakeNavigation)`, nil),
+	)
+	assert(
+		`new URL(location.href).searchParams.get('sort')==='report'&&new URL(location.href).searchParams.get('dir')==='desc'&&[...document.querySelectorAll('.tabulator-col[tabulator-field]')].filter(column=>column.getClientRects().length).length===4`,
+		"artifact table wrote invalid default ordering into its URL",
+	)
+	check(
 		chromedp.Click(`a[href="#original-content"]`, chromedp.ByQuery),
 		chromedp.Poll(`location.hash==='#original-content'`, nil),
 	)
@@ -1034,6 +1040,38 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	assert(
 		`history.state.wakeNavigation.workspace==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='fragment-filter'`,
 		"fragment reload lost the originating workspace or filters",
+	)
+	assert(
+		`new URL(location.href).searchParams.get('sort')==='report'&&new URL(location.href).searchParams.get('dir')==='desc'`,
+		"artifact default ordering did not survive reload",
+	)
+	check(
+		chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
+		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil),
+		chromedp.Evaluate(`window.Tabulator.findTable('.tabulator')[0].setSort('outcome','asc')`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('sort')==='outcome'&&new URL(location.href).searchParams.get('dir')==='asc'&&document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			nil,
+		),
+		testbrowser.NewDocument(chromedp.Reload()),
+		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil),
+	)
+	assert(
+		`new URL(location.href).searchParams.get('sort')==='outcome'&&new URL(location.href).searchParams.get('dir')==='asc'&&document.querySelector('.tabulator-col[tabulator-field="outcome"]').getAttribute('aria-sort')==='ascending'`,
+		"artifact selected ordering did not survive reload",
+	)
+	check(
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Poll(
+			`!new URL(location.href).searchParams.has('q')&&new URL(location.href).searchParams.get('sort')==='report'&&document.querySelector('[data-grid-status]').textContent==='75 of 75 results'`,
+			nil,
+		),
+		chromedp.Evaluate(`history.forward()`, nil),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('q')==='TradeConfirm[75]'&&new URL(location.href).searchParams.get('sort')==='outcome'&&document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`,
+			nil,
+		),
 	)
 
 	check(
