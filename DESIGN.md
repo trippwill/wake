@@ -213,7 +213,7 @@ The [icon sprite](internal/transport/admin/assets/brand/icons.svg) supplies simp
 line icons alongside visible labels. Icons inherit foreground color and are hidden
 from assistive technology when decorative. Never substitute an icon for a control's
 accessible name or decorate every heading and value. Give each sidebar destination
-a distinct icon so Overview, Activity, Instruments, Needs review, Connections and
+a distinct icon so Overview, Activity, Instruments, Positions, Needs review, Connections and
 System remain visually distinguishable.
 
 ## Layout and task hierarchy
@@ -234,7 +234,8 @@ stack simple regions, provide dismissible keyboard-accessible navigation and kee
 genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
 
 Overview orients the operator and surfaces specific next actions. Activity owns
-financial-history inspection. Instruments owns instrument browsing, and Needs
+financial-history inspection. Positions owns latest reported account sets, with their own
+availability and reported effective time. Instruments owns instrument browsing, and Needs
 review owns actionable financial and identity uncertainty. These are separate
 Workspace sidebar destinations. Administration groups Connections, then System.
 Connections owns source authority, synchronization, reports and access; System
@@ -244,7 +245,7 @@ System status includes the current financial database file size, with readable
 binary units and an exact byte count. It describes the warehouse file, including
 retained reports, independently of encrypted access storage and temporary journals.
 Full-page details retain breadcrumbs and a return path to their originating view.
-Workspace paths identify Activity, Instruments and Needs review independently; query
+Workspace paths identify Activity, Instruments, Positions and Needs review independently; query
 parameters control filtering and table presentation. System uses a status landing
 page with Configuration at a child path, following the Connections workspace.
 Resource links carry no navigation ancestry. Tab-local browser history preserves
@@ -270,9 +271,10 @@ changes; keep unchanged and waiting/blocked states steady.
 
 Preserve drafts, focus/caret, selections and disclosures through live updates.
 Retain intentional filter, ordering, page and page-size state in URLs, and selected
-column layout and page-size preferences through Tabulator persistence. Remember
-page size separately for activity, instruments and retained observations in the
-current browser; a supported URL size takes precedence. Exact pixel-scroll restoration
+column layout and page-size preferences through Tabulator persistence. Restore column order,
+widths and visibility while taking headings from the current application. Remember
+page size separately for activity, positions, instruments and retained observations in
+the current browser; a supported URL size takes precedence. Exact pixel-scroll restoration
 is unnecessary. Native submissions give pending feedback and prevent accidental
 duplicates. Financial history search, filtering, sorting and pagination operate on the complete
 matching warehouse set, with 50 rows per page by default and a Rows per page selector
@@ -297,13 +299,19 @@ Protect active/dirty forms and selections. Accepted detail pages, decision forms
 and immutable raw-evidence pages are explicit read snapshots with refresh/navigation
 actions; their contact feedback remains live. Retained observation grids refresh
 independently. Do not cache financial page HTML in browser history storage.
-Use the pinned, embedded Tabulator distribution for activity, instrument and
+Use the pinned, embedded Tabulator distribution for activity, instrument, positions and
 observation datasets. Filtering, ordering and pagination use bounded server queries,
 with 50 rows per page by default. Preserve keyboard sorting/resizing, focused records,
 visible loading and clear error/retry or sign-in states. Compare decimal values on
 the server without floating-point conversion, keeping currency and unit distinctions.
 Short tables and decision controls remain native; exact, unrounded choices remain
 available in every appearance.
+Positions presents reported time and availability at account-set level, with exact signed
+quantities, explicit units and long/short wording. Label source-reported aggregate cost basis as
+“Total basis”. Use “Not provided” for missing amounts and preserve explicit zero. Contract
+disclosures show reported option/debt terms without substituting current instrument terms.
+Refresh the metadata and rows together, and distinguish an outdated displayed report from the
+latest available set.
 
 ## Evidence and decisions
 

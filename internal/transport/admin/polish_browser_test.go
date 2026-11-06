@@ -854,7 +854,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.Poll(`document.querySelector('.tabulator-row')!==null`, nil),
 	)
 	assert(
-		`new Set([...document.querySelectorAll('.wake-nav-link use')].map(icon=>icon.getAttribute('href'))).size===6`,
+		`(()=>{const icons=[...document.querySelectorAll('.wake-nav-link use')];return icons.length===7 && new Set(icons.map(icon=>icon.getAttribute('href'))).size===icons.length})()`,
 		"sidebar destinations reuse an icon",
 	)
 	assert(

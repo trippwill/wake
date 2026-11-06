@@ -147,7 +147,7 @@ handling without financial roles or separate result authority.
 The admin console exposes understandable work, values, conflicts and next actions.
 Detailed evidence is optional. Prerequisite and status reads use source/access and
 work metadata without decoding financial history. Source list/detail, overview,
-review and accepted activity/instrument lists have separate typed read models.
+review, accepted activity/instrument lists and reported positions have separate typed read models.
 Lists filter and order in SQLite, default to 50 rows per page and retain stable
 identity tie-breakers. Exact decimal ordering uses the registered numeric collation;
 unknown values sort last independently of direction and currency/unit groups remain
@@ -431,10 +431,15 @@ before accepted state is written. Projection follows retained source dependencie
 so a changed shared target also updates its previously observed parents.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
-instrument and observation tables require JavaScript and consume authenticated JSON.
+instrument, positions and observation tables require JavaScript and consume authenticated JSON.
 Tabulator owns each grid. SSE hints and polling check for changed results, then
 announce an available refresh without replacing the displayed rows. The operator
 applies the update through an explicit refresh action; HTML does not duplicate rows.
+The positions admin read pages the accepted account set and joins current instrument labels
+in one transaction, independently of the financial snapshot. Its availability, effective time,
+counts and rows travel together. Applying a refresh installs the set metadata with its rows;
+unavailable sets contain no earlier fallback. Label changes are detected even when the
+positions version is unchanged.
 Queries filter, order and page the complete matching set,
 with 50 rows per page by default and exact decimal ordering. URLs retain intentional
 filter and page state; native column persistence retains layout preferences.

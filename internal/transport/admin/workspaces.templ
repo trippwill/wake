@@ -43,7 +43,7 @@ templ DashboardOverview(view overviewView) {
 		</section>
 	}
 	if view.Account.ID()!="" {
-		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p></div><a class="btn btn-primary" href="/activity">Inspect activity</a></div></section>
+		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p></div><div class="wake-actions"><a class="btn btn-primary" href="/activity">Inspect activity</a><a class="btn" href="/positions">Inspect positions</a></div></div></section>
 		<div class="wake-columns">
 			<section class="wake-card">
 				<h2>Financial review</h2>
@@ -529,4 +529,38 @@ templ ListPagination(info application.PageInfo) {
 			}
 		</nav>
 	}
+}
+
+templ PositionsPage() {
+	@PageHeader("Positions", "Inspect the latest accepted positions reported for your account.")
+	<section class="wake-card">
+		<h2>Reported account positions</h2>
+		@Grid("positions", "/grids/positions", "Reported positions")
+	</section>
+}
+
+templ PositionsSummary() {
+	<div data-positions-summary aria-live="polite">
+		<p data-positions-account>Loading reported account…</p>
+		<dl><dt>Availability</dt><dd data-positions-state>Loading…</dd><dt>Reported as of</dt><dd data-positions-as-of>Loading…</dd></dl>
+		<p class="wake-help" data-positions-message hidden></p>
+		<div class="wake-actions"><a href="/connections" data-positions-source>Inspect source reports</a><a href="/instruments">Inspect instruments</a></div>
+	</div>
+}
+
+templ PositionsFilters() {
+	<form class="wake-filters" method="get" action="/positions" data-list-filters>
+		<p><label for="positions-search">Search instruments</label><input class="input" id="positions-search" name="q" type="search" maxlength="256" value={ page(ctx).Query.Get("q") } placeholder="Instrument name or symbol"/></p>
+		<p>
+			<label for="positions-kind">Kind</label>
+			<select class="select" id="positions-kind" name="kind">
+				<option value="">All kinds</option>
+				for _,v:=range []string{"equity","fund","option","debt"} {
+					<option value={ v } selected?={ page(ctx).Query.Get("kind")==v }>{ activityKindLabel(v) }</option>
+				}
+			</select>
+		</p>
+		<p><label for="positions-side">Side</label><select class="select" id="positions-side" name="state"><option value="">All sides</option><option value="long" selected?={ page(ctx).Query.Get("state")=="long" }>Long</option><option value="short" selected?={ page(ctx).Query.Get("state")=="short" }>Short</option></select></p>
+		<button class="btn" type="submit">Apply filters</button><a href="/positions" data-grid-reset-filters>Reset filters</a>
+	</form>
 }

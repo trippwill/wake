@@ -59,6 +59,7 @@ func TestRenderFrontend(t *testing.T) {
 	for name, component := range map[string]templ.Component{
 		"connections":    ConnectionsPage("synthetic-csrf", sourceView{}),
 		"activity":       ActivityPage(activityView{}),
+		"positions":      PositionsPage(),
 		"source":         ConnectionPage("synthetic-csrf", fixtureSource(view), source),
 		"source-access":  ConnectionAccess("synthetic-csrf", source),
 		"source-reports": ConnectionReports("synthetic-csrf", source),

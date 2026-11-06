@@ -62,6 +62,7 @@ const (
 	SourceScope
 	ReviewScope
 	ObservationScope
+	PositionsScope
 )
 
 type ListQuery struct {
@@ -127,7 +128,13 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		kinds = []string{""}
 	}
 
-	if scope > ObservationScope {
+	if scope == PositionsScope {
+		sorts = []string{"name", "side", "quantity", "cost"}
+		states = []string{"", "long", "short"}
+		kinds = []string{"", "equity", "fund", "option", "debt"}
+	}
+
+	if scope > PositionsScope {
 		return ListQuery{}, ErrInvalid
 	}
 
@@ -306,6 +313,7 @@ type (
 		Overview(context.Context) (OverviewView, error)
 		ActivityList(context.Context, ListQuery) (ActivityList, error)
 		InstrumentList(context.Context, ListQuery) (InstrumentList, error)
+		PositionsList(context.Context, ListQuery) (PositionsList, error)
 		ReviewList(context.Context, ListQuery) (ReviewList, error)
 		ObservationList(context.Context, string, string, ListQuery) (ObservationList, error)
 	}

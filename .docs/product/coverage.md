@@ -46,7 +46,7 @@ the primary instrument identity and naming reference.
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
 | Reference data | Allocation-aware OpenFIGI lookup, bounded composite-parent completion, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Matching verified identities combine with retained aliases; conflicting choices require review. Refresh failures preserve established identity. |
-| Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, compact conflicts, optional linked evidence/rules and correction of existing activity. |
+| Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, a separate latest reported positions workspace, compact conflicts, optional linked evidence/rules and correction of existing activity. |
 | Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
 
 Some reported bookings lack execution IDs; acceptance cannot universally require
@@ -178,9 +178,9 @@ preserves reusable encrypted access but establishes new financial identities. Se
 [development](../engineering/development.md) for verification and reset procedures. No version tag
 is implied by this coverage.
 
-Admin activity, instrument, review and retained-observation lists use server filtering
+Admin activity, instrument, positions, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for
-administration. Tabulator renders activity, instrument and observation tables from
+administration. Tabulator renders activity, instrument, positions and observation tables from
 authenticated JSON; source/status regions use focused updates, and accepted detail
 pages offer an explicit refresh action. Retained observations preserve original
 source bindings, underliers and appearance multiplicity after operator relinks.
@@ -190,6 +190,15 @@ prerequisites use focused metadata reads; source detail loads one connection and
 bounded account-candidate page. Result counts and page links preserve intentional
 URL filters. These bounds limit response memory; filtered counts and sorting still
 require SQLite to inspect the matching history.
+
+The Positions workspace shows account availability and reported effective time alongside
+exact signed quantities, long/short meaning, applicable reported contract terms and optional
+aggregate reported cost basis. Missing cost differs from explicit zero. Empty reported sets,
+unavailable sets and filters with no matches have separate explanations. Instrument and source
+links open existing inspection pages. Updates are offered explicitly and apply metadata and
+rows together; unavailable results contain no earlier fallback positions. Display-label changes
+are detected independently of the positions version. The workspace adds no position-correction
+workflow, valuation, aggregate portfolio totals or lot reconstruction.
 
 Processing, correction preflight, saved decisions and releases share deterministic
 financial calculations. Synthetic proofs cover exact decimal and timestamp

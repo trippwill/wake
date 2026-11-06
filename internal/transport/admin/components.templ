@@ -76,8 +76,13 @@ templ Grid(kind, endpoint, label string) {
 templ GridView(kind, endpoint, label, variant string) {
 	<section class="wake-grid" id={ kind + "-grid" } data-grid={ kind } data-grid-variant={ variant } data-grid-url={ endpoint } aria-label={ label }>
 		<div class="wake-grid-header">
+			if kind=="positions" {
+				@PositionsSummary()
+			}
 			if kind=="observations" {
 				<form class="wake-filters" data-observation-filters><p><label for="observation-search">Search retained observations</label><input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
+			} else if kind=="positions" {
+				@PositionsFilters()
 			} else {
 				@ListFilters(kind == "instruments")
 			}

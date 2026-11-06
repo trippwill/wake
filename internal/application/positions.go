@@ -39,3 +39,17 @@ type PositionsPublication struct {
 	AccountID   string `json:"account_id"`
 	Version     string `json:"version"`
 }
+
+type PositionListItem struct {
+	Key, Name, Ticker, Kind string
+	Position                PublishedPosition
+}
+
+type PositionsList struct {
+	Account Account
+	PageInfo
+	Version, Status string
+	AsOf            *PositionTime
+	Reason          *string
+	Items           []PositionListItem
+}

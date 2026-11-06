@@ -5,3 +5,4 @@ mise.local.*
 /.mise/mise.*.local.lock
 coverage.txt
 /.cache/
+/.impeccable/

@@ -268,7 +268,7 @@
       link.removeAttribute("aria-busy");
       if (intent !== navigationIntent || !link.isConnected) return;
     }
-    if (location.pathname === "/activity") {
+    if (["/activity", "/positions"].includes(location.pathname)) {
       const record = link.closest("[data-record]")?.dataset.record;
       if (record) {
         const current = new URL(location.href);
@@ -620,6 +620,13 @@
       ["state", "Activity state"],
       ["reference", "Reference identity"],
     ],
+    positions: [
+      ["name", "Instrument"],
+      ["side", "Side"],
+      ["quantity", "Quantity"],
+      ["cost", "Total basis"],
+      ["terms", "Reported terms"],
+    ],
     instruments: [
       ["name", "Instrument"],
       ["kind", "Kind"],
@@ -636,7 +643,7 @@
   const gridDefaultSort = (region) =>
     region.dataset.grid === "activity"
       ? "date"
-      : region.dataset.grid === "instruments"
+      : ["instruments", "positions"].includes(region.dataset.grid)
         ? "name"
         : "report";
   const selectedTextWithin = (region) => {
@@ -666,7 +673,36 @@
       note.textContent = value.note;
       node.append(note);
     }
+    if (value.details?.length) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Show reported terms";
+      details.append(summary);
+      const facts = document.createElement("dl");
+      for (const fact of value.details) {
+        const label = document.createElement("dt");
+        label.textContent = fact.label;
+        const content = document.createElement("dd");
+        content.textContent = fact.value;
+        facts.append(label, content);
+      }
+      details.append(facts);
+      details.addEventListener("toggle", () => cell.getRow().normalizeHeight());
+      node.append(details);
+    }
     return node;
+  };
+  const positionSummary = (region, result) => {
+    const meta = result.positions;
+    if (!meta) return;
+    for (const field of ["account", "state", "as_of", "message"])
+      region.querySelector(
+        `[data-positions-${field.replaceAll("_", "-")}]`,
+      ).textContent = meta[field];
+    const source = region.querySelector("[data-positions-source]");
+    source.href = meta.source_href;
+    source.textContent = meta.source_label;
+    region.querySelector("[data-positions-message]").hidden = !meta.message;
   };
   const enhance = (root) => {
     for (const region of root.querySelectorAll("[data-grid]")) {
@@ -693,11 +729,15 @@
         const preferenceKey = (id, type) =>
           `${id}${artifact && type === "columns" ? "-artifact" : ""}-${type}`;
         const emptyState = document.createElement("span");
-        emptyState.textContent = "No matching records.";
+        emptyState.textContent =
+          kind === "positions"
+            ? "No reported rows in this view. See availability and filters above."
+            : "No matching records.";
         const params = new URL(location.href).searchParams;
         const initialSort = params.get("sort") || gridDefaultSort(region);
         const initialDirection =
-          params.get("dir") || (kind === "instruments" ? "asc" : "desc");
+          params.get("dir") ||
+          (["instruments", "positions"].includes(kind) ? "asc" : "desc");
         const element = region.querySelector("[data-grid-table]");
         const createColumns = () => {
           const definitions = artifact
@@ -714,6 +754,7 @@
             minWidth: 130,
             widthGrow: artifact && field === "location" ? 2 : 1,
             headerWordWrap: true,
+            headerSort: field !== "terms",
             variableHeight: true,
             formatter: gridCell,
           }));
@@ -878,7 +919,10 @@
           initialSort: [{ column: initialSort, dir: initialDirection }],
           columnHeaderSortMulti: false,
           langs: { default: { pagination: { page_size: "Rows per page" } } },
-          persistence: { columns: true, page: { size: true, page: false } },
+          persistence: {
+            columns: ["width", "visible"],
+            page: { size: true, page: false },
+          },
           persistenceID: `wake-${kind}`,
           persistenceMode: "local",
           persistenceReaderFunc: (id, type) => {
@@ -951,7 +995,9 @@
               ?.focus({ preventScroll: true });
           refresh.hidden = !state.available;
           const message = state.available
-            ? "Updated results are available. Refresh the table to see them."
+            ? kind === "positions"
+              ? "Displayed report is out of date. Refresh the table to see the latest positions and availability."
+              : "Updated results are available. Refresh the table to see them."
             : `${state.displayed.last_row} of ${state.displayed.total} results`;
           if (status.textContent !== message) status.textContent = message;
         };
@@ -1021,6 +1067,7 @@
           if (state.installing?.data === rows) {
             state.displayed = state.installing;
             state.installing = null;
+            positionSummary(region, state.displayed);
             status.textContent = `${state.displayed.last_row} of ${state.displayed.total} results`;
           }
           region.dataset.gridReady = "true";
@@ -1146,7 +1193,8 @@
       const kind = region.dataset.grid;
       const field = params.get("sort") || gridDefaultSort(region);
       const dir =
-        params.get("dir") || (kind === "instruments" ? "asc" : "desc");
+        params.get("dir") ||
+        (["instruments", "positions"].includes(kind) ? "asc" : "desc");
       state.selectionRestored = false;
       state.restoring = true;
       const size =
