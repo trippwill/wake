@@ -735,3 +735,83 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 		}
 	}
 }
+
+func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
+	s := coverageStore(t)
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	instrument, _ := source.NewInstrument(
+		source.InstrumentInput{Kind: source.Equity, Name: "Anonymous security"},
+	)
+	date, _ := financial.ParseDate("2026-11-03")
+
+	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
+	for _, value := range []string{"1", "2"} {
+		quantity, _ := financial.NewQuantity(value)
+		p, _ := source.NewPosition(instrument, quantity, financial.Money{})
+		f.Positions = append(f.Positions, p)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"anonymous-positions",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+				o, err := source.NewPositionSetObservation(f)
+				if err != nil {
+					return provider.Result{}, err
+				}
+
+				if err = c.PutPositionSet(ctx, o); err != nil {
+					return provider.Result{}, err
+				}
+
+				return provider.NewResult(provider.Counts{Rows: 3, PositionSets: 1, Instruments: 2})
+			},
+		),
+	)
+
+	v := readPositions(t, s)
+	if v.Status != "unavailable" || v.Reason == nil || *v.Reason != "identity_unresolved" ||
+		v.Positions != nil {
+		t.Fatal("anonymous claims silently reused the first instrument binding", v)
+	}
+
+	var bindings int
+	if err := s.db.QueryRow(`SELECT count(*) FROM position_bindings`).
+		Scan(&bindings); err != nil ||
+		bindings != 2 {
+		t.Fatal("lost a contested root binding", bindings, err)
+	}
+
+	roots, err := s.queries.Instruments(t.Context())
+	if err != nil || len(roots) != 2 {
+		t.Fatal(roots, err)
+	}
+
+	tx, err := s.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = aliasResource(
+		t.Context(),
+		s.queries.WithTx(tx),
+		"instruments",
+		roots[1].ID,
+		roots[0].ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.commit(t.Context(), tx); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved := readPositions(t, s)
+	if resolved.Status != "available" || len(resolved.Positions) != 2 || resolved.Version == v.Version ||
+		resolved.Positions[0].InstrumentID != roots[0].ID ||
+		resolved.Positions[1].InstrumentID != roots[0].ID {
+		t.Fatal("established identity combination did not resolve contested bindings", resolved)
+	}
+}
