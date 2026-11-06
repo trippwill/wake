@@ -232,7 +232,10 @@ erase established reported state. Undated evidence establishes no newer effectiv
 Select whole account sets through source authority and established revision relationships.
 Do not combine independently dated rows or infer revision authority from report generation
 or retrieval order. Unresolved incompatible claims at the same effective time withhold the
-set. Reported costs remain distinct from reconstructed lots, valuations and calculated P&L.
+set. Established replacements can retire conflicting revision claims, including correcting
+their effective dates backwards. Conflicting instrument identities withhold bound positions
+until resolved. Reported costs remain distinct from reconstructed lots, valuations and
+calculated P&L.
 
 Changes to accepted values, links, relevant reference data or conflict status matter
 to consumers even without a new trade. Stable identities and reproducible views

@@ -427,6 +427,7 @@ components:
             at:
               type: string
               format: date-time
+              x-go-type: string
               nullable: true
         reason:
           type: string

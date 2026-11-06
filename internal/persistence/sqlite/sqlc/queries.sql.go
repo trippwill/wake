@@ -2142,12 +2142,14 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 }
 
 const positionBindings = `-- name: PositionBindings :many
-SELECT c.data,CAST(coalesce(a.target_id,p.instrument_id) AS TEXT) AS instrument_id FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE p.account_id=? ORDER BY p.rowid
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? ORDER BY p.rowid
 `
 
 type PositionBindingsRow struct {
-	Data         []byte
-	InstrumentID string
+	Data            []byte
+	InstrumentID    string
+	Kind            string
+	ReferenceStatus string
 }
 
 func (q *Queries) PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error) {
@@ -2159,7 +2161,12 @@ func (q *Queries) PositionBindings(ctx context.Context, accountID string) ([]Pos
 	var items []PositionBindingsRow
 	for rows.Next() {
 		var i PositionBindingsRow
-		if err := rows.Scan(&i.Data, &i.InstrumentID); err != nil {
+		if err := rows.Scan(
+			&i.Data,
+			&i.InstrumentID,
+			&i.Kind,
+			&i.ReferenceStatus,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

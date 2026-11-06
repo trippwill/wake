@@ -152,65 +152,127 @@ func mergePositionRows(base *PositionSelection, c PositionCandidate) bool {
 		indexes[key] = append(indexes[key], i)
 	}
 
-	for i, p := range f.Positions {
+	// Optional terms can match more than one duplicate row. Reassign earlier pairs
+	// when necessary so one broad match cannot consume another row's only partner.
+	paired := make([]int, len(base.Source.Positions))
+	for i := range paired {
+		paired[i] = -1
+	}
+
+	var match func(int, map[int]bool) bool
+
+	match = func(i int, seen map[int]bool) bool {
+		p := f.Positions[i]
 		key := rowKey{c.InstrumentIDs[i], positionNumber(p.Quantity().Value()), p.Unit()}
+		for _, occupied := range []bool{false, true} {
+			for _, index := range indexes[key] {
+				if seen[index] || (paired[index] >= 0) != occupied {
+					continue
+				}
 
-		matches := indexes[key]
-		if len(matches) == 0 {
+				if _, ok := mergePositionRow(base.Source.Positions[index], p); !ok {
+					continue
+				}
+
+				seen[index] = true
+				if !occupied || match(paired[index], seen) {
+					paired[index] = i
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+	for i := range f.Positions {
+		if !match(i, map[int]bool{}) {
 			return false
 		}
+	}
 
-		index := matches[0]
-		indexes[key] = matches[1:]
-
-		prior := base.Source.Positions[index]
-		if !CompatibleOption(prior.Instrument().Option(), p.Instrument().Option()) ||
-			!CompatibleDebt(prior.Instrument().Debt(), p.Instrument().Debt()) {
-			return false
-		}
-
-		x, y := prior.CostBasis(), p.CostBasis()
-		if x.Amount() != "" && y.Amount() != "" && !x.Equal(y) {
-			return false
-		}
-
-		if x.Amount() == "" {
-			x = y
-		}
-
-		instrument, err := EnrichInstrument(prior.Instrument(), p.Instrument())
-		if err != nil {
-			return false
-		}
-
-		v, err := source.NewPosition(instrument, prior.Quantity(), x)
-		if err != nil {
-			return false
-		}
-
-		base.Source.Positions[index] = v
+	for index, i := range paired {
+		base.Source.Positions[index], _ = mergePositionRow(base.Source.Positions[index], f.Positions[i])
 	}
 
 	return true
 }
 
-// Remove acyclic revision nodes before treating remaining revision authority as uncertain.
+func mergePositionRow(prior, next source.Position) (source.Position, bool) {
+	if !CompatibleOption(prior.Instrument().Option(), next.Instrument().Option()) ||
+		!CompatibleDebt(prior.Instrument().Debt(), next.Instrument().Debt()) {
+		return source.Position{}, false
+	}
+
+	x, y := prior.CostBasis(), next.CostBasis()
+	if x.Amount() != "" && y.Amount() != "" && !x.Equal(y) {
+		return source.Position{}, false
+	}
+
+	if x.Amount() == "" {
+		x = y
+	}
+
+	instrument, err := EnrichInstrument(prior.Instrument(), next.Instrument())
+	if err != nil {
+		return source.Position{}, false
+	}
+
+	v, err := source.NewPosition(instrument, prior.Quantity(), x)
+
+	return v, err == nil
+}
+
+// Cycles and their revision targets have uncertain authority until an unambiguous
+// replacement supersedes them. Re-evaluate after retiring authoritative targets.
 func positionRevisionCycles(inputs []PositionCandidate) map[source.Reference]bool {
 	edges := map[source.Reference][]source.Reference{}
-	incoming := map[source.Reference]int{}
 	for _, c := range inputs {
 		f := c.Observation.Fields()
 		if f.Reference.IsZero() {
 			continue
 		}
 
-		if _, ok := incoming[f.Reference]; !ok {
-			incoming[f.Reference] = 0
+		edges[f.Reference] = append(edges[f.Reference], f.Supersedes...)
+	}
+
+	retired := map[source.Reference]bool{}
+	for {
+		cycles := unresolvedPositionRevisions(edges, retired)
+		changed := false
+		for ref, targets := range edges {
+			if cycles[ref] {
+				continue
+			}
+
+			for _, target := range targets {
+				if !retired[target] {
+					retired[target] = true
+					changed = true
+				}
+			}
 		}
 
-		for _, r := range f.Supersedes {
-			edges[f.Reference] = append(edges[f.Reference], r)
-			incoming[r]++
+		if !changed {
+			return cycles
+		}
+	}
+}
+
+func unresolvedPositionRevisions(
+	edges map[source.Reference][]source.Reference,
+	retired map[source.Reference]bool,
+) map[source.Reference]bool {
+	incoming := map[source.Reference]int{}
+	for ref, targets := range edges {
+		if retired[ref] {
+			continue
+		}
+
+		incoming[ref] += 0
+		for _, target := range targets {
+			if !retired[target] {
+				incoming[target]++
+			}
 		}
 	}
 
@@ -223,6 +285,10 @@ func positionRevisionCycles(inputs []PositionCandidate) map[source.Reference]boo
 
 	for i := 0; i < len(queue); i++ {
 		for _, r := range edges[queue[i]] {
+			if retired[r] {
+				continue
+			}
+
 			incoming[r]--
 			if incoming[r] == 0 {
 				queue = append(queue, r)

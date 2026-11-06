@@ -426,4 +426,4 @@ INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,su
 -- name: PutPositionBinding :exec
 INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: PositionBindings :many
-SELECT c.data,CAST(coalesce(a.target_id,p.instrument_id) AS TEXT) AS instrument_id FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE p.account_id=? ORDER BY p.rowid;
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? ORDER BY p.rowid;

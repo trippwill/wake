@@ -9,7 +9,6 @@ package socket
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -806,7 +805,7 @@ type PositionsPublication struct {
 type PositionsView struct {
 	AccountId string `json:"account_id"`
 	AsOf      *struct {
-		At   *time.Time         `json:"at"`
+		At   *string            `json:"at"`
 		Date openapi_types.Date `json:"date"`
 	} `json:"as_of"`
 	Positions   *[]Position          `json:"positions"`

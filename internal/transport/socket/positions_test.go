@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -17,6 +18,22 @@ import (
 type positionReads struct {
 	reads
 	view application.PositionsView
+}
+
+func TestGeneratedPositionsModelPreservesReportedTimestampText(t *testing.T) {
+	for _, at := range []string{"2026-11-04T12:00:00.1200Z", "2026-11-04T12:00:00.000000000+01:00"} {
+		body := `{"warehouse_id":"warehouse","account_id":"account","version":"v","status":"available","as_of":{"date":"2026-11-04","at":"` + at + `"},"reason":null,"positions":[]}`
+
+		var model PositionsView
+		if err := json.Unmarshal([]byte(body), &model); err != nil {
+			t.Fatal(err)
+		}
+
+		roundtrip, err := json.Marshal(model)
+		if err != nil || !strings.Contains(string(roundtrip), `"at":"`+at+`"`) {
+			t.Fatalf("lost reported timestamp precision: %s: %v", roundtrip, err)
+		}
+	}
 }
 
 func (s positionReads) Positions(

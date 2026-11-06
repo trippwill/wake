@@ -362,6 +362,125 @@ func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
 	}
 }
 
+func TestPositionsWithholdDisputedInstrumentBindings(t *testing.T) {
+	for _, change := range []string{"reported conflict", "reference conflict", "incompatible family"} {
+		t.Run(change, func(t *testing.T) {
+			s := coverageStore(t)
+			coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+			acquireRealized(
+				t,
+				s,
+				reportedPositionsXML(
+					"2026-11-01",
+					"<OpenPositions>"+holdingXML("2026-11-01", "10", "")+"</OpenPositions>",
+				),
+			)
+
+			before := readPositions(t, s)
+			if before.Status != "available" {
+				t.Fatal(before)
+			}
+
+			changes, remove := s.SubscribePublications()
+			defer remove()
+
+			if change == "reported conflict" {
+				row := strings.ReplaceAll(syntheticOption, `conid="200"`, `conid="100"`)
+				row = strings.ReplaceAll(row, `underlyingConid="100"`, `underlyingConid="101"`)
+				coverageReport(t, s, "incompatible-activity", row)
+			} else {
+				tx, err := s.db.BeginTx(t.Context(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				statement := `UPDATE instruments SET reference_status='conflict' WHERE id=?`
+				if change == "incompatible family" {
+					statement = `UPDATE instruments SET kind='option' WHERE id=?`
+				}
+
+				if _, err = tx.Exec(statement, before.Positions[0].InstrumentID); err != nil {
+					t.Fatal(err)
+				}
+
+				if err = s.commit(t.Context(), tx); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			after := readPositions(t, s)
+			if after.Status != "unavailable" || after.Reason == nil || *after.Reason != "identity_unresolved" ||
+				after.Version == before.Version ||
+				len(changes) != 1 {
+				t.Fatal("disputed instrument binding remained available", after, len(changes))
+			}
+		})
+	}
+}
+
+func TestPositionRevisionCycleCannotHideNewerTargetAndCanBeReplaced(t *testing.T) {
+	s := coverageStore(t)
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	ref := func(id string) source.Reference {
+		r, _ := source.NewReference("broker", "snapshot", "U1", id)
+		return r
+	}
+	admit := func(id, date string, supersedes ...string) {
+		t.Helper()
+
+		d, _ := financial.ParseDate(date)
+
+		input := source.PositionSetInput{
+			Location:  "set",
+			Account:   account,
+			Reference: ref(id),
+			Date:      d,
+			Complete:  true,
+		}
+		for _, id := range supersedes {
+			input.Supersedes = append(input.Supersedes, ref(id))
+		}
+
+		coverageClaims(
+			t,
+			s,
+			id,
+			claimNormalizer(
+				func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+					o, err := source.NewPositionSetObservation(input)
+					if err != nil {
+						return provider.Result{}, err
+					}
+
+					if err = c.PutPositionSet(ctx, o); err != nil {
+						return provider.Result{}, err
+					}
+
+					return provider.NewResult(provider.Counts{Rows: 1, PositionSets: 1})
+				},
+			),
+		)
+	}
+	admit("a", "2026-11-01", "b", "newer")
+	admit("b", "2026-11-01", "a")
+	admit("newer", "2026-11-04")
+	admit("independent", "2026-11-02")
+
+	if v := readPositions(
+		t,
+		s,
+	); v.Status != "unavailable" || v.Reason == nil || *v.Reason != "conflict" ||
+		v.AsOf.Date != "2026-11-04" {
+		t.Fatal("revision filtering hid the newer target", v)
+	}
+
+	admit("replacement", "2026-11-01", "a", "b", "newer", "independent")
+
+	if v := readPositions(t, s); v.Status != "available" || v.AsOf.Date != "2026-11-01" {
+		t.Fatal("authoritative replacement did not retire cycle", v)
+	}
+}
+
 func TestPositionRevisionAuthorityCanCorrectEffectiveDateAndRejectCycles(t *testing.T) {
 	s := coverageStore(t)
 

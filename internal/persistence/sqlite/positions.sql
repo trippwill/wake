@@ -23,5 +23,5 @@ WITH superseded(reference) AS (
  SELECT p.* FROM position_sets p WHERE p.account_id=? AND (p.source_reference='' OR p.source_reference NOT IN (SELECT reference FROM superseded))
 )
 SELECT c.data,processing.location FROM position_sets p JOIN source_claims c ON c.id=p.claim_id JOIN claim_processing processing ON processing.claim_id=c.id AND processing.ordinal=1
-WHERE p.account_id=? AND (p.effective_date='' OR p.claim_id IN (SELECT claim_id FROM live WHERE effective_date=(SELECT max(effective_date) FROM live)) OR json_array_length(p.supersedes)>0)
+WHERE p.account_id=? AND (p.effective_date='' OR p.claim_id IN (SELECT claim_id FROM live WHERE effective_date=(SELECT max(effective_date) FROM live)) OR json_array_length(p.supersedes)>0 OR p.source_reference IN (SELECT reference FROM superseded))
 ORDER BY p.rowid;

@@ -17,6 +17,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/source"
 )
 
 //go:embed positions.sql
@@ -61,10 +62,19 @@ func calculatePositions(
 		}
 
 		key := positionInstrumentIdentity(d.Instrument)
-		if prior, ok := ids[key]; ok && prior != b.InstrumentID {
+		id := b.InstrumentID
+		if b.ReferenceStatus == "conflict" ||
+			!application.CompatibleInstrumentKind(
+				d.Instrument.Kind,
+				source.InstrumentKind(b.Kind),
+			) {
+			id = ""
+		}
+
+		if prior, ok := ids[key]; ok && prior != id {
 			ids[key] = ""
 		} else if !ok {
-			ids[key] = b.InstrumentID
+			ids[key] = id
 		}
 	}
 
