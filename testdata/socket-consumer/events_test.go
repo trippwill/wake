@@ -220,3 +220,58 @@ func TestPublicationBackoffRequiresSuccessfulSynchronization(t *testing.T) {
 		}
 	})
 }
+
+func TestPositionsBackoffRequiresSuccessfulRefreshAfterPublication(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		stream := "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\nevent: positions\ndata: {\"warehouse_id\":\"warehouse\",\"account_id\":\"account\",\"version\":\"p\"}\n\n"
+		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), Request: r}, nil
+		})}, base: "http://wake", stderr: io.Discard}
+		start := time.Now()
+		times := []time.Duration{}
+		c.positionUpdate = func(positionsPublication) error {
+			times = append(times, time.Since(start))
+			switch len(times) {
+			case 4:
+				return nil
+			case 6:
+				cancel()
+				return nil
+			default:
+				return transportError{errors.New("positions interrupted")}
+			}
+		}
+		err := c.follow(ctx, time.Second, func(publication) error { return nil })
+		want := []time.Duration{0, time.Second, 3 * time.Second, 7 * time.Second, 8 * time.Second, 10 * time.Second}
+		if !errors.Is(err, context.Canceled) || !slices.Equal(times, want) {
+			t.Fatal("failed positions refresh reset reconnect delay", times, err)
+		}
+	})
+}
+
+func TestPositionsBackoffDoesNotResetBeforePositionsAnnouncement(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		start := time.Now()
+		times := []time.Duration{}
+		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
+			times = append(times, time.Since(start))
+			if len(times) == 6 {
+				cancel()
+			}
+			stream := "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n"
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), Request: r}, nil
+		})}, base: "http://wake", stderr: io.Discard, positionUpdate: func(positionsPublication) error {
+			t.Fatal("unexpected positions announcement")
+			return nil
+		}}
+		err := c.follow(ctx, time.Second, func(publication) error { return nil })
+		want := []time.Duration{0, time.Second, 3 * time.Second, 7 * time.Second, 15 * time.Second, 31 * time.Second}
+		if !errors.Is(err, context.Canceled) || !slices.Equal(times, want) {
+			t.Fatal("unrelated publication reset positions reconnect delay", times, err)
+		}
+	})
+}

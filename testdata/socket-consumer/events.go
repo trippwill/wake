@@ -24,19 +24,30 @@ type positionsUpdateError struct{ error }
 // Each connection starts with current publication, so reconnect needs no cursor.
 func (c *client) follow(ctx context.Context, delay time.Duration, synchronize func(publication) error) error {
 	backoff := min(delay, 30*time.Second)
+	positionUpdate := c.positionUpdate
 	for {
 		var syncError error
 		connected := false
+		if positionUpdate != nil {
+			c.positionUpdate = func(p positionsPublication) error {
+				err := positionUpdate(p)
+				if err == nil {
+					connected = true
+				}
+				return err
+			}
+		}
 		streamError := c.events(ctx, func(p publication) error {
 			if !connected {
 				fmt.Fprintln(c.stderr, "Following accepted publication events")
 			}
 			syncError = synchronize(p)
-			if syncError == nil {
+			if syncError == nil && positionUpdate == nil {
 				connected = true
 			}
 			return syncError
 		})
+		c.positionUpdate = positionUpdate
 		var positionsError positionsUpdateError
 		if errors.As(streamError, &positionsError) {
 			syncError = positionsError.error
