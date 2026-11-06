@@ -22,14 +22,6 @@ templ Breadcrumbs(title string) {
 	<a class="wake-return" href={ templ.SafeURL(returnURL(ctx)) } data-return>Return to { parentLabel(ctx) }</a>
 }
 
-templ ActivityNavigation(view string) {
-	<nav class="wake-tabs" aria-label="Activity views">
-		<a href="/activity" aria-current={ currentPage(view == "all") }>All activity</a>
-		<a href="/activity?view=review" aria-current={ currentPage(view == "review") }>Needs review</a>
-		<a href="/activity?view=instruments" aria-current={ currentPage(view == "instruments") }>Instruments</a>
-	</nav>
-}
-
 func currentPage(active bool) string {
 	if active {
 		return "page"
@@ -430,8 +422,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 }
 
 templ ActivityPage(view activityView) {
-	@PageHeader("Activity", "Inspect financial history and resolve questions from retained evidence.")
-	@ActivityNavigation(activeView(ctx, "all"))
+	@PageHeader(activityTitle(activeView(ctx, "all")), activityDescription(activeView(ctx, "all")))
 	if view.Account.ID()=="" && activeView(ctx,"all")=="all" {
 		<section class="wake-card"><h2>Confirm an account to begin</h2><a class="btn btn-primary" href="/connections">Review source setup</a></section>
 	}
@@ -446,7 +437,6 @@ templ ActivityPage(view activityView) {
 
 templ ReviewQueue(view activityView) {
 	<section class="wake-card">
-		<h2>Needs review</h2>
 		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
 		<form class="wake-filters" method="get" action="/activity"><input type="hidden" name="view" value="review"/><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
 		if len(view.Reviews)==0 {
@@ -476,7 +466,6 @@ templ ActivityRows(view activityView) {
 
 templ InstrumentsView(view activityView) {
 	<section class="wake-card">
-		<h2>Instruments</h2>
 		@Grid("instruments", "/grids/instruments", "Instruments")
 	</section>
 }

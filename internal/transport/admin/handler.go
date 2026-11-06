@@ -24,6 +24,7 @@ type (
 	Status struct {
 		CredentialProtection bool
 		StartedAt            string
+		WarehouseBytes       *int64
 	}
 	Queries interface {
 		Status(context.Context) (Status, error)

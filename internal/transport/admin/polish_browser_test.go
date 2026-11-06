@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,8 @@ import (
 	"github.com/chromedp/chromedp/kb"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -212,7 +215,18 @@ func polishObservations() templ.Component {
 
 func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool) {
 	rows := []application.Observation{}
-	for i := range 2 {
+
+	count := 2
+	artifact := r.URL.Query().Get("subject") == "artifact"
+	if artifact {
+		count = 75
+	}
+
+	if r.URL.Query().Get("id") == "empty-report" {
+		count = 0
+	}
+
+	for i := range count {
 		outcome := application.ObservationAccepted
 		if i == 1 && changed {
 			outcome = application.ObservationTermsConflict
@@ -237,6 +251,15 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 		)
 	}
 
+	if artifact {
+		for i := range rows {
+			rows[i].Artifact = "synthetic-report"
+			if i%3 != 0 {
+				rows[i].ActivityID = "synthetic-activity"
+			}
+		}
+	}
+
 	query, err := listQuery(r.Context(), application.ObservationScope)
 	if err != nil {
 		gridJSON(w, nil, err)
@@ -244,6 +267,29 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 	}
 
 	options := query.Options()
+	if artifact && options.Sort == "referenced" {
+		slices.SortStableFunc(rows, func(a, b application.Observation) int {
+			if a.Location == options.ReferencedLocation && b.Location != options.ReferencedLocation {
+				return -1
+			}
+
+			if b.Location == options.ReferencedLocation && a.Location != options.ReferencedLocation {
+				return 1
+			}
+
+			return 0
+		})
+	}
+
+	if options.Search != "" {
+		rows = slices.DeleteFunc(rows, func(row application.Observation) bool {
+			return !strings.Contains(
+				strings.ToLower(row.Artifact+" "+row.Location+" "+observationStatus(row.Outcome)),
+				options.Search,
+			)
+		})
+	}
+
 	if options.Direction == "desc" && options.Sort == "location" {
 		slices.Reverse(rows)
 	}
@@ -260,8 +306,13 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 		observationGrid(
 			r.Context(),
 			application.ObservationList{
-				Items:    rows[start:end],
-				PageInfo: application.PageInfo{Page: options.Page, PageSize: options.PageSize, Total: 2, Matched: 2},
+				Items: rows[start:end],
+				PageInfo: application.PageInfo{
+					Page:     options.Page,
+					PageSize: options.PageSize,
+					Total:    int64(count),
+					Matched:  int64(len(rows)),
+				},
 			},
 		),
 		nil,
@@ -317,7 +368,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 	defer auth.Close()
 
-	base, err := NewHandler(auth, Dependencies{})
+	var warehouseBytes atomic.Int64
+	warehouseBytes.Store(134637824)
+
+	base, err := NewHandler(auth, Dependencies{
+		Queries: browserStatus{size: &warehouseBytes},
+		Config: config.Config{Paths: config.Paths{
+			ConfigFile: "/synthetic/operator configuration/private instance/settings.toml",
+		}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,8 +616,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			return
 		}
 
-		if strings.HasPrefix(r.URL.Path, "/test/") || r.URL.Path == "/" ||
-			r.URL.Path == "/activity/synthetic-activity/correct" || r.URL.Path == "/instruments/synthetic-instrument" {
+		if strings.HasPrefix(r.URL.Path, "/test/") || strings.HasPrefix(r.URL.Path, "/evidence/") ||
+			r.URL.Path == "/" ||
+			r.URL.Path == "/activity/synthetic-activity/correct" ||
+			r.URL.Path == "/instruments/synthetic-instrument" {
 			csrf, ok := auth.session(r)
 			if !ok {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -569,6 +630,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 			var component templ.Component
 			switch r.URL.Path {
+			case "/evidence/synthetic-report", "/evidence/empty-report":
+				artifact, _ := provider.NewArtifact(
+					"synthetic-xml",
+					"application/xml",
+					time.Now(),
+					[]byte("<SyntheticReport/>"),
+				)
+				component = RetainedEvidence(
+					host.Retained{
+						ID:       strings.TrimPrefix(r.URL.Path, "/evidence/"),
+						Provider: "Synthetic provider",
+						Artifact: artifact,
+					},
+					application.EvidenceContext{ConnectionName: "Synthetic source"},
+				)
 			case "/test/grid", "/test/dense-grid":
 				component = polishGrid(r.URL.Path == "/test/dense-grid")
 			case "/test/instruments":
@@ -738,6 +814,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
 		chromedp.WaitVisible(".tabulator", chromedp.ByQuery),
 		chromedp.Poll(`document.querySelector('.tabulator-row')!==null`, nil),
+	)
+	assert(
+		`new Set([...document.querySelectorAll('.wake-nav-link use')].map(icon=>icon.getAttribute('href'))).size===6`,
+		"sidebar destinations reuse an icon",
 	)
 	assert(
 		`!document.querySelector('table') && !window.privateInjection && document.querySelector('[data-grid-status]').textContent==='70 of 70 results'`,
@@ -1901,12 +1981,80 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`document.querySelector('[data-different="true"]').textContent.includes('9007199254740993.0000000000001')`,
 		"exact candidate comparison missing",
 	)
+
+	referenced := strings.Repeat(
+		"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
+		4,
+	) + "/TradeConfirm[75]"
+	check(
+		testbrowser.NewDocument(
+			chromedp.Navigate(origin+"/evidence/synthetic-report?location="+url.QueryEscape(referenced)),
+		),
+		chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil),
+	)
+	assert(
+		`document.querySelector('.tabulator-row').dataset.referenced==='true' && document.querySelector('.tabulator-row').textContent.includes('Referenced observation') && document.querySelectorAll('.tabulator-row').length===50`,
+		"report reference or bounded initial page missing",
+	)
+	check(
+		chromedp.Evaluate(
+			`window.reportTable=window.Tabulator.findTable('.tabulator')[0]; window.reportTable.setPageSize(25).then(()=>window.reportTable.setPage(2))`,
+			nil,
+		),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-status]').textContent.includes('75 of 75') && new URL(location.href).searchParams.get('observations_page')==='2'`,
+			nil,
+		),
+	)
+	assert(
+		`document.querySelectorAll('.tabulator-row').length===25 && !document.querySelector('.tabulator-row').textContent.includes('Referenced observation')`,
+		"report table paging lost bounds",
+	)
+	check(chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
+		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil))
+	assert(
+		`document.querySelector('.tabulator-row').textContent.includes('Referenced observation')`,
+		"filtered referenced observation disappeared",
+	)
+	check(
+		chromedp.Focus(`.tabulator-col[tabulator-field="location"]`, chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.Poll(
+			`new URL(location.href).searchParams.get('observations_sort')==='location' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			nil,
+		),
+		chromedp.Evaluate(
+			`window.previousObservationColumns=localStorage.getItem('tabulator-wake-observations-columns');window.reportTable.getColumn('location').setWidth(410)`,
+			nil,
+		),
+	)
+	assert(
+		`localStorage.getItem('tabulator-wake-observations-artifact-columns')!==null && localStorage.getItem('tabulator-wake-observations-columns')===window.previousObservationColumns`,
+		"report column preferences overwrote the ordinary observation layout",
+	)
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/status")),
+		chromedp.WaitVisible("h1", chromedp.ByQuery),
+	)
+	assert(
+		`document.body.textContent.includes('128.4 MiB (134637824 bytes)') && !document.body.textContent.includes('Operator workspaces')`,
+		"status size presentation missing",
+	)
+	warehouseBytes.Store(268435456)
+	check(
+		chromedp.Poll(
+			`document.body.textContent.includes('256.0 MiB (268435456 bytes)')`,
+			nil,
+			chromedp.WithPollingTimeout(15*time.Second),
+		),
+	)
 	// Review every representative page in both themes, with layout checks at all selected widths.
 	for _, theme := range []string{"light", "dark"} {
 		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
 				check(
 					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
@@ -1916,6 +2064,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				if strings.Contains(path, "?field=") {
 					check(chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil))
+				}
+
+				if strings.HasPrefix(path, "/evidence/") {
+					check(chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil))
+					assert(
+						`window.Tabulator.findTable('.tabulator')[0].getColumns().filter(c=>c.isVisible()).length===4`,
+						"report table lost its four-column layout",
+					)
 				}
 
 				if path == "/test/grid" {
@@ -1963,6 +2119,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					)
 				}
 
+				if path == "/configuration" {
+					assert(
+						`document.querySelector('dl').textContent.includes('/synthetic/operator configuration/private instance/settings.toml')`,
+						"loaded TOML file path missing from configuration",
+					)
+				}
+
 				if path == "/test/instrument" {
 					check(
 						chromedp.Click(
@@ -1988,7 +2151,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					)
 				}
 
-				if width == 320 || width == 1440 || path == "/test/grid" {
+				if width == 320 || width == 1440 || path == "/test/grid" ||
+					width == 768 &&
+						(strings.HasPrefix(path, "/evidence/") || path == "/status" || path == "/configuration") {
 					if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" {
 						var png []byte
 						check(chromedp.FullScreenshot(&png, 90))
@@ -2122,4 +2287,11 @@ func (browserNormalizer) Normalize(
 	provider.Claims,
 ) (provider.Result, error) {
 	return provider.Result{}, provider.ErrUnavailable
+}
+
+type browserStatus struct{ size *atomic.Int64 }
+
+func (s browserStatus) Status(context.Context) (Status, error) {
+	value := s.size.Load()
+	return Status{WarehouseBytes: &value, CredentialProtection: true}, nil
 }

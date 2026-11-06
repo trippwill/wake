@@ -82,6 +82,20 @@ type Store struct {
 
 type storeMetadata struct{ kind, version, id string }
 
+// WarehouseSize reads the owned database file, excluding access storage and journals.
+func (s *Store) WarehouseSize() (int64, error) {
+	if s.owners[0] == nil {
+		return 0, os.ErrInvalid
+	}
+
+	info, err := s.owners[0].Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	return info.Size(), nil
+}
+
 var (
 	storeKinds    = [2]string{"warehouse", "connections"}
 	storeSchemas  = [2]string{"main", "access"}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
@@ -170,6 +171,10 @@ func origin(ctx context.Context) string {
 		return "/status"
 	}
 
+	if u != nil && strings.HasPrefix(u.Path, "/instruments/") {
+		return "/activity?view=instruments"
+	}
+
 	return "/activity"
 }
 
@@ -209,7 +214,8 @@ func parentLabel(ctx context.Context) string {
 	p := strings.Split(returnURL(ctx), "?")[0]
 	switch {
 	case p == "/activity":
-		return "Activity"
+		u, _ := url.Parse(returnURL(ctx))
+		return activityTitle(u.Query().Get("view"))
 	case strings.HasPrefix(p, "/instruments/"):
 		return "Instrument"
 	case strings.HasPrefix(p, "/evidence/") || strings.HasPrefix(p, "/reference-evidence/"):
@@ -547,6 +553,10 @@ func servePageError(w http.ResponseWriter, r *http.Request, csrf string, status 
 
 func originLabel(ctx context.Context) string {
 	p := origin(ctx)
+	if u, err := url.Parse(p); err == nil && u.Path == "/activity" {
+		return activityTitle(u.Query().Get("view"))
+	}
+
 	if strings.HasPrefix(p, "/connections") {
 		return "Connections"
 	}
@@ -587,21 +597,6 @@ func workspaceAttributes(ctx context.Context, csrf string) templ.Attributes {
 	}
 }
 
-func orderedEvidence(
-	ctx context.Context,
-	observations []application.EvidenceObservation,
-) []application.EvidenceObservation {
-	out := append([]application.EvidenceObservation(nil), observations...)
-	location := page(ctx).Query.Get("location")
-	if location != "" {
-		sort.SliceStable(out, func(i, j int) bool {
-			return out[i].Location == location && out[j].Location != location
-		})
-	}
-
-	return out
-}
-
 func correctionContext(f application.CorrectionForm) string {
 	if f.Kind == "activity" && f.Values["instrument"].Label != "" {
 		return f.Values["instrument"].Label + " · " + f.Label
@@ -636,4 +631,57 @@ func workLabel(work application.WorkStatus) string {
 	}
 
 	return work.Stream + " · " + operationLabel(work.Operation)
+}
+
+func activityTitle(view string) string {
+	switch view {
+	case "instruments":
+		return "Instruments"
+	case "review":
+		return "Needs review"
+	default:
+		return "Activity"
+	}
+}
+
+func activityDescription(view string) string {
+	switch view {
+	case "instruments":
+		return "Inspect instrument identity, reported symbols and supporting observations."
+	case "review":
+		return "Resolve financial disagreements and uncertain instrument identity."
+	default:
+		return "Inspect financial history and its retained evidence."
+	}
+}
+
+func workspaceSection(ctx context.Context, fallback string) string {
+	if fallback == "Activity" {
+		return originLabel(ctx)
+	}
+
+	return fallback
+}
+
+func warehouseSizeText(bytes *int64) string {
+	if bytes == nil || *bytes < 0 {
+		return "Unavailable"
+	}
+
+	if *bytes < 1024 {
+		return fmt.Sprintf("%d B (%d bytes)", *bytes, *bytes)
+	}
+
+	value := float64(*bytes)
+	unit := "B"
+	for _, next := range []string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"} {
+		value /= 1024
+		unit = next
+
+		if value < 1024 {
+			break
+		}
+	}
+
+	return fmt.Sprintf("%.1f %s (%d bytes)", value, unit, *bytes)
 }

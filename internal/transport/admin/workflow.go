@@ -449,7 +449,8 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell("Activity", csrf, "Activity", ActivityPage(view))).ServeHTTP(w, r)
+		templ.Handler(SectionShell(activityTitle(activeView(r.Context(), "all")), csrf, "Activity", ActivityPage(view))).
+			ServeHTTP(w, r)
 	})
 	gate("GET /executions/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id"))

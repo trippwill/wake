@@ -446,8 +446,12 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Click(`//summary[text()='Retained observations and acceptance rules']`, chromedp.BySearch),
 		newDocument(chromedp.Click(`.tabulator a[href^="/evidence/"]`, chromedp.ByQuery)),
 		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
+		chromedp.Poll(
+			`document.querySelector('[data-grid-variant="artifact"]')?.dataset.gridReady==='true'`,
+			nil,
+		),
 		chromedp.Evaluate(
-			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger')`,
+			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger') && document.querySelector('.tabulator-row').dataset.referenced==='true' && document.querySelector('.tabulator-row').textContent.includes('Referenced observation') && document.querySelector('.tabulator-row a[href^="/activity/"]')!==null`,
 			&ok,
 		),
 	)
@@ -533,7 +537,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(`//h2[text()='Acquisition context']`, chromedp.BySearch),
 		newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
 		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
-		chromedp.Evaluate(`new URL(document.querySelector('[data-return]').href).pathname==='/activity'`, &ok),
+		chromedp.Evaluate(
+			`new URL(document.querySelector('[data-return]').href).searchParams.get('view')==='instruments' && document.querySelector('[data-return]').textContent.includes('Instruments')`,
+			&ok,
+		),
 	)
 
 	if !ok {
@@ -542,7 +549,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	check(
 		newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
-		chromedp.WaitVisible("#activity-rows", chromedp.ByQuery),
+		chromedp.WaitVisible(`[data-grid="instruments"]`, chromedp.ByQuery),
 	)
 
 	check(

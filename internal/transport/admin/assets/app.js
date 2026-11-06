@@ -330,6 +330,14 @@
   };
   const gridParameter = (region, name) =>
     region.dataset.grid === "observations" ? `observations_${name}` : name;
+  const gridDefaultSort = (region) =>
+    region.dataset.gridVariant === "artifact"
+      ? "referenced"
+      : region.dataset.grid === "activity"
+        ? "date"
+        : region.dataset.grid === "instruments"
+          ? "name"
+          : "report";
   const selectedTextWithin = (region) => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed) return false;
@@ -380,27 +388,44 @@
       }
       try {
         const kind = region.dataset.grid;
+        const artifact = region.dataset.gridVariant === "artifact";
+        const preferenceKey = (id, type) =>
+          `${id}${artifact && type === "columns" ? "-artifact" : ""}-${type}`;
+        const emptyState = document.createElement("span");
+        emptyState.textContent = "No matching records.";
         const params = new URL(location.href).searchParams;
         const initialSort =
-          params.get(gridParameter(region, "sort")) ||
-          (kind === "activity"
-            ? "date"
-            : kind === "instruments"
-              ? "name"
-              : "report");
+          params.get(gridParameter(region, "sort")) || gridDefaultSort(region);
         const initialDirection =
           params.get(gridParameter(region, "dir")) ||
           (kind === "instruments" ? "asc" : "desc");
         const element = region.querySelector("[data-grid-table]");
-        const createColumns = () =>
-          gridColumns[kind].map(([field, title]) => ({
+        const createColumns = () => {
+          const definitions = artifact
+            ? [
+                ["outcome", "Outcome"],
+                ["activity", "Related activity"],
+                ["location", "Source location"],
+                ["rule", "Acceptance rule / version"],
+              ]
+            : gridColumns[kind];
+          const columns = definitions.map(([field, title]) => ({
             field,
             title,
             minWidth: 130,
+            widthGrow: artifact && field === "location" ? 2 : 1,
             headerWordWrap: true,
             variableHeight: true,
             formatter: gridCell,
           }));
+          if (artifact)
+            columns.push({
+              field: "referenced",
+              visible: false,
+              headerSort: false,
+            });
+          return columns;
+        };
         const state = {
           table: null,
           check: null,
@@ -523,6 +548,11 @@
               );
             if (sequence !== state.sequence)
               throw new Error("Superseded table request");
+            if (artifact)
+              emptyState.textContent =
+                result.total === 0
+                  ? "No financial observations are attached to this report."
+                  : "No matching records.";
             if (!background) {
               state.installing = result;
               history.replaceState(null, "", current);
@@ -576,7 +606,9 @@
               if (size) return { paginationSize: size };
             }
             try {
-              const saved = JSON.parse(localStorage.getItem(`${id}-${type}`));
+              const saved = JSON.parse(
+                localStorage.getItem(preferenceKey(id, type)),
+              );
               if (type === "page") {
                 const size = gridPageSize(saved?.paginationSize);
                 return size ? { paginationSize: size } : false;
@@ -589,16 +621,23 @@
           persistenceWriterFunc: (id, type, data) => {
             if (type === "page" && !gridPageSize(data.paginationSize)) return;
             try {
-              localStorage.setItem(`${id}-${type}`, JSON.stringify(data));
+              localStorage.setItem(
+                preferenceKey(id, type),
+                JSON.stringify(data),
+              );
             } catch {
               // Browser preferences must not block table interactions.
             }
           },
-          placeholder: "No matching records.",
+          placeholder: emptyState,
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: requestData,
           rowFormatter: (row) => {
             row.getElement().dataset.record = row.getData().id;
+            if (artifact)
+              row.getElement().dataset.referenced = String(
+                row.getData().referenced,
+              );
           },
         });
         state.table = table;
@@ -828,12 +867,7 @@
       }
       const kind = region.dataset.grid;
       const field =
-        params.get(gridParameter(region, "sort")) ||
-        (kind === "activity"
-          ? "date"
-          : kind === "instruments"
-            ? "name"
-            : "report");
+        params.get(gridParameter(region, "sort")) || gridDefaultSort(region);
       const dir =
         params.get(gridParameter(region, "dir")) ||
         (kind === "instruments" ? "asc" : "desc");

@@ -186,6 +186,50 @@ func TestLoadConfigFilePresence(t *testing.T) {
 	})
 }
 
+func TestLoadRetainsLoadedConfigurationFile(t *testing.T) {
+	for _, selected := range []string{"absent", "default", "flag", "environment"} {
+		t.Run(selected, func(t *testing.T) {
+			roots := configureEnvironment(t, true)
+			path := filepath.Join(roots.config, "wake", "config.toml")
+			overrides := Overrides{}
+
+			if selected == "flag" || selected == "environment" {
+				path = filepath.Join(roots.base, "operator settings.toml")
+			}
+
+			if selected != "absent" {
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(path, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			switch selected {
+			case "flag":
+				overrides.ConfigPath, overrides.ConfigPathExplicit = path, true
+			case "environment":
+				t.Setenv("WAKE_CONFIG", path)
+			}
+
+			cfg, err := loadForTest(overrides)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if selected == "absent" {
+				path = ""
+			}
+
+			if cfg.Paths.ConfigFile != path {
+				t.Fatalf("loaded configuration file = %q, want %q", cfg.Paths.ConfigFile, path)
+			}
+		})
+	}
+}
+
 func TestLoadRequiresRuntimeDirectory(t *testing.T) {
 	configureEnvironment(t, false)
 

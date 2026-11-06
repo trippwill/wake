@@ -50,14 +50,16 @@ details. Leave an unknown account currency empty. Confirmation activates one
 account and starts automatic synchronization; other discovered accounts remain
 candidates.
 
-**Overview** shows setup steps, financial review and source work. In **Activity**,
-use **All activity**, **Needs review** or **Instruments** to inspect the records you
-need. Activity, instrument and evidence pages retain a return path to the originating
-view. Unresolved financial and identity conflicts remain distinct from ordinary
+**Overview** shows setup steps, financial review and source work. Use the sidebar's
+**Activity**, **Instruments** and **Needs review** destinations to inspect financial
+history, instrument identities and unresolved questions. Activity, instrument and
+evidence pages retain a return path to the originating view. Unresolved financial
+and identity conflicts remain distinct from ordinary
 reference gaps and source failures.
 
-**Connections** groups each source's **Status**, **Reports** and **Access**. Repair
-its Query ID or token beside the affected source. **Instrument reference** manages
+Under **Administration**, **Connections** groups each source's **Status**, **Reports**
+and **Access**. Repair its Query ID or token beside the affected source.
+**Instrument reference** manages
 the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
 stays visible until repaired or explicitly cleared for anonymous access.
 
@@ -69,6 +71,14 @@ differences. Decisions retain the authenticated session, time
 and optional rationale. Release a decision to return to automatic selection.
 
 A source's **Reports** view provides **Retry processing report** for retained reports.
+Each source report shows its observed financial meaning in a searchable, paginated
+table with related activity, source locations and acceptance rules.
+
+**System → Status** shows the current financial database file size in readable
+units and exact bytes. This includes retained reports and warehouse operational
+data; encrypted access storage and temporary journals are separate.
+**System → Configuration** identifies the TOML file loaded at startup, when present,
+alongside the effective storage and runtime paths.
 
 The two `[storage]` file settings are `warehouse_path` for financial history and
 operational state, and `connections_path` for active access and encrypted credentials.

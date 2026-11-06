@@ -163,8 +163,8 @@ metadata secondary while making uncertainty and the next useful action clear.
 ## Identity and assets
 
 The name evokes a ship's visible wake. Diverging water trails and a lowercase
-geometric wordmark form the identity. Spell the product **Wake** and use
-**Financial evidence** as its descriptor.
+geometric wordmark form the identity. Spell the product **Wake**. The application
+chrome uses the logo on its own, without a tagline.
 
 Use the [primary logo](internal/transport/admin/assets/brand/wake-logo.svg) on light
 surfaces and the [reversed logo](internal/transport/admin/assets/brand/wake-logo-reversed.svg)
@@ -212,7 +212,9 @@ lettering for identity and avoid decorative or condensed evidence typography.
 The [icon sprite](internal/transport/admin/assets/brand/icons.svg) supplies simple
 line icons alongside visible labels. Icons inherit foreground color and are hidden
 from assistive technology when decorative. Never substitute an icon for a control's
-accessible name or decorate every heading and value.
+accessible name or decorate every heading and value. Give each sidebar destination
+a distinct icon so Overview, Activity, Instruments, Needs review, Connections and
+System remain visually distinguishable.
 
 ## Layout and task hierarchy
 
@@ -232,9 +234,15 @@ stack simple regions, provide dismissible keyboard-accessible navigation and kee
 genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
 
 Overview orients the operator and surfaces specific next actions. Activity owns
-inspection, actionable financial/identity review and instrument browsing.
+financial-history inspection. Instruments owns instrument browsing, and Needs
+review owns actionable financial and identity uncertainty. These are separate
+Workspace sidebar destinations. Administration groups Connections, then System.
 Connections owns source authority, synchronization, reports and access; System
 owns installation status, effective configuration and advanced maintenance.
+Configuration identifies the TOML file loaded at startup, or states that none was loaded.
+System status includes the current financial database file size, with readable
+binary units and an exact byte count. It describes the warehouse file, including
+retained reports, independently of encrypted access storage and temporary journals.
 Full-page details retain breadcrumbs and a return path to their originating view.
 Applied corrections and ordinary reference gaps remain distinct from review tasks.
 
@@ -314,6 +322,11 @@ and preflight feedback provided by JavaScript.
 Require an explicit choice; disclose optional reasons and retain them after errors.
 Observation tables show source location and acceptance rule/version directly in
 their cells, with wrapping and local scrolling for long values.
+Source reports use a bounded observation table with outcome, related activity,
+source location and rule/version columns. Mark the referenced source location and
+prioritize it in the default ordering; explicit sorting and search retain their
+normal meaning. Preserve every appearance and interpretation version. Keep report
+table column preferences separate from other observation tables.
 Keep evidence/history reachable and distinguish saved decisions from checks still
 in progress. Use named source/context labels before technical references.
 

@@ -38,7 +38,11 @@ const (
 )
 
 // Paths contains the resolved paths used by the Wake process.
-type Paths struct{ ConfigDir, RuntimeDir string }
+type Paths struct {
+	ConfigDir, RuntimeDir string
+	// ConfigFile is the path of the TOML snapshot loaded at startup, or empty when absent.
+	ConfigFile string
+}
 
 // Storage contains independently resolved database file locations.
 type Storage struct {

@@ -38,11 +38,13 @@ type instrumentGridRow struct {
 	State  gridCell `json:"state"`
 }
 type observationGridRow struct {
-	ID       string   `json:"id"`
-	Report   gridCell `json:"report"`
-	Outcome  gridCell `json:"outcome"`
-	Location gridCell `json:"location"`
-	Rule     gridCell `json:"rule"`
+	ID         string   `json:"id"`
+	Report     gridCell `json:"report"`
+	Outcome    gridCell `json:"outcome"`
+	Location   gridCell `json:"location"`
+	Rule       gridCell `json:"rule"`
+	Activity   gridCell `json:"activity"`
+	Referenced bool     `json:"referenced"`
 }
 type gridPage[T any] struct {
 	Data     []T   `json:"data"`
@@ -153,6 +155,17 @@ func instrumentGrid(ctx context.Context, data application.InstrumentList) gridPa
 func observationGrid(ctx context.Context, data application.ObservationList) gridPage[observationGridRow] {
 	rows := make([]observationGridRow, 0, len(data.Items))
 	for _, row := range data.Items {
+		activity := gridCell{Text: "Not linked"}
+		if row.ActivityID != "" {
+			activity = gridCell{Text: "Inspect related activity", Href: navURL(ctx, "/activity/"+row.ActivityID)}
+		}
+
+		outcome := gridCell{Text: observationStatus(row.Outcome), Tone: observationBadgeKind(row.Outcome)}
+		referenced := page(ctx).Query.Get("location") != "" && page(ctx).Query.Get("location") == row.Location
+		if referenced {
+			outcome.Note = "Referenced observation"
+		}
+
 		rows = append(
 			rows,
 			observationGridRow{
@@ -162,9 +175,11 @@ func observationGrid(ctx context.Context, data application.ObservationList) grid
 					Note: row.Artifact,
 					Href: navURL(ctx, "/evidence/"+row.Artifact) + "&location=" + url.QueryEscape(row.Location),
 				},
-				Outcome:  gridCell{Text: observationStatus(row.Outcome), Tone: observationBadgeKind(row.Outcome)},
-				Location: gridCell{Text: row.Location},
-				Rule:     gridCell{Text: row.Rule + " · " + row.Version},
+				Outcome:    outcome,
+				Location:   gridCell{Text: row.Location},
+				Rule:       gridCell{Text: row.Rule + " · " + row.Version},
+				Activity:   activity,
+				Referenced: referenced,
 			},
 		)
 	}
@@ -248,6 +263,10 @@ func gridPageRequest(r *http.Request, kind string) (*http.Request, error) {
 
 			if query.Get("subject") == "instrument" {
 				path = "/instruments/" + url.PathEscape(query.Get("id"))
+			}
+
+			if query.Get("subject") == "artifact" {
+				path = "/evidence/" + url.PathEscape(query.Get("id"))
 			}
 		}
 

@@ -21,7 +21,7 @@ func (s *Store) ObservationList(
 	options := query.Options()
 	if query.Scope() != application.ObservationScope || options.Page < 1 || options.PageSize < 1 || id == "" ||
 		len(id) > 256 ||
-		kind != "activity" && kind != "instrument" {
+		kind != "activity" && kind != "instrument" && kind != "artifact" {
 		return application.ObservationList{}, application.ErrInvalid
 	}
 
@@ -32,10 +32,13 @@ func (s *Store) ObservationList(
 		out := application.ObservationList{Items: []application.Observation{}}
 
 		var err error
-		if kind == "activity" {
+		switch kind {
+		case "activity":
 			_, err = q.Execution(ctx, id)
-		} else {
+		case "instrument":
 			_, err = q.Instrument(ctx, id)
+		case "artifact":
+			_, err = q.ArtifactProvider(ctx, id)
 		}
 
 		if errors.Is(err, sql.ErrNoRows) {
@@ -64,15 +67,16 @@ func (s *Store) ObservationList(
 		rows, err := q.AdminObservationRows(
 			ctx,
 			sqlc.AdminObservationRowsParams{
-				SubjectKind:    kind,
-				SubjectID:      sql.NullString{String: id, Valid: true},
-				Search:         options.Search,
-				OutcomeMatches: string(matches),
-				OutcomeLabels:  string(labels),
-				SortField:      options.Sort,
-				Direction:      options.Direction,
-				PageSize:       int64(options.PageSize),
-				PageOffset:     query.Offset(),
+				SubjectKind:        kind,
+				SubjectID:          sql.NullString{String: id, Valid: true},
+				Search:             options.Search,
+				OutcomeMatches:     string(matches),
+				OutcomeLabels:      string(labels),
+				SortField:          options.Sort,
+				Direction:          options.Direction,
+				PageSize:           int64(options.PageSize),
+				PageOffset:         query.Offset(),
+				ReferencedLocation: options.ReferencedLocation,
 			},
 		)
 		if err != nil {
@@ -83,12 +87,13 @@ func (s *Store) ObservationList(
 			out.Items = append(
 				out.Items,
 				application.Observation{
-					Artifact:  row.ArtifactID,
-					Version:   row.Version,
-					Location:  row.Location,
-					Rule:      row.Rule,
-					Retrieved: row.Retrieved,
-					Outcome:   application.ObservationOutcome(row.Outcome),
+					Artifact:   row.ArtifactID,
+					Version:    row.Version,
+					Location:   row.Location,
+					Rule:       row.Rule,
+					Retrieved:  row.Retrieved,
+					Outcome:    application.ObservationOutcome(row.Outcome),
+					ActivityID: row.ExecutionID.String,
 				},
 			)
 		}

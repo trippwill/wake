@@ -10,6 +10,15 @@
   <symbol id="trades" viewBox="0 0 24 24">
     <path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>
   </symbol>
+  <symbol id="instruments" viewBox="0 0 24 24">
+    <path d="M3 21h18M5 21V8h14v13M3 8l9-5 9 5M9 12v5m6-5v5"/>
+  </symbol>
+  <symbol id="connections" viewBox="0 0 24 24">
+    <rect x="3" y="9" width="6" height="6" rx="1"/>
+    <rect x="15" y="3" width="6" height="6" rx="1"/>
+    <rect x="15" y="15" width="6" height="6" rx="1"/>
+    <path d="M9 12h3m0-6v12m0-12h3m-3 12h3"/>
+  </symbol>
   <symbol id="imports" viewBox="0 0 24 24">
     <path d="M12 3v11m-4-4 4 4 4-4M4 14v6h16v-6"/>
   </symbol>

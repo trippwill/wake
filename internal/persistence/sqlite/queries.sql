@@ -250,8 +250,6 @@ SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.accoun
 UNION
 SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.replacement=e.reference WHERE e.execution_id=sqlc.arg(execution_id)
 ORDER BY artifact_id,version,location;
--- name: ArtifactObservations :many
-SELECT * FROM execution_observations WHERE artifact_id=? ORDER BY rowid;
 
 -- name: UpdateDescriptorName :exec
 UPDATE connections SET name=? WHERE id=?;

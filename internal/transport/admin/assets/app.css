@@ -130,13 +130,6 @@ body {
   width: 8.9375rem;
   height: auto;
 }
-.wake-brand span {
-  display: block;
-  margin-inline-start: 2.5rem;
-  color: var(--wake-muted);
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
 .wake-nav .menu {
   width: 100%;
   padding: 0;
@@ -437,6 +430,7 @@ body {
 @media (max-width: 64rem) {
   .wake-app {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
   }
   .wake-sidebar {
     padding: 0.75rem 1rem;
@@ -448,9 +442,6 @@ body {
   }
   .wake-brand img {
     width: 7.5rem;
-  }
-  .wake-brand span {
-    display: none;
   }
   .wake-menu-toggle:not([hidden]) {
     display: inline-flex;
@@ -1259,4 +1250,9 @@ body {
   .wake-timestamp {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.wake-main .wake-grid[data-grid-variant="artifact"] {
+  height: min(65dvh, 38rem);
+  min-height: 20rem;
 }

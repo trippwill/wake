@@ -37,12 +37,13 @@ func (s gridReadStore) ObservationList(
 		PageInfo: application.PageInfo{Total: 3, Matched: 2, Page: 1, PageSize: query.Options().PageSize},
 		Items: []application.Observation{
 			{
-				Artifact:  "synthetic-report",
-				Version:   "rule-v1",
-				Location:  "row[2]&field=value",
-				Rule:      "synthetic-rule",
-				Retrieved: "2026-10-31T10:00:00.120Z",
-				Outcome:   application.ObservationAccepted,
+				Artifact:   "synthetic-report",
+				ActivityID: "synthetic-activity",
+				Version:    "rule-v1",
+				Location:   "row[2]&field=value",
+				Rule:       "synthetic-rule",
+				Retrieved:  "2026-10-31T10:00:00.120Z",
+				Outcome:    application.ObservationAccepted,
 			},
 			{
 				Artifact:  "synthetic-report",
@@ -80,6 +81,7 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 		{name: "empty instruments", route: "/grids/instruments", status: 200},
 		{name: "activity appearances", route: "/grids/observations?subject=activity&id=one", status: 200},
 		{name: "instrument appearances", route: "/grids/observations?subject=instrument&id=two", status: 200},
+		{name: "artifact appearances", route: "/grids/observations?subject=artifact&id=report&location=row%5B2%5D%26field%3Dvalue", status: 200},
 		{name: "untrusted page", route: "/grids/activity?page_url=https://outside.invalid/activity", status: 400},
 		{name: "invalid page", route: "/grids/activity?page=abc", status: 400},
 		{name: "invalid size", route: "/grids/instruments?size=abc", status: 400},
@@ -153,6 +155,16 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 			expected := "/activity/one"
 			if strings.Contains(tc.route, "instrument") {
 				expected = "/instruments/two"
+			}
+
+			if strings.Contains(tc.route, "subject=artifact") {
+				expected = "/evidence/report"
+
+				if !page.Data[0].Referenced || page.Data[0].Outcome.Note != "Referenced observation" ||
+					page.Data[0].Activity.Href == "" ||
+					page.Data[1].Activity.Text != "Not linked" {
+					t.Fatal("report observation links or context missing", page)
+				}
 			}
 
 			parent, err := url.Parse(link.Query().Get("parent"))

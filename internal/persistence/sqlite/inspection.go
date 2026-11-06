@@ -102,23 +102,5 @@ func (s *Store) EvidenceContext(ctx context.Context, id string) (application.Evi
 
 	out.ConnectionName = connection.Name
 
-	rows, err := s.queries.ArtifactObservations(ctx, id)
-	if err != nil {
-		return out, err
-	}
-
-	for _, o := range rows {
-		out.Observations = append(
-			out.Observations,
-			application.EvidenceObservation{
-				ActivityID: o.ExecutionID.String,
-				Location:   o.Location,
-				Outcome:    o.Outcome,
-				Rule:       o.Rule,
-				Version:    o.Version,
-			},
-		)
-	}
-
 	return out, nil
 }

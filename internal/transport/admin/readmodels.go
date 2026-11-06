@@ -284,6 +284,11 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	}
 
 	if scope == application.ObservationScope {
+		options.ReferencedLocation = params.Get("location")
+		if options.Sort == "" && params.Get("subject") == "artifact" {
+			options.Sort = "referenced"
+		}
+
 		options.Kind = ""
 		options.State = ""
 		options.ObservationLabels = map[application.ObservationOutcome]string{}

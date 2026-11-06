@@ -177,6 +177,8 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		return out, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
 	}
 
+	fileLoaded := err == nil
+
 	file, metadata, err := decodeFileConfigSnapshot(content)
 	if err != nil {
 		return out, err
@@ -259,6 +261,7 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	}
 
 	port := command.Uint16("admin-port")
+
 	file = fileConfig{
 		Storage: Storage{
 			WarehousePath:   command.String("warehouse-path"),
@@ -274,6 +277,9 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		},
 	}
 	out.Config, err = resolvedConfig(file, dir, runtimeRequired)
+	if err == nil && fileLoaded {
+		out.Config.Paths.ConfigFile = path
+	}
 
 	return out, err
 }
