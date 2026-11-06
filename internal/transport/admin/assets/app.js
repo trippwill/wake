@@ -55,6 +55,9 @@
   };
   let navigation = { workspace: defaultWorkspace, trail: [] };
   let navigationRevision = 0;
+  let navigationIntent = 0;
+  let navigationPending = false;
+  let navigationReady = Promise.resolve();
   const canonicalParents = new WeakMap();
   const navigationState = () => ({
     ...history.state,
@@ -100,7 +103,7 @@
       }
     }
   };
-  const restoreNavigation = async () => {
+  const restoreNavigationEntry = async () => {
     const revision = ++navigationRevision;
     const arrived = localAddress(location.href);
     let restored = readNavigation(history.state?.wakeNavigation);
@@ -126,6 +129,7 @@
             resourceKey(arrived).endsWith("/correct")
         ) {
           // Verify alias redirects through the existing authenticated resource route.
+          navigationPending = true;
           const response = await fetch(target, {
             method: "HEAD",
             credentials: "same-origin",
@@ -139,13 +143,27 @@
       // Storage or redirect-verification failures keep canonical navigation usable.
     }
     if (revision !== navigationRevision) return;
-    navigation = restored || { workspace: defaultWorkspace, trail: [] };
+    const workspace = workspaceAddresses.find(
+      (address) => resourceKey(address) === resourceKey(arrived),
+    );
+    navigation = workspace
+      ? { workspace, trail: [] }
+      : restored || { workspace: defaultWorkspace, trail: [] };
     const self = navigation.trail.findIndex(
       (address) => resourceKey(address) === resourceKey(location.href),
     );
     if (self !== -1) navigation.trail = navigation.trail.slice(0, self);
     history.replaceState(navigationState(), "");
     renderNavigation();
+  };
+  const restoreNavigation = () => {
+    navigationIntent++;
+    navigationPending = false;
+    const ready = restoreNavigationEntry();
+    navigationReady = ready;
+    ready.then(() => {
+      if (navigationReady === ready) navigationPending = false;
+    });
   };
   const rememberNavigation = (target, submission = false) => {
     const destination = localAddress(target);
@@ -161,13 +179,22 @@
       trail: [...navigation.trail],
     };
     const previous = next.trail.indexOf(destination);
+    const canonicalBack =
+      !next.trail.length &&
+      resourceKey(current).endsWith("/correct") &&
+      resourceKey(destination) ===
+        resourceKey(current).slice(0, -"/correct".length);
     const workspace = workspaceAddresses.find(
       (address) => resourceKey(address) === resourceKey(destination),
     );
     if (!submission && workspace) next = { workspace, trail: [] };
     else if (!submission && previous !== -1)
       next.trail = next.trail.slice(0, previous);
-    else if (!submission && resourceKey(current) !== resourceKey(destination)) {
+    else if (
+      !submission &&
+      !canonicalBack &&
+      resourceKey(current) !== resourceKey(destination)
+    ) {
       next.trail.push(current);
       if (next.trail.length > 16) next.trail.splice(1, 1);
     }
@@ -191,7 +218,7 @@
   });
   window.addEventListener("popstate", restoreNavigation);
   document.addEventListener("htmx:afterSettle", renderNavigation);
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", async (event) => {
     const link = event.target.closest("a[href]");
     if (
       !link ||
@@ -205,6 +232,15 @@
       (link.target && link.target !== "_self")
     )
       return;
+    const intent = ++navigationIntent;
+    const deferred = navigationPending && !!localAddress(link.href);
+    if (deferred) {
+      event.preventDefault();
+      link.setAttribute("aria-busy", "true");
+      await navigationReady;
+      link.removeAttribute("aria-busy");
+      if (intent !== navigationIntent || !link.isConnected) return;
+    }
     if (location.pathname === "/activity") {
       const record = link.closest("[data-record]")?.dataset.record;
       if (record) {
@@ -214,14 +250,30 @@
       }
     }
     rememberNavigation(link.href);
+    if (deferred) location.assign(link.href);
   });
-  document.addEventListener("submit", (event) => {
+  document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (
       event.defaultPrevented ||
       form.matches("[data-list-filters],[data-observation-filters]")
     )
       return;
+    const intent = ++navigationIntent;
+    if (navigationPending) {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const inert = form.inert;
+      form.inert = true;
+      form.setAttribute("aria-busy", "true");
+      await navigationReady;
+      form.inert = inert;
+      form.removeAttribute("aria-busy");
+      if (intent !== navigationIntent || !form.isConnected) return;
+      if (submitter) form.requestSubmit(submitter);
+      else form.requestSubmit();
+      return;
+    }
     const target = new URL(form.action, location.href);
     if (form.method.toLowerCase() === "get")
       target.search = new URLSearchParams(new FormData(form)).toString();

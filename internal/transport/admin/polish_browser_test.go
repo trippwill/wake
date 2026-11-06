@@ -395,6 +395,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	selectionStarted, releaseSelection := make(chan struct{}, 1), make(chan struct{})
 	movedFocusStarted, releaseMovedFocus := make(chan struct{}, 1), make(chan struct{})
 
+	var holdAlias atomic.Bool
+
+	aliasStarted, releaseAlias := make(chan struct{}, 1), make(chan struct{}, 1)
+
 	eventShutdown := make(chan struct{})
 	form := application.CorrectionForm{
 		Kind:        "activity",
@@ -621,6 +625,20 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			}
 
 			setSecurityHeaders(w.Header())
+
+			if r.Method == http.MethodHead && r.URL.Path == "/instruments/retired-instrument" && holdAlias.Load() {
+				select {
+				case aliasStarted <- struct{}{}:
+				case <-r.Context().Done():
+					return
+				}
+
+				select {
+				case <-releaseAlias:
+				case <-r.Context().Done():
+					return
+				}
+			}
 
 			var component templ.Component
 			switch r.URL.Path {
@@ -897,6 +915,67 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		check(
 			testbrowser.NewDocument(chromedp.Reload()),
 			chromedp.Poll(`history.state?.wakeNavigation?.workspace==='/review'`, nil),
+		)
+	}
+
+	for _, action := range []string{"link", "form"} {
+		holdAlias.Store(true)
+		check(
+			testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=delayed-filter&size=25")),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`(()=>{const a=document.createElement('a');a.id='delayed-alias';a.href='/instruments/retired-instrument';a.textContent='Open retired instrument';document.body.append(a)})()`,
+				nil,
+			),
+			testbrowser.NewDocument(chromedp.Click("#delayed-alias", chromedp.ByQuery)),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				select {
+				case <-aliasStarted:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}),
+			chromedp.Evaluate(
+				`(()=>{const form=document.createElement('form');form.id='delayed-form';form.method='get';form.action='/instruments/synthetic-instrument/correct';form.innerHTML='<input name="mode" value="decisions" type="hidden"><button type="submit" id="delayed-submit">Open corrections</button>';document.body.append(form);const a=document.createElement('a');a.id='delayed-link';a.href='/instruments/synthetic-instrument/correct?mode=decisions';a.textContent='Correct instrument data';document.body.append(a)})()`,
+				nil,
+			),
+		)
+
+		selector := "#delayed-link"
+		if action == "form" {
+			selector = "#delayed-submit"
+		}
+
+		var waiting bool
+		check(
+			testbrowser.NewDocument(chromedp.Tasks{
+				chromedp.Click(selector, chromedp.ByQuery),
+				chromedp.Evaluate(
+					`location.pathname==='/instruments/synthetic-instrument'&&document.querySelector('[aria-busy="true"]')!==null`,
+					&waiting,
+				),
+				chromedp.ActionFunc(func(context.Context) error {
+					holdAlias.Store(false)
+
+					releaseAlias <- struct{}{}
+
+					return nil
+				}),
+			}),
+			chromedp.Poll(
+				`history.state?.wakeNavigation?.workspace==='/review'&&location.pathname.endsWith('/correct')`,
+				nil,
+			),
+		)
+
+		if !waiting {
+			t.Fatal("navigation did not wait for alias verification", action)
+		}
+
+		assert(
+			`new URL(document.querySelector('[data-workspace-breadcrumb] a').href).searchParams.get('q')==='delayed-filter'&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/review'&&new URL(location.href).searchParams.get('mode')==='decisions'`,
+			"action during alias verification lost workspace, filters or form data",
 		)
 	}
 

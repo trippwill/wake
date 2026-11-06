@@ -356,6 +356,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			nil,
 		),
 	)
+	check(
+		chromedp.Evaluate(
+			`history.state.wakeNavigation.workspace==='/activity'&&history.state.wakeNavigation.trail.length===0&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/activity'`,
+			&ok,
+		),
+	)
+
+	if !ok {
+		t.Fatal("account confirmation retained Connections context on Activity")
+	}
+
 	clock.Add(6)
 
 	select {
@@ -451,6 +462,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatal("execution inspection lost precision")
 	}
+
+	var directActivity string
+	check(
+		chromedp.Evaluate(`location.href.split('?')[0].replace('/executions/','/activity/')`, &directActivity),
+	)
 
 	check(
 		chromedp.Click(`//summary[text()='Retained observations and acceptance rules']`, chromedp.BySearch),
@@ -561,6 +577,40 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
 		chromedp.WaitVisible(`[data-grid="instruments"]`, chromedp.ByQuery),
 	)
+
+	for _, detail := range []string{directActivity, directInstrument} {
+		root := "/activity"
+		if strings.Contains(detail, "/instruments/") {
+			root = "/instruments"
+		}
+
+		check(
+			newDocument(chromedp.Navigate(strings.Split(detail, "?")[0]+"/correct?mode=decisions")),
+			chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible("[data-return]", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`new URL(document.querySelector('[data-return]').href).pathname===`+strconv.Quote(
+					root,
+				)+`&&history.state.wakeNavigation.trail.length===0`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("direct correction created a return loop", detail)
+		}
+
+		check(
+			newDocument(chromedp.Click("[data-return]", chromedp.ByQuery)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(`location.pathname===`+strconv.Quote(root), &ok),
+		)
+
+		if !ok {
+			t.Fatal("direct correction failed to return to its workspace", detail)
+		}
+	}
 
 	for _, target := range []string{"/review", "/instruments?state=gaps"} {
 		check(
