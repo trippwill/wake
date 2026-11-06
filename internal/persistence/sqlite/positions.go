@@ -123,7 +123,11 @@ func calculatePositions(
 		return out, err
 	}
 
-	selection := application.SelectPositions(candidates)
+	selection, err := application.SelectPositions(ctx, candidates)
+	if err != nil {
+		return out, err
+	}
+
 	if !selection.Source.Date.IsZero() {
 		out.AsOf = &application.PositionTime{
 			Date: selection.Source.Date.String(),

@@ -238,6 +238,9 @@ until resolved. Repeated instrument/quantity rows have no independent identity e
 by their ordering. Optional costs and terms remain unknown where compatible pairings
 disagree. Reported costs remain distinct from reconstructed lots, valuations and calculated
 P&L.
+Ambiguous pairing work is bounded. If reconciliation cannot establish a usable set within
+that bound, positions are unavailable as incomplete; neither a partial pairing nor an older
+set is served.
 
 Changes to accepted values, links, relevant reference data or conflict status matter
 to consumers even without a new trade. Stable identities and reproducible views

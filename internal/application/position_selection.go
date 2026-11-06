@@ -4,6 +4,7 @@
 package application
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"strings"
@@ -25,10 +26,20 @@ type PositionSelection struct {
 
 // SelectPositions uses financial effective time and explicit supersession only.
 // Input order retains the first compatible text representation, never authority.
-func SelectPositions(inputs []PositionCandidate) PositionSelection {
-	result := PositionSelection{Reason: "not_reported"}
+func SelectPositions(ctx context.Context, inputs []PositionCandidate) (result PositionSelection, err error) {
+	defer func() {
+		if err == nil {
+			err = ctx.Err()
+		}
+	}()
+
+	result = PositionSelection{Reason: "not_reported"}
+	if err = ctx.Err(); err != nil {
+		return result, err
+	}
+
 	if len(inputs) == 0 {
-		return result
+		return result, nil
 	}
 
 	cycles := positionRevisionCycles(inputs)
@@ -82,7 +93,7 @@ func SelectPositions(inputs []PositionCandidate) PositionSelection {
 
 	if len(latest) == 0 {
 		result.Reason = "conflict"
-		return result
+		return result, nil
 	}
 
 	base := latest[0]
@@ -91,40 +102,45 @@ func SelectPositions(inputs []PositionCandidate) PositionSelection {
 	result.InstrumentIDs = slices.Clone(base.InstrumentIDs)
 	if result.Source.Date.IsZero() {
 		result.Reason = "incomplete"
-		return result
+		return result, nil
 	}
 
 	for _, c := range latest {
 		f := c.Observation.Fields()
 		if cycles[f.Reference] {
 			result.Reason = "conflict"
-			return result
+			return result, nil
 		}
 
 		if !f.Complete {
 			result.Reason = f.Reason
-			return result
+			return result, nil
 		}
 
 		if !f.At.Equal(result.Source.At) {
 			result.Reason = "conflict"
-			return result
+			return result, nil
 		}
 
 		if len(c.InstrumentIDs) != len(f.Positions) || slices.Contains(c.InstrumentIDs, "") {
 			result.Reason = "identity_unresolved"
-			return result
+			return result, nil
 		}
 	}
 
-	if !mergePositionSets(&result, latest[1:]) {
+	search := &positionPairingSearch{ctx: ctx, remaining: positionPairingSteps}
+	if !mergePositionSets(search, &result, latest[1:]) {
 		result.Reason = "conflict"
-		return result
+		if search.exhausted {
+			result.Reason = "incomplete"
+		}
+
+		return result, nil
 	}
 
 	result.Reason = ""
 
-	return result
+	return result, nil
 }
 
 func positionNumber(s string) string {
@@ -139,9 +155,38 @@ func positionNumber(s string) string {
 	return s
 }
 
+// Bound ambiguous multiset work across the entire account selection. Exhaustion
+// establishes no financial disagreement; the set is incomplete for publication.
+const positionPairingSteps = 10000
+
+type positionPairingSearch struct {
+	ctx       context.Context
+	remaining int
+	exhausted bool
+}
+
+func (s *positionPairingSearch) step() bool {
+	if s.ctx.Err() != nil {
+		return false
+	}
+
+	if s.remaining == 0 {
+		s.exhausted = true
+		return false
+	}
+
+	s.remaining--
+
+	return true
+}
+
 // Reconcile each instrument/quantity multiset across all applicable reports before
 // committing enrichment. Duplicate rows have no source-established row identity.
-func mergePositionSets(base *PositionSelection, candidates []PositionCandidate) bool {
+func mergePositionSets(
+	search *positionPairingSearch,
+	base *PositionSelection,
+	candidates []PositionCandidate,
+) bool {
 	type rowKey struct{ id, quantity, unit string }
 
 	key := func(id string, p source.Position) rowKey {
@@ -174,6 +219,10 @@ func mergePositionSets(base *PositionSelection, candidates []PositionCandidate) 
 	}
 
 	for k, rows := range indexes {
+		if search.ctx.Err() != nil {
+			return false
+		}
+
 		initial := make([]source.Position, 0, len(rows))
 		for _, i := range rows {
 			initial = append(initial, base.Source.Positions[i])
@@ -188,7 +237,7 @@ func mergePositionSets(base *PositionSelection, candidates []PositionCandidate) 
 			claims = append(claims, report[k])
 		}
 
-		selected, ok := mergePositionGroup(initial, claims)
+		selected, ok := mergePositionGroup(search, initial, claims)
 		if !ok {
 			return false
 		}
@@ -201,10 +250,22 @@ func mergePositionSets(base *PositionSelection, candidates []PositionCandidate) 
 	return true
 }
 
-func mergePositionGroup(initial []source.Position, reports [][]source.Position) ([]source.Position, bool) {
+func mergePositionGroup(
+	work *positionPairingSearch,
+	initial []source.Position,
+	reports [][]source.Position,
+) ([]source.Position, bool) {
 	current := slices.Clone(initial)
+	if len(reports) == 0 {
+		return current, true
+	}
+
 	if len(initial) == 1 {
 		for _, report := range reports {
+			if work.ctx.Err() != nil {
+				return nil, false
+			}
+
 			var ok bool
 
 			current[0], ok = mergePositionRow(current[0], report[0])
@@ -222,11 +283,19 @@ func mergePositionGroup(initial []source.Position, reports [][]source.Position) 
 	)
 
 	search = func(report, row int, used []bool) bool {
+		if !work.step() {
+			return true
+		}
+
 		if report == len(reports) {
 			if consensus == nil {
 				consensus = slices.Clone(current)
 			} else {
 				for i, p := range current {
+					if !work.step() {
+						return true
+					}
+
 					instrument, cost := consensus[i].Instrument(), consensus[i].CostBasis()
 					if !samePositionTerms(instrument, p.Instrument()) {
 						instrument = initial[i].Instrument()
@@ -250,8 +319,27 @@ func mergePositionGroup(initial []source.Position, reports [][]source.Position) 
 		// Swapping indistinguishable rows creates the same financial solution.
 		seen := []source.Position{}
 		for i, prior := range current {
-			if used[i] ||
-				slices.ContainsFunc(seen, func(p source.Position) bool { return samePositionRow(p, prior) }) {
+			if !work.step() {
+				return true
+			}
+
+			if used[i] {
+				continue
+			}
+
+			equivalent := false
+			for _, p := range seen {
+				if !work.step() {
+					return true
+				}
+
+				if samePositionRow(p, prior) {
+					equivalent = true
+					break
+				}
+			}
+
+			if equivalent {
 				continue
 			}
 
@@ -274,6 +362,10 @@ func mergePositionGroup(initial []source.Position, reports [][]source.Position) 
 		return false
 	}
 	search(0, 0, make([]bool, len(initial)))
+
+	if work.exhausted || work.ctx.Err() != nil {
+		return nil, false
+	}
 
 	return consensus, consensus != nil
 }

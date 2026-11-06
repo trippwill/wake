@@ -627,3 +627,73 @@ func TestPositionsInterpretationUpgradeUsesRetainedEvidenceWithoutRefetch(t *tes
 		t.Fatal("repeat interpretation republished positions")
 	}
 }
+
+func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+	acquireRealized(
+		t,
+		s,
+		reportedPositionsXML(
+			"2026-11-01",
+			"<OpenPositions>"+holdingXML("2026-11-01", "10", "1")+"</OpenPositions>",
+		),
+	)
+
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
+	instrument, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
+	date, _ := financial.ParseDate("2026-11-02")
+	quantity, _ := financial.NewQuantity("10")
+	usd, _ := financial.ParseCurrency("USD")
+	admit := func(id string, costs []string) {
+		t.Helper()
+
+		f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
+		for _, value := range costs {
+			cost := financial.Money{}
+			if value != "" {
+				cost, _ = financial.NewMoney(value, usd)
+			}
+
+			p, _ := source.NewPosition(instrument, quantity, cost)
+			f.Positions = append(f.Positions, p)
+		}
+
+		coverageClaims(
+			t,
+			s,
+			id,
+			claimNormalizer(
+				func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+					o, err := source.NewPositionSetObservation(f)
+					if err != nil {
+						return provider.Result{}, err
+					}
+
+					if err = c.PutPositionSet(ctx, o); err != nil {
+						return provider.Result{}, err
+					}
+
+					return provider.NewResult(provider.Counts{Rows: 10, PositionSets: 1, Instruments: 9})
+				},
+			),
+		)
+	}
+	admit("reported-duplicates", []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"})
+
+	before := readPositions(t, s)
+	if before.Status != "available" || len(before.Positions) != 9 {
+		t.Fatal(before)
+	}
+
+	admit("ambiguous-duplicates", []string{"", "", "", "", "", "", "", "", "99"})
+
+	after := readPositions(t, s)
+	if after.Status != "unavailable" || after.Reason == nil || *after.Reason != "incomplete" ||
+		after.Positions != nil ||
+		after.AsOf.Date != "2026-11-02" ||
+		after.Version == before.Version {
+		t.Fatal("pairing exhaustion published partial rows or an older fallback", after)
+	}
+}

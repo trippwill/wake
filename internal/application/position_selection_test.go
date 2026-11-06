@@ -4,6 +4,8 @@
 package application
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
@@ -115,7 +117,7 @@ func TestPositionSelectionUsesCompleteEffectiveSetsAndExplicitRevisions(t *testi
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := SelectPositions(tc.rows)
+			got := selectPositions(t, tc.rows)
 			if got.Reason != tc.reason {
 				t.Fatal(got)
 			}
@@ -137,7 +139,7 @@ func TestPositionSelectionUsesCompleteEffectiveSetsAndExplicitRevisions(t *testi
 	f.Supersedes = []source.Reference{first}
 
 	b.Observation, _ = source.NewPositionSetObservation(f)
-	if got := SelectPositions(
+	if got := selectPositions(t,
 		[]PositionCandidate{b, old},
 	); got.Reason != "" ||
 		got.Source.Positions[0].Quantity().Value() != "11" {
@@ -150,7 +152,7 @@ func TestPositionTimeSelectionCannotHideDateOnlyEvidenceByInputOrder(t *testing.
 	early := positionCandidate(t, "2026-11-03", "2026-11-03T12:00:00Z", "10", "", "")
 	late := positionCandidate(t, "2026-11-03", "2026-11-03T13:00:00Z", "10", "", "")
 	for _, rows := range [][]PositionCandidate{{dated, early, late}, {early, dated, late}, {early, late, dated}, {late, dated, early}} {
-		if got := SelectPositions(rows); got.Reason != "conflict" {
+		if got := selectPositions(t, rows); got.Reason != "conflict" {
 			t.Fatal("hid incomparable evidence", got)
 		}
 	}
@@ -184,12 +186,12 @@ func TestPositionRevisionReplacementRetiresCycle(t *testing.T) {
 				candidates[i].Observation, _ = source.NewPositionSetObservation(f)
 			}
 
-			if got := SelectPositions(candidates[:2]); got.Reason != "conflict" {
+			if got := selectPositions(t, candidates[:2]); got.Reason != "conflict" {
 				t.Fatal("cycle published", got)
 			}
 
 			for _, rows := range [][]PositionCandidate{candidates, {candidates[2], candidates[1], candidates[0]}} {
-				if got := SelectPositions(
+				if got := selectPositions(t,
 					rows,
 				); got.Reason != "" ||
 					got.Source.Positions[0].Quantity().Value() != "3" {
@@ -227,14 +229,14 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 		{"multiplicity differs", []string{"1", "2"}, []string{"1", "1"}, "conflict"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := SelectPositions(
+			if got := selectPositions(t,
 				[]PositionCandidate{set(tc.base, "10.00"), set(tc.next, "10")},
 			); got.Reason != tc.reason {
 				t.Fatal(got)
 			}
 
 			if tc.name == "unknown costs stay unknown" {
-				got := SelectPositions([]PositionCandidate{set(tc.base, "10.00"), set(tc.next, "10")})
+				got := selectPositions(t, []PositionCandidate{set(tc.base, "10.00"), set(tc.next, "10")})
 				if got.Source.Positions[0].CostBasis().Amount() != "" {
 					t.Fatal("invented certainty about an unknown cost", got)
 				}
@@ -248,7 +250,7 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 		set([]string{"2", "1"}, "10"),
 	}
 	for _, order := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
-		got := SelectPositions([]PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
+		got := selectPositions(t, []PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
 		if got.Reason != "" {
 			t.Fatal("compatible duplicate reports depend on input order", order, got)
 		}
@@ -316,7 +318,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				terms = []string{"2030-01-01", "2031-01-01"}
 			}
 
-			if got := SelectPositions(
+			if got := selectPositions(t,
 				[]PositionCandidate{set(terms), set([]string{terms[1], terms[0]})},
 			); got.Reason != "" {
 				t.Fatal("reordered reported terms conflicted", got)
@@ -328,7 +330,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				set(terms, "2", "1"),
 			}
 			for _, order := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
-				got := SelectPositions([]PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
+				got := selectPositions(t, []PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
 				if got.Reason != "" {
 					t.Fatal("compatible contract reports depend on input order", order, got)
 				}
@@ -346,6 +348,78 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				if costs[terms[0]] != "2" || costs[terms[1]] != "1" || len(costs) != 2 {
 					t.Fatal("misassociated reported terms and costs", order, costs)
 				}
+			}
+		})
+	}
+}
+
+func selectPositions(t *testing.T, inputs []PositionCandidate) PositionSelection {
+	t.Helper()
+
+	result, err := SelectPositions(t.Context(), inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return result
+}
+
+func TestPositionPairingExhaustionWithholdsPossibleAndIncompatibleSets(t *testing.T) {
+	for _, last := range []string{"99", "9"} {
+		t.Run(last, func(t *testing.T) {
+			base := positionCandidate(t, "2026-11-03", "", "10", "1", "")
+			f := base.Observation.Fields()
+
+			f.Positions = nil
+			base.InstrumentIDs = nil
+			other := f
+			for _, cost := range []string{"1", "2", "3", "4", "5", "6", "7", "8", ""} {
+				c := positionCandidate(t, "2026-11-03", "", "10", cost, "")
+				f.Positions = append(f.Positions, c.Observation.Fields().Positions[0])
+				base.InstrumentIDs = append(base.InstrumentIDs, "instrument")
+				c = positionCandidate(t, "2026-11-03", "", "10", "", "")
+				other.Positions = append(other.Positions, c.Observation.Fields().Positions[0])
+			}
+
+			c := positionCandidate(t, "2026-11-03", "", "10", last, "")
+			other.Positions[8] = c.Observation.Fields().Positions[0]
+			if last == "99" {
+				f.Positions[8] = positionCandidate(t, "2026-11-03", "", "10", "9", "").Observation.Fields().Positions[0]
+			}
+
+			base.Observation, _ = source.NewPositionSetObservation(f)
+			c.Observation, _ = source.NewPositionSetObservation(other)
+			c.InstrumentIDs = base.InstrumentIDs
+
+			if got := selectPositions(t, []PositionCandidate{base, c}); got.Reason != "incomplete" {
+				t.Fatal("unbounded or partially published duplicate search", got)
+			}
+
+			work := &positionPairingSearch{ctx: t.Context(), remaining: positionPairingSteps}
+			if rows, ok := mergePositionGroup(
+				work,
+				f.Positions,
+				[][]source.Position{other.Positions},
+			); ok || rows != nil || !work.exhausted ||
+				work.remaining != 0 {
+				t.Fatal("search did not fail closed at its deterministic work bound", rows, ok, work)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			work = &positionPairingSearch{ctx: ctx, remaining: positionPairingSteps}
+			if rows, ok := mergePositionGroup(
+				work,
+				f.Positions,
+				[][]source.Position{other.Positions},
+			); ok || rows != nil || work.exhausted ||
+				work.remaining != positionPairingSteps {
+				t.Fatal("cancelled pairing consumed work or produced rows", rows, ok, work)
+			}
+
+			if _, err := SelectPositions(ctx, []PositionCandidate{base, c}); !errors.Is(err, context.Canceled) {
+				t.Fatal("selection did not return cancellation", err)
 			}
 		})
 	}
