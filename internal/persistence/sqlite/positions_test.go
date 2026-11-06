@@ -184,6 +184,153 @@ func TestPositionsDateInterpretationRepairsRetainedMalformedSummary(t *testing.T
 	}
 }
 
+func TestPositionsReinterpretationReplacesInstrumentContributions(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(
+		t,
+		s,
+		"baseline",
+		strings.ReplaceAll(equityRow("U1", "holding", "1"), `conid="100"`, `conid="999"`),
+	)
+
+	id := acquireRealized(
+		t,
+		s,
+		reportedPositionsXML(
+			"2026-11-04",
+			"<OpenPositions>"+holdingXML("2026-11-04", "10", "1")+"</OpenPositions>",
+		),
+	)
+	before := readPositions(t, s)
+	if before.Status != "available" || len(before.Positions) != 1 {
+		t.Fatal(before)
+	}
+
+	root := before.Positions[0].InstrumentID
+	reg, _ := ibkrflex.Registration(ibkrflex.Options{})
+
+	corrected := claimNormalizer(
+		func(ctx context.Context, a provider.Artifact, claims provider.Claims) (provider.Result, error) {
+			body := strings.ReplaceAll(
+				string(a.Content()),
+				`assetCategory="STK"`,
+				`assetCategory="OPT" putCall="C" strike="100" expiry="2026-12-18" multiplier="100" underlyingConid="999"`,
+			)
+
+			interpreted, err := provider.NewArtifact(a.Format(), a.MediaType(), a.RetrievedAt(), []byte(body))
+			if err != nil {
+				return provider.Result{}, err
+			}
+
+			return reg.Normalizer().Normalize(ctx, interpreted, claims)
+		},
+	)
+
+	const version = "position-family-correction"
+	if _, err := s.Normalize(t.Context(), id, version, corrected); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), id, version); err != nil {
+		t.Fatal(err)
+	}
+
+	after := readPositions(t, s)
+	if after.Status != "available" || len(after.Positions) != 1 || after.Positions[0].InstrumentID != root ||
+		after.Positions[0].Quantity.Unit != "contracts" {
+		t.Fatal(after, after.Reason)
+	}
+
+	detail, err := s.InstrumentDetail(t.Context(), root)
+	if err != nil || detail.Instrument.Kind() != string(source.Option) {
+		t.Fatal(detail, err)
+	}
+
+	if err = s.Process(t.Context(), id, version); err != nil {
+		t.Fatal(err)
+	}
+
+	if readPositions(t, s).Version != after.Version {
+		t.Fatal("repeat interpretation changed positions")
+	}
+}
+
+func TestPositionsEmptyReinterpretationRetiresConflictingInstrumentClaims(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "baseline", equityRow("U1", "holding", "1"))
+
+	row := strings.ReplaceAll(
+		holdingXML("2026-11-04", "10", "1"),
+		`assetCategory="STK"`,
+		`assetCategory="OPT" putCall="C" strike="100" expiry="2026-12-18" multiplier="100" underlyingConid="999"`,
+	)
+
+	id := acquireRealized(t, s, reportedPositionsXML("2026-11-04", "<OpenPositions>"+row+"</OpenPositions>"))
+	before := readPositions(t, s)
+	if before.Status != "unavailable" || before.Reason == nil || *before.Reason != "identity_unresolved" {
+		t.Fatal(before)
+	}
+
+	reg, _ := ibkrflex.Registration(ibkrflex.Options{})
+
+	empty := claimNormalizer(
+		func(ctx context.Context, a provider.Artifact, claims provider.Claims) (provider.Result, error) {
+			interpreted, err := provider.NewArtifact(
+				a.Format(),
+				a.MediaType(),
+				a.RetrievedAt(),
+				[]byte(reportedPositionsXML("2026-11-04", "<OpenPositions/>")),
+			)
+			if err != nil {
+				return provider.Result{}, err
+			}
+
+			return reg.Normalizer().Normalize(ctx, interpreted, claims)
+		},
+	)
+
+	const version = "position-empty-correction"
+	if _, err := s.Normalize(t.Context(), id, version, empty); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), id, version); err != nil {
+		t.Fatal(err)
+	}
+
+	after := readPositions(t, s)
+	if after.Status != "available" || len(after.Positions) != 0 {
+		t.Fatal(after)
+	}
+
+	roots, err := s.queries.ArtifactRootIDs(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, root := range roots {
+		inputs, e := s.queries.RootCalculationInputs(t.Context(), root)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		for _, input := range inputs {
+			if input.Kind == "position-instrument" {
+				t.Fatal("replaced interpretation still contributes to a root", input.ClaimID)
+			}
+		}
+
+		detail, e := s.InstrumentDetail(t.Context(), root)
+		if e != nil || detail.Instrument.Status() == "conflict" {
+			t.Fatal(detail, e)
+		}
+
+		if detail.Instrument.Kind() == "equity" && detail.Underlier != "" {
+			t.Fatal("replaced position left an underlier on an equity", detail.Underlier)
+		}
+	}
+}
+
 func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))

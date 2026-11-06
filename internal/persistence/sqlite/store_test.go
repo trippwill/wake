@@ -73,7 +73,7 @@ func TestUnsupportedStoreIsUntouched(t *testing.T) {
 func TestUnsupportedPositionsFormatPreservesStores(t *testing.T) {
 	s, path := testStore(t)
 	if _, err := s.db.Exec(
-		`UPDATE store_metadata SET version='wake-reported-positions-1' WHERE singleton=1`,
+		`UPDATE store_metadata SET version='wake-reported-positions-2' WHERE singleton=1`,
 	); err != nil {
 		t.Fatal(err)
 	}

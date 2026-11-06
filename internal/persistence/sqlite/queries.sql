@@ -316,7 +316,7 @@ WITH RECURSIVE affected(instrument_id) AS (
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id;
 -- name: RootCalculationInputs :many
-SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role;
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id)) ORDER BY p.rowid,i.role;
 
 -- name: ClaimRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
@@ -426,4 +426,4 @@ INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,su
 -- name: PutPositionBinding :exec
 INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: PositionBindings :many
-SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? ORDER BY p.rowid;
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN current_position_claims active ON active.claim_id=p.claim_id JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? ORDER BY p.rowid;

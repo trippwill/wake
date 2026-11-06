@@ -13,6 +13,8 @@ INSERT INTO positions_current(account_id,revision,data) VALUES(?,?,?) ON CONFLIC
 DELETE FROM positions_dirty;
 -- name: InterpretationChanged
 INSERT OR IGNORE INTO positions_dirty SELECT DISTINCT p.account_id FROM position_sets p JOIN records r ON r.claim_id=p.claim_id WHERE r.artifact_id=?;
+-- name: Reinterpreting
+SELECT EXISTS(SELECT 1 FROM records r JOIN source_claims c ON c.id=r.claim_id JOIN processing_receipts receipt ON receipt.artifact_id=r.artifact_id AND receipt.version=r.version WHERE c.kind IN ('positions','position-instrument') AND receipt.version<>? AND r.artifact_id=?);
 -- name: Account
 SELECT id FROM accounts WHERE id=?;
 -- name: Metadata
@@ -20,12 +22,7 @@ SELECT m.id,p.account_id,p.revision FROM store_metadata m CROSS JOIN positions_c
 
 -- name: Inputs
 WITH current_sets AS (
- SELECT p.*,p.rowid AS sequence FROM position_sets p WHERE EXISTS (
-  SELECT 1 FROM records r JOIN processing_receipts receipt ON receipt.artifact_id=r.artifact_id AND receipt.version=r.version
-  WHERE r.claim_id=p.claim_id AND NOT EXISTS (
-   SELECT 1 FROM processing_receipts newer WHERE newer.artifact_id=receipt.artifact_id AND newer.rowid>receipt.rowid
-  )
- )
+ SELECT p.*,p.rowid AS sequence FROM position_sets p JOIN current_position_claims active ON active.claim_id=p.claim_id
 ), superseded(reference) AS (
  SELECT ref.value FROM current_sets other JOIN json_each(other.supersedes) ref WHERE other.account_id=?
 ), live AS (

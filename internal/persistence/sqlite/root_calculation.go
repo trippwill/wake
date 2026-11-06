@@ -151,7 +151,12 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		}
 	}
 
-	root.calculation, err = application.CalculateBoundRoot(root.reported, claims, bindings)
+	baseline := root.reported
+	if row.ReferenceFigi == "" && len(claims) > 0 {
+		baseline = claims[0]
+	}
+
+	root.calculation, err = application.CalculateBoundRoot(baseline, claims, bindings)
 	if err != nil {
 		return retainedRoot{}, err
 	}

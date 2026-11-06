@@ -293,6 +293,19 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		}
 	}
 
+	var reinterpretingPositions bool
+	if err = tx.QueryRowContext(ctx, positionsStatement("Reinterpreting"), version, id).
+		Scan(&reinterpretingPositions); err != nil {
+		return err
+	}
+
+	if err = q.SaveProcessingReceipt(
+		ctx,
+		sqlc.SaveProcessingReceiptParams{ArtifactID: id, Version: version},
+	); err != nil {
+		return err
+	}
+
 	if err = bindUnderlierInstrumentClaims(ctx, q, positionParents); err != nil {
 		return err
 	}
@@ -301,13 +314,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		if err = projectArtifact(ctx, q, id); err != nil {
 			return err
 		}
-	}
-
-	if err = q.SaveProcessingReceipt(
-		ctx,
-		sqlc.SaveProcessingReceiptParams{ArtifactID: id, Version: version},
-	); err != nil {
-		return err
+	} else if reinterpretingPositions {
+		if err = projectArtifactRoots(ctx, q, id); err != nil {
+			return err
+		}
 	}
 
 	if err = q.ArtifactProcessed(ctx, id); err != nil {

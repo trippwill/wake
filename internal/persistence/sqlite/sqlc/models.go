@@ -188,6 +188,10 @@ type Connection struct {
 	Name     string
 }
 
+type CurrentPositionClaim struct {
+	ClaimID string
+}
+
 type DecisionSupersession struct {
 	DecisionID string
 	PreviousID string

@@ -134,6 +134,7 @@ CREATE TRIGGER publish_activity_selection_insert AFTER INSERT ON activity_select
 CREATE TRIGGER publish_activity_selection_update AFTER UPDATE ON activity_selections BEGIN INSERT INTO publishing_dirty VALUES('activity',NEW.activity_id) ON CONFLICT DO NOTHING; END;
 
 CREATE TABLE position_sets(claim_id TEXT PRIMARY KEY REFERENCES source_claims(id),account_id TEXT NOT NULL REFERENCES accounts(id),effective_date TEXT NOT NULL,source_reference TEXT NOT NULL,supersedes TEXT NOT NULL) STRICT;
+CREATE VIEW current_position_claims AS SELECT c.id AS claim_id FROM source_claims c WHERE c.kind IN ('positions','position-instrument') AND EXISTS (SELECT 1 FROM records r JOIN processing_receipts receipt ON receipt.artifact_id=r.artifact_id AND receipt.version=r.version WHERE r.claim_id=c.id AND NOT EXISTS (SELECT 1 FROM processing_receipts newer WHERE newer.artifact_id=receipt.artifact_id AND newer.rowid>receipt.rowid));
 CREATE INDEX position_sets_account ON position_sets(account_id,effective_date);
 CREATE INDEX position_sets_reference ON position_sets(account_id,source_reference);
 CREATE TABLE positions_current(account_id TEXT PRIMARY KEY REFERENCES accounts(id),revision INTEGER NOT NULL,data BLOB NOT NULL) STRICT;
