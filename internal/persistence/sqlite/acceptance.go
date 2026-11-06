@@ -117,6 +117,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 
 	changed := false
 	positionParents := []string{}
+	seenPositionParents := map[string]bool{}
 	for _, record := range records {
 		previous, knownErr := q.ClaimProcessing(
 			ctx,
@@ -249,7 +250,11 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 					return e
 				}
 
-				positionParents = append(positionParents, root)
+				if !seenPositionParents[root] {
+					positionParents = append(positionParents, root)
+					seenPositionParents[root] = true
+				}
+
 				changed = true
 			}
 

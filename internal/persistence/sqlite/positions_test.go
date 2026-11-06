@@ -815,3 +815,63 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 		t.Fatal("established identity combination did not resolve contested bindings", resolved)
 	}
 }
+
+func TestPositionsBindEachSharedParentOnceWithoutDroppingEvidence(t *testing.T) {
+	s := coverageStore(t)
+	if _, err := s.db.Exec(`CREATE TABLE underlier_binding_attempts(total INTEGER NOT NULL);
+INSERT INTO underlier_binding_attempts VALUES(0);
+CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_claims WHEN NEW.role='underlier' BEGIN UPDATE underlier_binding_attempts SET total=total+1; END;`); err != nil {
+		t.Fatal(err)
+	}
+
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	underlierRef, _ := source.NewReference("ibkr", "contract-id", "", "100")
+	underlier, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Reference: underlierRef})
+	terms, _ := source.NewOptionTerms(source.OptionInput{Underlier: underlier})
+	ref, _ := source.NewReference("ibkr", "contract-id", "", "200")
+	instrument, _ := source.NewInstrument(
+		source.InstrumentInput{Kind: source.Option, Reference: ref, Option: terms},
+	)
+	quantity, _ := financial.NewQuantity("1")
+	p, _ := source.NewPosition(instrument, quantity, financial.Money{})
+	date, _ := financial.ParseDate("2026-11-03")
+
+	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
+
+	const count = 12
+	for range count {
+		f.Positions = append(f.Positions, p)
+	}
+
+	coverageClaims(
+		t,
+		s,
+		"shared-position-parent",
+		claimNormalizer(
+			func(ctx context.Context, _ provider.Artifact, c provider.Claims) (provider.Result, error) {
+				o, err := source.NewPositionSetObservation(f)
+				if err != nil {
+					return provider.Result{}, err
+				}
+
+				if err = c.PutPositionSet(ctx, o); err != nil {
+					return provider.Result{}, err
+				}
+
+				return provider.NewResult(provider.Counts{Rows: count + 1, PositionSets: 1, Instruments: count})
+			},
+		),
+	)
+
+	var attempts, retained int
+	if err := s.db.QueryRow(`SELECT (SELECT total FROM underlier_binding_attempts),(SELECT count(*) FROM instrument_claims WHERE role='underlier')`).
+		Scan(&attempts, &retained); err != nil ||
+		attempts != count ||
+		retained != count {
+		t.Fatal("shared parent amplified binding work or lost evidence", attempts, retained, err)
+	}
+
+	if v := readPositions(t, s); v.Status != "available" || len(v.Positions) != count {
+		t.Fatal("shared-parent binding changed position multiplicity", v)
+	}
+}
