@@ -6,6 +6,8 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
@@ -471,5 +473,99 @@ func TestPositionPairingIgnoresIdentifierOrder(t *testing.T) {
 
 	if base.Observation.Fields().Positions[0].Instrument().Identifiers()[0] != isin {
 		t.Fatal("comparison changed retained identifier order")
+	}
+}
+
+func positionRevisionCycleChain(t testing.TB, count int) []PositionCandidate {
+	t.Helper()
+
+	account, _ := source.NewReference("broker", "account", "", "one")
+	ref := func(id string) source.Reference {
+		r, _ := source.NewReference("broker", "snapshot", "", id)
+		return r
+	}
+	date, _ := financial.ParseDate("2026-11-03")
+	rootDate, _ := financial.ParseDate("2026-11-02")
+	inputs := []PositionCandidate{}
+	add := func(reference source.Reference, d financial.Date, supersedes ...source.Reference) {
+		o, err := source.NewPositionSetObservation(
+			source.PositionSetInput{
+				Location:   "set",
+				Account:    account,
+				Reference:  reference,
+				Date:       d,
+				Complete:   true,
+				Supersedes: supersedes,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		inputs = append(inputs, PositionCandidate{Observation: o})
+	}
+	add(ref("root"), rootDate, ref("a-0"))
+
+	for i := range count {
+		a, b := ref(fmt.Sprintf("a-%d", i)), ref(fmt.Sprintf("b-%d", i))
+		add(a, date, b)
+
+		targets := []source.Reference{a}
+		if i+1 < count {
+			targets = append(targets, ref(fmt.Sprintf("a-%d", i+1)))
+		}
+
+		add(b, date, targets...)
+	}
+
+	return inputs
+}
+
+func TestPositionRevisionCycleChainRetirementAndCancellation(t *testing.T) {
+	inputs := positionRevisionCycleChain(t, 1024)
+	if got := selectPositions(t, inputs); got.Reason != "" || got.Source.Date.String() != "2026-11-02" {
+		t.Fatal("external revision authority did not retire the cycle chain", got)
+	}
+
+	if got := selectPositions(t, inputs[1:]); got.Reason != "conflict" {
+		t.Fatal("unopposed cycles established revision authority", got)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	checked := &cancelDuringRevisionGraph{Context: ctx, cancel: cancel}
+	checked.remaining.Store(100)
+
+	if _, err := SelectPositions(checked, inputs); !errors.Is(err, context.Canceled) {
+		t.Fatal("graph processing ignored cancellation while resolving revisions", err)
+	}
+}
+
+type cancelDuringRevisionGraph struct {
+	context.Context
+	cancel    context.CancelFunc
+	remaining atomic.Int64
+}
+
+func (c *cancelDuringRevisionGraph) Err() error {
+	if c.remaining.Add(-1) == 0 {
+		c.cancel()
+	}
+
+	return c.Context.Err()
+}
+
+func BenchmarkPositionRevisionCycleChains(b *testing.B) {
+	for _, count := range []int{128, 512, 2048} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			inputs := positionRevisionCycleChain(b, count)
+			for b.Loop() {
+				result, err := SelectPositions(b.Context(), inputs)
+				if err != nil || result.Reason != "" {
+					b.Fatal(result, err)
+				}
+			}
+		})
 	}
 }

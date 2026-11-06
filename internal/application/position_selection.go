@@ -43,7 +43,11 @@ func SelectPositions(ctx context.Context, inputs []PositionCandidate) (result Po
 		return result, nil
 	}
 
-	cycles := positionRevisionCycles(inputs)
+	uncertain, err := positionRevisionUncertainty(ctx, inputs)
+	if err != nil {
+		return result, err
+	}
+
 	superseded := map[source.Reference]bool{}
 	for _, c := range inputs {
 		for _, r := range c.Observation.Fields().Supersedes {
@@ -55,7 +59,7 @@ func SelectPositions(ctx context.Context, inputs []PositionCandidate) (result Po
 	latestDate := ""
 	for _, c := range inputs {
 		f := c.Observation.Fields()
-		if !f.Reference.IsZero() && superseded[f.Reference] && !cycles[f.Reference] {
+		if !f.Reference.IsZero() && superseded[f.Reference] && !uncertain[f.Reference] {
 			continue
 		}
 
@@ -108,7 +112,7 @@ func SelectPositions(ctx context.Context, inputs []PositionCandidate) (result Po
 
 	for _, c := range latest {
 		f := c.Observation.Fields()
-		if cycles[f.Reference] {
+		if uncertain[f.Reference] {
 			result.Reason = "conflict"
 			return result, nil
 		}
@@ -425,86 +429,71 @@ func mergePositionRow(prior, next source.Position) (source.Position, bool) {
 	return v, err == nil
 }
 
-// Cycles and their revision targets have uncertain authority until an unambiguous
-// replacement supersedes them. Re-evaluate after retiring authoritative targets.
-func positionRevisionCycles(inputs []PositionCandidate) map[source.Reference]bool {
+// An unopposed revision root establishes authority along its explicit revision
+// edges. Cycles and their targets remain uncertain when no such root reaches them.
+func positionRevisionUncertainty(
+	ctx context.Context,
+	inputs []PositionCandidate,
+) (map[source.Reference]bool, error) {
 	edges := map[source.Reference][]source.Reference{}
+	incoming := map[source.Reference]int{}
 	for _, c := range inputs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		f := c.Observation.Fields()
 		if f.Reference.IsZero() {
 			continue
 		}
 
+		incoming[f.Reference] += 0
 		edges[f.Reference] = append(edges[f.Reference], f.Supersedes...)
-	}
-
-	retired := map[source.Reference]bool{}
-	for {
-		cycles := unresolvedPositionRevisions(edges, retired)
-		changed := false
-		for ref, targets := range edges {
-			if cycles[ref] {
-				continue
+		for _, target := range f.Supersedes {
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
 
-			for _, target := range targets {
-				if !retired[target] {
-					retired[target] = true
-					changed = true
-				}
-			}
-		}
-
-		if !changed {
-			return cycles
-		}
-	}
-}
-
-func unresolvedPositionRevisions(
-	edges map[source.Reference][]source.Reference,
-	retired map[source.Reference]bool,
-) map[source.Reference]bool {
-	incoming := map[source.Reference]int{}
-	for ref, targets := range edges {
-		if retired[ref] {
-			continue
-		}
-
-		incoming[ref] += 0
-		for _, target := range targets {
-			if !retired[target] {
-				incoming[target]++
-			}
+			incoming[target]++
 		}
 	}
 
+	trusted := map[source.Reference]bool{}
 	queue := []source.Reference{}
 	for ref, n := range incoming {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		if n == 0 {
+			trusted[ref] = true
 			queue = append(queue, ref)
 		}
 	}
 
 	for i := 0; i < len(queue); i++ {
-		for _, r := range edges[queue[i]] {
-			if retired[r] {
-				continue
+		for _, target := range edges[queue[i]] {
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
 
-			incoming[r]--
-			if incoming[r] == 0 {
-				queue = append(queue, r)
+			if !trusted[target] {
+				trusted[target] = true
+				queue = append(queue, target)
 			}
 		}
 	}
 
-	cycles := map[source.Reference]bool{}
-	for ref, n := range incoming {
-		if n > 0 {
-			cycles[ref] = true
+	uncertain := map[source.Reference]bool{}
+	for ref := range incoming {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		if !trusted[ref] {
+			uncertain[ref] = true
 		}
 	}
 
-	return cycles
+	return uncertain, nil
 }
