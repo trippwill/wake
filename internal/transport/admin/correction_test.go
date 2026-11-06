@@ -120,7 +120,7 @@ func TestContactFragmentRequiresAuthentication(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(
 		response,
-		httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/status/contact", nil),
+		httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/system/contact", nil),
 	)
 
 	if response.Code != http.StatusUnauthorized {

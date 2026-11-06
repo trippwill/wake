@@ -488,9 +488,9 @@ func GridView(kind, endpoint, label, variant string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var24 string
-			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(page(ctx).Query.Get("observations_q"))
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(page(ctx).Query.Get("q"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 80, Col: 256}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/components.templ`, Line: 80, Col: 243}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
@@ -564,7 +564,7 @@ func ReportObservations(id string) templ.Component {
 			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id)+"&location="+url.QueryEscape(page(ctx).Query.Get("location")), "Observed financial meaning", "artifact").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id), "Observed financial meaning", "artifact").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

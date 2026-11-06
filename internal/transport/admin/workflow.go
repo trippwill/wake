@@ -392,66 +392,70 @@ func registerWorkflowRoutes(
 
 		http.Redirect(w, r, destination, http.StatusSeeOther)
 	})
-	gate("GET /activity", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		var (
-			view activityView
-			err  error
-		)
 
-		scope := application.ActivityScope
-		switch activeView(r.Context(), "all") {
-		case "instruments":
-			scope = application.InstrumentScope
-		case "review":
-			scope = application.ReviewScope
-		}
-
-		if scope != application.ReviewScope {
-			params := page(r.Context()).Query
-			switch params.Get("size") {
-			case "", "10", "25", "50", "100", "200":
-			default:
-				params.Del("size")
-			}
-		}
-
-		query, err := listQuery(r.Context(), scope)
-		if err != nil {
-			http.Error(w, "invalid list query", http.StatusBadRequest)
-			return
-		}
-
-		switch scope {
-		case application.ActivityScope:
-			result, e := workflow.Prerequisites(r.Context())
-			err = e
-			view.Account = result.Account
-		case application.InstrumentScope:
-			result, e := workflow.Prerequisites(r.Context())
-			err = e
-			view.Account = result.Account
-		case application.ReviewScope:
-			result, e := workflow.ReviewList(r.Context(), query)
-			err = e
-			view = activityView{PageInfo: result.PageInfo, Reviews: reviewItems(result)}
-		}
-
-		if err != nil {
-			servePageError(
-				w,
-				r,
-				csrf,
-				http.StatusServiceUnavailable,
-				"Temporarily unavailable",
-				"activity unavailable. Retry or inspect daemon status.",
+	for _, path := range []string{"/activity", "/instruments", "/review"} {
+		gate("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			var (
+				view activityView
+				err  error
 			)
 
-			return
-		}
+			scope := application.ActivityScope
+			switch activityWorkspace(r.Context()) {
+			case "instruments":
+				scope = application.InstrumentScope
+			case "review":
+				scope = application.ReviewScope
+			}
 
-		templ.Handler(SectionShell(activityTitle(activeView(r.Context(), "all")), csrf, "Activity", ActivityPage(view))).
-			ServeHTTP(w, r)
-	})
+			if scope != application.ReviewScope {
+				params := page(r.Context()).Query
+				switch params.Get("size") {
+				case "", "10", "25", "50", "100", "200":
+				default:
+					params.Del("size")
+				}
+			}
+
+			query, err := listQuery(r.Context(), scope)
+			if err != nil {
+				http.Error(w, "invalid list query", http.StatusBadRequest)
+				return
+			}
+
+			switch scope {
+			case application.ActivityScope:
+				result, e := workflow.Prerequisites(r.Context())
+				err = e
+				view.Account = result.Account
+			case application.InstrumentScope:
+				result, e := workflow.Prerequisites(r.Context())
+				err = e
+				view.Account = result.Account
+			case application.ReviewScope:
+				result, e := workflow.ReviewList(r.Context(), query)
+				err = e
+				view = activityView{PageInfo: result.PageInfo, Reviews: reviewItems(result)}
+			}
+
+			if err != nil {
+				servePageError(
+					w,
+					r,
+					csrf,
+					http.StatusServiceUnavailable,
+					"Temporarily unavailable",
+					"activity unavailable. Retry or inspect daemon status.",
+				)
+
+				return
+			}
+
+			templ.Handler(SectionShell(activityTitle(activityWorkspace(r.Context())), csrf, "Activity", ActivityPage(view))).
+				ServeHTTP(w, r)
+		})
+	}
+
 	gate("GET /executions/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id"))
 		if err != nil {

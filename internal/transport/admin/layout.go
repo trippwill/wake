@@ -5,9 +5,9 @@ package admin
 
 func pageTitle(path string) string {
 	switch path {
-	case "/configuration":
+	case "/system/configuration":
 		return "Configuration"
-	case "/status":
+	case "/system":
 		return "Daemon status"
 	default:
 		return "Overview"

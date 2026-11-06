@@ -36,7 +36,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 	auth.issue(session)
 
 	for _, tc := range []struct{ path, title string }{
-		{"/activity", "Activity"}, {"/activity?view=instruments", "Instruments"}, {"/activity?view=review", "Needs review"},
+		{"/activity", "Activity"}, {"/instruments", "Instruments"}, {"/review", "Needs review"}, {"/system", "Daemon status"}, {"/system/configuration", "Configuration"},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+tc.path, nil)
 		r.AddCookie(session.Result().Cookies()[0])
@@ -50,7 +50,8 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 			t.Fatal("destination lost its title or active navigation", tc, w.Code, html)
 		}
 
-		if strings.Contains(html, "Activity views") || strings.Contains(html, "Financial evidence") {
+		if strings.Contains(html, "Activity views") || strings.Contains(html, "Financial evidence") ||
+			strings.Contains(html, `name="view"`) || strings.Contains(html, `/activity?view=`) {
 			t.Fatal("redundant chrome retained", tc)
 		}
 
@@ -74,7 +75,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 func TestConfigurationShowsLoadedFileOrAbsence(t *testing.T) {
 	for _, path := range []string{"", "/synthetic/operator settings.toml"} {
 		var html strings.Builder
-		if err := OverviewBody("/configuration", Status{}, config.Config{
+		if err := OverviewBody("/system/configuration", Status{}, config.Config{
 			Paths: config.Paths{ConfigFile: path},
 		}).Render(context.Background(), &html); err != nil {
 			t.Fatal(err)
@@ -92,27 +93,51 @@ func TestConfigurationShowsLoadedFileOrAbsence(t *testing.T) {
 	}
 }
 
-func TestWorkspaceContextLabelsFollowOriginAndDirectInstrumentLinks(t *testing.T) {
-	for _, tc := range []struct{ path, origin, section string }{
-		{"/instruments/one", "", "Instruments"},
-		{"/instruments/one/correct", "/activity?view=review&q=conflict&page=2&size=25&selected=one", "Needs review"},
-		{"/evidence/report", "/activity?view=instruments&q=exact&page=3", "Instruments"},
-		{"/activity/one", "/activity?sort=amount&dir=asc&page=2", "Activity"},
+func TestDirectResourceNavigationUsesCanonicalFallbacks(t *testing.T) {
+	for _, tc := range []struct{ path, section, back, label string }{
+		{"/instruments/one", "Instruments", "/instruments", "Instruments"},
+		{"/instruments/one/correct", "Instruments", "/instruments/one", "Instrument"},
+		{"/evidence/report", "Activity", "/activity", "Activity"},
+		{"/activity/one", "Activity", "/activity", "Activity"},
+		{"/activity/one/correct", "Activity", "/activity/one", "Activity detail"},
+		{"/review", "Needs review", "/review", "Needs review"},
+		{"/instruments", "Instruments", "/instruments", "Instruments"},
+		{"/system/configuration", "System", "/system", "System"},
 	} {
-		path := tc.path
-		if tc.origin != "" {
-			path += "?origin=" + url.QueryEscape(tc.origin)
+		r := pageRequest(httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if workspaceSection(r.Context(), "Activity") != tc.section || workspaceLabel(r.Context()) != tc.section ||
+			returnURL(r.Context()) != tc.back || parentLabel(r.Context()) != tc.label {
+			t.Fatal("canonical navigation lost", tc, workspaceURL(r.Context()), returnURL(r.Context()))
+		}
+	}
+}
+
+func TestCorrectionURLsRetainOnlyTheirViewParameters(t *testing.T) {
+	r := pageRequest(httptest.NewRequest(
+		http.MethodGet,
+		"/instruments/one/correct?mode=evidence&candidate=two&field=name&origin=https://outside.invalid&parent=/activity&page_url=/activity",
+		nil,
+	))
+
+	for _, target := range []string{taskURL(r.Context(), "/instruments/one/correct"), modeURL(r.Context(), "decisions")} {
+		u, err := url.Parse(target)
+		if err != nil || u.Path != "/instruments/one/correct" {
+			t.Fatal(target, err)
 		}
 
-		r := pageRequest(httptest.NewRequest(http.MethodGet, path, nil))
-		if workspaceSection(r.Context(), "Activity") != tc.section || originLabel(r.Context()) != tc.section ||
-			parentLabel(r.Context()) != tc.section {
-			t.Fatal("workspace context lost", tc, origin(r.Context()), returnURL(r.Context()))
+		for _, key := range []string{"origin", "parent", "page_url"} {
+			if u.Query().Has(key) {
+				t.Fatal("navigation transport retained", target)
+			}
 		}
+	}
 
-		if tc.origin != "" && returnURL(r.Context()) != localDestination(tc.origin) {
-			t.Fatal("return filters changed", tc, returnURL(r.Context()))
-		}
+	if taskURL(
+		r.Context(),
+		"/instruments/one/correct",
+	) != "/instruments/one/correct?candidate=two&mode=evidence" ||
+		modeURL(r.Context(), "decisions") != "/instruments/one/correct?field=name&mode=decisions" {
+		t.Fatal("correction view parameters lost")
 	}
 }
 
@@ -136,7 +161,7 @@ func TestWarehouseSizeFormattingAndStatusPresentation(t *testing.T) {
 
 	bytes := int64(134637824)
 	if err := OverviewBody(
-		"/status",
+		"/system",
 		Status{WarehouseBytes: &bytes},
 		config.Config{},
 	).Render(context.Background(), &page); err != nil {

@@ -2,6 +2,192 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 (() => {
+  const localAddress = (value) => {
+    if (
+      typeof value !== "string" ||
+      !value ||
+      value.length > 8192 ||
+      /[\\\r\n]/.test(value)
+    )
+      return null;
+    try {
+      const url = new URL(value, location.href);
+      return url.origin === location.origin ? url.pathname + url.search : null;
+    } catch {
+      return null;
+    }
+  };
+  const workspaceLinks = [...document.querySelectorAll(".wake-nav-link")];
+  const workspaceAddresses = workspaceLinks.map((link) =>
+    localAddress(link.href),
+  );
+  const defaultWorkspace = localAddress(
+    workspaceLinks.find((link) => link.getAttribute("aria-current") === "page")
+      ?.href || "/activity",
+  );
+  const resourceKey = (address) => {
+    const url = new URL(address, location.href);
+    return url.pathname;
+  };
+  const navigationLabel = (address) => {
+    const url = new URL(address, location.href);
+    const workspace = workspaceLinks.find(
+      (link) => resourceKey(link.href) === resourceKey(address),
+    );
+    if (workspace) return workspace.textContent.trim();
+    if (url.pathname.startsWith("/instruments/")) return "Instrument";
+    if (/^\/(reference-)?evidence\//.test(url.pathname))
+      return "Supporting evidence";
+    if (url.pathname.startsWith("/connections/")) return "Connections";
+    if (url.pathname.startsWith("/system/")) return "System";
+    return "Activity detail";
+  };
+  const readNavigation = (value) => {
+    if (
+      !value ||
+      !workspaceAddresses.includes(value.workspace) ||
+      !Array.isArray(value.trail) ||
+      value.trail.length > 16
+    )
+      return null;
+    const trail = value.trail.map(localAddress);
+    return trail.every(Boolean) ? { workspace: value.workspace, trail } : null;
+  };
+  let navigation;
+  const renderNavigation = () => {
+    const previous = navigation.trail.at(-1);
+    const root =
+      navigation.trail.find(
+        (address) => resourceKey(address) === resourceKey(navigation.workspace),
+      ) || navigation.workspace;
+    for (const link of document.querySelectorAll("[data-return]")) {
+      if (!link.dataset.defaultReturn) link.dataset.defaultReturn = link.href;
+      link.href = previous || link.dataset.defaultReturn;
+      link.textContent = `Return to ${navigationLabel(link.href)}`;
+    }
+    for (const breadcrumbs of document.querySelectorAll("[data-breadcrumbs]")) {
+      const workspace = breadcrumbs.querySelector(
+        "[data-workspace-breadcrumb] a",
+      );
+      workspace.href = root;
+      workspace.textContent = navigationLabel(root);
+      const parent = breadcrumbs.querySelector("[data-parent-breadcrumb]");
+      parent.hidden = !previous || resourceKey(previous) === resourceKey(root);
+      if (previous) {
+        parent.querySelector("a").href = previous;
+        parent.querySelector("a").textContent = navigationLabel(previous);
+      }
+    }
+    if (document.body.hasAttribute("data-contextual-workspace")) {
+      for (const link of workspaceLinks) {
+        if (localAddress(link.href) === navigation.workspace)
+          link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      }
+    }
+  };
+  const restoreNavigation = () => {
+    navigation = readNavigation(history.state?.wakeNavigation);
+    try {
+      const pending = JSON.parse(
+        sessionStorage.getItem("wake.navigation.pending"),
+      );
+      sessionStorage.removeItem("wake.navigation.pending");
+      if (
+        !navigation &&
+        pending?.from === localAddress(document.referrer) &&
+        (!pending.to || pending.to === localAddress(location.href))
+      )
+        navigation = readNavigation(pending.navigation);
+    } catch {
+      // Navigation remains usable when tab storage is unavailable.
+    }
+    navigation ||= { workspace: defaultWorkspace, trail: [] };
+    const self = navigation.trail.findIndex(
+      (address) => resourceKey(address) === resourceKey(location.href),
+    );
+    if (self !== -1) navigation.trail = navigation.trail.slice(0, self);
+    history.replaceState({ ...history.state, wakeNavigation: navigation }, "");
+    renderNavigation();
+  };
+  const rememberNavigation = (target, reset = false, submission = false) => {
+    const destination = localAddress(target);
+    if (
+      !destination ||
+      new URL(destination, location.href).pathname === "/login"
+    )
+      return;
+    const current = localAddress(location.href);
+    let next = {
+      workspace: navigation.workspace,
+      trail: [...navigation.trail],
+    };
+    const previous = next.trail.indexOf(destination);
+    if (reset) next = { workspace: destination, trail: [] };
+    else if (!submission && previous !== -1)
+      next.trail = next.trail.slice(0, previous);
+    else if (!submission && resourceKey(current) !== resourceKey(destination)) {
+      next.trail.push(current);
+      if (next.trail.length > 16) next.trail.splice(1, 1);
+    }
+    try {
+      sessionStorage.setItem(
+        "wake.navigation.pending",
+        JSON.stringify({
+          from: current,
+          to: submission ? null : destination,
+          navigation: next,
+        }),
+      );
+    } catch {
+      // Resource links keep their canonical destinations without tab storage.
+    }
+  };
+  restoreNavigation();
+  window.addEventListener("pageshow", restoreNavigation);
+  window.addEventListener("popstate", restoreNavigation);
+  document.addEventListener("htmx:afterSettle", renderNavigation);
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href]");
+    if (
+      !link ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey ||
+      link.hasAttribute("download") ||
+      (link.target && link.target !== "_self")
+    )
+      return;
+    if (location.pathname === "/activity") {
+      const record = link.closest("[data-record]")?.dataset.record;
+      if (record) {
+        const current = new URL(location.href);
+        current.searchParams.set("selected", record);
+        history.replaceState(history.state, "", current);
+      }
+    }
+    rememberNavigation(link.href, !!link.closest(".wake-nav-link,.wake-brand"));
+  });
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (
+      event.defaultPrevented ||
+      form.matches("[data-list-filters],[data-observation-filters]")
+    )
+      return;
+    const target = new URL(form.action, location.href);
+    if (form.method.toLowerCase() === "get")
+      target.search = new URLSearchParams(new FormData(form)).toString();
+    rememberNavigation(
+      target.href,
+      false,
+      form.method.toLowerCase() === "post",
+    );
+  });
+
   const toggle = document.querySelector(".wake-menu-toggle");
   const nav = document.querySelector("#main-navigation");
   if (toggle && nav) {
@@ -178,7 +364,7 @@
       if (!template) {
         const url = new URL(location.href);
         url.searchParams.delete("field");
-        history.replaceState(null, "", url);
+        history.replaceState(history.state, "", url);
         return;
       }
       host.append(template.content.cloneNode(true));
@@ -269,7 +455,7 @@
       }
       const url = new URL(location.href);
       url.searchParams.set("field", scope.value);
-      history.replaceState(null, "", url);
+      history.replaceState(history.state, "", url);
       check();
     };
     form.addEventListener("input", (event) => {
@@ -328,16 +514,12 @@
       ["rule", "Acceptance rule / version"],
     ],
   };
-  const gridParameter = (region, name) =>
-    region.dataset.grid === "observations" ? `observations_${name}` : name;
   const gridDefaultSort = (region) =>
-    region.dataset.gridVariant === "artifact"
-      ? "referenced"
-      : region.dataset.grid === "activity"
-        ? "date"
-        : region.dataset.grid === "instruments"
-          ? "name"
-          : "report";
+    region.dataset.grid === "activity"
+      ? "date"
+      : region.dataset.grid === "instruments"
+        ? "name"
+        : "report";
   const selectedTextWithin = (region) => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed) return false;
@@ -394,11 +576,9 @@
         const emptyState = document.createElement("span");
         emptyState.textContent = "No matching records.";
         const params = new URL(location.href).searchParams;
-        const initialSort =
-          params.get(gridParameter(region, "sort")) || gridDefaultSort(region);
+        const initialSort = params.get("sort") || gridDefaultSort(region);
         const initialDirection =
-          params.get(gridParameter(region, "dir")) ||
-          (kind === "instruments" ? "asc" : "desc");
+          params.get("dir") || (kind === "instruments" ? "asc" : "desc");
         const element = region.querySelector("[data-grid-table]");
         const createColumns = () => {
           const definitions = artifact
@@ -418,12 +598,6 @@
             variableHeight: true,
             formatter: gridCell,
           }));
-          if (artifact)
-            columns.push({
-              field: "referenced",
-              visible: false,
-              headerSort: false,
-            });
           return columns;
         };
         const state = {
@@ -482,11 +656,8 @@
           const target = new URL(url, location.href);
           const current = new URL(location.href);
           for (const key of ["q", "kind", "state"])
-            if (current.searchParams.has(gridParameter(region, key)))
-              target.searchParams.set(
-                key,
-                current.searchParams.get(gridParameter(region, key)),
-              );
+            if (current.searchParams.has(key))
+              target.searchParams.set(key, current.searchParams.get(key));
           const sort = parameters.sort?.[0];
           if (sort) {
             target.searchParams.set("sort", sort.field);
@@ -506,19 +677,7 @@
             resetFilters.href = destination.href;
           }
           for (const key of ["sort", "dir", "page", "size"])
-            current.searchParams.set(
-              gridParameter(region, key),
-              target.searchParams.get(key),
-            );
-          if (current.searchParams.has("origin"))
-            target.searchParams.set(
-              "origin",
-              current.searchParams.get("origin"),
-            );
-          target.searchParams.set(
-            "page_url",
-            current.pathname + current.search,
-          );
+            current.searchParams.set(key, target.searchParams.get(key));
           const timeout = setTimeout(() => controller.abort(), 8000);
           try {
             const response = await fetch(target, {
@@ -555,7 +714,7 @@
                   : "No matching records.";
             if (!background) {
               state.installing = result;
-              history.replaceState(null, "", current);
+              history.replaceState(history.state, "", current);
             }
             return result;
           } catch (error) {
@@ -584,12 +743,9 @@
           columns: createColumns(),
           pagination: true,
           paginationMode: "remote",
-          paginationSize:
-            gridPageSize(params.get(gridParameter(region, "size"))) || 50,
+          paginationSize: gridPageSize(params.get("size")) || 50,
           paginationSizeSelector: [...gridPageSizes],
-          paginationInitialPage: Number(
-            params.get(gridParameter(region, "page")) || 1,
-          ),
+          paginationInitialPage: Number(params.get("page") || 1),
           sortMode: "remote",
           filterMode: "remote",
           initialSort: [{ column: initialSort, dir: initialDirection }],
@@ -600,9 +756,7 @@
           persistenceMode: "local",
           persistenceReaderFunc: (id, type) => {
             if (type === "page") {
-              const size = gridPageSize(
-                params.get(gridParameter(region, "size")),
-              );
+              const size = gridPageSize(params.get("size"));
               if (size) return { paginationSize: size };
             }
             try {
@@ -634,10 +788,6 @@
           ajaxRequestFunc: requestData,
           rowFormatter: (row) => {
             row.getElement().dataset.record = row.getData().id;
-            if (artifact)
-              row.getElement().dataset.referenced = String(
-                row.getData().referenced,
-              );
           },
         });
         state.table = table;
@@ -650,7 +800,7 @@
           if (!changed || state.restoring) return;
           const url = new URL(location.href);
           url.searchParams.delete("selected");
-          history.replaceState(null, "", url);
+          history.replaceState(history.state, "", url);
         });
         const readPage = (background) =>
           requestData(
@@ -848,10 +998,10 @@
     if (!state) return;
     const url = new URL(location.href);
     for (const [key, value] of new FormData(form))
-      url.searchParams.set(gridParameter(region, key), value);
-    url.searchParams.set(gridParameter(region, "page"), "1");
+      url.searchParams.set(key, value);
+    url.searchParams.set("page", "1");
     url.searchParams.delete("selected");
-    history.pushState(null, "", url);
+    history.pushState(history.state, "", url);
     state.table.setData().catch(() => {});
   });
 
@@ -863,39 +1013,24 @@
         document.querySelector("[data-list-filters]");
       for (const control of form?.querySelectorAll("[name]") || []) {
         if (["q", "kind", "state"].includes(control.name))
-          control.value = params.get(gridParameter(region, control.name)) || "";
+          control.value = params.get(control.name) || "";
       }
       const kind = region.dataset.grid;
-      const field =
-        params.get(gridParameter(region, "sort")) || gridDefaultSort(region);
+      const field = params.get("sort") || gridDefaultSort(region);
       const dir =
-        params.get(gridParameter(region, "dir")) ||
-        (kind === "instruments" ? "asc" : "desc");
+        params.get("dir") || (kind === "instruments" ? "asc" : "desc");
       state.selectionRestored = false;
       state.restoring = true;
       const size =
-        gridPageSize(params.get(gridParameter(region, "size"))) ||
+        gridPageSize(params.get("size")) ||
         gridPageSize(state.table.getPageSize()) ||
         50;
       if (state.table.getPageSize() !== size)
         state.table.setPageSize(size).catch(() => {});
       state.table.setSort(field, dir);
-      state.table
-        .setPage(Number(params.get(gridParameter(region, "page")) || 1))
-        .catch(() => {});
+      state.table.setPage(Number(params.get("page") || 1)).catch(() => {});
       state.restoring = false;
     }
-  });
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest("[data-grid] [data-record] a[href]");
-    if (!link || location.pathname !== "/activity") return;
-    const target = new URL(link.href, location.href);
-    if (target.origin !== location.origin) return;
-    const source = new URL(location.href);
-    const record = link.closest("[data-record]")?.dataset.record;
-    if (record) source.searchParams.set("selected", record);
-    target.searchParams.set("origin", source.pathname + source.search);
-    link.href = target.pathname + target.search;
   });
 
   const focusScrollableTables = () => {
@@ -998,7 +1133,7 @@
     if (checking || expired || document.hidden) return;
     checking = true;
     htmx
-      .ajax("GET", "/status/contact", {
+      .ajax("GET", "/system/contact", {
         source: document.body,
         target: document.body,
         swap: "none",
@@ -1038,7 +1173,7 @@
       expire();
       return;
     }
-    if (path === "/status/contact") {
+    if (path === "/system/contact") {
       setContact(
         detail.successful ? "connected" : "stale",
         detail.successful

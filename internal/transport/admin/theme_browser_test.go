@@ -41,7 +41,7 @@ func TestBrowserThemePreference(t *testing.T) {
 	// The token deliberately matches a CSS selector as text in hidden metadata.
 	mux.Handle(
 		"GET /theme",
-		templ.Handler(Overview("synthetic-h1-token", "/configuration", Status{}, config.Config{})),
+		templ.Handler(Overview("synthetic-h1-token", "/system/configuration", Status{}, config.Config{})),
 	)
 
 	server := httptest.NewServer(mux)

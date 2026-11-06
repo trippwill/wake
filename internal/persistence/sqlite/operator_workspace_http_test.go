@@ -189,14 +189,14 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		}
 
 		query := u.Query()
-		grid := u.Path == "/activity" && query.Get("view") != "review"
+		grid := u.Path == "/activity" || u.Path == "/instruments"
 		if grid {
-			u.Path = "/grids/activity"
-			if query.Get("view") == "instruments" {
+			if u.Path == "/instruments" {
 				u.Path = "/grids/instruments"
+			} else {
+				u.Path = "/grids/activity"
 			}
 
-			query.Del("view")
 			u.RawQuery = query.Encode()
 		}
 
@@ -255,7 +255,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	}
 
 	t.Run("conversion-pair-review", func(t *testing.T) {
-		response := request(http.MethodGet, "/activity?view=review&q="+url.QueryEscape("EUR → USD"), nil, false)
+		response := request(http.MethodGet, "/review?q="+url.QueryEscape("EUR → USD"), nil, false)
 		if response.Code != http.StatusOK ||
 			!strings.Contains(html.UnescapeString(response.Body.String()), ">Convert EUR → USD<") {
 			t.Fatal("displayed currency pair did not match review row", response.Code)
@@ -303,22 +303,22 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?q=Assignment+%C2%B7+Synthetic+option", "Assignment"},
 		{"/activity?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=" + url.QueryEscape("EUR sent · Unknown EUR"), "0 of 4 results"},
-		{"/activity?view=review&q=Buy+Synthetic+option", "Buy Synthetic option"},
-		{"/activity?view=review&q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
+		{"/review?q=Buy+Synthetic+option", "Buy Synthetic option"},
+		{"/review?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=sent", "Convert EUR"},
 		{"/activity?q=100.123456789+EUR+sent", "Convert EUR"},
 		{"/activity?q=USD+received", "Convert EUR"},
-		{"/activity?view=review&q=unmatched-synthetic-query", "No review items match"},
+		{"/review?q=unmatched-synthetic-query", "No review items match"},
 		{"/activity?q=option+outcome", "Assignment"},
-		{"/activity?view=review", "Reported values need review"},
-		{"/activity?view=review&q=Identity", "Instrument identity needs review"},
-		{"/activity?view=review&q=unresolved", "endpoint unresolved; needs review"},
-		{"/activity?view=review&q=needs+review", "Instrument identity needs review"},
-		{"/activity?view=review&q=Source+instruction", "Source instruction"},
-		{"/activity?view=review&q=endpoint+unresolved", "endpoint unresolved; needs review"},
-		{"/activity?view=review&q=Reported+values", "Reported values need review"},
-		{"/activity?view=instruments&state=gaps", "Synthetic Treasury missing terms"},
-		{"/activity?view=instruments&state=review", "Synthetic option"},
+		{"/review", "Reported values need review"},
+		{"/review?q=Identity", "Instrument identity needs review"},
+		{"/review?q=unresolved", "endpoint unresolved; needs review"},
+		{"/review?q=needs+review", "Instrument identity needs review"},
+		{"/review?q=Source+instruction", "Source instruction"},
+		{"/review?q=endpoint+unresolved", "endpoint unresolved; needs review"},
+		{"/review?q=Reported+values", "Reported values need review"},
+		{"/instruments?state=gaps", "Synthetic Treasury missing terms"},
+		{"/instruments?state=review", "Synthetic option"},
 		{"/activity?q=unmatched-synthetic-query", "0 of"},
 		{"/connections/synthetic?view=access", "Confirmation Query ID"},
 		{"/connections/synthetic?view=reports", "operator-history"},
@@ -390,7 +390,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	for _, instrument := range view.Instruments {
 		response := request(
 			http.MethodGet,
-			"/instruments/"+instrument.ID()+"?origin=%2Factivity%3Fview%3Dinstruments",
+			"/instruments/"+instrument.ID(),
 			nil,
 			true,
 		)
@@ -520,7 +520,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"ment · " + separatorName, "Assignment · " + separatorName},
 		{" · Zebra · A", "Assignment · " + separatorName},
 	} {
-		for _, endpoint := range []string{"/activity?", "/activity?view=review&"} {
+		for _, endpoint := range []string{"/activity?", "/review?"} {
 			t.Run("lifecycle-label/"+endpoint+test.search, func(t *testing.T) {
 				response, text, grid := readPageOrGrid(endpoint+"q="+url.QueryEscape(test.search), false)
 				if response.Code != http.StatusOK || grid && !strings.Contains(text, test.label) ||

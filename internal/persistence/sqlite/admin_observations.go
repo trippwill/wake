@@ -67,16 +67,15 @@ func (s *Store) ObservationList(
 		rows, err := q.AdminObservationRows(
 			ctx,
 			sqlc.AdminObservationRowsParams{
-				SubjectKind:        kind,
-				SubjectID:          sql.NullString{String: id, Valid: true},
-				Search:             options.Search,
-				OutcomeMatches:     string(matches),
-				OutcomeLabels:      string(labels),
-				SortField:          options.Sort,
-				Direction:          options.Direction,
-				PageSize:           int64(options.PageSize),
-				PageOffset:         query.Offset(),
-				ReferencedLocation: options.ReferencedLocation,
+				SubjectKind:    kind,
+				SubjectID:      sql.NullString{String: id, Valid: true},
+				Search:         options.Search,
+				OutcomeMatches: string(matches),
+				OutcomeLabels:  string(labels),
+				SortField:      options.Sort,
+				Direction:      options.Direction,
+				PageSize:       int64(options.PageSize),
+				PageOffset:     query.Offset(),
 			},
 		)
 		if err != nil {

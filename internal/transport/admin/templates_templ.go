@@ -153,7 +153,7 @@ func OverviewBody(path string, status Status, cfg config.Config) templ.Component
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if path == "/configuration" {
+		if path == "/system/configuration" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<section class=\"wake-card\"><h2>Effective storage and runtime configuration</h2><dl><dt>Configuration file</dt><dd>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -319,7 +319,7 @@ func ErrorPage(title, message string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\">Return to previous work</a><a href=\"/status\">Inspect daemon status</a></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" data-return>Return to previous work</a><a href=\"/system\">Inspect daemon status</a></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

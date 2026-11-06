@@ -52,10 +52,11 @@ candidates.
 
 **Overview** shows setup steps, financial review and source work. Use the sidebar's
 **Activity**, **Instruments** and **Needs review** destinations to inspect financial
-history, instrument identities and unresolved questions. Activity, instrument and
-evidence pages retain a return path to the originating view. Unresolved financial
-and identity conflicts remain distinct from ordinary
-reference gaps and source failures.
+history, instrument identities and unresolved questions. Each workspace has its
+own path. Activity, instrument and evidence pages retain a return path to the
+originating view within the current tab.
+Shared resource links open with canonical navigation. Unresolved financial and
+identity conflicts remain distinct from ordinary reference gaps and source failures.
 
 Under **Administration**, **Connections** groups each source's **Status**, **Reports**
 and **Access**. Repair its Query ID or token beside the affected source.

@@ -258,6 +258,10 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 				rows[i].ActivityID = "synthetic-activity"
 			}
 		}
+
+		if len(rows) != 0 {
+			rows[len(rows)-1].Location = strings.Repeat("/r[1]", 200) + "/TradeConfirm[75]"
+		}
 	}
 
 	query, err := listQuery(r.Context(), application.ObservationScope)
@@ -267,19 +271,6 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 	}
 
 	options := query.Options()
-	if artifact && options.Sort == "referenced" {
-		slices.SortStableFunc(rows, func(a, b application.Observation) int {
-			if a.Location == options.ReferencedLocation && b.Location != options.ReferencedLocation {
-				return -1
-			}
-
-			if b.Location == options.ReferencedLocation && a.Location != options.ReferencedLocation {
-				return 1
-			}
-
-			return 0
-		})
-	}
 
 	if options.Search != "" {
 		rows = slices.DeleteFunc(rows, func(row application.Observation) bool {
@@ -297,14 +288,9 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 	start := min(int(query.Offset()), len(rows))
 	end := min(start+options.PageSize, len(rows))
 
-	if owner, err := gridPageRequest(r, "observations"); err == nil {
-		r = owner
-	}
-
 	gridJSON(
 		w,
 		observationGrid(
-			r.Context(),
 			application.ObservationList{
 				Items: rows[start:end],
 				PageInfo: application.PageInfo{
@@ -470,7 +456,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = pageRequest(r)
-		if r.URL.Path == "/activity" || r.URL.Path == "/grids/activity" || r.URL.Path == "/grids/instruments" {
+		if r.URL.Path == "/activity" || r.URL.Path == "/instruments" || r.URL.Path == "/review" ||
+			r.URL.Path == "/grids/activity" || r.URL.Path == "/grids/instruments" {
 			production.ServeHTTP(w, r)
 			return
 		}
@@ -480,7 +467,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			return
 		}
 
-		if r.URL.Path == "/status/contact" {
+		if r.URL.Path == "/system/contact" {
 			if expired.Load() {
 				http.Error(w, "expired", http.StatusUnauthorized)
 				return
@@ -743,10 +730,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var exceptions atomic.Int64
+	var (
+		exceptions          atomic.Int64
+		navigationTransport atomic.Bool
+	)
 	chromedp.ListenTarget(ctx, func(event any) {
 		if _, ok := event.(*runtime.EventExceptionThrown); ok {
 			exceptions.Add(1)
+		}
+
+		if request, ok := event.(*network.EventRequestWillBeSent); ok {
+			u, err := url.Parse(request.Request.URL)
+			if err == nil &&
+				(u.Query().Has("origin") || u.Query().Has("parent") || u.Query().Has("page_url") || u.Query().Has("location")) {
+				navigationTransport.Store(true)
+			}
 		}
 	})
 
@@ -965,7 +963,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 		chromedp.Evaluate(
-			`(()=>{const url=new URL(location.href);url.searchParams.set('selected','precision-025');history.replaceState(null,'',url);document.querySelector('[data-list-filters]').requestSubmit()})()`,
+			`(()=>{const url=new URL(location.href);url.searchParams.set('selected','precision-025');history.replaceState(history.state,'',url);document.querySelector('[data-list-filters]').requestSubmit()})()`,
 			nil,
 		),
 		chromedp.Poll(
@@ -1005,15 +1003,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"page-size persistence also saved the page number",
 	)
 
-	// Each table type keeps its own preference, including observations' URL namespace.
+	// Each table type keeps its own page-size preference.
 	visitGrid("/instruments/synthetic-instrument", 50, 2)
 	chooseSize(10, 2)
 	assert(
-		`new URL(location.href).searchParams.get('observations_size')==='10' && !new URL(location.href).searchParams.has('size')`,
-		"observation size escaped its namespace",
+		`new URL(location.href).searchParams.get('size')==='10'`,
+		"observation page size missing from URL",
 	)
 	assert(
-		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.pathname==='/instruments/synthetic-instrument' && parent.searchParams.get('observations_size')==='10'})()`,
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);return link.pathname.startsWith('/evidence/') && !link.search && new URL(location.href).searchParams.get('size')==='10'})()`,
 		"evidence return link lost the selected observation page size",
 	)
 	visitGrid("/test/instruments", 50, 50)
@@ -1046,11 +1044,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		)
 
 		for _, size := range []string{"invalid", "201", "20"} {
-			visitGrid("/activity?view="+kind+"&size="+size, 25, 0)
+			visitGrid("/"+kind+"?size="+size, 25, 0)
 		}
 
 		check(chromedp.Evaluate(`localStorage.removeItem('tabulator-wake-`+kind+`-page')`, nil))
-		visitGrid("/activity?view="+kind+"&size=invalid", 50, 0)
+		visitGrid("/"+kind+"?size=invalid", 50, 0)
 	}
 
 	// Block storage before initialization as well as while changing the control.
@@ -1075,8 +1073,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	chooseSize(100, 70)
 
 	// Reset navigation retains the live size even when no browser preference can be saved.
-	for _, query := range []string{"kind=trade&state=accepted", "view=instruments&kind=equity&state=resolved"} {
-		visitGrid("/activity?"+query+"&q=investment&size=50&page=2&selected=one", 50, 0)
+	for _, path := range []string{"/activity?kind=trade&state=accepted", "/instruments?kind=equity&state=resolved"} {
+		visitGrid(path+"&q=investment&size=50&page=2&selected=one", 50, 0)
 		chooseSize(25, 0)
 		check(
 			testbrowser.NewDocument(chromedp.Click("[data-grid-reset-filters]", chromedp.ByQuery)),
@@ -1086,7 +1084,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			),
 		)
 		assert(
-			`(()=>{const q=new URL(location.href).searchParams;return location.pathname==='/activity' && q.get('size')==='25' && q.get('page')==='1' && ['q','kind','state','selected'].every(key=>!q.has(key)) && (document.querySelector('[data-grid]').dataset.grid==='instruments')===(q.get('view')==='instruments')})()`,
+			`(()=>{const q=new URL(location.href).searchParams;return ['/activity','/instruments'].includes(location.pathname) && q.get('size')==='25' && q.get('page')==='1' && ['q','kind','state','selected'].every(key=>!q.has(key)) && (document.querySelector('[data-grid]').dataset.grid==='instruments')===(location.pathname==='/instruments')})()`,
 			"resetting filters lost page size or retained filters/selection with blocked storage",
 		)
 	}
@@ -1681,7 +1679,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(
-			origin+"/instruments/synthetic-instrument?observations_q=synthetic&observations_sort=location&observations_dir=asc",
+			origin+"/instruments/synthetic-instrument?q=synthetic&sort=location&dir=asc",
 		)),
 		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
 	)
@@ -1691,23 +1689,23 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 		chromedp.Poll(
-			`new URL(location.href).searchParams.get('observations_page')==='2' && document.querySelectorAll('.tabulator-row').length===1`,
+			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===1`,
 			nil,
 		),
 	)
 	assert(
-		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.pathname==='/instruments/synthetic-instrument'&&parent.searchParams.get('observations_page')==='2'&&parent.searchParams.get('observations_dir')==='asc'})()`,
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);return !link.search&&new URL(location.href).searchParams.get('page')==='2'&&new URL(location.href).searchParams.get('dir')==='asc'})()`,
 		"evidence link retained the previous observation page",
 	)
 	check(
 		chromedp.Evaluate(`window.observationGrid.setSort('location','desc')`, nil),
 		chromedp.Poll(
-			`new URL(location.href).searchParams.get('observations_dir')==='desc' && new URL(location.href).searchParams.get('observations_page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+			`new URL(location.href).searchParams.get('dir')==='desc' && new URL(location.href).searchParams.get('page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
 			nil,
 		),
 	)
 	assert(
-		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);const parent=new URL(link.searchParams.get('parent'),location.origin);return parent.searchParams.get('observations_page')==='1'&&parent.searchParams.get('observations_dir')==='desc'})()`,
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row a').href);return !link.search&&new URL(location.href).searchParams.get('page')==='1'&&new URL(location.href).searchParams.get('dir')==='desc'})()`,
 		"evidence link retained the previous observation order",
 	)
 	check(
@@ -1715,7 +1713,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.WaitVisible(`.tabulator-row`, chromedp.ByQuery),
 	)
 	assert(
-		`new URL(location.href).searchParams.get('observations_q')==='synthetic'&&new URL(location.href).searchParams.get('observations_dir')==='desc'&&document.querySelector('#observation-search').value==='synthetic'`,
+		`new URL(location.href).searchParams.get('q')==='synthetic'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('#observation-search').value==='synthetic'`,
 		"accepted-detail refresh discarded current observation state",
 	)
 
@@ -1982,19 +1980,19 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"exact candidate comparison missing",
 	)
 
-	referenced := strings.Repeat(
-		"/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]",
-		4,
-	) + "/TradeConfirm[75]"
 	check(
 		testbrowser.NewDocument(
-			chromedp.Navigate(origin+"/evidence/synthetic-report?location="+url.QueryEscape(referenced)),
+			chromedp.Navigate(origin+"/evidence/synthetic-report"),
 		),
 		chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil),
 	)
 	assert(
-		`document.querySelector('.tabulator-row').dataset.referenced==='true' && document.querySelector('.tabulator-row').textContent.includes('Referenced observation') && document.querySelectorAll('.tabulator-row').length===50`,
-		"report reference or bounded initial page missing",
+		`document.querySelectorAll('.tabulator-row').length===50 && !new URL(location.href).searchParams.has('location')`,
+		"canonical report or bounded initial page missing",
+	)
+	assert(
+		`(()=>{const link=new URL(document.querySelector('.tabulator-row [tabulator-field="activity"] a').href);return link.pathname==='/activity/synthetic-activity'&&!link.search})()`,
+		"related activity link contains view parameters",
 	)
 	check(
 		chromedp.Evaluate(
@@ -2002,26 +2000,26 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			nil,
 		),
 		chromedp.Poll(
-			`document.querySelector('[data-grid-status]').textContent.includes('75 of 75') && new URL(location.href).searchParams.get('observations_page')==='2'`,
+			`document.querySelector('[data-grid-status]').textContent.includes('75 of 75') && new URL(location.href).searchParams.get('page')==='2'`,
 			nil,
 		),
 	)
 	assert(
-		`document.querySelectorAll('.tabulator-row').length===25 && !document.querySelector('.tabulator-row').textContent.includes('Referenced observation')`,
+		`document.querySelectorAll('.tabulator-row').length===25`,
 		"report table paging lost bounds",
 	)
 	check(chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
 		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
 		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil))
 	assert(
-		`document.querySelector('.tabulator-row').textContent.includes('Referenced observation')`,
-		"filtered referenced observation disappeared",
+		`document.querySelector('.tabulator-row').textContent.includes('/r[1]'.repeat(200)+'/TradeConfirm[75]')`,
+		"long source path is missing from filtered observation",
 	)
 	check(
 		chromedp.Focus(`.tabulator-col[tabulator-field="location"]`, chromedp.ByQuery),
 		chromedp.KeyEvent(kb.Enter),
 		chromedp.Poll(
-			`new URL(location.href).searchParams.get('observations_sort')==='location' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			`new URL(location.href).searchParams.get('sort')==='location' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
 			nil,
 		),
 		chromedp.Evaluate(
@@ -2034,7 +2032,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"report column preferences overwrote the ordinary observation layout",
 	)
 	check(
-		testbrowser.NewDocument(chromedp.Navigate(origin+"/status")),
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/system")),
 		chromedp.WaitVisible("h1", chromedp.ByQuery),
 	)
 	assert(
@@ -2049,12 +2047,29 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			chromedp.WithPollingTimeout(15*time.Second),
 		),
 	)
+	check(
+		testbrowser.NewDocument(
+			chromedp.Click(`nav[aria-label="System views"] a[href="/system/configuration"]`, chromedp.ByQuery),
+		),
+		chromedp.WaitVisible(`//h1[text()='Configuration']`, chromedp.BySearch),
+	)
+	assert(
+		`location.pathname==='/system/configuration'&&!location.search&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/system'`,
+		"configuration lost its resource path or System navigation",
+	)
+	check(
+		testbrowser.NewDocument(
+			chromedp.Click(`nav[aria-label="System views"] a[href="/system"]`, chromedp.ByQuery),
+		),
+		chromedp.WaitVisible(`//h1[text()='Daemon status']`, chromedp.BySearch),
+	)
+
 	// Review every representative page in both themes, with layout checks at all selected widths.
 	for _, theme := range []string{"light", "dark"} {
 		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/status", "/configuration"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration"} {
 				check(
 					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
@@ -2119,7 +2134,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					)
 				}
 
-				if path == "/configuration" {
+				if path == "/system/configuration" {
 					assert(
 						`document.querySelector('dl').textContent.includes('/synthetic/operator configuration/private instance/settings.toml')`,
 						"loaded TOML file path missing from configuration",
@@ -2143,6 +2158,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					`document.documentElement.scrollWidth<=innerWidth+1`,
 					fmt.Sprintf("overflow %s %d %s", theme, width, path),
 				)
+				assert(
+					`[...document.querySelectorAll('a[href],form[action]')].every(node=>{const q=new URL(node.href||node.action,location.href).searchParams;return !['origin','parent','page_url','location'].some(key=>q.has(key))})&&!document.querySelector('input[name="origin"],input[name="parent"],input[name="page_url"]')`,
+					"rendered navigation contains referring-page parameters",
+				)
 
 				if strings.Contains(path, "mode=evidence") {
 					assert(
@@ -2153,7 +2172,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				if width == 320 || width == 1440 || path == "/test/grid" ||
 					width == 768 &&
-						(strings.HasPrefix(path, "/evidence/") || path == "/status" || path == "/configuration") {
+						(strings.HasPrefix(path, "/evidence/") || path == "/system" || path == "/system/configuration") {
 					if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" {
 						var png []byte
 						check(chromedp.FullScreenshot(&png, 90))
@@ -2276,6 +2295,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	if exceptions.Load() != 0 {
 		t.Fatal("browser script exceptions", exceptions.Load())
+	}
+
+	if navigationTransport.Load() {
+		t.Fatal("browser requests carried navigation ancestry")
 	}
 }
 

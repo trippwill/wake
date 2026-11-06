@@ -16,7 +16,7 @@ import (
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
-func TestCombinedInstrumentHTTPRedirectPreservesNavigation(t *testing.T) {
+func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
 	coverageReport(
@@ -79,12 +79,15 @@ func TestCombinedInstrumentHTTPRedirectPreservesNavigation(t *testing.T) {
 		t.Fatal("synthetic login", loggedIn.Code, loggedIn.Body.String())
 	}
 
-	const listOrigin = "/activity?q=synthetic&view=instruments"
-
 	for _, suffix := range []string{"", "/correct"} {
+		query := ""
+		if suffix != "" {
+			query = "?mode=evidence&candidate=synthetic"
+		}
+
 		r := httptest.NewRequest(
 			http.MethodGet,
-			origin+"/instruments/"+second+suffix+"?origin="+url.QueryEscape(listOrigin),
+			origin+"/instruments/"+second+suffix+query,
 			nil,
 		)
 		r.AddCookie(loggedIn.Result().Cookies()[0])
@@ -94,8 +97,10 @@ func TestCombinedInstrumentHTTPRedirectPreservesNavigation(t *testing.T) {
 
 		target, e := url.Parse(w.Header().Get("Location"))
 		if e != nil || w.Code != http.StatusSeeOther || target.Path != "/instruments/"+first+suffix ||
-			target.Query().Get("origin") != listOrigin || target.Query().Get("parent") != "" {
-			t.Fatal("combined instrument lost canonical URL or list navigation", w.Code, w.Header(), e)
+			target.Query().Has("origin") || target.Query().Has("parent") || target.Query().Has("page_url") ||
+			suffix != "" &&
+				(target.Query().Get("mode") != "evidence" || target.Query().Get("candidate") != "synthetic") {
+			t.Fatal("combined instrument lost canonical URL or correction view", w.Code, w.Header(), e)
 		}
 
 		canonical := httptest.NewRequest(http.MethodGet, origin+target.String(), nil)

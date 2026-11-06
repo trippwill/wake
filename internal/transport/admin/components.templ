@@ -77,7 +77,7 @@ templ GridView(kind, endpoint, label, variant string) {
 	<section class="wake-grid" id={ kind + "-grid" } data-grid={ kind } data-grid-variant={ variant } data-grid-url={ endpoint } aria-label={ label }>
 		<div class="wake-grid-header">
 			if kind=="observations" {
-				<form class="wake-filters" data-observation-filters><p><label for="observation-search">Search retained observations</label><input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("observations_q") }/></p><button class="btn" type="submit">Search</button></form>
+				<form class="wake-filters" data-observation-filters><p><label for="observation-search">Search retained observations</label><input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
 			} else {
 				@ListFilters(kind == "instruments")
 			}
@@ -100,7 +100,7 @@ templ ObservationHistory(kind, id string) {
 }
 
 templ ReportObservations(id string) {
-	@GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id)+"&location="+url.QueryEscape(page(ctx).Query.Get("location")), "Observed financial meaning", "artifact")
+	@GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id), "Observed financial meaning", "artifact")
 }
 
 func comparisonText(value application.CorrectionValue) string {

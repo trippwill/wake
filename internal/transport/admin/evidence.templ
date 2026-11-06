@@ -31,9 +31,6 @@ templ RetainedEvidence(retained host.Retained, info application.EvidenceContext)
 	<section class="wake-card"><h2>Acquisition context</h2><p>First retained body. Each subsequent acquisition has its own receipt above.</p><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
 	<section class="wake-card">
 		<h2>Observed financial meaning</h2>
-		if page(ctx).Query.Get("location")!="" {
-			<p>Referenced source location: <code>{ page(ctx).Query.Get("location") }</code></p>
-		}
 		@ReportObservations(retained.ID)
 	</section>
 	<details class="wake-card"><summary>Retained identity and integrity</summary><dl><dt>Wake report ID</dt><dd>{ retained.ID }</dd><dt>Content hash</dt><dd>{ retained.Artifact.Hash() }</dd><dt>Format</dt><dd>{ retained.Artifact.Format() } · { retained.Artifact.MediaType() }</dd></dl></details>

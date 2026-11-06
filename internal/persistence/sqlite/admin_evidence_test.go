@@ -14,7 +14,7 @@ import (
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
-func TestReportObservationPagesPreserveVersionsLinksAndReference(t *testing.T) {
+func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 	s := coverageStore(t)
 
 	var rows strings.Builder
@@ -54,28 +54,16 @@ func TestReportObservationPagesPreserveVersionsLinksAndReference(t *testing.T) {
 		t.Fatal("financial links or unselected appearances lost", unlinked)
 	}
 
-	referenced := all[len(all)-1].Location
-	for page := 1; page <= 2; page++ {
-		query, _ := application.NewListQuery(application.ListOptions{
-			Page: page, PageSize: 1, Sort: "referenced", ReferencedLocation: referenced,
-		}, application.ObservationScope)
-		result, err := s.ObservationList(t.Context(), "artifact", "report", query)
-		if err != nil || result.Total != 114 || result.Matched != 114 || len(result.Items) != 1 ||
-			result.Items[0].Location != referenced {
-			t.Fatal("referenced versions did not lead the default order", result, err)
-		}
-	}
-
 	query, _ := application.NewListQuery(application.ListOptions{
-		PageSize:           10,
-		Search:             "second-version",
-		Sort:               "location",
-		Direction:          "asc",
-		ReferencedLocation: referenced,
+		PageSize:  10,
+		Search:    "second-version",
+		Sort:      "location",
+		Direction: "asc",
 	}, application.ObservationScope)
+
 	result, err := s.ObservationList(t.Context(), "artifact", "report", query)
 	if err != nil || result.Total != 114 || result.Matched != 57 || len(result.Items) != 10 ||
-		result.Items[0].Location == referenced {
+		result.Items[0].Location > result.Items[1].Location {
 		t.Fatal("filtering or explicit ordering ignored", result, err)
 	}
 

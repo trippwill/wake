@@ -10,12 +10,10 @@ import (
 )
 
 templ Breadcrumbs(title string) {
-	<nav class="wake-breadcrumbs" aria-label="Breadcrumb">
+	<nav class="wake-breadcrumbs" aria-label="Breadcrumb" data-breadcrumbs>
 		<ol>
-			<li><a href={ templ.SafeURL(origin(ctx)) }>{ originLabel(ctx) }</a></li>
-			if localDestination(page(ctx).Query.Get("parent"))!="" {
-				<li><a href={ templ.SafeURL(returnURL(ctx)) }>{ parentLabel(ctx) }</a></li>
-			}
+			<li data-workspace-breadcrumb><a href={ templ.SafeURL(workspaceURL(ctx)) }>{ workspaceLabel(ctx) }</a></li>
+			<li data-parent-breadcrumb hidden?={ returnURL(ctx)==workspaceURL(ctx) }><a href={ templ.SafeURL(returnURL(ctx)) }>{ parentLabel(ctx) }</a></li>
 			<li aria-current="page">{ title }</li>
 		</ol>
 	</nav>
@@ -55,11 +53,11 @@ templ DashboardOverview(view overviewView) {
 					<p>{ strconv.FormatInt(view.ReviewPage.Matched,10) } items need your judgment.</p>
 					<ul class="wake-task-list">
 						for _,item:=range view.Reviews {
-							<li><a href={ templ.SafeURL(navURL(ctx, item.Href)) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
+							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
 						}
 					</ul>
 				}
-				<a href="/activity?view=review">Open Needs review</a>
+				<a href="/review">Open Needs review</a>
 			</section>
 			<section class="wake-card">
 				<h2>Source and system work</h2>
@@ -73,7 +71,7 @@ templ DashboardOverview(view overviewView) {
 					<p>No recorded source or system failures in the displayed connections.</p><a href="/connections">Inspect connections</a>
 				}
 				<p class="wake-help">Reachability, acquisition and processing have separate states. Report bounds do not prove complete history.</p>
-				<a href="/activity?view=instruments&state=gaps">Inspect instrument reference gaps</a>
+				<a href="/instruments?state=gaps">Inspect instrument reference gaps</a>
 			</section>
 		</div>
 	}
@@ -393,7 +391,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 		for _,p:=range c.Processing {
 			<article class="wake-report-row">
 				<div class="wake-card-heading">
-					<h3><a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>{ known(p.Stream) } report</a></h3>
+					<h3><a href={ templ.SafeURL("/evidence/" + p.Artifact) }>{ known(p.Stream) } report</a></h3>
 					if c.Descriptor.ID()=="" {
 						<p>Provider unavailable. Evidence is retained.</p>
 					} else if !c.CanNormalize {
@@ -406,7 +404,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 				</div>
 				<dl><dt>Acquired</dt><dd>{ p.Retrieved }</dd><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.ActivityClaims,10) } activity observations</dd></dl>
 				if p.NeedsReview>0 {
-					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL(navURL(ctx, "/evidence/"+p.Artifact)) }>Inspect report observations</a>.</p>
+					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL("/evidence/" + p.Artifact) }>Inspect report observations</a>.</p>
 				}
 				if c.CanNormalize && p.Failure!="" {
 					<p class="wake-notice">{ p.Failure }</p>
@@ -422,13 +420,13 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 }
 
 templ ActivityPage(view activityView) {
-	@PageHeader(activityTitle(activeView(ctx, "all")), activityDescription(activeView(ctx, "all")))
-	if view.Account.ID()=="" && activeView(ctx,"all")=="all" {
+	@PageHeader(activityTitle(activityWorkspace(ctx)), activityDescription(activityWorkspace(ctx)))
+	if view.Account.ID()=="" && activityWorkspace(ctx)=="all" {
 		<section class="wake-card"><h2>Confirm an account to begin</h2><a class="btn btn-primary" href="/connections">Review source setup</a></section>
 	}
-	if activeView(ctx,"all")=="review" {
+	if activityWorkspace(ctx)=="review" {
 		@ReviewQueue(view)
-	} else if activeView(ctx,"all")=="instruments" {
+	} else if activityWorkspace(ctx)=="instruments" {
 		@InstrumentsView(view)
 	} else {
 		@ActivityRows(view)
@@ -438,18 +436,18 @@ templ ActivityPage(view activityView) {
 templ ReviewQueue(view activityView) {
 	<section class="wake-card">
 		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
-		<form class="wake-filters" method="get" action="/activity"><input type="hidden" name="view" value="review"/><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
+		<form class="wake-filters" method="get" action="/review"><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
 		if len(view.Reviews)==0 {
 			if view.Total==0 {
 				<p>No activity or identity conflicts are awaiting review.</p>
 			} else {
 				<p>No review items match this result page. Change the search or return to the first page.</p>
-				<a href="/activity?view=review">View all review items</a>
+				<a href="/review">View all review items</a>
 			}
 		} else {
 			<ul class="wake-task-list">
 				for _,r:=range view.Reviews {
-					<li><div><span class="wake-help">{ r.Kind }</span><h3><a href={ templ.SafeURL(navURL(ctx, r.Href)) }>{ r.Label }</a></h3><p>{ r.Reason }</p></div><a class="btn" href={ templ.SafeURL(navURL(ctx, r.Href)) }>Review</a></li>
+					<li><div><span class="wake-help">{ r.Kind }</span><h3><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></h3><p>{ r.Reason }</p></div><a class="btn" href={ templ.SafeURL(r.Href) }>Review</a></li>
 				}
 			</ul>
 		}
@@ -471,10 +469,7 @@ templ InstrumentsView(view activityView) {
 }
 
 templ ListFilters(instruments bool) {
-	<form class="wake-filters" method="get" action="/activity" data-list-filters>
-		if instruments {
-			<input type="hidden" name="view" value="instruments"/>
-		}
+	<form class="wake-filters" method="get" action={ templ.SafeURL(resetListURL(instruments)) } data-list-filters>
 		<input type="hidden" name="sort" value={ page(ctx).Query.Get("sort") }/>
 		<input type="hidden" name="dir" value={ page(ctx).Query.Get("dir") }/>
 		<p><label for="activity-search">Search</label><input class="input" id="activity-search" name="q" type="search" value={ page(ctx).Query.Get("q") } placeholder="Instrument, date or value"/></p>
@@ -519,7 +514,7 @@ templ ReferencePage(csrf string, view sourceView) {
 }
 
 templ SystemNavigation(view string) {
-	<nav class="wake-tabs" aria-label="System views"><a href="/status" aria-current={ currentPage(view == "status") }>Status</a><a href="/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a></nav>
+	<nav class="wake-tabs" aria-label="System views"><a href="/system" aria-current={ currentPage(view == "status") }>Status</a><a href="/system/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a></nav>
 }
 
 templ ListPagination(info application.PageInfo) {

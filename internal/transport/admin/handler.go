@@ -57,7 +57,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		registerWorkflowRoutes(mux, auth, deps.Workflow, deps.Stopping)
 	}
 
-	mux.HandleFunc("GET /status/contact", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /system/contact", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := auth.session(r); !ok {
 			rejection(r, "session_required")
 			http.Error(w, "authentication required", http.StatusUnauthorized)
@@ -76,7 +76,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		_, _ = w.Write([]byte("Daemon connected"))
 	})
 
-	for _, path := range []string{"/{$}", "/configuration", "/status"} {
+	for _, path := range []string{"/{$}", "/system/configuration", "/system"} {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
 			if !ok {

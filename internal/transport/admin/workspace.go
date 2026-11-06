@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path"
 	"sort"
 	"strings"
 
@@ -110,119 +109,53 @@ func pageRequest(r *http.Request) *http.Request {
 	)
 }
 
-func localDestination(raw string) string {
-	if len(raw) > 2048 || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") ||
-		strings.ContainsAny(raw, "\\\r\n") {
-		return ""
-	}
-
-	u, err := url.Parse(raw)
-	if err != nil || u.Host != "" || u.Scheme != "" {
-		return ""
-	}
-
-	if path.Clean(u.Path) != u.Path || strings.ContainsAny(u.Path, "\\\r\n") {
-		return ""
-	}
-
-	allowed := u.Path == "/" || u.Path == "/activity" || u.Path == "/connections" || u.Path == "/status" ||
-		u.Path == "/configuration" ||
-		strings.HasPrefix(u.Path, "/activity/") ||
-		strings.HasPrefix(u.Path, "/executions/") ||
-		strings.HasPrefix(u.Path, "/instruments/") ||
-		strings.HasPrefix(u.Path, "/connections/") ||
-		strings.HasPrefix(
-			u.Path,
-			"/evidence/",
-		) || strings.HasPrefix(u.Path, "/reference-evidence/") || strings.HasPrefix(u.Path, "/system/")
-	if !allowed {
-		return ""
-	}
-
-	q := url.Values{}
-	for _, key := range []string{"view", "q", "kind", "state", "sort", "dir", "page", "size", "selected", "observations_q", "observations_sort", "observations_dir", "observations_page", "observations_size", "mode", "candidate", "location", "field"} {
-		if v := u.Query().Get(key); v != "" {
-			q.Set(key, v)
-		}
-	}
-
-	u.RawQuery = q.Encode()
-	u.Fragment = ""
-
-	return u.String()
-}
-
-func origin(ctx context.Context) string {
-	if v := localDestination(page(ctx).Query.Get("origin")); v != "" {
-		return v
-	}
-
+func workspaceURL(ctx context.Context) string {
 	u, _ := url.Parse(page(ctx).URL)
-	if u != nil &&
-		(u.Path == "/activity" || u.Path == "/connections" || u.Path == "/status" || u.Path == "/configuration" || u.Path == "/system/maintenance") {
-		return localDestination(u.String())
+	if u == nil {
+		return "/activity"
 	}
 
-	if u != nil && strings.HasPrefix(u.Path, "/connections/") {
+	switch {
+	case u.Path == "/":
+		return "/"
+	case u.Path == "/review":
+		return "/review"
+	case u.Path == "/instruments" || strings.HasPrefix(u.Path, "/instruments/"):
+		return "/instruments"
+	case strings.HasPrefix(u.Path, "/connections"):
 		return "/connections"
-	}
-
-	if u != nil && strings.HasPrefix(u.Path, "/system/") {
-		return "/status"
-	}
-
-	if u != nil && strings.HasPrefix(u.Path, "/instruments/") {
-		return "/activity?view=instruments"
+	case u.Path == "/system" || strings.HasPrefix(u.Path, "/system/"):
+		return "/system"
 	}
 
 	return "/activity"
 }
 
-func navURL(ctx context.Context, dest string) string {
-	u, err := url.Parse(dest)
-	if err != nil {
-		return dest
-	}
-
-	q := u.Query()
-	q.Set("origin", origin(ctx))
-
-	current, _ := url.Parse(page(ctx).URL)
-	if current != nil && current.Path != "/" && current.Path != "/activity" && current.Path != "/connections" {
-		q.Set("parent", localDestination(current.String()))
-	}
-
-	u.RawQuery = q.Encode()
-
-	return u.String()
-}
-
 func returnURL(ctx context.Context) string {
-	if v := localDestination(page(ctx).Query.Get("parent")); v != "" {
-		u, _ := url.Parse(v)
-		q := u.Query()
-		q.Set("origin", origin(ctx))
-		u.RawQuery = q.Encode()
-
-		return u.String()
+	u, _ := url.Parse(page(ctx).URL)
+	if u != nil && strings.HasSuffix(u.Path, "/correct") {
+		return strings.TrimSuffix(u.Path, "/correct")
 	}
 
-	return origin(ctx)
+	return workspaceURL(ctx)
 }
 
 func parentLabel(ctx context.Context) string {
 	p := strings.Split(returnURL(ctx), "?")[0]
 	switch {
 	case p == "/activity":
-		u, _ := url.Parse(returnURL(ctx))
-		return activityTitle(u.Query().Get("view"))
+		return "Activity"
+	case p == "/instruments":
+		return "Instruments"
+	case p == "/review":
+		return "Needs review"
 	case strings.HasPrefix(p, "/instruments/"):
 		return "Instrument"
 	case strings.HasPrefix(p, "/evidence/") || strings.HasPrefix(p, "/reference-evidence/"):
 		return "Supporting evidence"
 	case strings.HasPrefix(p, "/connections"):
 		return "Connections"
-	case p == "/status" || p == "/configuration" || strings.HasPrefix(p, "/system/"):
+	case p == "/system" || strings.HasPrefix(p, "/system/"):
 		return "System"
 	default:
 		return "Activity detail"
@@ -266,9 +199,11 @@ func modeURL(ctx context.Context, mode string) string {
 		return "?mode=" + mode
 	}
 
-	q := u.Query()
-	q.Set("mode", mode)
-	q.Del("candidate")
+	q := url.Values{"mode": {mode}}
+	if field := page(ctx).Query.Get("field"); field != "" {
+		q.Set("field", field)
+	}
+
 	u.RawQuery = q.Encode()
 
 	return u.String()
@@ -435,11 +370,6 @@ func taskURL(ctx context.Context, path string) string {
 	}
 
 	q := u.Query()
-	q.Set("origin", origin(ctx))
-
-	if parent := localDestination(page(ctx).Query.Get("parent")); parent != "" {
-		q.Set("parent", parent)
-	}
 
 	for _, key := range []string{"mode", "candidate"} {
 		if v := page(ctx).Query.Get(key); v != "" {
@@ -489,7 +419,7 @@ func recoveryReady(v sourceView) bool {
 
 func resetListURL(instruments bool) string {
 	if instruments {
-		return "/activity?view=instruments"
+		return "/instruments"
 	}
 
 	return "/activity"
@@ -538,7 +468,7 @@ func activeDecisions(f application.CorrectionForm) int {
 }
 
 func systemView(path string) string {
-	if path == "/configuration" {
+	if path == "/system/configuration" {
 		return "configuration"
 	}
 
@@ -551,18 +481,25 @@ func servePageError(w http.ResponseWriter, r *http.Request, csrf string, status 
 	_ = SectionShell(title, csrf, "", ErrorPage(title, message)).Render(r.Context(), w)
 }
 
-func originLabel(ctx context.Context) string {
-	p := origin(ctx)
-	if u, err := url.Parse(p); err == nil && u.Path == "/activity" {
-		return activityTitle(u.Query().Get("view"))
+func workspaceLabel(ctx context.Context) string {
+	p := workspaceURL(ctx)
+	if p == "/instruments" {
+		return "Instruments"
+	}
+
+	if p == "/review" {
+		return "Needs review"
+	}
+
+	if p == "/" {
+		return "Overview"
 	}
 
 	if strings.HasPrefix(p, "/connections") {
 		return "Connections"
 	}
 
-	if strings.HasPrefix(p, "/status") || strings.HasPrefix(p, "/configuration") ||
-		strings.HasPrefix(p, "/system/") {
+	if p == "/system" || strings.HasPrefix(p, "/system/") {
 		return "System"
 	}
 
@@ -580,7 +517,7 @@ func workspaceAttributes(ctx context.Context, csrf string) templ.Attributes {
 
 	// Financial grids refresh through their JSON API. Accepted details are explicit
 	// page-load snapshots, leaving disclosures and inspected terms stable.
-	if u.Path == "/activity" && page(ctx).Query.Get("view") != "review" ||
+	if u.Path == "/activity" || u.Path == "/instruments" ||
 		strings.HasPrefix(u.Path, "/executions/") ||
 		strings.HasPrefix(u.Path, "/instruments/") ||
 		strings.HasPrefix(u.Path, "/activity/") {
@@ -633,6 +570,20 @@ func workLabel(work application.WorkStatus) string {
 	return work.Stream + " · " + operationLabel(work.Operation)
 }
 
+func activityWorkspace(ctx context.Context) string {
+	u, _ := url.Parse(page(ctx).URL)
+	if u != nil {
+		switch u.Path {
+		case "/instruments":
+			return "instruments"
+		case "/review":
+			return "review"
+		}
+	}
+
+	return "all"
+}
+
 func activityTitle(view string) string {
 	switch view {
 	case "instruments":
@@ -657,7 +608,7 @@ func activityDescription(view string) string {
 
 func workspaceSection(ctx context.Context, fallback string) string {
 	if fallback == "Activity" {
-		return originLabel(ctx)
+		return workspaceLabel(ctx)
 	}
 
 	return fallback

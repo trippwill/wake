@@ -8,6 +8,7 @@ templ Shell(title string, csrf string, content templ.Component) {
 }
 
 templ SectionShell(title string, csrf string, section string, content templ.Component) {
+	{{ contextual := section == "Activity" }}
 	{{ section = workspaceSection(ctx, section) }}
 	if page(ctx).Fragment {
 		@WorkspaceContent(csrf, content)
@@ -33,7 +34,7 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 				<script defer src="/assets/vendor/tabulator-6.3.1/tabulator.min.js"></script>
 				<script defer src="/assets/app.js"></script>
 			</head>
-			<body data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
+			<body data-contextual-workspace?={ contextual } data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
 				<a class="wake-skip" href="#main-content">Skip to content</a>
 				<div class="wake-app">
 					<aside class="wake-sidebar" data-navigation>
@@ -57,17 +58,17 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 										@SidebarLink("Activity", "/activity", "trades", section == "Activity")
 									</li>
 									<li>
-										@SidebarLink("Instruments", "/activity?view=instruments", "instruments", section == "Instruments")
+										@SidebarLink("Instruments", "/instruments", "instruments", section == "Instruments")
 									</li>
 									<li>
-										@SidebarLink("Needs review", "/activity?view=review", "review", section == "Needs review")
+										@SidebarLink("Needs review", "/review", "review", section == "Needs review")
 									</li>
 									<li class="menu-title">Administration</li>
 									<li>
 										@SidebarLink("Connections", "/connections", "connections", section == "Connections")
 									</li>
 									<li>
-										@SidebarLink("System", "/status", "configuration", section == "System" || section == "Daemon status" || section == "Configuration")
+										@SidebarLink("System", "/system", "configuration", section == "System" || section == "Daemon status" || section == "Configuration")
 									</li>
 								</ul>
 							</nav>

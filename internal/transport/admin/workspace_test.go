@@ -16,106 +16,6 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func TestNavigationContextStaysLocalAndBounded(t *testing.T) {
-	for _, raw := range []string{"https://outside.invalid/", "//outside.invalid/activity", "/activity/../login", "/activity/%5coutside", "/assets/app.js", "/activity\r\nLocation: x"} {
-		if got := localDestination(raw); got != "" {
-			t.Errorf("accepted unsafe destination %q: %q", raw, got)
-		}
-	}
-
-	root := "/activity?view=instruments&q=exact+name&page=2&size=25&selected=one"
-	r := pageRequest(httptest.NewRequest(http.MethodGet, "/activity/one?origin="+url.QueryEscape(root), nil))
-
-	dest, err := url.Parse(navURL(r.Context(), "/instruments/two"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if dest.Query().Get("origin") != localDestination(root) || dest.Query().Get("parent") != "/activity/one" ||
-		!strings.Contains(dest.Query().Get("origin"), "size=25") {
-		t.Fatal(dest)
-	}
-
-	next := pageRequest(httptest.NewRequest(http.MethodGet, dest.String(), nil))
-
-	back, err := url.Parse(returnURL(next.Context()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if back.Path != "/activity/one" || back.Query().Get("origin") != localDestination(root) {
-		t.Fatal(back)
-	}
-
-	if got := localDestination(
-		"/activity?origin=" + url.QueryEscape(root) + "&parent=/activity/two&q=needle",
-	); got != "/activity?q=needle" {
-		t.Fatal("recursive navigation retained", got)
-	}
-}
-
-func TestGridNavigationUsesOwningPage(t *testing.T) {
-	root := "/activity?q=exact&sort=price&dir=desc&page=2&size=25&selected=one"
-	owner := "/activity/one?observations_q=duplicate&observations_sort=location&observations_dir=asc&observations_page=2&observations_size=10"
-	request := httptest.NewRequest(
-		http.MethodGet,
-		"/grids/observations?page_url="+url.QueryEscape(owner)+"&origin="+url.QueryEscape(root),
-		nil,
-	)
-
-	r, err := gridPageRequest(request, "observations")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	target, err := url.Parse(navURL(r.Context(), "/evidence/report"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if target.Query().Get("parent") != localDestination(owner) ||
-		target.Query().Get("origin") != localDestination(root) {
-		t.Fatal(target)
-	}
-
-	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
-
-	back, err := url.Parse(returnURL(next.Context()))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if back.Path != "/activity/one" || back.Query().Get("observations_q") != "duplicate" ||
-		back.Query().Get("observations_page") != "2" ||
-		back.Query().Get("observations_size") != "10" ||
-		back.Query().Get("origin") != localDestination(root) {
-		t.Fatal(back)
-	}
-
-	fallback, err := gridPageRequest(
-		httptest.NewRequest(http.MethodGet, "/grids/observations?subject=activity&id=one&page=2&size=25", nil),
-		"observations",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fallbackURL, err := url.Parse(page(fallback.Context()).URL)
-	if err != nil || fallbackURL.Query().Get("observations_size") != "25" || fallbackURL.Query().Has("size") {
-		t.Fatal("observation size lost its page namespace", fallbackURL, err)
-	}
-
-	for _, owner := range []string{"https://outside.invalid/activity", "//outside.invalid/activity", "/assets/app.js"} {
-		_, err := gridPageRequest(
-			httptest.NewRequest(http.MethodGet, "/grids/activity?page_url="+url.QueryEscape(owner), nil),
-			"activity",
-		)
-		if err == nil {
-			t.Fatal("accepted unsafe grid owner", owner)
-		}
-	}
-}
-
 func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 	for _, state := range []application.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
 		if state.NeedsReview() {
@@ -179,7 +79,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, route := range []string{"/", "/activity", "/activity?size=invalid", "/activity?size=201", "/activity?view=review", "/activity?view=instruments", "/activity?view=instruments&size=invalid", "/activity?view=instruments&size=201", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/status", "/configuration"} {
+	for _, route := range []string{"/", "/activity", "/activity?size=invalid", "/activity?size=201", "/review", "/instruments", "/instruments?size=invalid", "/instruments?size=201", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/system", "/system/configuration"} {
 		for _, fragment := range []bool{false, true} {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+route, nil)
 			r.AddCookie(session.Result().Cookies()[0])
@@ -266,7 +166,7 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 	}
 
 	request := pageRequest(
-		httptest.NewRequest(http.MethodGet, "/activity?view=instruments&q=operator+decision&state=resolved", nil),
+		httptest.NewRequest(http.MethodGet, "/instruments?q=operator+decision&state=resolved", nil),
 	)
 
 	query, queryErr := listQuery(request.Context(), application.InstrumentScope)
@@ -312,7 +212,7 @@ func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testi
 	}
 
 	for _, info := range []application.PageInfo{{Total: 2, Matched: 0, Page: 1, PageSize: 50}, {Total: 2, Matched: 2, Page: 9, PageSize: 50}} {
-		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?view=review&q=unmatched", nil))
+		request := pageRequest(httptest.NewRequest(http.MethodGet, "/review?q=unmatched", nil))
 
 		var out strings.Builder
 		if err := ReviewQueue(activityView{PageInfo: info}).Render(request.Context(), &out); err != nil {
@@ -342,7 +242,7 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 		{"Reported values", application.ReviewActivity, "", false, 0},
 	} {
 		request := pageRequest(
-			httptest.NewRequest(http.MethodGet, "/activity?view=review&q="+url.QueryEscape(test.search), nil),
+			httptest.NewRequest(http.MethodGet, "/review?q="+url.QueryEscape(test.search), nil),
 		)
 
 		query, err := listQuery(request.Context(), application.ReviewScope)
@@ -362,40 +262,11 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 	}
 }
 
-func TestObservationGridFallbackPreservesNamespacedState(t *testing.T) {
-	root := "/activity?q=original&page=3"
-	request := httptest.NewRequest(
-		http.MethodGet,
-		"/grids/observations?subject=activity&id=one&q=duplicate&sort=location&dir=asc&page=2&origin="+url.QueryEscape(
-			root,
-		),
-		nil,
-	)
+func TestObservationQueriesKeepTypedOutcomeLabels(t *testing.T) {
+	request := pageRequest(httptest.NewRequest(http.MethodGet,
+		"/grids/observations?subject=activity&id=one&q=duplicate&sort=location&dir=asc&page=2", nil))
 
-	owned, err := gridPageRequest(request, "observations")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	target, err := url.Parse(navURL(owned.Context(), "/evidence/report"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	next := pageRequest(httptest.NewRequest(http.MethodGet, target.String(), nil))
-
-	returned, err := url.Parse(returnURL(next.Context()))
-	if err != nil || returned.Path != "/activity/one" ||
-		returned.Query().Get("observations_q") != "duplicate" ||
-		returned.Query().Get("observations_sort") != "location" ||
-		returned.Query().Get("observations_dir") != "asc" ||
-		returned.Query().Get("observations_page") != "2" ||
-		returned.Query().Get("origin") != localDestination(root) ||
-		returned.Query().Get("q") != "" {
-		t.Fatal(returned, err)
-	}
-
-	query, err := listQuery(owned.Context(), application.ObservationScope)
+	query, err := listQuery(request.Context(), application.ObservationScope)
 	if err != nil {
 		t.Fatal(err)
 	}

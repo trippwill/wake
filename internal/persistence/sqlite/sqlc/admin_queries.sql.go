@@ -455,7 +455,7 @@ func (q *Queries) AdminObservationCount(ctx context.Context, arg AdminObservatio
 }
 
 const adminObservationRows = `-- name: AdminObservationRows :many
-WITH ordering AS (SELECT CAST(?7 AS TEXT) AS sort_field,CAST(?8 AS TEXT) AS direction,CAST(?9 AS TEXT) AS outcome_labels,CAST(?10 AS TEXT) AS referenced_location)
+WITH ordering AS (SELECT CAST(?7 AS TEXT) AS sort_field,CAST(?8 AS TEXT) AS direction,CAST(?9 AS TEXT) AS outcome_labels)
 SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,o.execution_id,a.retrieved
 FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id CROSS JOIN ordering
 LEFT JOIN json_each(ordering.outcome_labels) labels ON labels.key=o.outcome
@@ -464,8 +464,7 @@ WHERE (?1='activity' AND o.execution_id=?2
  OR ?1='instrument' AND (o.artifact_id,o.version,o.location) IN
  (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=?2)) AND (?3='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,?3)=1
  OR EXISTS(SELECT 1 FROM json_each(?4) m WHERE m.value=o.outcome))
-ORDER BY CASE WHEN sort_field='referenced' AND o.location=referenced_location THEN 0 ELSE 1 END,
-CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,
+ORDER BY CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,
 CASE WHEN sort_field='report' AND direction='desc' THEN a.retrieved END COLLATE wake_instant desc,
 CASE WHEN sort_field='outcome' AND direction='asc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE asc,
 CASE WHEN sort_field='outcome' AND direction='desc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE desc,
@@ -479,16 +478,15 @@ o.artifact_id,o.version,o.location LIMIT ?6 OFFSET ?5
 `
 
 type AdminObservationRowsParams struct {
-	SubjectKind        interface{}
-	SubjectID          sql.NullString
-	Search             interface{}
-	OutcomeMatches     interface{}
-	PageOffset         int64
-	PageSize           int64
-	SortField          string
-	Direction          string
-	OutcomeLabels      string
-	ReferencedLocation string
+	SubjectKind    interface{}
+	SubjectID      sql.NullString
+	Search         interface{}
+	OutcomeMatches interface{}
+	PageOffset     int64
+	PageSize       int64
+	SortField      string
+	Direction      string
+	OutcomeLabels  string
 }
 
 type AdminObservationRowsRow struct {
@@ -512,7 +510,6 @@ func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservation
 		arg.SortField,
 		arg.Direction,
 		arg.OutcomeLabels,
-		arg.ReferencedLocation,
 	)
 	if err != nil {
 		return nil, err

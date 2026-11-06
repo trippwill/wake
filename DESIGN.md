@@ -244,6 +244,14 @@ System status includes the current financial database file size, with readable
 binary units and an exact byte count. It describes the warehouse file, including
 retained reports, independently of encrypted access storage and temporary journals.
 Full-page details retain breadcrumbs and a return path to their originating view.
+Workspace paths identify Activity, Instruments and Needs review independently; query
+parameters control filtering and table presentation. System uses a status landing
+page with Configuration at a child path, following the Connections workspace.
+Resource links carry no navigation ancestry. Tab-local browser history preserves
+the originating workspace and return trail through details, evidence and corrections.
+Direct links use canonical breadcrumbs and return destinations. Reload and browser
+Back/Forward retain the current entry's navigation context; a newly opened tab starts
+from the resource's canonical workspace. Store navigation metadata only, never page HTML.
 Applied corrections and ordinary reference gaps remain distinct from review tasks.
 
 ## Interaction and live feedback
@@ -323,10 +331,10 @@ Require an explicit choice; disclose optional reasons and retain them after erro
 Observation tables show source location and acceptance rule/version directly in
 their cells, with wrapping and local scrolling for long values.
 Source reports use a bounded observation table with outcome, related activity,
-source location and rule/version columns. Mark the referenced source location and
-prioritize it in the default ordering; explicit sorting and search retain their
-normal meaning. Preserve every appearance and interpretation version. Keep report
-table column preferences separate from other observation tables.
+source location and rule/version columns. Report links identify the retained report
+without passing source paths or highlighting a referenced observation. Preserve every
+appearance and interpretation version. Keep report table column preferences separate
+from other observation tables.
 Keep evidence/history reachable and distinguish saved decisions from checks still
 in progress. Use named source/context labels before technical references.
 

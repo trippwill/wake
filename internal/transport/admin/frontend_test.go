@@ -36,7 +36,7 @@ func TestRenderFrontend(t *testing.T) {
 
 	if err = Overview(
 		"synthetic-csrf",
-		"/status",
+		"/system",
 		Status{},
 		config.Config{},
 	).Render(context.Background(), f); err != nil {

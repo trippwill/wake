@@ -62,6 +62,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		contextual := section == "Activity"
 		section = workspaceSection(ctx, section)
 		if page(ctx).Fragment {
 			templ_7745c5c3_Err = WorkspaceContent(csrf, content).Render(ctx, templ_7745c5c3_Buffer)
@@ -76,7 +77,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 20, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 21, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 			if templ_7745c5c3_Err != nil {
@@ -89,7 +90,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 21, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 22, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -102,13 +103,23 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(`{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true,"historyCacheSize":0,"timeout":8000}`)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 22, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/shell.templ`, Line: 23, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><meta name=\"theme-color\" content=\"#b0b6bc\"><script src=\"/assets/theme.js\"></script><link rel=\"icon\" href=\"/assets/brand/favicon.ico\" sizes=\"16x16 32x32 48x48\"><link rel=\"icon\" href=\"/assets/brand/favicon.svg\" type=\"image/svg+xml\" sizes=\"any\"><link rel=\"apple-touch-icon\" href=\"/assets/brand/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"stylesheet\" href=\"/assets/vendor/daisyui-5.5.14/daisyui.css\"><link rel=\"stylesheet\" href=\"/assets/vendor/tabulator-6.3.1/tabulator.min.css\"><link rel=\"stylesheet\" href=\"/assets/app.css\"><script defer src=\"/assets/vendor/htmx-2.0.11/htmx.min.js\"></script><script defer src=\"/assets/vendor/htmx-sse-2.2.4/sse.min.js\"></script><script defer src=\"/assets/vendor/tabulator-6.3.1/tabulator.min.js\"></script><script defer src=\"/assets/app.js\"></script></head><body data-live-state=\"connected\" hx-ext=\"sse\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><meta name=\"theme-color\" content=\"#b0b6bc\"><script src=\"/assets/theme.js\"></script><link rel=\"icon\" href=\"/assets/brand/favicon.ico\" sizes=\"16x16 32x32 48x48\"><link rel=\"icon\" href=\"/assets/brand/favicon.svg\" type=\"image/svg+xml\" sizes=\"any\"><link rel=\"apple-touch-icon\" href=\"/assets/brand/apple-touch-icon.png\" sizes=\"180x180\"><link rel=\"stylesheet\" href=\"/assets/vendor/daisyui-5.5.14/daisyui.css\"><link rel=\"stylesheet\" href=\"/assets/vendor/tabulator-6.3.1/tabulator.min.css\"><link rel=\"stylesheet\" href=\"/assets/app.css\"><script defer src=\"/assets/vendor/htmx-2.0.11/htmx.min.js\"></script><script defer src=\"/assets/vendor/htmx-sse-2.2.4/sse.min.js\"></script><script defer src=\"/assets/vendor/tabulator-6.3.1/tabulator.min.js\"></script><script defer src=\"/assets/app.js\"></script></head><body")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if contextual {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " data-contextual-workspace")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " data-live-state=\"connected\" hx-ext=\"sse\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -116,22 +127,22 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " hx-history=\"false\"><a class=\"wake-skip\" href=\"#main-content\">Skip to content</a><div class=\"wake-app\"><aside class=\"wake-sidebar\" data-navigation><div class=\"wake-brand-row\"><a class=\"wake-brand\" href=\"/\"><img class=\"wake-logo-light\" src=\"/assets/brand/wake-logo.svg\" width=\"143\" height=\"45\" alt=\"Wake\"> <img class=\"wake-logo-dark\" src=\"/assets/brand/wake-logo-reversed.svg\" width=\"143\" height=\"45\" alt=\"Wake\"></a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " hx-history=\"false\"><a class=\"wake-skip\" href=\"#main-content\">Skip to content</a><div class=\"wake-app\"><aside class=\"wake-sidebar\" data-navigation><div class=\"wake-brand-row\"><a class=\"wake-brand\" href=\"/\"><img class=\"wake-logo-light\" src=\"/assets/brand/wake-logo.svg\" width=\"143\" height=\"45\" alt=\"Wake\"> <img class=\"wake-logo-dark\" src=\"/assets/brand/wake-logo-reversed.svg\" width=\"143\" height=\"45\" alt=\"Wake\"></a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if csrf != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<button class=\"btn btn-sm wake-menu-toggle\" type=\"button\" aria-expanded=\"true\" aria-controls=\"main-navigation\" hidden>Menu</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<button class=\"btn btn-sm wake-menu-toggle\" type=\"button\" aria-expanded=\"true\" aria-controls=\"main-navigation\" hidden>Menu</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if csrf != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<nav aria-label=\"Main navigation\" class=\"wake-nav\" id=\"main-navigation\"><ul class=\"menu\"><li class=\"menu-title\">Workspace</li><li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<nav aria-label=\"Main navigation\" class=\"wake-nav\" id=\"main-navigation\"><ul class=\"menu\"><li class=\"menu-title\">Workspace</li><li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -139,7 +150,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</li><li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</li><li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -147,27 +158,11 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</li><li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</li><li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = SidebarLink("Instruments", "/activity?view=instruments", "instruments", section == "Instruments").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</li><li>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = SidebarLink("Needs review", "/activity?view=review", "review", section == "Needs review").Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</li><li class=\"menu-title\">Administration</li><li>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = SidebarLink("Connections", "/connections", "connections", section == "Connections").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = SidebarLink("Instruments", "/instruments", "instruments", section == "Instruments").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -175,26 +170,42 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = SidebarLink("System", "/status", "configuration", section == "System" || section == "Daemon status" || section == "Configuration").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = SidebarLink("Needs review", "/review", "review", section == "Needs review").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</li></ul></nav>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</li><li class=\"menu-title\">Administration</li><li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = SidebarLink("Connections", "/connections", "connections", section == "Connections").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</li><li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = SidebarLink("System", "/system", "configuration", section == "System" || section == "Daemon status" || section == "Configuration").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</li></ul></nav>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</aside><div class=\"wake-workspace\"><header class=\"wake-toolbar\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</aside><div class=\"wake-workspace\"><header class=\"wake-toolbar\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if csrf != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"wake-contact\"><span class=\"wake-contact-indicator\" aria-hidden=\"true\"></span><div class=\"wake-contact-details\"><button class=\"wake-contact-trigger\" type=\"button\" aria-describedby=\"status-contact-detail\"><span id=\"daemon-contact\" role=\"status\" aria-live=\"polite\">Daemon connected</span></button> <span id=\"status-contact-detail\" class=\"wake-contact-tooltip\" role=\"tooltip\">Authenticated contact is available. Financial freshness is shown in page content.</span></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"wake-contact\"><span class=\"wake-contact-indicator\" aria-hidden=\"true\"></span><div class=\"wake-contact-details\"><button class=\"wake-contact-trigger\" type=\"button\" aria-describedby=\"status-contact-detail\"><span id=\"daemon-contact\" role=\"status\" aria-live=\"polite\">Daemon connected</span></button> <span id=\"status-contact-detail\" class=\"wake-contact-tooltip\" role=\"tooltip\">Authenticated contact is available. Financial freshness is shown in page content.</span></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div class=\"wake-toolbar-preferences\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"wake-toolbar-preferences\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -202,7 +213,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></header><main class=\"wake-main\" id=\"main-content\" tabindex=\"-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div></header><main class=\"wake-main\" id=\"main-content\" tabindex=\"-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -210,7 +221,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</main></div></div></body></html>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</main></div></div></body></html>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -240,7 +251,7 @@ func WorkspaceContent(csrf string, content templ.Component) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div id=\"workspace-content\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div id=\"workspace-content\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -248,7 +259,7 @@ func WorkspaceContent(csrf string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -256,7 +267,7 @@ func WorkspaceContent(csrf string, content templ.Component) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

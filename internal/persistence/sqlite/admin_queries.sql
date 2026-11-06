@@ -101,7 +101,7 @@ WHERE (sqlc.arg(subject_kind)='activity' AND o.execution_id=sqlc.arg(subject_id)
  (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=sqlc.arg(subject_id))) AND (sqlc.arg(search)='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,sqlc.arg(search))=1
  OR EXISTS(SELECT 1 FROM json_each(sqlc.arg(outcome_matches)) m WHERE m.value=o.outcome));
 -- name: AdminObservationRows :many
-WITH ordering AS (SELECT CAST(sqlc.arg(sort_field) AS TEXT) AS sort_field,CAST(sqlc.arg(direction) AS TEXT) AS direction,CAST(sqlc.arg(outcome_labels) AS TEXT) AS outcome_labels,CAST(sqlc.arg(referenced_location) AS TEXT) AS referenced_location)
+WITH ordering AS (SELECT CAST(sqlc.arg(sort_field) AS TEXT) AS sort_field,CAST(sqlc.arg(direction) AS TEXT) AS direction,CAST(sqlc.arg(outcome_labels) AS TEXT) AS outcome_labels)
 SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,o.execution_id,a.retrieved
 FROM execution_observations o JOIN artifacts a ON a.id=o.artifact_id CROSS JOIN ordering
 LEFT JOIN json_each(ordering.outcome_labels) labels ON labels.key=o.outcome
@@ -110,8 +110,7 @@ WHERE (sqlc.arg(subject_kind)='activity' AND o.execution_id=sqlc.arg(subject_id)
  OR sqlc.arg(subject_kind)='instrument' AND (o.artifact_id,o.version,o.location) IN
  (SELECT r.artifact_id,r.version,r.location FROM instrument_claims c JOIN records r ON r.claim_id=c.claim_id AND r.ordinal=c.ordinal WHERE c.instrument_id=sqlc.arg(subject_id))) AND (sqlc.arg(search)='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' || o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || a.retrieved,sqlc.arg(search))=1
  OR EXISTS(SELECT 1 FROM json_each(sqlc.arg(outcome_matches)) m WHERE m.value=o.outcome))
-ORDER BY CASE WHEN sort_field='referenced' AND o.location=referenced_location THEN 0 ELSE 1 END,
-CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,
+ORDER BY CASE WHEN sort_field='report' AND direction='asc' THEN a.retrieved END COLLATE wake_instant asc,
 CASE WHEN sort_field='report' AND direction='desc' THEN a.retrieved END COLLATE wake_instant desc,
 CASE WHEN sort_field='outcome' AND direction='asc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE asc,
 CASE WHEN sort_field='outcome' AND direction='desc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE desc,

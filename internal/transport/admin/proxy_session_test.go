@@ -213,7 +213,7 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 		return w
 	}
 
-	issued := request(http.MethodGet, "/configuration?tab=one", guard, nil)
+	issued := request(http.MethodGet, "/system/configuration?tab=one", guard, nil)
 	cookies := issued.Result().Cookies()
 	if issued.Code != http.StatusOK || len(cookies) != 1 ||
 		issued.Header().Get("Location") != "" {
@@ -229,13 +229,13 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 	}
 
 	for _, supplied := range []string{"", "invalid"} {
-		w := request(http.MethodGet, "/configuration", supplied, cookie)
+		w := request(http.MethodGet, "/system/configuration", supplied, cookie)
 		if w.Code != http.StatusUnauthorized || len(w.Result().Cookies()) != 0 {
 			t.Fatal("cookie bypassed guard", w.Code)
 		}
 	}
 
-	w := request(http.MethodGet, "/configuration", guard, cookie)
+	w := request(http.MethodGet, "/system/configuration", guard, cookie)
 	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 0 {
 		t.Fatal("valid session was not reused", w.Code)
 	}
@@ -274,7 +274,7 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 		SameSite: http.SameSiteStrictMode,
 	}
 
-	w = request(http.MethodGet, "/configuration", guard, bad)
+	w = request(http.MethodGet, "/system/configuration", guard, bad)
 	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 1 {
 		t.Fatal("tampered session not replaced", w.Code)
 	}
@@ -282,7 +282,7 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 	now = now.Add(auth.lifetime + time.Second)
 
 	for _, mode := range []string{"", "cors", "no-cors", "navigate"} {
-		r := httptest.NewRequest(http.MethodGet, origin+"/status/contact", nil)
+		r := httptest.NewRequest(http.MethodGet, origin+"/system/contact", nil)
 		r.Header.Set("X-Wake-Proxy-Authorization", guard)
 		r.Header.Set("Sec-Fetch-Mode", mode)
 
@@ -305,7 +305,7 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 		t.Fatal("proxy recovery path", w.Code, w.Header())
 	}
 
-	w = request(http.MethodGet, "/configuration", guard, cookie)
+	w = request(http.MethodGet, "/system/configuration", guard, cookie)
 	if w.Code != http.StatusOK || len(w.Result().Cookies()) != 1 {
 		t.Fatal("expired session not replaced", w.Code)
 	}

@@ -89,7 +89,7 @@ func TestBrowserProxySession(t *testing.T) {
 	if err = chromedp.Run(
 		ctx,
 		chromedp.Evaluate(
-			`window.htmx.ajax("GET", "/status/contact", {source: document.body, swap: "none"});`,
+			`window.htmx.ajax("GET", "/system/contact", {source: document.body, swap: "none"});`,
 			nil,
 		),
 		chromedp.WaitVisible("#status-sign-in", chromedp.ByQuery),
