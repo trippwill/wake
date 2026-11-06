@@ -198,6 +198,10 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 
 func polishObservations() templ.Component {
 	return templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
+		if err := Breadcrumbs("Instrument").Render(ctx, w); err != nil {
+			return err
+		}
+
 		if err := PageHeader(
 			"Instrument observations",
 			"Inspect retained source locations and acceptance rules.",
@@ -606,7 +610,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		if strings.HasPrefix(r.URL.Path, "/test/") || strings.HasPrefix(r.URL.Path, "/evidence/") ||
 			r.URL.Path == "/" ||
 			r.URL.Path == "/activity/synthetic-activity/correct" ||
-			r.URL.Path == "/instruments/synthetic-instrument" {
+			r.URL.Path == "/instruments/synthetic-instrument" ||
+			r.URL.Path == "/instruments/synthetic-instrument/correct" ||
+			r.URL.Path == "/instruments/retired-instrument" ||
+			r.URL.Path == "/instruments/retired-instrument/correct" {
 			csrf, ok := auth.session(r)
 			if !ok {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -617,6 +624,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 			var component templ.Component
 			switch r.URL.Path {
+			case "/instruments/retired-instrument":
+				http.Redirect(w, r, "/instruments/synthetic-instrument", http.StatusSeeOther)
+				return
+			case "/instruments/retired-instrument/correct":
+				http.Redirect(w, r, "/instruments/synthetic-instrument/correct?mode=decisions", http.StatusSeeOther)
+				return
 			case "/evidence/synthetic-report", "/evidence/empty-report":
 				artifact, _ := provider.NewArtifact(
 					"synthetic-xml",
@@ -638,11 +651,20 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				component = Grid("instruments", "/test/grid-data?view=instruments", "Synthetic instruments")
 			case "/test/observations", "/instruments/synthetic-instrument":
 				component = polishObservations()
-			case "/test/correction", "/activity/synthetic-activity/correct":
+			case "/test/correction",
+				"/activity/synthetic-activity/correct",
+				"/instruments/synthetic-instrument/correct":
 				snapshot := page(r.Context())
-				snapshot.URL = "/activity/synthetic-activity/correct?" + r.URL.RawQuery
+				correction := form
+				if r.URL.Path == "/instruments/synthetic-instrument/correct" {
+					correction.Kind = "instrument"
+					correction.ID = "synthetic-instrument"
+				} else {
+					snapshot.URL = "/activity/synthetic-activity/correct?" + r.URL.RawQuery
+				}
+
 				r = r.WithContext(context.WithValue(r.Context(), pageKey{}, snapshot))
-				component = CorrectionPage(csrf, form)
+				component = CorrectionPage(csrf, correction)
 			case "/test/source":
 				component = ConnectionPage(csrf, fixtureSource(view), view.Connections[0])
 			case "/test/access":
@@ -820,6 +842,82 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	assert(
 		`!document.querySelector('table') && !window.privateInjection && document.querySelector('[data-grid-status]').textContent==='70 of 70 results'`,
 		"JSON grid or escaping",
+	)
+
+	// Direct corrections preserve the canonical parent, including after contextual history is cleared.
+	for _, path := range []string{"/activity/synthetic-activity", "/instruments/synthetic-instrument"} {
+		check(
+			testbrowser.NewDocument(chromedp.Navigate(origin+path+"/correct?mode=decisions")),
+			chromedp.WaitVisible("[data-parent-breadcrumb]", chromedp.ByQuery),
+		)
+		assert(
+			`(()=>{const parent=document.querySelector('[data-parent-breadcrumb]');return !parent.hidden&&new URL(parent.querySelector('a').href).pathname===`+strconv.Quote(
+				path,
+			)+`})()`,
+			"direct correction lost its canonical parent",
+		)
+		check(
+			chromedp.Evaluate(
+				`history.replaceState({wakeNavigation:{workspace:'/review',trail:['/review','/evidence/synthetic-report']}},'');dispatchEvent(new PopStateEvent('popstate'))`,
+				nil,
+			),
+		)
+		assert(
+			`document.querySelector('[data-parent-breadcrumb] a').textContent==='Supporting evidence'`,
+			"contextual parent was not applied",
+		)
+		check(
+			chromedp.Evaluate(`history.replaceState(null,'');dispatchEvent(new PopStateEvent('popstate'))`, nil),
+		)
+		assert(
+			`(()=>{const parent=document.querySelector('[data-parent-breadcrumb]');return !parent.hidden&&new URL(parent.querySelector('a').href).pathname===`+strconv.Quote(
+				path,
+			)+`})()`,
+			"canonical parent was not restored",
+		)
+	}
+
+	for _, suffix := range []string{"", "/correct?mode=decisions"} {
+		check(
+			testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=retained-filter&size=25")),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`(()=>{const a=document.createElement('a');a.id='alias-proof';a.href='/instruments/retired-instrument'+`+strconv.Quote(
+					suffix,
+				)+`;a.textContent='Inspect retired instrument';document.body.append(a)})()`,
+				nil,
+			),
+			testbrowser.NewDocument(chromedp.Click("#alias-proof", chromedp.ByQuery)),
+			chromedp.Poll(`history.state?.wakeNavigation?.workspace==='/review'`, nil),
+		)
+		assert(
+			`location.pathname.startsWith('/instruments/synthetic-instrument')&&new URL(document.querySelector('[data-return]').href).pathname==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='retained-filter'&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/review'`,
+			"canonical redirect lost the originating workspace or filters",
+		)
+		check(
+			testbrowser.NewDocument(chromedp.Reload()),
+			chromedp.Poll(`history.state?.wakeNavigation?.workspace==='/review'`, nil),
+		)
+	}
+
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/review")),
+		chromedp.WaitVisible("h1", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`(()=>{sessionStorage.setItem('wake.navigation.pending',JSON.stringify({from:location.pathname,to:'/instruments/unrelated-instrument',navigation:{workspace:'/review',trail:['/review']}}));const a=document.createElement('a');a.id='unrelated-proof';a.href='/instruments/synthetic-instrument';a.textContent='Open unrelated destination';a.addEventListener('click',event=>event.stopPropagation());document.body.append(a)})()`,
+			nil,
+		),
+		testbrowser.NewDocument(chromedp.Click("#unrelated-proof", chromedp.ByQuery)),
+		chromedp.Poll(
+			`document.querySelector('[data-grid]')?.dataset.gridReady==='true'&&history.state?.wakeNavigation?.workspace==='/instruments'`,
+			nil,
+		),
+	)
+	assert(`history.state?.wakeNavigation?.trail.length===0`, "unrelated handoff adopted navigation context")
+
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
+		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
 	)
 
 	visitGrid := func(path string, size, rows int) {

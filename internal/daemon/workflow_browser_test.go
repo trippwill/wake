@@ -562,6 +562,23 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(`[data-grid="instruments"]`, chromedp.ByQuery),
 	)
 
+	for _, target := range []string{"/review", "/instruments?state=gaps"} {
+		check(
+			newDocument(chromedp.Navigate(origin+"/")),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			newDocument(chromedp.Click(`main a[href="`+target+`"]`, chromedp.ByQuery)),
+			chromedp.WaitVisible("h1", chromedp.ByQuery),
+			chromedp.Evaluate(
+				`history.state.wakeNavigation.workspace===location.pathname&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')===location.pathname&&(location.pathname!=='/instruments'||new URL(location.href).searchParams.get('state')==='gaps')`,
+				&ok,
+			),
+		)
+
+		if !ok {
+			t.Fatal("Overview workspace link lost navigation or filters", target)
+		}
+	}
+
 	for _, workspace := range []string{"instruments", "review"} {
 		root := "/" + workspace + "?q=REFERENCE+EQUITY&sort=name&dir=asc&page=1&size=25"
 		check(

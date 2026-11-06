@@ -53,7 +53,13 @@
     const trail = value.trail.map(localAddress);
     return trail.every(Boolean) ? { workspace: value.workspace, trail } : null;
   };
-  let navigation;
+  let navigation = { workspace: defaultWorkspace, trail: [] };
+  let navigationRevision = 0;
+  const canonicalParents = new WeakMap();
+  const navigationState = () => ({
+    ...history.state,
+    wakeNavigation: navigation,
+  });
   const renderNavigation = () => {
     const previous = navigation.trail.at(-1);
     const root =
@@ -72,11 +78,19 @@
       workspace.href = root;
       workspace.textContent = navigationLabel(root);
       const parent = breadcrumbs.querySelector("[data-parent-breadcrumb]");
-      parent.hidden = !previous || resourceKey(previous) === resourceKey(root);
-      if (previous) {
-        parent.querySelector("a").href = previous;
-        parent.querySelector("a").textContent = navigationLabel(previous);
-      }
+      const link = parent.querySelector("a");
+      if (!canonicalParents.has(parent))
+        canonicalParents.set(parent, {
+          hidden: parent.hidden,
+          href: link.href,
+          label: link.textContent,
+        });
+      const canonical = canonicalParents.get(parent);
+      parent.hidden = previous
+        ? resourceKey(previous) === resourceKey(root)
+        : canonical.hidden;
+      link.href = previous || canonical.href;
+      link.textContent = previous ? navigationLabel(previous) : canonical.label;
     }
     if (document.body.hasAttribute("data-contextual-workspace")) {
       for (const link of workspaceLinks) {
@@ -86,44 +100,71 @@
       }
     }
   };
-  const restoreNavigation = () => {
-    navigation = readNavigation(history.state?.wakeNavigation);
+  const restoreNavigation = async () => {
+    const revision = ++navigationRevision;
+    const arrived = localAddress(location.href);
+    let restored = readNavigation(history.state?.wakeNavigation);
     try {
       const pending = JSON.parse(
         sessionStorage.getItem("wake.navigation.pending"),
       );
       sessionStorage.removeItem("wake.navigation.pending");
       if (
-        !navigation &&
+        !restored &&
         pending?.from === localAddress(document.referrer) &&
-        (!pending.to || pending.to === localAddress(location.href))
-      )
-        navigation = readNavigation(pending.navigation);
+        readNavigation(pending.navigation)
+      ) {
+        let matches = !pending.to || pending.to === arrived;
+        const target = localAddress(pending.to);
+        const instrumentPath = /^\/instruments\/[^/]+(\/correct)?$/;
+        if (
+          !matches &&
+          target &&
+          instrumentPath.test(resourceKey(target)) &&
+          instrumentPath.test(resourceKey(arrived)) &&
+          resourceKey(target).endsWith("/correct") ===
+            resourceKey(arrived).endsWith("/correct")
+        ) {
+          // Verify alias redirects through the existing authenticated resource route.
+          const response = await fetch(target, {
+            method: "HEAD",
+            credentials: "same-origin",
+            signal: AbortSignal.timeout(8000),
+          });
+          matches = response.ok && localAddress(response.url) === arrived;
+        }
+        if (matches) restored = readNavigation(pending.navigation);
+      }
     } catch {
-      // Navigation remains usable when tab storage is unavailable.
+      // Storage or redirect-verification failures keep canonical navigation usable.
     }
-    navigation ||= { workspace: defaultWorkspace, trail: [] };
+    if (revision !== navigationRevision) return;
+    navigation = restored || { workspace: defaultWorkspace, trail: [] };
     const self = navigation.trail.findIndex(
       (address) => resourceKey(address) === resourceKey(location.href),
     );
     if (self !== -1) navigation.trail = navigation.trail.slice(0, self);
-    history.replaceState({ ...history.state, wakeNavigation: navigation }, "");
+    history.replaceState(navigationState(), "");
     renderNavigation();
   };
-  const rememberNavigation = (target, reset = false, submission = false) => {
+  const rememberNavigation = (target, submission = false) => {
     const destination = localAddress(target);
     if (
       !destination ||
       new URL(destination, location.href).pathname === "/login"
     )
       return;
+    navigationRevision++;
     const current = localAddress(location.href);
     let next = {
       workspace: navigation.workspace,
       trail: [...navigation.trail],
     };
     const previous = next.trail.indexOf(destination);
-    if (reset) next = { workspace: destination, trail: [] };
+    const workspace = workspaceAddresses.find(
+      (address) => resourceKey(address) === resourceKey(destination),
+    );
+    if (!submission && workspace) next = { workspace, trail: [] };
     else if (!submission && previous !== -1)
       next.trail = next.trail.slice(0, previous);
     else if (!submission && resourceKey(current) !== resourceKey(destination)) {
@@ -144,7 +185,10 @@
     }
   };
   restoreNavigation();
-  window.addEventListener("pageshow", restoreNavigation);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) restoreNavigation();
+    else history.replaceState(navigationState(), "");
+  });
   window.addEventListener("popstate", restoreNavigation);
   document.addEventListener("htmx:afterSettle", renderNavigation);
   document.addEventListener("click", (event) => {
@@ -166,10 +210,10 @@
       if (record) {
         const current = new URL(location.href);
         current.searchParams.set("selected", record);
-        history.replaceState(history.state, "", current);
+        history.replaceState(navigationState(), "", current);
       }
     }
-    rememberNavigation(link.href, !!link.closest(".wake-nav-link,.wake-brand"));
+    rememberNavigation(link.href);
   });
   document.addEventListener("submit", (event) => {
     const form = event.target;
@@ -181,11 +225,7 @@
     const target = new URL(form.action, location.href);
     if (form.method.toLowerCase() === "get")
       target.search = new URLSearchParams(new FormData(form)).toString();
-    rememberNavigation(
-      target.href,
-      false,
-      form.method.toLowerCase() === "post",
-    );
+    rememberNavigation(target.href, form.method.toLowerCase() === "post");
   });
 
   const toggle = document.querySelector(".wake-menu-toggle");
@@ -364,7 +404,7 @@
       if (!template) {
         const url = new URL(location.href);
         url.searchParams.delete("field");
-        history.replaceState(history.state, "", url);
+        history.replaceState(navigationState(), "", url);
         return;
       }
       host.append(template.content.cloneNode(true));
@@ -455,7 +495,7 @@
       }
       const url = new URL(location.href);
       url.searchParams.set("field", scope.value);
-      history.replaceState(history.state, "", url);
+      history.replaceState(navigationState(), "", url);
       check();
     };
     form.addEventListener("input", (event) => {
@@ -714,7 +754,7 @@
                   : "No matching records.";
             if (!background) {
               state.installing = result;
-              history.replaceState(history.state, "", current);
+              history.replaceState(navigationState(), "", current);
             }
             return result;
           } catch (error) {
@@ -800,7 +840,7 @@
           if (!changed || state.restoring) return;
           const url = new URL(location.href);
           url.searchParams.delete("selected");
-          history.replaceState(history.state, "", url);
+          history.replaceState(navigationState(), "", url);
         });
         const readPage = (background) =>
           requestData(
@@ -1001,7 +1041,7 @@
       url.searchParams.set(key, value);
     url.searchParams.set("page", "1");
     url.searchParams.delete("selected");
-    history.pushState(history.state, "", url);
+    history.pushState(navigationState(), "", url);
     state.table.setData().catch(() => {});
   });
 
