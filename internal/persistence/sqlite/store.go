@@ -32,7 +32,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-reported-positions-3"
+	schemaVersion              = "wake-reported-positions-4"
 	accessSchemaVersion        = "wake-simplification-4"
 )
 

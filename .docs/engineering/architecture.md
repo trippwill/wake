@@ -187,6 +187,8 @@ Each retained report contributes its latest successfully processed interpretatio
 earlier interpreted claims remain evidence without competing with their replacement.
 This applies to its position-derived instrument claims and bindings as well as the set;
 replacement recalculates affected identities in the same transaction.
+Duplicate occurrences retain separate support across report appearances: replacement
+retires an occurrence only when no current report still supports it.
 Position publication remains independent of activity snapshots; both reuse canonical
 instrument identities. Identity combinations invalidate affected position projections.
 The shared event stream carries independent refresh hints for each view, and finite position

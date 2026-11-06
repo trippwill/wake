@@ -190,6 +190,7 @@ type Connection struct {
 
 type CurrentPositionClaim struct {
 	ClaimID string
+	Ordinal int64
 }
 
 type DecisionSupersession struct {

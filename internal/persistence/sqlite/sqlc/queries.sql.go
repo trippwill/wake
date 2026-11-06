@@ -374,7 +374,7 @@ func (q *Queries) ArtifactProvider(ctx context.Context, id string) (string, erro
 
 const artifactRootIDs = `-- name: ArtifactRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
- SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?1
+ SELECT i.instrument_id FROM records r JOIN source_claims c ON c.id=r.claim_id JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=?1 AND (c.kind='position-instrument' OR (p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location))
  UNION
  SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=?1 AND b.instrument_id IS NOT NULL
  UNION
@@ -2142,7 +2142,7 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 }
 
 const positionBindings = `-- name: PositionBindings :many
-SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN current_position_claims active ON active.claim_id=p.claim_id JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? ORDER BY p.rowid
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM instrument_claims binding JOIN current_position_claims active ON active.claim_id=binding.claim_id AND active.ordinal=binding.ordinal WHERE binding.claim_id=p.claim_id AND binding.instrument_id=p.instrument_id AND binding.role='activity') ORDER BY p.rowid
 `
 
 type PositionBindingsRow struct {
@@ -3582,7 +3582,7 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 }
 
 const rootCalculationInputs = `-- name: RootCalculationInputs :many
-SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id)) ORDER BY p.rowid,i.role
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=i.ordinal)) ORDER BY p.rowid,i.role
 `
 
 type RootCalculationInputsRow struct {

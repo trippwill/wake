@@ -48,6 +48,115 @@ func readPositions(t *testing.T, s *Store) application.PositionsView {
 	return read.View
 }
 
+func positionSetNormalizer(input source.PositionSetInput) provider.Normalizer {
+	return claimNormalizer(
+		func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+			set, err := source.NewPositionSetObservation(input)
+			if err != nil {
+				return provider.Result{}, err
+			}
+
+			if err = claims.PutPositionSet(ctx, set); err != nil {
+				return provider.Result{}, err
+			}
+
+			n := uint64(len(input.Positions))
+
+			return provider.NewResult(provider.Counts{Rows: 1 + n, PositionSets: 1, Instruments: n})
+		},
+	)
+}
+
+func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.T) {
+	s := coverageStore(t)
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	instrument, _ := source.NewInstrument(
+		source.InstrumentInput{Kind: source.Equity, Name: "Anonymous security"},
+	)
+	date, _ := financial.ParseDate("2026-11-03")
+
+	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
+	for _, value := range []string{"1", "2"} {
+		q, _ := financial.NewQuantity(value)
+		p, _ := source.NewPosition(instrument, q, financial.Money{})
+		f.Positions = append(f.Positions, p)
+	}
+
+	coverageClaims(t, s, "two-occurrences", positionSetNormalizer(f))
+	later := f
+	later.Date, _ = financial.ParseDate("2026-11-04")
+	later.Positions = later.Positions[:1]
+	coverageClaims(t, s, "one-occurrence", positionSetNormalizer(later))
+
+	if v := readPositions(t, s); v.Status != "unavailable" {
+		t.Fatal("contested occurrence unexpectedly available", v)
+	}
+
+	f.Positions = nil
+
+	const version = "occurrence-replacement"
+	if _, err := s.Normalize(t.Context(), "two-occurrences", version, positionSetNormalizer(f)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), "two-occurrences", version); err != nil {
+		t.Fatal(err)
+	}
+
+	v := readPositions(t, s)
+	if v.Status != "available" || v.AsOf.Date != "2026-11-04" || len(v.Positions) != 1 ||
+		v.Positions[0].Quantity.Value != "1" {
+		t.Fatal("retired second occurrence still disputes current binding", v)
+	}
+}
+
+func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "baseline", equityRow("U1", "holding", "1"))
+
+	account, _ := source.NewReference("ibkr", "account", "", "U1")
+	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
+	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Option, Reference: ref})
+	q, _ := financial.NewQuantity("1")
+	p, _ := source.NewPosition(instrument, q, financial.Money{})
+	date, _ := financial.ParseDate("2026-11-04")
+
+	f := source.PositionSetInput{
+		Location:  "set",
+		Account:   account,
+		Date:      date,
+		Complete:  true,
+		Positions: []source.Position{p},
+	}
+	for _, id := range []string{"first-appearance", "reused-appearance"} {
+		coverageClaims(t, s, id, positionSetNormalizer(f))
+	}
+
+	roots, err := s.queries.ArtifactRootIDs(t.Context(), "first-appearance")
+	if err != nil || len(roots) != 1 {
+		t.Fatal(roots, err)
+	}
+
+	root := roots[0]
+	f.Positions = nil
+
+	const version = "reused-claim-replacement"
+	for index, id := range []string{"first-appearance", "reused-appearance"} {
+		if _, err = s.Normalize(t.Context(), id, version, positionSetNormalizer(f)); err != nil {
+			t.Fatal(err)
+		}
+
+		if err = s.Process(t.Context(), id, version); err != nil {
+			t.Fatal(err)
+		}
+
+		detail, e := s.InstrumentDetail(t.Context(), root)
+		if e != nil || (detail.Instrument.Status() == "conflict") != (index == 0) {
+			t.Fatal("replacement missed root or retired independently active evidence", detail, e)
+		}
+	}
+}
+
 func TestPositionsMalformedOlderSummaryCannotBlockNewerReportedSet(t *testing.T) {
 	for _, malformedFirst := range []bool{true, false} {
 		t.Run(fmt.Sprint(malformedFirst), func(t *testing.T) {

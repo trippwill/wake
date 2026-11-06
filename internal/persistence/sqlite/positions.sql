@@ -22,7 +22,7 @@ SELECT m.id,p.account_id,p.revision FROM store_metadata m CROSS JOIN positions_c
 
 -- name: Inputs
 WITH current_sets AS (
- SELECT p.*,p.rowid AS sequence FROM position_sets p JOIN current_position_claims active ON active.claim_id=p.claim_id
+ SELECT p.*,p.rowid AS sequence FROM position_sets p WHERE EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=p.claim_id)
 ), superseded(reference) AS (
  SELECT ref.value FROM current_sets other JOIN json_each(other.supersedes) ref WHERE other.account_id=?
 ), live AS (
