@@ -4,6 +4,7 @@
 package application
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 
@@ -114,11 +115,11 @@ func SelectPositions(inputs []PositionCandidate) PositionSelection {
 			result.Reason = "identity_unresolved"
 			return result
 		}
+	}
 
-		if !mergePositionRows(&result, c) {
-			result.Reason = "conflict"
-			return result
-		}
+	if !mergePositionSets(&result, latest[1:]) {
+		result.Reason = "conflict"
+		return result
 	}
 
 	result.Reason = ""
@@ -138,63 +139,159 @@ func positionNumber(s string) string {
 	return s
 }
 
-func mergePositionRows(base *PositionSelection, c PositionCandidate) bool {
-	f := c.Observation.Fields()
-	if len(base.Source.Positions) != len(f.Positions) || len(base.InstrumentIDs) != len(base.Source.Positions) {
-		return false
-	}
-
+// Reconcile each instrument/quantity multiset across all applicable reports before
+// committing enrichment. Duplicate rows have no source-established row identity.
+func mergePositionSets(base *PositionSelection, candidates []PositionCandidate) bool {
 	type rowKey struct{ id, quantity, unit string }
 
+	key := func(id string, p source.Position) rowKey {
+		return rowKey{id, positionNumber(p.Quantity().Value()), p.Unit()}
+	}
 	indexes := map[rowKey][]int{}
 	for i, p := range base.Source.Positions {
-		key := rowKey{base.InstrumentIDs[i], positionNumber(p.Quantity().Value()), p.Unit()}
-		indexes[key] = append(indexes[key], i)
+		k := key(base.InstrumentIDs[i], p)
+		indexes[k] = append(indexes[k], i)
 	}
 
-	// Optional terms can match more than one duplicate row. Reassign earlier pairs
-	// when necessary so one broad match cannot consume another row's only partner.
-	paired := make([]int, len(base.Source.Positions))
-	for i := range paired {
-		paired[i] = -1
+	reports := make([]map[rowKey][]source.Position, 0, len(candidates))
+	for _, c := range candidates {
+		f := c.Observation.Fields()
+		if len(f.Positions) != len(base.Source.Positions) {
+			return false
+		}
+
+		groups := map[rowKey][]source.Position{}
+		for i, p := range f.Positions {
+			k := key(c.InstrumentIDs[i], p)
+			if _, ok := indexes[k]; !ok {
+				return false
+			}
+
+			groups[k] = append(groups[k], p)
+		}
+
+		reports = append(reports, groups)
 	}
 
-	var match func(int, map[int]bool) bool
+	for k, rows := range indexes {
+		initial := make([]source.Position, 0, len(rows))
+		for _, i := range rows {
+			initial = append(initial, base.Source.Positions[i])
+		}
 
-	match = func(i int, seen map[int]bool) bool {
-		p := f.Positions[i]
-		key := rowKey{c.InstrumentIDs[i], positionNumber(p.Quantity().Value()), p.Unit()}
-		for _, occupied := range []bool{false, true} {
-			for _, index := range indexes[key] {
-				if seen[index] || (paired[index] >= 0) != occupied {
-					continue
-				}
+		claims := make([][]source.Position, 0, len(reports))
+		for _, report := range reports {
+			if len(report[k]) != len(rows) {
+				return false
+			}
 
-				if _, ok := mergePositionRow(base.Source.Positions[index], p); !ok {
-					continue
-				}
+			claims = append(claims, report[k])
+		}
 
-				seen[index] = true
-				if !occupied || match(paired[index], seen) {
-					paired[index] = i
-					return true
+		selected, ok := mergePositionGroup(initial, claims)
+		if !ok {
+			return false
+		}
+
+		for j, i := range rows {
+			base.Source.Positions[i] = selected[j]
+		}
+	}
+
+	return true
+}
+
+func mergePositionGroup(initial []source.Position, reports [][]source.Position) ([]source.Position, bool) {
+	current := slices.Clone(initial)
+	if len(initial) == 1 {
+		for _, report := range reports {
+			var ok bool
+
+			current[0], ok = mergePositionRow(current[0], report[0])
+			if !ok {
+				return nil, false
+			}
+		}
+
+		return current, true
+	}
+
+	var (
+		consensus []source.Position
+		search    func(int, int, []bool) bool
+	)
+
+	search = func(report, row int, used []bool) bool {
+		if report == len(reports) {
+			if consensus == nil {
+				consensus = slices.Clone(current)
+			} else {
+				for i, p := range current {
+					instrument, cost := consensus[i].Instrument(), consensus[i].CostBasis()
+					if !samePositionTerms(instrument, p.Instrument()) {
+						instrument = initial[i].Instrument()
+					}
+
+					if !cost.Equal(p.CostBasis()) {
+						cost = initial[i].CostBasis()
+					}
+
+					consensus[i], _ = source.NewPosition(instrument, initial[i].Quantity(), cost)
 				}
+			}
+			// No further solution can remove source facts already in the baseline.
+			return slices.EqualFunc(consensus, initial, samePositionRow)
+		}
+
+		if row == len(initial) {
+			return search(report+1, 0, make([]bool, len(initial)))
+		}
+
+		// Swapping indistinguishable rows creates the same financial solution.
+		seen := []source.Position{}
+		for i, prior := range current {
+			if used[i] ||
+				slices.ContainsFunc(seen, func(p source.Position) bool { return samePositionRow(p, prior) }) {
+				continue
+			}
+
+			seen = append(seen, prior)
+
+			merged, ok := mergePositionRow(prior, reports[report][row])
+			if !ok {
+				continue
+			}
+
+			current[i], used[i] = merged, true
+			stop := search(report, row+1, used)
+			current[i], used[i] = prior, false
+
+			if stop {
+				return true
 			}
 		}
 
 		return false
 	}
-	for i := range f.Positions {
-		if !match(i, map[int]bool{}) {
-			return false
-		}
+	search(0, 0, make([]bool, len(initial)))
+
+	return consensus, consensus != nil
+}
+
+func samePositionRow(a, b source.Position) bool {
+	return a.Quantity().Equal(b.Quantity()) && a.Unit() == b.Unit() &&
+		a.CostBasis().Equal(b.CostBasis()) && samePositionTerms(a.Instrument(), b.Instrument())
+}
+
+func samePositionTerms(a, b source.Instrument) bool {
+	if !CompatibleOption(a.Option(), b.Option()) || !CompatibleDebt(a.Debt(), b.Debt()) {
+		return false
 	}
 
-	for index, i := range paired {
-		base.Source.Positions[index], _ = mergePositionRow(base.Source.Positions[index], f.Positions[i])
-	}
+	left, leftErr := EnrichInstrument(a, b)
+	right, rightErr := EnrichInstrument(b, a)
 
-	return true
+	return leftErr == nil && rightErr == nil && reflect.DeepEqual(left, a) && reflect.DeepEqual(right, b)
 }
 
 func mergePositionRow(prior, next source.Position) (source.Position, bool) {

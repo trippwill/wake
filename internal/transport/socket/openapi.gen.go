@@ -1022,11 +1022,9 @@ func (t PositionsView) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'as_of': %w", err)
 	}
 
-	if t.Positions != nil {
-		object["positions"], err = json.Marshal(t.Positions)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'positions': %w", err)
-		}
+	object["positions"], err = json.Marshal(t.Positions)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'positions': %w", err)
 	}
 
 	object["reason"], err = json.Marshal(t.Reason)

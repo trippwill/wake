@@ -223,6 +223,7 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 	}{
 		{"reordered equivalent scales", []string{"1.00", "2.00"}, []string{"2", "1"}, ""},
 		{"optional cost requires reassignment", []string{"", "1"}, []string{"1.00", "2.00"}, ""},
+		{"unknown costs stay unknown", []string{"", "1"}, []string{"1.00", ""}, ""},
 		{"multiplicity differs", []string{"1", "2"}, []string{"1", "1"}, "conflict"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -231,14 +232,42 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 			); got.Reason != tc.reason {
 				t.Fatal(got)
 			}
+
+			if tc.name == "unknown costs stay unknown" {
+				got := SelectPositions([]PositionCandidate{set(tc.base, "10.00"), set(tc.next, "10")})
+				if got.Source.Positions[0].CostBasis().Amount() != "" {
+					t.Fatal("invented certainty about an unknown cost", got)
+				}
+			}
 		})
+	}
+
+	sets := []PositionCandidate{
+		set([]string{"", "1"}, "10.00"),
+		set([]string{"1.00", ""}, "10"),
+		set([]string{"2", "1"}, "10"),
+	}
+	for _, order := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+		got := SelectPositions([]PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
+		if got.Reason != "" {
+			t.Fatal("compatible duplicate reports depend on input order", order, got)
+		}
+
+		costs := map[string]int{}
+		for _, p := range got.Source.Positions {
+			costs[positionNumber(p.CostBasis().Amount())]++
+		}
+
+		if costs["1"] != 1 || costs["2"] != 1 || len(costs) != 2 {
+			t.Fatal("lost reported costs", order, costs)
+		}
 	}
 }
 
 func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 	for _, kind := range []source.InstrumentKind{source.Option, source.Debt} {
 		t.Run(string(kind), func(t *testing.T) {
-			set := func(terms []string) PositionCandidate {
+			set := func(terms []string, costs ...string) PositionCandidate {
 				t.Helper()
 
 				c := positionCandidate(t, "2026-11-03", "", "1", "", "")
@@ -246,7 +275,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				f := c.Observation.Fields()
 				f.Positions = nil
 				c.InstrumentIDs = nil
-				for _, term := range terms {
+				for i, term := range terms {
 					input := source.InstrumentInput{Kind: kind, Name: "Synthetic contract"}
 					if kind == source.Option {
 						multiplier, _ := financial.NewQuantity(term)
@@ -263,7 +292,13 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 
 					quantity, _ := financial.NewQuantity("1")
 
-					p, err := source.NewPosition(instrument, quantity, financial.Money{})
+					cost := financial.Money{}
+					if i < len(costs) && costs[i] != "" {
+						usd, _ := financial.ParseCurrency("USD")
+						cost, _ = financial.NewMoney(costs[i], usd)
+					}
+
+					p, err := source.NewPosition(instrument, quantity, cost)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -285,6 +320,32 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				[]PositionCandidate{set(terms), set([]string{terms[1], terms[0]})},
 			); got.Reason != "" {
 				t.Fatal("reordered reported terms conflicted", got)
+			}
+
+			sets := []PositionCandidate{
+				set(terms, "", "1"),
+				set([]string{"", ""}, "1.00", ""),
+				set(terms, "2", "1"),
+			}
+			for _, order := range [][3]int{{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+				got := SelectPositions([]PositionCandidate{sets[order[0]], sets[order[1]], sets[order[2]]})
+				if got.Reason != "" {
+					t.Fatal("compatible contract reports depend on input order", order, got)
+				}
+
+				costs := map[string]string{}
+				for _, p := range got.Source.Positions {
+					term := p.Instrument().Option().Fields().Multiplier.Value()
+					if kind == source.Debt {
+						term = p.Instrument().Debt().Fields().Maturity.String()
+					}
+
+					costs[term] = positionNumber(p.CostBasis().Amount())
+				}
+
+				if costs[terms[0]] != "2" || costs[terms[1]] != "1" || len(costs) != 2 {
+					t.Fatal("misassociated reported terms and costs", order, costs)
+				}
 			}
 		})
 	}

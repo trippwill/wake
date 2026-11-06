@@ -36,6 +36,49 @@ func TestGeneratedPositionsModelPreservesReportedTimestampText(t *testing.T) {
 	}
 }
 
+func TestGeneratedUnavailablePositionsAlwaysReplaceRowsWithNull(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("../../../api/openapi/v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, initial := range []string{"", `{"warehouse_id":"w","account_id":"a","version":"v","status":"available","as_of":{"date":"2026-11-04","at":null},"reason":null,"positions":[{"instrument_id":"old"}]}`} {
+		model := PositionsView{WarehouseId: "w", AccountId: "a", Version: "v"}
+		if initial != "" {
+			if err := json.Unmarshal([]byte(initial), &model); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		model.Status = "unavailable"
+		model.Positions = nil
+		model.Reason = new(PositionsViewReason("incomplete"))
+
+		b, err := json.Marshal(model)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var body map[string]any
+		if err = json.Unmarshal(b, &body); err != nil {
+			t.Fatal(err)
+		}
+
+		if rows, present := body["positions"]; !present || rows != nil {
+			t.Fatalf("unavailable view retained or omitted rows: %s: %v", b, err)
+		}
+
+		if err = doc.Components.Schemas["PositionsView"].Value.VisitJSON(body); err != nil {
+			t.Fatal(err)
+		}
+
+		body["status"], body["reason"] = "available", nil
+		if err = doc.Components.Schemas["PositionsView"].Value.VisitJSON(body); err == nil {
+			t.Fatal("available view accepted null positions")
+		}
+	}
+}
+
 func (s positionReads) Positions(
 	_ context.Context,
 	_ string,

@@ -234,8 +234,10 @@ Do not combine independently dated rows or infer revision authority from report 
 or retrieval order. Unresolved incompatible claims at the same effective time withhold the
 set. Established replacements can retire conflicting revision claims, including correcting
 their effective dates backwards. Conflicting instrument identities withhold bound positions
-until resolved. Reported costs remain distinct from reconstructed lots, valuations and
-calculated P&L.
+until resolved. Repeated instrument/quantity rows have no independent identity established
+by their ordering. Optional costs and terms remain unknown where compatible pairings
+disagree. Reported costs remain distinct from reconstructed lots, valuations and calculated
+P&L.
 
 Changes to accepted values, links, relevant reference data or conflict status matter
 to consumers even without a new trade. Stable identities and reproducible views

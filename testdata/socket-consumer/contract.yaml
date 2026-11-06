@@ -434,10 +434,11 @@ components:
           nullable: true
           enum: [not_reported, incomplete, conflict, identity_unresolved]
         positions:
-          type: array
-          nullable: true
-          items:
-            $ref: '#/components/schemas/Position'
+          allOf:
+          - type: array
+            nullable: true
+            items:
+              $ref: '#/components/schemas/Position'
       description: Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. Effective time may be unknown when unavailable.
     Publication:
       type: object
