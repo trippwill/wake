@@ -48,6 +48,142 @@ func readPositions(t *testing.T, s *Store) application.PositionsView {
 	return read.View
 }
 
+func TestPositionsMalformedOlderSummaryCannotBlockNewerReportedSet(t *testing.T) {
+	for _, malformedFirst := range []bool{true, false} {
+		t.Run(fmt.Sprint(malformedFirst), func(t *testing.T) {
+			s := coverageStore(t)
+			coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+
+			malformed := reportedPositionsXML(
+				"2026-11-06",
+				"<OpenPositions>"+holdingXML("2026-11-04", "invalid", "1")+"</OpenPositions>",
+			)
+			usable := reportedPositionsXML(
+				"2026-11-05",
+				"<OpenPositions>"+holdingXML("2026-11-05", "20.0000", "2.0000")+"</OpenPositions>",
+			)
+			if malformedFirst {
+				acquireRealized(t, s, malformed)
+
+				v := readPositions(t, s)
+				if v.Status != "unavailable" || v.AsOf.Date != "2026-11-04" || v.Reason == nil ||
+					*v.Reason != "incomplete" {
+					t.Fatal(v)
+				}
+
+				acquireRealized(t, s, usable)
+			} else {
+				acquireRealized(t, s, usable)
+				acquireRealized(t, s, malformed)
+			}
+
+			v := readPositions(t, s)
+			if v.Status != "available" || v.AsOf.Date != "2026-11-05" || len(v.Positions) != 1 ||
+				v.Positions[0].Quantity.Value != "20.0000" {
+				t.Fatal(v)
+			}
+		})
+	}
+}
+
+func TestPositionsDateInterpretationRepairsRetainedMalformedSummary(t *testing.T) {
+	s := coverageStore(t)
+	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+	acquireRealized(
+		t,
+		s,
+		reportedPositionsXML(
+			"2026-11-05",
+			"<OpenPositions>"+holdingXML("2026-11-05", "20.0000", "2.0000")+"</OpenPositions>",
+		),
+	)
+
+	id := retainRealizedReport(
+		t,
+		s,
+		"synthetic",
+		reportedPositionsXML(
+			"2026-11-06",
+			"<OpenPositions>"+holdingXML("2026-11-04", "invalid", "1")+"</OpenPositions>",
+		),
+	)
+	old := claimNormalizer(
+		func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+			account, _ := source.NewReference("ibkr", "account", "", "U1")
+			date, _ := financial.ParseDate("2026-11-06")
+
+			set, err := source.NewPositionSetObservation(source.PositionSetInput{
+				Location: "/FlexQueryResponse[1]/FlexStatements[1]/FlexStatement[1]/OpenPositions",
+				Account:  account, Date: date, Reason: "incomplete",
+			})
+			if err != nil {
+				return provider.Result{}, err
+			}
+
+			if err = claims.PutPositionSet(ctx, set); err != nil {
+				return provider.Result{}, err
+			}
+
+			return provider.NewResult(provider.Counts{Rows: 1, PositionSets: 1})
+		},
+	)
+	if _, err := s.Normalize(t.Context(), id, "ibkr-flex-8", old); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), id, "ibkr-flex-8"); err != nil {
+		t.Fatal(err)
+	}
+
+	before := readPositions(t, s)
+	if before.Status != "unavailable" || before.AsOf.Date != "2026-11-06" {
+		t.Fatal(before, *before.AsOf)
+	}
+
+	reg, _ := ibkrflex.Registration(ibkrflex.Options{})
+	if _, err := s.Normalize(t.Context(), id, ibkrflex.Version, reg.Normalizer()); err != nil {
+		t.Fatal(err)
+	}
+
+	changes, remove := s.SubscribePublications()
+	defer remove()
+
+	if _, err := s.db.Exec(
+		`CREATE TRIGGER fail_position_upgrade BEFORE UPDATE ON positions_current BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), id, ibkrflex.Version); err == nil {
+		t.Fatal("interpretation unexpectedly committed")
+	}
+
+	if v := readPositions(t, s); v.Version != before.Version || len(changes) != 0 {
+		t.Fatal("failed interpretation changed publication", v)
+	}
+
+	if _, err := s.db.Exec(`DROP TRIGGER fail_position_upgrade`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Process(t.Context(), id, ibkrflex.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	after := readPositions(t, s)
+	if after.Status != "available" || after.AsOf.Date != "2026-11-05" || after.Version == before.Version {
+		t.Fatal(after, after.AsOf, after.Reason)
+	}
+
+	if err := s.Process(t.Context(), id, ibkrflex.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	if readPositions(t, s).Version != after.Version {
+		t.Fatal("repeated interpretation republished positions")
+	}
+}
+
 func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *testing.T) {
 	s := coverageStore(t)
 	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))

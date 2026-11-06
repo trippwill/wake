@@ -128,7 +128,9 @@ Summary rows establish one common reported date; an explicitly empty section use
 statement end date. Missing sections establish no position coverage. LOT rows never
 add quantities; a lot-only populated section cannot establish the summary set. Malformed
 rows, mixed report dates, model partitions or unsupported asset families withhold the
-whole set. This adapter supports the existing equity/ETF, option and debt families.
+whole set. An unusable set retains its latest valid summary row date when available;
+the statement end date applies when no summary row establishes a date.
+This adapter supports the existing equity/ETF, option and debt families.
 Generation and retrieval times do not select between conflicting same-date sets.
 Positions use the Activity acquisition cadence and their own client version and event;
 they do not establish live holdings, market values or unrealized P&L.

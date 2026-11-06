@@ -44,7 +44,6 @@ func normalizePositions(
 					Account:  ref,
 					Date:     date,
 				},
-				attemptDate: date,
 			}
 			sets = append(sets, current)
 		}
@@ -118,7 +117,10 @@ func normalizePositions(
 		f := set.input
 		f.Complete = set.sections == 1 && !f.Date.IsZero() && !set.invalid && (set.rows == 0 || set.summaries > 0)
 		if !f.Complete {
-			f.Date = set.attemptDate
+			if !set.attemptDate.IsZero() {
+				f.Date = set.attemptDate
+			}
+
 			f.Positions = nil
 			f.Reason = "incomplete"
 			if set.sections == 0 && !set.invalid {

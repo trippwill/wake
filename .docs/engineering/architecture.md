@@ -183,6 +183,8 @@ Reported positions use a separate complete account-set projection with its own d
 publication version. Source interpretation contributes typed immutable sets and instrument
 claims; deterministic financial selection uses effective time, account source authority and
 explicit revision relationships. Set content, availability and version commit atomically.
+Each retained report contributes its latest successfully processed interpretation;
+earlier interpreted claims remain evidence without competing with their replacement.
 Position publication remains independent of activity snapshots; both reuse canonical
 instrument identities. Identity combinations invalidate affected position projections.
 The shared event stream carries independent refresh hints for each view, and finite position

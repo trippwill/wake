@@ -94,3 +94,36 @@ func TestPositionTermsKeepOptionsAndDebtDistinct(t *testing.T) {
 		}
 	}
 }
+
+func TestIncompletePositionsUseReportedDatesBeforeStatementEnd(t *testing.T) {
+	for _, tc := range []struct{ name, rows, date string }{
+		{"malformed quantity", strings.ReplaceAll(positionRow, `position="-0.0000000012300"`, `position="invalid"`), "2026-11-04"},
+		{"unsupported family", strings.ReplaceAll(positionRow, `assetCategory="STK"`, `assetCategory="FUT"`), "2026-11-04"},
+		{"mixed dates", positionRow + strings.ReplaceAll(positionRow, "2026-11-04", "2026-11-05"), "2026-11-05"},
+		{"mixed dates reversed", strings.ReplaceAll(positionRow, "2026-11-04", "2026-11-05") + positionRow, "2026-11-05"},
+		{"missing date", strings.ReplaceAll(positionRow, `reportDate="2026-11-04"`, ""), "2026-11-06"},
+		{"lot only", strings.ReplaceAll(positionRow, `levelOfDetail="SUMMARY"`, `levelOfDetail="LOT"`), "2026-11-06"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &testClaims{}
+
+			var counts provider.Counts
+
+			err := normalizePositions(
+				t.Context(),
+				[]byte(positionReport("2026-11-06", "<OpenPositions>"+tc.rows+"</OpenPositions>")),
+				sink,
+				&counts,
+			)
+			if err != nil || len(sink.positions) != 1 {
+				t.Fatal(err, sink)
+			}
+
+			f := sink.positions[0].Fields()
+			if f.Complete || f.Reason != "incomplete" || f.Date.String() != tc.date || len(f.Positions) != 0 ||
+				!f.At.IsZero() {
+				t.Fatal(f)
+			}
+		})
+	}
+}

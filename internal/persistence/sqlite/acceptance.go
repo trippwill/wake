@@ -313,6 +313,10 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	if err = q.ArtifactProcessed(ctx, id); err != nil {
 		return err
 	}
+	// Reinterpretation retires earlier meanings while retaining every source claim.
+	if _, err = tx.ExecContext(ctx, positionsStatement("InterpretationChanged"), id); err != nil {
+		return err
+	}
 
 	return s.commit(ctx, tx)
 }

@@ -19,7 +19,7 @@ const (
 	ConfirmationFormat  = "ibkr-flex-confirmation-xml"
 	Activity            = "activity"
 	ActivityFormat      = "ibkr-flex-activity-xml"
-	Version             = "ibkr-flex-8"
+	Version             = "ibkr-flex-9"
 	continuationVersion = "confirmation-state-1"
 	DefaultBaseURL      = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 	webBudget           = "web-service"
