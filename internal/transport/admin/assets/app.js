@@ -63,6 +63,11 @@
     ...history.state,
     wakeNavigation: navigation,
   });
+  let navigationAddress = location.href;
+  const updateHistory = (url = location.href, push = false) => {
+    history[push ? "pushState" : "replaceState"](navigationState(), "", url);
+    navigationAddress = location.href;
+  };
   const renderNavigation = () => {
     const previous = navigation.trail.at(-1);
     const root =
@@ -153,7 +158,7 @@
       (address) => resourceKey(address) === resourceKey(location.href),
     );
     if (self !== -1) navigation.trail = navigation.trail.slice(0, self);
-    history.replaceState(navigationState(), "");
+    updateHistory();
     renderNavigation();
   };
   const restoreNavigation = () => {
@@ -214,9 +219,26 @@
   restoreNavigation();
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) restoreNavigation();
-    else history.replaceState(navigationState(), "");
+    else updateHistory();
   });
-  window.addEventListener("popstate", restoreNavigation);
+  const restoreLocation = (event) => {
+    const previous = new URL(navigationAddress);
+    const current = new URL(location.href);
+    const fragment =
+      current.pathname === previous.pathname &&
+      current.search === previous.search &&
+      current.href !== previous.href;
+    if (
+      fragment ||
+      (navigationPending && current.pathname === previous.pathname)
+    ) {
+      if (fragment) event.wakeFragmentNavigation = true;
+      updateHistory();
+      renderNavigation();
+    } else if (event.type === "popstate") restoreNavigation();
+  };
+  window.addEventListener("popstate", restoreLocation);
+  window.addEventListener("hashchange", restoreLocation);
   document.addEventListener("htmx:afterSettle", renderNavigation);
   document.addEventListener("click", async (event) => {
     const link = event.target.closest("a[href]");
@@ -233,6 +255,11 @@
     )
       return;
     const intent = ++navigationIntent;
+    if (
+      link.href.includes("#") &&
+      localAddress(link.href) === localAddress(location.href)
+    )
+      return;
     const deferred = navigationPending && !!localAddress(link.href);
     if (deferred) {
       event.preventDefault();
@@ -246,7 +273,7 @@
       if (record) {
         const current = new URL(location.href);
         current.searchParams.set("selected", record);
-        history.replaceState(navigationState(), "", current);
+        updateHistory(current);
       }
     }
     rememberNavigation(link.href);
@@ -456,7 +483,7 @@
       if (!template) {
         const url = new URL(location.href);
         url.searchParams.delete("field");
-        history.replaceState(navigationState(), "", url);
+        updateHistory(url);
         return;
       }
       host.append(template.content.cloneNode(true));
@@ -547,7 +574,7 @@
       }
       const url = new URL(location.href);
       url.searchParams.set("field", scope.value);
-      history.replaceState(navigationState(), "", url);
+      updateHistory(url);
       check();
     };
     form.addEventListener("input", (event) => {
@@ -806,7 +833,7 @@
                   : "No matching records.";
             if (!background) {
               state.installing = result;
-              history.replaceState(navigationState(), "", current);
+              updateHistory(current);
             }
             return result;
           } catch (error) {
@@ -892,7 +919,7 @@
           if (!changed || state.restoring) return;
           const url = new URL(location.href);
           url.searchParams.delete("selected");
-          history.replaceState(navigationState(), "", url);
+          updateHistory(url);
         });
         const readPage = (background) =>
           requestData(
@@ -1093,11 +1120,12 @@
       url.searchParams.set(key, value);
     url.searchParams.set("page", "1");
     url.searchParams.delete("selected");
-    history.pushState(navigationState(), "", url);
+    updateHistory(url, true);
     state.table.setData().catch(() => {});
   });
 
-  window.addEventListener("popstate", () => {
+  window.addEventListener("popstate", (event) => {
+    if (event.wakeFragmentNavigation) return;
     const params = new URL(location.href).searchParams;
     for (const [region, state] of grids) {
       const form =

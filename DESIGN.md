@@ -251,7 +251,8 @@ Resource links carry no navigation ancestry. Tab-local browser history preserves
 the originating workspace and return trail through details, evidence and corrections.
 Direct links use canonical breadcrumbs and return destinations. Reload and browser
 Back/Forward retain the current entry's navigation context; a newly opened tab starts
-from the resource's canonical workspace. Store navigation metadata only, never page HTML.
+from the resource's canonical workspace. In-page fragment links retain that context
+and do not reload financial tables. Store navigation metadata only, never page HTML.
 Applied corrections and ordinary reference gaps remain distinct from review tasks.
 
 ## Interaction and live feedback

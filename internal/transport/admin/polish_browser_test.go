@@ -995,6 +995,48 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	assert(`history.state?.wakeNavigation?.trail.length===0`, "unrelated handoff adopted navigation context")
 
 	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=fragment-filter&size=25")),
+		chromedp.WaitVisible("h1", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`(()=>{const a=document.createElement('a');a.id='fragment-report';a.href='/evidence/synthetic-report';a.textContent='Inspect source report';document.body.append(a)})()`,
+			nil,
+		),
+		testbrowser.NewDocument(chromedp.Click("#fragment-report", chromedp.ByQuery)),
+		chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
+		chromedp.Evaluate(`window.fragmentContext=JSON.stringify(history.state.wakeNavigation)`, nil),
+		chromedp.Click(`a[href="#original-content"]`, chromedp.ByQuery),
+		chromedp.Poll(`location.hash==='#original-content'`, nil),
+	)
+	assert(
+		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='fragment-filter'`,
+		"in-page report navigation discarded its return context",
+	)
+	check(
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Poll(`location.hash===''`, nil),
+	)
+	assert(
+		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext`,
+		"fragment Back lost navigation context",
+	)
+	check(
+		chromedp.Evaluate(`history.forward()`, nil),
+		chromedp.Poll(`location.hash==='#original-content'`, nil),
+	)
+	assert(
+		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext`,
+		"fragment Forward lost navigation context",
+	)
+	check(
+		testbrowser.NewDocument(chromedp.Reload()),
+		chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
+	)
+	assert(
+		`history.state.wakeNavigation.workspace==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='fragment-filter'`,
+		"fragment reload lost the originating workspace or filters",
+	)
+
+	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
 		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
 	)
