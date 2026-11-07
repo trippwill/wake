@@ -129,8 +129,9 @@ unknowns remain part of that source comparison.
 Supporting observation links belong independently to each activity and instrument, including
 nested underliers. Keep the first supporting observation, later source information and
 distinct conflicting assertions. Repeated support, including an already retained conflict,
-adds no link. A new activity can need an observation without adding information about its
-instrument. A reported position keeps its association with the held instrument independently
+adds no link. An observation can itself contain conflicting assertions; equivalent repeats
+still add no support. A new activity can need an observation without adding information about
+its instrument. A reported position keeps its association with the held instrument independently
 of whether its report adds instrument support. Instrument support concerns its identity and
 underlier relationship; dated financial terms belong to the activity. Child descriptions and
 identifiers belong to the child even when its source has not supplied a qualified reference.

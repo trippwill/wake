@@ -4,17 +4,102 @@
 package persistence
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
+
+func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *testing.T) {
+	s := coverageStore(t)
+	trade := underlierTrade(t, underlierTemplate(t), "repeated-charges", "", true)
+	retainUnderlierTrades(t, s, "established", trade)
+	base := trade.Observation().Fields()
+
+	base.EventDistinct = true
+	base.EventAliases = nil
+	usd, _ := financial.ParseCurrency("USD")
+	for _, amount := range []string{"1", "2"} {
+		money, _ := financial.NewMoney(amount, usd)
+		charge, _ := source.NewCharge("reported-fee", "component", money)
+
+		field, err := source.NewActivityField(source.ActivityFieldInput{Name: source.FieldCharge, Charge: charge})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		base.Fields = append(base.Fields, field)
+	}
+
+	normalizer := claimNormalizer(
+		func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+			for _, location := range []string{"first", "duplicate"} {
+				input := base
+				input.Location = location
+
+				observation, err := source.NewActivityObservation(input)
+				if err != nil {
+					return provider.Result{}, err
+				}
+
+				if err = claims.PutActivity(ctx, observation); err != nil {
+					return provider.Result{}, err
+				}
+			}
+
+			return provider.NewResult(provider.Counts{Rows: 2, Activities: 2})
+		},
+	)
+	coverageClaims(t, s, "charge-report", normalizer)
+
+	baseline, err := snapshotState(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, step := range []struct{ report, version string }{
+		{"charge-report", "synthetic-claims/1"},
+		{"repeat-charge-report", "synthetic-claims/1"},
+		{"charge-report", "charge-reinterpretation/2"},
+	} {
+		if step.report != "charge-report" {
+			coverageClaims(t, s, step.report, normalizer)
+		} else if step.version != "synthetic-claims/1" {
+			if _, err = s.Normalize(t.Context(), step.report, step.version, normalizer); err != nil {
+				t.Fatal(err)
+			}
+
+			if err = s.Process(t.Context(), step.report, step.version); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		var support int
+		if err = s.db.QueryRow(`SELECT count(*) FROM execution_observations WHERE execution_id IS NOT NULL`).
+			Scan(&support); err != nil ||
+			support != 2 {
+			t.Fatal("repeated internal disagreement added activity support", support, err)
+		}
+
+		records, err := s.Records(t.Context(), step.report, step.version)
+		if err != nil || len(records) != 2 {
+			t.Fatal("duplicate report appearances were lost", records, err)
+		}
+
+		if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
+			t.Fatal("repeated internal disagreement published", changes.Items)
+		}
+	}
+}
 
 func TestActivitiesDoNotAccumulateInstrumentSupport(t *testing.T) {
 	checkActivityContributionVolume(t, 64)

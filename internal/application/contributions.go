@@ -26,9 +26,11 @@ func ObservationContribution(
 		return !CompatibleObservations(old, incoming)
 	})
 	if covered && conflict {
+		// A source can contradict itself; an equivalent repeat still adds nothing.
 		covered = false
 		for _, old := range prior {
-			if !CompatibleObservations(old, incoming) {
+			if !CompatibleObservations(old, incoming) &&
+				!observationCovered([]source.ActivityObservation{incoming}, old) {
 				continue
 			}
 

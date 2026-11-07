@@ -94,6 +94,53 @@ func TestObservationContributionsRetainAliasesAndDistinctEventAssertions(t *test
 	}
 }
 
+func TestObservationContributionsDeduplicateInternallyConflictingCharges(t *testing.T) {
+	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation().Fields()
+	usd, _ := financial.ParseCurrency("USD")
+	prior := []source.ActivityObservation{}
+	for index, step := range []struct {
+		amounts []string
+		want    ObservationOutcome
+	}{
+		{[]string{"1", "2"}, ObservationAccepted},
+		{[]string{"1", "2"}, ""},
+		{[]string{"2", "1"}, ""},
+		{[]string{"1", "3"}, ObservationTermsConflict},
+		{[]string{"3", "1"}, ""},
+	} {
+		input := base
+		input.Location = string(rune('a' + index))
+
+		input.Fields = append([]source.ActivityField{}, base.Fields...)
+		for _, amount := range step.amounts {
+			money, _ := financial.NewMoney(amount, usd)
+			charge, _ := source.NewCharge("reported-fee", "component", money)
+			input.Fields = append(
+				input.Fields,
+				asserted(t, source.ActivityFieldInput{Name: source.FieldCharge, Charge: charge}),
+			)
+		}
+
+		value, err := source.NewActivityObservation(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		outcome := ObservationContribution(prior, value)
+		if outcome != step.want {
+			t.Fatalf("charges=%v: got %q, want %q", step.amounts, outcome, step.want)
+		}
+
+		if outcome != "" {
+			prior = append(prior, value)
+		}
+	}
+
+	if len(prior) != 2 {
+		t.Fatal("repeated internal conflicts added support", len(prior))
+	}
+}
+
 func TestInstrumentContributionsOwnIdentityAndUnderlierRelationship(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "instrument", "", "option")
 	underlier, _ := source.NewReference("synthetic", "instrument", "", "underlier")
