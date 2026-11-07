@@ -12,10 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/testbrowser"
@@ -37,7 +40,7 @@ func TestBrowserThemePreference(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /assets/", http.FileServerFS(assets))
+	mux.HandleFunc("GET /assets/", serveAsset)
 	// The token deliberately matches a CSS selector as text in hidden metadata.
 	mux.Handle(
 		"GET /theme",
@@ -57,12 +60,26 @@ func TestBrowserThemePreference(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 20*time.Second)
 	defer deadline()
 
+	var gzipAssets atomic.Int64
+	chromedp.ListenTarget(ctx, func(event any) {
+		if response, ok := event.(*network.EventResponseReceived); ok &&
+			strings.Contains(response.Response.URL, "/assets/") &&
+			response.Response.Headers["Content-Encoding"] == "gzip" {
+			gzipAssets.Add(1)
+		}
+	})
+
 	if err := chromedp.Run(ctx,
+		network.Enable(),
 		testbrowser.NewDocument(chromedp.Navigate(server.URL+"/theme")),
 		chromedp.WaitVisible("h1", chromedp.ByQuery),
 		chromedp.WaitVisible("[data-theme-preference]", chromedp.ByQuery),
 	); err != nil {
 		t.Fatal("theme page", err)
+	}
+
+	if gzipAssets.Load() == 0 {
+		t.Fatal("browser did not receive any compressed assets")
 	}
 
 	for _, preference := range []string{"dark", "light"} {

@@ -209,6 +209,13 @@ browser sandbox enabled. Tests must not use a personal browser profile or source
 credentials. Consult task definitions for browser discovery, environment switches
 and artifacts. Source assets and their vendor inventory own exact library versions.
 
+After editing browser assets, run `mise run assets:gen` to refresh the checked-in
+gzip copies embedded in the executable. `mise run assets:check` verifies that the
+generated files exactly match the sources, including additions and deletions.
+Both tasks use the pinned Go toolchain; an ordinary Go build uses the checked-in
+copies. The source files remain readable and retain upstream licenses. Source
+generation and CI include these tasks.
+
 ## Documentation maintenance
 
 Use the [Wake docs skill](../../.agents/skills/wake-docs/SKILL.md) for substantive

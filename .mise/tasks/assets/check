@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify compressed browser assets match their source files"
+#MISE wait_for=["assets:gen"]
+set -euo pipefail
+snapshot=$(mktemp -d)
+trap 'rm -rf "$snapshot"' EXIT
+go run ./internal/assetgen -output "$snapshot/assetsgzip"
+diff -ru internal/transport/admin/assetsgzip "$snapshot/assetsgzip"

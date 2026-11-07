@@ -40,8 +40,8 @@ run = ["go mod download", "go mod verify"]
 
 [tasks.check]
 description = "Run static checks"
-depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "openapi:check", "docs:check", "test:ci"]
-wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "assets:check", "openapi:check", "docs:check", "test:ci"]
+wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 
 [tasks.'source:check']
 description = "Generate and format sources, then verify no tracked source changes"
@@ -50,12 +50,12 @@ run = "git diff --exit-code"
 
 [tasks.build]
 description = "Build all Go packages"
-wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 run = "CGO_ENABLED=0 go build ./..."
 
 [tasks.'build:release']
 description = "Build a stripped Wake executable at .cache/release/wake"
-wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 run = "CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o .cache/release/wake ./cmd/wake"
 
 [tasks.clean]
@@ -77,7 +77,7 @@ run = "go run ./cmd/wake -- "
 
 [tasks.gen]
 description = "Generate code for all tools"
-depends = ["sqlc:gen", "templ:gen", "openapi:gen"]
+depends = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 
 [tasks.fix]
 description = "Fix lint issues and format all Go files"
@@ -95,11 +95,16 @@ run = "go test -tags=integration -count=1 ./..."
 description = "Format handwritten JS/CSS without touching vendored assets or templ"
 run = "biome format --write internal/transport/admin/assets/app.js internal/transport/admin/assets/theme.js internal/transport/admin/assets/app.css"
 
+[tasks.'assets:gen']
+description = "Generate deterministic compressed browser assets"
+wait_for = ["frontend:fmt"]
+run = "go run ./internal/assetgen"
+
 [tasks.'frontend:render']
 description = "Render synthetic templ pages for HTML accessibility linting"
 run = "go test -tags=frontend ./internal/transport/admin -run '^TestRenderFrontend$' -count=1"
 env = { WAKE_HTML_DIR = "{{config_root}}/.cache/frontend" }
-wait_for = ["templ:gen"]
+wait_for = ["templ:gen", "assets:gen"]
 
 [tasks.'frontend:check']
 description = "Check handwritten JS/CSS and accessibility of synthetic rendered HTML"
@@ -120,7 +125,7 @@ run = "golangci-lint run --fix"
 
 [tasks.'lint:fmt']
 description = "Format all Go files"
-wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 run = "golangci-lint fmt"
 
 [tasks.'lint:headers']
@@ -129,7 +134,7 @@ run = "golangci-lint run --fix --enable-only=goheader"
 
 [tasks.'vuln:check']
 description = "Scan dependencies for known vulnerabilities"
-wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 run = "govulncheck ./..."
 
 [tasks.'codecov:validate']

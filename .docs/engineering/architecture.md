@@ -12,6 +12,12 @@ socket serves downstream applications. Deployment wrappers do not define the cor
 Wake uses Go, standard-library HTTP, SQLite/sqlc, templ and embedded browser assets.
 The build configuration and dependency manifests own exact tools and versions.
 
+Browser assets are embedded as deterministic gzip copies to reduce executable size.
+The admin serves those bytes directly when the client accepts gzip and decompresses
+them for clients requesting uncompressed content. Asset URLs and cache policy are
+independent of that representation; readable sources and upstream licenses remain
+in the repository.
+
 Launch configuration resolves once on the actual parsed CLI command. Strictly decode
 and validate the selected TOML file before applying higher-priority values; explicit
 flags cannot conceal an invalid file. TOML table and field names use the catalog's exact

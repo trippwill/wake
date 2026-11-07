@@ -6,8 +6,6 @@ package admin
 
 import (
 	"context"
-	"embed"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,9 +14,6 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
 )
-
-//go:embed assets
-var assets embed.FS
 
 type (
 	Status struct {
@@ -45,12 +40,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 
-	assetFS, err := fs.Sub(assets, "assets")
-	if err != nil {
-		return nil, err
-	}
-
-	mux.Handle("GET /assets/", cacheAssets(http.StripPrefix("/assets/", http.FileServerFS(assetFS))))
+	mux.HandleFunc("GET /assets/", serveAsset)
 	registerLoginRoutes(mux, auth)
 
 	if deps.Workflow != nil {
@@ -195,17 +185,4 @@ func setSecurityHeaders(headers http.Header) {
 	headers.Set("Referrer-Policy", "same-origin")
 	headers.Set("X-Content-Type-Options", "nosniff")
 	headers.Set("X-Frame-Options", "DENY")
-}
-
-func cacheAssets(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		cacheControl := "no-cache"
-		if strings.HasPrefix(request.URL.Path, "/assets/vendor/") {
-			cacheControl = "public, max-age=31536000, immutable"
-		}
-
-		response.Header().Set("Cache-Control", cacheControl)
-		response.Header().Set("X-Content-Type-Options", "nosniff")
-		next.ServeHTTP(response, request)
-	})
 }
