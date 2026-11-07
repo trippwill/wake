@@ -15,11 +15,10 @@ import (
 )
 
 func main() {
-	output := flag.String("output", "internal/transport/admin/assetsgzip", "generated asset directory")
-
+	// Reject unsupported flags before touching the generated directory.
 	flag.Parse()
 
-	if err := generate("internal/transport/admin/assets", *output); err != nil {
+	if err := generate("internal/transport/admin/assets", "internal/transport/admin/assetsgzip"); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

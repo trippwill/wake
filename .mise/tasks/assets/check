@@ -4,7 +4,10 @@
 #MISE description="Verify compressed browser assets match their source files"
 #MISE wait_for=["assets:gen"]
 set -euo pipefail
+root=$PWD
 snapshot=$(mktemp -d)
 trap 'rm -rf "$snapshot"' EXIT
-go run ./internal/assetgen -output "$snapshot/assetsgzip"
-diff -ru internal/transport/admin/assetsgzip "$snapshot/assetsgzip"
+mkdir -p "$snapshot/internal/transport/admin"
+ln -s "$root/internal/transport/admin/assets" "$snapshot/internal/transport/admin/assets"
+(cd "$snapshot" && go run "$root/internal/assetgen/main.go")
+diff -ru internal/transport/admin/assetsgzip "$snapshot/internal/transport/admin/assetsgzip"

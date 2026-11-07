@@ -11,12 +11,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestAssetgenCommandUsesSourceDirectoryAndOutputFlag(t *testing.T) {
+func TestAssetgenCommandUsesRepositoryAssetDirectories(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	source := "internal/transport/admin/assets"
@@ -34,11 +35,11 @@ func TestAssetgenCommandUsesSourceDirectoryAndOutputFlag(t *testing.T) {
 	})
 
 	flag.CommandLine = flag.NewFlagSet("assetgen", flag.ContinueOnError)
-	os.Args = []string{"assetgen", "-output", "generated"}
+	os.Args = []string{"assetgen"}
 
 	main()
 
-	data, err := fs.ReadFile(os.DirFS("generated"), "app.js.gz")
+	data, err := fs.ReadFile(os.DirFS("internal/transport/admin/assetsgzip"), "app.js.gz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +53,60 @@ func TestAssetgenCommandUsesSourceDirectoryAndOutputFlag(t *testing.T) {
 	closeErr := reader.Close()
 	if err != nil || closeErr != nil || string(decoded) != "const source = true;" {
 		t.Fatal("command output differs from source", err, closeErr)
+	}
+}
+
+func TestAssetgenCommandRejectsOutputOverrides(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "assetgen")
+	//nolint:gosec // Build only this package into a test-owned temporary executable.
+	build := exec.Command("go", "build", "-o", executable, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build generator: %v\n%s", err, output)
+	}
+
+	for _, destination := range []string{
+		"internal/transport/admin/assets",
+		"internal/transport/admin",
+		"source-alias",
+		"parent-alias",
+	} {
+		t.Run(destination, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "internal/transport/admin/assets"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, name := range []string{"internal/transport/admin/assets/app.js", "internal/transport/admin/handler.go"} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte("preserve original"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			for alias, target := range map[string]string{
+				"source-alias": "internal/transport/admin/assets",
+				"parent-alias": "internal/transport/admin",
+			} {
+				if err := os.Symlink(target, filepath.Join(root, alias)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			//nolint:gosec // Execute this package's generator in a disposable fixture.
+			command := exec.Command(executable, "-output", destination)
+			command.Dir = root
+
+			output, err := command.CombinedOutput()
+
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 2 {
+				t.Fatalf("unsupported output override was accepted: %v\n%s", err, output)
+			}
+
+			for _, name := range []string{"internal/transport/admin/assets/app.js", "internal/transport/admin/handler.go"} {
+				if data, err := fs.ReadFile(os.DirFS(root), name); err != nil || string(data) != "preserve original" {
+					t.Fatal("original files changed", name, err)
+				}
+			}
+		})
 	}
 }
 
