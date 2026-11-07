@@ -4,6 +4,7 @@
 package application
 
 import (
+	"fmt"
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
@@ -193,5 +194,65 @@ func TestChargeAncestorSelectionPreservesBaselineAndExplicitChoices(t *testing.T
 				t.Fatal("ancestor selection lost baseline or explicit choice", charges)
 			}
 		})
+	}
+}
+
+func TestChargeAncestorExclusionsSurviveUnrelatedInvariantFallback(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	money, _ := financial.NewMoney("-0.00100", usd)
+	charge := func(category source.ChargeCategory, field string, components ...source.Charge) source.Charge {
+		t.Helper()
+
+		input := source.ChargeInput{Category: category, Field: field, Components: components}
+		if len(components) == 0 {
+			input.Total = money
+		}
+
+		value, err := source.NewCharge(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+	old := charge(source.RegulatoryFee, "subtotal", charge(source.RegulatoryFee, "z"))
+	baseline := selectionTrade(t, source.Equity, []source.Charge{old}, source.DebtTerms{}).Observation()
+	newValue := charge(source.OtherFee, "subtotal", charge(source.RegulatoryFee, "a"))
+	replacement := selectionTrade(t, source.Equity, []source.Charge{newValue}, source.DebtTerms{}).Observation()
+
+	components := make([]source.Charge, 31)
+	for i := range components {
+		components[i] = charge(source.Fee, fmt.Sprintf("detail%d", i))
+	}
+
+	large := charge(source.Fee, "other", components...)
+	enrichment := selectionTrade(t, source.Equity, []source.Charge{large}, source.DebtTerms{}).Observation()
+	claims := []ActivityClaim{{Key: "replacement", Value: replacement}, {Key: "large", Value: enrichment}}
+	choices := map[string]string{"charge/subtotal/a": "replacement"}
+
+	selected, err := SelectActivityFields(baseline.Fields().Fields, claims, choices)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	terms, err := completeActivitySelection(baseline.Fields(), baseline.Fields().Fields, &selected, choices)
+	if err != nil {
+		t.Fatal("unrelated overflow restored an excluded baseline descendant", err)
+	}
+
+	found := false
+	for _, root := range terms.Trade().Fields().Charges {
+		if root.Field() == "subtotal" {
+			found = true
+
+			if root.Category() != source.OtherFee || len(root.Components()) != 1 ||
+				root.Components()[0].Field() != "a" {
+				t.Fatal("fallback changed the explicit subtree replacement", root)
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("fallback lost the explicit subtree replacement")
 	}
 }

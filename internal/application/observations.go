@@ -697,6 +697,14 @@ func completeActivitySelection(
 
 	groups := groupActivityFields(selected.Fields, choices)
 	retained := slices.Clone(baseline)
+	// Ancestor selection can exclude baseline descendants. Rebuilding around an
+	// unrelated invariant must preserve those exclusions before applying choices.
+	retained = slices.DeleteFunc(retained, func(field source.ActivityField) bool {
+		return field.Name() == source.FieldCharge &&
+			!slices.ContainsFunc(selected.Fields, func(value source.ActivityField) bool {
+				return value.Key() == field.Key()
+			})
+	})
 	for _, group := range groups {
 		if group.chosen {
 			retained = overlayActivityFields(retained, group.fields)
