@@ -240,10 +240,18 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			// Comparisons also retain internally conflicting raw assertions.
 			rows := []string{}
 			for _, f := range chargeFields {
-				c := f.Fields().Charge
+				assertion := f.Fields()
+				c := assertion.Charge
+				categories := make([]string, 0, len(assertion.ChargeParents)+1)
+				for _, parent := range assertion.ChargeParents {
+					categories = append(categories, string(parent.Category()))
+				}
+
+				categories = append(categories, string(c.Category()))
 				rows = append(
 					rows,
-					f.Key()+" ("+string(c.Category())+"): "+c.Total().Amount()+" "+c.Total().Currency().String(),
+					fmt.Sprintf("%s (%s): %s %s", f.Key(), strings.Join(categories, " / "),
+						c.Total().Amount(), c.Total().Currency().String()),
 				)
 			}
 

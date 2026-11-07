@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	"go.trippwill.dev/wake/source"
 )
 
 func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
@@ -124,6 +126,39 @@ func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCandidateComparisonIncludesAncestorChargeCategories(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	amount, _ := financial.NewMoney("-0.00100", usd)
+	leaf, _ := source.NewCharge(source.ChargeInput{Category: source.RegulatoryFee, Field: "taf", Total: amount})
+	account, _ := source.NewReference("synthetic", "account", "", "U1")
+	encode := func(category source.ChargeCategory) []byte {
+		t.Helper()
+
+		parent, err := source.NewCharge(
+			source.ChargeInput{Category: category, Field: "subtotal", Components: []source.Charge{leaf}},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		observation, err := source.NewActivityObservation(source.ActivityObservationInput{
+			Location: "synthetic", Account: account, Fields: source.ChargeFields([]source.Charge{parent}),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := encodeObservation(observation)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return data
+	}
+	renderIdentityComparison(t, "activity", encode(source.RegulatoryFee), encode(source.OtherFee),
+		"charges", "Attached charges", "regulatory-fee / regulatory-fee", "other-fee / regulatory-fee")
 }
 
 func TestDuplicateInstrumentLinkLabelsRetainStableIdentity(t *testing.T) {
