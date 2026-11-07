@@ -82,7 +82,20 @@ func serveAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(data)))
-	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+	http.ServeContent(assetResponseWriter{w}, r, name, time.Time{}, bytes.NewReader(data))
+}
+
+type assetResponseWriter struct{ http.ResponseWriter }
+
+func (w assetResponseWriter) WriteHeader(status int) {
+	if status >= http.StatusBadRequest {
+		w.Header().Del("Content-Length")
+		w.Header().Del("Content-Encoding")
+		w.Header().Del("ETag")
+		w.Header().Set("Cache-Control", "no-store")
+	}
+
+	w.ResponseWriter.WriteHeader(status)
 }
 
 func assetEncoding(values []string) string {

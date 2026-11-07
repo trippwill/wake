@@ -226,3 +226,56 @@ func TestAssetEncodingNegotiation(t *testing.T) {
 		}
 	}
 }
+
+func TestAssetPreconditionFailuresOverHTTP(t *testing.T) {
+	server := httptest.NewServer(assetTestHandler(t))
+	defer server.Close()
+
+	transport := &http.Transport{DisableCompression: true}
+	t.Cleanup(transport.CloseIdleConnections)
+
+	client := &http.Client{Transport: transport}
+	for _, encoding := range []string{"gzip", "identity"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			for _, tc := range []struct {
+				header string
+				value  string
+				status int
+			}{
+				{"If-Match", `"different-asset"`, http.StatusPreconditionFailed},
+				{"Range", "bytes=999999999-", http.StatusRequestedRangeNotSatisfiable},
+			} {
+				t.Run(encoding+"/"+method+"/"+tc.header, func(t *testing.T) {
+					r, err := http.NewRequest(method, server.URL+"/assets/vendor/daisyui-5.5.14/daisyui.css", nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					r.Host = "127.0.0.1:8787"
+					r.Header.Set("Accept-Encoding", encoding)
+					r.Header.Set(tc.header, tc.value)
+
+					response, err := client.Do(r)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					body, readErr := io.ReadAll(response.Body)
+					closeErr := response.Body.Close()
+					if readErr != nil || closeErr != nil {
+						t.Fatal("invalid HTTP response framing", readErr, closeErr)
+					}
+
+					if response.StatusCode != tc.status || response.Header.Get("Content-Encoding") != "" ||
+						response.Header.Get("Cache-Control") != "no-store" || response.Header.Get("ETag") != "" {
+						t.Fatal("asset metadata leaked into error response", response.StatusCode, response.Header)
+					}
+
+					if (method == http.MethodHead || tc.status == http.StatusPreconditionFailed) && len(body) != 0 {
+						t.Fatal("unexpected precondition or HEAD response body", string(body))
+					}
+				})
+			}
+		}
+	}
+}
