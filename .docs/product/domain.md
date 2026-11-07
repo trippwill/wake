@@ -205,9 +205,13 @@ to the reported total, and overlapping subtotal/detail levels are never added to
 
 Compare each monetary assertion by its complete charge-role path. Reordering or
 omitting a role does not establish disagreement. Different amounts, currencies or
-classifications at the same path remain conflicting evidence. Normalized observations
-can retain conflicting assertions at one path; accepted charge trees select a single
-value per role. Known breakdowns and compatible recombinations add no subject support;
+classifications at the same path remain conflicting evidence. Compare ancestor
+classifications even when their reported descendants differ.
+An existing baseline category wins over incompatible automatic descendants. Without
+a baseline category, disputed enrichment stays unknown. An explicit source choice
+selects a coherent subtree and excludes descendants with incompatible ancestor categories.
+Normalized observations can retain conflicting assertions at one path; accepted charge trees
+select a single value per role. Known breakdowns and compatible recombinations add no subject support;
 report appearances remain inspectable independently.
 
 A standalone fee or tax posting uses its cash amount as the charge total. Its

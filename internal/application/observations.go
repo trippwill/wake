@@ -4,6 +4,7 @@
 package application
 
 import (
+	"net/url"
 	"reflect"
 	"slices"
 	"sort"
@@ -276,6 +277,10 @@ func SelectActivityFields(
 		}
 	}
 
+	if err := selectChargeAncestors(&out, baseline, all, choices, conflicts); err != nil {
+		return out, err
+	}
+
 	for key := range conflicts {
 		out.Conflicts = append(out.Conflicts, key)
 	}
@@ -284,6 +289,106 @@ func SelectActivityFields(
 	sort.Slice(out.Baseline, func(i, j int) bool { return out.Baseline[i].Key() < out.Baseline[j].Key() })
 
 	return out, nil
+}
+
+func chargeCategories(field source.ActivityField) map[string]source.ChargeCategory {
+	roles := map[string]source.ChargeCategory{}
+	if field.Name() != source.FieldCharge || !field.Known() {
+		return roles
+	}
+
+	f := field.Fields()
+	path := "charge"
+	for _, role := range append(slices.Clone(f.ChargeParents), f.Charge.Role()) {
+		path += "/" + url.PathEscape(role.Field())
+		roles[path] = role.Category()
+	}
+
+	return roles
+}
+
+// Shared ancestors couple otherwise independent monetary assertions. A missing
+// baseline category stays unknown when enrichments disagree; explicit choices
+// replace incompatible baseline descendants as one coherent subtree.
+func selectChargeAncestors(
+	out *ActivitySelection,
+	baseline map[string]source.ActivityField,
+	all map[string][]activityFieldClaim,
+	choices map[string]string,
+	conflicts map[string]bool,
+) error {
+	categories := map[string]map[source.ChargeCategory]bool{}
+
+	preferred := map[string]source.ChargeCategory{}
+	add := func(field source.ActivityField) {
+		for path, category := range chargeCategories(field) {
+			if categories[path] == nil {
+				categories[path] = map[source.ChargeCategory]bool{}
+			}
+
+			categories[path][category] = true
+		}
+	}
+	for _, field := range baseline {
+		add(field)
+
+		for path, category := range chargeCategories(field) {
+			preferred[path] = category
+		}
+	}
+
+	for _, claims := range all {
+		for _, claim := range claims {
+			add(claim.value)
+		}
+	}
+
+	chosen := map[string]source.ChargeCategory{}
+	for _, field := range out.Fields {
+		if _, ok := choices[field.Key()]; !ok {
+			continue
+		}
+
+		for path, category := range chargeCategories(field) {
+			if old, ok := chosen[path]; ok && old != category {
+				return ErrInvalid
+			}
+
+			chosen[path], preferred[path] = category, category
+		}
+	}
+
+	accept := func(field source.ActivityField) bool {
+		keep := true
+		for path, category := range chargeCategories(field) {
+			if len(categories[path]) > 1 {
+				conflicts[field.Key()] = true
+
+				if preferred[path] != category {
+					keep = false
+				}
+			}
+		}
+
+		return keep
+	}
+	for _, claims := range all {
+		for _, claim := range claims {
+			accept(claim.value)
+		}
+	}
+
+	out.Fields = slices.DeleteFunc(out.Fields, func(field source.ActivityField) bool {
+		if accept(field) {
+			return false
+		}
+
+		delete(out.Sources, field.Key())
+
+		return true
+	})
+
+	return nil
 }
 
 func sameActivityAssertion(a, b source.ActivityField) bool {

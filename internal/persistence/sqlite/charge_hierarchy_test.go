@@ -61,6 +61,92 @@ func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
 	}
 }
 
+func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	money, _ := financial.NewMoney("-0.00100", usd)
+	trade := func(category source.ChargeCategory, field string) source.Trade {
+		t.Helper()
+
+		leaf, _ := source.NewCharge(
+			source.ChargeInput{Category: source.RegulatoryFee, Field: field, Total: money},
+		)
+		parent, _ := source.NewCharge(
+			source.ChargeInput{Category: category, Field: "subtotal", Components: []source.Charge{leaf}},
+		)
+		f := partialTrade(t).Fields()
+		f.Location, f.Charges = field, []source.Charge{parent}
+
+		value, err := source.NewTrade(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+
+	a, b := trade(source.RegulatoryFee, "z"), trade(source.OtherFee, "a")
+	for _, sameBatch := range []bool{true, false} {
+		t.Run(
+			map[bool]string{true: "complete same batch", false: "competing enrichments"}[sameBatch],
+			func(t *testing.T) {
+				s := coverageStore(t)
+				if sameBatch {
+					processPartial(t, s, "competing", a.Observation(), b.Observation())
+				} else {
+					processPartial(t, s, "empty-baseline", partialTrade(t).Observation())
+					processPartial(t, s, "first-enrichment", a.Observation())
+					processPartial(t, s, "second-enrichment", b.Observation())
+				}
+
+				rows, err := s.queries.Executions(t.Context())
+				if err != nil || len(rows) != 1 {
+					t.Fatal("ancestor disagreement prevented complete activity", rows, err)
+				}
+
+				id := rows[0].ID
+
+				charges := realizedActivity(t, s, id).Activity.Charges
+				chosenCategory, chosenRole := "other-fee", "a"
+				if sameBatch {
+					if len(charges) != 1 || len(charges[0].Components) != 1 {
+						t.Fatal("conflicting sibling displaced complete baseline", charges)
+					}
+
+					if charges[0].Category == chosenCategory {
+						chosenCategory, chosenRole = "regulatory-fee", "z"
+					}
+				} else if len(charges) != 0 {
+					t.Fatal("disputed enrichment selected a category by descendant order", charges)
+				}
+
+				form, err := s.CorrectionForm(t.Context(), "activity", id)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				chosen := ""
+				for _, candidate := range form.Candidates {
+					if strings.Contains(candidate.Fields["charges"].Value, "("+chosenCategory+" / ") {
+						chosen = candidate.Value
+					}
+				}
+
+				if chosen == "" {
+					t.Fatal("conflicting source evidence disappeared")
+				}
+
+				retainDecision(t, s, "activity", id, "observation", chosen, "", "set")
+
+				charges = realizedActivity(t, s, id).Activity.Charges
+				if len(charges) != 1 || charges[0].Category != chosenCategory || len(charges[0].Components) != 1 ||
+					charges[0].Components[0].Role != chosenRole {
+					t.Fatal("explicit source choice could not replace incompatible descendants", charges)
+				}
+			},
+		)
+	}
+}
+
 func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 	s := coverageStore(t)
 	base := equityRow("U1", "charge-fill", "100")

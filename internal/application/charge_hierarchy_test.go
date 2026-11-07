@@ -136,3 +136,62 @@ func TestChargeCompatibilityIncludesSharedAncestorCategories(t *testing.T) {
 		})
 	}
 }
+
+func TestChargeAncestorSelectionPreservesBaselineAndExplicitChoices(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	money, _ := financial.NewMoney("-0.00100", usd)
+	makeTrade := func(category source.ChargeCategory, field string) source.Trade {
+		t.Helper()
+
+		leaf, _ := source.NewCharge(
+			source.ChargeInput{Category: source.RegulatoryFee, Field: field, Total: money},
+		)
+		parent, _ := source.NewCharge(
+			source.ChargeInput{Category: category, Field: "subtotal", Components: []source.Charge{leaf}},
+		)
+
+		return selectionTrade(t, source.Equity, []source.Charge{parent}, source.DebtTerms{})
+	}
+	a := makeTrade(source.RegulatoryFee, "z")
+
+	b := makeTrade(source.OtherFee, "a")
+	empty := selectionTrade(t, source.Equity, nil, source.DebtTerms{})
+	claims := []ActivityClaim{{Key: "z", Value: a.Observation()}, {Key: "a", Value: b.Observation()}}
+	for _, test := range []struct {
+		name     string
+		base     source.Trade
+		choices  map[string]string
+		category source.ChargeCategory
+	}{
+		{"disputed enrichment", empty, nil, ""},
+		{"baseline subtree", a, nil, source.RegulatoryFee},
+		{"explicit replacement", a, map[string]string{"charge/subtotal/a": "a"}, source.OtherFee},
+		{"explicit enrichment", empty, map[string]string{"charge/subtotal/z": "z"}, source.RegulatoryFee},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			selected, err := SelectActivityFields(test.base.Observation().Fields().Fields, claims, test.choices)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			terms, err := completeActivitySelection(
+				test.base.Observation().Fields(),
+				test.base.Observation().Fields().Fields,
+				&selected,
+				test.choices,
+			)
+			if err != nil {
+				t.Fatal("ancestor conflict prevented complete activity", err)
+			}
+
+			charges := terms.Trade().Fields().Charges
+			if test.category == "" {
+				if len(charges) != 0 {
+					t.Fatal("disputed enrichment selected by descendant key order", charges)
+				}
+			} else if len(charges) != 1 || charges[0].Category() != test.category || len(charges[0].Components()) != 1 {
+				t.Fatal("ancestor selection lost baseline or explicit choice", charges)
+			}
+		})
+	}
+}
