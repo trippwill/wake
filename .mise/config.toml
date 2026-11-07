@@ -53,6 +53,11 @@ description = "Build all Go packages"
 wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
 run = "CGO_ENABLED=0 go build ./..."
 
+[tasks.'build:release']
+description = "Build a stripped Wake executable at .cache/release/wake"
+wait_for = ["sqlc:gen", "templ:gen", "openapi:gen"]
+run = "CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o .cache/release/wake ./cmd/wake"
+
 [tasks.clean]
 description = "Explicitly clean build artifacts and the test cache"
 run = "go clean -x ./... && go clean -x -i && go clean -x -testcache"

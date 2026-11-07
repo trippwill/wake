@@ -15,6 +15,12 @@ and [.mise/config.toml](../../.mise/config.toml) to discover tasks, dependencies
 and exact tool pins; [go.mod](../../go.mod) owns Go dependencies. Keep the lock file
 aligned with intentional tool updates. Avoid machine-global configuration changes.
 
+Run `mise run build:release` to build the standalone executable at `.cache/release/wake`.
+The release task disables CGo, removes filesystem paths with `-trimpath`, and strips
+symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary size.
+Use an ordinary build when debugger symbols are needed. `mise run build` continues
+to check all Go packages with the existing development build settings.
+
 Use `mise run bin -- help` for application commands. The [README](../../README.md)
 provides a quick setup and usage helper. Keep automation in repository tasks
 rather than app-specific wrappers.
