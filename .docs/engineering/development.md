@@ -136,6 +136,16 @@ inadmissible automatic choices while preserving the source assertions.
 Position binding and publication must work when the containing report adds no instrument
 evidence; underlier assertions remain part of instrument reconciliation.
 
+The structured-charge development format replaces flat total/component labels with
+categorized charge paths and nested accepted breakdowns. Monetary source assertions
+remain independently selectable and contribution checks retain conflicting source
+values without accumulating repeated support. This is an approved warehouse-recreation
+exception: preserve any required old evidence and decisions, stop Wake, preview then
+explicitly confirm `wake reset warehouse` with the same configuration, and reacquire
+history using retained connection settings and credentials. Previous formats, including
+the observation-contribution format, fail closed without modification. There is no
+migration, automatic reset or conversion; the encrypted access format is unchanged.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL

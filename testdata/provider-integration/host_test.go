@@ -707,7 +707,7 @@ func TestConversionExternalClaimRoundTrip(t *testing.T) {
 		t.Fatal(records, err)
 	}
 	terms := observedConversion(t, records[0].Observation).Fields()
-	if terms.Sent.Amount() != "10.1234567890000000001" || terms.Received.Amount() != "" || terms.Charges[0].Money().Currency().String() != "GBP" {
+	if terms.Sent.Amount() != "10.1234567890000000001" || terms.Received.Amount() != "" || terms.Charges[0].Total().Currency().String() != "GBP" || len(terms.Charges[0].Components()) != 1 || terms.Charges[0].Components()[0].Total().Amount() != "" || len(terms.Charges[0].Components()[0].Components()) != 1 {
 		t.Fatal("conversion roles lost", terms)
 	}
 }

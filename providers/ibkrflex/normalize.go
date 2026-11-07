@@ -286,30 +286,9 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 		}
 	}
 
-	for _, entry := range []struct{ field, scope string }{{"commission", "total"}, {"brokerExecutionCommission", "component"}, {"brokerClearingCommission", "component"}, {"thirdPartyExecutionCommission", "component"}, {"thirdPartyClearingCommission", "component"}, {"thirdPartyRegulatoryCommission", "component"}, {"regFINRATradingActivityFee", "component"}, {"regSection31TransactionFee", "component"}, {"regOther", "component"}, {"otherCommission", "component"}, {"tax", "total"}, {"salesTax", "component"}, {"tradeCharge", "total"}, {"otherTax", "component"}} {
-		if row[entry.field] == "" {
-			continue
-		}
-
-		cc := currency
-		if strings.Contains(strings.ToLower(entry.field), "commission") {
-			cc, err = financial.ParseCurrency(row["commissionCurrency"])
-			if err != nil {
-				return source.TradeInput{}, err
-			}
-		}
-
-		amount, e := financial.NewMoney(row[entry.field], cc)
-		if e != nil {
-			return source.TradeInput{}, e
-		}
-
-		charge, e := source.NewCharge(entry.field, entry.scope, amount)
-		if e != nil {
-			return source.TradeInput{}, e
-		}
-
-		fields.Charges = append(fields.Charges, charge)
+	fields.Charges, err = reportedCharges(row, currency)
+	if err != nil {
+		return source.TradeInput{}, err
 	}
 
 	if row["transactionType"] == "BookTrade" {

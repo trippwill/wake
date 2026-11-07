@@ -36,11 +36,11 @@ the primary instrument identity and naming reference.
 | --- | --- |
 | Acquisition | One IBKR account, Confirmation and optional Activity queries sharing the same encrypted token; retained original reports, overlapping windows, restart and catch-up. |
 | Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
-| Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, charges and dates. |
+| Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, categorized charges with nested reported totals/components, and dates. |
 | Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
 | Security transfers | Reported inbound/outbound security movements, separate transfer valuations and aggregate reported costs, counterparty details and exact quantities. Transfer lots remain evidence. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
-| Non-trade cash | Detailed funding, cash transfers, dividends, payments in lieu, broker/bond interest, withholding, fees, sales taxes and explicit adjustments. Separate signed postings, optional instruments, source action groups and explicit tax relationships. |
+| Non-trade cash | Detailed funding, cash transfers, dividends, payments in lieu, broker/bond interest, withholding, fees, sales taxes and explicit adjustments. Separate signed postings, shared fee/tax charge totals, optional instruments, source action groups and explicit tax relationships. |
 | Reported positions | Complete current account sets from Activity Open Positions summary detail, with exact signed quantities, dated contract terms and optional aggregate reported cost basis. Explicit empty/unavailable states; no holdings or lot reconstruction. |
 | Realized P&L | Activity execution-level reported gains/losses and allocated costs linked to existing activity, with exact currencies, separate reporting dates, unknowns and source disagreement. No result calculation or lot reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
@@ -65,9 +65,8 @@ Debt activity retains nominal face quantity and exact reported price without a
 quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
 charges remain separate; no combined settlement total is inferred.
 
-This pre-release identity, debt, activity-result and reported-position format requires explicit
-warehouse recreation
-on upgrade.
+This pre-release identity, debt, activity-result, reported-position and structured-charge
+format requires explicit warehouse recreation on upgrade.
 Older warehouses fail closed and remain untouched; encrypted access seeds retain
 their independent format. Reacquire and confirm source history in the new warehouse.
 Recreating a warehouse discards warehouse-only decisions and evidence; preserve
@@ -103,6 +102,13 @@ group postings without merging their identities; tax references resolve when rel
 postings arrive. Explicit trade-linked bond-interest rows support the trade's accrued
 interest rather than creating another non-trade payment. Missing targets stay pending.
 There is no net-income, cash-balance or lot reconstruction.
+
+Attached trade and FX charges preserve commission totals, nested regulatory subtotals
+and components, with financial categories and source roles. Missing totals remain unknown;
+no component sum, currency conversion or all-in charge is inferred. Standalone fee/tax
+postings expose their existing cash amounts through the same charge view. IBKR's detailed
+cash postings supply totals without a fee-component breakdown; separate linked tax postings
+remain separate. The domain accepts explicitly reported standalone breakdowns.
 
 Retained acquired reports are automatically queued when their provider interpretation
 version changes. Bounded processing preserves identities and decisions, commits each

@@ -119,7 +119,7 @@ CREATE VIEW report_observations AS
    WHEN execution_id IS NULL THEN 'native-review'
    ELSE 'no-additional-contribution' END AS outcome,execution_id
  FROM (
-   SELECT r.artifact_id,r.version,r.location,coalesce(o.rule,'qualified-activity-observations/4') AS rule,
+   SELECT r.artifact_id,r.version,r.location,coalesce(o.rule,'qualified-activity-observations/5') AS rule,
    o.outcome AS retained_outcome,
    r.artifact_id=p.artifact_id AND r.version=p.version AND r.location=p.location AS representative,
    CASE WHEN o.artifact_id IS NOT NULL THEN o.execution_id ELSE

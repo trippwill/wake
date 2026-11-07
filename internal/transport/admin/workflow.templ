@@ -113,18 +113,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd></dl>
 			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
 		}
-		if len(d.Execution.Terms().Fields().Charges)>0 {
-			<section class="wake-table-scroll" aria-label="Attached charges">
-				<table class="table">
-					<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Qualification</th><th scope="col">Amount</th></tr></thead>
-					<tbody>
-						for _,c:=range d.Execution.Terms().Fields().Charges {
-							<tr><td>{ c.Field() }</td><td>{ c.Scope() }</td><td>{ moneyText(c.Money()) }</td></tr>
-						}
-					</tbody>
-				</table>
-			</section>
-		}
+		@ChargesTable(d.Execution.Terms().Fields().Charges)
 	</section>
 	@ReportedRealized(d.Context.Realized)
 	if !d.Execution.Terms().Fields().Instrument.Option().IsZero() || !d.Execution.Terms().Fields().Instrument.Debt().IsZero() {
@@ -773,14 +762,59 @@ templ ChargesTable(rows []source.Charge) {
 	if len(rows)>0 {
 		<section class="wake-table-scroll" aria-label="Attached charges">
 			<table class="table">
-				<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Qualification</th><th scope="col">Amount</th></tr></thead>
+				<caption>Attached charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Category</th><th scope="col">Total</th></tr></thead>
 				<tbody>
-					for _,c:=range rows {
-						<tr><td>{ c.Field() }</td><td>{ c.Scope() }</td><td>{ moneyText(c.Money()) }</td></tr>
-					}
+					@ChargeRows(rows, 0)
 				</tbody>
 			</table>
 		</section>
+	}
+}
+
+templ ChargeRows(rows []source.Charge, depth int) {
+	for _, c := range rows {
+		<tr>
+			<td>{ strings.Repeat("↳ ", depth)+c.Field() }</td>
+			<td>{ string(c.Category()) }</td>
+			<td>
+				if c.Total().Amount()=="" {
+					<span>Total not reported</span>
+				} else {
+					{ moneyText(c.Total()) }
+				}
+			</td>
+		</tr>
+		@ChargeRows(c.Components(), depth+1)
+	}
+}
+
+templ PublishedChargesTable(rows []application.PublishedCharge) {
+	if len(rows)>0 {
+		<section class="wake-table-scroll" aria-label="Charges">
+			<table class="table">
+				<caption>Charges</caption><thead><tr><th scope="col">Role</th><th scope="col">Category</th><th scope="col">Total</th></tr></thead>
+				<tbody>
+					@PublishedChargeRows(rows, 0)
+				</tbody>
+			</table>
+		</section>
+	}
+}
+
+templ PublishedChargeRows(rows []application.PublishedCharge, depth int) {
+	for _, c := range rows {
+		<tr>
+			<td>{ strings.Repeat("↳ ",depth)+c.Role }</td>
+			<td>{ c.Category }</td>
+			<td>
+				if c.Total==nil {
+					<span>Total not reported</span>
+				} else {
+					{ publishedMoney(c.Total) }
+				}
+			</td>
+		</tr>
+		@PublishedChargeRows(c.Components, depth+1)
 	}
 }
 

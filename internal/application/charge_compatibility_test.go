@@ -19,10 +19,10 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 	quantity, _ := financial.NewQuantity("1")
 	price, _ := financial.NewPrice("100", usd)
 	date, _ := financial.ParseDate("2026-10-20")
-	charge := func(field, scope, amount string, currency financial.Currency) source.Charge {
+	charge := func(field, amount string, currency financial.Currency) source.Charge {
 		money, _ := financial.NewMoney(amount, currency)
 
-		value, err := source.NewCharge(field, scope, money)
+		value, err := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: field, Total: money})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -30,8 +30,8 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 		return value
 	}
 
-	total := charge("commission", "total", "-1", usd)
-	component := charge("brokerFee", "component", "-0.25", usd)
+	total := charge("commission", "-1", usd)
+	component := charge("brokerFee", "-0.25", usd)
 	trade := func(t *testing.T, charges []source.Charge) source.Trade {
 		value, err := source.NewTrade(source.TradeInput{
 			Location: "synthetic", Account: account,
@@ -52,8 +52,8 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 		{"enrichment", []source.Charge{total}, []source.Charge{total, component}, true},
 		{"reordered", []source.Charge{total, component}, []source.Charge{component, total}, true},
 		{"unknown", nil, []source.Charge{total}, true},
-		{"changed amount", []source.Charge{total}, []source.Charge{charge("commission", "total", "-2", usd)}, false},
-		{"changed currency", []source.Charge{total}, []source.Charge{charge("commission", "total", "-1", gbp)}, false},
+		{"changed amount", []source.Charge{total}, []source.Charge{charge("commission", "-2", usd)}, false},
+		{"changed currency", []source.Charge{total}, []source.Charge{charge("commission", "-1", gbp)}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if Compatible(trade(t, tc.a), trade(t, tc.b)) != tc.compatible ||
@@ -74,9 +74,15 @@ func TestConversionChargeRolesAllowEnrichment(t *testing.T) {
 	totalMoney, _ := financial.NewMoney("-1", usd)
 	componentMoney, _ := financial.NewMoney("-0.25", gbp)
 	changedMoney, _ := financial.NewMoney("-2", usd)
-	total, _ := source.NewCharge("commission", "total", totalMoney)
-	component, _ := source.NewCharge("brokerFee", "component", componentMoney)
-	changed, _ := source.NewCharge("commission", "total", changedMoney)
+	total, _ := source.NewCharge(
+		source.ChargeInput{Category: source.Fee, Field: "commission", Total: totalMoney},
+	)
+	component, _ := source.NewCharge(
+		source.ChargeInput{Category: source.Fee, Field: "brokerFee", Total: componentMoney},
+	)
+	changed, _ := source.NewCharge(
+		source.ChargeInput{Category: source.Fee, Field: "commission", Total: changedMoney},
+	)
 	makeConversion := func(charges []source.Charge) source.Conversion {
 		value, err := source.NewConversion(
 			source.ConversionInput{

@@ -729,6 +729,33 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("independent socket mirror omitted movements", movements)
 	}
 
+	nestedCharges := false
+	for _, resource := range before.Resources {
+		if resource.Activity == nil {
+			continue
+		}
+
+		for _, charge := range resource.Activity.Charges {
+			if charge.Category != "commission" {
+				continue
+			}
+
+			if charge.Total == nil || len(charge.Components) == 0 {
+				t.Fatal("commission total or components missing from independent mirror", charge)
+			}
+
+			for _, component := range charge.Components {
+				if component.Role == "thirdPartyRegulatoryCommission" && len(component.Components) == 3 {
+					nestedCharges = true
+				}
+			}
+		}
+	}
+
+	if !nestedCharges {
+		t.Fatal("independent mirror omitted nested regulatory charge breakdown")
+	}
+
 	debtCount := 0
 	for _, r := range before.Resources {
 		if r.Activity == nil || r.Activity.Quantity == nil || r.Activity.Quantity.Unit != "nominal" {

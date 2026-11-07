@@ -37,6 +37,7 @@ templ MovementPage(r application.CanonicalResource, name string) {
 				<p>Reported action group: { c.Action.Value }</p>
 			}
 		}
+		@PublishedChargesTable(r.Activity.Charges)
 		if t := r.Activity.Transfer; t != nil {
 			<dl><dt>Direction</dt><dd>{ t.Direction }</dd><dt>Quantity</dt><dd>{ r.Activity.Quantity.Value } { r.Activity.Quantity.Unit }</dd><dt>Transfer method</dt><dd>{ known(text(t.Method)) }</dd><dt>Report date</dt><dd>{ known(text(t.ReportDate)) }</dd><dt>Reported transfer company</dt><dd>{ known(text(t.Company)) }</dd><dt>Delivering broker</dt><dd>{ known(text(t.DeliveringBroker)) }</dd><dt>Counterparty account</dt><dd>{ known(text(t.CounterpartyAccount)) }</dd><dt>Counterparty name</dt><dd>{ known(text(t.CounterpartyName)) }</dd><dt>Transfer price</dt><dd>{ publishedMoney(t.Price) }</dd><dt>Position value</dt><dd>{ publishedMoney(t.PositionValue) }</dd><dt>Reported aggregate cost</dt><dd>{ publishedMoney(t.ReportedCost) }</dd><dt>Reported P&amp;L</dt><dd>{ publishedMoney(t.ReportedPnL) }</dd></dl>
 			<p class="wake-help">Reported transfer valuations and costs do not establish a purchase, transferred lots or a cash payment.</p>

@@ -32,6 +32,7 @@ type CashActivityInput struct {
 	Instrument                                                        Instrument
 	Category                                                          CashCategory
 	Amount                                                            financial.Money
+	ChargeComponents                                                  []Charge
 	Date, ReportDate, SettlementDate, ExDate, AvailableForTradingDate financial.Date
 	At                                                                financial.Timestamp
 	ReportedType, Description, Code                                   string
@@ -43,12 +44,15 @@ type CashActivity struct{ input CashActivityInput }
 
 func NewCashActivity(f CashActivityInput) (CashActivity, error) {
 	if !validCashCategory(f.Category) || f.Amount.Amount() == "" || f.Date.IsZero() ||
-		!validRelationships(f.Relationships) {
+		!validRelationships(
+			f.Relationships,
+		) || !validCharges(f.ChargeComponents) || chargeCount(f.ChargeComponents) >= 32 {
 		return CashActivity{}, ErrInvalidActivity
 	}
 
 	f.EventAliases = slices.Clone(f.EventAliases)
 	f.Relationships = slices.Clone(f.Relationships)
+	f.ChargeComponents = slices.Clone(f.ChargeComponents)
 
 	v := CashActivity{f}
 	if v.Observation().IsZero() {
@@ -80,6 +84,7 @@ func (v CashActivity) Fields() CashActivityInput {
 	f := v.input
 	f.EventAliases = slices.Clone(f.EventAliases)
 	f.Relationships = slices.Clone(f.Relationships)
+	f.ChargeComponents = slices.Clone(f.ChargeComponents)
 
 	return f
 }
@@ -102,6 +107,10 @@ func (v CashActivity) Observation() ActivityObservation {
 		{Name: FieldSourceCode, Text: f.Code},
 		{Name: FieldCashAction, Reference: f.Action},
 	}
+	for _, c := range ChargeFields(f.ChargeComponents) {
+		fields = append(fields, c.Fields())
+	}
+
 	for _, r := range f.Relationships {
 		fields = append(fields, ActivityFieldInput{Name: FieldRelationship, Relationship: r})
 	}
@@ -163,5 +172,34 @@ func (o ActivityObservation) CashActivity() (CashActivity, error) {
 		return CashActivity{}, ErrInvalidActivity
 	}
 
+	var err error
+
+	f.ChargeComponents, err = ChargesFromFields(s.Fields)
+	if err != nil {
+		return CashActivity{}, err
+	}
+
 	return NewCashActivity(f)
+}
+
+// Charges describes fee/tax postings using their authoritative cash amount once.
+// Reclassification retains reported components without inventing a new total.
+func (v CashActivity) Charges() []Charge {
+	f := v.Fields()
+
+	var category ChargeCategory
+	switch f.Category {
+	case CashFee:
+		category = Fee
+	case CashTax:
+		category = Tax
+	default:
+		return f.ChargeComponents
+	}
+
+	value, _ := NewCharge(
+		ChargeInput{Category: category, Field: "cash_amount", Total: f.Amount, Components: f.ChargeComponents},
+	)
+
+	return []Charge{value}
 }

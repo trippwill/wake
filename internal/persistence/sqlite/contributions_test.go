@@ -30,7 +30,9 @@ func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *t
 	usd, _ := financial.ParseCurrency("USD")
 	for _, amount := range []string{"1", "2"} {
 		money, _ := financial.NewMoney(amount, usd)
-		charge, _ := source.NewCharge("reported-fee", "component", money)
+		charge, _ := source.NewCharge(
+			source.ChargeInput{Category: source.Fee, Field: "reported-fee", Total: money},
+		)
 
 		field, err := source.NewActivityField(source.ActivityFieldInput{Name: source.FieldCharge, Charge: charge})
 		if err != nil {
@@ -435,8 +437,8 @@ func TestUnderlierSupportIsIndependentOfParentSupport(t *testing.T) {
 	}
 }
 
-func TestObservationContributionFormatRefusesPreviousWarehouse(t *testing.T) {
-	for _, version := range []string{"wake-partial-activity-1", "wake-reported-positions-4", "wake-observation-contributions-1", "wake-observation-contributions-2"} {
+func TestChargeFormatRefusesPreviousWarehouse(t *testing.T) {
+	for _, version := range []string{"wake-observation-contributions-3", "wake-partial-activity-1", "wake-reported-positions-4", "wake-observation-contributions-1", "wake-observation-contributions-2"} {
 		t.Run(version, func(t *testing.T) {
 			s, path := testStore(t)
 			if _, err := s.db.Exec(`UPDATE store_metadata SET version=?`, version); err != nil {

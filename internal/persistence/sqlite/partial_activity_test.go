@@ -449,7 +449,7 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	subject := full.Fields()
 	usd, _ := financial.ParseCurrency("USD")
 	fee, _ := financial.NewMoney("-0.010000000000000001", usd)
-	charge, _ := source.NewCharge("commission", "total", fee)
+	charge, _ := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: "commission", Total: fee})
 	date, _ := financial.ParseDate("2026-10-23")
 	late := partialObservation(
 		t,
@@ -464,7 +464,7 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	value := realizedActivity(t, s, id)
 	if value.Activity.SettlementDate == nil || *value.Activity.SettlementDate != "2026-10-23" ||
 		len(value.Activity.Charges) != 1 ||
-		value.Activity.Charges[0].Money.Amount != fee.Amount() {
+		value.Activity.Charges[0].Total.Amount != fee.Amount() {
 		t.Fatal("late ordinary fields did not enrich", value)
 	}
 
@@ -488,7 +488,7 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 
 	choice := ""
 	for _, candidate := range form.Candidates {
-		if candidate.Fields["charge/commission/total"].Value == fee.Amount() {
+		if candidate.Fields["charge/commission"].Value == fee.Amount() {
 			choice = candidate.Value
 		}
 	}

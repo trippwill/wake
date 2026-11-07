@@ -57,7 +57,7 @@ func TestSelectionMergesChargeRolesAndRetainsOverflow(t *testing.T) {
 	gbp, _ := financial.ParseCurrency("GBP")
 	money, _ := financial.NewMoney("-1", usd)
 	charge := func(field string) source.Charge {
-		c, e := source.NewCharge(field, "component", money)
+		c, e := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: field, Total: money})
 		if e != nil {
 			t.Fatal(e)
 		}

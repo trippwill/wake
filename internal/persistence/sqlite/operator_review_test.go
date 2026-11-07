@@ -111,7 +111,7 @@ func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 				}
 			}
 
-			for _, want := range []string{"Attached charges", "brokerExecutionCommission", "component", "-0.25000000001 USD", "-0.75000000001 USD", "Different"} {
+			for _, want := range []string{"Attached charges", "commission/brokerExecutionCommission", "broker-execution-fee", "-0.25000000001 USD", "-0.75000000001 USD", "Different"} {
 				if !strings.Contains(rendered.String(), want) {
 					t.Errorf("charge-only comparison hides %q", want)
 				}

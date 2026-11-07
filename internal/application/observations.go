@@ -93,7 +93,7 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 	case source.FieldExecutedAt:
 		return x.Timestamp.Contains(y.Timestamp) || y.Timestamp.Contains(x.Timestamp)
 	case source.FieldCharge:
-		return equalCharge(x.Charge, y.Charge)
+		return slices.Equal(x.ChargeParents, y.ChargeParents) && equalCharge(x.Charge, y.Charge)
 	case source.FieldSent, source.FieldReceived:
 		return equalAmount(x.CurrencyAmount, y.CurrencyAmount) ||
 			x.CurrencyAmount.Currency() == y.CurrencyAmount.Currency() &&

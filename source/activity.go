@@ -80,6 +80,7 @@ type ActivityFieldInput struct {
 	Timestamp      financial.Timestamp
 	CurrencyAmount CurrencyAmount
 	Charge         Charge
+	ChargeParents  []ChargeRole
 	Relationship   Relationship
 	Money          financial.Money
 }
@@ -210,9 +211,15 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 			expected.CurrencyAmount = f.CurrencyAmount
 		}
 	case FieldCharge:
-		valid = f.Unknown || (f.Charge.Field() != "")
+		valid = f.Charge.Field() != "" && f.Charge.Total().Amount() != "" && len(f.Charge.Components()) == 0 &&
+			len(f.ChargeParents) < 32
+		for _, parent := range f.ChargeParents {
+			valid = valid && parent.Field() != ""
+		}
+
 		if !f.Unknown {
 			expected.Charge = f.Charge
+			expected.ChargeParents = f.ChargeParents
 		}
 	case FieldRelationship:
 		valid = f.Unknown || (!f.Relationship.Target().IsZero())
@@ -261,18 +268,26 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		return ActivityField{}, ErrInvalidActivity
 	}
 
+	f.ChargeParents = slices.Clone(f.ChargeParents)
+
 	return ActivityField{f}, nil
 }
-func (f ActivityField) Fields() ActivityFieldInput { return f.input }
-func (f ActivityField) Name() ActivityFieldName    { return f.input.Name }
-func (f ActivityField) Known() bool                { return f.input.Name != "" && !f.input.Unknown }
+
+func (f ActivityField) Fields() ActivityFieldInput {
+	v := f.input
+	v.ChargeParents = slices.Clone(v.ChargeParents)
+
+	return v
+}
+func (f ActivityField) Name() ActivityFieldName { return f.input.Name }
+func (f ActivityField) Known() bool             { return f.input.Name != "" && !f.input.Unknown }
 
 // Key distinguishes independent charge roles and relationships without allowing
 // arbitrary financial property names.
 func (f ActivityField) Key() string {
 	switch f.input.Name {
 	case FieldCharge:
-		return string(f.input.Name) + "/" + f.input.Charge.Field() + "/" + f.input.Charge.Scope()
+		return string(f.input.Name) + "/" + chargePath(f.input.ChargeParents, f.input.Charge.Role())
 	case FieldRelationship:
 		r := f.input.Relationship.Target()
 
@@ -415,8 +430,8 @@ func tradeObservationFields(f TradeInput) []ActivityFieldInput {
 		{Name: FieldNetBillable, Money: f.NetWithBillable},
 		{Name: FieldAccruedInterest, Money: f.AccruedInterest},
 	}
-	for _, c := range f.Charges {
-		fields = append(fields, ActivityFieldInput{Name: FieldCharge, Charge: c})
+	for _, c := range ChargeFields(f.Charges) {
+		fields = append(fields, c.Fields())
 	}
 
 	for _, r := range f.Relationships {
@@ -485,8 +500,8 @@ func (v Conversion) Observation() ActivityObservation {
 		{Name: FieldNet, Money: f.Net},
 		{Name: FieldNetBillable, Money: f.NetWithBillable},
 	}
-	for _, c := range f.Charges {
-		fields = append(fields, ActivityFieldInput{Name: FieldCharge, Charge: c})
+	for _, c := range ChargeFields(f.Charges) {
+		fields = append(fields, c.Fields())
 	}
 
 	return completeObservation(f.Location, f.Account, f.Event, f.EventAliases, f.EventDistinct, fields)
@@ -550,7 +565,9 @@ func activityFieldApplies(family string, name ActivityFieldName) bool {
 		return family == "trade" || family == "lifecycle" || family == "security-transfer" || family == "cash"
 	case FieldQuantity:
 		return family == "trade" || family == "lifecycle" || family == "security-transfer"
-	case FieldGross, FieldProceeds, FieldNet, FieldNetBillable, FieldCharge:
+	case FieldCharge:
+		return family == "trade" || family == "conversion" || family == "cash"
+	case FieldGross, FieldProceeds, FieldNet, FieldNetBillable:
 		return family == "trade" || family == "conversion"
 	}
 

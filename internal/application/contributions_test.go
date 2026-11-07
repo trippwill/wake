@@ -114,7 +114,9 @@ func TestObservationContributionsDeduplicateInternallyConflictingCharges(t *test
 		input.Fields = append([]source.ActivityField{}, base.Fields...)
 		for _, amount := range step.amounts {
 			money, _ := financial.NewMoney(amount, usd)
-			charge, _ := source.NewCharge("reported-fee", "component", money)
+			charge, _ := source.NewCharge(
+				source.ChargeInput{Category: source.Fee, Field: "reported-fee", Total: money},
+			)
 			input.Fields = append(
 				input.Fields,
 				asserted(t, source.ActivityFieldInput{Name: source.FieldCharge, Charge: charge}),
