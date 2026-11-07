@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"flag"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +15,45 @@ import (
 	"testing"
 	"time"
 )
+
+func TestAssetgenCommandUsesSourceDirectoryAndOutputFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	source := "internal/transport/admin/assets"
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(source, "app.js"), []byte("const source = true;"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	previousFlags, previousArgs := flag.CommandLine, os.Args
+	t.Cleanup(func() {
+		flag.CommandLine, os.Args = previousFlags, previousArgs
+	})
+
+	flag.CommandLine = flag.NewFlagSet("assetgen", flag.ContinueOnError)
+	os.Args = []string{"assetgen", "-output", "generated"}
+
+	main()
+
+	data, err := fs.ReadFile(os.DirFS("generated"), "app.js.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if err != nil || closeErr != nil || string(decoded) != "const source = true;" {
+		t.Fatal("command output differs from source", err, closeErr)
+	}
+}
 
 func TestGenerateDeterministicAssetsAndRemoveStaleFiles(t *testing.T) {
 	source, output := t.TempDir(), filepath.Join(t.TempDir(), "generated")
