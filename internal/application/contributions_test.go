@@ -50,6 +50,50 @@ func TestObservationContributionsRetainNewAssertionsAndPrecision(t *testing.T) {
 	}
 }
 
+func TestObservationContributionsRetainAliasesAndDistinctEventAssertions(t *testing.T) {
+	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation().Fields()
+
+	base.Event, _ = source.NewReference("synthetic", "execution", "U1", "fill")
+	alias, _ := source.NewReference("synthetic", "order", "U1", "shared-order")
+	prior := []source.ActivityObservation{}
+	for _, step := range []struct {
+		alias, distinct bool
+		want            ObservationOutcome
+	}{
+		{false, false, ObservationAccepted},
+		{true, false, ObservationEnriched},
+		{true, false, ""},
+		{true, true, ObservationEnriched},
+		{true, true, ""},
+		{false, true, ""},
+	} {
+		input := base
+		input.EventAliases = nil
+		input.EventDistinct = step.distinct
+		if step.alias {
+			input.EventAliases = []source.Reference{alias}
+		}
+
+		value, err := source.NewActivityObservation(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		outcome := ObservationContribution(prior, value)
+		if outcome != step.want {
+			t.Fatalf("alias=%t distinct=%t: got %q, want %q", step.alias, step.distinct, outcome, step.want)
+		}
+
+		if outcome != "" {
+			prior = append(prior, value)
+		}
+	}
+
+	if len(prior) != 3 {
+		t.Fatal("identity assertion history lost or repeated", prior)
+	}
+}
+
 func TestInstrumentContributionsOwnIdentityAndUnderlierRelationship(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "instrument", "", "option")
 	underlier, _ := source.NewReference("synthetic", "instrument", "", "underlier")

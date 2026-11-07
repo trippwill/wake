@@ -304,6 +304,16 @@ func TestPositionChildAssertionsRemainCurrentWithoutHistoricalSupportLinks(t *te
 		t.Fatal("qualification replaced the source child or lost independent history", detail, err)
 	}
 
+	coverageClaims(t, s, "anonymous-still-current", positionSetNormalizer(input))
+
+	detail, err = s.InstrumentDetail(t.Context(), parent)
+	if err != nil || detail.Underlier != child ||
+		len(observationRowsForTest(t, s, "instrument", parent)) != 2 ||
+		len(observationRowsForTest(t, s, "instrument", child)) != 4 ||
+		readPositions(t, s).Status != "available" {
+		t.Fatal("current anonymous assertion lost its qualified source relationship", detail, err)
+	}
+
 	retainDecision(t, s, "instrument", child, "ticker", "", "", "release")
 
 	detail, err = s.InstrumentDetail(t.Context(), child)
