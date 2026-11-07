@@ -141,6 +141,92 @@ func TestObservationContributionsDeduplicateInternallyConflictingCharges(t *test
 	}
 }
 
+func TestObservationContributionsAccumulateCompoundAssertions(t *testing.T) {
+	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "isin")
+	cusip, _ := source.NewIdentifier(source.CUSIP, "000000001", "cusip")
+	for _, variant := range []string{"separate-identifiers", "provider-order"} {
+		t.Run(variant, func(t *testing.T) {
+			base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Fields()
+
+			steps := [][]source.Identifier{{isin}, {cusip}, {isin, cusip}, {cusip, isin}}
+			outcomes := []ObservationOutcome{ObservationAccepted, ObservationEnriched, "", ""}
+			if variant == "provider-order" {
+				steps = steps[2:]
+				steps = append(steps, []source.Identifier{isin, cusip})
+				outcomes = []ObservationOutcome{ObservationAccepted, "", ""}
+			}
+
+			var prior []source.ActivityObservation
+			for index, ids := range steps {
+				f := base.Instrument.Fields()
+				f.Identifiers = ids
+				input := base
+				input.Instrument, _ = source.NewInstrument(f)
+
+				trade, err := source.NewTrade(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				outcome := ObservationContribution(prior, trade.Observation())
+				if outcome != outcomes[index] {
+					t.Fatalf("step %d: got %q, want %q", index, outcome, outcomes[index])
+				}
+
+				if outcome != "" {
+					prior = append(prior, trade.Observation())
+				}
+			}
+		})
+	}
+}
+
+func TestObservationContributionsPreserveCompoundAssertionBoundaries(t *testing.T) {
+	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "isin")
+	other, _ := source.NewIdentifier(source.ISIN, "US0000000002", "isin")
+
+	cusip, _ := source.NewIdentifier(source.CUSIP, "000000001", "cusip")
+	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation().Fields()
+	observation := func(ids []source.Identifier, date string) source.ActivityObservation {
+		f := base
+		i, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Identifiers: ids})
+		d, _ := financial.ParseDate(date)
+		f.Fields = []source.ActivityField{asserted(t, source.ActivityFieldInput{
+			Name: source.FieldInstrument, Instrument: i, ReportedOn: d,
+		})}
+
+		value, err := source.NewActivityObservation(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+	for _, step := range []struct {
+		name  string
+		prior []source.ActivityObservation
+		want  ObservationOutcome
+	}{
+		{"same-date", []source.ActivityObservation{
+			observation([]source.Identifier{isin}, "2026-10-20"),
+			observation([]source.Identifier{cusip}, "2026-10-20"),
+		}, ""},
+		{"different-date", []source.ActivityObservation{
+			observation([]source.Identifier{isin}, "2026-10-20"),
+			observation([]source.Identifier{cusip}, "2026-10-21"),
+		}, ObservationEnriched},
+		{"distinct-conflict", []source.ActivityObservation{
+			observation([]source.Identifier{isin}, "2026-10-20"),
+			observation([]source.Identifier{other, cusip}, "2026-10-20"),
+		}, ObservationTermsConflict},
+	} {
+		got := ObservationContribution(step.prior, observation([]source.Identifier{isin, cusip}, "2026-10-20"))
+		if got != step.want {
+			t.Fatal(step.name, got, step.want)
+		}
+	}
+}
+
 func TestInstrumentContributionsOwnIdentityAndUnderlierRelationship(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "instrument", "", "option")
 	underlier, _ := source.NewReference("synthetic", "instrument", "", "underlier")

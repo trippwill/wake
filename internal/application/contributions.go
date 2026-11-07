@@ -62,40 +62,66 @@ func observationCovered(prior []source.ActivityObservation, incoming source.Acti
 	}
 
 	for _, field := range f.Fields {
-		covered := false
+		var previous []source.ActivityField
 		for _, old := range prior {
-			for _, previous := range old.Fields().Fields {
-				if previous.Key() != field.Key() ||
-					!field.Fields().ReportedOn.IsZero() && previous.Fields().ReportedOn != field.Fields().ReportedOn {
+			for _, value := range old.Fields().Fields {
+				if value.Key() != field.Key() ||
+					!field.Fields().ReportedOn.IsZero() && value.Fields().ReportedOn != field.Fields().ReportedOn {
 					continue
 				}
 
-				if !field.Known() {
-					covered = covered || !previous.Known()
-					continue
-				}
-
-				if !previous.Known() || !CompatibleActivityFields(previous, field) {
-					continue
-				}
-
-				value, err := enrichActivityField(previous, field)
-				if err != nil {
-					continue
-				}
-
-				x, y := previous.Fields(), value.Fields()
-				x.ReportedOn, y.ReportedOn = financial.Date{}, financial.Date{}
-				covered = covered || reflect.DeepEqual(x, y)
+				previous = append(previous, value)
 			}
 		}
 
-		if !covered {
+		if !activityFieldsCover(previous, field) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func activityFieldsCover(prior []source.ActivityField, incoming source.ActivityField) bool {
+	if !incoming.Known() {
+		return slices.ContainsFunc(prior, func(old source.ActivityField) bool { return !old.Known() })
+	}
+
+	var histories []source.ActivityField
+	for _, old := range prior {
+		if !old.Known() || !CompatibleActivityFields(old, incoming) {
+			continue
+		}
+		// Normalize comparison values without changing retained source order.
+		value, err := enrichActivityField(old, old)
+		if err != nil {
+			continue
+		}
+
+		for index, previous := range histories {
+			if CompatibleActivityFields(previous, value) {
+				if merged, e := enrichActivityField(previous, value); e == nil {
+					histories[index] = merged
+				}
+			}
+		}
+
+		histories = append(histories, value)
+		for _, previous := range histories {
+			value, err = enrichActivityField(previous, incoming)
+			if err != nil {
+				continue
+			}
+
+			x, y := previous.Fields(), value.Fields()
+			x.ReportedOn, y.ReportedOn = financial.Date{}, financial.Date{}
+			if reflect.DeepEqual(x, y) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // InstrumentContribution excludes activity terms and the descriptive details of

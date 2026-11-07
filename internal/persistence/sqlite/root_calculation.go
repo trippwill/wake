@@ -401,19 +401,25 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 	return targets, nil
 }
 
+type underlierLink struct {
+	id string
+	// Invalid targets clear a previous automatic choice even during conflict.
+	invalid bool
+}
+
 func (p *rootPhase) link(
 	ctx context.Context,
 	parent string,
 	u source.Instrument,
 	targets map[string]underlierTarget,
-) (string, error) {
+) (underlierLink, error) {
 	if u.Kind() == "" {
-		return "", nil
+		return underlierLink{}, nil
 	}
 
 	selected, err := p.automatic(ctx, parent)
 	if err != nil {
-		return "", err
+		return underlierLink{}, err
 	}
 
 	var target underlierTarget
@@ -424,12 +430,12 @@ func (p *rootPhase) link(
 		if !ok {
 			candidate, e := p.q.InstrumentBySource(ctx, referenceKey(u.Reference()))
 			if e != nil {
-				return "", e
+				return underlierLink{}, e
 			}
 
 			root, e := p.load(ctx, candidate.ID)
 			if e != nil {
-				return "", e
+				return underlierLink{}, e
 			}
 
 			target = underlierTarget{
@@ -441,33 +447,42 @@ func (p *rootPhase) link(
 	}
 
 	if target.id == parent || selected.Valid && selected.String == parent {
-		return "", nil
+		return underlierLink{invalid: true}, nil
+	}
+
+	if target.id != "" &&
+		!application.CompatibleInstrumentKind(source.UnknownInstrument, target.reported.Kind()) {
+		return underlierLink{invalid: true}, nil
 	}
 
 	if selected.Valid {
 		previous, e := p.load(ctx, selected.String)
 		if e != nil {
-			return "", e
+			return underlierLink{}, e
+		}
+
+		if !application.CompatibleInstrumentKind(source.UnknownInstrument, previous.calculation.Reported.Kind()) {
+			return underlierLink{invalid: true}, nil
 		}
 
 		if previous.calculation.Conflict || target.conflict ||
 			!application.CompatibleInstrument(previous.reported, u) ||
 			target.id != "" && !application.CompatibleInstrument(previous.reported, target.reported) {
-			return selected.String, nil
+			return underlierLink{id: selected.String}, nil
 		}
 
 		if target.id == "" {
-			return selected.String, nil
+			return underlierLink{id: selected.String}, nil
 		}
 	}
 
 	if target.id != "" {
-		return target.id, nil
+		return underlierLink{id: target.id}, nil
 	}
 
 	id, _, err := acceptInstrument(ctx, p.q, "retained", parent+"/underlier", u, "")
 
-	return id, err
+	return underlierLink{id: id}, err
 }
 
 // Bind source occurrences independently of operator choices. Qualified subject
@@ -551,10 +566,12 @@ func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents
 			return e
 		}
 
-		links[parent], e = phase.link(ctx, parent, root.calculation.Underlier, targets)
+		link, e := phase.link(ctx, parent, root.calculation.Underlier, targets)
 		if e != nil {
 			return e
 		}
+
+		links[parent] = link.id
 	}
 
 	for _, parent := range parents {
@@ -648,7 +665,7 @@ func projectRoots(ctx context.Context, q *sqlc.Queries, ids []string) error {
 
 	phase := newRootPhase(q)
 	results := make(map[string]application.RootCalculation, len(ids))
-	links := make(map[string]string, len(ids))
+	links := make(map[string]underlierLink, len(ids))
 	for _, id := range ids {
 		result, err := phase.calculate(ctx, id)
 		if err != nil {
@@ -730,7 +747,8 @@ func enrichRootUnderlier(result, child application.RootCalculation) (application
 		return result, nil
 	}
 
-	compatible := application.CompatibleInstrument(result.Underlier, child.Reported)
+	compatible := application.CompatibleInstrumentKind(source.UnknownInstrument, child.Reported.Kind()) &&
+		application.CompatibleInstrument(result.Underlier, child.Reported)
 	result.Conflict = result.Conflict || child.Conflict || !compatible
 	if child.Conflict || !compatible {
 		return result, nil

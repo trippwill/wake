@@ -550,6 +550,91 @@ func underlierTemplate(t *testing.T) source.Trade {
 	return view.Executions[0].Terms()
 }
 
+func TestInadmissibleUnderlierFamilyRetainsConflictWithoutBlockingReports(t *testing.T) {
+	base := underlierTemplate(t)
+	for _, family := range []source.InstrumentKind{source.Debt, source.Option} {
+		for _, order := range []string{"target-first", "parent-first"} {
+			for _, kind := range []string{"activity", "position"} {
+				t.Run(string(family)+"/"+order+"/"+kind, func(t *testing.T) {
+					s := coverageStore(t)
+					input := base.Fields()
+					parent := input.Instrument.Fields()
+					option := parent.Option.Fields()
+					child := option.Underlier.Fields()
+					child.Kind = source.UnknownInstrument
+					option.Underlier, _ = source.NewInstrument(child)
+					parent.Option, _ = source.NewOptionTerms(option)
+					input.Instrument, _ = source.NewInstrument(parent)
+					input.EventAliases = nil
+
+					parentTrade, err := source.NewTrade(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					target := base.Fields()
+					target.Event, _ = source.NewReference("synthetic", "execution", "U1", "inadmissible-target")
+					target.Location = "inadmissible-target"
+					target.EventAliases = nil
+
+					f := source.InstrumentInput{Kind: family, Reference: child.Reference}
+					if family == source.Option {
+						f.Option, _ = source.NewOptionTerms(source.OptionInput{Right: source.Call})
+					}
+
+					target.Instrument, _ = source.NewInstrument(f)
+
+					targetTrade, err := source.NewTrade(target)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					retainParent := func() {
+						if kind == "activity" {
+							retainUnderlierTrades(t, s, "inadmissible-parent", parentTrade)
+						} else {
+							coverageClaims(
+								t,
+								s,
+								"inadmissible-parent",
+								positionSetNormalizer(positionInput(t, input.Instrument)),
+							)
+						}
+					}
+					if order == "parent-first" {
+						retainParent()
+					}
+
+					retainUnderlierTrades(t, s, "inadmissible-target", targetTrade)
+
+					if order == "target-first" {
+						retainParent()
+					}
+
+					root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(parent.Reference))
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					detail, err := s.InstrumentDetail(t.Context(), root.ID)
+					if err != nil || detail.Instrument.Status() != "conflict" || detail.Underlier != "" {
+						t.Fatal("inadmissible family was accepted or conflict lost", detail, err)
+					}
+
+					selection, err := s.queries.InstrumentSelection(t.Context(), root.ID)
+					if err != nil || selection.UnderlierID.Valid {
+						t.Fatal("inadmissible underlier selected", selection, err)
+					}
+
+					if err = s.Process(t.Context(), "inadmissible-parent", "synthetic-claims/1"); err != nil {
+						t.Fatal("report retry failed", err)
+					}
+				})
+			}
+		}
+	}
+}
+
 func underlierTrade(t *testing.T, base source.Trade, event, isin string, qualified bool) source.Trade {
 	t.Helper()
 

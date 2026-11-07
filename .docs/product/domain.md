@@ -73,7 +73,8 @@ financial terms alone never authorize combination.
 An equity option is one specific contract, linked to its equity/fund underlier.
 The underlier's identifier does not identify the option. If a source uses one qualified
 identity for both, preserve the conflicting assertions without establishing a self-underlier
-relationship. Contract adjustments can
+relationship. A reference resolving to debt or another option likewise remains a source
+conflict, without selecting that instrument as the equity option's underlier. Contract adjustments can
 preserve identity while changing terms. A premium multiplier is not a deliverable;
 an unknown deliverable must not become an assumed 100 shares. Historical activity
 retains the terms used to interpret it. Instruments describe identity; option and
@@ -130,7 +131,9 @@ Supporting observation links belong independently to each activity and instrumen
 nested underliers. Keep the first supporting observation, later source information and
 distinct conflicting assertions. Repeated support, including an already retained conflict,
 adds no link. An observation can itself contain conflicting assertions; equivalent repeats
-still add no support. A new activity can need an observation without adding information about
+still add no support. Combining previously retained compatible assertions or changing identifier
+order adds no information. Preserve reporting-date and conflict boundaries when comparing those
+assertions. A new activity can need an observation without adding information about
 its instrument. A reported position keeps its association with the held instrument independently
 of whether its report adds instrument support. Instrument support concerns its identity and
 underlier relationship; dated financial terms belong to the activity. Child descriptions and

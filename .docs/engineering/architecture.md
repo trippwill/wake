@@ -98,12 +98,19 @@ representative is no longer current. Source underlier binding consumes child ass
 through the automatic instrument relationship, including anonymous children, before operator
 choices. Family disagreements remain conflicts; child enrichment cannot attach option fields
 to a different instrument family. A source relationship resolving back to its parent remains
-a source conflict, without a self-edge or automatic self-selection.
+a source conflict, without a self-edge or automatic self-selection. Underlier enrichment and
+automatic selection enforce the option's admissible instrument families; a conflicting family
+keeps its source evidence and clears an inadmissible automatic choice.
 
 Report inspection reads processed normalized appearances separately from subject support.
-Related activity context is derived from retained source references using the same
+Related activity context in report and instrument support views is derived from retained source
+references using the same
 distinct-event and ambiguity rules as reconciliation; inspection creates no replacement
 evidence links or financial publications.
+
+Compound contribution comparisons accumulate compatible historical assertions within their
+reporting-date and conflict boundaries. Comparison values normalize identifier order while
+retained source records keep their original order.
 
 Small typed field policies own applicable activity/instrument families, scalar value
 types, optionality and bounds. Domain constructors own parsing/application invariants;

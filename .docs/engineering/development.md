@@ -130,6 +130,9 @@ of supporting-link counts; a repeated appearance can show no additional
 contribution while still identifying its related activity. Disposable-store verification covers
 position/activity processing order, occurrence retirement, unchanged and partial
 reinterpretations, reappearing assertions, child enrichment/conflicts, rollback and restart.
+Contribution checks also cover identifier order, compatible compound recombinations and
+reporting-date boundaries; underlier family checks cover both processing orders and clearing
+inadmissible automatic choices while preserving the source assertions.
 Position binding and publication must work when the containing report adds no instrument
 evidence; underlier assertions remain part of instrument reconciliation.
 

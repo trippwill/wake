@@ -132,7 +132,9 @@ CREATE VIEW report_observations AS
 CREATE VIEW admin_observations AS
  SELECT 'activity' AS subject_kind,execution_id AS subject_id,artifact_id,version,location,rule,outcome,execution_id FROM execution_observations WHERE execution_id IS NOT NULL
  UNION ALL
- SELECT 'instrument',i.instrument_id,p.artifact_id,p.version,p.location,i.rule,i.outcome,o.execution_id
+ SELECT 'instrument',i.instrument_id,p.artifact_id,p.version,p.location,i.rule,i.outcome,
+ CASE WHEN o.artifact_id IS NOT NULL THEN o.execution_id ELSE
+   (SELECT t.execution_id FROM report_activity_targets t WHERE t.claim_id=i.claim_id AND t.ordinal=i.ordinal) END
  FROM instrument_claims i JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal
  LEFT JOIN execution_observations o ON o.artifact_id=p.artifact_id AND o.version=p.version AND o.location=p.location
  UNION ALL

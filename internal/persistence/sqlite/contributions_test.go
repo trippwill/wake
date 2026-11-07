@@ -105,6 +105,54 @@ func TestActivitiesDoNotAccumulateInstrumentSupport(t *testing.T) {
 	checkActivityContributionVolume(t, 64)
 }
 
+func TestCompoundInstrumentAssertionsDoNotAccumulateActivitySupport(t *testing.T) {
+	s := coverageStore(t)
+	base := partialTrade(t).Fields()
+
+	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "isin")
+	cusip, _ := source.NewIdentifier(source.CUSIP, "000000001", "cusip")
+
+	var baseline application.FinancialSnapshot
+	for index, ids := range [][]source.Identifier{{isin}, {cusip}, {isin, cusip}, {cusip, isin}, {isin, cusip}} {
+		f := base.Instrument.Fields()
+		f.Identifiers = ids
+		input := base
+		input.Instrument, _ = source.NewInstrument(f)
+
+		trade, err := source.NewTrade(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		report := fmt.Sprint("compound-", index)
+		processPartial(t, s, report, trade.Observation())
+
+		if index == 1 {
+			baseline, err = snapshotState(t.Context(), s)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if index < 2 {
+			continue
+		}
+
+		if tableCount(t, s, "execution_observations") != 2 || tableCount(t, s, "instrument_claims") != 2 {
+			t.Fatal("recombined identifiers added supporting links")
+		}
+
+		if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
+			t.Fatal("recombined identifiers published", changes.Items)
+		}
+
+		if rows := observationRowsForTest(t, s, "artifact", report); len(rows) != 1 ||
+			rows[0].ActivityID == "" || rows[0].Outcome != application.ObservationNoContribution {
+			t.Fatal("recombined source appearance was lost", rows)
+		}
+	}
+}
+
 func checkActivityContributionVolume(t *testing.T, count int) {
 	t.Helper()
 	s := coverageStore(t)

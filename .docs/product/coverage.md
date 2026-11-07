@@ -130,20 +130,24 @@ repeat-acquisition proofs cover receipts without redundant bodies or normalizati
 pre-correction claim comparison, duplicate-row multiplicity and retention of disputed
 variants. Subject support retains the first observation, compatible new information and
 distinct conflicts independently for activities, instruments and nested underliers. Repeated
-claims add no supporting links or publication changes. Different activities with unchanged
+claims, identifier reordering and compatible recombinations add no supporting links or publication
+changes. Different activities with unchanged
 instrument facts add no instrument support; their own contributions and publications remain
 independent. Position bindings likewise survive discarded instrument support. Holding
 quantities and dates can change independently of instrument evidence, and active position
 interpretations remain usable when their first instrument-supporting appearance belongs to an
 earlier interpretation. Report pages preserve processed normalized appearances, unselected and
 pending observations, duplicate locations and interpretation versions. Related activity
-context remains available for discarded support without adding persistent links.
+context remains available in report and instrument support views for discarded activity support
+without adding persistent links.
 Anonymous-underlier enrichment and disputes propagate through instrument relationships
 independently of parent support and operator selections. Interpretation replacement changes
 current eligibility without deleting contribution history or multiplying repeated support.
 Instrument-family disputes preserve evidence without attaching option fields to another
 family. Self-referential reported underliers preserve conflicts without blocking report
-processing or selecting a cyclic relationship. Raw report retention alone does not establish
+processing or selecting a cyclic relationship. References resolving to inadmissible underlier
+families remain source conflicts and cannot establish automatic underlier choices. Raw report
+retention alone does not establish
 financial coverage. Private reports and
 credentials are not repository fixtures.
 

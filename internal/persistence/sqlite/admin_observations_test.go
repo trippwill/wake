@@ -167,6 +167,34 @@ func TestUnderlierObservationPageUsesOriginalClaimBinding(t *testing.T) {
 	}
 }
 
+func TestInstrumentContributionKeepsRelatedActivityAfterActivitySupportDiscarded(t *testing.T) {
+	s := coverageStore(t)
+	row := equityRow("U1", "instrument-name", "100")
+	coverageReport(t, s, "original-name", row)
+	coverageReport(t, s, "changed-name", strings.Replace(row, `description="`, `description="Changed `, 1))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	activity := view.Executions[0]
+	if rows := observationRowsForTest(t, s, "activity", activity.ID()); len(rows) != 1 {
+		t.Fatal("name change added activity support", rows)
+	}
+
+	rows := observationRowsForTest(t, s, "instrument", activity.Instrument())
+	if len(rows) != 2 {
+		t.Fatal("instrument name assertion was lost", rows)
+	}
+
+	for _, item := range rows {
+		if item.ActivityID != activity.ID() {
+			t.Fatal("discarded activity support lost instrument context", item)
+		}
+	}
+}
+
 func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
 	store := coverageStore(t)
 
