@@ -106,7 +106,8 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 }
 
 func CompatibleObservations(a, b source.ActivityObservation) bool {
-	if a.Fields().Account != b.Fields().Account {
+	if a.Fields().Account != b.Fields().Account ||
+		!compatibleChargeAssertions(a.Fields().Fields, b.Fields().Fields) {
 		return false
 	}
 
@@ -128,6 +129,40 @@ func CompatibleObservations(a, b source.ActivityObservation) bool {
 	for _, f := range b.Fields().Fields {
 		if old, ok := values[f.Key()]; ok && !CompatibleActivityFields(old, f) {
 			return false
+		}
+	}
+
+	return true
+}
+
+func compatibleChargeAssertions(a, b []source.ActivityField) bool {
+	for _, left := range a {
+		if left.Name() != source.FieldCharge || !left.Known() {
+			continue
+		}
+
+		for _, right := range b {
+			if right.Name() != source.FieldCharge || !right.Known() {
+				continue
+			}
+
+			x, y := left.Fields(), right.Fields()
+
+			leftPath := append(slices.Clone(x.ChargeParents), x.Charge.Role())
+			rightPath := append(slices.Clone(y.ChargeParents), y.Charge.Role())
+			for i := 0; i < min(len(leftPath), len(rightPath)); i++ {
+				if leftPath[i].Field() != rightPath[i].Field() {
+					break
+				}
+
+				if leftPath[i].Category() != rightPath[i].Category() {
+					return false
+				}
+			}
+
+			if left.Key() == right.Key() && !CompatibleActivityFields(left, right) {
+				return false
+			}
 		}
 	}
 

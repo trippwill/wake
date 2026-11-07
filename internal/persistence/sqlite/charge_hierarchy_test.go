@@ -9,9 +9,57 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/source"
 )
+
+func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
+	s := coverageStore(t)
+	usd, _ := financial.ParseCurrency("USD")
+	money, _ := financial.NewMoney("-0.00100", usd)
+	trade := func(category source.ChargeCategory, field string) source.Trade {
+		t.Helper()
+
+		leaf, _ := source.NewCharge(
+			source.ChargeInput{Category: source.RegulatoryFee, Field: field, Total: money},
+		)
+		parent, _ := source.NewCharge(
+			source.ChargeInput{Category: category, Field: "subtotal", Components: []source.Charge{leaf}},
+		)
+
+		f := partialTrade(t).Fields()
+		f.Charges = []source.Charge{parent}
+		if field == "b" {
+			alias, _ := source.NewReference("fixture", "execution", "U1", "conflicting-alias")
+			f.EventAliases = []source.Reference{alias}
+			relationship, _ := source.NewRelationship(source.RelatedTradeLink, alias)
+			f.Relationships = []source.Relationship{relationship}
+		}
+
+		value, err := source.NewTrade(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+	processPartial(t, s, "charge-baseline", trade(source.RegulatoryFee, "a").Observation())
+	links := tableCount(t, s, "event_links")
+	processPartial(t, s, "charge-conflict", trade(source.OtherFee, "b").Observation())
+
+	if tableCount(t, s, "event_links") != links || tableCount(t, s, "activity_relationships") != 0 {
+		t.Fatal("incompatible ancestor categories admitted aliases or relationships")
+	}
+
+	appearances := observationRowsForTest(t, s, "artifact", "charge-conflict")
+	if !slices.ContainsFunc(appearances, func(row application.Observation) bool {
+		return row.Outcome == application.ObservationTermsConflict
+	}) {
+		t.Fatal("ancestor category disagreement was not retained as a conflict", appearances)
+	}
+}
 
 func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 	s := coverageStore(t)

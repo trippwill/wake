@@ -97,3 +97,42 @@ func TestChargeHierarchyContributionsAndIndependentSelection(t *testing.T) {
 		t.Fatal("whole-trade enrichment lost hierarchy", merged, conflict, err)
 	}
 }
+
+func TestChargeCompatibilityIncludesSharedAncestorCategories(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	money, _ := financial.NewMoney("-0.00100", usd)
+
+	charge := func(category source.ChargeCategory, field string, child ...source.Charge) source.Charge {
+		t.Helper()
+
+		input := source.ChargeInput{Category: category, Field: field, Components: child}
+		if len(child) == 0 {
+			input.Total = money
+		}
+
+		value, err := source.NewCharge(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+	left := charge(source.RegulatoryFee, "subtotal", charge(source.RegulatoryFee, "a"))
+	base := selectionTrade(t, source.Equity, []source.Charge{left}, source.DebtTerms{})
+	for _, category := range []source.ChargeCategory{source.RegulatoryFee, source.OtherFee} {
+		t.Run(string(category), func(t *testing.T) {
+			right := charge(category, "subtotal", charge(source.RegulatoryFee, "b"))
+
+			incoming := selectionTrade(t, source.Equity, []source.Charge{right}, source.DebtTerms{})
+			want := category == source.RegulatoryFee
+			if Compatible(base, incoming) != want || Compatible(incoming, base) != want {
+				t.Error("trade compatibility ignored shared ancestor categories")
+			}
+
+			if CompatibleObservations(base.Observation(), incoming.Observation()) != want ||
+				CompatibleObservations(incoming.Observation(), base.Observation()) != want {
+				t.Error("observation compatibility ignored shared ancestor categories")
+			}
+		})
+	}
+}

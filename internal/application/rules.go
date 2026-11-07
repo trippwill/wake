@@ -221,16 +221,7 @@ func equalDeliverable(a, b source.Deliverable) bool {
 }
 
 func compatibleCharges(a, b []source.Charge) bool {
-	left, right := source.ChargeFields(a), source.ChargeFields(b)
-	for _, x := range left {
-		for _, y := range right {
-			if x.Key() == y.Key() && !CompatibleActivityFields(x, y) {
-				return false
-			}
-		}
-	}
-
-	return true
+	return compatibleChargeAssertions(source.ChargeFields(a), source.ChargeFields(b))
 }
 
 func compatibleDeliverables(a, b []source.Deliverable) bool {
