@@ -71,7 +71,9 @@ active choices keep entries separate until review. Matching names, tickers or
 financial terms alone never authorize combination.
 
 An equity option is one specific contract, linked to its equity/fund underlier.
-The underlier's identifier does not identify the option. Contract adjustments can
+The underlier's identifier does not identify the option. If a source uses one qualified
+identity for both, preserve the conflicting assertions without establishing a self-underlier
+relationship. Contract adjustments can
 preserve identity while changing terms. A premium multiplier is not a deliverable;
 an unknown deliverable must not become an assumed 100 shares. Historical activity
 retains the terms used to interpret it. Instruments describe identity; option and

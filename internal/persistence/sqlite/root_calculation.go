@@ -440,6 +440,10 @@ func (p *rootPhase) link(
 		}
 	}
 
+	if target.id == parent || selected.Valid && selected.String == parent {
+		return "", nil
+	}
+
 	if selected.Valid {
 		previous, e := p.load(ctx, selected.String)
 		if e != nil {
@@ -596,10 +600,12 @@ func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents
 			}
 
 			for id := range ids {
-				if e = q.PutInstrumentUnderlier(ctx, sqlc.PutInstrumentUnderlierParams{
-					ParentID: parent, UnderlierID: id,
-				}); e != nil {
-					return e
+				if id != parent {
+					if e = q.PutInstrumentUnderlier(ctx, sqlc.PutInstrumentUnderlierParams{
+						ParentID: parent, UnderlierID: id,
+					}); e != nil {
+						return e
+					}
 				}
 
 				if e = q.PutInstrumentClaim(
@@ -694,6 +700,7 @@ func (p *rootPhase) calculate(ctx context.Context, id string) (application.RootC
 		}
 
 		if candidate.ID == id {
+			result.Conflict = result.Conflict || reported.Reference() == result.Underlier.Reference()
 			continue
 		}
 

@@ -142,7 +142,9 @@ Anonymous-underlier enrichment and disputes propagate through instrument relatio
 independently of parent support and operator selections. Interpretation replacement changes
 current eligibility without deleting contribution history or multiplying repeated support.
 Instrument-family disputes preserve evidence without attaching option fields to another
-family. Raw report retention alone does not establish financial coverage. Private reports and
+family. Self-referential reported underliers preserve conflicts without blocking report
+processing or selecting a cyclic relationship. Raw report retention alone does not establish
+financial coverage. Private reports and
 credentials are not repository fixtures.
 
 ## Canonical publishing

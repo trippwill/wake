@@ -97,7 +97,8 @@ assertions; calculation reads current eligible assertions, even when their histo
 representative is no longer current. Source underlier binding consumes child assertions
 through the automatic instrument relationship, including anonymous children, before operator
 choices. Family disagreements remain conflicts; child enrichment cannot attach option fields
-to a different instrument family.
+to a different instrument family. A source relationship resolving back to its parent remains
+a source conflict, without a self-edge or automatic self-selection.
 
 Report inspection reads processed normalized appearances separately from subject support.
 Related activity context is derived from retained source references using the same
