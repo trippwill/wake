@@ -486,6 +486,10 @@ func (w *Workflow) InstrumentList(ctx context.Context, query ListQuery) (Instrum
 	return w.store.InstrumentList(ctx, query)
 }
 
+func (w *Workflow) PositionsList(ctx context.Context, query ListQuery) (PositionsList, error) {
+	return w.store.PositionsList(ctx, query)
+}
+
 func (w *Workflow) ObservationList(
 	ctx context.Context,
 	kind, id string,

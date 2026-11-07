@@ -12,10 +12,11 @@ import (
 )
 
 type gridCell struct {
-	Text string `json:"text"`
-	Href string `json:"href,omitempty"`
-	Note string `json:"note,omitempty"`
-	Tone string `json:"tone,omitempty"`
+	Text    string     `json:"text"`
+	Href    string     `json:"href,omitempty"`
+	Note    string     `json:"note,omitempty"`
+	Tone    string     `json:"tone,omitempty"`
+	Details []gridFact `json:"details,omitempty"`
 }
 type activityGridRow struct {
 	ID        string   `json:"id"`
@@ -44,10 +45,11 @@ type observationGridRow struct {
 	Activity gridCell `json:"activity"`
 }
 type gridPage[T any] struct {
-	Data     []T   `json:"data"`
-	LastPage int64 `json:"last_page"`
-	LastRow  int64 `json:"last_row"`
-	Total    int64 `json:"total"`
+	Data      []T               `json:"data"`
+	LastPage  int64             `json:"last_page"`
+	LastRow   int64             `json:"last_row"`
+	Total     int64             `json:"total"`
+	Positions *positionGridMeta `json:"positions,omitempty"`
 }
 
 func gridResult[T any](rows []T, info application.PageInfo) gridPage[T] {
@@ -183,7 +185,7 @@ func registerGridRoutes(
 	gate func(string, func(http.ResponseWriter, *http.Request, string)),
 	workflow *application.Workflow,
 ) {
-	for _, kind := range []string{"activity", "instruments", "observations"} {
+	for _, kind := range []string{"activity", "instruments", "observations", "positions"} {
 		gate("GET /grids/"+kind, func(w http.ResponseWriter, r *http.Request, _ string) {
 			r = pageRequest(r)
 
@@ -196,6 +198,10 @@ func registerGridRoutes(
 				scope = application.ObservationScope
 			}
 
+			if kind == "positions" {
+				scope = application.PositionsScope
+			}
+
 			query, err := listQuery(r.Context(), scope)
 			if err != nil {
 				gridJSON(w, nil, err)
@@ -203,6 +209,9 @@ func registerGridRoutes(
 			}
 
 			switch kind {
+			case "positions":
+				data, err := workflow.PositionsList(r.Context(), query)
+				gridJSON(w, positionsGrid(data), err)
 			case "activity":
 				data, err := workflow.ActivityList(r.Context(), query)
 				gridJSON(w, activityGrid(data), err)

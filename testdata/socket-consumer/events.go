@@ -19,22 +19,39 @@ type publication struct {
 	Version     string `json:"version"`
 }
 
+type positionsUpdateError struct{ error }
+
 // Each connection starts with current publication, so reconnect needs no cursor.
 func (c *client) follow(ctx context.Context, delay time.Duration, synchronize func(publication) error) error {
 	backoff := min(delay, 30*time.Second)
+	positionUpdate := c.positionUpdate
 	for {
 		var syncError error
 		connected := false
-		_ = c.events(ctx, func(p publication) error {
+		if positionUpdate != nil {
+			c.positionUpdate = func(p positionsPublication) error {
+				err := positionUpdate(p)
+				if err == nil {
+					connected = true
+				}
+				return err
+			}
+		}
+		streamError := c.events(ctx, func(p publication) error {
 			if !connected {
 				fmt.Fprintln(c.stderr, "Following accepted publication events")
 			}
 			syncError = synchronize(p)
-			if syncError == nil {
+			if syncError == nil && positionUpdate == nil {
 				connected = true
 			}
 			return syncError
 		})
+		c.positionUpdate = positionUpdate
+		var positionsError positionsUpdateError
+		if errors.As(streamError, &positionsError) {
+			syncError = positionsError.error
+		}
 		var interruption transportError
 		if syncError != nil && !errors.As(syncError, &interruption) {
 			return syncError
@@ -91,6 +108,19 @@ func (c *client) events(ctx context.Context, receive func(publication) error) er
 		}
 		if line == "" {
 			idle.Reset(45 * time.Second)
+			if event == "positions" && data.Len() > 0 && c.positionUpdate != nil {
+				payload := []byte(data.String())
+				if err = validateContract("PositionsPublication", payload); err != nil {
+					return positionsUpdateError{err}
+				}
+				var p positionsPublication
+				if err = decode(payload, &p); err != nil {
+					return positionsUpdateError{err}
+				}
+				if err = c.positionUpdate(p); err != nil {
+					return positionsUpdateError{err}
+				}
+			}
 			if event == "publication" && data.Len() > 0 {
 				payload := []byte(data.String())
 				if err = validateContract("Publication", payload); err != nil {

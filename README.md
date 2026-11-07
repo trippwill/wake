@@ -51,12 +51,15 @@ account and starts automatic synchronization; other discovered accounts remain
 candidates.
 
 **Overview** shows setup steps, financial review and source work. Use the sidebar's
-**Activity**, **Instruments** and **Needs review** destinations to inspect financial
-history, instrument identities and unresolved questions. Each workspace has its
-own path. Activity, instrument and evidence pages retain a return path to the
+**Activity**, **Instruments**, **Positions** and **Needs review** destinations to inspect financial
+history, instrument identities, latest reported positions and unresolved questions. Each workspace
+has its own path. Activity, instrument and evidence pages retain a return path to the
 originating view within the current tab.
 Shared resource links open with canonical navigation. Unresolved financial and
 identity conflicts remain distinct from ordinary reference gaps and source failures.
+Positions shows its reported effective date/time and availability, exact quantities, reported
+contract terms and optional aggregate reported cost basis. It distinguishes an empty reported
+set from unavailable positions and links to instrument details and source reports.
 
 Under **Administration**, **Connections** groups each source's **Status**, **Reports**
 and **Access**. Repair its Query ID or token beside the affected source.
@@ -92,7 +95,7 @@ history stays inspectable. In **Connections → Recovery**, follow the ordered
 source-access and reference review steps, then select **Resume upstream work**.
 An ordinary restart with intact stores keeps the existing authorization.
 
-The admin console requires JavaScript. Activity, instrument and observation tables
+The admin console requires JavaScript. Activity, instrument, positions and observation tables
 load authenticated JSON, with filtering, exact ordering and pagination performed on
 the server at 50 rows per page by default. URLs retain filters and page state;
 Tabulator retains column preferences. Accepted detail pages offer an explicit refresh

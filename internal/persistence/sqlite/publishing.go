@@ -171,11 +171,16 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
+	positionsChanged, err := refreshPositions(ctx, tx, q)
+	if err != nil {
+		return err
+	}
+
 	if err = tx.Commit(); err != nil {
 		return err
 	}
 
-	if changed {
+	if changed || positionsChanged {
 		s.notifyPublication()
 	}
 

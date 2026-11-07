@@ -118,6 +118,8 @@ func workspaceURL(ctx context.Context) string {
 	switch {
 	case u.Path == "/":
 		return "/"
+	case u.Path == "/positions":
+		return "/positions"
 	case u.Path == "/review":
 		return "/review"
 	case u.Path == "/instruments" || strings.HasPrefix(u.Path, "/instruments/"):
@@ -143,6 +145,8 @@ func returnURL(ctx context.Context) string {
 func parentLabel(ctx context.Context) string {
 	p := strings.Split(returnURL(ctx), "?")[0]
 	switch {
+	case p == "/positions":
+		return "Positions"
 	case p == "/activity":
 		return "Activity"
 	case p == "/instruments":
@@ -483,6 +487,10 @@ func servePageError(w http.ResponseWriter, r *http.Request, csrf string, status 
 
 func workspaceLabel(ctx context.Context) string {
 	p := workspaceURL(ctx)
+	if p == "/positions" {
+		return "Positions"
+	}
+
 	if p == "/instruments" {
 		return "Instruments"
 	}
@@ -517,7 +525,7 @@ func workspaceAttributes(ctx context.Context, csrf string) templ.Attributes {
 
 	// Financial grids refresh through their JSON API. Accepted details are explicit
 	// page-load snapshots, leaving disclosures and inspected terms stable.
-	if u.Path == "/activity" || u.Path == "/instruments" ||
+	if u.Path == "/positions" || u.Path == "/activity" || u.Path == "/instruments" ||
 		strings.HasPrefix(u.Path, "/executions/") ||
 		strings.HasPrefix(u.Path, "/instruments/") ||
 		strings.HasPrefix(u.Path, "/activity/") {

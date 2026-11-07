@@ -98,3 +98,10 @@ func (s workspaceStore) SourceAccess(ctx context.Context) (application.AccessSna
 	v, err := s.SourcePage(ctx, application.ListQuery{})
 	return application.AccessSnapshot{Prerequisites: v.Prerequisites, Connections: v.Connections}, err
 }
+
+func (s workspaceStore) PositionsList(
+	context.Context,
+	application.ListQuery,
+) (application.PositionsList, error) {
+	return application.PositionsList{Account: s.view.Account}, nil
+}

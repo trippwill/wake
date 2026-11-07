@@ -24,6 +24,8 @@ type FinancialReader interface {
 	Snapshot(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
 	Resource(context.Context, string, string) (application.CanonicalResource, error)
 	Explanation(context.Context, string, string, int64) (application.Explanation, error)
+	Positions(context.Context, string, application.SnapshotCondition) (application.PositionsRead, error)
+	PositionsPublications(context.Context) ([]application.PositionsPublication, error)
 	SubscribePublications() (<-chan struct{}, func())
 }
 
@@ -67,6 +69,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	endpoint := parts[1]
 	explanation := false
+	positions := endpoint == "accounts" && len(parts) == 4 && parts[3] == "positions"
 	switch endpoint {
 	case "snapshot", "events":
 		if len(parts) != 2 {
@@ -75,12 +78,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "accounts", "instruments", "listings", "activity":
 		if len(parts) != 3 && len(parts) != 4 || len(parts) > 2 && (parts[2] == "" || len(parts[2]) > 256) ||
-			len(parts) == 4 && parts[3] != "explanation" {
+			len(parts) == 4 && parts[3] != "explanation" && !positions {
 			h.failure(w, NotFound, http.StatusNotFound)
 			return
 		}
 
-		explanation = len(parts) == 4
+		explanation = len(parts) == 4 && !positions
 	default:
 		h.failure(w, NotFound, http.StatusNotFound)
 		return
@@ -100,6 +103,26 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var response any
 	switch {
+	case positions:
+		condition, e := snapshotConditions(r.Header.Values("If-None-Match"))
+		if e != nil {
+			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			return
+		}
+
+		var read application.PositionsRead
+
+		read, err = h.reads.Positions(r.Context(), parts[2], condition)
+		if err == nil {
+			w.Header().Set("ETag", `"`+read.View.Version+`"`)
+
+			if read.Unchanged {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+
+			response = read.View
+		}
 	case endpoint == "snapshot":
 		conditions, e := snapshotConditions(r.Header.Values("If-None-Match"))
 		if e != nil {

@@ -221,6 +221,27 @@ is an observation, not an explanation of how it arose. Derived state is a calcul
 from retained information. Never invent an event to make observations and calculated
 state agree. Tax-relevant source facts differ from a user's tax treatment.
 
+A reported position set describes an account at one effective time. It is independent of
+activity and lots: neither its quantity nor its reported aggregate cost basis explains
+how the holding arose. Keep exact signed quantities, units, dated contract terms and
+source currencies. A known empty set differs from absent or unusable position coverage.
+A newer applicable unusable set makes current positions unavailable; an older usable
+set remains evidence without becoming a fallback. Acquisition failures alone do not
+erase established reported state. Undated evidence establishes no newer effective time.
+
+Select whole account sets through source authority and established revision relationships.
+Do not combine independently dated rows or infer revision authority from report generation
+or retrieval order. Unresolved incompatible claims at the same effective time withhold the
+set. Established replacements can retire conflicting revision claims, including correcting
+their effective dates backwards. Conflicting instrument identities withhold bound positions
+until resolved. Repeated instrument/quantity rows have no independent identity established
+by their ordering. Optional costs and terms remain unknown where compatible pairings
+disagree. Reported costs remain distinct from reconstructed lots, valuations and calculated
+P&L.
+Ambiguous pairing work is bounded. If reconciliation cannot establish a usable set within
+that bound, positions are unavailable as incomplete; neither a partial pairing nor an older
+set is served.
+
 Changes to accepted values, links, relevant reference data or conflict status matter
 to consumers even without a new trade. Stable identities and reproducible views
 support restart and recovery. Recalculating a view is different from reconstructing

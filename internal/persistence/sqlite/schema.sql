@@ -12,7 +12,7 @@ CREATE TABLE report_comparisons(connection_id TEXT NOT NULL REFERENCES connectio
 CREATE TABLE acquisition_receipts(sequence INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), operation TEXT NOT NULL, retrieved TEXT NOT NULL, hash TEXT NOT NULL, policy TEXT NOT NULL, digest TEXT NOT NULL, requested_from TEXT NOT NULL,requested_to TEXT NOT NULL,reported_from TEXT NOT NULL,reported_to TEXT NOT NULL) STRICT;
 CREATE INDEX receipts_body ON acquisition_receipts(artifact_id,operation);
 CREATE TABLE candidates(receipt_id TEXT NOT NULL REFERENCES acquisition_receipts(id), artifact_id TEXT NOT NULL REFERENCES artifacts(id), authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL, PRIMARY KEY(receipt_id,authority,kind,scope,value)) STRICT;
-CREATE TABLE source_claims(id TEXT PRIMARY KEY NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, version TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('activity','correction','instrument','rejected')), data BLOB NOT NULL) STRICT;
+CREATE TABLE source_claims(id TEXT PRIMARY KEY NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, version TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('activity','correction','instrument','rejected','positions','position-instrument')), data BLOB NOT NULL) STRICT;
 CREATE TABLE records(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, claim_id TEXT NOT NULL REFERENCES source_claims(id), ordinal INTEGER NOT NULL CHECK(ordinal>0), PRIMARY KEY(artifact_id,version,location)) STRICT;
 CREATE INDEX records_claim_appearances ON records(claim_id,ordinal,artifact_id,version,location);
 CREATE VIEW record_values AS SELECT r.artifact_id,r.version,r.location,r.claim_id,r.ordinal,c.kind,c.data FROM records r JOIN source_claims c ON c.id=r.claim_id;
@@ -132,3 +132,17 @@ CREATE INDEX activity_reference_targets ON activity_references(account_id,refere
 CREATE TABLE activity_selections(activity_id TEXT PRIMARY KEY REFERENCES executions(id),baseline BLOB NOT NULL,selected BLOB NOT NULL) STRICT;
 CREATE TRIGGER publish_activity_selection_insert AFTER INSERT ON activity_selections BEGIN INSERT INTO publishing_dirty VALUES('activity',NEW.activity_id) ON CONFLICT DO NOTHING; END;
 CREATE TRIGGER publish_activity_selection_update AFTER UPDATE ON activity_selections BEGIN INSERT INTO publishing_dirty VALUES('activity',NEW.activity_id) ON CONFLICT DO NOTHING; END;
+
+CREATE TABLE position_sets(claim_id TEXT PRIMARY KEY REFERENCES source_claims(id),account_id TEXT NOT NULL REFERENCES accounts(id),effective_date TEXT NOT NULL,source_reference TEXT NOT NULL,supersedes TEXT NOT NULL) STRICT;
+CREATE VIEW current_position_claims AS SELECT r.claim_id,r.ordinal FROM records r JOIN source_claims c ON c.id=r.claim_id WHERE c.kind IN ('positions','position-instrument') AND EXISTS (SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=r.artifact_id AND receipt.version=r.version AND NOT EXISTS (SELECT 1 FROM processing_receipts newer WHERE newer.artifact_id=receipt.artifact_id AND newer.rowid>receipt.rowid));
+CREATE INDEX position_sets_account ON position_sets(account_id,effective_date);
+CREATE INDEX position_sets_reference ON position_sets(account_id,source_reference);
+CREATE TABLE positions_current(account_id TEXT PRIMARY KEY REFERENCES accounts(id),revision INTEGER NOT NULL,data BLOB NOT NULL) STRICT;
+CREATE TABLE positions_dirty(account_id TEXT PRIMARY KEY REFERENCES accounts(id)) STRICT;
+CREATE TRIGGER positions_new_set AFTER INSERT ON position_sets BEGIN INSERT OR IGNORE INTO positions_dirty VALUES(NEW.account_id); END;
+CREATE TRIGGER positions_account_insert AFTER INSERT ON accounts BEGIN INSERT OR IGNORE INTO positions_dirty VALUES(NEW.id); END;
+CREATE TRIGGER positions_account_update AFTER UPDATE ON accounts BEGIN INSERT OR IGNORE INTO positions_dirty VALUES(NEW.id); END;
+CREATE TRIGGER positions_alias_insert AFTER INSERT ON resource_aliases WHEN NEW.kind='instruments' BEGIN INSERT OR IGNORE INTO positions_dirty SELECT id FROM accounts; END;
+CREATE TRIGGER positions_alias_update AFTER UPDATE ON resource_aliases WHEN NEW.kind='instruments' BEGIN INSERT OR IGNORE INTO positions_dirty SELECT id FROM accounts; END;
+CREATE TABLE position_bindings(claim_id TEXT NOT NULL REFERENCES source_claims(id),account_id TEXT NOT NULL REFERENCES accounts(id),instrument_id TEXT NOT NULL REFERENCES instruments(id),PRIMARY KEY(claim_id,instrument_id)) STRICT;
+CREATE TRIGGER positions_instrument_update AFTER UPDATE OF kind,reference_status ON instruments WHEN OLD.kind<>NEW.kind OR OLD.reference_status<>NEW.reference_status BEGIN INSERT OR IGNORE INTO positions_dirty SELECT p.account_id FROM position_bindings p LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE coalesce(a.target_id,p.instrument_id)=NEW.id; END;

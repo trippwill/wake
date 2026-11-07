@@ -283,6 +283,10 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		options.Direction = ""
 	}
 
+	if scope == application.PositionsScope {
+		return application.NewListQuery(options, scope)
+	}
+
 	if scope == application.ObservationScope {
 		options.Kind = ""
 		options.State = ""

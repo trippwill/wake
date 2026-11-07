@@ -446,7 +446,7 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 			t.Fatal("dependent parent lookup is not keyed by source occurrence", text)
 		}
 
-		for _, fullScan := range []string{"SCAN p", "SCAN i", "SCAN o", "SCAN source_claims", "SCAN records"} {
+		for _, fullScan := range []string{"SCAN p", "SCAN i", "SCAN o", "SCAN r ", "SCAN source_claims", "SCAN records"} {
 			if strings.Contains(text, fullScan) {
 				t.Fatal("calculation scans unrelated history", name, text)
 			}

@@ -3,7 +3,8 @@
 Wake supports one IBKR account with automatic Confirmation acquisition, optional
 Activity acquisition for security transfers, non-trade cash postings and reported
 per-activity realized P&L, financial review and
-attributable corrections to existing activity. This document owns
+attributable corrections to existing activity, and a separate latest reported positions view.
+This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
 
@@ -40,11 +41,12 @@ the primary instrument identity and naming reference.
 | Security transfers | Reported inbound/outbound security movements, separate transfer valuations and aggregate reported costs, counterparty details and exact quantities. Transfer lots remain evidence. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
 | Non-trade cash | Detailed funding, cash transfers, dividends, payments in lieu, broker/bond interest, withholding, fees, sales taxes and explicit adjustments. Separate signed postings, optional instruments, source action groups and explicit tax relationships. |
+| Reported positions | Complete current account sets from Activity Open Positions summary detail, with exact signed quantities, dated contract terms and optional aggregate reported cost basis. Explicit empty/unavailable states; no holdings or lot reconstruction. |
 | Realized P&L | Activity execution-level reported gains/losses and allocated costs linked to existing activity, with exact currencies, separate reporting dates, unknowns and source disagreement. No result calculation or lot reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
 | Reference data | Allocation-aware OpenFIGI lookup, bounded composite-parent completion, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Matching verified identities combine with retained aliases; conflicting choices require review. Refresh failures preserve established identity. |
-| Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, compact conflicts, optional linked evidence/rules and correction of existing activity. |
+| Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, a separate latest reported positions workspace, compact conflicts, optional linked evidence/rules and correction of existing activity. |
 | Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
 
 Some reported bookings lack execution IDs; acceptance cannot universally require
@@ -63,7 +65,8 @@ Debt activity retains nominal face quantity and exact reported price without a
 quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
 charges remain separate; no combined settlement total is inferred.
 
-This pre-release identity, debt and activity-result format requires explicit warehouse recreation
+This pre-release identity, debt, activity-result and reported-position format requires explicit
+warehouse recreation
 on upgrade.
 Older warehouses fail closed and remain untouched; encrypted access seeds retain
 their independent format. Reacquire and confirm source history in the new warehouse.
@@ -92,7 +95,7 @@ A result is not recomputed from proceeds, charges or an operator's corrected pri
 Source restatements without established revision semantics retain the baseline and
 disagreement. Competing enrichments of an originally unknown field remain unknown;
 operators can select reported fields without replacing omitted activity terms. Additional
-lot and position sections remain original evidence without financial contribution.
+lot sections remain original evidence without financial contribution.
 
 Transfer lot rows and cash summaries do not create additional activity. Cash postings
 retain signed values, including refunds and explicit zeros. Shared action references
@@ -115,7 +118,8 @@ acquisition success. No fresh report or warehouse reset is required.
   them in the original report; execution/booked rows supply financial activity.
 - Lot identities and allocations, wash-sale calculations and
   dedicated corporate-action processing, including Treasury-bill maturity events.
-- Positions, balances, NAV, unrealized or calculated P&L, and reconstruction of
+- Balances, NAV, unrealized or calculated P&L, historical position queries, position corrections,
+  and reconstruction of
   holdings, cash, lots or missing lifecycle outcomes.
 - SnapTrade and other acquisition providers, multiple-account workflows, file
   imports, automatic source switching and peer-source reconciliation.
@@ -142,6 +146,16 @@ cover accepted financial state, independently of admin workflow status.
 Restarts and access-store recovery retain publication with an intact warehouse.
 Warehouse replacement establishes a clearly reported new baseline.
 
+Reported positions have a separate account read, opaque version and ETag. They are excluded
+from complete financial snapshots. Each available set has one effective date and optional
+reported timestamp; instrument IDs resolve through existing lookups. Newer missing,
+unsupported or unusable coverage withholds rows. Same-effective-time incompatible claims
+remain unavailable until an unambiguous later state or established source revision supplies
+a usable set. A known empty set remains available. The existing SSE stream announces
+positions versions independently, including availability changes, on connection/reconnect
+and after committed changes. Shared identity combinations update affected position IDs;
+quantity, cost or date changes alone do not advance the financial snapshot.
+
 The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The independent
 [consumer acceptance procedure](../engineering/development.md#socket-consumer-acceptance)
 uses a separate process and actual private socket without Wake store access, internal
@@ -164,9 +178,9 @@ preserves reusable encrypted access but establishes new financial identities. Se
 [development](../engineering/development.md) for verification and reset procedures. No version tag
 is implied by this coverage.
 
-Admin activity, instrument, review and retained-observation lists use server filtering
+Admin activity, instrument, positions, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for
-administration. Tabulator renders activity, instrument and observation tables from
+administration. Tabulator renders activity, instrument, positions and observation tables from
 authenticated JSON; source/status regions use focused updates, and accepted detail
 pages offer an explicit refresh action. Retained observations preserve original
 source bindings, underliers and appearance multiplicity after operator relinks.
@@ -176,6 +190,15 @@ prerequisites use focused metadata reads; source detail loads one connection and
 bounded account-candidate page. Result counts and page links preserve intentional
 URL filters. These bounds limit response memory; filtered counts and sorting still
 require SQLite to inspect the matching history.
+
+The Positions workspace shows account availability and reported effective time alongside
+exact signed quantities, long/short meaning, applicable reported contract terms and optional
+aggregate reported cost basis. Missing cost differs from explicit zero. Empty reported sets,
+unavailable sets and filters with no matches have separate explanations. Instrument and source
+links open existing inspection pages. Updates are offered explicitly and apply metadata and
+rows together; unavailable results contain no earlier fallback positions. Display-label changes
+are detected independently of the positions version. The workspace adds no position-correction
+workflow, valuation, aggregate portfolio totals or lot reconstruction.
 
 Processing, correction preflight, saved decisions and releases share deterministic
 financial calculations. Synthetic proofs cover exact decimal and timestamp

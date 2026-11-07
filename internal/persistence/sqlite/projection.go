@@ -208,11 +208,14 @@ func persistRootEnrichment(
 		}
 	}
 
-	if underlier != "" {
+	if underlier != "" || !result.Conflict && result.Underlier.Kind() == "" {
 		return setAutomaticUnderlier(
 			ctx,
 			q,
-			sqlc.SetUnderlierParams{ID: root.ID, UnderlierID: sql.NullString{String: underlier, Valid: true}},
+			sqlc.SetUnderlierParams{
+				ID:          root.ID,
+				UnderlierID: sql.NullString{String: underlier, Valid: underlier != ""},
+			},
 		)
 	}
 

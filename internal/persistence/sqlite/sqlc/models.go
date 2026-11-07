@@ -188,6 +188,11 @@ type Connection struct {
 	Name     string
 }
 
+type CurrentPositionClaim struct {
+	ClaimID string
+	Ordinal int64
+}
+
 type DecisionSupersession struct {
 	DecisionID string
 	PreviousID string
@@ -303,6 +308,30 @@ type Pacing struct {
 	Policy   string
 	Scope    string
 	Next     string
+}
+
+type PositionBinding struct {
+	ClaimID      string
+	AccountID    string
+	InstrumentID string
+}
+
+type PositionSet struct {
+	ClaimID         string
+	AccountID       string
+	EffectiveDate   string
+	SourceReference string
+	Supersedes      string
+}
+
+type PositionsCurrent struct {
+	AccountID string
+	Revision  int64
+	Data      []byte
+}
+
+type PositionsDirty struct {
+	AccountID string
 }
 
 type ProcessingReceipt struct {

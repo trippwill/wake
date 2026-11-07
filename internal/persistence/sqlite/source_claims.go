@@ -25,6 +25,35 @@ func claimKeyData(kind string, data []byte) ([]byte, error) { return claimWire(k
 func claimWire(kind string, data []byte, location string, orderSets bool) ([]byte, error) {
 	var value any
 	switch kind {
+	case "positions":
+		var d positionSetData
+		if err := json.Unmarshal(data, &d); err != nil {
+			return nil, err
+		}
+
+		d.Location = location
+		if orderSets {
+			orderClaimSet(d.Supersedes)
+
+			for i := range d.Positions {
+				canonicalInstrument(&d.Positions[i].Instrument)
+			}
+
+			orderClaimSet(d.Positions)
+		}
+
+		value = d
+	case "position-instrument":
+		var d positionInstrumentData
+		if err := json.Unmarshal(data, &d); err != nil {
+			return nil, err
+		}
+
+		if orderSets {
+			canonicalInstrument(&d.Instrument)
+		}
+
+		value = d
 	case "correction":
 		var d correctionData
 		if err := json.Unmarshal(data, &d); err != nil {

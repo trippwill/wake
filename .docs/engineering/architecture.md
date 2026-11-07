@@ -147,7 +147,7 @@ handling without financial roles or separate result authority.
 The admin console exposes understandable work, values, conflicts and next actions.
 Detailed evidence is optional. Prerequisite and status reads use source/access and
 work metadata without decoding financial history. Source list/detail, overview,
-review and accepted activity/instrument lists have separate typed read models.
+review, accepted activity/instrument lists and reported positions have separate typed read models.
 Lists filter and order in SQLite, default to 50 rows per page and retain stable
 identity tie-breakers. Exact decimal ordering uses the registered numeric collation;
 unknown values sort last independently of direction and currency/unit groups remain
@@ -178,6 +178,22 @@ share application meaning without depending on one another's UI or wire types.
 help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the socket
 interface; [development guidance](development.md#socket-consumer-acceptance) provides
 runnable consumer checks.
+
+Reported positions use a separate complete account-set projection with its own durable
+publication version. Source interpretation contributes typed immutable sets and instrument
+claims; deterministic financial selection uses effective time, account source authority and
+explicit revision relationships. Set content, availability and version commit atomically.
+Each retained report contributes its latest successfully processed interpretation;
+earlier interpreted claims remain evidence without competing with their replacement.
+This applies to its position-derived instrument claims and bindings as well as the set;
+replacement recalculates affected identities in the same transaction.
+Duplicate occurrences retain separate support across report appearances: replacement
+retires an occurrence only when no current report still supports it.
+Position publication remains independent of activity snapshots; both reuse canonical
+instrument identities. Identity combinations invalidate affected position projections.
+The shared event stream carries independent refresh hints for each view, and finite position
+reads release storage transactions before client I/O. Source protocols and report-generation
+metadata do not define the consumer contract.
 
 ## Canonical publishing and continuity
 
@@ -214,7 +230,7 @@ revision and fail visibly if it has changed.
 
 SSE publication notifications reduce refresh latency without changing snapshot
 consistency or mirror ownership. Subscription precedes the initial metadata read;
-only successful commits that advance accepted publication signal subscribers.
+only successful commits that advance a financial view signal subscribers.
 Signals coalesce without waiting for clients. Each stream reads current publication
 metadata in a bounded transaction, releases it before I/O, and announces the opaque
 version and warehouse identity. Comment heartbeats do not read storage. Streams
@@ -421,10 +437,15 @@ before accepted state is written. Projection follows retained source dependencie
 so a changed shared target also updates its previously observed parents.
 
 Administrative commands use authenticated HTTP forms. Interactive activity,
-instrument and observation tables require JavaScript and consume authenticated JSON.
+instrument, positions and observation tables require JavaScript and consume authenticated JSON.
 Tabulator owns each grid. SSE hints and polling check for changed results, then
 announce an available refresh without replacing the displayed rows. The operator
 applies the update through an explicit refresh action; HTML does not duplicate rows.
+The positions admin read pages the accepted account set and joins current instrument labels
+in one transaction, independently of the financial snapshot. Its availability, effective time,
+counts and rows travel together. Applying a refresh installs the set metadata with its rows;
+unavailable sets contain no earlier fallback. Label changes are detected even when the
+positions version is unchanged.
 Queries filter, order and page the complete matching set,
 with 50 rows per page by default and exact decimal ordering. URLs retain intentional
 filter and page state; native column persistence retains layout preferences.

@@ -306,7 +306,7 @@ SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execut
 INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: ArtifactRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
- SELECT i.instrument_id FROM records r JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=sqlc.arg(artifact_id)
+ SELECT i.instrument_id FROM records r JOIN source_claims c ON c.id=r.claim_id JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal JOIN instrument_claims i ON i.claim_id=r.claim_id AND i.ordinal=r.ordinal WHERE r.artifact_id=sqlc.arg(artifact_id) AND (c.kind='position-instrument' OR (p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location))
  UNION
  SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=sqlc.arg(artifact_id) AND b.instrument_id IS NOT NULL
  UNION
@@ -316,7 +316,7 @@ WITH RECURSIVE affected(instrument_id) AS (
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id;
 -- name: RootCalculationInputs :many
-SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role;
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=i.ordinal)) ORDER BY p.rowid,i.role;
 
 -- name: ClaimRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
@@ -420,3 +420,10 @@ INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VA
 UPDATE artifacts SET processed=0
 WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
 AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value));
+
+-- name: PutPositionSet :exec
+INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,supersedes) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING;
+-- name: PutPositionBinding :exec
+INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+-- name: PositionBindings :many
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM instrument_claims binding JOIN current_position_claims active ON active.claim_id=binding.claim_id AND active.ordinal=binding.ordinal WHERE binding.claim_id=p.claim_id AND binding.instrument_id=p.instrument_id AND binding.role='activity') ORDER BY p.rowid;

@@ -8,8 +8,10 @@ package socket
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for AccountResourceKind.
@@ -288,6 +290,111 @@ func (e NullableRealizedPnLSelection) Valid() bool {
 	case NullableRealizedPnLSelectionAutomatic:
 		return true
 	case NullableRealizedPnLSelectionOperator:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionSide.
+const (
+	Long  PositionSide = "long"
+	Short PositionSide = "short"
+)
+
+// Valid indicates whether the value is a known member of the PositionSide enum.
+func (e PositionSide) Valid() bool {
+	switch e {
+	case Long:
+		return true
+	case Short:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionsViewReason.
+const (
+	Conflict           PositionsViewReason = "conflict"
+	IdentityUnresolved PositionsViewReason = "identity_unresolved"
+	Incomplete         PositionsViewReason = "incomplete"
+	NotReported        PositionsViewReason = "not_reported"
+)
+
+// Valid indicates whether the value is a known member of the PositionsViewReason enum.
+func (e PositionsViewReason) Valid() bool {
+	switch e {
+	case Conflict:
+		return true
+	case IdentityUnresolved:
+		return true
+	case Incomplete:
+		return true
+	case NotReported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionsViewStatus.
+const (
+	PositionsViewStatusAvailable   PositionsViewStatus = "available"
+	PositionsViewStatusUnavailable PositionsViewStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the PositionsViewStatus enum.
+func (e PositionsViewStatus) Valid() bool {
+	switch e {
+	case PositionsViewStatusAvailable:
+		return true
+	case PositionsViewStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionsView0Reason.
+const (
+	PositionsView0ReasonLessThannil PositionsView0Reason = "<nil>"
+)
+
+// Valid indicates whether the value is a known member of the PositionsView0Reason enum.
+func (e PositionsView0Reason) Valid() bool {
+	switch e {
+	case PositionsView0ReasonLessThannil:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionsView0Status.
+const (
+	PositionsView0StatusAvailable PositionsView0Status = "available"
+)
+
+// Valid indicates whether the value is a known member of the PositionsView0Status enum.
+func (e PositionsView0Status) Valid() bool {
+	switch e {
+	case PositionsView0StatusAvailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PositionsView1Status.
+const (
+	PositionsView1StatusUnavailable PositionsView1Status = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the PositionsView1Status enum.
+func (e PositionsView1Status) Valid() bool {
+	switch e {
+	case PositionsView1StatusUnavailable:
 		return true
 	default:
 		return false
@@ -671,6 +778,74 @@ type Option struct {
 	Strike *NullableMoney `json:"strike"`
 }
 
+// Position defines model for Position.
+type Position struct {
+	// CostBasis Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	CostBasis    *NullableMoney `json:"cost_basis"`
+	Debt         *NullableDebt  `json:"debt"`
+	InstrumentId string         `json:"instrument_id"`
+
+	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
+	Option   *NullableOption `json:"option"`
+	Quantity Quantity        `json:"quantity"`
+	Side     PositionSide    `json:"side"`
+}
+
+// PositionSide defines model for Position.Side.
+type PositionSide string
+
+// PositionsPublication defines model for PositionsPublication.
+type PositionsPublication struct {
+	AccountId   string `json:"account_id"`
+	Version     string `json:"version"`
+	WarehouseId string `json:"warehouse_id"`
+}
+
+// PositionsView Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. Effective time may be unknown when unavailable.
+type PositionsView struct {
+	AccountId string `json:"account_id"`
+	AsOf      *struct {
+		At   *string            `json:"at"`
+		Date openapi_types.Date `json:"date"`
+	} `json:"as_of"`
+	Positions   *[]Position          `json:"positions"`
+	Reason      *PositionsViewReason `json:"reason"`
+	Status      PositionsViewStatus  `json:"status"`
+	Version     string               `json:"version"`
+	WarehouseId string               `json:"warehouse_id"`
+	union       json.RawMessage
+}
+
+// PositionsViewReason defines model for PositionsView.Reason.
+type PositionsViewReason string
+
+// PositionsViewStatus defines model for PositionsView.Status.
+type PositionsViewStatus string
+
+// PositionsView0 defines model for PositionsView.0.
+type PositionsView0 struct {
+	AsOf      *map[string]interface{} `json:"as_of,omitempty"`
+	Positions *[]Position             `json:"positions,omitempty"`
+	Reason    *PositionsView0Reason   `json:"reason,omitempty"`
+	Status    *PositionsView0Status   `json:"status,omitempty"`
+}
+
+// PositionsView0Reason defines model for PositionsView.0.Reason.
+type PositionsView0Reason string
+
+// PositionsView0Status defines model for PositionsView.0.Status.
+type PositionsView0Status string
+
+// PositionsView1 defines model for PositionsView.1.
+type PositionsView1 struct {
+	Positions *[]Position           `json:"positions,omitempty"`
+	Reason    *string               `json:"reason,omitempty"`
+	Status    *PositionsView1Status `json:"status,omitempty"`
+}
+
+// PositionsView1Status defines model for PositionsView.1.Status.
+type PositionsView1Status string
+
 // Publication defines model for Publication.
 type Publication struct {
 	Version     string `json:"version"`
@@ -743,6 +918,11 @@ type ExplainAccountsParams struct {
 	Revision Revision `form:"revision" json:"revision"`
 }
 
+// AccountPositionsParams defines parameters for AccountPositions.
+type AccountPositionsParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // ExplainActivityParams defines parameters for ExplainActivity.
 type ExplainActivityParams struct {
 	// Revision The mirrored resource revision. A different current revision returns stale_revision.
@@ -765,6 +945,173 @@ type ExplainListingsParams struct {
 type SnapshotParams struct {
 	// IfNoneMatch A previous ETag; weak validators and lists are supported.
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
+// AsPositionsView0 returns the union data inside the PositionsView as a PositionsView0
+func (t PositionsView) AsPositionsView0() (PositionsView0, error) {
+	var body PositionsView0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPositionsView0 overwrites any union data inside the PositionsView as the provided PositionsView0
+func (t *PositionsView) FromPositionsView0(v PositionsView0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePositionsView0 performs a merge with any union data inside the PositionsView, using the provided PositionsView0
+func (t *PositionsView) MergePositionsView0(v PositionsView0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsPositionsView1 returns the union data inside the PositionsView as a PositionsView1
+func (t PositionsView) AsPositionsView1() (PositionsView1, error) {
+	var body PositionsView1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPositionsView1 overwrites any union data inside the PositionsView as the provided PositionsView1
+func (t *PositionsView) FromPositionsView1(v PositionsView1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePositionsView1 performs a merge with any union data inside the PositionsView, using the provided PositionsView1
+func (t *PositionsView) MergePositionsView1(v PositionsView1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t PositionsView) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	object["account_id"], err = json.Marshal(t.AccountId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'account_id': %w", err)
+	}
+
+	object["as_of"], err = json.Marshal(t.AsOf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'as_of': %w", err)
+	}
+
+	object["positions"], err = json.Marshal(t.Positions)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'positions': %w", err)
+	}
+
+	object["reason"], err = json.Marshal(t.Reason)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'reason': %w", err)
+	}
+
+	object["status"], err = json.Marshal(t.Status)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'status': %w", err)
+	}
+
+	object["version"], err = json.Marshal(t.Version)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'version': %w", err)
+	}
+
+	object["warehouse_id"], err = json.Marshal(t.WarehouseId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'warehouse_id': %w", err)
+	}
+
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *PositionsView) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["account_id"]; found {
+		err = json.Unmarshal(raw, &t.AccountId)
+		if err != nil {
+			return fmt.Errorf("error reading 'account_id': %w", err)
+		}
+	}
+
+	if raw, found := object["as_of"]; found {
+		err = json.Unmarshal(raw, &t.AsOf)
+		if err != nil {
+			return fmt.Errorf("error reading 'as_of': %w", err)
+		}
+	}
+
+	if raw, found := object["positions"]; found {
+		err = json.Unmarshal(raw, &t.Positions)
+		if err != nil {
+			return fmt.Errorf("error reading 'positions': %w", err)
+		}
+	}
+
+	if raw, found := object["reason"]; found {
+		err = json.Unmarshal(raw, &t.Reason)
+		if err != nil {
+			return fmt.Errorf("error reading 'reason': %w", err)
+		}
+	}
+
+	if raw, found := object["status"]; found {
+		err = json.Unmarshal(raw, &t.Status)
+		if err != nil {
+			return fmt.Errorf("error reading 'status': %w", err)
+		}
+	}
+
+	if raw, found := object["version"]; found {
+		err = json.Unmarshal(raw, &t.Version)
+		if err != nil {
+			return fmt.Errorf("error reading 'version': %w", err)
+		}
+	}
+
+	if raw, found := object["warehouse_id"]; found {
+		err = json.Unmarshal(raw, &t.WarehouseId)
+		if err != nil {
+			return fmt.Errorf("error reading 'warehouse_id': %w", err)
+		}
+	}
+
+	return err
 }
 
 // AsAccountResource returns the union data inside the Resource as a AccountResource

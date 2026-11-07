@@ -5,6 +5,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"slices"
 
@@ -150,7 +151,12 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 		}
 	}
 
-	root.calculation, err = application.CalculateBoundRoot(root.reported, claims, bindings)
+	baseline := root.reported
+	if row.ReferenceFigi == "" && len(claims) > 0 {
+		baseline = claims[0]
+	}
+
+	root.calculation, err = application.CalculateBoundRoot(baseline, claims, bindings)
 	if err != nil {
 		return retainedRoot{}, err
 	}
@@ -638,6 +644,15 @@ func reportedRootClaim(row sqlc.RootCalculationInputsRow) (source.Instrument, er
 }
 
 func reportedActivityInstrument(kind string, data []byte) (source.Instrument, error) {
+	if kind == "position-instrument" {
+		var d positionInstrumentData
+		if err := json.Unmarshal(data, &d); err != nil {
+			return source.Instrument{}, err
+		}
+
+		return d.Instrument.instrument()
+	}
+
 	if kind == "activity" {
 		o, err := decodeObservation(data)
 		if err != nil {

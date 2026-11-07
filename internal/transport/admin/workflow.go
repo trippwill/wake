@@ -83,6 +83,14 @@ func registerWorkflowRoutes(
 		})
 	}
 	registerGridRoutes(gate, workflow)
+	gate("GET /positions", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		if _, err := listQuery(r.Context(), application.PositionsScope); err != nil {
+			http.Error(w, "invalid list query", http.StatusBadRequest)
+			return
+		}
+
+		templ.Handler(SectionShell("Positions", csrf, "Positions", PositionsPage())).ServeHTTP(w, r)
+	})
 
 	failure := func(w http.ResponseWriter, r *http.Request, csrf string, err error) {
 		message := "The operation could not be saved. Retry after checking daemon status."

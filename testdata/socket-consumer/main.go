@@ -64,9 +64,10 @@ func (e transportError) Error() string { return e.cause.Error() }
 func (e transportError) Unwrap() error { return e.cause }
 
 type client struct {
-	http   *http.Client
-	base   string
-	stderr io.Writer
+	http           *http.Client
+	base           string
+	stderr         io.Writer
+	positionUpdate func(positionsPublication) error
 }
 
 func decode(data []byte, out any) error {
@@ -564,11 +565,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	path := flags.String("state", "", "private SQLite mirror path")
 	fixture := flags.String("assert", "", "JSON fixture assertions")
 	follow := flags.Bool("follow", false, "synchronize until interrupted")
+	positionsAccount := flags.String("positions-account", "", "read reported positions independently for this Wake account ID")
 	interval := flags.Duration("interval", time.Second, "initial event-stream reconnect delay")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *socket == "" || *path == "" || *interval <= 0 || flags.NArg() != 0 {
+	if *socket == "" || *path == "" && *positionsAccount == "" || *interval <= 0 || flags.NArg() != 0 || len(*positionsAccount) > 256 {
 		return errors.New("--socket and --state are required; reconnect delay must be positive")
 	}
 	defer func() {
@@ -598,6 +600,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 	}}
 	defer transport.CloseIdleConnections()
 	c := client{http: &http.Client{Transport: transport, Timeout: 20 * time.Second}, base: "http://wake", stderr: stderr}
+	if *positionsAccount != "" {
+		return c.positionsMode(ctx, *positionsAccount, *follow, *interval, stdout)
+	}
 	db, err := openMirror(*path)
 	if err != nil {
 		return err

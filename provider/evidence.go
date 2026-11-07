@@ -74,14 +74,14 @@ func (a Artifact) Equivalence() (string, string) {
 // Counts names each outcome so adding a supported claim kind cannot shift
 // positional arguments in a provider's report accounting.
 type Counts struct {
-	Rows, Activities, Corrections, Instruments, Rejected, Ignored uint64
+	Rows, Activities, Corrections, Instruments, PositionSets, Rejected, Ignored uint64
 }
 
 type Result struct{ counts Counts }
 
 func NewResult(counts Counts) (Result, error) {
 	remaining := counts.Rows
-	for _, n := range []uint64{counts.Activities, counts.Corrections, counts.Instruments, counts.Rejected, counts.Ignored} {
+	for _, n := range []uint64{counts.Activities, counts.Corrections, counts.Instruments, counts.PositionSets, counts.Rejected, counts.Ignored} {
 		if n > remaining {
 			return Result{}, ErrInvalid
 		}

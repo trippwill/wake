@@ -36,7 +36,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 	auth.issue(session)
 
 	for _, tc := range []struct{ path, title string }{
-		{"/activity", "Activity"}, {"/instruments", "Instruments"}, {"/review", "Needs review"}, {"/system", "Daemon status"}, {"/system/configuration", "Configuration"},
+		{"/activity", "Activity"}, {"/instruments", "Instruments"}, {"/positions", "Positions"}, {"/review", "Needs review"}, {"/system", "Daemon status"}, {"/system/configuration", "Configuration"},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+tc.path, nil)
 		r.AddCookie(session.Result().Cookies()[0])
@@ -56,7 +56,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 		}
 
 		previous := -1
-		for _, label := range []string{"Overview", "Activity", "Instruments", "Needs review", "Connections", "System"} {
+		for _, label := range []string{"Overview", "Activity", "Instruments", "Positions", "Needs review", "Connections", "System"} {
 			index := strings.Index(html, "<span>"+label+"</span>")
 			if index <= previous {
 				t.Fatal("sidebar order changed", label)
@@ -102,6 +102,7 @@ func TestDirectResourceNavigationUsesCanonicalFallbacks(t *testing.T) {
 		{"/activity/one/correct", "Activity", "/activity/one", "Activity detail"},
 		{"/review", "Needs review", "/review", "Needs review"},
 		{"/instruments", "Instruments", "/instruments", "Instruments"},
+		{"/positions", "Positions", "/positions", "Positions"},
 		{"/system/configuration", "System", "/system", "System"},
 	} {
 		r := pageRequest(httptest.NewRequest(http.MethodGet, tc.path, nil))

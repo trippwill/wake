@@ -1256,3 +1256,32 @@ body {
   height: min(65dvh, 38rem);
   min-height: 20rem;
 }
+
+.wake-main [data-positions-summary] {
+  padding-block-end: 0.75rem;
+}
+.wake-main [data-positions-summary] p {
+  margin-block: 0 0.5rem;
+}
+.wake-main [data-positions-summary] dl {
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  padding-block: 0.5rem;
+}
+.wake-main [data-positions-summary] dd {
+  margin: 0;
+}
+.wake-main .wake-grid-cell details {
+  margin-block-start: 0.25rem;
+  padding: 0.5rem;
+}
+.wake-main .wake-grid-cell dl {
+  display: block;
+  padding-block: 0;
+}
+.wake-main .wake-grid-cell dt {
+  margin-block-start: 0.5rem;
+}
+.wake-main .wake-grid-cell dd {
+  margin: 0;
+}

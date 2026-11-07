@@ -70,6 +70,54 @@ func TestUnsupportedStoreIsUntouched(t *testing.T) {
 	}
 }
 
+func TestUnsupportedPositionsFormatPreservesStores(t *testing.T) {
+	s, path := testStore(t)
+	if _, err := s.db.Exec(
+		`UPDATE store_metadata SET version='wake-reported-positions-3' WHERE singleton=1`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := testProfile(path)
+
+	directory, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = directory.Close() }()
+
+	before := map[string][]byte{}
+	for _, file := range profile.paths() {
+		data, err := directory.ReadFile(filepath.Base(file))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		before[file] = data
+	}
+
+	next, err := Open(t.Context(), profile, nil)
+	if next != nil {
+		_ = next.Close()
+	}
+
+	if !errors.Is(err, ErrUnsupportedSchema) {
+		t.Fatal("old positions format did not fail closed", err)
+	}
+
+	for file, data := range before {
+		after, err := directory.ReadFile(filepath.Base(file))
+		if err != nil || !bytes.Equal(data, after) {
+			t.Fatal("unsupported positions format changed a retained store", file, err)
+		}
+	}
+}
+
 func TestPrivateStoreOwnershipAndRestart(t *testing.T) {
 	dir := t.TempDir()
 	//nolint:gosec // Private test directory or synthetic database.

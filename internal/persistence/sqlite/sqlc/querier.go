@@ -116,6 +116,7 @@ type Querier interface {
 	PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error)
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
+	PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error)
 	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
 	Profile(ctx context.Context) (Profile, error)
@@ -141,6 +142,8 @@ type Querier interface {
 	PutListing(ctx context.Context, arg PutListingParams) error
 	PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error
 	PutObservation(ctx context.Context, arg PutObservationParams) error
+	PutPositionBinding(ctx context.Context, arg PutPositionBindingParams) error
+	PutPositionSet(ctx context.Context, arg PutPositionSetParams) error
 	PutRecord(ctx context.Context, arg PutRecordParams) error
 	PutReferenceEvidence(ctx context.Context, arg PutReferenceEvidenceParams) error
 	PutRelationship(ctx context.Context, arg PutRelationshipParams) error
