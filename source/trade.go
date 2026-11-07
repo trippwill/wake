@@ -18,23 +18,6 @@ const (
 	Mixed         PositionEffect = "mixed"
 )
 
-// Charge retains the reported monetary role and total/component qualification.
-type Charge struct {
-	field, scope string
-	money        financial.Money
-}
-
-func NewCharge(field, scope string, money financial.Money) (Charge, error) {
-	if !validText(field, 128) || (scope != "total" && scope != "component") || money.Amount() == "" {
-		return Charge{}, ErrInvalidTrade
-	}
-
-	return Charge{field, scope, money}, nil
-}
-func (c Charge) Field() string          { return c.field }
-func (c Charge) Scope() string          { return c.scope }
-func (c Charge) Money() financial.Money { return c.money }
-
 type TradeKind string
 
 const (
@@ -99,18 +82,12 @@ func NewTrade(input TradeInput) (Trade, error) {
 		return Trade{}, ErrInvalidTrade
 	}
 
-	if len(input.EventAliases) > 16 || len(input.Charges) > 32 {
+	if len(input.EventAliases) > 16 || !validCharges(input.Charges) {
 		return Trade{}, ErrInvalidTrade
 	}
 
 	for _, ref := range input.EventAliases {
 		if ref.IsZero() {
-			return Trade{}, ErrInvalidTrade
-		}
-	}
-
-	for _, c := range input.Charges {
-		if c.field == "" {
 			return Trade{}, ErrInvalidTrade
 		}
 	}

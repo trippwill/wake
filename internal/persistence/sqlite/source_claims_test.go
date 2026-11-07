@@ -314,12 +314,16 @@ func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing
 	original.Fields = append(
 		original.Fields,
 		activityFieldData{
-			Name:   source.FieldCharge,
-			Charge: &chargeData{Field: "b", Scope: "total", Money: moneyData{Amount: "1.00", Currency: "USD"}},
+			Name: source.FieldCharge,
+			Charge: &chargeData{
+				Field:    "b",
+				Category: source.Fee,
+				Total:    moneyData{Amount: "1.00", Currency: "USD"},
+			},
 		},
 		activityFieldData{
 			Name:   source.FieldCharge,
-			Charge: &chargeData{Field: "a", Scope: "total", Money: moneyData{Amount: "2", Currency: "USD"}},
+			Charge: &chargeData{Field: "a", Category: source.Fee, Total: moneyData{Amount: "2", Currency: "USD"}},
 		},
 	)
 	baseline, _ := json.Marshal(original)

@@ -277,6 +277,10 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 				}
 			}
 		}
+		templ_7745c5c3_Err = PublishedChargesTable(r.Activity.Charges).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		if t := r.Activity.Transfer; t != nil {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<dl><dt>Direction</dt><dd>")
 			if templ_7745c5c3_Err != nil {
@@ -285,7 +289,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t.Direction)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -298,7 +302,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(r.Activity.Quantity.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -311,7 +315,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(r.Activity.Quantity.Unit)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 126}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -324,7 +328,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.Method)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 184}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 184}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -337,7 +341,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.ReportDate)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 242}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 242}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -350,7 +354,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.Company)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 311}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 311}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -363,7 +367,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.DeliveringBroker)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 381}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 381}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -376,7 +380,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.CounterpartyAccount)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 457}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 457}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -389,7 +393,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(known(text(t.CounterpartyName)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 527}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 527}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -402,7 +406,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(publishedMoney(t.Price))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 586}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 586}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -415,7 +419,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(publishedMoney(t.PositionValue))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 653}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 653}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
@@ -428,7 +432,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(publishedMoney(t.ReportedCost))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 728}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 728}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -441,7 +445,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(publishedMoney(t.ReportedPnL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 41, Col: 795}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 42, Col: 795}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -469,7 +473,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(link.Kind)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 50, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 51, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -487,7 +491,7 @@ func MovementPage(r application.CanonicalResource, name string) templ.Component 
 					var templ_7745c5c3_Var31 templ.SafeURL
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/activity/" + text(link.TargetID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 52, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/movement.templ`, Line: 53, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {

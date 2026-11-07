@@ -134,18 +134,48 @@ func (e CashCategory) Valid() bool {
 	}
 }
 
-// Defines values for ChargeScope.
+// Defines values for ChargeCategory.
 const (
-	Component ChargeScope = "component"
-	Total     ChargeScope = "total"
+	ChargeCategoryBrokerClearingFee      ChargeCategory = "broker-clearing-fee"
+	ChargeCategoryBrokerExecutionFee     ChargeCategory = "broker-execution-fee"
+	ChargeCategoryCommission             ChargeCategory = "commission"
+	ChargeCategoryFee                    ChargeCategory = "fee"
+	ChargeCategoryOtherFee               ChargeCategory = "other-fee"
+	ChargeCategoryOtherTax               ChargeCategory = "other-tax"
+	ChargeCategoryRegulatoryFee          ChargeCategory = "regulatory-fee"
+	ChargeCategorySalesTax               ChargeCategory = "sales-tax"
+	ChargeCategoryTax                    ChargeCategory = "tax"
+	ChargeCategoryThirdPartyClearingFee  ChargeCategory = "third-party-clearing-fee"
+	ChargeCategoryThirdPartyExecutionFee ChargeCategory = "third-party-execution-fee"
+	ChargeCategoryTransactionFee         ChargeCategory = "transaction-fee"
 )
 
-// Valid indicates whether the value is a known member of the ChargeScope enum.
-func (e ChargeScope) Valid() bool {
+// Valid indicates whether the value is a known member of the ChargeCategory enum.
+func (e ChargeCategory) Valid() bool {
 	switch e {
-	case Component:
+	case ChargeCategoryBrokerClearingFee:
 		return true
-	case Total:
+	case ChargeCategoryBrokerExecutionFee:
+		return true
+	case ChargeCategoryCommission:
+		return true
+	case ChargeCategoryFee:
+		return true
+	case ChargeCategoryOtherFee:
+		return true
+	case ChargeCategoryOtherTax:
+		return true
+	case ChargeCategoryRegulatoryFee:
+		return true
+	case ChargeCategorySalesTax:
+		return true
+	case ChargeCategoryTax:
+		return true
+	case ChargeCategoryThirdPartyClearingFee:
+		return true
+	case ChargeCategoryThirdPartyExecutionFee:
+		return true
+	case ChargeCategoryTransactionFee:
 		return true
 	default:
 		return false
@@ -542,16 +572,18 @@ type Cash struct {
 // CashCategory defines model for Cash.Category.
 type CashCategory string
 
-// Charge defines model for Charge.
+// Charge A reported monetary role with an optional total and independently reported components. Components need not sum to the total. Separate postings are not combined.
 type Charge struct {
-	// Money Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Money Money       `json:"money"`
-	Role  string      `json:"role"`
-	Scope ChargeScope `json:"scope"`
+	Category   ChargeCategory `json:"category"`
+	Components []Charge       `json:"components"`
+	Role       string         `json:"role"`
+
+	// Total Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Total *NullableMoney `json:"total"`
 }
 
-// ChargeScope defines model for Charge.Scope.
-type ChargeScope string
+// ChargeCategory defines model for Charge.Category.
+type ChargeCategory string
 
 // Correction defines model for Correction.
 type Correction struct {

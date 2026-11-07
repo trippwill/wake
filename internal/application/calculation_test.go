@@ -175,7 +175,9 @@ func TestFallbackRetainsCoupledRateWhenIndependentChargeExceedsLimit(t *testing.
 	for i := range charges {
 		var err error
 
-		charges[i], err = source.NewCharge("fee"+strconv.Itoa(i), "component", money)
+		charges[i], err = source.NewCharge(
+			source.ChargeInput{Category: source.Fee, Field: "fee" + strconv.Itoa(i), Total: money},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,7 +200,7 @@ func TestFallbackRetainsCoupledRateWhenIndependentChargeExceedsLimit(t *testing.
 	baseline, _ := ConversionTerms(conversion)
 	subject := baseline.Observation().Fields()
 	rate, _ := financial.NewPrice("0.9", eur)
-	extra, _ := source.NewCharge("overflow", "component", money)
+	extra, _ := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: "overflow", Total: money})
 
 	overflow := asserted(t, source.ActivityFieldInput{Name: source.FieldCharge, Charge: extra})
 	claims := []ActivityClaim{

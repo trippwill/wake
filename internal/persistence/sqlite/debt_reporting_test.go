@@ -62,10 +62,10 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 			for role, amount := range map[string]string{"commission": tc.commission, "tax": "0.00"} {
 				i := slices.IndexFunc(
 					f.Charges,
-					func(c source.Charge) bool { return c.Field() == role && c.Scope() == "total" },
+					func(c source.Charge) bool { return c.Field() == role },
 				)
-				if i < 0 || f.Charges[i].Money().Amount() != amount ||
-					f.Charges[i].Money().Currency().String() != tc.currency {
+				if i < 0 || f.Charges[i].Total().Amount() != amount ||
+					f.Charges[i].Total().Currency().String() != tc.currency {
 					t.Fatal("reported charge lost", role, f.Charges)
 				}
 			}

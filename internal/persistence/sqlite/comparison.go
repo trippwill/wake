@@ -66,18 +66,23 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 	}
 
 	charges := func(items []source.Charge) {
-		rows := make([]string, 0, len(items))
-		for _, charge := range items {
-			rows = append(
-				rows,
-				charge.Field()+" ("+charge.Scope()+"): "+charge.Money().
-					Amount()+
-					" "+charge.Money().
-					Currency().
-					String(),
-			)
-		}
+		rows := []string{}
 
+		var visit func([]source.Charge, string)
+
+		visit = func(items []source.Charge, prefix string) {
+			for _, c := range items {
+				path := prefix + c.Field()
+				amount := "Total not reported"
+				if c.Total().Amount() != "" {
+					amount = c.Total().Amount() + " " + c.Total().Currency().String()
+				}
+
+				rows = append(rows, path+" ("+string(c.Category())+"): "+amount)
+				visit(c.Components(), path+" / ")
+			}
+		}
+		visit(items, "")
 		sort.Strings(rows)
 
 		value := strings.Join(rows, "; ")
@@ -139,7 +144,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		text("debt.payments_per_year", payments)
 	}
 	activity := func(o source.ActivityObservation) {
-		reportedCharges := []source.Charge{}
+		chargeFields := []source.ActivityField{}
 		for _, field := range o.Fields().Fields {
 			f := field.Fields()
 			key := field.Key()
@@ -221,8 +226,9 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			case source.FieldRateBase:
 				text(key, f.Currency.String())
 			case source.FieldCharge:
-				money(key, f.Charge.Money())
-				reportedCharges = append(reportedCharges, f.Charge)
+				money(key, f.Charge.Total())
+
+				chargeFields = append(chargeFields, field)
 			case source.FieldRelationship:
 				text(key, comparisonReference(f.Relationship.Target()))
 			default:
@@ -230,8 +236,27 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			}
 		}
 
-		if len(reportedCharges) > 0 {
-			charges(reportedCharges)
+		if len(chargeFields) > 0 {
+			// Comparisons also retain internally conflicting raw assertions.
+			rows := []string{}
+			for _, f := range chargeFields {
+				assertion := f.Fields()
+				c := assertion.Charge
+				categories := make([]string, 0, len(assertion.ChargeParents)+1)
+				for _, parent := range assertion.ChargeParents {
+					categories = append(categories, string(parent.Category()))
+				}
+
+				categories = append(categories, string(c.Category()))
+				rows = append(
+					rows,
+					fmt.Sprintf("%s (%s): %s %s", f.Key(), strings.Join(categories, " / "),
+						c.Total().Amount(), c.Total().Currency().String()),
+				)
+			}
+
+			sort.Strings(rows)
+			text("charges", strings.Join(rows, "; "))
 		}
 	}
 	switch kind {

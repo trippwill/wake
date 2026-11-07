@@ -306,7 +306,7 @@ func TestConversionUnknownCounterpartAndIndependentMoney(t *testing.T) {
 		f.Rate.Amount() != "1.234567890123" ||
 		f.Proceeds.Amount() != "123.45" ||
 		f.Net.Amount() != "123.25" ||
-		f.Charges[0].Money().Currency().String() != "GBP" {
+		f.Charges[0].Total().Currency().String() != "GBP" {
 		t.Fatal("conversion roles changed", f)
 	}
 

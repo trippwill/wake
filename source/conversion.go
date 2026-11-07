@@ -59,7 +59,7 @@ func NewConversion(f ConversionInput) (Conversion, error) {
 		f.Received.currency == (financial.Currency{}) ||
 		f.Sent.currency == f.Received.currency ||
 		len(f.EventAliases) > 16 ||
-		len(f.Charges) > 32 {
+		!validCharges(f.Charges) {
 		return Conversion{}, ErrInvalidTrade
 	}
 
@@ -78,12 +78,6 @@ func NewConversion(f ConversionInput) (Conversion, error) {
 
 	for _, r := range f.EventAliases {
 		if r.IsZero() {
-			return Conversion{}, ErrInvalidTrade
-		}
-	}
-
-	for _, c := range f.Charges {
-		if c.field == "" {
 			return Conversion{}, ErrInvalidTrade
 		}
 	}

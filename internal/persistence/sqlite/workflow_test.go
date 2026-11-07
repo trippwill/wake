@@ -353,7 +353,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	if fields.Quantity.Value() != "0.000000000123" || fields.Price.Amount() != "401.000000001" ||
 		fields.ExecutedAt.String() != "2026-10-20T13:30:00.120Z" ||
 		fields.PositionEffect != "opening" ||
-		fields.Charges[0].Money().Amount() != "-0.000000000001" ||
+		fields.Charges[0].Total().Amount() != "-0.000000000001" ||
 		fields.Proceeds.Amount() != "-0.000000049323000000123" {
 		t.Fatal("lost exact source terms", fields)
 	}

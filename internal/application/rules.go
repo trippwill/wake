@@ -12,7 +12,7 @@ import (
 
 const (
 	AuthorityRule  = "account-authority/2"
-	RepeatRule     = "qualified-activity-observations/4"
+	RepeatRule     = "qualified-activity-observations/5"
 	InstrumentRule = "qualified-instrument-reference/3"
 )
 
@@ -213,7 +213,7 @@ func equalAmount(a, b source.CurrencyAmount) bool {
 }
 
 func equalCharge(a, b source.Charge) bool {
-	return a.Field() == b.Field() && a.Scope() == b.Scope() && a.Money().Equal(b.Money())
+	return a.Role() == b.Role() && a.Total().Equal(b.Total())
 }
 
 func equalDeliverable(a, b source.Deliverable) bool {
@@ -221,15 +221,7 @@ func equalDeliverable(a, b source.Deliverable) bool {
 }
 
 func compatibleCharges(a, b []source.Charge) bool {
-	for _, left := range a {
-		for _, right := range b {
-			if left.Field() == right.Field() && left.Scope() == right.Scope() && !equalCharge(left, right) {
-				return false
-			}
-		}
-	}
-
-	return true
+	return compatibleChargeAssertions(source.ChargeFields(a), source.ChargeFields(b))
 }
 
 func compatibleDeliverables(a, b []source.Deliverable) bool {

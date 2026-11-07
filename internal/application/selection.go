@@ -238,44 +238,27 @@ func enrichDebt(a, b source.DebtTerms) (source.DebtTerms, error) {
 }
 
 func mergeCharges(a, b []source.Charge) ([]source.Charge, error) {
-	type role struct{ field, scope string }
-
-	known := make(map[role]source.Charge, len(a)+len(b))
+	known := map[string]source.ActivityField{}
 	for _, charges := range [][]source.Charge{a, b} {
-		for _, charge := range charges {
-			key := role{charge.Field(), charge.Scope()}
-			if previous, ok := known[key]; ok {
-				if !equalCharge(previous, charge) {
+		for _, field := range source.ChargeFields(charges) {
+			if previous, ok := known[field.Key()]; ok {
+				if !CompatibleActivityFields(previous, field) {
 					return nil, ErrInvalid
 				}
 			} else {
-				known[key] = charge
+				known[field.Key()] = field
 			}
 		}
 	}
 
-	if len(known) > 32 {
-		return nil, ErrInvalid
+	fields := make([]source.ActivityField, 0, len(known))
+	for _, field := range known {
+		fields = append(fields, field)
 	}
 
-	if len(known) == 0 {
-		return nil, nil
-	}
+	slices.SortFunc(fields, func(a, b source.ActivityField) int { return cmp.Compare(a.Key(), b.Key()) })
 
-	out := make([]source.Charge, 0, len(known))
-	for _, charge := range known {
-		out = append(out, charge)
-	}
-
-	slices.SortFunc(out, func(a, b source.Charge) int {
-		if n := cmp.Compare(a.Field(), b.Field()); n != 0 {
-			return n
-		}
-
-		return cmp.Compare(a.Scope(), b.Scope())
-	})
-
-	return out, nil
+	return source.ChargesFromFields(fields)
 }
 
 func enrichTrade(a, b source.Trade) (source.Trade, error) {

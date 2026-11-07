@@ -20,6 +20,7 @@ type activityFieldData struct {
 	Reference                                                           refData
 	CurrencyAmount                                                      *currencyAmountData
 	Charge                                                              *chargeData
+	ChargeParents                                                       []chargeRoleData
 	Relationship                                                        *relationshipData
 }
 type observationData struct {
@@ -74,7 +75,14 @@ func activityFieldWire(value source.ActivityField) activityFieldData {
 	}
 
 	if f.Charge.Field() != "" {
-		d.Charge = &chargeData{f.Charge.Field(), f.Charge.Scope(), moneyWire(f.Charge.Money())}
+		charge := chargeWire(f.Charge)
+		d.Charge = &charge
+		for _, parent := range f.ChargeParents {
+			d.ChargeParents = append(
+				d.ChargeParents,
+				chargeRoleData{Field: parent.Field(), Category: parent.Category()},
+			)
+		}
 	}
 
 	if !f.Relationship.Target().IsZero() {
@@ -171,15 +179,23 @@ func (d activityFieldData) field() (source.ActivityField, error) {
 	}
 
 	if d.Charge != nil {
-		m, e := d.Charge.Money.money()
+		f.Charge, err = d.Charge.charge()
+		if err != nil {
+			return source.ActivityField{}, err
+		}
+	}
+
+	if len(d.ChargeParents) >= 32 {
+		return source.ActivityField{}, ErrCorrupt
+	}
+
+	for _, parent := range d.ChargeParents {
+		role, e := source.NewChargeRole(parent.Category, parent.Field)
 		if e != nil {
 			return source.ActivityField{}, e
 		}
 
-		f.Charge, err = source.NewCharge(d.Charge.Field, d.Charge.Scope, m)
-		if err != nil {
-			return source.ActivityField{}, err
-		}
+		f.ChargeParents = append(f.ChargeParents, role)
 	}
 
 	if d.Relationship != nil {

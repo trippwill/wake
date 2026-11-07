@@ -239,7 +239,9 @@ func Conversion() (source.Conversion, error) {
 	received, _ := source.NewCurrencyAmount(usd, "")
 	rate, _ := financial.NewPrice("1.2345678901", usd)
 	money, _ := financial.NewMoney("-0.25", gbp)
-	charge, _ := source.NewCharge("commission", "total", money)
+	component, _ := source.NewCharge(source.ChargeInput{Category: source.RegulatoryFee, Field: "regulatory-detail", Total: money})
+	subtotal, _ := source.NewCharge(source.ChargeInput{Category: source.RegulatoryFee, Field: "regulatory", Components: []source.Charge{component}})
+	charge, _ := source.NewCharge(source.ChargeInput{Category: source.Commission, Field: "commission", Total: money, Components: []source.Charge{subtotal}})
 	return source.NewConversion(source.ConversionInput{Location: "fx:1", Account: f.Account, Event: f.Event, Date: f.TradeDate, Sent: sent, Received: received, RateBase: eur, Rate: rate, Charges: []source.Charge{charge}})
 }
 

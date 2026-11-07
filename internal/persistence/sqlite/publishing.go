@@ -261,7 +261,12 @@ func publicCharges(charges []source.Charge) []application.PublishedCharge {
 	for _, c := range charges {
 		out = append(
 			out,
-			application.PublishedCharge{Role: c.Field(), Scope: c.Scope(), Money: *publicMoney(c.Money())},
+			application.PublishedCharge{
+				Role:       c.Field(),
+				Category:   string(c.Category()),
+				Total:      publicMoney(c.Total()),
+				Components: publicCharges(c.Components()),
+			},
 		)
 	}
 
@@ -469,6 +474,7 @@ func canonicalSnapshot(
 			}
 
 			f := terms.Cash().Fields()
+			a.Charges = publicCharges(terms.Cash().Charges())
 			a.Date, a.At, a.SettlementDate = f.Date.String(), known(f.At.String()), publicDate(f.SettlementDate)
 			a.Cash = &application.PublishedCash{
 				AvailableForTradingDate: publicDate(f.AvailableForTradingDate),

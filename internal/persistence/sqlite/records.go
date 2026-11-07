@@ -144,8 +144,46 @@ type tradeData struct {
 	Charges                                                          []chargeData
 }
 type chargeData struct {
-	Field, Scope string
-	Money        moneyData
+	Field      string
+	Category   source.ChargeCategory
+	Total      moneyData
+	Components []chargeData
+}
+type chargeRoleData struct {
+	Field    string
+	Category source.ChargeCategory
+}
+
+func chargeWire(c source.Charge) chargeData {
+	d := chargeData{Field: c.Field(), Category: c.Category(), Total: moneyWire(c.Total())}
+	for _, child := range c.Components() {
+		d.Components = append(d.Components, chargeWire(child))
+	}
+
+	return d
+}
+func (d chargeData) charge() (source.Charge, error) { return decodeCharge(d, 0) }
+func decodeCharge(d chargeData, depth int) (source.Charge, error) {
+	if depth >= 32 || len(d.Components) > 32 {
+		return source.Charge{}, ErrCorrupt
+	}
+
+	total, err := d.Total.money()
+	if err != nil {
+		return source.Charge{}, err
+	}
+
+	f := source.ChargeInput{Field: d.Field, Category: d.Category, Total: total}
+	for _, child := range d.Components {
+		c, e := decodeCharge(child, depth+1)
+		if e != nil {
+			return source.Charge{}, e
+		}
+
+		f.Components = append(f.Components, c)
+	}
+
+	return source.NewCharge(f)
 }
 
 func encodeTrade(t source.Trade) ([]byte, error) {
@@ -177,7 +215,7 @@ func encodeTrade(t source.Trade) ([]byte, error) {
 	}
 
 	for _, c := range f.Charges {
-		data.Charges = append(data.Charges, chargeData{c.Field(), c.Scope(), moneyWire(c.Money())})
+		data.Charges = append(data.Charges, chargeWire(c))
 	}
 
 	if !f.SettlementDate.IsZero() {
@@ -276,12 +314,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 
 	charges := []source.Charge{}
 	for _, c := range wire.Charges {
-		money, e := c.Money.money()
-		if e != nil {
-			return source.Trade{}, e
-		}
-
-		charge, e := source.NewCharge(c.Field, c.Scope, money)
+		charge, e := c.charge()
 		if e != nil {
 			return source.Trade{}, e
 		}
@@ -684,7 +717,7 @@ func encodeConversion(c source.Conversion) ([]byte, error) {
 	}
 
 	for _, c := range f.Charges {
-		d.Charges = append(d.Charges, chargeData{c.Field(), c.Scope(), moneyWire(c.Money())})
+		d.Charges = append(d.Charges, chargeWire(c))
 	}
 
 	return json.Marshal(d)
@@ -764,12 +797,7 @@ func decodeConversion(data []byte) (source.Conversion, error) {
 	}
 
 	for _, c := range d.Charges {
-		m, e := c.Money.money()
-		if e != nil {
-			return source.Conversion{}, e
-		}
-
-		v, e := source.NewCharge(c.Field, c.Scope, m)
+		v, e := c.charge()
 		if e != nil {
 			return source.Conversion{}, e
 		}

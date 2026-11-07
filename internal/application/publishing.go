@@ -51,10 +51,12 @@ type PublishedAmount struct {
 	Currency string  `json:"currency"`
 }
 type PublishedCharge struct {
-	Role  string         `json:"role"`
-	Scope string         `json:"scope"`
-	Money PublishedMoney `json:"money"`
+	Role       string            `json:"role"`
+	Category   string            `json:"category"`
+	Total      *PublishedMoney   `json:"total"`
+	Components []PublishedCharge `json:"components"`
 }
+
 type PublishedQuantity struct {
 	Value string `json:"value"`
 	Unit  string `json:"unit"`

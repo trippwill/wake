@@ -5,7 +5,7 @@ package source
 
 // activityInputs materializes only reported known fields. The strict term
 // constructors below remain the completeness and coupled-invariant boundary.
-func (o ActivityObservation) activityInputs() (string, TradeInput, LifecycleInput, ConversionInput) {
+func (o ActivityObservation) activityInputs() (string, TradeInput, LifecycleInput, ConversionInput, error) {
 	subject := o.Fields()
 	fields := subject.Fields
 
@@ -73,9 +73,6 @@ func (o ActivityObservation) activityInputs() (string, TradeInput, LifecycleInpu
 			t.NetWithBillable, c.NetWithBillable = f.Money, f.Money
 		case FieldAccruedInterest:
 			t.AccruedInterest = f.Money
-		case FieldCharge:
-			t.Charges = append(t.Charges, f.Charge)
-			c.Charges = append(c.Charges, f.Charge)
 		case FieldRelationship:
 			t.Relationships = append(t.Relationships, f.Relationship)
 			l.Relationships = append(l.Relationships, f.Relationship)
@@ -90,11 +87,17 @@ func (o ActivityObservation) activityInputs() (string, TradeInput, LifecycleInpu
 		}
 	}
 
-	return family, t, l, c
+	charges, err := ChargesFromFields(fields)
+	t.Charges, c.Charges = charges, charges
+
+	return family, t, l, c, err
 }
 
 func (o ActivityObservation) Trade() (Trade, error) {
-	family, t, _, _ := o.activityInputs()
+	family, t, _, _, err := o.activityInputs()
+	if err != nil {
+		return Trade{}, err
+	}
 
 	kind, present := o.Field(FieldTradeKind)
 	if !present || !kind.Known() {
@@ -125,7 +128,11 @@ func (o ActivityObservation) Trade() (Trade, error) {
 }
 
 func (o ActivityObservation) Lifecycle() (Lifecycle, error) {
-	family, _, l, _ := o.activityInputs()
+	family, _, l, _, err := o.activityInputs()
+	if err != nil {
+		return Lifecycle{}, err
+	}
+
 	if family != "lifecycle" {
 		return Lifecycle{}, ErrInvalidActivity
 	}
@@ -143,7 +150,11 @@ func (o ActivityObservation) Lifecycle() (Lifecycle, error) {
 }
 
 func (o ActivityObservation) Conversion() (Conversion, error) {
-	family, _, _, c := o.activityInputs()
+	family, _, _, c, err := o.activityInputs()
+	if err != nil {
+		return Conversion{}, err
+	}
+
 	if family != "conversion" {
 		return Conversion{}, ErrInvalidActivity
 	}

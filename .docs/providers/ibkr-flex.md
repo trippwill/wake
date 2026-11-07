@@ -222,6 +222,33 @@ Wake rejects upstream reports whose raw bytes or decoded XML attributes contain 
 and rejects credential-bearing decoded generation references. Accepted report bytes remain unchanged
 as evidence.
 
+## Charges and fee breakdowns
+
+Confirmation execution rows preserve commission as a total with broker execution,
+broker clearing, third-party execution/clearing, regulatory and other commission
+components. Regulatory fees retain their own subtotal and FINRA, Section 31 and
+other regulatory details. All levels use the explicit commission currency, including
+FX commissions reported in another currency. Tax, sales tax, trade charge and other
+tax remain independent roles in the transaction currency; Wake does not infer an
+undocumented containment relationship between them. IBKR's
+[Confirmation configuration reference](https://www.ibkrguides.com/reportingreference/reportguide/trade%20confirmation%20configuration.htm)
+distinguishes the commission total and its principal components.
+
+The regulatory nesting is an interpretation supported by the inspected private
+Activity/Confirmation sample, not a universal arithmetic guarantee: all 190 execution
+rows supplying the regulatory fields matched that subtotal's three details, while
+one commission total differed from its six principal components. Preserve totals
+and details independently, including zeros, rebates and missing subtotals. The
+samples establish no nonzero relationship between the separate tax/charge fields.
+Private reports remain outside repository fixtures; synthetic tests exercise these
+interpretations and their limits.
+
+Activity Cash Transactions fee postings retain their reported total amount with no
+invented breakdown. Sales Taxes remain separate postings with their explicit taxable
+transaction links. Neither the taxable amount nor a related fee creates a combined
+total. Activity Commission Details and summary rows remain original evidence without
+an additional financial contribution.
+
 ## Repeated reports
 
 Every completed fetch records its actual digest, retrieval time and requested and

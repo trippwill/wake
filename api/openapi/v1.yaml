@@ -522,20 +522,36 @@ components:
     Charge:
       type: object
       additionalProperties: false
+      description: A reported monetary role with an optional total and independently reported components. Components need not sum to the total. Separate postings are not combined.
       properties:
         role:
           type: string
-        scope:
+        category:
           type: string
           enum:
-          - total
-          - component
-        money:
-          $ref: '#/components/schemas/Money'
+          - commission
+          - broker-execution-fee
+          - broker-clearing-fee
+          - third-party-execution-fee
+          - third-party-clearing-fee
+          - regulatory-fee
+          - transaction-fee
+          - fee
+          - tax
+          - sales-tax
+          - other-tax
+          - other-fee
+        total:
+          $ref: '#/components/schemas/NullableMoney'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Charge'
       required:
       - role
-      - scope
-      - money
+      - category
+      - total
+      - components
     Relationship:
       type: object
       additionalProperties: false

@@ -196,9 +196,30 @@ Missing, zero and inapplicable differ. A date is not an invented midnight instan
 Price, gross amount, net cash, accrued interest and charges are not interchangeable.
 Calculations and rounded displays do not replace source values.
 
-Charges are compared by their reported field and total/component scope. Reordering
-or omitting a charge role does not establish disagreement. Different monetary
-values or currencies for the same reported role remain conflicting evidence.
+A charge has a financial category, a source role, an optional reported total and
+independently reported components. Components can have their own subtotals and
+breakdowns. A total without components does not establish a complete breakdown;
+components without a total do not authorize calculating one. Preserve signed
+amounts, refunds, exact zeros and each amount's currency. Components need not sum
+to the reported total, and overlapping subtotal/detail levels are never added together.
+
+Compare each monetary assertion by its complete charge-role path. Reordering or
+omitting a role does not establish disagreement. Different amounts, currencies or
+classifications at the same path remain conflicting evidence. Compare ancestor
+classifications even when their reported descendants differ.
+An existing baseline category wins over incompatible automatic descendants. Without
+a baseline category, disputed enrichment stays unknown. An explicit source choice
+selects a coherent subtree and excludes descendants with incompatible ancestor categories.
+Normalized observations can retain conflicting assertions at one path; accepted charge trees
+select a single value per role. Known breakdowns and compatible recombinations add no subject support;
+report appearances remain inspectable independently.
+
+A standalone fee or tax posting uses its cash amount as the charge total. Its
+breakdown can use the same structure as attached trade or FX charges without
+creating a second cash event or independent copy of the posting amount. An operator's
+cash-amount correction controls that total while original source assertions remain
+retained. Separate fee and tax postings retain their identities and explicit links;
+Wake does not derive a combined fee-plus-tax total.
 
 Establish identity through explicit corroboration before combining fields. Weighted
 confidence cannot outweigh a strong contradiction. Repeated observations must not duplicate
@@ -295,7 +316,7 @@ other accepted values. Selecting financial fields from an observation does not
 silently change instrument or listing identity. Decisions preserve dissent,
 and stale forms must not overwrite decisions made after the form was read.
 
-Compatible observations contribute charge roles in a deterministic field/scope order. If combining
+Compatible observations contribute charge roles in deterministic path order. If combining
 individually valid facts exceeds a constructor bound or produces invalid debt terms, retain the
 durable baseline with visible disagreement and preserve all supporting observations. Conflicting
 shared instrument terms mark the automatic instrument selection for review without replacing its
