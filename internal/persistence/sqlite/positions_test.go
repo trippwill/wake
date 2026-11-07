@@ -1208,7 +1208,7 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 	}
 }
 
-func TestPositionsBindEachSharedParentOnceWithoutDroppingEvidence(t *testing.T) {
+func TestPositionsBindEachSharedParentOnceWithIndependentSupport(t *testing.T) {
 	s := coverageStore(t)
 	if _, err := s.db.Exec(`CREATE TABLE underlier_binding_attempts(total INTEGER NOT NULL);
 INSERT INTO underlier_binding_attempts VALUES(0);
@@ -1259,8 +1259,8 @@ CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_clai
 	if err := s.db.QueryRow(`SELECT (SELECT total FROM underlier_binding_attempts),(SELECT count(*) FROM instrument_claims WHERE role='underlier')`).
 		Scan(&attempts, &retained); err != nil ||
 		attempts != count ||
-		retained != count {
-		t.Fatal("shared parent amplified binding work or lost evidence", attempts, retained, err)
+		retained != 1 {
+		t.Fatal("shared parent amplified binding work or retained redundant support", attempts, retained, err)
 	}
 
 	if v := readPositions(t, s); v.Status != "available" || len(v.Positions) != count {

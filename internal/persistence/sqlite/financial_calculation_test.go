@@ -178,7 +178,7 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 	}
 }
 
-func TestCalculationUsesDistinctClaimsAndCanSelectAnyRetainedAppearance(t *testing.T) {
+func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testing.T) {
 	s := coverageStore(t)
 	ctx := t.Context()
 	row := equityRow("U1", "same", "100")
@@ -201,8 +201,8 @@ func TestCalculationUsesDistinctClaimsAndCanSelectAnyRetainedAppearance(t *testi
 	}
 
 	form, err := s.CorrectionForm(ctx, "activity", id)
-	if err != nil || len(form.Candidates) != 13 {
-		t.Fatal("provenance candidates were discarded", len(form.Candidates), err)
+	if err != nil || len(form.Candidates) != 1 {
+		t.Fatal("redundant appearances became evidence choices", len(form.Candidates), err)
 	}
 
 	choice := form.Candidates[len(form.Candidates)-1].Value
@@ -223,11 +223,11 @@ func TestCalculationUsesDistinctClaimsAndCanSelectAnyRetainedAppearance(t *testi
 	}
 
 	if err = s.CheckCorrection(ctx, decision); err != nil {
-		t.Fatal("later appearance cannot be checked", err)
+		t.Fatal("retained observation cannot be checked", err)
 	}
 
 	if err = s.SaveDecision(ctx, decision, "synthetic", time.Now()); err != nil {
-		t.Fatal("later appearance cannot be selected", err)
+		t.Fatal("retained observation cannot be selected", err)
 	}
 
 	current, err := s.CorrectionForm(ctx, "activity", id)
@@ -349,7 +349,7 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 	}
 }
 
-func TestNewCompatibleClaimCorroboratesSourceBeforeOperatorChoices(t *testing.T) {
+func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing.T) {
 	s := coverageStore(t)
 	ctx := t.Context()
 	baseline := strings.Replace(equityRow("U1", "fill", "10"), ` netCash="-0.000000049324000000123"`, "", 1)
@@ -384,7 +384,7 @@ func TestNewCompatibleClaimCorroboratesSourceBeforeOperatorChoices(t *testing.T)
 		if observation.Artifact == "new-compatible-source" {
 			found = true
 
-			if observation.Outcome != application.ObservationCorroborated {
+			if observation.Outcome != application.ObservationEnriched {
 				t.Fatal("source compared against operator terms", observation)
 			}
 		}

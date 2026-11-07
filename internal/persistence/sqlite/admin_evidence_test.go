@@ -40,6 +40,7 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 	}
 
 	unlinked := 0
+	noContribution := 0
 	for _, row := range all {
 		if row.Artifact != "report" {
 			t.Fatal("report scoping lost", row)
@@ -48,10 +49,47 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 		if row.ActivityID == "" {
 			unlinked++
 		}
+
+		if row.Outcome == application.ObservationNoContribution {
+			noContribution++
+		}
 	}
 
 	if unlinked != 2 {
 		t.Fatal("financial links or unselected appearances lost", unlinked)
+	}
+
+	if noContribution != 57 {
+		t.Fatal("repeated appearances claimed to add information", noContribution)
+	}
+
+	for _, direction := range []string{"asc", "desc"} {
+		query, _ := application.NewListQuery(
+			application.ListOptions{PageSize: 200, Sort: "activity", Direction: direction},
+			application.ObservationScope,
+		)
+
+		result, err := s.ObservationList(t.Context(), "artifact", "report", query)
+		if err != nil || len(result.Items) != 114 {
+			t.Fatal(result, err)
+		}
+
+		for i := 1; i < len(result.Items); i++ {
+			previous, current := result.Items[i-1].ActivityID, result.Items[i].ActivityID
+			if direction == "asc" && previous > current || direction == "desc" && previous < current {
+				t.Fatal("activity ordering ignored", direction, previous, current)
+			}
+		}
+	}
+
+	neutral, _ := application.NewListQuery(application.ListOptions{
+		Page: 2, PageSize: 50, Search: "no additional contribution",
+		ObservationMatches: []application.ObservationOutcome{application.ObservationNoContribution},
+	}, application.ObservationScope)
+
+	matched, err := s.ObservationList(t.Context(), "artifact", "report", neutral)
+	if err != nil || matched.Total != 114 || matched.Matched != 57 || len(matched.Items) != 7 {
+		t.Fatal("contribution filter was not applied before paging", matched, err)
 	}
 
 	query, _ := application.NewListQuery(application.ListOptions{

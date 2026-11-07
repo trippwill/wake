@@ -356,7 +356,7 @@ func SourceClaimOutcome(base, incoming ActivityTerms, prior []ActivityClaim) Obs
 		}
 	}
 
-	return ObservationCorroborated
+	return ObservationEnriched
 }
 
 func compatibleActivityTerms(a, b ActivityTerms) bool {

@@ -109,7 +109,7 @@ func (q *Queries) ActivityBase(ctx context.Context, activityID string) (Activity
 }
 
 const activityInputs = `-- name: ActivityInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY p.rowid
 `
 
 func (q *Queries) ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error) {
@@ -180,7 +180,7 @@ func (q *Queries) ActivitySelection(ctx context.Context, activityID string) (Act
 
 const activityToMatch = `-- name: ActivityToMatch :many
 WITH RECURSIVE seeds(node,claim_id,ordinal,account_id,reference) AS (
- SELECT 'claim' AS node,r.claim_id,r.ordinal,CAST(NULL AS TEXT) AS account_id,CAST(NULL AS TEXT) AS reference FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=?1
+ SELECT 'claim' AS node,r.claim_id,r.ordinal,CAST(NULL AS TEXT) AS account_id,CAST(NULL AS TEXT) AS reference FROM records occurrence JOIN activity_references r ON r.claim_id=occurrence.claim_id AND r.ordinal=occurrence.ordinal WHERE occurrence.artifact_id=?1
  UNION
  SELECT 'reference',NULL,NULL,e.account_id,e.reference FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id WHERE o.artifact_id=?1
 ), affected(node,claim_id,ordinal,account_id,reference) AS (
@@ -190,7 +190,7 @@ WITH RECURSIVE seeds(node,claim_id,ordinal,account_id,reference) AS (
  UNION
  SELECT 'claim',r.claim_id,r.ordinal,NULL,NULL FROM affected a JOIN activity_references r ON r.account_id=a.account_id AND r.reference=a.reference WHERE a.node='reference'
 )
-SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id WHERE a.node='claim' ORDER BY p.rowid
+SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id WHERE a.node='claim' AND p.activity_support=1 ORDER BY p.rowid
 `
 
 type ActivityToMatchRow struct {
@@ -378,9 +378,11 @@ WITH RECURSIVE affected(instrument_id) AS (
  UNION
  SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=?1 AND b.instrument_id IS NOT NULL
  UNION
- SELECT parent.instrument_id FROM affected
- JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
- JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+ SELECT coalesce(a.target_id,b.instrument_id) FROM position_bindings b JOIN records r ON r.claim_id=b.claim_id AND r.ordinal=b.ordinal LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id WHERE r.artifact_id=?1
+ UNION
+ SELECT u.underlier_id FROM position_bindings b JOIN records r ON r.claim_id=b.claim_id AND r.ordinal=b.ordinal LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id JOIN instrument_underliers u ON u.parent_id=coalesce(a.target_id,b.instrument_id) WHERE r.artifact_id=?1
+ UNION
+ SELECT parent.parent_id FROM affected JOIN instrument_underliers parent ON parent.underlier_id=affected.instrument_id
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id
 `
@@ -496,7 +498,7 @@ func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCac
 }
 
 const calculationInputs = `-- name: CalculationInputs :many
-SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid
+SELECT record_values.artifact_id, record_values.version, record_values.location, record_values.claim_id, record_values.ordinal, record_values.kind, record_values.data,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY p.rowid
 `
 
 type CalculationInputsRow struct {
@@ -722,9 +724,7 @@ const claimRootIDs = `-- name: ClaimRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
  SELECT selected.instrument_id FROM instrument_claims selected WHERE selected.claim_id=?1 AND selected.ordinal=?2
  UNION
- SELECT parent.instrument_id FROM affected
- JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
- JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+ SELECT parent.parent_id FROM affected JOIN instrument_underliers parent ON parent.underlier_id=affected.instrument_id
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id
 `
@@ -900,31 +900,6 @@ func (q *Queries) CopyClaimCorrection(ctx context.Context, arg CopyClaimCorrecti
 	return err
 }
 
-const copyClaimObservation = `-- name: CopyClaimObservation :exec
-INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) SELECT ?1,?2,?3,execution_id,outcome,rule FROM execution_observations prior WHERE prior.artifact_id=?4 AND prior.version=?5 AND prior.location=?6 ON CONFLICT DO NOTHING
-`
-
-type CopyClaimObservationParams struct {
-	ArtifactID       string
-	Version          string
-	Location         string
-	PreviousArtifact string
-	PreviousVersion  string
-	PreviousLocation string
-}
-
-func (q *Queries) CopyClaimObservation(ctx context.Context, arg CopyClaimObservationParams) error {
-	_, err := q.db.ExecContext(ctx, copyClaimObservation,
-		arg.ArtifactID,
-		arg.Version,
-		arg.Location,
-		arg.PreviousArtifact,
-		arg.PreviousVersion,
-		arg.PreviousLocation,
-	)
-	return err
-}
-
 const correctionStatus = `-- name: CorrectionStatus :exec
 UPDATE source_corrections SET status=? WHERE artifact_id=? AND version=? AND location=?
 `
@@ -1075,6 +1050,60 @@ func (q *Queries) Decisions(ctx context.Context, arg DecisionsParams) ([]Decisio
 	return items, nil
 }
 
+const deleteInstrumentClaim = `-- name: DeleteInstrumentClaim :exec
+DELETE FROM instrument_claims WHERE instrument_id=? AND claim_id=? AND ordinal=? AND role=?
+`
+
+type DeleteInstrumentClaimParams struct {
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Role         string
+}
+
+func (q *Queries) DeleteInstrumentClaim(ctx context.Context, arg DeleteInstrumentClaimParams) error {
+	_, err := q.db.ExecContext(ctx, deleteInstrumentClaim,
+		arg.InstrumentID,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.Role,
+	)
+	return err
+}
+
+const deleteInstrumentUnderlierLinks = `-- name: DeleteInstrumentUnderlierLinks :exec
+DELETE FROM instrument_underliers WHERE parent_id=?1 OR underlier_id=?1
+`
+
+func (q *Queries) DeleteInstrumentUnderlierLinks(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteInstrumentUnderlierLinks, id)
+	return err
+}
+
+const deleteObservation = `-- name: DeleteObservation :exec
+DELETE FROM execution_observations WHERE artifact_id=? AND version=? AND location=?
+`
+
+type DeleteObservationParams struct {
+	ArtifactID string
+	Version    string
+	Location   string
+}
+
+func (q *Queries) DeleteObservation(ctx context.Context, arg DeleteObservationParams) error {
+	_, err := q.db.ExecContext(ctx, deleteObservation, arg.ArtifactID, arg.Version, arg.Location)
+	return err
+}
+
+const deleteSubjectInstrumentClaims = `-- name: DeleteSubjectInstrumentClaims :exec
+DELETE FROM instrument_claims WHERE instrument_id=?
+`
+
+func (q *Queries) DeleteSubjectInstrumentClaims(ctx context.Context, instrumentID string) error {
+	_, err := q.db.ExecContext(ctx, deleteSubjectInstrumentClaims, instrumentID)
+	return err
+}
+
 const descriptor = `-- name: Descriptor :one
 SELECT id, provider, name FROM connections WHERE id=?
 `
@@ -1101,6 +1130,20 @@ UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover'
 
 func (q *Queries) DisableDiscovery(ctx context.Context, connectionID string) error {
 	_, err := q.db.ExecContext(ctx, disableDiscovery, connectionID)
+	return err
+}
+
+const discardActivitySupport = `-- name: DiscardActivitySupport :exec
+UPDATE claim_processing SET activity_support=0 WHERE claim_id=? AND ordinal=?
+`
+
+type DiscardActivitySupportParams struct {
+	ClaimID string
+	Ordinal int64
+}
+
+func (q *Queries) DiscardActivitySupport(ctx context.Context, arg DiscardActivitySupportParams) error {
+	_, err := q.db.ExecContext(ctx, discardActivitySupport, arg.ClaimID, arg.Ordinal)
 	return err
 }
 
@@ -1343,7 +1386,7 @@ func (q *Queries) FlattenAliases(ctx context.Context, arg FlattenAliasesParams) 
 
 const identityDependents = `-- name: IdentityDependents :many
 WITH bindings(id) AS (SELECT CAST(?1 AS TEXT) AS id UNION SELECT alias.id FROM resource_aliases alias WHERE alias.kind='instruments' AND alias.target_id=?1), affected(id) AS (
- SELECT CAST(?1 AS TEXT) AS id UNION SELECT p.instrument_id FROM instrument_claims n JOIN instrument_claims p ON p.claim_id=n.claim_id AND p.ordinal=n.ordinal AND p.role='activity' WHERE n.instrument_id IN (SELECT id FROM bindings) AND n.role='underlier'
+ SELECT CAST(?1 AS TEXT) AS id UNION SELECT p.parent_id FROM instrument_underliers p WHERE p.underlier_id IN (SELECT id FROM bindings)
 )
 SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id
 `
@@ -1534,6 +1577,49 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.UnderlierID,
 	)
 	return i, err
+}
+
+const instrumentContributionInputs = `-- name: InstrumentContributionInputs :many
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role
+`
+
+type InstrumentContributionInputsRow struct {
+	ClaimID  string
+	Ordinal  int64
+	Kind     string
+	Data     []byte
+	Location string
+	Role     string
+}
+
+func (q *Queries) InstrumentContributionInputs(ctx context.Context, instrumentID string) ([]InstrumentContributionInputsRow, error) {
+	rows, err := q.db.QueryContext(ctx, instrumentContributionInputs, instrumentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InstrumentContributionInputsRow
+	for rows.Next() {
+		var i InstrumentContributionInputsRow
+		if err := rows.Scan(
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.Kind,
+			&i.Data,
+			&i.Location,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const instrumentReferenceAttempts = `-- name: InstrumentReferenceAttempts :many
@@ -1861,7 +1947,7 @@ func (q *Queries) MoveBaseListing(ctx context.Context, arg MoveBaseListingParams
 }
 
 const moveInstrumentClaims = `-- name: MoveInstrumentClaims :exec
-INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) SELECT ?1,c.claim_id,c.ordinal,c.role FROM instrument_claims c WHERE c.instrument_id=?2 ON CONFLICT DO NOTHING
+INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role,outcome,rule) SELECT ?1,c.claim_id,c.ordinal,c.role,c.outcome,c.rule FROM instrument_claims c WHERE c.instrument_id=?2 ON CONFLICT DO NOTHING
 `
 
 type MoveInstrumentClaimsParams struct {
@@ -1871,6 +1957,25 @@ type MoveInstrumentClaimsParams struct {
 
 func (q *Queries) MoveInstrumentClaims(ctx context.Context, arg MoveInstrumentClaimsParams) error {
 	_, err := q.db.ExecContext(ctx, moveInstrumentClaims, arg.Target, arg.Previous)
+	return err
+}
+
+const moveInstrumentUnderlierLinks = `-- name: MoveInstrumentUnderlierLinks :exec
+INSERT INTO instrument_underliers(parent_id,underlier_id)
+SELECT CASE WHEN links.parent_id=?1 THEN ?2 ELSE links.parent_id END AS parent_id,
+ CASE WHEN links.underlier_id=?1 THEN ?2 ELSE links.underlier_id END AS underlier_id
+FROM instrument_underliers links WHERE (links.parent_id=?1 OR links.underlier_id=?1)
+ AND CASE WHEN links.parent_id=?1 THEN ?2 ELSE links.parent_id END <> CASE WHEN links.underlier_id=?1 THEN ?2 ELSE links.underlier_id END
+ON CONFLICT DO NOTHING
+`
+
+type MoveInstrumentUnderlierLinksParams struct {
+	Previous string
+	Target   string
+}
+
+func (q *Queries) MoveInstrumentUnderlierLinks(ctx context.Context, arg MoveInstrumentUnderlierLinksParams) error {
+	_, err := q.db.ExecContext(ctx, moveInstrumentUnderlierLinks, arg.Previous, arg.Target)
 	return err
 }
 
@@ -2142,7 +2247,7 @@ func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]Pen
 }
 
 const positionBindings = `-- name: PositionBindings :many
-SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM instrument_claims binding JOIN current_position_claims active ON active.claim_id=binding.claim_id AND active.ordinal=binding.ordinal WHERE binding.claim_id=p.claim_id AND binding.instrument_id=p.instrument_id AND binding.role='activity') ORDER BY p.rowid
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=p.claim_id AND active.ordinal=p.ordinal) ORDER BY p.rowid
 `
 
 type PositionBindingsRow struct {
@@ -2166,6 +2271,53 @@ func (q *Queries) PositionBindings(ctx context.Context, accountID string) ([]Pos
 			&i.InstrumentID,
 			&i.Kind,
 			&i.ReferenceStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const positionUnderlierInputs = `-- name: PositionUnderlierInputs :many
+SELECT p.instrument_id, p.claim_id, p.ordinal, p.kind, p.data, p.location,CAST(coalesce(s.underlier_id,(SELECT CASE WHEN count(*)=1 THEN min(underlier_id) END FROM instrument_underliers WHERE parent_id=p.instrument_id),'') AS TEXT) AS underlier_id,processing.sequence AS sequence FROM current_position_instruments p JOIN instrument_underliers u ON u.parent_id=p.instrument_id JOIN claim_processing processing ON processing.claim_id=p.claim_id AND processing.ordinal=p.ordinal LEFT JOIN instrument_selections s ON s.instrument_id=p.instrument_id WHERE u.underlier_id=? ORDER BY processing.rowid
+`
+
+type PositionUnderlierInputsRow struct {
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Kind         string
+	Data         []byte
+	Location     string
+	UnderlierID  string
+	Sequence     int64
+}
+
+func (q *Queries) PositionUnderlierInputs(ctx context.Context, underlierID string) ([]PositionUnderlierInputsRow, error) {
+	rows, err := q.db.QueryContext(ctx, positionUnderlierInputs, underlierID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PositionUnderlierInputsRow
+	for rows.Next() {
+		var i PositionUnderlierInputsRow
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.ClaimID,
+			&i.Ordinal,
+			&i.Kind,
+			&i.Data,
+			&i.Location,
+			&i.UnderlierID,
+			&i.Sequence,
 		); err != nil {
 			return nil, err
 		}
@@ -2751,6 +2903,20 @@ func (q *Queries) PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootPa
 	return err
 }
 
+const putInstrumentUnderlier = `-- name: PutInstrumentUnderlier :exec
+INSERT INTO instrument_underliers(parent_id,underlier_id) VALUES(?,?) ON CONFLICT DO NOTHING
+`
+
+type PutInstrumentUnderlierParams struct {
+	ParentID    string
+	UnderlierID string
+}
+
+func (q *Queries) PutInstrumentUnderlier(ctx context.Context, arg PutInstrumentUnderlierParams) error {
+	_, err := q.db.ExecContext(ctx, putInstrumentUnderlier, arg.ParentID, arg.UnderlierID)
+	return err
+}
+
 const putLifecycleActivity = `-- name: PutLifecycleActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES('lifecycle',?,?,?,?,'accepted',?)
 `
@@ -2848,17 +3014,23 @@ func (q *Queries) PutObservation(ctx context.Context, arg PutObservationParams) 
 }
 
 const putPositionBinding = `-- name: PutPositionBinding :exec
-INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING
+INSERT INTO position_bindings(claim_id,ordinal,account_id,instrument_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING
 `
 
 type PutPositionBindingParams struct {
 	ClaimID      string
+	Ordinal      int64
 	AccountID    string
 	InstrumentID string
 }
 
 func (q *Queries) PutPositionBinding(ctx context.Context, arg PutPositionBindingParams) error {
-	_, err := q.db.ExecContext(ctx, putPositionBinding, arg.ClaimID, arg.AccountID, arg.InstrumentID)
+	_, err := q.db.ExecContext(ctx, putPositionBinding,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.AccountID,
+		arg.InstrumentID,
+	)
 	return err
 }
 
@@ -3582,7 +3754,10 @@ func (q *Queries) ReviewReference(ctx context.Context) error {
 }
 
 const rootCalculationInputs = `-- name: RootCalculationInputs :many
-SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=i.ordinal)) ORDER BY p.rowid,i.role
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role,p.sequence AS sequence FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=?1 AND c.kind<>'position-instrument'
+UNION ALL
+SELECT i.claim_id,i.ordinal,i.kind,i.data,i.location,'subject' AS role,p.sequence AS sequence FROM current_position_instruments i JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=?1
+ORDER BY sequence,role
 `
 
 type RootCalculationInputsRow struct {
@@ -3592,10 +3767,11 @@ type RootCalculationInputsRow struct {
 	Data     []byte
 	Location string
 	Role     string
+	Sequence int64
 }
 
-func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error) {
-	rows, err := q.db.QueryContext(ctx, rootCalculationInputs, instrumentID)
+func (q *Queries) RootCalculationInputs(ctx context.Context, id string) ([]RootCalculationInputsRow, error) {
+	rows, err := q.db.QueryContext(ctx, rootCalculationInputs, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3610,6 +3786,7 @@ func (q *Queries) RootCalculationInputs(ctx context.Context, instrumentID string
 			&i.Data,
 			&i.Location,
 			&i.Role,
+			&i.Sequence,
 		); err != nil {
 			return nil, err
 		}
@@ -3758,6 +3935,29 @@ func (q *Queries) SelectedObservation(ctx context.Context, arg SelectedObservati
 		&i.Data,
 	)
 	return i, err
+}
+
+const setInstrumentClaimOutcome = `-- name: SetInstrumentClaimOutcome :exec
+UPDATE instrument_claims SET outcome=? WHERE instrument_id=? AND claim_id=? AND ordinal=? AND role=?
+`
+
+type SetInstrumentClaimOutcomeParams struct {
+	Outcome      string
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Role         string
+}
+
+func (q *Queries) SetInstrumentClaimOutcome(ctx context.Context, arg SetInstrumentClaimOutcomeParams) error {
+	_, err := q.db.ExecContext(ctx, setInstrumentClaimOutcome,
+		arg.Outcome,
+		arg.InstrumentID,
+		arg.ClaimID,
+		arg.Ordinal,
+		arg.Role,
+	)
+	return err
 }
 
 const setListingFIGI = `-- name: SetListingFIGI :exec

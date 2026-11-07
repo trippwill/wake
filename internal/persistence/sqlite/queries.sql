@@ -182,7 +182,7 @@ INSERT INTO executions(kind,id,account_id,accepted,status,rule) VALUES('conversi
 -- name: ActivityBase :one
 SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
-SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid;
+SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY p.rowid;
 -- name: ProjectActivity :exec
 UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
 -- name: PutSourceCorrection :exec
@@ -273,8 +273,6 @@ INSERT INTO source_claims(id,connection_id,stream,version,kind,data) VALUES(?,?,
 SELECT artifact_id,version,location FROM claim_processing WHERE claim_id=? AND ordinal=?;
 -- name: PutClaimProcessing :exec
 INSERT INTO claim_processing(claim_id,ordinal,artifact_id,version,location) VALUES(?,?,?,?,?);
--- name: CopyClaimObservation :exec
-INSERT INTO execution_observations(artifact_id,version,location,execution_id,outcome,rule) SELECT sqlc.arg(artifact_id),sqlc.arg(version),sqlc.arg(location),execution_id,outcome,rule FROM execution_observations prior WHERE prior.artifact_id=sqlc.arg(previous_artifact) AND prior.version=sqlc.arg(previous_version) AND prior.location=sqlc.arg(previous_location) ON CONFLICT DO NOTHING;
 -- name: CopyClaimCorrection :exec
 INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement,status) SELECT sqlc.arg(artifact_id),sqlc.arg(version),sqlc.arg(location),account_id,kind,target,replacement,status FROM source_corrections prior WHERE prior.artifact_id=sqlc.arg(previous_artifact) AND prior.version=sqlc.arg(previous_version) AND prior.location=sqlc.arg(previous_location) ON CONFLICT DO NOTHING;
 
@@ -295,7 +293,7 @@ INSERT INTO activity_bases(activity_id,data,instrument_id,listing_id) SELECT e.i
 SELECT DISTINCT o.execution_id FROM execution_observations o JOIN records r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location WHERE o.artifact_id=? AND o.execution_id IS NOT NULL ORDER BY o.execution_id;
 
 -- name: CalculationInputs :many
-SELECT record_values.*,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY o.rowid;
+SELECT record_values.*,o.outcome AS link_outcome FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal AND p.artifact_id=o.artifact_id AND p.version=o.version AND p.location=o.location WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY p.rowid;
 -- name: SelectedObservation :one
 SELECT record_values.* FROM record_values JOIN execution_observations o USING(artifact_id,version,location) WHERE o.execution_id=? AND o.artifact_id=? AND o.version=? AND o.location=?;
 
@@ -310,21 +308,28 @@ WITH RECURSIVE affected(instrument_id) AS (
  UNION
  SELECT b.instrument_id FROM execution_observations o JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.artifact_id=sqlc.arg(artifact_id) AND b.instrument_id IS NOT NULL
  UNION
- SELECT parent.instrument_id FROM affected
- JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
- JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+ SELECT coalesce(a.target_id,b.instrument_id) FROM position_bindings b JOIN records r ON r.claim_id=b.claim_id AND r.ordinal=b.ordinal LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id WHERE r.artifact_id=sqlc.arg(artifact_id)
+ UNION
+ SELECT u.underlier_id FROM position_bindings b JOIN records r ON r.claim_id=b.claim_id AND r.ordinal=b.ordinal LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id JOIN instrument_underliers u ON u.parent_id=coalesce(a.target_id,b.instrument_id) WHERE r.artifact_id=sqlc.arg(artifact_id)
+ UNION
+ SELECT parent.parent_id FROM affected JOIN instrument_underliers parent ON parent.underlier_id=affected.instrument_id
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id;
 -- name: RootCalculationInputs :many
-SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? AND (c.kind<>'position-instrument' OR EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=i.ordinal)) ORDER BY p.rowid,i.role;
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role,p.sequence AS sequence FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=sqlc.arg(id) AND c.kind<>'position-instrument'
+UNION ALL
+SELECT i.claim_id,i.ordinal,i.kind,i.data,i.location,'subject' AS role,p.sequence AS sequence FROM current_position_instruments i JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=sqlc.arg(id)
+ORDER BY sequence,role;
+-- name: InstrumentContributionInputs :many
+SELECT c.id AS claim_id,i.ordinal,c.kind,c.data,p.location,i.role FROM instrument_claims i JOIN source_claims c ON c.id=i.claim_id JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal WHERE i.instrument_id=? ORDER BY p.rowid,i.role;
+-- name: PositionUnderlierInputs :many
+SELECT p.*,CAST(coalesce(s.underlier_id,(SELECT CASE WHEN count(*)=1 THEN min(underlier_id) END FROM instrument_underliers WHERE parent_id=p.instrument_id),'') AS TEXT) AS underlier_id,processing.sequence AS sequence FROM current_position_instruments p JOIN instrument_underliers u ON u.parent_id=p.instrument_id JOIN claim_processing processing ON processing.claim_id=p.claim_id AND processing.ordinal=p.ordinal LEFT JOIN instrument_selections s ON s.instrument_id=p.instrument_id WHERE u.underlier_id=? ORDER BY processing.rowid;
 
 -- name: ClaimRootIDs :many
 WITH RECURSIVE affected(instrument_id) AS (
  SELECT selected.instrument_id FROM instrument_claims selected WHERE selected.claim_id=sqlc.arg(claim_id) AND selected.ordinal=sqlc.arg(ordinal)
  UNION
- SELECT parent.instrument_id FROM affected
- JOIN instrument_claims nested ON nested.instrument_id=affected.instrument_id AND nested.role='underlier'
- JOIN instrument_claims parent INDEXED BY instrument_claim_occurrence ON parent.claim_id=nested.claim_id AND parent.ordinal=nested.ordinal AND parent.role='activity'
+ SELECT parent.parent_id FROM affected JOIN instrument_underliers parent ON parent.underlier_id=affected.instrument_id
 )
 SELECT DISTINCT coalesce((SELECT target_id FROM resource_aliases a WHERE a.kind='instruments' AND a.id=affected.instrument_id),instrument_id) AS instrument_id FROM affected ORDER BY instrument_id;
 
@@ -339,7 +344,7 @@ UPDATE instruments SET reference_allocation=sqlc.arg(allocation),reference_reaso
 -- name: IdentityRoots :many
 SELECT i.* FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=sqlc.arg(figi) UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=sqlc.arg(figi)) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid;
 -- name: MoveInstrumentClaims :exec
-INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role) SELECT sqlc.arg(target),c.claim_id,c.ordinal,c.role FROM instrument_claims c WHERE c.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
+INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role,outcome,rule) SELECT sqlc.arg(target),c.claim_id,c.ordinal,c.role,c.outcome,c.rule FROM instrument_claims c WHERE c.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
 -- name: MoveReferenceAttempts :exec
 INSERT INTO instrument_reference_attempts(instrument_id,evidence_id,status,rule) SELECT sqlc.arg(target),a.evidence_id,a.status,a.rule FROM instrument_reference_attempts a WHERE a.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
 -- name: MoveActivityInstrument :exec
@@ -373,7 +378,7 @@ SELECT * FROM listings WHERE instrument_id=? AND venue=? AND ticker=? AND curren
 
 -- name: IdentityDependents :many
 WITH bindings(id) AS (SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT alias.id FROM resource_aliases alias WHERE alias.kind='instruments' AND alias.target_id=sqlc.arg(id)), affected(id) AS (
- SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT p.instrument_id FROM instrument_claims n JOIN instrument_claims p ON p.claim_id=n.claim_id AND p.ordinal=n.ordinal AND p.role='activity' WHERE n.instrument_id IN (SELECT id FROM bindings) AND n.role='underlier'
+ SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT p.parent_id FROM instrument_underliers p WHERE p.underlier_id IN (SELECT id FROM bindings)
 )
 SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id;
 
@@ -387,7 +392,7 @@ INSERT INTO activity_references(claim_id,ordinal,account_id,reference) VALUES(?,
 -- Traverse claim and qualified-reference nodes separately. UNION expands each
 -- shared reference once, rather than revisiting its entire claim set per claim.
 WITH RECURSIVE seeds(node,claim_id,ordinal,account_id,reference) AS (
- SELECT 'claim' AS node,r.claim_id,r.ordinal,CAST(NULL AS TEXT) AS account_id,CAST(NULL AS TEXT) AS reference FROM claim_processing p JOIN activity_references r ON r.claim_id=p.claim_id AND r.ordinal=p.ordinal WHERE p.artifact_id=sqlc.arg(artifact_id)
+ SELECT 'claim' AS node,r.claim_id,r.ordinal,CAST(NULL AS TEXT) AS account_id,CAST(NULL AS TEXT) AS reference FROM records occurrence JOIN activity_references r ON r.claim_id=occurrence.claim_id AND r.ordinal=occurrence.ordinal WHERE occurrence.artifact_id=sqlc.arg(artifact_id)
  UNION
  SELECT 'reference',NULL,NULL,e.account_id,e.reference FROM execution_observations o JOIN event_links e ON e.execution_id=o.execution_id WHERE o.artifact_id=sqlc.arg(artifact_id)
 ), affected(node,claim_id,ordinal,account_id,reference) AS (
@@ -397,7 +402,7 @@ WITH RECURSIVE seeds(node,claim_id,ordinal,account_id,reference) AS (
  UNION
  SELECT 'claim',r.claim_id,r.ordinal,NULL,NULL FROM affected a JOIN activity_references r ON r.account_id=a.account_id AND r.reference=a.reference WHERE a.node='reference'
 )
-SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id WHERE a.node='claim' ORDER BY p.rowid;
+SELECT p.artifact_id,p.version,p.location,p.claim_id,p.ordinal,c.kind,c.data FROM affected a JOIN claim_processing p ON p.claim_id=a.claim_id AND p.ordinal=a.ordinal JOIN source_claims c ON c.id=p.claim_id WHERE a.node='claim' AND p.activity_support=1 ORDER BY p.rowid;
 -- name: RelinkActivityObservation :exec
 UPDATE execution_observations SET execution_id=sqlc.narg(execution_id),outcome=sqlc.arg(outcome) WHERE (artifact_id,version,location) IN (SELECT artifact_id,version,location FROM records WHERE claim_id=sqlc.arg(claim_id) AND ordinal=sqlc.arg(ordinal));
 -- name: ActivityObservation :one
@@ -424,6 +429,28 @@ AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id J
 -- name: PutPositionSet :exec
 INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,supersedes) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: PutPositionBinding :exec
-INSERT INTO position_bindings(claim_id,account_id,instrument_id) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+INSERT INTO position_bindings(claim_id,ordinal,account_id,instrument_id) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: PositionBindings :many
-SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM instrument_claims binding JOIN current_position_claims active ON active.claim_id=binding.claim_id AND active.ordinal=binding.ordinal WHERE binding.claim_id=p.claim_id AND binding.instrument_id=p.instrument_id AND binding.role='activity') ORDER BY p.rowid;
+SELECT c.data,i.id AS instrument_id,i.kind,i.reference_status FROM position_bindings p JOIN source_claims c ON c.id=p.claim_id LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id JOIN instruments i ON i.id=coalesce(a.target_id,p.instrument_id) WHERE p.account_id=? AND EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=p.claim_id AND active.ordinal=p.ordinal) ORDER BY p.rowid;
+-- name: DeleteObservation :exec
+DELETE FROM execution_observations WHERE artifact_id=? AND version=? AND location=?;
+-- name: DeleteInstrumentClaim :exec
+DELETE FROM instrument_claims WHERE instrument_id=? AND claim_id=? AND ordinal=? AND role=?;
+-- name: SetInstrumentClaimOutcome :exec
+UPDATE instrument_claims SET outcome=? WHERE instrument_id=? AND claim_id=? AND ordinal=? AND role=?;
+-- name: DeleteSubjectInstrumentClaims :exec
+DELETE FROM instrument_claims WHERE instrument_id=?;
+-- name: PutInstrumentUnderlier :exec
+INSERT INTO instrument_underliers(parent_id,underlier_id) VALUES(?,?) ON CONFLICT DO NOTHING;
+-- name: MoveInstrumentUnderlierLinks :exec
+INSERT INTO instrument_underliers(parent_id,underlier_id)
+SELECT CASE WHEN links.parent_id=sqlc.arg(previous) THEN sqlc.arg(target) ELSE links.parent_id END AS parent_id,
+ CASE WHEN links.underlier_id=sqlc.arg(previous) THEN sqlc.arg(target) ELSE links.underlier_id END AS underlier_id
+FROM instrument_underliers links WHERE (links.parent_id=sqlc.arg(previous) OR links.underlier_id=sqlc.arg(previous))
+ AND CASE WHEN links.parent_id=sqlc.arg(previous) THEN sqlc.arg(target) ELSE links.parent_id END <> CASE WHEN links.underlier_id=sqlc.arg(previous) THEN sqlc.arg(target) ELSE links.underlier_id END
+ON CONFLICT DO NOTHING;
+-- name: DeleteInstrumentUnderlierLinks :exec
+DELETE FROM instrument_underliers WHERE parent_id=sqlc.arg(id) OR underlier_id=sqlc.arg(id);
+
+-- name: DiscardActivitySupport :exec
+UPDATE claim_processing SET activity_support=0 WHERE claim_id=? AND ordinal=?;

@@ -49,8 +49,9 @@ Acquisition receipts, distinct report bodies and standardized source claims have
 separate identities. Each receipt preserves actual coverage and byte digest even
 when a provider's explicit versioned policy reuses a body for a report-window-only
 change. Claim comparison uses the retained pre-correction meaning, excluding only
-structural location and retaining appearance multiplicity. Known claims attach
-provenance before reconciliation and skip financial recalculation and publication.
+structural location and retaining appearance multiplicity. Known claims retain
+report provenance before reconciliation; pure corroboration leaves accepted values and
+financial publication unchanged.
 Changed non-equivalent bytes remain evidence even when all their claims are known.
 Named/versioned rules and operator decisions explain conclusions through links.
 Activity lifecycle, review reasons and selection authority are independent typed
@@ -70,15 +71,46 @@ caused by existing disagreement cannot corroborate a later conflicting value or
 admit its relationships. Shared compatibility rules govern this comparison and the
 automatic financial calculation.
 
-Financial calculation consumes one consistent retained input set: source claims, identity bindings,
-selected references, active decisions and an explicit implemented rule. It returns typed accepted
-values, independent conflict/authority facts and explanations without SQL writes or upstream calls.
-Processing, correction preflight, saving and release use that same calculation. Field parsing and
-whole-value constructor failures return the typed invalid-input outcome, not a service failure.
-Preflight substitutes a prospective decision in memory inside a read transaction; saving persists
-the calculated result, decision and publication atomically. Only groups reached by new claims or
-changed source-correction state require recalculation. Retained appearances remain provenance;
-financial selection reads distinct source claims with their multiplicity.
+Financial calculation consumes one consistent retained input set: source claims, identity
+bindings, selected references, active decisions and an explicit implemented rule. It returns
+typed accepted values, independent conflict/authority facts and explanations without SQL
+writes or upstream calls. Processing, correction preflight, saving and release use that same
+calculation. Field parsing and whole-value constructor failures return the typed invalid-input
+outcome, not a service failure. Preflight substitutes a prospective decision in memory inside
+a read transaction; saving persists the calculated result, decision and publication
+atomically. Only groups reached by new claims, changed interpretation eligibility or changed
+source-correction state require recalculation.
+
+Retained appearances remain provenance; financial selection reads source assertions eligible
+for its projection. Subject evidence links retain only the first support, added information
+and distinct conflicts, evaluated against prior source assertions before operator choices or
+reference enrichment. Activity, instrument and nested-underlier contributions are independent:
+another activity or report appearance does not establish new instrument information.
+Instrument observation outcomes describe instrument contributions rather than the containing
+activity's outcome.
+
+Direct instrument-underlier relationships preserve update propagation independently of
+supporting observation links. Admission and derived writes commit atomically; discarded
+candidate links never become visible. Instrument identity bindings and source relationships
+survive independently of explanatory support. Contribution admission reads historical source
+assertions; calculation reads current eligible assertions, even when their historical
+representative is no longer current. Source underlier binding consumes child assertions
+through the automatic instrument relationship, including anonymous children, before operator
+choices. Family disagreements remain conflicts; child enrichment cannot attach option fields
+to a different instrument family. A source relationship resolving back to its parent remains
+a source conflict, without a self-edge or automatic self-selection. Underlier enrichment and
+automatic selection enforce the option's admissible instrument families; a conflicting family
+keeps its source evidence and clears an inadmissible automatic choice.
+
+Report inspection reads processed normalized appearances separately from subject support.
+Related activity context in report and instrument support views is derived from retained source
+references using the same
+distinct-event and ambiguity rules as reconciliation; inspection creates no replacement
+evidence links or financial publications.
+
+Compound contribution comparisons accumulate compatible historical assertions within their
+reporting-date and conflict boundaries. Comparison values normalize identifier order while
+retained source records keep their original order.
 
 Small typed field policies own applicable activity/instrument families, scalar value
 types, optionality and bounds. Domain constructors own parsing/application invariants;
@@ -185,10 +217,14 @@ claims; deterministic financial selection uses effective time, account source au
 explicit revision relationships. Set content, availability and version commit atomically.
 Each retained report contributes its latest successfully processed interpretation;
 earlier interpreted claims remain evidence without competing with their replacement.
-This applies to its position-derived instrument claims and bindings as well as the set;
-replacement recalculates affected identities in the same transaction.
-Duplicate occurrences retain separate support across report appearances: replacement
-retires an occurrence only when no current report still supports it.
+This controls eligibility of position-derived instrument assertions and bindings as well as
+the set; replacement recalculates affected identities in the same transaction. Durable bindings
+identify source occurrences and resolve their held instruments without requiring contribution
+links. Duplicate occurrences remain distinct: replacement retires an occurrence only when no
+current report still asserts it. Historical contribution representatives remain evidence, while
+current instrument assertions are recovered from eligible occurrences and source relationships.
+Position changes publish independently of whether the report adds instrument information;
+underliers participate through instrument reconciliation.
 Position publication remains independent of activity snapshots; both reuse canonical
 instrument identities. Identity combinations invalidate affected position projections.
 The shared event stream carries independent refresh hints for each view, and finite position

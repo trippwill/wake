@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestRepeatedObservationsRetainEvidenceWithoutPublishedChanges(t *testing.T) {
+func TestRepeatedObservationsRetainFirstSupportWithoutPublishedChanges(t *testing.T) {
 	s := coverageStore(t)
 	lifecycle := strings.NewReplacer(`execID="option-fill"`, `execID="exercise-fill"`, `tradeID="option-trade"`, `tradeID="exercise-trade"`, `transactionType="ExchTrade"`, `transactionType="BookTrade" code="Ex"`).
 		Replace(syntheticOption)
@@ -45,7 +45,7 @@ func TestRepeatedObservationsRetainEvidenceWithoutPublishedChanges(t *testing.T)
 	var count int
 	if err = s.db.QueryRow(`SELECT count(*) FROM execution_observations WHERE execution_id IS NOT NULL`).
 		Scan(&count); err != nil ||
-		count != 33*len(rows) {
-		t.Fatal("comparison deduplication lost retained evidence", count, err)
+		count != len(rows) {
+		t.Fatal("redundant activity support retained", count, err)
 	}
 }

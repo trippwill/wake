@@ -4,14 +4,18 @@
 package persistence
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/source"
 )
 
 func observationRowsForTest(t *testing.T, s *Store, kind, id string) []application.Observation {
@@ -43,16 +47,16 @@ func observationRowsForTest(t *testing.T, s *Store, kind, id string) []applicati
 	}
 }
 
-func TestObservationPagesRetainMultiplicityAndFilterBeforePaging(t *testing.T) {
+func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) {
 	store := coverageStore(t)
-	row := equityRow("U1", "repeat-observation", "100")
-	for i := range 55 {
-		coverageReport(
-			t,
-			store,
-			fmt.Sprintf("appearance-%03d", i),
-			fmt.Sprintf("<!-- distinct body %d -->", i)+row+row,
-		)
+	for group, count := range []int{55, 5} {
+		var rows strings.Builder
+		for i := range count {
+			row := equityRow("U1", "repeat-observation", fmt.Sprint(100+group*100+i))
+			rows.WriteString(row + row)
+		}
+
+		coverageReport(t, store, []string{"matching-report", "other-report"}[group], rows.String())
 	}
 
 	view, err := store.Dashboard(t.Context())
@@ -67,8 +71,8 @@ func TestObservationPagesRetainMultiplicityAndFilterBeforePaging(t *testing.T) {
 	)
 
 	page, err := store.ObservationList(t.Context(), "activity", id, first)
-	if err != nil || page.Total != 110 || page.Matched != 110 || len(page.Items) != 50 {
-		t.Fatal("default page lost appearance multiplicity", page, err)
+	if err != nil || page.Total != 60 || page.Matched != 60 || len(page.Items) != 50 {
+		t.Fatal("default page lost distinct contributions", page, err)
 	}
 
 	repeat, err := store.ObservationList(t.Context(), "activity", id, first)
@@ -77,17 +81,17 @@ func TestObservationPagesRetainMultiplicityAndFilterBeforePaging(t *testing.T) {
 	}
 
 	filtered, _ := application.NewListQuery(
-		application.ListOptions{Search: "TradeConfirm[2]", Page: 2, Sort: "location"},
+		application.ListOptions{Search: "matching-report", Page: 2, Sort: "location"},
 		application.ObservationScope,
 	)
 
 	page, err = store.ObservationList(t.Context(), "activity", id, filtered)
-	if err != nil || page.Total != 110 || page.Matched != 55 || len(page.Items) != 5 {
+	if err != nil || page.Total != 60 || page.Matched != 55 || len(page.Items) != 5 {
 		t.Fatal("filter applied after paging", page, err)
 	}
 
 	for _, item := range page.Items {
-		if !strings.HasSuffix(item.Location, "/TradeConfirm[2]") || item.Retrieved == "" {
+		if item.Artifact != "matching-report" || item.Retrieved == "" {
 			t.Fatal("qualified evidence context lost", item)
 		}
 	}
@@ -101,21 +105,21 @@ func TestObservationPagesRetainMultiplicityAndFilterBeforePaging(t *testing.T) {
 	)
 
 	page, err = store.ObservationList(t.Context(), "activity", id, matched)
-	if err != nil || page.Matched != 55 || len(page.Items) != 50 {
+	if err != nil || page.Matched != 1 || len(page.Items) != 1 {
 		t.Fatal("typed outcome filter did not apply before count/page", page, err)
 	}
 
-	corroborated, _ := application.NewListQuery(
+	conflicting, _ := application.NewListQuery(
 		application.ListOptions{
-			Search:             "corroborating observation",
-			ObservationMatches: []application.ObservationOutcome{application.ObservationCorroborated},
+			Search:             "conflicting terms",
+			ObservationMatches: []application.ObservationOutcome{application.ObservationTermsConflict},
 		},
 		application.ObservationScope,
 	)
 
-	page, err = store.ObservationList(t.Context(), "activity", id, corroborated)
-	if err != nil || page.Matched != 55 || len(page.Items) != 50 {
-		t.Fatal("duplicate-row corroboration status lost", page, err)
+	page, err = store.ObservationList(t.Context(), "activity", id, conflicting)
+	if err != nil || page.Matched != 59 || len(page.Items) != 50 {
+		t.Fatal("distinct conflict status lost", page, err)
 	}
 
 	if _, err = store.ObservationList(
@@ -163,6 +167,34 @@ func TestUnderlierObservationPageUsesOriginalClaimBinding(t *testing.T) {
 	}
 }
 
+func TestInstrumentContributionKeepsRelatedActivityAfterActivitySupportDiscarded(t *testing.T) {
+	s := coverageStore(t)
+	row := equityRow("U1", "instrument-name", "100")
+	coverageReport(t, s, "original-name", row)
+	coverageReport(t, s, "changed-name", strings.Replace(row, `description="`, `description="Changed `, 1))
+
+	view, err := s.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	activity := view.Executions[0]
+	if rows := observationRowsForTest(t, s, "activity", activity.ID()); len(rows) != 1 {
+		t.Fatal("name change added activity support", rows)
+	}
+
+	rows := observationRowsForTest(t, s, "instrument", activity.Instrument())
+	if len(rows) != 2 {
+		t.Fatal("instrument name assertion was lost", rows)
+	}
+
+	for _, item := range rows {
+		if item.ActivityID != activity.ID() {
+			t.Fatal("discarded activity support lost instrument context", item)
+		}
+	}
+}
+
 func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
 	store := coverageStore(t)
 
@@ -174,7 +206,22 @@ func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
 	}
 	ids := make([]string, len(stamps))
 	for i, stamp := range stamps {
-		ids[i] = acquireClaimReport(t, store, singleClaimBody(fmt.Sprintf("<!-- body%d -->", i)+row), false)
+		ids[i] = acquireClaimReport(
+			t,
+			store,
+			singleClaimBody(
+				fmt.Sprintf(
+					"<!-- body%d -->",
+					i,
+				)+strings.Replace(
+					row,
+					`price="100"`,
+					fmt.Sprintf(`price="%d"`, 100+i),
+					1,
+				),
+			),
+			false,
+		)
 		if _, err := store.db.ExecContext(
 			t.Context(),
 			"UPDATE artifacts SET retrieved=? WHERE id=?",
@@ -216,7 +263,8 @@ func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
 func TestObservationOutcomeOrderingUsesPresentationLabels(t *testing.T) {
 	store := coverageStore(t)
 	row := equityRow("U1", "outcome-order", "100")
-	coverageReport(t, store, "outcome-order", row+row+strings.Replace(row, `price="100"`, `price="101"`, 1))
+	base := strings.Replace(row, ` netCash="-0.000000049324000000123"`, "", 1)
+	coverageReport(t, store, "outcome-order", base+row+strings.Replace(row, `price="100"`, `price="101"`, 1))
 
 	view, err := store.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 {
@@ -225,19 +273,19 @@ func TestObservationOutcomeOrderingUsesPresentationLabels(t *testing.T) {
 
 	labels := map[application.ObservationOutcome]string{
 		application.ObservationAccepted:      "accepted",
-		application.ObservationCorroborated:  "corroborating observation",
+		application.ObservationEnriched:      "adds source information",
 		application.ObservationTermsConflict: "conflicting terms; needs review",
 	}
 	for _, direction := range []string{"asc", "desc"} {
 		expected := []application.ObservationOutcome{
 			application.ObservationAccepted,
+			application.ObservationEnriched,
 			application.ObservationTermsConflict,
-			application.ObservationCorroborated,
 		}
 		if direction == "desc" {
 			expected = []application.ObservationOutcome{
-				application.ObservationCorroborated,
 				application.ObservationTermsConflict,
+				application.ObservationEnriched,
 				application.ObservationAccepted,
 			}
 		}
@@ -269,15 +317,47 @@ func TestObservationRuleOrderingIncludesNormalizationVersion(t *testing.T) {
 	store := coverageStore(t)
 	row := equityRow("U1", "rule-order", "100")
 
-	registration, err := ibkrflex.Registration(ibkrflex.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for i := range 2 {
-		id := acquireClaimReport(t, store, singleClaimBody(fmt.Sprintf("<!-- body%d -->", i)+row), false)
-		for _, version := range []string{"z-version", "a-version"} {
-			if _, err := store.Normalize(t.Context(), id, version, registration.Normalizer()); err != nil {
+		id := acquireClaimReport(
+			t,
+			store,
+			singleClaimBody(
+				fmt.Sprintf(
+					"<!-- body%d -->",
+					i,
+				)+strings.Replace(
+					row,
+					`price="100"`,
+					fmt.Sprintf(`price="%d"`, 100+i),
+					1,
+				),
+			),
+			false,
+		)
+		records, err := store.Records(t.Context(), id, ibkrflex.Version)
+		if err != nil || len(records) != 1 {
+			t.Fatal(records, err)
+		}
+
+		for j, version := range []string{"z-version", "a-version"} {
+			fields := observedTrade(t, records[0].Observation).Fields()
+			fields.Price, _ = financial.NewPrice(fmt.Sprint(200+i*2+j), fields.Price.Currency())
+
+			trade, err := source.NewTrade(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			normalizer := claimNormalizer(
+				func(ctx context.Context, _ provider.Artifact, claims provider.Claims) (provider.Result, error) {
+					if e := claims.PutActivity(ctx, trade.Observation()); e != nil {
+						return provider.Result{}, e
+					}
+
+					return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
+				},
+			)
+			if _, err := store.Normalize(t.Context(), id, version, normalizer); err != nil {
 				t.Fatal(err)
 			}
 

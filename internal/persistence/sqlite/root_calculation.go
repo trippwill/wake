@@ -3,6 +3,7 @@
 package persistence
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -18,6 +19,7 @@ type rootClaim struct {
 	id       string
 	ordinal  int64
 	role     string
+	sequence int64
 	reported source.Instrument
 }
 
@@ -25,6 +27,7 @@ type retainedRoot struct {
 	row         sqlc.Instrument
 	reported    source.Instrument
 	claims      []rootClaim
+	underlier   string
 	references  map[string]source.Reference
 	calculation application.RootCalculation
 }
@@ -75,80 +78,46 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 	}
 
 	root := retainedRoot{row: row, reported: value.Reported(), references: map[string]source.Reference{}}
-	claims := make([]source.Instrument, 0, len(inputs))
 	for _, input := range inputs {
-		reported, e := reportedRootClaim(input)
+		reported, e := reportedRootClaim(input.Kind, input.Data, input.Location, input.Role)
 		if e != nil {
 			return retainedRoot{}, e
 		}
 
-		root.claims = append(root.claims, rootClaim{input.ClaimID, input.Ordinal, input.Role, reported})
-		if input.Role == "activity" {
+		root.claims = append(
+			root.claims,
+			rootClaim{
+				id:       input.ClaimID,
+				ordinal:  input.Ordinal,
+				role:     input.Role,
+				sequence: input.Sequence,
+				reported: reported,
+			},
+		)
+		if input.Role == "subject" {
 			reference := reported.Option().Fields().Underlier.Reference()
 			if !reference.IsZero() {
 				root.references[referenceKey(reference)] = reference
 			}
 		}
-
-		claims = append(claims, reported)
 	}
 
-	bindings := map[source.Reference]application.RootBinding{}
-	if row.ReferenceFigi != "" {
-		rows, e := p.bindingRows(ctx, id)
-		if e != nil {
-			return retainedRoot{}, e
-		}
-
-		for _, binding := range rows {
-			value, e := instrumentValue(binding)
-			if e != nil {
-				return retainedRoot{}, e
-			}
-
-			bindings[value.Reported().Reference()] = application.RootBinding{
-				Reported:  value.Reported(),
-				Canonical: root.reported,
-			}
-		}
+	children, err := p.positionUnderlierClaims(ctx, id)
+	if err != nil {
+		return retainedRoot{}, err
 	}
-	// Verified aliases of nested underliers use the same identity comparison.
-	// Raw claims remain unchanged, including their original qualified references.
-	for _, ref := range root.references {
-		underlier, e := p.q.InstrumentBySource(ctx, referenceKey(ref))
-		if errors.Is(e, sql.ErrNoRows) {
-			continue
-		}
 
-		if e != nil {
-			return retainedRoot{}, e
-		}
+	root.claims = append(root.claims, children...)
+	slices.SortStableFunc(root.claims, func(a, b rootClaim) int { return cmp.Compare(a.sequence, b.sequence) })
 
-		if underlier.ReferenceFigi == "" {
-			continue
-		}
+	claims := make([]source.Instrument, 0, len(root.claims))
+	for _, claim := range root.claims {
+		claims = append(claims, claim.reported)
+	}
 
-		value, e := instrumentValue(underlier)
-		if e != nil {
-			return retainedRoot{}, e
-		}
-
-		rows, e := p.bindingRows(ctx, underlier.ID)
-		if e != nil {
-			return retainedRoot{}, e
-		}
-
-		for _, binding := range rows {
-			original, e := instrumentValue(binding)
-			if e != nil {
-				return retainedRoot{}, e
-			}
-
-			bindings[original.Reported().Reference()] = application.RootBinding{
-				Reported:  original.Reported(),
-				Canonical: value.Reported(),
-			}
-		}
+	bindings, err := p.sourceBindings(ctx, row, root.reported, root.references)
+	if err != nil {
+		return retainedRoot{}, err
 	}
 
 	baseline := root.reported
@@ -162,8 +131,97 @@ func (p *rootPhase) load(ctx context.Context, id string) (retainedRoot, error) {
 	}
 
 	p.roots[id] = root
+	if root.calculation.Underlier.Kind() != "" {
+		selection, e := p.q.InstrumentSelection(ctx, id)
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return retainedRoot{}, e
+		}
+
+		if selection.UnderlierID.Valid && selection.UnderlierID.String != id {
+			root.underlier = selection.UnderlierID.String
+
+			child, e := p.load(ctx, root.underlier)
+			if e != nil {
+				return retainedRoot{}, e
+			}
+
+			root.calculation, e = enrichRootUnderlier(root.calculation, child.calculation)
+			if e != nil {
+				return retainedRoot{}, e
+			}
+		}
+	}
+
+	p.roots[id] = root
 
 	return root, nil
+}
+
+func (p *rootPhase) sourceBindings(
+	ctx context.Context,
+	row sqlc.Instrument,
+	reported source.Instrument,
+	references map[string]source.Reference,
+) (map[source.Reference]application.RootBinding, error) {
+	bindings := map[source.Reference]application.RootBinding{}
+	if row.ReferenceFigi != "" {
+		rows, e := p.bindingRows(ctx, row.ID)
+		if e != nil {
+			return nil, e
+		}
+
+		for _, binding := range rows {
+			value, e := instrumentValue(binding)
+			if e != nil {
+				return nil, e
+			}
+
+			bindings[value.Reported().Reference()] = application.RootBinding{
+				Reported:  value.Reported(),
+				Canonical: reported,
+			}
+		}
+	}
+	// Verified aliases of nested underliers use the same identity comparison.
+	// Raw claims remain unchanged, including their original qualified references.
+	for _, ref := range references {
+		underlier, e := p.q.InstrumentBySource(ctx, referenceKey(ref))
+		if errors.Is(e, sql.ErrNoRows) {
+			continue
+		}
+
+		if e != nil {
+			return nil, e
+		}
+
+		if underlier.ReferenceFigi == "" {
+			continue
+		}
+
+		value, e := instrumentValue(underlier)
+		if e != nil {
+			return nil, e
+		}
+
+		rows, e := p.bindingRows(ctx, underlier.ID)
+		if e != nil {
+			return nil, e
+		}
+
+		for _, binding := range rows {
+			original, e := instrumentValue(binding)
+			if e != nil {
+				return nil, e
+			}
+
+			bindings[original.Reported().Reference()] = application.RootBinding{
+				Reported:  original.Reported(),
+				Canonical: value.Reported(),
+			}
+		}
+	}
+
+	return bindings, nil
 }
 
 type underlierTarget struct {
@@ -203,7 +261,7 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 
 		var claims []source.Instrument
 		for _, claim := range root.claims {
-			if claim.role != "activity" {
+			if claim.role != "subject" {
 				continue
 			}
 
@@ -213,6 +271,17 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 			}
 
 			claims = append(claims, u)
+		}
+
+		if root.underlier != "" {
+			child, e := p.load(ctx, root.underlier)
+			if e != nil {
+				return nil, e
+			}
+
+			for _, claim := range child.claims {
+				claims = append(claims, claim.reported)
+			}
 		}
 
 		for key, reference := range references {
@@ -332,19 +401,25 @@ func (p *rootPhase) targets(ctx context.Context, parents []string) (map[string]u
 	return targets, nil
 }
 
+type underlierLink struct {
+	id string
+	// Invalid targets clear a previous automatic choice even during conflict.
+	invalid bool
+}
+
 func (p *rootPhase) link(
 	ctx context.Context,
 	parent string,
 	u source.Instrument,
 	targets map[string]underlierTarget,
-) (string, error) {
+) (underlierLink, error) {
 	if u.Kind() == "" {
-		return "", nil
+		return underlierLink{}, nil
 	}
 
 	selected, err := p.automatic(ctx, parent)
 	if err != nil {
-		return "", err
+		return underlierLink{}, err
 	}
 
 	var target underlierTarget
@@ -355,12 +430,12 @@ func (p *rootPhase) link(
 		if !ok {
 			candidate, e := p.q.InstrumentBySource(ctx, referenceKey(u.Reference()))
 			if e != nil {
-				return "", e
+				return underlierLink{}, e
 			}
 
 			root, e := p.load(ctx, candidate.ID)
 			if e != nil {
-				return "", e
+				return underlierLink{}, e
 			}
 
 			target = underlierTarget{
@@ -371,33 +446,47 @@ func (p *rootPhase) link(
 		}
 	}
 
+	if target.id == parent || selected.Valid && selected.String == parent {
+		return underlierLink{invalid: true}, nil
+	}
+
+	if target.id != "" &&
+		!application.CompatibleInstrumentKind(source.UnknownInstrument, target.reported.Kind()) {
+		return underlierLink{invalid: true}, nil
+	}
+
 	if selected.Valid {
 		previous, e := p.load(ctx, selected.String)
 		if e != nil {
-			return "", e
+			return underlierLink{}, e
 		}
 
-		if target.conflict || !application.CompatibleInstrument(previous.reported, u) ||
+		if !application.CompatibleInstrumentKind(source.UnknownInstrument, previous.calculation.Reported.Kind()) {
+			return underlierLink{invalid: true}, nil
+		}
+
+		if previous.calculation.Conflict || target.conflict ||
+			!application.CompatibleInstrument(previous.reported, u) ||
 			target.id != "" && !application.CompatibleInstrument(previous.reported, target.reported) {
-			return selected.String, nil
+			return underlierLink{id: selected.String}, nil
 		}
 
 		if target.id == "" {
-			return selected.String, nil
+			return underlierLink{id: selected.String}, nil
 		}
 	}
 
 	if target.id != "" {
-		return target.id, nil
+		return underlierLink{id: target.id}, nil
 	}
 
 	id, _, err := acceptInstrument(ctx, p.q, "retained", parent+"/underlier", u, "")
 
-	return id, err
+	return underlierLink{id: id}, err
 }
 
-// Bind source occurrences independently of operator choices. Existing bindings
-// remain retained when qualified claims expose a compatible or disputed context.
+// Bind source occurrences independently of operator choices. Qualified subject
+// relationships survive even when an occurrence adds no supporting evidence.
 func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact string) error {
 	rows, err := q.ArtifactInstrumentClaims(ctx, artifact)
 	if err != nil {
@@ -447,7 +536,7 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 				InstrumentID: root.ID,
 				ClaimID:      row.ClaimID,
 				Ordinal:      row.Ordinal,
-				Role:         "activity",
+				Role:         "subject",
 			},
 		); e != nil {
 			return e
@@ -477,10 +566,12 @@ func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents
 			return e
 		}
 
-		links[parent], e = phase.link(ctx, parent, root.calculation.Underlier, targets)
+		link, e := phase.link(ctx, parent, root.calculation.Underlier, targets)
 		if e != nil {
 			return e
 		}
+
+		links[parent] = link.id
 	}
 
 	for _, parent := range parents {
@@ -490,7 +581,7 @@ func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents
 		}
 
 		for _, claim := range root.claims {
-			if claim.role != "activity" {
+			if claim.role != "subject" {
 				continue
 			}
 
@@ -526,6 +617,14 @@ func bindUnderlierInstrumentClaims(ctx context.Context, q *sqlc.Queries, parents
 			}
 
 			for id := range ids {
+				if id != parent {
+					if e = q.PutInstrumentUnderlier(ctx, sqlc.PutInstrumentUnderlierParams{
+						ParentID: parent, UnderlierID: id,
+					}); e != nil {
+						return e
+					}
+				}
+
 				if e = q.PutInstrumentClaim(
 					ctx,
 					sqlc.PutInstrumentClaimParams{
@@ -558,9 +657,15 @@ func projectArtifactRoots(ctx context.Context, q *sqlc.Queries, artifact string)
 }
 
 func projectRoots(ctx context.Context, q *sqlc.Queries, ids []string) error {
+	for _, id := range ids {
+		if err := retainInstrumentContributions(ctx, q, id); err != nil {
+			return err
+		}
+	}
+
 	phase := newRootPhase(q)
 	results := make(map[string]application.RootCalculation, len(ids))
-	links := make(map[string]string, len(ids))
+	links := make(map[string]underlierLink, len(ids))
 	for _, id := range ids {
 		result, err := phase.calculate(ctx, id)
 		if err != nil {
@@ -569,9 +674,11 @@ func projectRoots(ctx context.Context, q *sqlc.Queries, ids []string) error {
 
 		results[id] = result
 
-		links[id], err = phase.link(ctx, id, result.Underlier, nil)
-		if err != nil {
-			return err
+		if result.Reported.Kind() == source.Option {
+			links[id], err = phase.link(ctx, id, result.Underlier, nil)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -610,6 +717,7 @@ func (p *rootPhase) calculate(ctx context.Context, id string) (application.RootC
 		}
 
 		if candidate.ID == id {
+			result.Conflict = result.Conflict || reported.Reference() == result.Underlier.Reference()
 			continue
 		}
 
@@ -620,23 +728,64 @@ func (p *rootPhase) calculate(ctx context.Context, id string) (application.RootC
 
 		result.Conflict = result.Conflict || value.calculation.Conflict ||
 			!application.CompatibleInstrument(reported, value.calculation.Reported)
+
+		if reported.Reference() == result.Underlier.Reference() {
+			result, e = enrichRootUnderlier(result, value.calculation)
+			if e != nil {
+				return application.RootCalculation{}, e
+			}
+		}
 	}
 
 	return result, nil
 }
 
-func reportedRootClaim(row sqlc.RootCalculationInputsRow) (source.Instrument, error) {
-	data, err := claimData(row.Kind, row.Data, row.Location)
+// Follow the automatic source relationship, independently of operator overrides
+// and of whether the parent retained this child's latest observation.
+func enrichRootUnderlier(result, child application.RootCalculation) (application.RootCalculation, error) {
+	if result.Reported.Kind() != source.Option {
+		return result, nil
+	}
+
+	compatible := application.CompatibleInstrumentKind(source.UnknownInstrument, child.Reported.Kind()) &&
+		application.CompatibleInstrument(result.Underlier, child.Reported)
+	result.Conflict = result.Conflict || child.Conflict || !compatible
+	if child.Conflict || !compatible {
+		return result, nil
+	}
+
+	underlier, err := application.EnrichInstrument(result.Underlier, child.Reported)
+	if err != nil {
+		return application.RootCalculation{}, err
+	}
+
+	f := result.Reported.Fields()
+	option := f.Option.Fields()
+	option.Underlier = underlier
+
+	f.Option, err = source.NewOptionTerms(option)
+	if err != nil {
+		return application.RootCalculation{}, err
+	}
+
+	result.Reported, err = source.NewInstrument(f)
+	result.Underlier = underlier
+
+	return result, err
+}
+
+func reportedRootClaim(kind string, raw []byte, location, role string) (source.Instrument, error) {
+	data, err := claimData(kind, raw, location)
 	if err != nil {
 		return source.Instrument{}, err
 	}
 
-	claim, err := reportedActivityInstrument(row.Kind, data)
+	claim, err := reportedActivityInstrument(kind, data)
 	if err != nil {
 		return source.Instrument{}, err
 	}
 
-	if row.Role == "underlier" {
+	if role == "underlier" {
 		claim = claim.Option().Fields().Underlier
 	}
 

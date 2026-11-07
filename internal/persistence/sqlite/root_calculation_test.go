@@ -441,9 +441,9 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 		if name == "dependents" &&
 			!strings.Contains(
 				text,
-				"SEARCH parent USING INDEX instrument_claim_occurrence (claim_id=? AND ordinal=?)",
+				"SEARCH parent USING COVERING INDEX underlier_parents (underlier_id=?)",
 			) {
-			t.Fatal("dependent parent lookup is not keyed by source occurrence", text)
+			t.Fatal("dependent parent lookup is not keyed by underlier", text)
 		}
 
 		for _, fullScan := range []string{"SCAN p", "SCAN i", "SCAN o", "SCAN r ", "SCAN source_claims", "SCAN records"} {
@@ -461,6 +461,82 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 	}
 }
 
+func TestSelfReferentialUnderlierRetainsConflictWithoutBlockingReports(t *testing.T) {
+	base := underlierTemplate(t)
+	for _, kind := range []string{"activity", "position"} {
+		for _, seeded := range []bool{false, true} {
+			name := kind + "/option-first"
+			if seeded {
+				name = kind + "/equity-first"
+			}
+
+			t.Run(name, func(t *testing.T) {
+				s := coverageStore(t)
+				fields := base.Fields()
+				parent := fields.Instrument.Fields()
+				terms := parent.Option.Fields()
+				child := terms.Underlier.Fields()
+				child.Kind = source.Equity
+				terms.Underlier, _ = source.NewInstrument(child)
+				parent.Reference = child.Reference
+				parent.Option, _ = source.NewOptionTerms(terms)
+
+				fields.Instrument, _ = source.NewInstrument(parent)
+				fields.Event, _ = source.NewReference("synthetic", "execution", "U1", "self-underlier")
+				fields.EventAliases = nil
+				if seeded {
+					prior := fields
+					prior.Event, _ = source.NewReference("synthetic", "execution", "U1", "equity-first")
+					prior.Instrument = terms.Underlier
+
+					trade, err := source.NewTrade(prior)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					retainUnderlierTrades(t, s, "equity-first", trade)
+				}
+
+				trade, err := source.NewTrade(fields)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if kind == "activity" {
+					retainUnderlierTrades(t, s, "self-underlier", trade)
+				} else {
+					coverageClaims(t, s, "self-underlier", positionSetNormalizer(positionInput(t, fields.Instrument)))
+				}
+
+				root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(child.Reference))
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				detail, err := s.InstrumentDetail(t.Context(), root.ID)
+				if err != nil || detail.Instrument.Status() != "conflict" || detail.Underlier != "" ||
+					tableCount(t, s, "instrument_underliers") != 0 ||
+					tableCount(t, s, "instrument_claims") != 2 {
+					t.Fatal("self-relation lost source conflict or created a cycle", detail, err)
+				}
+
+				selected, err := s.queries.InstrumentSelection(t.Context(), root.ID)
+				if err != nil || selected.UnderlierID.Valid {
+					t.Fatal("parent selected as its own underlier", selected, err)
+				}
+
+				if err = s.Process(t.Context(), "self-underlier", "synthetic-claims/1"); err != nil {
+					t.Fatal("completed report did not replay", err)
+				}
+
+				if kind == "position" && readPositions(t, s).Status != "unavailable" {
+					t.Fatal("disputed position was published")
+				}
+			})
+		}
+	}
+}
+
 func underlierTemplate(t *testing.T) source.Trade {
 	t.Helper()
 	seed := coverageStore(t)
@@ -472,6 +548,91 @@ func underlierTemplate(t *testing.T) source.Trade {
 	}
 
 	return view.Executions[0].Terms()
+}
+
+func TestInadmissibleUnderlierFamilyRetainsConflictWithoutBlockingReports(t *testing.T) {
+	base := underlierTemplate(t)
+	for _, family := range []source.InstrumentKind{source.Debt, source.Option} {
+		for _, order := range []string{"target-first", "parent-first"} {
+			for _, kind := range []string{"activity", "position"} {
+				t.Run(string(family)+"/"+order+"/"+kind, func(t *testing.T) {
+					s := coverageStore(t)
+					input := base.Fields()
+					parent := input.Instrument.Fields()
+					option := parent.Option.Fields()
+					child := option.Underlier.Fields()
+					child.Kind = source.UnknownInstrument
+					option.Underlier, _ = source.NewInstrument(child)
+					parent.Option, _ = source.NewOptionTerms(option)
+					input.Instrument, _ = source.NewInstrument(parent)
+					input.EventAliases = nil
+
+					parentTrade, err := source.NewTrade(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					target := base.Fields()
+					target.Event, _ = source.NewReference("synthetic", "execution", "U1", "inadmissible-target")
+					target.Location = "inadmissible-target"
+					target.EventAliases = nil
+
+					f := source.InstrumentInput{Kind: family, Reference: child.Reference}
+					if family == source.Option {
+						f.Option, _ = source.NewOptionTerms(source.OptionInput{Right: source.Call})
+					}
+
+					target.Instrument, _ = source.NewInstrument(f)
+
+					targetTrade, err := source.NewTrade(target)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					retainParent := func() {
+						if kind == "activity" {
+							retainUnderlierTrades(t, s, "inadmissible-parent", parentTrade)
+						} else {
+							coverageClaims(
+								t,
+								s,
+								"inadmissible-parent",
+								positionSetNormalizer(positionInput(t, input.Instrument)),
+							)
+						}
+					}
+					if order == "parent-first" {
+						retainParent()
+					}
+
+					retainUnderlierTrades(t, s, "inadmissible-target", targetTrade)
+
+					if order == "target-first" {
+						retainParent()
+					}
+
+					root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(parent.Reference))
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					detail, err := s.InstrumentDetail(t.Context(), root.ID)
+					if err != nil || detail.Instrument.Status() != "conflict" || detail.Underlier != "" {
+						t.Fatal("inadmissible family was accepted or conflict lost", detail, err)
+					}
+
+					selection, err := s.queries.InstrumentSelection(t.Context(), root.ID)
+					if err != nil || selection.UnderlierID.Valid {
+						t.Fatal("inadmissible underlier selected", selection, err)
+					}
+
+					if err = s.Process(t.Context(), "inadmissible-parent", "synthetic-claims/1"); err != nil {
+						t.Fatal("report retry failed", err)
+					}
+				})
+			}
+		}
+	}
 }
 
 func underlierTrade(t *testing.T, base source.Trade, event, isin string, qualified bool) source.Trade {

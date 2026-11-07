@@ -287,7 +287,7 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 		}
 
 		if target != "" {
-			outcome = "corroborated"
+			outcome = "enriched"
 			if created {
 				outcome = "accepted"
 			}
