@@ -260,6 +260,7 @@ func polishObservationData(w http.ResponseWriter, r *http.Request, changed bool)
 			rows[i].Artifact = "synthetic-report"
 			if i%3 != 0 {
 				rows[i].ActivityID = "synthetic-activity"
+				rows[i].Outcome = application.ObservationNoContribution
 			}
 		}
 
@@ -2264,6 +2265,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===25`,
 		"report table paging lost bounds",
+	)
+	check(chromedp.SetValue("#observation-search", "no additional contribution", chromedp.ByQuery),
+		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='50 of 75 results'`, nil))
+	assert(
+		`[...document.querySelectorAll('.tabulator-row [tabulator-field="outcome"]')].every(cell=>cell.textContent==='no additional contribution')`,
+		"report contribution label was not displayed or searchable",
 	)
 	check(chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
 		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),

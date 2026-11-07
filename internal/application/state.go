@@ -73,8 +73,9 @@ const (
 	ObservationNativeReview       ObservationOutcome = "native-review"
 	ObservationKindConflict       ObservationOutcome = "kind-conflict"
 	ObservationTermsConflict      ObservationOutcome = "terms-conflict"
-	ObservationCorroborated       ObservationOutcome = "corroborated"
+	ObservationEnriched           ObservationOutcome = "enriched"
 	ObservationAccepted           ObservationOutcome = "accepted"
+	ObservationNoContribution     ObservationOutcome = "no-additional-contribution"
 )
 
 type ReferenceStatus string

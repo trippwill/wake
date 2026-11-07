@@ -49,8 +49,10 @@ func observationStatus(outcome application.ObservationOutcome) string {
 		return "conflicting activity kind; needs review"
 	case application.ObservationTermsConflict:
 		return "conflicting terms; needs review"
-	case application.ObservationCorroborated:
-		return "corroborating observation"
+	case application.ObservationNoContribution:
+		return "no additional contribution"
+	case application.ObservationEnriched:
+		return "adds source information"
 	case application.ObservationAccepted:
 		return "accepted"
 	default:

@@ -291,7 +291,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		options.Kind = ""
 		options.State = ""
 		options.ObservationLabels = map[application.ObservationOutcome]string{}
-		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIncomplete, application.ObservationIncompleteConflict, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationCorroborated, application.ObservationAccepted} {
+		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIncomplete, application.ObservationIncompleteConflict, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationEnriched, application.ObservationNoContribution, application.ObservationAccepted} {
 			options.ObservationLabels[outcome] = observationStatus(outcome)
 			if strings.Contains(strings.ToLower(observationStatus(outcome)), strings.ToLower(options.Search)) {
 				options.ObservationMatches = append(options.ObservationMatches, outcome)

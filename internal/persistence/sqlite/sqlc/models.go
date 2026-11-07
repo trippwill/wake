@@ -123,6 +123,17 @@ type AdminInstrument struct {
 	SearchText         string
 }
 
+type AdminObservation struct {
+	SubjectKind string
+	SubjectID   sql.NullString
+	ArtifactID  string
+	Version     string
+	Location    string
+	Rule        string
+	Outcome     string
+	ExecutionID sql.NullString
+}
+
 type AdminReview struct {
 	Kind       string
 	ID         string
@@ -175,11 +186,13 @@ type Candidate struct {
 }
 
 type ClaimProcessing struct {
-	ClaimID    string
-	Ordinal    int64
-	ArtifactID string
-	Version    string
-	Location   string
+	Sequence        int64
+	ActivitySupport int64
+	ClaimID         string
+	Ordinal         int64
+	ArtifactID      string
+	Version         string
+	Location        string
 }
 
 type Connection struct {
@@ -191,6 +204,15 @@ type Connection struct {
 type CurrentPositionClaim struct {
 	ClaimID string
 	Ordinal int64
+}
+
+type CurrentPositionInstrument struct {
+	InstrumentID string
+	ClaimID      string
+	Ordinal      int64
+	Kind         string
+	Data         []byte
+	Location     string
 }
 
 type DecisionSupersession struct {
@@ -252,6 +274,8 @@ type InstrumentClaim struct {
 	ClaimID      string
 	Ordinal      int64
 	Role         string
+	Outcome      string
+	Rule         string
 }
 
 type InstrumentReferenceAttempt struct {
@@ -269,6 +293,11 @@ type InstrumentSelection struct {
 	Evidence     string
 	Status       string
 	UnderlierID  sql.NullString
+}
+
+type InstrumentUnderlier struct {
+	ParentID    string
+	UnderlierID string
 }
 
 type Listing struct {
@@ -312,6 +341,7 @@ type Pacing struct {
 
 type PositionBinding struct {
 	ClaimID      string
+	Ordinal      int64
 	AccountID    string
 	InstrumentID string
 }
@@ -410,6 +440,12 @@ type ReferenceEvidence struct {
 	Headers    []byte
 }
 
+type ReportActivityTarget struct {
+	ClaimID     string
+	Ordinal     int64
+	ExecutionID string
+}
+
 type ReportComparison struct {
 	ConnectionID string
 	Stream       string
@@ -418,6 +454,15 @@ type ReportComparison struct {
 	Policy       string
 	Digest       string
 	ArtifactID   string
+}
+
+type ReportObservation struct {
+	ArtifactID  string
+	Version     string
+	Location    string
+	Rule        string
+	Outcome     string
+	ExecutionID interface{}
 }
 
 type ResourceAlias struct {

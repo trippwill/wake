@@ -441,9 +441,9 @@ func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
 		if name == "dependents" &&
 			!strings.Contains(
 				text,
-				"SEARCH parent USING INDEX instrument_claim_occurrence (claim_id=? AND ordinal=?)",
+				"SEARCH parent USING COVERING INDEX underlier_parents (underlier_id=?)",
 			) {
-			t.Fatal("dependent parent lookup is not keyed by source occurrence", text)
+			t.Fatal("dependent parent lookup is not keyed by underlier", text)
 		}
 
 		for _, fullScan := range []string{"SCAN p", "SCAN i", "SCAN o", "SCAN r ", "SCAN source_claims", "SCAN records"} {

@@ -328,7 +328,8 @@ func knownObservationOutcome(outcome ObservationOutcome) bool {
 		ObservationNativeReview,
 		ObservationKindConflict,
 		ObservationTermsConflict,
-		ObservationCorroborated,
+		ObservationEnriched,
+		ObservationNoContribution,
 		ObservationAccepted:
 		return true
 	default:

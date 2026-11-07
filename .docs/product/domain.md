@@ -117,12 +117,31 @@ retained report body. Exact duplicates reuse bytes; a provider may explicitly
 version a comparison policy that ignores only report-window fields. Other byte
 changes retain a new body even when their financial claims are already known.
 
-A standardized source claim is independent of its structural report location and
-of later corrections or reference enrichment. Preserve each appearance and duplicate
-row multiplicity. Known claims add provenance without recalculating accepted state;
-an operator's corrected value is never the baseline for recognizing a repeated
-source claim. Exact values, time precision, qualified identity and unknowns remain
-part of that source comparison.
+A standardized source claim is independent of its structural report location and of later
+corrections or reference enrichment. Preserve each appearance and duplicate row multiplicity.
+Known claims retain report provenance without adding support. A change in which assertions are
+current can still require reconciliation. An operator's corrected value is never the baseline
+for recognizing a repeated source claim. Exact values, time precision, qualified identity and
+unknowns remain part of that source comparison.
+
+Supporting observation links belong independently to each activity and instrument, including
+nested underliers. Keep the first supporting observation, later source information and
+distinct conflicting assertions. Repeated support, including an already retained conflict,
+adds no link. A new activity can need an observation without adding information about its
+instrument. A reported position keeps its association with the held instrument independently
+of whether its report adds instrument support. Instrument support concerns its identity and
+underlier relationship; dated financial terms belong to the activity. Child descriptions and
+identifiers belong to the child even when its source has not supplied a qualified reference.
+The underlier relationship belongs to the option instrument; it establishes no position in the
+child. Child disagreements affect the parent's identity assessment through that instrument
+relationship, independently of position quantities or evidence-link admission. Report
+appearances remain inspectable in retained evidence, including duplicate locations and
+interpretation versions, even when they add no supporting link. An appearance that adds no
+support must not imply additional financial evidence. Retained assertion history determines
+whether information is new. Eligibility for a current projection is separate: replacement
+interpretations can retire an assertion from current reconciliation while preserving its
+history, and another current occurrence can still assert information whose first supporting
+appearance has been replaced.
 
 Linking establishes identity and relationships. Reconciliation selects an accepted
 view while preserving dissent. An operator decision records who chose what, why

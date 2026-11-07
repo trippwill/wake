@@ -111,16 +111,27 @@ and reacquiring history with the reusable encrypted access seed. There is no
 compatibility conversion, automatic updater or rebuild command. The general
 retained-history requirement above continues to apply to later changes.
 
-The partial-activity development format separates valid source assertions from
-complete accepted terms and replaces the unpublished P&L-specific claim format.
-Financial authority remains the confirmed connection, provider and source account;
-acquisition inputs describe protocol work and preserve provenance. The format changes
-normalized observations, pending associations and retained field-selection state.
-Old warehouses fail closed without modification. Operator deployment preserves any
-needed old evidence and decisions and explicitly recreates the warehouse under this
-pre-release format exception; there is no migration, automatic reset or conversion.
-The encrypted access format is unchanged. Supported-format history retains complete
-and partial observations, active decisions and exact values across replay and restart.
+The observation-contribution development format retains supporting links only when
+an observation adds information to that activity or instrument. It also separates
+instrument-underlier update dependencies and occurrence-qualified position bindings from
+those evidence links. Historical contribution comparison and current interpretation eligibility
+have separate reads, so replacement can retire an assertion without deleting history or
+requiring a new support link for an unchanged assertion. This is an
+explicit warehouse-recreation exception: earlier warehouse formats fail closed
+without modification. Before deployment, preserve any required old evidence and
+operator decisions, stop Wake, and preview then explicitly confirm
+`wake reset warehouse` with the same configuration. Reacquire history using the retained
+connection settings and encrypted credentials. There is no automatic compaction,
+reference conversion, migration or deletion. The encrypted access format is
+unchanged. Supported-format replay and restart preserve source records, useful
+supporting observations, active decisions and exact values.
+Report inspection retains the complete processed appearance history independently
+of supporting-link counts; a repeated appearance can show no additional
+contribution while still identifying its related activity. Disposable-store verification covers
+position/activity processing order, occurrence retirement, unchanged and partial
+reinterpretations, reappearing assertions, child enrichment/conflicts, rollback and restart.
+Position binding and publication must work when the containing report adds no instrument
+evidence; underlier assertions remain part of instrument reconciliation.
 
 ## Coding conventions
 

@@ -35,8 +35,8 @@ func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 
 	retainDecision(t, s, "activity", activity.ID(), "instrument", target.Instrument(), "", "set")
 
-	if got := observationRowsForTest(t, s, "instrument", activity.Instrument()); len(got) != 2 {
-		t.Fatal("operator relink moved original source appearances", got)
+	if got := observationRowsForTest(t, s, "instrument", activity.Instrument()); len(got) != 1 {
+		t.Fatal("operator relink moved original source support", got)
 	}
 
 	if got := observationRowsForTest(t, s, "instrument", target.Instrument()); len(got) != 1 {

@@ -263,8 +263,11 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 }
 
 func TestObservationQueriesKeepTypedOutcomeLabels(t *testing.T) {
-	request := pageRequest(httptest.NewRequest(http.MethodGet,
-		"/grids/observations?subject=activity&id=one&q=duplicate&sort=location&dir=asc&page=2", nil))
+	request := pageRequest(httptest.NewRequest(
+		http.MethodGet,
+		"/grids/observations?subject=artifact&id=one&q=no+additional+contribution&sort=location&dir=asc&page=2",
+		nil,
+	))
 
 	query, err := listQuery(request.Context(), application.ObservationScope)
 	if err != nil {
@@ -277,7 +280,12 @@ func TestObservationQueriesKeepTypedOutcomeLabels(t *testing.T) {
 		}
 	}
 
-	if len(query.Options().ObservationLabels) != 9 {
+	if !slices.Contains(query.Options().ObservationMatches, application.ObservationNoContribution) ||
+		observationStatus(application.ObservationNoContribution) != "no additional contribution" {
+		t.Fatal("report contribution label was not searchable", query.Options())
+	}
+
+	if len(query.Options().ObservationLabels) != 10 {
 		t.Fatal("incomplete outcome vocabulary", query.Options().ObservationLabels)
 	}
 }

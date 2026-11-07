@@ -63,7 +63,6 @@ type Querier interface {
 	ConnectionAccess(ctx context.Context, id string) (int64, error)
 	Connections(ctx context.Context) ([]string, error)
 	CopyClaimCorrection(ctx context.Context, arg CopyClaimCorrectionParams) error
-	CopyClaimObservation(ctx context.Context, arg CopyClaimObservationParams) error
 	CorrectionStatus(ctx context.Context, arg CorrectionStatusParams) error
 	CountAcquisitionReceipts(ctx context.Context, artifactID string) (int64, error)
 	// SPDX-FileCopyrightText: 2026 trippwill
@@ -72,9 +71,14 @@ type Querier interface {
 	CredentialKeys(ctx context.Context, connectionID string) ([]string, error)
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
 	Decisions(ctx context.Context, arg DecisionsParams) ([]DecisionsRow, error)
+	DeleteInstrumentClaim(ctx context.Context, arg DeleteInstrumentClaimParams) error
+	DeleteInstrumentUnderlierLinks(ctx context.Context, id string) error
+	DeleteObservation(ctx context.Context, arg DeleteObservationParams) error
+	DeleteSubjectInstrumentClaims(ctx context.Context, instrumentID string) error
 	Descriptor(ctx context.Context, id string) (Connection, error)
 	DisableAcquisition(ctx context.Context, connectionID string) error
 	DisableDiscovery(ctx context.Context, connectionID string) error
+	DiscardActivitySupport(ctx context.Context, arg DiscardActivitySupportParams) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
 	EnsureInstrumentSelection(ctx context.Context, id string) error
 	EnsureWork(ctx context.Context, arg EnsureWorkParams) error
@@ -92,6 +96,7 @@ type Querier interface {
 	Instrument(ctx context.Context, id string) (Instrument, error)
 	InstrumentBindings(ctx context.Context, id string) ([]Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
+	InstrumentContributionInputs(ctx context.Context, instrumentID string) ([]InstrumentContributionInputsRow, error)
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)
 	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
 	Instruments(ctx context.Context) ([]Instrument, error)
@@ -105,6 +110,7 @@ type Querier interface {
 	MoveBaseInstrument(ctx context.Context, arg MoveBaseInstrumentParams) error
 	MoveBaseListing(ctx context.Context, arg MoveBaseListingParams) error
 	MoveInstrumentClaims(ctx context.Context, arg MoveInstrumentClaimsParams) error
+	MoveInstrumentUnderlierLinks(ctx context.Context, arg MoveInstrumentUnderlierLinksParams) error
 	MoveListing(ctx context.Context, arg MoveListingParams) error
 	MoveReferenceAttempts(ctx context.Context, arg MoveReferenceAttemptsParams) error
 	MoveSelectedUnderliers(ctx context.Context, arg MoveSelectedUnderliersParams) error
@@ -117,6 +123,7 @@ type Querier interface {
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
 	PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error)
+	PositionUnderlierInputs(ctx context.Context, underlierID string) ([]PositionUnderlierInputsRow, error)
 	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
 	Profile(ctx context.Context) (Profile, error)
@@ -138,6 +145,7 @@ type Querier interface {
 	PutInstrumentClaim(ctx context.Context, arg PutInstrumentClaimParams) error
 	PutInstrumentReferenceAttempt(ctx context.Context, arg PutInstrumentReferenceAttemptParams) error
 	PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error
+	PutInstrumentUnderlier(ctx context.Context, arg PutInstrumentUnderlierParams) error
 	PutLifecycleActivity(ctx context.Context, arg PutLifecycleActivityParams) error
 	PutListing(ctx context.Context, arg PutListingParams) error
 	PutMovementActivity(ctx context.Context, arg PutMovementActivityParams) error
@@ -177,7 +185,7 @@ type Querier interface {
 	RetryProcessing(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
-	RootCalculationInputs(ctx context.Context, instrumentID string) ([]RootCalculationInputsRow, error)
+	RootCalculationInputs(ctx context.Context, id string) ([]RootCalculationInputsRow, error)
 	SaveActivitySelection(ctx context.Context, arg SaveActivitySelectionParams) error
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
@@ -186,6 +194,7 @@ type Querier interface {
 	SeedArtifactBases(ctx context.Context, artifactID string) error
 	SeedInstrumentSelections(ctx context.Context) error
 	SelectedObservation(ctx context.Context, arg SelectedObservationParams) (RecordValue, error)
+	SetInstrumentClaimOutcome(ctx context.Context, arg SetInstrumentClaimOutcomeParams) error
 	SetListingFIGI(ctx context.Context, arg SetListingFIGIParams) error
 	SetObservationOutcome(ctx context.Context, arg SetObservationOutcomeParams) error
 	SetPacing(ctx context.Context, arg SetPacingParams) error

@@ -16,12 +16,12 @@ CREATE TABLE source_claims(id TEXT PRIMARY KEY NOT NULL, connection_id TEXT NOT 
 CREATE TABLE records(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, claim_id TEXT NOT NULL REFERENCES source_claims(id), ordinal INTEGER NOT NULL CHECK(ordinal>0), PRIMARY KEY(artifact_id,version,location)) STRICT;
 CREATE INDEX records_claim_appearances ON records(claim_id,ordinal,artifact_id,version,location);
 CREATE VIEW record_values AS SELECT r.artifact_id,r.version,r.location,r.claim_id,r.ordinal,c.kind,c.data FROM records r JOIN source_claims c ON c.id=r.claim_id;
-CREATE TABLE claim_processing(claim_id TEXT NOT NULL REFERENCES source_claims(id), ordinal INTEGER NOT NULL, artifact_id TEXT NOT NULL, version TEXT NOT NULL, location TEXT NOT NULL, PRIMARY KEY(claim_id,ordinal), FOREIGN KEY(artifact_id,version,location) REFERENCES records(artifact_id,version,location)) STRICT;
+CREATE TABLE claim_processing(sequence INTEGER PRIMARY KEY,activity_support INTEGER NOT NULL DEFAULT 1 CHECK(activity_support IN (0,1)),claim_id TEXT NOT NULL REFERENCES source_claims(id), ordinal INTEGER NOT NULL, artifact_id TEXT NOT NULL, version TEXT NOT NULL, location TEXT NOT NULL, UNIQUE(claim_id,ordinal), FOREIGN KEY(artifact_id,version,location) REFERENCES records(artifact_id,version,location)) STRICT;
 CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT NULL, next TEXT NOT NULL, PRIMARY KEY(provider,policy,scope)) STRICT;
 
 CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
 CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, singleton INTEGER NOT NULL UNIQUE CHECK(singleton=1), name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), provider TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/2') STRICT;
-CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/2', underlier_id TEXT REFERENCES instruments(id)) STRICT;
+CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3', underlier_id TEXT REFERENCES instruments(id)) STRICT;
 CREATE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
 CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '') STRICT;
 CREATE INDEX listing_terms ON listings(instrument_id,venue,ticker,currency);
@@ -90,8 +90,54 @@ CREATE TABLE attempts(id TEXT PRIMARY KEY NOT NULL, artifact_id TEXT NOT NULL RE
 CREATE INDEX attempts_artifact ON attempts(artifact_id,version,outcome);
 CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;
 
-CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('activity','underlier')),PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
+CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('subject','underlier')),outcome TEXT NOT NULL DEFAULT 'accepted',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3',PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
 CREATE INDEX instrument_claim_occurrence ON instrument_claims(claim_id,ordinal);
+CREATE TABLE instrument_underliers(parent_id TEXT NOT NULL REFERENCES instruments(id),underlier_id TEXT NOT NULL REFERENCES instruments(id),PRIMARY KEY(parent_id,underlier_id),CHECK(parent_id<>underlier_id)) STRICT;
+CREATE INDEX underlier_parents ON instrument_underliers(underlier_id,parent_id);
+-- Report context is derived from source references, not redundant support links.
+CREATE VIEW report_activity_targets AS
+ SELECT p.claim_id,p.ordinal,
+ CAST((SELECT CASE WHEN sum(matches.direct)=1 THEN max(CASE WHEN matches.direct=1 THEN matches.execution_id END)
+   WHEN count(*)=1 THEN min(matches.execution_id) END
+ FROM (
+   SELECT e.execution_id,max(CASE WHEN json_extract(CAST(c.data AS TEXT),'$.EventDistinct')=1 AND e.reference=json_extract(CAST(c.data AS TEXT),'$.Event') THEN 1 ELSE 0 END) AS direct
+   FROM activity_references r JOIN event_links e ON e.account_id=r.account_id AND e.reference=r.reference
+   WHERE r.claim_id=p.claim_id AND r.ordinal=p.ordinal
+   AND (e.reference=json_extract(CAST(c.data AS TEXT),'$.Event') OR json_extract(CAST(c.data AS TEXT),'$.EventDistinct')<>1
+     OR NOT EXISTS(SELECT 1 FROM event_links other WHERE other.execution_id=e.execution_id AND other.distinct_event=1
+       AND json_extract(other.reference,'$[0]')=json_extract(CAST(c.data AS TEXT),'$.Event[0]')
+       AND json_extract(other.reference,'$[1]')=json_extract(CAST(c.data AS TEXT),'$.Event[1]')
+       AND json_extract(other.reference,'$[2]')=json_extract(CAST(c.data AS TEXT),'$.Event[2]')
+       AND other.reference<>json_extract(CAST(c.data AS TEXT),'$.Event')))
+   GROUP BY e.execution_id
+ ) matches) AS TEXT) AS execution_id
+ FROM claim_processing p JOIN source_claims c ON c.id=p.claim_id WHERE c.kind='activity';
+CREATE VIEW report_observations AS
+ SELECT artifact_id,version,location,rule,
+ CASE WHEN retained_outcome IS NOT NULL AND (execution_id IS NULL OR representative=1
+   OR retained_outcome IN ('identity-review','native-review','incomplete','incomplete-conflict','kind-conflict','unselected')) THEN retained_outcome
+   WHEN execution_id IS NULL THEN 'native-review'
+   ELSE 'no-additional-contribution' END AS outcome,execution_id
+ FROM (
+   SELECT r.artifact_id,r.version,r.location,coalesce(o.rule,'qualified-activity-observations/4') AS rule,
+   o.outcome AS retained_outcome,
+   r.artifact_id=p.artifact_id AND r.version=p.version AND r.location=p.location AS representative,
+   CASE WHEN o.artifact_id IS NOT NULL THEN o.execution_id ELSE
+     (SELECT t.execution_id FROM report_activity_targets t WHERE t.claim_id=r.claim_id AND t.ordinal=r.ordinal) END AS execution_id
+   FROM records r JOIN source_claims c ON c.id=r.claim_id AND c.kind='activity'
+   JOIN processing_receipts processed ON processed.artifact_id=r.artifact_id AND processed.version=r.version
+   JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal
+   LEFT JOIN execution_observations o ON o.artifact_id=p.artifact_id AND o.version=p.version AND o.location=p.location
+ );
+CREATE VIEW admin_observations AS
+ SELECT 'activity' AS subject_kind,execution_id AS subject_id,artifact_id,version,location,rule,outcome,execution_id FROM execution_observations WHERE execution_id IS NOT NULL
+ UNION ALL
+ SELECT 'instrument',i.instrument_id,p.artifact_id,p.version,p.location,i.rule,i.outcome,o.execution_id
+ FROM instrument_claims i JOIN claim_processing p ON p.claim_id=i.claim_id AND p.ordinal=i.ordinal
+ LEFT JOIN execution_observations o ON o.artifact_id=p.artifact_id AND o.version=p.version AND o.location=p.location
+ UNION ALL
+ SELECT 'artifact',artifact_id,artifact_id,version,location,rule,outcome,execution_id FROM report_observations;
+
 CREATE INDEX observation_execution ON execution_observations(execution_id,artifact_id,version,location);
 
 
@@ -144,5 +190,13 @@ CREATE TRIGGER positions_account_insert AFTER INSERT ON accounts BEGIN INSERT OR
 CREATE TRIGGER positions_account_update AFTER UPDATE ON accounts BEGIN INSERT OR IGNORE INTO positions_dirty VALUES(NEW.id); END;
 CREATE TRIGGER positions_alias_insert AFTER INSERT ON resource_aliases WHEN NEW.kind='instruments' BEGIN INSERT OR IGNORE INTO positions_dirty SELECT id FROM accounts; END;
 CREATE TRIGGER positions_alias_update AFTER UPDATE ON resource_aliases WHEN NEW.kind='instruments' BEGIN INSERT OR IGNORE INTO positions_dirty SELECT id FROM accounts; END;
-CREATE TABLE position_bindings(claim_id TEXT NOT NULL REFERENCES source_claims(id),account_id TEXT NOT NULL REFERENCES accounts(id),instrument_id TEXT NOT NULL REFERENCES instruments(id),PRIMARY KEY(claim_id,instrument_id)) STRICT;
+CREATE TABLE position_bindings(claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,account_id TEXT NOT NULL REFERENCES accounts(id),instrument_id TEXT NOT NULL REFERENCES instruments(id),PRIMARY KEY(claim_id,ordinal,instrument_id),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
+CREATE INDEX position_binding_subject ON position_bindings(instrument_id,claim_id,ordinal);
 CREATE TRIGGER positions_instrument_update AFTER UPDATE OF kind,reference_status ON instruments WHEN OLD.kind<>NEW.kind OR OLD.reference_status<>NEW.reference_status BEGIN INSERT OR IGNORE INTO positions_dirty SELECT p.account_id FROM position_bindings p LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=p.instrument_id WHERE coalesce(a.target_id,p.instrument_id)=NEW.id; END;
+
+-- Current instrument assertions follow source occurrences, independently of support representatives.
+CREATE VIEW current_position_instruments AS
+ SELECT CAST(coalesce(a.target_id,b.instrument_id) AS TEXT) AS instrument_id,c.id AS claim_id,p.ordinal,c.kind,c.data,p.location
+ FROM position_bindings b JOIN source_claims c ON c.id=b.claim_id JOIN claim_processing p ON p.claim_id=c.id AND p.ordinal=b.ordinal
+ LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id
+ WHERE EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=p.ordinal);

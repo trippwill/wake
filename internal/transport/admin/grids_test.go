@@ -57,7 +57,7 @@ func (s gridReadStore) ObservationList(
 				Location:  "row[3]",
 				Rule:      "synthetic-rule",
 				Retrieved: "2026-10-31T10:00:00.120Z",
-				Outcome:   application.ObservationCorroborated,
+				Outcome:   application.ObservationEnriched,
 			},
 		},
 	}, s.failure

@@ -35,6 +35,15 @@ INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority
 
 func coverageReport(t *testing.T, s *Store, id, rows string) {
 	t.Helper()
+	normalizeCoverageReport(t, s, id, rows)
+
+	if err := s.Process(t.Context(), id, ibkrflex.Version); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func normalizeCoverageReport(t *testing.T, s *Store, id, rows string) {
+	t.Helper()
 
 	ctx := context.Background()
 	body := []byte(workflowReport(rows))
@@ -66,10 +75,6 @@ func coverageReport(t *testing.T, s *Store, id, rows string) {
 	recordTestReceipt(t, s, id)
 
 	if _, err = s.Normalize(ctx, id, ibkrflex.Version, r.Normalizer()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err = s.Process(ctx, id, ibkrflex.Version); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -233,7 +238,7 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 
 	d, err = s.LifecycleDetail(ctx, id)
 	if err != nil || d.Relationships[0].TargetID == "" ||
-		len(observationRowsForTest(t, s, "activity", id)) != 2 {
+		len(observationRowsForTest(t, s, "activity", id)) != 1 {
 		t.Fatal("late endpoint/replay", d, err)
 	}
 

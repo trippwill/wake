@@ -124,13 +124,26 @@ acquisition success. No fresh report or warehouse reset is required.
 - SnapTrade and other acquisition providers, multiple-account workflows, file
   imports, automatic source switching and peer-source reconciliation.
 
-Exercise, explicit cancellation/replacement, adjusted-option and representative
-gilt checks use representative evidence or clearly identified synthetic cases.
-Synthetic repeat-acquisition proofs cover receipts without redundant bodies or
-normalization, pre-correction claim comparison, duplicate-row multiplicity and
-retention of disputed variants. Known claims add provenance without changing the
-accepted publication. Raw report retention alone does not establish financial coverage. Private reports
-and credentials are not repository fixtures.
+Exercise, explicit cancellation/replacement, adjusted-option and representative gilt checks
+use representative evidence or clearly identified synthetic cases. Synthetic
+repeat-acquisition proofs cover receipts without redundant bodies or normalization,
+pre-correction claim comparison, duplicate-row multiplicity and retention of disputed
+variants. Subject support retains the first observation, compatible new information and
+distinct conflicts independently for activities, instruments and nested underliers. Repeated
+claims add no supporting links or publication changes. Different activities with unchanged
+instrument facts add no instrument support; their own contributions and publications remain
+independent. Position bindings likewise survive discarded instrument support. Holding
+quantities and dates can change independently of instrument evidence, and active position
+interpretations remain usable when their first instrument-supporting appearance belongs to an
+earlier interpretation. Report pages preserve processed normalized appearances, unselected and
+pending observations, duplicate locations and interpretation versions. Related activity
+context remains available for discarded support without adding persistent links.
+Anonymous-underlier enrichment and disputes propagate through instrument relationships
+independently of parent support and operator selections. Interpretation replacement changes
+current eligibility without deleting contribution history or multiplying repeated support.
+Instrument-family disputes preserve evidence without attaching option fields to another
+family. Raw report retention alone does not establish financial coverage. Private reports and
+credentials are not repository fixtures.
 
 ## Canonical publishing
 

@@ -68,7 +68,7 @@ func decisionIdentity(
 }
 
 // Resolve duplicates only after comparing active choices for every current root.
-// No raw identifier, term, observation, or operator event is rewritten or deleted.
+// No raw source record or operator event is rewritten or deleted.
 func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
@@ -295,6 +295,20 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 		ctx,
 		sqlc.MoveInstrumentClaimsParams{Target: target, Previous: previous},
 	); err != nil {
+		return err
+	}
+
+	if err := q.DeleteSubjectInstrumentClaims(ctx, previous); err != nil {
+		return err
+	}
+
+	if err := q.MoveInstrumentUnderlierLinks(ctx, sqlc.MoveInstrumentUnderlierLinksParams{
+		Previous: previous, Target: target,
+	}); err != nil {
+		return err
+	}
+
+	if err := q.DeleteInstrumentUnderlierLinks(ctx, previous); err != nil {
 		return err
 	}
 

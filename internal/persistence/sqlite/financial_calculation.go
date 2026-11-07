@@ -346,7 +346,7 @@ func selectedCashInstrument(
 					InstrumentID: instrument,
 					ClaimID:      contributor.ClaimID,
 					Ordinal:      contributor.Ordinal,
-					Role:         "activity",
+					Role:         "subject",
 				},
 			); e != nil {
 				return "", e
@@ -741,6 +741,10 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) erro
 	}
 
 	for _, id := range ordered {
+		if err = retainActivityContributions(ctx, q, id); err != nil {
+			return err
+		}
+
 		if err = projectActivity(ctx, q, affected[id], states[id]); err != nil {
 			return err
 		}

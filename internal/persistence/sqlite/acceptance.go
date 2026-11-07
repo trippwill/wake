@@ -71,8 +71,8 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 	)
 }
 
-// Process accepts only the confirmed connection/provider/source account. Terms and
-// every matching or dissenting observation commit with the artifact completion.
+// Process accepts only the confirmed connection/provider/source account.
+// Useful source contributions commit atomically with artifact completion.
 func (s *Store) Process(ctx context.Context, id, version string) error {
 	complete, err := s.queries.ProcessingComplete(
 		ctx,
@@ -116,28 +116,18 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	}
 
 	changed := false
+
+	hasPositions := false
 	positionParents := []string{}
 	seenPositionParents := map[string]bool{}
 	for _, record := range records {
+		hasPositions = hasPositions || record.Kind == "positions" || record.Kind == "position-instrument"
+
 		previous, knownErr := q.ClaimProcessing(
 			ctx,
 			sqlc.ClaimProcessingParams{ClaimID: record.ClaimID, Ordinal: record.Ordinal},
 		)
 		if knownErr == nil {
-			if err = q.CopyClaimObservation(
-				ctx,
-				sqlc.CopyClaimObservationParams{
-					ArtifactID:       id,
-					Version:          version,
-					Location:         record.Location,
-					PreviousArtifact: previous.ArtifactID,
-					PreviousVersion:  previous.Version,
-					PreviousLocation: previous.Location,
-				},
-			); err != nil {
-				return err
-			}
-
 			if err = q.CopyClaimCorrection(
 				ctx,
 				sqlc.CopyClaimCorrectionParams{
@@ -233,7 +223,12 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 
 				if e = q.PutPositionBinding(
 					ctx,
-					sqlc.PutPositionBindingParams{ClaimID: record.ClaimID, AccountID: account.ID(), InstrumentID: root},
+					sqlc.PutPositionBindingParams{
+						ClaimID:      record.ClaimID,
+						Ordinal:      record.Ordinal,
+						AccountID:    account.ID(),
+						InstrumentID: root,
+					},
 				); e != nil {
 					return e
 				}
@@ -244,7 +239,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 						InstrumentID: root,
 						ClaimID:      record.ClaimID,
 						Ordinal:      record.Ordinal,
-						Role:         "activity",
+						Role:         "subject",
 					},
 				); e != nil {
 					return e
@@ -314,7 +309,7 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		if err = projectArtifact(ctx, q, id); err != nil {
 			return err
 		}
-	} else if reinterpretingPositions {
+	} else if reinterpretingPositions || hasPositions {
 		if err = projectArtifactRoots(ctx, q, id); err != nil {
 			return err
 		}
