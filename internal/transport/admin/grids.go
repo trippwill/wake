@@ -113,7 +113,7 @@ func activityGrid(data application.ActivityList) gridPage[activityGridRow] {
 				Label: gridCell{
 					Text: item.Label,
 					Href: item.Href,
-					Note: activityKindLabel(item.Kind),
+					Note: describe(item.Description, activityKindLabel(item.Kind)),
 				},
 				Date:      gridCell{Text: item.Date},
 				Quantity:  gridCell{Text: item.Quantity},
@@ -137,9 +137,9 @@ func instrumentGrid(data application.InstrumentList) gridPage[instrumentGridRow]
 			rows,
 			instrumentGridRow{
 				ID:     item.ID,
-				Name:   gridCell{Text: item.Name, Href: "/instruments/" + item.ID},
+				Name:   gridCell{Text: known(item.Name)},
 				Kind:   gridCell{Text: item.Kind},
-				Ticker: gridCell{Text: item.Ticker},
+				Ticker: gridCell{Text: instrumentTitle(item.Ticker, item.Name), Href: "/instruments/" + item.ID},
 				State: gridCell{
 					Text: referenceLabel(item.Status, item.Authority),
 					Tone: referenceTone(item.Status),

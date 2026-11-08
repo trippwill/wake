@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-templ MovementPage(r application.CanonicalResource, name string) {
+templ MovementPage(r application.CanonicalResource, name, description string) {
 	@Breadcrumbs(activityKindLabel(r.Activity.Family))
-	@PageHeader(activityLabel(r.Activity, name), r.Activity.Date)
+	@PageHeader(activityLabel(r.Activity, name), describe(description, r.Activity.Date))
 	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading"><h2>Accepted activity</h2><a class="btn" href={ templ.SafeURL("/activity/" + r.ID + "/correct") }>Correct accepted data</a></div>

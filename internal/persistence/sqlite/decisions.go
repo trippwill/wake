@@ -337,7 +337,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			return out, err
 		}
 
-		out.Label = row.Name + " · " + row.Kind
+		out.Label = instrumentLabel(row.Name, row.Ticker) + " · " + row.Kind
 
 		out.Values = map[string]application.CorrectionValue{
 			"name":               {Value: row.Name},
@@ -389,7 +389,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 							out.Candidates,
 							application.CorrectionCandidate{
 								Value: referenceCandidateKey(c.ID, j, k),
-								Label: r.Name + " · " + r.Ticker + " · " + r.FIGI,
+								Label: instrumentLabel(r.Name, r.Ticker) + " · " + r.FIGI,
 								Fields: map[string]application.CorrectionValue{
 									"name":               {Value: r.Name},
 									"reference_identity": {Value: identity},
@@ -413,15 +413,12 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 	for _, root := range roots {
 		for _, scope := range []string{"instrument", "underlier"} {
 			if current := out.Values[scope]; current.Value == root.ID {
-				current.Label = root.Kind + " · " + root.Name + " · Wake ID " + root.ID
+				current.Label = instrumentLabel(root.Name, root.Ticker) + " · " + root.Kind + " · Wake ID " + root.ID
 				out.Values[scope] = current
 			}
 		}
 
-		label := root.Name
-		if root.Ticker != "" {
-			label += " (" + root.Ticker + ")"
-		}
+		label := instrumentLabel(root.Name, root.Ticker)
 
 		label += " · " + root.Kind + " · Wake ID " + root.ID
 		if root.ReferenceFigi != "" {
@@ -451,7 +448,10 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 			for _, l := range listings {
 				if current := out.Values["listing"]; current.Value == l.ID {
-					current.Label = root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID
+					current.Label = instrumentLabel(
+						root.Name,
+						root.Ticker,
+					) + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID
 					out.Values["listing"] = current
 				}
 
@@ -460,7 +460,10 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 					application.CorrectionCandidate{
 						Value: l.ID,
 						Scope: "listing",
-						Label: "Listing · " + root.Name + " · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID,
+						Label: instrumentLabel(
+							root.Name,
+							root.Ticker,
+						) + " · Listing · " + l.Venue + " · " + l.Currency + " · Wake ID " + l.ID,
 					},
 				)
 			}
@@ -566,6 +569,18 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 	}
 
 	return projectInstrument(ctx, q, p.ID)
+}
+
+func instrumentLabel(name, ticker string) string {
+	if ticker == "" {
+		return name
+	}
+
+	if name == "" || name == ticker {
+		return ticker
+	}
+
+	return ticker + " · " + name
 }
 
 func observationLabel(r sqlc.RecordValue) string {

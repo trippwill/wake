@@ -399,7 +399,7 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 		want   int
 	}{
 		{"Transfer out", 1},
-		{"Transfer out · Synthetic security", 1},
+		{"Transfer out · TEST", 1},
 		{"Transfer in", 0},
 		{"Payment in lieu · Synthetic distribution", 1},
 		{"payment in lieu", 1},
@@ -475,7 +475,7 @@ func TestMovementListUsesDisplayedLabelsAndPlaceholders(t *testing.T) {
 	}
 
 	for i, name := range []string{"Synthetic security", "alpha", "Zulu"} {
-		row := strings.NewReplacer(`transactionID="transfer1"`, `transactionID="transfer-`+name+`"`, `conid="100"`, `conid="10`+string(rune('0'+i))+`"`, "Synthetic security", name).
+		row := strings.NewReplacer(`transactionID="transfer1"`, `transactionID="transfer-`+name+`"`, `conid="100"`, `conid="10`+string(rune('0'+i))+`"`, `symbol="TEST"`, `symbol="`+strings.ToUpper(name[:1])+`YN"`, "Synthetic security", name).
 			Replace(transferRow)
 		if i > 0 {
 			row = strings.Replace(row, `direction="IN"`, `direction="OUT"`, 1)

@@ -53,7 +53,7 @@ templ DashboardOverview(view overviewView) {
 					<p>{ strconv.FormatInt(view.ReviewPage.Matched,10) } items need your judgment.</p>
 					<ul class="wake-task-list">
 						for _,item:=range view.Reviews {
-							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
+							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ describe(item.Description, item.Reason) }</span></li>
 						}
 					</ul>
 				}
@@ -447,7 +447,16 @@ templ ReviewQueue(view activityView) {
 		} else {
 			<ul class="wake-task-list">
 				for _,r:=range view.Reviews {
-					<li><div><span class="wake-help">{ r.Kind }</span><h3><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></h3><p>{ r.Reason }</p></div><a class="btn" href={ templ.SafeURL(r.Href) }>Review</a></li>
+					<li>
+						<div>
+							<span class="wake-help">{ r.Kind }</span>
+							<h3><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></h3>
+							if r.Description!="" {
+								<p class="wake-help">{ r.Description }</p>
+							}
+							<p>{ r.Reason }</p>
+						</div><a class="btn" href={ templ.SafeURL(r.Href) }>Review</a>
+					</li>
 				}
 			</ul>
 		}

@@ -628,10 +628,10 @@
       ["terms", "Reported terms"],
     ],
     instruments: [
-      ["name", "Instrument"],
+      ["ticker", "Ticker"],
       ["kind", "Kind"],
-      ["ticker", "Reported symbol"],
-      ["state", "Reference identity"],
+      ["name", "Description"],
+      ["state", "Status"],
     ],
     observations: [
       ["report", "Report"],
@@ -643,9 +643,11 @@
   const gridDefaultSort = (region) =>
     region.dataset.grid === "activity"
       ? "date"
-      : ["instruments", "positions"].includes(region.dataset.grid)
-        ? "name"
-        : "report";
+      : region.dataset.grid === "instruments"
+        ? "ticker"
+        : region.dataset.grid === "positions"
+          ? "name"
+          : "report";
   const selectedTextWithin = (region) => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed) return false;

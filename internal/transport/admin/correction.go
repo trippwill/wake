@@ -104,7 +104,7 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 		c.Kind, c.Hint = "timestamp", "Keep the reported time, fractional seconds and UTC offset. Leave all three parts blank for Unknown."
 	case application.TextCorrection:
 		if field == "name" {
-			c.Hint = "Enter a readable instrument name."
+			c.Hint = "Enter the instrument description."
 		} else {
 			c.Hint = "Enter the reported symbol, or leave blank for Unknown."
 		}

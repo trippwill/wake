@@ -74,6 +74,7 @@ func reviewList(
 				Activity: activity,
 				ID:       row.ID,
 				Name:     row.Name,
+				Ticker:   row.Ticker,
 				Artifact: row.Artifact,
 				Location: row.Location,
 				Status:   application.CorrectionStatus(row.Status),

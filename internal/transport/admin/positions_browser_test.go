@@ -183,6 +183,9 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	poll(
 		`document.querySelector('[data-positions-as-of]').textContent==='2026-11-04' && document.querySelector('.tabulator-table').textContent.includes('9007199254740993.0000000000001 shares') && document.querySelector('.tabulator-table').textContent.includes('0.0000 USD') && document.querySelector('.tabulator-table').textContent.includes('Not provided') && document.querySelector('.tabulator-table').textContent.includes('Short')`,
 	)
+	poll(
+		`document.querySelector('.tabulator-row a[href="/instruments/equity"]').textContent==='SYN' && document.querySelector('.tabulator-row [tabulator-field="name"]').textContent.includes('Synthetic equity')`,
+	)
 	// Legacy column preferences must preserve layout without restoring obsolete headings.
 	check(chromedp.Evaluate(`(()=>{
  const columns=window.Tabulator.findTable('.tabulator')[0].getColumnLayout();
@@ -256,6 +259,9 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	check(testbrowser.NewDocument(chromedp.Click("a[href='/instruments/equity']", chromedp.ByQuery)))
 	poll(
 		`location.pathname==='/instruments/equity' && document.querySelector('[data-return]').textContent==='Return to Positions' && document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/positions'`,
+	)
+	poll(
+		`document.querySelector('h1').textContent==='SYN' && document.querySelector('.wake-page-header').textContent.includes('Synthetic equity')`,
 	)
 	check(testbrowser.NewDocument(chromedp.Click("[data-return]", chromedp.ByQuery)))
 	poll(

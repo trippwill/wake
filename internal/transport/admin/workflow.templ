@@ -72,7 +72,7 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 
 templ ExecutionPage(d application.ExecutionDetail) {
 	@Breadcrumbs("Activity detail")
-	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String())
+	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String()))
 	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
@@ -136,7 +136,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 
 templ InstrumentPage(d application.InstrumentDetail) {
 	@Breadcrumbs("Instrument")
-	@PageHeader(known(d.Instrument.Name()), d.Instrument.Kind()+" · "+known(d.Instrument.Ticker()))
+	@PageHeader(instrumentTitle(d.Instrument.Ticker(), d.Instrument.Name()), describe(instrumentDescription(d.Instrument.Ticker(), d.Instrument.Name()), d.Instrument.Kind()))
 	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
@@ -146,7 +146,7 @@ templ InstrumentPage(d application.InstrumentDetail) {
 				<a class="btn" href={ templ.SafeURL("/instruments/" + d.Instrument.ID() + "/correct") }>Correct instrument data</a>
 			</div>
 		</div>
-		<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported label</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd><dt>Reported symbol</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd></dl>
+		<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported ticker</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd><dt>Reported description</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd></dl>
 		if d.Instrument.Kind()=="option" {
 			<p>
 				Underlier:
@@ -309,7 +309,7 @@ templ RelationshipLinks(links []application.Relationship) {
 
 templ LifecyclePage(d application.LifecycleDetail) {
 	@Breadcrumbs("Option outcome")
-	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String())
+	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String()))
 	@AcceptedDetailScope()
 	@ReportedRealized(d.Context.Realized)
 	<section class="wake-card">
@@ -547,9 +547,9 @@ func fieldLabel(s string) string {
 	case "rate":
 		return "Quoted rate"
 	case "name":
-		return "Name"
+		return "Description"
 	case "ticker":
-		return "Reported symbol"
+		return "Ticker"
 	case "kind":
 		return "Reported outcome"
 	case "realized_pnl":
