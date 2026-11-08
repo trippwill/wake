@@ -629,9 +629,9 @@
     ],
     instruments: [
       ["ticker", "Ticker"],
-      ["name", "Description"],
       ["kind", "Kind"],
-      ["state", "Reference identity"],
+      ["name", "Description"],
+      ["state", "Status"],
     ],
     observations: [
       ["report", "Report"],
