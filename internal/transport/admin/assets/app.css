@@ -1130,6 +1130,9 @@ body {
   }
 }
 @media (max-width: 24rem) {
+  .wake-main:has(.wake-appearance) {
+    padding-inline: min(1rem, 4vw);
+  }
   .wake-main .wake-system-tabs a {
     padding-inline: min(0.5rem, 12px);
   }
