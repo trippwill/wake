@@ -15,6 +15,12 @@ and [.mise/config.toml](../../.mise/config.toml) to discover tasks, dependencies
 and exact tool pins; [go.mod](../../go.mod) owns Go dependencies. Keep the lock file
 aligned with intentional tool updates. Avoid machine-global configuration changes.
 
+Run `mise run build:release` to build the standalone executable at `.cache/release/wake`.
+The release task disables CGo, removes filesystem paths with `-trimpath`, and strips
+symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary size.
+Use an ordinary build when debugger symbols are needed. `mise run build` continues
+to check all Go packages with the existing development build settings.
+
 Use `mise run bin -- help` for application commands. The [README](../../README.md)
 provides a quick setup and usage helper. Keep automation in repository tasks
 rather than app-specific wrappers.
@@ -202,6 +208,13 @@ Use isolated synthetic instances and the supported Chromium workflow; keep the
 browser sandbox enabled. Tests must not use a personal browser profile or source
 credentials. Consult task definitions for browser discovery, environment switches
 and artifacts. Source assets and their vendor inventory own exact library versions.
+
+After editing browser assets, run `mise run assets:gen` to refresh the checked-in
+gzip copies embedded in the executable. `mise run assets:check` verifies that the
+generated files exactly match the sources, including additions and deletions.
+Both tasks use the pinned Go toolchain; an ordinary Go build uses the checked-in
+copies. The source files remain readable and retain upstream licenses. Source
+generation and CI include these tasks.
 
 ## Documentation maintenance
 

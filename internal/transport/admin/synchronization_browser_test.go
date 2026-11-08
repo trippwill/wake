@@ -55,7 +55,7 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		},
 	}}})
 	mux := http.NewServeMux()
-	mux.Handle("GET /assets/", http.FileServerFS(assets))
+	mux.HandleFunc("GET /assets/", serveAsset)
 	mux.Handle(
 		"GET /",
 		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(view))),
