@@ -57,9 +57,9 @@ SELECT snapshot,selection_authority FROM admin_instruments CROSS JOIN ordering W
  AND (sqlc.arg(search)='' OR wake_contains(search_text,sqlc.arg(search))=1 OR sqlc.arg(missing_values)=1 AND (name='' OR ticker='')
  OR EXISTS(SELECT 1 FROM json_each(sqlc.arg(reference_matches)) match WHERE json_extract(match.value,'$.status')=reference_status AND json_extract(match.value,'$.authority')=selection_authority))
  ORDER BY
- CASE ordering.sort_field WHEN 'name' THEN name='' WHEN 'ticker' THEN ticker='' ELSE 0 END ASC,
- CASE WHEN ordering.direction='asc' THEN CASE ordering.sort_field WHEN 'name' THEN name WHEN 'ticker' THEN ticker WHEN 'kind' THEN kind WHEN 'state' THEN reference_status END END COLLATE NOCASE ASC,
- CASE WHEN ordering.direction='desc' THEN CASE ordering.sort_field WHEN 'name' THEN name WHEN 'ticker' THEN ticker WHEN 'kind' THEN kind WHEN 'state' THEN reference_status END END COLLATE NOCASE DESC,
+ CASE ordering.sort_field WHEN 'name' THEN name='' ELSE 0 END ASC,
+ CASE WHEN ordering.direction='asc' THEN CASE ordering.sort_field WHEN 'name' THEN name WHEN 'ticker' THEN coalesce(nullif(ticker,''),nullif(name,''),'Unknown') WHEN 'kind' THEN kind WHEN 'state' THEN reference_status END END COLLATE NOCASE ASC,
+ CASE WHEN ordering.direction='desc' THEN CASE ordering.sort_field WHEN 'name' THEN name WHEN 'ticker' THEN coalesce(nullif(ticker,''),nullif(name,''),'Unknown') WHEN 'kind' THEN kind WHEN 'state' THEN reference_status END END COLLATE NOCASE DESC,
  CASE WHEN ordering.sort_field='state' AND ordering.direction='asc' THEN selection_authority END ASC,
  CASE WHEN ordering.sort_field='state' AND ordering.direction='desc' THEN selection_authority END DESC,
  id ASC LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);

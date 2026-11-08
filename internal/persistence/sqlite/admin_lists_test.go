@@ -768,6 +768,73 @@ func TestAdminTickerIdentityPreservesDescriptionSearchAndOrdering(t *testing.T) 
 	}
 }
 
+func TestInstrumentTickerOrderingUsesDisplayedFallbacks(t *testing.T) {
+	s := coverageStore(t)
+
+	want := []struct{ name, ticker string }{
+		{"Zebra", "aaa"},
+		{"Alpha", ""},
+		{"Beta", ""},
+		{"", ""},
+		{"First description", "ZZZ"},
+	}
+
+	var rows strings.Builder
+	for i, item := range want {
+		rows.WriteString(strings.NewReplacer(
+			`conid="100"`, fmt.Sprintf(`conid="%d"`, 100+i),
+			`symbol="SYN"`, `symbol="`+item.ticker+`"`,
+			`description="Synthetic equity"`, `description="`+item.name+`"`,
+		).Replace(equityRow("U1", fmt.Sprintf("ticker-fallback-%d", i), "10")))
+	}
+
+	coverageReport(t, s, "ticker-fallback-order", rows.String())
+
+	for _, direction := range []string{"asc", "desc"} {
+		for page := 1; page <= 3; page++ {
+			query, err := application.NewListQuery(application.ListOptions{
+				Direction: direction, Page: page, PageSize: 2,
+			}, application.InstrumentScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := s.InstrumentList(t.Context(), query)
+			if err != nil || got.Total != 5 || got.Matched != 5 || len(got.Items) != min(2, 5-2*(page-1)) {
+				t.Fatal(got, err)
+			}
+
+			for i, item := range got.Items {
+				position := 2*(page-1) + i
+				if direction == "desc" {
+					position = len(want) - 1 - position
+				}
+
+				name, ticker := "", ""
+				if item.Resource.Instrument.Name != nil {
+					name = *item.Resource.Instrument.Name
+				}
+
+				if item.Resource.Instrument.Ticker != nil {
+					ticker = *item.Resource.Instrument.Ticker
+				}
+
+				if name != want[position].name || ticker != want[position].ticker {
+					t.Fatalf(
+						"%s page %d row %d: name %q ticker %q, want %+v",
+						direction,
+						page,
+						i,
+						name,
+						ticker,
+						want[position],
+					)
+				}
+			}
+		}
+	}
+}
+
 func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
 	s := coverageStore(t)
 	first := equityRow("U1", "reference-a", "10")
