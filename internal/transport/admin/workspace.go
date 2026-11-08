@@ -16,6 +16,7 @@ import (
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -82,6 +83,7 @@ type (
 		URL      string
 		Query    url.Values
 		Fragment bool
+		Accounts []application.Account
 		Method   string
 	}
 )
@@ -92,6 +94,13 @@ func page(ctx context.Context) pageState {
 	}
 
 	return pageState{URL: "/", Query: url.Values{}}
+}
+
+func withAccounts(r *http.Request, accounts []application.Account) *http.Request {
+	p := page(r.Context())
+	p.Accounts = accounts
+
+	return r.WithContext(context.WithValue(r.Context(), pageKey{}, p))
 }
 
 func pageRequest(r *http.Request) *http.Request {
@@ -246,9 +255,9 @@ func hasDifferences(f application.CorrectionForm, c application.CorrectionCandid
 
 type reviewItem struct{ Key, Kind, Label, Description, Reason, Href string }
 
-func sourceWork(v sourceView, c application.ConnectionView) []application.WorkStatus {
+func sourceWork(c application.ConnectionView) []application.WorkStatus {
 	operation := "discover"
-	if v.Account.Connection() == c.ID && c.CanAcquire {
+	if c.Account.ID() != "" && c.CanAcquire {
 		operation = "acquire"
 	}
 
@@ -287,7 +296,7 @@ func repairs(v sourceView) []reviewItem {
 			)
 		}
 
-		for _, w := range sourceWork(v, c) {
+		for _, w := range sourceWork(c) {
 			if w.Failure != "" {
 				out = append(out, reviewItem{Label: c.Name, Reason: w.Failure, Href: connectionURL(c.ID, "status")})
 				break
@@ -335,6 +344,7 @@ func stringTitle(s string) string {
 
 type activityItem struct {
 	ID, Href, Label, Date, Kind, Instrument, Description, InstrumentID, Reference, Quantity, Amount, Price, Basis, State, Realized string
+	AccountName                                                                                                                    string
 	RealizedConflict                                                                                                               bool
 	FinancialState                                                                                                                 application.ActivityState
 }
@@ -353,13 +363,13 @@ func connectionURL(id, view string) string {
 	return "/connections/" + url.PathEscape(id) + "?view=" + view
 }
 
-func connectionFailure(v sourceView, c application.ConnectionView) bool {
+func connectionFailure(c application.ConnectionView) bool {
 	if c.MissingAccess {
 		return true
 	}
 
-	for _, w := range sourceWork(v, c) {
-		if w.Failure != "" {
+	for _, w := range sourceWork(c) {
+		if w.Failure != "" || w.Progress == provider.ProgressUnavailable {
 			return true
 		}
 	}

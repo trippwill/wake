@@ -12,6 +12,11 @@ import (
 type Querier interface {
 	AccessReadiness(ctx context.Context, connectionID string) (AccessReadinessRow, error)
 	Account(ctx context.Context) (Account, error)
+	AccountByConnection(ctx context.Context, connectionID string) (Account, error)
+	AccountByID(ctx context.Context, id string) (Account, error)
+	AccountBySource(ctx context.Context, arg AccountBySourceParams) (Account, error)
+	AccountCount(ctx context.Context) (int64, error)
+	Accounts(ctx context.Context) ([]Account, error)
 	AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)

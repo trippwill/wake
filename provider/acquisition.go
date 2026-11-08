@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/source"
 )
 
 // Settings contains non-secret configuration. Secret fields are supplied only
@@ -66,15 +67,18 @@ type Request struct {
 	Settings Settings
 	State    State
 	Now      time.Time
+	// SourceAccount is the confirmed account for acquisition. Discovery leaves it empty.
+	SourceAccount source.Reference
 }
 
 type Step struct {
-	state    State
-	artifact Artifact
-	next     time.Time
-	failure  string
-	reason   RetryReason
-	coverage Coverage
+	state             State
+	artifact          Artifact
+	next              time.Time
+	failure           string
+	reason            RetryReason
+	coverage          Coverage
+	candidateSnapshot bool
 }
 
 // NewStep describes the next durable state after one bounded protocol step.
@@ -123,11 +127,12 @@ const (
 )
 
 // Coverage distinguishes requested bounds from the bounds actually reported.
-// Absent returned bounds establish no coverage.
+// An absent requested start represents unbounded history. Absent returned
+// bounds establish no coverage.
 type Coverage struct{ requestedFrom, requestedTo, reportedFrom, reportedTo financial.Date }
 
 func NewCoverage(from, to, reportedFrom, reportedTo financial.Date) (Coverage, error) {
-	if from.IsZero() || to.IsZero() || from.String() > to.String() ||
+	if to.IsZero() || (!from.IsZero() && from.String() > to.String()) ||
 		reportedFrom.IsZero() != reportedTo.IsZero() ||
 		(!reportedFrom.IsZero() && reportedFrom.String() > reportedTo.String()) {
 		return Coverage{}, ErrInvalid
@@ -169,7 +174,7 @@ func (c Coverage) ReportedTo() string {
 }
 
 func (s Step) WithCoverage(c Coverage) (Step, error) {
-	if s.artifact.IsZero() || c.requestedFrom.IsZero() {
+	if s.artifact.IsZero() || c.requestedTo.IsZero() {
 		return Step{}, ErrInvalid
 	}
 
@@ -177,7 +182,8 @@ func (s Step) WithCoverage(c Coverage) (Step, error) {
 
 	return s, nil
 }
-func (s Step) Coverage() Coverage { return s.coverage }
+func (s Step) Coverage() Coverage      { return s.coverage }
+func (s Step) CandidateSnapshot() bool { return s.candidateSnapshot }
 
 // ProgressPhase describes observable work without exposing protocol codes.
 type ProgressPhase string

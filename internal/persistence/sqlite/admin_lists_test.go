@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
@@ -1005,5 +1006,103 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 	page, err := s.ActivityList(t.Context(), query)
 	if err != nil || page.Matched != 1 || page.Items[0].InstrumentName != "" {
 		t.Fatal("unknown instrument label phrase not searchable", page.Matched, err)
+	}
+}
+
+func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	connection := host.Connection{ID: "second-source", Provider: "ibkr-flex", Name: "Another source"}
+	if err := s.Configure(ctx, connection, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	details, err := application.NewAccountDetails("Another account", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	key := host.WorkKey{Connection: connection.ID, Stream: "confirmations", Operation: "discover"}
+	discover := func(body string, candidates ...provider.Candidate) string {
+		t.Helper()
+
+		checkpoint, err := s.Checkpoint(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		artifact, _ := provider.NewArtifact("synthetic", "application/json", now, []byte(body))
+		step, _ := provider.NewStep(provider.State{}, artifact, now)
+
+		discovery, err := provider.NewDiscovery(step, candidates)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		discovery, err = discovery.WithCandidateSnapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		id, err := s.Accept(ctx, key, checkpoint.Revision, discovery.Step(), candidates, provider.Progress{})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return id
+	}
+
+	existing, _ := source.NewReference("ibkr", "account", "", "U1")
+	duplicate, _ := provider.NewCandidate(existing, "Already bound", financial.Currency{})
+	first := discover(`["already-bound"]`, duplicate)
+	if _, err = s.Confirm(
+		ctx,
+		connection,
+		first,
+		existing,
+		details,
+	); !errors.Is(
+		err,
+		application.ErrAccountBound,
+	) {
+		t.Fatalf("duplicate authority: %v", err)
+	}
+
+	distinct, _ := source.NewReference("ibkr", "account", "", "U2")
+	candidate, _ := provider.NewCandidate(distinct, "Second account", financial.Currency{})
+	available := discover(`["new-account"]`, candidate)
+	_ = discover(`[]`)
+
+	if _, err = s.Confirm(
+		ctx,
+		connection,
+		available,
+		distinct,
+		details,
+	); !errors.Is(
+		err,
+		application.ErrCandidate,
+	) {
+		t.Fatalf("withdrawn candidate: %v", err)
+	}
+
+	available = discover(`["new-account"]`, candidate)
+
+	second, err := s.Confirm(ctx, connection, available, distinct, details)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	if err != nil || len(snapshot.Snapshot.Resources) != 2 {
+		t.Fatalf("both accounts must publish: %+v %v", snapshot, err)
+	}
+
+	for id, want := range map[string]string{"account": "Synthetic account", second.ID(): details.Name()} {
+		resource, err := s.Resource(ctx, "accounts", id)
+		if err != nil || resource.Account == nil || resource.Account.Name != want {
+			t.Fatalf("account %q: %+v %v", id, resource, err)
+		}
 	}
 }

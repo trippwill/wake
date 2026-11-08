@@ -48,6 +48,11 @@ func prerequisites(ctx context.Context, q *sqlc.Queries) (application.Prerequisi
 		return out, err
 	}
 
+	out.AccountCount, err = q.AccountCount(ctx)
+	if err != nil {
+		return out, err
+	}
+
 	out.ConnectionCount, err = q.AdminSourceCount(ctx, "")
 
 	return out, err
@@ -65,13 +70,22 @@ func connectionAccess(
 	ctx context.Context,
 	q *sqlc.Queries,
 	connection sqlc.Connection,
-	account application.Account,
 ) (application.ConnectionView, error) {
 	view := application.ConnectionView{ID: connection.ID, Name: connection.Name, Provider: connection.Provider}
+
+	account, err := q.AccountByConnection(ctx, connection.ID)
+	if err == nil {
+		view.Account, err = accountValue(account)
+	}
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return view, err
+	}
+
 	if view.Name == "" {
 		view.Name = "Retained source connection"
-		if account.Connection() == connection.ID {
-			view.Name = "Source for " + account.Details().Name()
+		if view.Account.ID() != "" {
+			view.Name = "Source for " + view.Account.Details().Name()
 		}
 	}
 
@@ -113,9 +127,8 @@ func connectionStatus(
 	ctx context.Context,
 	q *sqlc.Queries,
 	connection sqlc.Connection,
-	account application.Account,
 ) (application.ConnectionView, error) {
-	view, err := connectionAccess(ctx, q, connection, account)
+	view, err := connectionAccess(ctx, q, connection)
 	if err != nil {
 		return view, err
 	}
@@ -132,6 +145,8 @@ func connectionStatus(
 				Operation: status.Operation,
 				Stream:    status.Stream,
 				Progress:  provider.ProgressPhase(status.Observed),
+				Completed: status.ObservedCompleted,
+				Total:     status.ObservedTotal,
 				Failure:   status.Failure,
 				Next:      status.Next,
 				Scheduled: status.Scheduled,
@@ -206,7 +221,7 @@ func (s *Store) SourcePage(ctx context.Context, query application.ListQuery) (ap
 		}
 
 		for _, row := range rows {
-			view, e := connectionStatus(ctx, q, row, out.Account)
+			view, e := connectionStatus(ctx, q, row)
 			if e != nil {
 				return out, e
 			}
@@ -247,7 +262,7 @@ func (s *Store) SourceDetail(
 			return out, err
 		}
 
-		out.Connection, err = connectionStatus(ctx, q, row, out.Account)
+		out.Connection, err = connectionStatus(ctx, q, row)
 		if err != nil {
 			return out, err
 		}
@@ -317,7 +332,7 @@ func systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatu
 
 	out.MoreConnections = out.ConnectionCount > int64(len(rows))
 	for _, row := range rows {
-		view, e := connectionStatus(ctx, q, row, out.Account)
+		view, e := connectionStatus(ctx, q, row)
 		if e != nil {
 			return out, e
 		}
@@ -376,7 +391,7 @@ func (s *Store) SourceAccessPage(
 		}
 
 		for _, row := range rows {
-			view, e := connectionAccess(ctx, q, row, out.Account)
+			view, e := connectionAccess(ctx, q, row)
 			if e != nil {
 				return out, e
 			}
@@ -407,7 +422,7 @@ func (s *Store) SourceAccess(ctx context.Context) (application.AccessSnapshot, e
 		}
 
 		for _, row := range rows {
-			c, e := connectionAccess(ctx, q, row, out.Account)
+			c, e := connectionAccess(ctx, q, row)
 			if e != nil {
 				return out, e
 			}

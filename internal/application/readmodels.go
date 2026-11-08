@@ -16,6 +16,7 @@ import (
 type ListOptions struct {
 	Search, Kind, State, Sort, Direction string
 	Page, PageSize                       int
+	AccountID                            string
 	KindMatches                          []ActivityKind
 	StateMatches                         []ActivityState
 	ReferenceMatches                     []ReferenceMatch
@@ -81,7 +82,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if options.Page < 1 || options.PageSize < 1 || options.PageSize > 200 ||
 		options.Page > math.MaxInt/options.PageSize ||
-		len(options.Search) > 256 {
+		len(options.Search) > 256 || len(options.AccountID) > 256 {
 		return ListQuery{}, ErrInvalid
 	}
 
@@ -231,6 +232,7 @@ type (
 		ReferenceKey     bool
 		ReferenceFailure string
 		ConnectionCount  int64
+		AccountCount     int64
 	}
 	SourcePage struct {
 		Prerequisites
@@ -255,10 +257,10 @@ type (
 		Resource                         CanonicalResource
 		State                            ActivityState
 		InstrumentName, InstrumentTicker string
+		AccountName                      string
 		Reference                        ReferenceMatch
 	}
 	ActivityList struct {
-		Account Account
 		PageInfo
 		Items []ActivityListItem
 	}
@@ -311,6 +313,7 @@ type (
 		SourceCandidate(context.Context, string, string, source.Reference) (Candidate, error)
 		SystemStatus(context.Context) (SystemStatus, error)
 		Overview(context.Context) (OverviewView, error)
+		Accounts(context.Context) ([]Account, error)
 		ActivityList(context.Context, ListQuery) (ActivityList, error)
 		InstrumentList(context.Context, ListQuery) (InstrumentList, error)
 		PositionsList(context.Context, ListQuery) (PositionsList, error)

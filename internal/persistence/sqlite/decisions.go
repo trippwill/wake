@@ -272,7 +272,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			out.Values[key] = value
 		}
 
-		if account, e := s.queries.Account(ctx); e == nil {
+		if account, e := s.queries.AccountByID(ctx, row.AccountID); e == nil {
 			out.AccountName = account.Name
 		}
 

@@ -98,7 +98,13 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			}
 			<dt>Trade date</dt>
 			<dd>{ d.Execution.Terms().Fields().TradeDate.String() }</dd>
-			<dt>Execution time (reported precision)</dt>
+			if d.Execution.Terms().Fields().Kind==source.ReportedTrade {
+				<dt>Trade grain</dt>
+				<dd>Reported trade</dd>
+				<dt>Reported trade time</dt>
+			} else {
+				<dt>Execution time (reported precision)</dt>
+			}
 			<dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd>
 		</dl>
 		<a href={ templ.SafeURL("/instruments/" + d.Execution.Instrument()) }>Inspect instrument</a>
@@ -124,7 +130,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 	}
 	<details class="wake-card">
 		<summary>Relationships and source context</summary>@RelationshipLinks(d.Relationships)
-		<dl><dt>Reported order membership</dt><dd>{ referenceText(d.Execution.Terms().Fields().Order) }</dd><dt>Opening/closing</dt><dd>{ known(string(d.Execution.Terms().Fields().PositionEffect)) }</dd><dt>Source event</dt><dd>{ referenceText(d.Execution.Terms().Fields().Event) }</dd><dt>Wake execution identity</dt><dd>{ d.Execution.ID() }</dd></dl>
+		<dl><dt>Reported order membership</dt><dd>{ referenceText(d.Execution.Terms().Fields().Order) }</dd><dt>Opening/closing</dt><dd>{ known(string(d.Execution.Terms().Fields().PositionEffect)) }</dd><dt>Source event</dt><dd>{ referenceText(d.Execution.Terms().Fields().Event) }</dd><dt>Wake activity identity</dt><dd>{ d.Execution.ID() }</dd></dl>
 	</details>
 	<section class="wake-card">
 		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)

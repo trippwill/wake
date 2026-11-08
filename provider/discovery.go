@@ -59,5 +59,18 @@ func NewDiscovery(step Step, candidates []Candidate) (Discovery, error) {
 
 	return Discovery{step, slices.Clone(candidates)}, nil
 }
+
+// WithCandidateSnapshot makes this completed discovery authoritative for its
+// input. An empty snapshot withdraws all candidates for that input.
+func (d Discovery) WithCandidateSnapshot() (Discovery, error) {
+	if d.step.Artifact().IsZero() || !d.step.State().IsZero() {
+		return Discovery{}, ErrInvalid
+	}
+
+	d.step.candidateSnapshot = true
+
+	return d, nil
+}
+
 func (d Discovery) Step() Step              { return d.step }
 func (d Discovery) Candidates() []Candidate { return slices.Clone(d.candidates) }

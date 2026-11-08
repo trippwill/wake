@@ -105,13 +105,14 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 
 	q := s.queries.WithTx(tx)
 
-	row, err := q.Account(ctx)
-	if err != nil {
-		return err
+	var account application.Account
+
+	row, err := q.AccountByConnection(ctx, retained.Connection)
+	if err == nil {
+		account, err = accountValue(row)
 	}
 
-	account, err := accountValue(row)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 
@@ -305,8 +306,8 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		return err
 	}
 
-	if changed {
-		if err = projectArtifact(ctx, q, id); err != nil {
+	if changed && account.ID() != "" {
+		if err = projectArtifact(ctx, q, id, account.ID()); err != nil {
 			return err
 		}
 	} else if reinterpretingPositions || hasPositions {
@@ -715,7 +716,7 @@ func (s *Store) activityContext(
 ) (application.ActivityContext, error) {
 	out := application.ActivityContext{}
 
-	account, err := s.queries.Account(ctx)
+	account, err := s.queries.AccountByID(ctx, row.AccountID)
 	if err != nil {
 		return out, err
 	}

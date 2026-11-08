@@ -129,7 +129,8 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 			expected.Text = f.Text
 		}
 	case FieldTradeKind:
-		valid = f.Unknown || (f.Text == string(ExchangeExecution) || f.Text == string(StockBooking))
+		valid = f.Unknown ||
+			(f.Text == string(ExchangeExecution) || f.Text == string(StockBooking) || f.Text == string(ReportedTrade))
 		if !f.Unknown {
 			expected.Text = f.Text
 		}

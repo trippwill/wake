@@ -23,6 +23,7 @@ type TradeKind string
 const (
 	ExchangeExecution TradeKind = "execution"
 	StockBooking      TradeKind = "stock-booking"
+	ReportedTrade     TradeKind = "reported-trade"
 )
 
 type Side string
@@ -32,7 +33,7 @@ const (
 	Sell Side = "sell"
 )
 
-// TradeInput is one reported security execution. Native event identity and time
+// TradeInput is one reported purchase or sale. Native event identity and time
 // can be absent; location, account, exact terms and civil trade date cannot.
 type TradeInput struct {
 	AccruedInterest, NetWithBillable financial.Money
@@ -66,7 +67,7 @@ func NewTrade(input TradeInput) (Trade, error) {
 		input.Kind = ExchangeExecution
 	}
 
-	if (input.Kind != ExchangeExecution && input.Kind != StockBooking) ||
+	if (input.Kind != ExchangeExecution && input.Kind != StockBooking && input.Kind != ReportedTrade) ||
 		(input.Kind == StockBooking && input.Instrument.Kind() != Equity && input.Instrument.Kind() != Fund) ||
 		!validRelationships(input.Relationships) {
 		return Trade{}, ErrInvalidTrade

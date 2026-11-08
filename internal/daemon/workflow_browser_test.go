@@ -8,14 +8,17 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -25,10 +28,12 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/providers/snaptrade"
 )
 
 func TestBrowserAccountWorkflow(t *testing.T) {
@@ -62,6 +67,32 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Logf("upstream %s at %s", r.URL.Path, now())
 
 		switch r.URL.Path {
+		case "/authorizations", "/accounts/all", "/accounts/synthetic-snaptrade/activities":
+			if r.Method != http.MethodGet || r.URL.Query().Get("clientId") != "synthetic-personal-client" ||
+				r.Header.Get("Signature") == "" {
+				t.Error("missing SnapTrade Personal authentication")
+				http.Error(w, "invalid access", http.StatusUnauthorized)
+
+				return
+			}
+
+			switch r.URL.Path {
+			case "/authorizations":
+				_, _ = io.WriteString(
+					w,
+					`[{"id":"auth-a","disabled":false,"brokerage":{"id":"fidelity-us","slug":"FIDELITY"}}]`,
+				)
+			case "/accounts/all":
+				_, _ = io.WriteString(
+					w,
+					`{"results":[{"id":"synthetic-snaptrade","connection_id":"auth-a","institution_id":"fidelity-us","kind":"investment","display_name":"Fidelity fixture"}]}`,
+				)
+			default:
+				_, _ = io.WriteString(
+					w,
+					`{"data":[{"id":"fill-1","type":"BUY","units":0.125,"price":19.12345678900001,"trade_date":"2026-10-20T00:00:00.000Z","currency":{"code":"USD"},"symbol":{"id":"fixture","raw_symbol":"SYN","type":{"code":"cs"}}}],"pagination":{"offset":0,"limit":1000,"total":1}}`,
+				)
+			}
 		case "/SendRequest":
 			if r.URL.Query().Get("q") == "456" && r.URL.Query().Get("t") == "synthetic-token" {
 				realizedSent <- struct{}{}
@@ -91,7 +122,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			if r.URL.Query().Get("q") == "realized-generation" {
 				_, _ = fmt.Fprint(
 					w,
-					`<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><Trades><Trade accountId="U-SYNTHETIC" assetCategory="STK" conid="123" tradeID="trade-1" ibExecID="fill-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="0.125" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" fifoPnlRealized="12.34000000000000001" cost="-100.0000"/></Trades><Transfers><Transfer transactionID="transfer-browser" assetCategory="STK" subCategory="COMMON" conid="123" currency="USD" levelOfDetail="TRANSFER" type="ACATS" direction="IN" quantity="3.00000000001" date="2026-10-20" transferPrice="100.0000"/></Transfers><CashTransactions><CashTransaction transactionID="cash-browser" levelOfDetail="DETAIL" type="Dividends" amount="7.89000000001" currency="USD" dateTime="2026-10-20" description="Synthetic browser dividend"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`,
+					`<FlexQueryResponse type="AF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><Trades><Trade accountId="U-SYNTHETIC" assetCategory="STK" conid="123" tradeID="trade-1" ibExecID="fill-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" quantity="0.125" currency="USD" tradeDate="2026-10-20" reportDate="2026-10-21" fifoPnlRealized="12.34000000000000001" cost="-100.0000"/></Trades><Transfers><Transfer transactionID="transfer-browser" assetCategory="STK" subCategory="COMMON" conid="123" currency="USD" levelOfDetail="TRANSFER" type="ACATS" direction="IN" quantity="3.00000000001" date="2026-10-20" transferPrice="100.0000"/></Transfers><CashTransactions><CashTransaction transactionID="cash-browser" levelOfDetail="DETAIL" type="Dividends" amount="7.89000000001" currency="USD" dateTime="2026-10-20" description="Synthetic browser dividend"/></CashTransactions><OpenPositions/></FlexStatement></FlexStatements></FlexQueryResponse>`,
 				)
 
 				return
@@ -144,7 +175,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		ready := make(chan struct{})
 		done = make(chan error, 1)
 		go func() {
-			done <- run(daemonContext, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{IBKR: ibkrflex.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL}, ReferenceClient: upstream.Client(), ReferenceURL: upstream.URL + "/mapping", Now: now}, func(phase string) {
+			done <- run(daemonContext, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{IBKR: ibkrflex.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL}, SnapTrade: snaptrade.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL}, ReferenceClient: upstream.Client(), ReferenceURL: upstream.URL + "/mapping", Now: now}, func(phase string) {
 				if phase == "ready" {
 					close(ready)
 				}
@@ -1285,5 +1316,138 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		}
 
 		capture(item.kind + "-correction")
+	}
+	// Add a distinct brokerage account through the normal form while Flex remains active.
+	tickCtx, stopClock := context.WithCancel(ctx)
+	defer stopClock()
+
+	go func() {
+		ticker := time.NewTicker(400 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-tickCtx.Done():
+				return
+			case <-ticker.C:
+				clock.Add(2)
+			}
+		}
+	}()
+
+	check(
+		newDocument(chromedp.Navigate(origin+"/connections/new")),
+		chromedp.WaitVisible("#connection-name-snaptrade", chromedp.ByQuery),
+		chromedp.SetValue("#connection-name-snaptrade", "Synthetic SnapTrade", chromedp.ByQuery),
+		chromedp.SetValue(`input[name="setting.client_id"]`, "synthetic-personal-client", chromedp.ByQuery),
+		chromedp.SetValue(`input[name="secret.consumer_key"]`, "synthetic-personal-key", chromedp.ByQuery),
+		newDocument(
+			chromedp.Click(`form:has(#connection-name-snaptrade) button[type="submit"]`, chromedp.ByQuery),
+		),
+		chromedp.WaitVisible(`a[href*="/confirm"]`, chromedp.ByQuery),
+		newDocument(chromedp.Click(`a[href*="/confirm"]`, chromedp.ByQuery)),
+		chromedp.SetValue("#account-name", "Confirmed Fidelity account", chromedp.ByQuery),
+		newDocument(chromedp.Click(`form[action$="/confirm"] button[type="submit"]`, chromedp.ByQuery)),
+	)
+
+	var snapAccount, flexAccount string
+	check(
+		chromedp.WaitVisible("#activity-account", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('[data-grid-ready="true"]')!==null`, nil),
+		chromedp.Evaluate(
+			`Array.from(document.querySelector('#activity-account').options).find(o=>o.text==='Confirmed Fidelity account').value`,
+			&snapAccount,
+		),
+		chromedp.Evaluate(
+			`Array.from(document.querySelector('#activity-account').options).find(o=>o.text==='Fresh confirmed account').value`,
+			&flexAccount,
+		),
+	)
+	check(
+		chromedp.Evaluate(`(()=>{const select=document.querySelector('#activity-account');select.value=`+
+			strconv.Quote(snapAccount)+`;select.form.requestSubmit()})()`, nil),
+		chromedp.Poll(`new URL(location.href).searchParams.get('account')===`+strconv.Quote(snapAccount), nil),
+		chromedp.Poll(
+			`(()=>{const refresh=document.querySelector('[data-grid-refresh]');if(refresh&&!refresh.hidden)refresh.click();const rows=document.querySelectorAll('.tabulator-row');return rows.length===1&&rows[0].textContent.includes('19.12345678900001 USD')&&rows[0].textContent.includes('Confirmed Fidelity account')})()`,
+			nil,
+		),
+	)
+
+	check(
+		newDocument(chromedp.Click(`.tabulator-row a[href^="/executions/"]`, chromedp.ByQuery)),
+		newDocument(chromedp.Click(`a[href*="/correct"]`, chromedp.ByQuery)),
+		chromedp.SetValue("#decision-scope", "price", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.WaitVisible("#decision-value", chromedp.ByQuery),
+		chromedp.SetValue("#decision-value", "21.12345678900001", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('#decision-value').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#decision-value').dispatchEvent(new Event('change',{bubbles:true}))`,
+			nil,
+		),
+		chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil),
+		newDocument(chromedp.Click(`form[data-correction] button[type="submit"]`, chromedp.ByQuery)),
+		chromedp.Poll(`document.body.textContent.includes('21.12345678900001')`, nil),
+	)
+
+	// Inspect positions for each account and verify that switching cannot carry
+	// the other account's availability into the new result.
+	check(
+		newDocument(chromedp.Navigate(origin+"/positions?account="+flexAccount)),
+		chromedp.Poll(`document.querySelector('[data-positions-state]').textContent==='Available'`, nil),
+		chromedp.Evaluate(`(()=>{const select=document.querySelector('#positions-account');select.value=`+
+			strconv.Quote(snapAccount)+`;select.form.requestSubmit()})()`, nil),
+		chromedp.Poll(`new URL(location.href).searchParams.get('account')===`+strconv.Quote(snapAccount), nil),
+		chromedp.Poll(
+			`document.querySelector('[data-positions-account]').textContent==='Confirmed Fidelity account'&&document.querySelector('[data-positions-state]').textContent==='Unavailable'`,
+			nil,
+		),
+	)
+
+	socket := filepath.Join(cfg.Paths.RuntimeDir, "wake.sock")
+
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	defer transport.CloseIdleConnections()
+
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reply, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reply.Body.Close() }()
+
+	var snapshot application.FinancialSnapshot
+	if err = json.NewDecoder(reply.Body).Decode(&snapshot); err != nil || reply.StatusCode != http.StatusOK {
+		t.Fatalf("socket snapshot status=%d err=%v", reply.StatusCode, err)
+	}
+
+	accounts := map[string]string{}
+	trades := map[string][]string{}
+	for _, resource := range snapshot.Resources {
+		if resource.Account != nil {
+			accounts[resource.ID] = resource.Account.Name
+		}
+
+		if activity := resource.Activity; activity != nil && activity.Price != nil {
+			trades[activity.AccountID] = append(trades[activity.AccountID], activity.Price.Amount)
+		}
+	}
+
+	if accounts[flexAccount] != "Fresh confirmed account" ||
+		accounts[snapAccount] != "Confirmed Fidelity account" ||
+		len(trades[snapAccount]) != 1 ||
+		trades[snapAccount][0] != "21.12345678900001" ||
+		!slices.Contains(trades[flexAccount], "400.123456789") {
+		t.Fatalf("socket account isolation: accounts=%v prices=%v", accounts, trades)
 	}
 }

@@ -1,6 +1,6 @@
 # Set up IBKR Flex
 
-The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account,
+The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account per connection,
 with an optional Activity Flex query for transfers, non-trade cash postings and
 reported realized P&L on individual activities, and reported open positions.
 

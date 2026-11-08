@@ -525,8 +525,10 @@ type Activity struct {
 	SettlementDate *string         `json:"settlement_date"`
 	Side           *string         `json:"side"`
 	State          ActivityState   `json:"state"`
-	TradeKind      *string         `json:"trade_kind"`
-	Transfer       *Transfer       `json:"transfer,omitempty"`
+
+	// TradeKind Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
+	TradeKind *string   `json:"trade_kind"`
+	Transfer  *Transfer `json:"transfer,omitempty"`
 }
 
 // ActivityFamily defines model for Activity.Family.

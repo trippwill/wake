@@ -20,6 +20,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 type Error string
@@ -36,6 +37,7 @@ type (
 	Connection struct {
 		ID, Provider, Name      string
 		Settings                provider.Settings
+		SourceAccount           source.Reference
 		Streams                 []provider.Stream
 		ResetStreams            []string
 		CanAcquire, CanDiscover bool
@@ -507,6 +509,9 @@ func (h *Host) step(
 	access := &access{host: h, connection: c, registration: r, key: key, live: true, ctx: work}
 
 	request := provider.Request{Stream: stream, Settings: c.Settings, State: checkpoint.State, Now: now}
+	if !discover {
+		request.SourceAccount = c.SourceAccount
+	}
 
 	var (
 		step       provider.Step

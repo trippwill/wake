@@ -9,6 +9,13 @@ import (
 )
 
 func fixtureSource(v fixtureView) sourceView {
+	connections := append([]application.ConnectionView(nil), v.Connections...)
+	for i := range connections {
+		if connections[i].ID == v.Account.Connection() {
+			connections[i].Account = v.Account
+		}
+	}
+
 	return sourceView{
 		Prerequisites: application.Prerequisites{
 			Storage:          v.Storage,
@@ -17,11 +24,19 @@ func fixtureSource(v fixtureView) sourceView {
 			ReferenceFailure: v.ReferenceFailure,
 			ConnectionCount:  int64(len(v.Connections)),
 		},
-		Connections: v.Connections,
+		Connections: connections,
 	}
 }
 
 func fixtureOverview(v fixtureView) overviewView { return overviewView{sourceView: fixtureSource(v)} }
+
+func (s workspaceStore) Accounts(context.Context) ([]application.Account, error) {
+	if s.view.Account.ID() == "" {
+		return nil, nil
+	}
+
+	return []application.Account{s.view.Account}, nil
+}
 
 func (s workspaceStore) Prerequisites(context.Context) (application.Prerequisites, error) {
 	return fixtureSource(s.view).Prerequisites, nil
@@ -65,7 +80,7 @@ func (s workspaceStore) ActivityList(
 	context.Context,
 	application.ListQuery,
 ) (application.ActivityList, error) {
-	return application.ActivityList{Account: s.view.Account}, nil
+	return application.ActivityList{}, nil
 }
 
 func (s workspaceStore) InstrumentList(

@@ -19,7 +19,8 @@ func (e Error) Error() string { return string(e) }
 
 const (
 	ErrInvalid           Error = "invalid account details"
-	ErrAccountLimit      Error = "one account is already activated"
+	ErrAccountLimit      Error = "one account is already activated on this connection"
+	ErrAccountBound      Error = "the source account is already bound to a connection"
 	ErrAccessReview      Error = "repair missing connection access and review the reference setting before resuming upstream work"
 	ErrCandidate         Error = "account was not discovered through this connection"
 	ErrConnectionChanged Error = "connection settings changed; retry confirmation"

@@ -7,10 +7,10 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
-Wake connects one IBKR account, automatically acquires Confirmation reports, and
-shows security executions, option outcomes and reported FX conversions in the
-admin console. It retains original reports, exact financial values, provisional
-instrument identity and conflicts.
+Wake acquires IBKR Flex reports and cached SnapTrade Personal trade history.
+Confirm one account per connection and inspect activity, instruments and available
+reported positions in the admin console. Wake retains original reports, exact
+financial values and conflicts.
 
 ### Set up and start
 
@@ -35,20 +35,24 @@ mise run bin -- serve --config /absolute/private/path/config.toml
 
 If startup reports an unsupported development store, stop Wake and preserve a
 backup of its stores and sidecars. Explicitly move the profile aside or select
-fresh database paths before restarting. Startup preserves unsupported data. Use current
+a fresh warehouse path before restarting. Keep the encrypted access store to reuse
+credentials. The new warehouse establishes new financial IDs. The old warehouse
+holds its original evidence and corrections. Startup preserves unsupported data. Use current
 settings from `config describe`; retired acquisition settings are rejected.
 
 ### Connect and inspect
 
-Open **Connections → Add source connection**, enter a connection name, the saved Confirmation Query
-ID and the Flex Web Service token. See [IBKR setup](.docs/providers/ibkr-flex.md) for query
-preparation. Wake encrypts the token and performs one bounded discovery attempt. It shows the
-available accounts and any missing profile information.
+Open **Connections → Add source connection** and choose the provider. For IBKR Flex,
+enter the saved Confirmation Query ID and token. For SnapTrade Personal, enter the
+Personal client ID and consumer key. Wake encrypts secret fields and discovers
+accounts. See the [IBKR setup](.docs/providers/ibkr-flex.md) and
+[SnapTrade setup](.docs/providers/snaptrade.md) guides.
 
 Select **Confirm account**, enter a display name, and confirm the available
-details. Leave an unknown account currency empty. Confirmation activates one
-account and starts automatic synchronization; other discovered accounts remain
-candidates.
+details. Leave an unknown account currency empty. Confirmation grants automatic
+synchronization for that connection’s selected account. Configure another connection
+for a different brokerage account. Use the account selector in Activity or Positions
+when several accounts are confirmed.
 
 **Overview** shows setup steps, financial review and source work. Use the sidebar's
 **Activity**, **Instruments**, **Positions** and **Needs review** destinations to inspect financial
@@ -117,7 +121,7 @@ mise run bin -- reset warehouse --confirm
 Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
 and works with corrupt or unsupported databases. A warehouse reset also clears its
 operational state and retains credentials. Start Wake, select **Resume upstream
-work**, then confirm the rediscovered account. A credentials reset retains financial
+work**, then confirm the rediscovered accounts. A credentials reset retains financial
 history; repair access in **Connections** and resume. Configuration, keys and browser
 access are retained. See the
 [development guide](.docs/engineering/development.md#workspaces-and-tools) for details.

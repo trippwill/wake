@@ -25,7 +25,7 @@ func coverageStore(t testing.TB) *Store {
 
 	_, err := s.db.Exec(`INSERT INTO connections(id,provider) VALUES('synthetic','ibkr-flex');
 INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('discovery','synthetic','confirmations','discover','ibkr-confirmation-v1','application/xml','2026-10-20T00:00:00Z','synthetic',X'00');
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic account','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`)
+INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account','Synthetic account','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`)
 	if err != nil {
 		t.Fatal(err)
 	}

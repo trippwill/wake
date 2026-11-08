@@ -67,13 +67,15 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 		}
 
 		settings, _ := provider.NewSettings(map[string]string{})
+		ref, err := sourceAccount(ctx, s.queries, id)
 
 		return host.Connection{
-			ID:       id,
-			Provider: descriptor.Provider,
-			Name:     descriptor.Name,
-			Settings: settings,
-		}, nil
+			ID:            id,
+			Provider:      descriptor.Provider,
+			Name:          descriptor.Name,
+			Settings:      settings,
+			SourceAccount: ref,
+		}, err
 	}
 
 	if err != nil {
@@ -90,7 +92,28 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 		return host.Connection{}, ErrCorrupt
 	}
 
-	return host.Connection{ID: row.ID, Provider: row.Provider, Name: row.Name, Settings: settings}, nil
+	ref, err := sourceAccount(ctx, s.queries, row.ID)
+
+	return host.Connection{
+		ID:            row.ID,
+		Provider:      row.Provider,
+		Name:          row.Name,
+		Settings:      settings,
+		SourceAccount: ref,
+	}, err
+}
+
+func sourceAccount(ctx context.Context, q *sqlc.Queries, connection string) (source.Reference, error) {
+	row, err := q.AccountByConnection(ctx, connection)
+	if errors.Is(err, sql.ErrNoRows) {
+		return source.Reference{}, nil
+	}
+
+	if err != nil {
+		return source.Reference{}, err
+	}
+
+	return source.NewReference(row.Authority, row.Kind, row.Scope, row.Value)
 }
 
 func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
@@ -133,8 +156,8 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		}
 	}
 
-	account, accountErr := q.Account(ctx)
-	if accountErr == nil && account.ConnectionID == c.ID {
+	_, accountErr := q.AccountByConnection(ctx, c.ID)
+	if accountErr == nil {
 		if err = q.DisableAcquisition(ctx, c.ID); err != nil {
 			return err
 		}
@@ -404,12 +427,17 @@ func (s *Store) Retained(ctx context.Context, id string) (host.Retained, error) 
 		return host.Retained{}, ErrCorrupt
 	}
 
+	ref, err := sourceAccount(ctx, s.queries, row.ConnectionID)
+	if err != nil {
+		return host.Retained{}, err
+	}
+
 	return host.Retained{
 		ID:         row.ID,
 		Connection: row.ConnectionID,
 		Provider:   row.Provider,
 		Stream:     row.Stream,
-		Artifact:   a,
+		Artifact:   a.WithSourceAccount(ref),
 	}, nil
 }
 

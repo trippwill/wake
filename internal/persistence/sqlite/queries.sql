@@ -63,11 +63,21 @@ SELECT work.*, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN 
 -- name: DisableDiscovery :exec
 UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
 -- name: Account :one
-SELECT * FROM accounts LIMIT 1;
+SELECT * FROM accounts ORDER BY rowid LIMIT 1;
+-- name: AccountByConnection :one
+SELECT * FROM accounts WHERE connection_id=?;
+-- name: AccountByID :one
+SELECT * FROM accounts WHERE id=?;
+-- name: AccountCount :one
+SELECT count(*) FROM accounts;
+-- name: Accounts :many
+SELECT * FROM accounts ORDER BY rowid;
+-- name: AccountBySource :one
+SELECT * FROM accounts WHERE provider=? AND authority=? AND kind=? AND scope=? AND value=?;
 -- name: CandidateExists :one
-SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover');
+SELECT count(*) FROM eligible_candidates WHERE connection_id=? AND artifact_id=? AND authority=? AND kind=? AND scope=? AND value=?;
 -- name: PutAccount :exec
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?);
+INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,?,?,?,?,?,?,?,?,?,?);
 -- name: CandidateProfiles :many
 SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
  SELECT candidates.*,receipt.sequence AS appearance,row_number() OVER (PARTITION BY candidates.authority,candidates.kind,candidates.scope,candidates.value ORDER BY receipt.sequence DESC) AS ranking
@@ -264,7 +274,7 @@ SELECT artifact_id FROM report_comparisons WHERE connection_id=? AND stream=? AN
 -- name: PutReportComparison :exec
 INSERT INTO report_comparisons(connection_id,stream,format,media_type,policy,digest,artifact_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: PutAcquisitionReceipt :exec
-INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?);
+INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to,candidate_snapshot) VALUES(?,?,?,?,?,?,?,?,?,?,?,?);
 -- name: AcquisitionReceipts :many
 SELECT * FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid;
 -- name: PutSourceClaim :exec
