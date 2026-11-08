@@ -36,7 +36,13 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 	auth.issue(session)
 
 	for _, tc := range []struct{ path, title string }{
-		{"/activity", "Activity"}, {"/instruments", "Instruments"}, {"/positions", "Positions"}, {"/review", "Needs review"}, {"/system", "Daemon status"}, {"/system/configuration", "Configuration"},
+		{"/activity", "Activity"},
+		{"/instruments", "Instruments"},
+		{"/positions", "Positions"},
+		{"/review", "Needs review"},
+		{"/system", "Daemon status"},
+		{"/system/configuration", "Configuration"},
+		{"/system/settings", "Settings"},
 	} {
 		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+tc.path, nil)
 		r.AddCookie(session.Result().Cookies()[0])
@@ -51,8 +57,15 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 		}
 
 		if strings.Contains(html, "Activity views") || strings.Contains(html, "Financial evidence") ||
-			strings.Contains(html, `name="view"`) || strings.Contains(html, `/activity?view=`) {
+			strings.Contains(
+				html,
+				`name="view"`,
+			) || strings.Contains(html, `/activity?view=`) || strings.Contains(html, "wake-toolbar") {
 			t.Fatal("redundant chrome retained", tc)
+		}
+
+		if strings.Contains(html, "data-theme-preference") != (tc.path == "/system/settings") {
+			t.Fatal("theme selector must appear only in Settings", tc)
 		}
 
 		previous := -1
@@ -70,6 +83,67 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 			t.Fatal("Connections is outside Administration")
 		}
 	}
+}
+
+func TestSettingsRequiresSessionAndDoesNotQueryStatus(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetUnlock(dir, []byte("synthetic-settings")); err != nil {
+		t.Fatal(err)
+	}
+
+	const origin = "http://127.0.0.1:8787"
+
+	auth, _, err := Open(dir, "local", origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer auth.Close()
+
+	h, err := NewHandler(auth, Dependencies{Queries: unavailableSettingsStatus{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		fragment      bool
+		authenticated bool
+		want          int
+	}{
+		{false, false, http.StatusSeeOther},
+		{true, false, http.StatusUnauthorized},
+		{false, true, http.StatusOK},
+		{true, true, http.StatusOK},
+	} {
+		r := httptest.NewRequest(http.MethodGet, origin+"/system/settings", nil)
+		if tc.fragment {
+			r.Header.Set("HX-Request", "true")
+		}
+
+		if tc.authenticated {
+			session := httptest.NewRecorder()
+			auth.issue(session)
+			r.AddCookie(session.Result().Cookies()[0])
+		}
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		if w.Code != tc.want || (tc.want == http.StatusSeeOther && w.Header().Get("Location") != "/login") {
+			t.Fatal(tc, w.Code, w.Header().Get("Location"))
+		}
+
+		html := w.Body.String()
+		if tc.authenticated && (!strings.Contains(html, "data-theme-preference") ||
+			strings.Contains(html, `hx-get="/system/settings"`) || strings.Contains(html, "wake-sidebar") == tc.fragment) {
+			t.Fatal("unexpected Settings response", tc, html)
+		}
+	}
+}
+
+type unavailableSettingsStatus struct{}
+
+func (unavailableSettingsStatus) Status(context.Context) (Status, error) {
+	return Status{}, context.DeadlineExceeded
 }
 
 func TestConfigurationShowsLoadedFileOrAbsence(t *testing.T) {

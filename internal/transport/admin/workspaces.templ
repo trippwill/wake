@@ -514,7 +514,11 @@ templ ReferencePage(csrf string, view sourceView) {
 }
 
 templ SystemNavigation(view string) {
-	<nav class="wake-tabs" aria-label="System views"><a href="/system" aria-current={ currentPage(view == "status") }>Status</a><a href="/system/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a></nav>
+	<nav class="wake-tabs wake-system-tabs" aria-label="System views">
+		<a href="/system" aria-current={ currentPage(view == "status") }>Status</a>
+		<a href="/system/configuration" aria-current={ currentPage(view == "configuration") }>Configuration</a>
+		<a href="/system/settings" aria-current={ currentPage(view == "settings") }>Settings</a>
+	</nav>
 }
 
 templ ListPagination(info application.PageInfo) {

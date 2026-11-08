@@ -243,12 +243,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 			check(
 				emulation.SetDeviceMetricsOverride(appearance.width, 1000, 1, false),
-				chromedp.Evaluate(
-					`(()=>{const control=document.querySelector('[data-theme-preference]');control.value=`+strconv.Quote(
-						appearance.theme,
-					)+`;control.dispatchEvent(new Event('change',{bubbles:true}))})()`,
-					nil,
-				),
+				testbrowser.EmulateSystemTheme(appearance.theme),
 			)
 
 			// Capture the settled theme, including finite CSS control transitions.
@@ -272,10 +267,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 		check(
 			emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
-			chromedp.Evaluate(
-				`(()=>{const control=document.querySelector('[data-theme-preference]');control.value='light';control.dispatchEvent(new Event('change',{bubbles:true}))})()`,
-				nil,
-			),
+			testbrowser.EmulateSystemTheme("light"),
 		)
 	}
 

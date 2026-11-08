@@ -75,25 +75,16 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 									</li>
 								</ul>
 							</nav>
+							<div class="wake-contact">
+								<span class="wake-contact-indicator" aria-hidden="true"></span>
+								<div class="wake-contact-details">
+									<button class="wake-contact-trigger" type="button" aria-describedby="status-contact-detail"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></button>
+									<span id="status-contact-detail" class="wake-contact-tooltip" role="tooltip">Authenticated contact is available. Financial freshness is shown in page content.</span>
+								</div>
+							</div>
 						}
 					</aside>
 					<div class="wake-workspace">
-						<header
-							class="wake-toolbar"
-						>
-							if csrf!="" {
-								<div class="wake-contact">
-									<span class="wake-contact-indicator" aria-hidden="true"></span>
-									<div class="wake-contact-details">
-										<button class="wake-contact-trigger" type="button" aria-describedby="status-contact-detail"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></button>
-										<span id="status-contact-detail" class="wake-contact-tooltip" role="tooltip">Authenticated contact is available. Financial freshness is shown in page content.</span>
-									</div>
-								</div>
-							}
-							<div class="wake-toolbar-preferences">
-								@ThemeControl()
-							</div>
-						</header>
 						<main class="wake-main" id="main-content" tabindex="-1">
 							@WorkspaceContent(csrf, content)
 						</main>

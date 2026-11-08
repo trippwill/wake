@@ -10,10 +10,12 @@
   const normalize = (value) =>
     value === "light" || value === "dark" ? value : "system";
   let preference = "system";
-  try {
-    preference = normalize(localStorage.getItem(key));
-  } catch {
-    // Storage can be disabled; the theme still works for this page.
+  function readPreference() {
+    try {
+      preference = normalize(localStorage.getItem(key));
+    } catch {
+      // Storage can be disabled; the theme still works for this page.
+    }
   }
 
   function apply() {
@@ -32,8 +34,14 @@
 
   // This script runs before stylesheets so a remembered dark theme is applied
   // before the first paint. Controls are synchronized once their markup exists.
+  readPreference();
   apply();
   document.addEventListener("DOMContentLoaded", apply, { once: true });
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    readPreference();
+    apply();
+  });
   document.addEventListener("change", (event) => {
     if (!event.target.matches("[data-theme-preference]")) return;
     preference = normalize(event.target.value);
