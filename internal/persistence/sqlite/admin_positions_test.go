@@ -104,6 +104,27 @@ func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
 	if err != nil || len(beyond.Items) != 0 || beyond.Total != 3 || beyond.AsOf.Date != got.AsOf.Date {
 		t.Fatal(beyond, err)
 	}
+
+	for _, change := range []struct{ id, name, ticker string }{
+		{got.Items[0].Position.InstrumentID, "Zebra", "AAA"},
+		{got.Items[1].Position.InstrumentID, "Alpha", "ZZZ"},
+	} {
+		if _, err = s.db.ExecContext(
+			t.Context(),
+			`UPDATE instruments SET name=?,ticker=? WHERE id=?`,
+			change.name,
+			change.ticker,
+			change.id,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ordered, err := s.PositionsList(t.Context(), positionsQuery(t, application.ListOptions{}))
+	if err != nil || len(ordered.Items) != 3 || ordered.Items[0].Ticker != "AAA" ||
+		ordered.Items[2].Ticker != "ZZZ" {
+		t.Fatal("position instrument ordering does not follow its displayed ticker", ordered, err)
+	}
 }
 
 func TestPositionsListAvailabilityAndReplacement(t *testing.T) {

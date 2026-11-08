@@ -734,9 +734,7 @@ func (s *Store) activityContext(
 		}
 
 		out.InstrumentName = instrument.Name
-		if out.InstrumentName == "" {
-			out.InstrumentName = instrument.Ticker
-		}
+		out.InstrumentTicker = instrument.Ticker
 	}
 
 	return out, nil

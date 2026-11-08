@@ -85,17 +85,14 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 			cost = publishedMoney(p.CostBasis)
 		}
 
-		note := activityKindLabel(item.Kind)
-		if item.Ticker != "" {
-			note = item.Ticker + " · " + note
-		}
+		note := describe(instrumentDescription(item.Ticker, item.Name), activityKindLabel(item.Kind))
 
 		rows = append(
 			rows,
 			positionGridRow{
 				ID: item.Key,
 				Name: gridCell{
-					Text: item.Name,
+					Text: instrumentTitle(item.Ticker, item.Name),
 					Href: "/instruments/" + p.InstrumentID,
 					Note: note,
 				},

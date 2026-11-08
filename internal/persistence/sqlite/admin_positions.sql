@@ -24,8 +24,8 @@ WITH current AS (
  SELECT (SELECT count(*) FROM reported) AS total,count(*) AS matched FROM matching
 ), ordered AS (
  SELECT *,row_number() OVER (ORDER BY
- CASE WHEN ?5='name' AND ?6='asc' THEN name END COLLATE NOCASE ASC,
- CASE WHEN ?5='name' AND ?6='desc' THEN name END COLLATE NOCASE DESC,
+ CASE WHEN ?5='name' AND ?6='asc' THEN coalesce(nullif(ticker,''),name) END COLLATE NOCASE ASC,
+ CASE WHEN ?5='name' AND ?6='desc' THEN coalesce(nullif(ticker,''),name) END COLLATE NOCASE DESC,
  CASE WHEN ?5='side' AND ?6='asc' THEN side END ASC,
  CASE WHEN ?5='side' AND ?6='desc' THEN side END DESC,
  CASE WHEN ?5='quantity' THEN unit END ASC,
@@ -35,7 +35,7 @@ WITH current AS (
  CASE WHEN ?5='cost' THEN currency END ASC,
  CASE WHEN ?5='cost' AND ?6='asc' THEN cost END COLLATE wake_decimal ASC,
  CASE WHEN ?5='cost' AND ?6='desc' THEN cost END COLLATE wake_decimal DESC,
- name COLLATE NOCASE ASC,id ASC,ordinal ASC) AS position_order
+ coalesce(nullif(ticker,''),name) COLLATE NOCASE ASC,id ASC,ordinal ASC) AS position_order
  FROM matching
 ), page AS (
  SELECT * FROM ordered ORDER BY position_order LIMIT ?7 OFFSET ?8

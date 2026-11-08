@@ -418,14 +418,14 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		newDocument(chromedp.Navigate(origin+"/instruments")),
 		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
 		chromedp.Poll(
-			`document.querySelector('.tabulator-col[tabulator-field="name"]').getAttribute('aria-sort')==='ascending'`,
+			`document.querySelector('.tabulator-col[tabulator-field="ticker"]').getAttribute('aria-sort')==='ascending'`,
 			nil,
 		),
 	)
-	check(chromedp.Click(`.tabulator-col[tabulator-field="name"]`, chromedp.ByQuery))
+	check(chromedp.Click(`.tabulator-col[tabulator-field="ticker"]`, chromedp.ByQuery))
 	check(
 		chromedp.Poll(
-			`new URL(location.href).searchParams.get('sort')==='name'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('.tabulator-col[tabulator-field="name"]').getAttribute('aria-sort')==='descending'`,
+			`new URL(location.href).searchParams.get('sort')==='ticker'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('.tabulator-col[tabulator-field="ticker"]').getAttribute('aria-sort')==='descending'`,
 			nil,
 		),
 	)
@@ -490,7 +490,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		),
 		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
 		chromedp.Evaluate(
-			`document.querySelector('h1').textContent==='REFERENCE EQUITY' && document.body.textContent.includes('BBG000000002')`,
+			`document.querySelector('h1').textContent==='SYN' && document.querySelector('.wake-page-header').textContent.includes('REFERENCE EQUITY') && document.body.textContent.includes('BBG000000002')`,
 			&ok,
 		),
 	)
@@ -726,8 +726,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		),
 		chromedp.WaitVisible(`//h2[text()='Instrument identity']`, chromedp.BySearch),
 		newDocument(chromedp.Click(`//a[text()='Inspect linked underlier']`, chromedp.BySearch)),
-		chromedp.WaitVisible(`//h1[text()='REFERENCE EQUITY']`, chromedp.BySearch),
-		chromedp.Evaluate(`document.querySelector('h1').textContent==='REFERENCE EQUITY'`, &ok),
+		chromedp.WaitVisible(`//h1[text()='SYN']`, chromedp.BySearch),
+		chromedp.Evaluate(
+			`document.querySelector('h1').textContent==='SYN' && document.querySelector('.wake-page-header').textContent.includes('REFERENCE EQUITY')`,
+			&ok,
+		),
 	)
 
 	if !ok {

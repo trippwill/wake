@@ -170,8 +170,8 @@ var correctionPolicies = []FieldPolicy{
 	{"sent_amount", DecimalCorrection, true, NonnegativeDecimal, 256, conversionFields, ""},
 	{"received_amount", DecimalCorrection, true, NonnegativeDecimal, 256, conversionFields, ""},
 	{"rate", DecimalCorrection, false, PositiveDecimal, 256, conversionFields, ""},
-	{"name", TextCorrection, false, SignedDecimal, 1024, instrumentFields, ""},
 	{"ticker", TextCorrection, true, SignedDecimal, 256, instrumentFields, ""},
+	{"name", TextCorrection, false, SignedDecimal, 1024, instrumentFields, ""},
 	{"underlier", LinkCorrection, true, SignedDecimal, 2048, instrumentFields, source.Option},
 	{"reference", ObservationCorrection, false, SignedDecimal, 2048, instrumentFields, ""},
 	{

@@ -200,8 +200,8 @@ func (e Execution) Terms() source.Trade  { return e.terms }
 
 type (
 	ActivityContext struct {
-		AccountName, InstrumentName string
-		Realized                    *PublishedRealizedPnL
+		AccountName, InstrumentName, InstrumentTicker string
+		Realized                                      *PublishedRealizedPnL
 	}
 	Observation struct {
 		Artifact, Version, Location, Rule, Retrieved, ActivityID string

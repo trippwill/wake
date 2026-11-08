@@ -219,6 +219,8 @@ System remain visually distinguishable.
 
 The first viewport explains the task and shows its relevant status or work.
 Keep navigation compact, financial context readable and identifiers secondary.
+Across admin views, lead instrument identity with its ticker and use its label as a
+secondary description. Fall back to the description when no ticker is available.
 Lead with connection maintenance before new setup; disclose lengthy forms and
 audit metadata on demand. Plain task labels take priority over internal vocabulary.
 

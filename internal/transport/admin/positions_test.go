@@ -101,7 +101,8 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 		t.Fatal(got)
 	}
 
-	if got.Data[0].Name.Href != "/instruments/equity" ||
+	if got.Data[0].Name.Text != "SYN" || got.Data[0].Name.Note != "Synthetic equity · Equity" ||
+		got.Data[0].Name.Href != "/instruments/equity" ||
 		got.Positions.SourceHref != "/connections/source?view=reports" {
 		t.Fatal(got)
 	}

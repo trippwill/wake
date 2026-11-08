@@ -255,7 +255,7 @@ func ExecutionPage(d application.ExecutionDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String())).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -739,7 +739,7 @@ func InstrumentPage(d application.InstrumentDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = PageHeader(known(d.Instrument.Name()), d.Instrument.Kind()+" · "+known(d.Instrument.Ticker())).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = PageHeader(instrumentTitle(d.Instrument.Ticker(), d.Instrument.Name()), describe(instrumentDescription(d.Instrument.Ticker(), d.Instrument.Name()), d.Instrument.Kind())).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -794,27 +794,27 @@ func InstrumentPage(d application.InstrumentDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</dd><dt>Reported label</dt><dd>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</dd><dt>Reported ticker</dt><dd>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var44 string
-		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(known(d.Instrument.Reported().Name()))
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(known(d.Instrument.Reported().Ticker()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 149, Col: 186}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 149, Col: 189}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</dd><dt>Reported symbol</dt><dd>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</dd><dt>Reported description</dt><dd>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var45 string
-		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(known(d.Instrument.Reported().Ticker()))
+		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(known(d.Instrument.Reported().Name()))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 149, Col: 262}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/workflow.templ`, Line: 149, Col: 268}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -1537,7 +1537,7 @@ func LifecyclePage(d application.LifecycleDetail) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+known(d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String())).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2370,9 +2370,9 @@ func fieldLabel(s string) string {
 	case "rate":
 		return "Quoted rate"
 	case "name":
-		return "Name"
+		return "Description"
 	case "ticker":
-		return "Reported symbol"
+		return "Ticker"
 	case "kind":
 		return "Reported outcome"
 	case "realized_pnl":
