@@ -516,7 +516,7 @@ func workspaceLabel(ctx context.Context) string {
 
 func workspaceAttributes(ctx context.Context, csrf string) templ.Attributes {
 	u, err := url.Parse(page(ctx).URL)
-	if csrf == "" || page(ctx).Method == http.MethodPost || err != nil ||
+	if csrf == "" || page(ctx).Method == http.MethodPost || err != nil || u.Path == "/system/settings" ||
 		strings.HasSuffix(u.Path, "/correct") ||
 		strings.HasPrefix(u.Path, "/evidence/") ||
 		strings.HasPrefix(u.Path, "/reference-evidence/") {

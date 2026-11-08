@@ -33,7 +33,7 @@ func ThemeControl() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<label class=\"wake-preference wake-theme-control\" data-theme-control hidden><span>Theme</span> <select class=\"select select-sm\" data-theme-preference><option value=\"system\">System</option> <option value=\"light\">Light</option> <option value=\"dark\">Dark</option></select></label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<label class=\"wake-field wake-theme-control\" data-theme-control hidden><span>Theme</span> <select class=\"select\" data-theme-preference><option value=\"system\">System</option> <option value=\"light\">Light</option> <option value=\"dark\">Dark</option></select></label>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

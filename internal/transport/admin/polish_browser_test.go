@@ -1931,11 +1931,19 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	offline.Store(false)
 	expired.Store(true)
 	check(
+		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
 		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
 		chromedp.Poll(
-			`document.querySelector('#status-sign-in')!==null && document.querySelector('#status-sign-in').parentElement.classList.contains('wake-contact')`,
+			`document.querySelector('.wake-sidebar > .wake-contact > #status-sign-in')!==null && document.querySelector('#main-navigation').hidden`,
 			nil,
 		),
+		chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Tab),
+		chromedp.Poll(
+			`document.activeElement.id==='status-sign-in' && document.activeElement.pathname==='/login'`,
+			nil,
+		),
+		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
 	)
 	expired.Store(false)
 
@@ -2338,7 +2346,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration", "/system/settings"} {
 				check(
 					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
@@ -2443,9 +2451,6 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					width == 768 &&
 						(strings.HasPrefix(path, "/evidence/") || path == "/system" || path == "/system/configuration") {
 					if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" {
-						var png []byte
-						check(chromedp.FullScreenshot(&png, 90))
-
 						//nolint:gosec // Caller-selected synthetic screenshot directory.
 						if err := os.MkdirAll(folder, 0o700); err != nil {
 							t.Fatal(err)
@@ -2454,11 +2459,29 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 						name := "m5-" + theme + "-" + fmt.Sprint(
 							width,
 						) + strings.NewReplacer("/", "-", "?", "-", "&", "-", "=", "-").
-							Replace(path) +
-							".png"
-						//nolint:gosec // Caller-selected synthetic screenshot directory and fixed page names.
-						if err := os.WriteFile(filepath.Join(folder, name), png, 0o600); err != nil {
-							t.Fatal(err)
+							Replace(path)
+						capture := func(suffix string) {
+							var png []byte
+							check(chromedp.FullScreenshot(&png, 90))
+							//nolint:gosec // Caller-selected synthetic screenshot directory and fixed page names.
+							if err := os.WriteFile(filepath.Join(folder, name+suffix+".png"), png, 0o600); err != nil {
+								t.Fatal(err)
+							}
+						}
+						capture("")
+
+						if path == "/system/settings" && width == 1440 {
+							check(emulation.SetDeviceMetricsOverride(width, 420, 1, false))
+							capture("-short")
+						}
+
+						if path == "/system/settings" && width == 320 {
+							check(
+								emulation.SetDeviceMetricsOverride(width, 1500, 1, false),
+								chromedp.Evaluate(`document.documentElement.style.fontSize='200%'`, nil),
+								testbrowser.SettleAnimations(),
+							)
+							capture("-text-200")
 						}
 					}
 				}
@@ -2467,11 +2490,41 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 
 	check(
+		emulation.SetDeviceMetricsOverride(1280, 420, 1, false),
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/system/settings")),
+		chromedp.WaitVisible(".wake-sidebar .wake-contact", chromedp.ByQuery),
+	)
+	assert(`(()=>{
+		const nav=document.querySelector('#main-navigation');
+		const contact=document.querySelector('.wake-contact');
+		const before=contact.getBoundingClientRect();
+		nav.scrollTop=nav.scrollHeight;
+		const after=contact.getBoundingClientRect();
+		return nav.scrollTop>0 && before.top===after.top && after.bottom<=innerHeight && innerHeight-after.bottom<40;
+	})()`, "status moved when scrolling short desktop navigation")
+	check(chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery))
+	assert(`(()=>{
+		const tooltip=document.querySelector('#status-contact-detail');
+		const bounds=tooltip.getBoundingClientRect();
+		const sidebar=tooltip.closest('.wake-sidebar').getBoundingClientRect();
+		return getComputedStyle(tooltip).visibility==='visible' && bounds.top>=sidebar.top && bounds.right<=sidebar.right &&
+			bounds.bottom<=document.querySelector('.wake-contact-trigger').getBoundingClientRect().top;
+	})()`, "desktop contact tooltip clipped or below the trigger")
+	check(chromedp.KeyEvent(kb.Escape))
+	assert(
+		`getComputedStyle(document.querySelector('#status-contact-detail')).visibility==='hidden' && document.activeElement.matches('.wake-contact-trigger')`,
+		"Escape did not dismiss contact tooltip and retain focus",
+	)
+
+	check(
 		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction")),
 		chromedp.WaitVisible("h1", chromedp.ByQuery),
 	)
-	assert(`document.querySelector('#main-navigation').hidden`, "narrow navigation consumes viewport")
+	assert(
+		`document.querySelector('#main-navigation').hidden && document.querySelector('.wake-sidebar > .wake-contact').getBoundingClientRect().height>0`,
+		"narrow navigation must collapse independently of status",
+	)
 	check(
 		chromedp.Click(".wake-menu-toggle", chromedp.ByQuery),
 		chromedp.Evaluate(
@@ -2483,8 +2536,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`document.querySelector('#main-navigation').hidden && document.activeElement.matches('.wake-menu-toggle')`,
 		"Escape focus return",
 	)
+	check(chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery))
+	assert(`(()=>{
+		const tooltip=document.querySelector('#status-contact-detail');
+		const bounds=tooltip.getBoundingClientRect();
+		return getComputedStyle(tooltip).visibility==='visible' && bounds.left>=0 && bounds.right<=innerWidth &&
+			bounds.top>=document.querySelector('.wake-contact-trigger').getBoundingClientRect().bottom;
+	})()`, "narrow contact tooltip clipped or above the trigger")
 	// Text resizing stresses long exact values and native controls independently of display density.
-	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid"} {
+	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid", "/system/settings"} {
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+path)),
 			chromedp.WaitVisible("h1", chromedp.ByQuery),

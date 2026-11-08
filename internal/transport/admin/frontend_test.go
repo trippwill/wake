@@ -60,6 +60,7 @@ func TestRenderFrontend(t *testing.T) {
 		"connections":    ConnectionsPage("synthetic-csrf", sourceView{}),
 		"activity":       ActivityPage(activityView{}),
 		"positions":      PositionsPage(),
+		"settings":       SettingsBody(),
 		"source":         ConnectionPage("synthetic-csrf", fixtureSource(view), source),
 		"source-access":  ConnectionAccess("synthetic-csrf", source),
 		"source-reports": ConnectionReports("synthetic-csrf", source),

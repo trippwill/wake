@@ -240,11 +240,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		for _, size := range []struct{ width, height int64 }{{1366, 900}, {390, 844}} {
 			check(
 				chromedp.EmulateViewport(size.width, size.height),
-				chromedp.SetValue("[data-theme-preference]", theme, chromedp.ByQuery),
-				chromedp.Evaluate(
-					`document.querySelector('[data-theme-preference]').dispatchEvent(new Event('change',{bubbles:true}))`,
-					nil,
-				),
+				testbrowser.EmulateSystemTheme(theme),
 			)
 			poll(`document.documentElement.scrollWidth<=innerWidth`)
 			capture(fmt.Sprintf("positions-available-%s-%d", theme, size.width))
@@ -300,11 +296,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	for _, theme := range []string{"light", "dark"} {
 		check(
 			chromedp.EmulateViewport(390, 844),
-			chromedp.SetValue("[data-theme-preference]", theme, chromedp.ByQuery),
-			chromedp.Evaluate(
-				`document.querySelector('[data-theme-preference]').dispatchEvent(new Event('change',{bubbles:true}))`,
-				nil,
-			),
+			testbrowser.EmulateSystemTheme(theme),
 		)
 		capture("positions-unavailable-" + theme + "-390")
 	}

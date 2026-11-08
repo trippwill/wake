@@ -66,7 +66,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		_, _ = w.Write([]byte("Daemon connected"))
 	})
 
-	for _, path := range []string{"/{$}", "/system/configuration", "/system"} {
+	for _, path := range []string{"/{$}", "/system/configuration", "/system/settings", "/system"} {
 		mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
 			csrf, ok := auth.session(r)
 			if !ok {
@@ -83,6 +83,11 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 					http.Error(w, "authentication required", http.StatusUnauthorized)
 				}
 
+				return
+			}
+
+			if r.URL.Path == "/system/settings" {
+				templ.Handler(Settings(csrf)).ServeHTTP(w, r)
 				return
 			}
 

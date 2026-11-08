@@ -331,7 +331,10 @@
   const contactDetails = document.querySelector(".wake-contact-details");
   if (contactDetails) {
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape")
+      if (
+        event.key === "Escape" &&
+        contactDetails.matches(":hover, :focus-within")
+      )
         contactDetails.dataset.tooltipDismissed = "true";
     });
     const restore = () => {

@@ -25,6 +25,20 @@ templ Overview(csrf, path string, status Status, cfg config.Config) {
 	@SectionShell(pageTitle(path), csrf, "System", OverviewBody(path, status, cfg))
 }
 
+templ Settings(csrf string) {
+	@SectionShell("Settings", csrf, "System", SettingsBody())
+}
+
+templ SettingsBody() {
+	@PageHeader("Settings", "Manage your preferences for this browser.")
+	@SystemNavigation("settings")
+	<section class="wake-card wake-appearance">
+		<h2>Appearance</h2>
+		<p class="wake-help">System follows your device’s appearance.</p>
+		@ThemeControl()
+	</section>
+}
+
 templ OverviewBody(path string, status Status, cfg config.Config) {
 	@PageHeader(pageTitle(path), "Installation health, effective configuration and maintenance.")
 	@SystemNavigation(systemView(path))

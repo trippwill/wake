@@ -197,10 +197,9 @@ being connected is not proof of successful synchronization. Failure, malformed
 and blocked treatments remain visibly distinct. Errors include a next action.
 Never communicate a difference or outcome through color alone.
 
-Support Light, Dark and System appearance on sign-in and authenticated pages.
-System follows the browser preference. Appearance belongs to the browser, not
-source configuration. Keep the choice usable when storage is unavailable. Honor
-reduced motion.
+Choose Light, Dark or System appearance in System Settings. Apply the browser's
+choice on sign-in and authenticated pages. System follows the browser preference.
+Keep the choice usable when storage is unavailable. Honor reduced motion.
 
 ## Typography and icons
 
@@ -229,11 +228,11 @@ Use bounded forms, restrained spacing and flat bordered cards to identify tasks,
 financial summaries, comparisons and configuration sections. A light steel canvas
 (`#EDF0F2`) carries light cards; a deep steel canvas (`#2B3036`) carries dark cards
 (`#363D44`). Group related fields within each card rather than treating individual
-fields or table rows as separate cards. Keep daemon
-contact compact in the header and full work status in page content. Toolbar
-preferences remain grouped and reachable when status text wraps. On narrow screens,
-stack simple regions, provide dismissible keyboard-accessible navigation and keep
-genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
+fields or table rows as separate cards. Pin daemon contact to the bottom of the
+desktop sidebar, with full work status in page content. On narrow screens, keep
+contact visible below the collapsible navigation. Stack simple regions, provide
+dismissible keyboard-accessible navigation and keep genuinely two-dimensional
+tables locally scrollable. Avoid whole-page overflow.
 
 Overview orients the operator and surfaces specific next actions. Activity owns
 financial-history inspection. Positions owns latest reported account sets, with their own
@@ -249,7 +248,7 @@ retained reports, independently of encrypted access storage and temporary journa
 Full-page details retain breadcrumbs and a return path to their originating view.
 Workspace paths identify Activity, Instruments, Positions and Needs review independently; query
 parameters control filtering and table presentation. System uses a status landing
-page with Configuration at a child path, following the Connections workspace.
+page with separate Configuration and Settings views, following the Connections workspace.
 Resource links carry no navigation ancestry. Tab-local browser history preserves
 the originating workspace and return trail through details, evidence and corrections.
 Direct links use canonical breadcrumbs and return destinations. Reload and browser
