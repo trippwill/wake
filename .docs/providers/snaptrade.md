@@ -26,8 +26,9 @@ financial history when repairing credentials. See [Wake setup and recovery](../.
 
 A completed scan schedules the next one after 24 hours. Wake reads the available
 cache through a fixed UTC date and rechecks upstream account identity at the start
-of a scan. The cache can lag the brokerage. Wake retains accepted discovery and
-activity responses and uses the source account’s native activity IDs to recognize
+of a scan. A resumed scan keeps its original end date. The cache can lag the
+brokerage. Wake retains accepted discovery and activity responses and uses the
+source account’s native activity IDs to recognize
 repeats. An unstable page sequence restarts from the beginning after a delay.
 Source status and retry timing are under **Status**. Processing and retained
 evidence are under **Reports**. See [SnapTrade data freshness](https://docs.snaptrade.com/docs/syncing).

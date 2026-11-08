@@ -46,6 +46,10 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 				`{"results":[{"id":"account-a","connection_id":"auth-a","institution_id":"broker-a","display_name":"Fidelity fixture","kind":"investment"}]}`,
 			)
 		case "/accounts/account-a/activities":
+			if date := r.URL.Query().Get("endDate"); date != "2026-10-21" {
+				t.Errorf("resumed scan changed its end date to %q", date)
+			}
+
 			offset := r.URL.Query().Get("offset")
 
 			mu.Lock()
@@ -80,7 +84,7 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 
 	s, path := testStore(t)
 	ctx := t.Context()
-	now := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 21, 23, 59, 45, 0, time.UTC)
 	clock := func() time.Time { return now }
 	envelope := testEnvelope(t)
 
@@ -159,6 +163,8 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 		t.Fatalf("first page published %d activities", rows)
 	}
 
+	customerDeadline := now.Add(time.Second)
+
 	h.Close()
 
 	if err = s.Close(); err != nil {
@@ -186,7 +192,33 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 		t.Fatalf("restart bypassed account pacing: %v", got)
 	}
 
+	customer, err := provider.NewPacingScope([]byte("synthetic-client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deadline, err := pacingDeadline(ctx, s.queries, "snaptrade", "customer", customer.Digest())
+	if err != nil || !deadline.Equal(customerDeadline) {
+		t.Fatalf("account pacing consumed a customer allowance: %v %v", deadline, err)
+	}
+
+	// A different connection on the same client has used the customer allowance.
+	// The account becomes ready first and must remain ready when the client cools.
+	if err = s.Delay(ctx, "snaptrade", "customer", customer.Digest(), now.Add(7*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
 	advance(5 * time.Second)
+
+	mu.Lock()
+	got = slices.Clone(offsets)
+	mu.Unlock()
+
+	if !slices.Equal(got, []string{"0"}) {
+		t.Fatalf("scan bypassed shared customer pacing: %v", got)
+	}
+
+	advance(2 * time.Second)
 
 	mu.Lock()
 	got = slices.Clone(offsets)

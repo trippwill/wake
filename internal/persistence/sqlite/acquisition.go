@@ -479,6 +479,15 @@ func (s *Store) Reserve(
 	now time.Time,
 	spacing time.Duration,
 ) (provider.Reservation, error) {
+	return s.ReserveTogether(ctx, p, now, host.PacingBudget{Policy: policy, Scope: scope, Spacing: spacing})
+}
+
+func (s *Store) ReserveTogether(
+	ctx context.Context,
+	p string,
+	now time.Time,
+	budgets ...host.PacingBudget,
+) (provider.Reservation, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return provider.Reservation{}, err
@@ -487,26 +496,40 @@ func (s *Store) Reserve(
 
 	q := s.queries.WithTx(tx)
 
-	text, err := q.Pacing(ctx, sqlc.PacingParams{Provider: p, Policy: policy, Scope: scope})
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return provider.Reservation{}, err
-	}
+	var next time.Time
 
-	next, err := parseOptionalTime(text)
-	if err != nil {
-		return provider.Reservation{}, err
+	for _, budget := range budgets {
+		at, err := pacingDeadline(ctx, q, p, budget.Policy, budget.Scope)
+		if err != nil {
+			return provider.Reservation{}, err
+		}
+
+		if at.After(next) {
+			next = at
+		}
 	}
 
 	if next.After(now) {
 		return provider.NewReservation(false, next)
 	}
 
-	next = now.Add(spacing).UTC()
-	if err = q.SetPacing(
-		ctx,
-		sqlc.SetPacingParams{Provider: p, Policy: policy, Scope: scope, Next: next.Format(time.RFC3339Nano)},
-	); err != nil {
-		return provider.Reservation{}, err
+	for _, budget := range budgets {
+		at := now.Add(budget.Spacing).UTC()
+		if err = q.SetPacing(
+			ctx,
+			sqlc.SetPacingParams{
+				Provider: p,
+				Policy:   budget.Policy,
+				Scope:    budget.Scope,
+				Next:     at.Format(time.RFC3339Nano),
+			},
+		); err != nil {
+			return provider.Reservation{}, err
+		}
+
+		if at.After(next) {
+			next = at
+		}
 	}
 
 	if err = s.commit(ctx, tx); err != nil {
@@ -514,6 +537,15 @@ func (s *Store) Reserve(
 	}
 
 	return provider.NewReservation(true, next)
+}
+
+func pacingDeadline(ctx context.Context, q *sqlc.Queries, p, policy, scope string) (time.Time, error) {
+	text, err := q.Pacing(ctx, sqlc.PacingParams{Provider: p, Policy: policy, Scope: scope})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, err
+	}
+
+	return parseOptionalTime(text)
 }
 
 func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.Time) error {
@@ -525,12 +557,7 @@ func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.T
 
 	q := s.queries.WithTx(tx)
 
-	text, err := q.Pacing(ctx, sqlc.PacingParams{Provider: p, Policy: policy, Scope: scope})
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-
-	next, err := parseOptionalTime(text)
+	next, err := pacingDeadline(ctx, q, p, policy, scope)
 	if err != nil {
 		return err
 	}

@@ -56,6 +56,13 @@ func (testAccess) ReservePacing(context.Context, string, provider.PacingScope) (
 	return provider.NewReservation(true, time.Unix(1, 0))
 }
 
+func (testAccess) ReservePacingTogether(
+	context.Context,
+	...provider.PacingBudget,
+) (provider.Reservation, error) {
+	return provider.NewReservation(true, time.Unix(1, 0))
+}
+
 func (a testAccess) DelayPacing(
 	_ context.Context,
 	policy string,

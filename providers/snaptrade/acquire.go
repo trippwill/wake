@@ -123,7 +123,7 @@ func (a *adapter) attempt(
 	if !r.State.IsZero() && (r.State.Version() != continuation ||
 		json.Unmarshal(r.State.Payload(), &cursor) != nil ||
 		cursor.Offset < 0 || cursor.Offset > cursor.Total || cursor.Failures > 7 ||
-		(cursor.Boundary != "" && !cursor.Verified)) {
+		(cursor.Verified && cursor.End == "") || (cursor.Boundary != "" && !cursor.Verified)) {
 		return provider.Step{}, nil, provider.ErrInvalid
 	}
 
@@ -141,9 +141,10 @@ func (a *adapter) attempt(
 			return provider.Step{}, nil, err
 		}
 
-		today := r.Now.UTC().Format(time.DateOnly)
-		if cursor.End != today {
-			cursor = scan{End: today, Failures: cursor.Failures}
+		if cursor.End == "" {
+			cursor.End = r.Now.UTC().Format(time.DateOnly)
+		} else if _, err = financial.ParseDate(cursor.End); err != nil {
+			return provider.Step{}, nil, provider.ErrInvalid
 		}
 
 		if cursor.Verified {
@@ -268,28 +269,19 @@ func (a *adapter) fetch(
 		}
 	}
 
-	for _, budget := range []struct {
-		id    string
-		scope provider.PacingScope
-	}{{accountPacing, accountScope}, {clientPacing, customer}} {
-		if budget.scope.Digest() == "" {
-			continue
-		}
+	reservation, err := reserveRequest(ctx, access, customer, accountScope)
+	if err != nil {
+		return response{}, provider.Step{}, err
+	}
 
-		reservation, err := access.ReservePacing(ctx, budget.id, budget.scope)
-		if err != nil {
+	if !reservation.Granted() {
+		if err = report(ctx, access, provider.ProgressPaced, cursor.Offset, cursor.Total); err != nil {
 			return response{}, provider.Step{}, err
 		}
 
-		if !reservation.Granted() {
-			if err = report(ctx, access, provider.ProgressPaced, cursor.Offset, cursor.Total); err != nil {
-				return response{}, provider.Step{}, err
-			}
+		step, err := provider.NewStep(r.State, provider.Artifact{}, reservation.NextEligibleAt())
 
-			step, err := provider.NewStep(r.State, provider.Artifact{}, reservation.NextEligibleAt())
-
-			return response{}, step, err
-		}
+		return response{}, step, err
 	}
 
 	if err = report(ctx, access, provider.ProgressRequesting, cursor.Offset, cursor.Total); err != nil {
@@ -373,6 +365,27 @@ func (a *adapter) fetch(
 
 		return response{}, provider.Step{}, provider.ErrInvalid
 	}
+}
+
+func reserveRequest(
+	ctx context.Context,
+	access provider.Access,
+	customer, account provider.PacingScope,
+) (provider.Reservation, error) {
+	if account.Digest() == "" {
+		return access.ReservePacing(ctx, clientPacing, customer)
+	}
+
+	pacer, ok := access.(provider.GroupPacer)
+	if !ok {
+		return provider.Reservation{}, provider.ErrUnavailable
+	}
+
+	return pacer.ReservePacingTogether(
+		ctx,
+		provider.PacingBudget{Policy: clientPacing, Scope: customer},
+		provider.PacingBudget{Policy: accountPacing, Scope: account},
+	)
 }
 
 func boundary(id string, raw json.RawMessage) string {
