@@ -187,3 +187,51 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestInstrumentIdentityLeadsWithTickerAcrossAdminViews(t *testing.T) {
+	for _, tc := range []struct{ ticker, name, title, description string }{
+		{"SYN", "Synthetic equity", "SYN", "Synthetic equity"},
+		{"", "Synthetic equity", "Synthetic equity", ""},
+		{"SYN", "", "SYN", ""},
+		{"SYN", "SYN", "SYN", ""},
+		{"", "", "Unknown", ""},
+	} {
+		t.Run(tc.ticker+"/"+tc.name, func(t *testing.T) {
+			instruments := instrumentGrid(application.InstrumentList{Items: []application.InstrumentListItem{{
+				Resource: application.CanonicalResource{ID: "equity", Instrument: &application.PublishedInstrument{
+					Name: new(tc.name), Ticker: new(tc.ticker), Family: "equity",
+				}},
+			}}})
+			if instruments.Data[0].Ticker.Text != tc.title ||
+				instruments.Data[0].Ticker.Href != "/instruments/equity" ||
+				instruments.Data[0].Name.Text != known(tc.name) ||
+				instruments.Data[0].Name.Href != "" {
+				t.Fatal(instruments.Data)
+			}
+
+			activity := &application.PublishedActivity{
+				Family:       "trade",
+				Side:         new("buy"),
+				InstrumentID: new("equity"),
+			}
+
+			activities := activityGrid(application.ActivityList{Items: []application.ActivityListItem{{
+				Resource:       application.CanonicalResource{ID: "trade", Activity: activity},
+				InstrumentName: tc.name, InstrumentTicker: tc.ticker,
+			}}})
+			if activities.Data[0].Label.Text != "Buy "+tc.title ||
+				activities.Data[0].Label.Note != describe(tc.description, activityKindLabel("trade")) {
+				t.Fatal(activities.Data)
+			}
+
+			reviews := reviewItems(application.ReviewList{Items: []application.ReviewEntry{
+				{Kind: application.ReviewInstrument, ID: "equity", Name: tc.name, Ticker: tc.ticker},
+				{Kind: application.ReviewActivity, ID: "trade", Name: tc.name, Ticker: tc.ticker, Activity: activity},
+			}})
+			if reviews[0].Label != tc.title || reviews[1].Label != "Buy "+tc.title ||
+				reviews[0].Description != tc.description || reviews[1].Description != tc.description {
+				t.Fatal(reviews)
+			}
+		})
+	}
+}

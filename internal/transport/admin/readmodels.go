@@ -108,6 +108,30 @@ func text(p *string) string {
 	return *p
 }
 
+func instrumentTitle(ticker, name string) string {
+	if ticker != "" {
+		return ticker
+	}
+
+	return known(name)
+}
+
+func instrumentDescription(ticker, name string) string {
+	if name == instrumentTitle(ticker, name) {
+		return ""
+	}
+
+	return name
+}
+
+func describe(description, context string) string {
+	if description == "" {
+		return context
+	}
+
+	return description + " · " + context
+}
+
 func referenceLabel(status application.ReferenceStatus, authority application.SelectionAuthority) string {
 	label := string(status)
 	if authority == application.OperatorSelection {
@@ -139,7 +163,7 @@ func activityList(v application.ActivityList) activityView {
 		r := item.Resource
 
 		a := r.Activity
-		name := known(item.InstrumentName)
+		name := instrumentTitle(item.InstrumentTicker, item.InstrumentName)
 
 		row := activityItem{
 			ID:             r.ID,
@@ -147,6 +171,7 @@ func activityList(v application.ActivityList) activityView {
 			Date:           a.Date,
 			Kind:           a.Family,
 			Instrument:     name,
+			Description:    instrumentDescription(item.InstrumentTicker, item.InstrumentName),
 			InstrumentID:   text(a.InstrumentID),
 			Reference:      referenceLabel(item.Reference.Status, item.Reference.Authority),
 			State:          activityStatus(item.State),
@@ -211,8 +236,8 @@ func instrumentList(v application.InstrumentList) activityView {
 			out.Instruments,
 			instrumentItem{
 				ID:     item.Resource.ID,
-				Name:   known(text(i.Name)),
-				Ticker: known(text(i.Ticker)),
+				Name:   text(i.Name),
+				Ticker: text(i.Ticker),
 				Kind:   i.Family,
 				Status: application.ReferenceStatus(i.ReferenceStatus), Authority: item.Authority,
 			},
@@ -229,12 +254,15 @@ func reviewItems(v application.ReviewList) []reviewItem {
 		item := reviewItem{Key: string(r.Kind) + "/" + r.ID, Label: known(r.Name), Kind: kind, Reason: reason}
 		switch r.Kind {
 		case application.ReviewActivity:
+			item.Description = instrumentDescription(r.Ticker, r.Name)
 			if r.Activity != nil {
-				item.Label = activityLabel(r.Activity, known(r.Name))
+				item.Label = activityLabel(r.Activity, instrumentTitle(r.Ticker, r.Name))
 			}
 
 			item.Href = "/activity/" + r.ID + "/correct?mode=evidence"
 		case application.ReviewInstrument:
+			item.Label = instrumentTitle(r.Ticker, r.Name)
+			item.Description = instrumentDescription(r.Ticker, r.Name)
 			item.Href = "/instruments/" + r.ID + "/correct?mode=evidence"
 		case application.ReviewInstruction:
 			item.Label = stringTitle(r.Name) + " instruction"

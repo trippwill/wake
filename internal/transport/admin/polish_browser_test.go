@@ -180,7 +180,11 @@ func polishGridData(w http.ResponseWriter, r *http.Request, extra bool) {
 		instruments := make([]instrumentGridRow, 0, end-start)
 		for _, row := range rows[start:end] {
 			instruments = append(instruments, instrumentGridRow{
-				ID: row.ID, Name: row.Label, Kind: gridCell{Text: "Equity"}, State: row.Reference,
+				ID:     row.ID,
+				Ticker: row.Label,
+				Name:   gridCell{Text: "Synthetic description"},
+				Kind:   gridCell{Text: "Equity"},
+				State:  row.Reference,
 			})
 		}
 

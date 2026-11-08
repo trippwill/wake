@@ -479,7 +479,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+known(detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail))).
+		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+instrumentTitle(detail.Context.InstrumentTicker, detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail))).
 			ServeHTTP(w, r)
 	})
 
@@ -490,7 +490,7 @@ func registerWorkflowRoutes(
 			r.PathValue("id"),
 		); err == nil && d.Activity != nil &&
 			(d.Activity.Family == "security-transfer" || d.Activity.Family == "cash") {
-			name := "Security"
+			name, description := "Security", ""
 			if d.Activity.InstrumentID != nil {
 				if instrument, e := workflow.Resource(
 					r.Context(),
@@ -498,21 +498,22 @@ func registerWorkflowRoutes(
 					*d.Activity.InstrumentID,
 				); e == nil &&
 					instrument.Instrument != nil {
-					name = known(text(instrument.Instrument.Name))
-					if instrument.Instrument.Name == nil {
-						name = known(text(instrument.Instrument.Ticker))
-					}
+					name = instrumentTitle(text(instrument.Instrument.Ticker), text(instrument.Instrument.Name))
+					description = instrumentDescription(
+						text(instrument.Instrument.Ticker),
+						text(instrument.Instrument.Name),
+					)
 				}
 			}
 
-			templ.Handler(SectionShell(activityKindLabel(d.Activity.Family), csrf, "Activity", MovementPage(d, name))).
+			templ.Handler(SectionShell(activityKindLabel(d.Activity.Family), csrf, "Activity", MovementPage(d, name, description))).
 				ServeHTTP(w, r)
 
 			return
 		}
 
 		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+known(d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d))).
+			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d))).
 				ServeHTTP(w, r)
 
 			return
@@ -538,7 +539,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+known(d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d))).
+		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -561,7 +562,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(known(detail.Instrument.Name()), csrf, "Activity", InstrumentPage(detail))).
+		templ.Handler(SectionShell(instrumentTitle(detail.Instrument.Ticker(), detail.Instrument.Name()), csrf, "Activity", InstrumentPage(detail))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {

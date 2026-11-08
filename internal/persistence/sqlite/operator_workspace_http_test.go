@@ -299,11 +299,11 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/activity?q=Unknown+USD+received", "1 of 4 results"},
 		{"/activity?q=Unknown+USD", "1 of 4 results"},
 		{"/activity?q=Unknown+EUR+sent", "0 of 4 results"},
-		{"/activity?q=Buy+Synthetic+option", "Buy Synthetic option"},
-		{"/activity?q=Assignment+%C2%B7+Synthetic+option", "Assignment"},
+		{"/activity?q=Buy+SYN+261120C00100000", "Buy SYN 261120C00100000"},
+		{"/activity?q=Assignment+%C2%B7+SYN+261120C00100000", "Assignment"},
 		{"/activity?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=" + url.QueryEscape("EUR sent · Unknown EUR"), "0 of 4 results"},
-		{"/review?q=Buy+Synthetic+option", "Buy Synthetic option"},
+		{"/review?q=Buy+SYN+261120C00100000", "Buy SYN 261120C00100000"},
 		{"/review?q=Convert+EUR+%E2%86%92+USD", "Convert EUR"},
 		{"/activity?q=sent", "Convert EUR"},
 		{"/activity?q=100.123456789+EUR+sent", "Convert EUR"},
@@ -486,9 +486,10 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Release") {
 		t.Fatal("retained decision unavailable for release", response.Code, response.Body.String())
 	}
-	// Display separators inside provider-owned names must survive label searches.
+	// Display separators inside provider-owned tickers must survive label searches.
 	separatorName := "Zebra · A → B"
-	separatorRow := strings.Replace(equityRow("U1", "separator", "10"), "Synthetic equity", separatorName, 1)
+	separatorRow := strings.NewReplacer("Synthetic equity", separatorName, `symbol="SYN"`, `symbol="`+separatorName+`"`, `conid="100"`, `conid="333"`).
+		Replace(equityRow("U1", "separator", "10"))
 	coverageReport(t, s, "separator-trade", separatorRow)
 	coverageReport(
 		t,
@@ -497,7 +498,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		strings.Replace(separatorRow, `price="10"`, `price="11"`, 1),
 	)
 	separatorLifecycle := strings.ReplaceAll(
-		strings.Replace(lifecycle, "Synthetic option", separatorName, 1),
+		strings.NewReplacer("Synthetic option", separatorName, `symbol="SYN 261120C00100000"`, `symbol="`+separatorName+`"`).
+			Replace(lifecycle),
 		`conid="200"`,
 		`conid="201"`,
 	)

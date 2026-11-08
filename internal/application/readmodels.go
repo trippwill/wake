@@ -100,7 +100,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	states := []string{"", "accepted", "cancelled", "superseded", "review"}
 	kinds := []string{"", "trade", "lifecycle", "conversion", "security-transfer", "cash"}
 	if scope == InstrumentScope {
-		sorts = []string{"name", "ticker", "kind", "state"}
+		sorts = []string{"ticker", "name", "kind", "state"}
 		states = []string{
 			"",
 			"gaps",
@@ -252,10 +252,10 @@ type (
 		MoreConnections bool
 	}
 	ActivityListItem struct {
-		Resource       CanonicalResource
-		State          ActivityState
-		InstrumentName string
-		Reference      ReferenceMatch
+		Resource                         CanonicalResource
+		State                            ActivityState
+		InstrumentName, InstrumentTicker string
+		Reference                        ReferenceMatch
 	}
 	ActivityList struct {
 		Account Account
@@ -282,11 +282,11 @@ const (
 
 type (
 	ReviewEntry struct {
-		Kind                         ReviewKind
-		ID, Name, Artifact, Location string
-		Activity                     *PublishedActivity
-		Status                       CorrectionStatus
-		Count                        int64
+		Kind                                 ReviewKind
+		ID, Name, Ticker, Artifact, Location string
+		Activity                             *PublishedActivity
+		Status                               CorrectionStatus
+		Count                                int64
 	}
 	ObservationList struct {
 		PageInfo

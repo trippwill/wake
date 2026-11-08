@@ -702,6 +702,72 @@ func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
 	}
 }
 
+func TestAdminTickerIdentityPreservesDescriptionSearchAndOrdering(t *testing.T) {
+	s := coverageStore(t)
+	first := strings.NewReplacer(`symbol="SYN"`, `symbol="AAA"`, "Synthetic equity", "Zebra").
+		Replace(equityRow("U1", "ticker-a", "10"))
+	second := strings.NewReplacer(`symbol="SYN"`, `symbol="ZZZ"`, "Synthetic equity", "Alpha", `conid="100"`, `conid="101"`).
+		Replace(equityRow("U1", "ticker-z", "10"))
+	coverageReport(t, s, "ticker-order", first+second)
+
+	for _, direction := range []string{"asc", "desc"} {
+		query, _ := application.NewListQuery(
+			application.ListOptions{Sort: "label", Direction: direction, PageSize: 1},
+			application.ActivityScope,
+		)
+		page, err := s.ActivityList(t.Context(), query)
+
+		want := "AAA"
+		if direction == "desc" {
+			want = "ZZZ"
+		}
+
+		if err != nil || len(page.Items) != 1 || page.Items[0].InstrumentTicker != want || page.Matched != 2 {
+			t.Fatal("activity ordering does not follow its ticker", page, err)
+		}
+	}
+
+	query, _ := application.NewListQuery(application.ListOptions{}, application.InstrumentScope)
+
+	instruments, err := s.InstrumentList(t.Context(), query)
+	if err != nil || len(instruments.Items) != 2 || *instruments.Items[0].Resource.Instrument.Ticker != "AAA" {
+		t.Fatal("instruments do not default to ticker ordering", instruments, err)
+	}
+
+	coverageReport(t, s, "ticker-dispute", strings.Replace(first, `price="10"`, `price="11"`, 1))
+
+	for _, search := range []string{"buy aaa", "Zebra"} {
+		query, _ = application.NewListQuery(
+			application.ListOptions{Search: search, ActivityText: application.ActivityText{Unknown: "Unknown"}},
+			application.ActivityScope,
+		)
+		page, e := s.ActivityList(t.Context(), query)
+		if e != nil || page.Matched != 1 || len(page.Items) != 1 || page.Items[0].InstrumentTicker != "AAA" ||
+			page.Items[0].InstrumentName != "Zebra" {
+			t.Fatal("activity ticker or description search failed", search, page, e)
+		}
+
+		query, _ = application.NewListQuery(
+			application.ListOptions{Search: search, ActivityText: application.ActivityText{Unknown: "Unknown"}},
+			application.ReviewScope,
+		)
+		review, e := s.ReviewList(t.Context(), query)
+		if e != nil || review.Matched != 1 || len(review.Items) != 1 || review.Items[0].Ticker != "AAA" ||
+			review.Items[0].Name != "Zebra" {
+			t.Fatal("review ticker or description search failed", search, review, e)
+		}
+	}
+
+	id := instruments.Items[0].Resource.ID
+
+	form, err := s.CorrectionForm(t.Context(), "instrument", id)
+	if err != nil || form.Label != "AAA · Zebra · equity" || len(form.Fields) < 2 ||
+		form.Fields[0] != "ticker" ||
+		form.Fields[1] != "name" {
+		t.Fatal("correction context does not lead with ticker", form, err)
+	}
+}
+
 func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
 	s := coverageStore(t)
 	first := equityRow("U1", "reference-a", "10")

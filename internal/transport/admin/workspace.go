@@ -244,7 +244,7 @@ func hasDifferences(f application.CorrectionForm, c application.CorrectionCandid
 	return false
 }
 
-type reviewItem struct{ Key, Kind, Label, Reason, Href string }
+type reviewItem struct{ Key, Kind, Label, Description, Reason, Href string }
 
 func sourceWork(v sourceView, c application.ConnectionView) []application.WorkStatus {
 	operation := "discover"
@@ -334,9 +334,9 @@ func stringTitle(s string) string {
 }
 
 type activityItem struct {
-	ID, Href, Label, Date, Kind, Instrument, InstrumentID, Reference, Quantity, Amount, Price, Basis, State, Realized string
-	RealizedConflict                                                                                                  bool
-	FinancialState                                                                                                    application.ActivityState
+	ID, Href, Label, Date, Kind, Instrument, Description, InstrumentID, Reference, Quantity, Amount, Price, Basis, State, Realized string
+	RealizedConflict                                                                                                               bool
+	FinancialState                                                                                                                 application.ActivityState
 }
 
 func connectionByID(v sourceView, id string) (application.ConnectionView, bool) {

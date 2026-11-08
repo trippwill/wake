@@ -173,9 +173,10 @@ func (s *Store) ActivityList(
 			out.Items = append(
 				out.Items,
 				application.ActivityListItem{
-					Resource:       resource,
-					State:          state,
-					InstrumentName: row.InstrumentName,
+					Resource:         resource,
+					State:            state,
+					InstrumentName:   row.InstrumentName,
+					InstrumentTicker: row.InstrumentTicker,
 					Reference: application.ReferenceMatch{
 						Status:    application.ReferenceStatus(row.ReferenceStatus),
 						Authority: application.SelectionAuthority(row.ReferenceAuthority),
