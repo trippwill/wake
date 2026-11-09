@@ -819,6 +819,7 @@ components:
         trade_kind:
           type: string
           nullable: true
+          description: Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
         side:
           type: string
           nullable: true

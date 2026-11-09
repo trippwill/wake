@@ -34,7 +34,16 @@ func (s *Store) PositionsList(
 
 	defer func() { _ = tx.Rollback() }()
 
-	account, err := s.queries.WithTx(tx).Account(ctx)
+	q := s.queries.WithTx(tx)
+
+	account, err := q.Account(ctx)
+	if options.AccountID != "" {
+		account, err = q.AccountByID(ctx, options.AccountID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return out, application.ErrNotFound
+		}
+	}
+
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, tx.Commit()
 	}

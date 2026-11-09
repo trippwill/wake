@@ -827,7 +827,7 @@
           signIn.hidden = true;
           const target = new URL(url, location.href);
           const current = new URL(location.href);
-          for (const key of ["q", "kind", "state"])
+          for (const key of ["q", "kind", "state", "account"])
             if (current.searchParams.has(key))
               target.searchParams.set(key, current.searchParams.get(key));
           const sort = parameters.sort?.[0] || {
@@ -1192,8 +1192,9 @@
         region.querySelector("[data-observation-filters]") ||
         document.querySelector("[data-list-filters]");
       for (const control of form?.querySelectorAll("[name]") || []) {
-        if (["q", "kind", "state"].includes(control.name))
-          control.value = params.get(control.name) || "";
+        if (["q", "kind", "state", "account"].includes(control.name))
+          control.value =
+            params.get(control.name) || control.options?.[0]?.value || "";
       }
       const kind = region.dataset.grid;
       const field = params.get("sort") || gridDefaultSort(region);

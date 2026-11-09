@@ -664,12 +664,12 @@ func bindCashInstrument(ctx context.Context, q *sqlc.Queries, row sqlc.Execution
 
 // Recalculate only groups reached by genuinely new claims or changed source
 // correction state. Known appearances keep provenance without revisiting terms.
-func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact string) error {
+func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact, accountID string) error {
 	if err := q.SeedArtifactBases(ctx, artifact); err != nil {
 		return err
 	}
 
-	activityIDs, err := linkActivityObservations(ctx, q, artifact)
+	activityIDs, err := linkActivityObservations(ctx, q, artifact, accountID)
 	if err != nil {
 		return err
 	}

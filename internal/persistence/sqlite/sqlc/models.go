@@ -37,7 +37,6 @@ type AccessStoreMetadatum struct {
 type Account struct {
 	Revision     int64
 	ID           string
-	Singleton    int64
 	Name         string
 	Currency     string
 	ConnectionID string
@@ -51,18 +50,19 @@ type Account struct {
 }
 
 type AcquisitionReceipt struct {
-	Sequence      int64
-	ID            string
-	ArtifactID    string
-	Operation     string
-	Retrieved     string
-	Hash          string
-	Policy        string
-	Digest        string
-	RequestedFrom string
-	RequestedTo   string
-	ReportedFrom  string
-	ReportedTo    string
+	Sequence          int64
+	ID                string
+	ArtifactID        string
+	Operation         string
+	Retrieved         string
+	Hash              string
+	Policy            string
+	Digest            string
+	RequestedFrom     string
+	RequestedTo       string
+	ReportedFrom      string
+	ReportedTo        string
+	CandidateSnapshot int64
 }
 
 type ActivityBasis struct {
@@ -218,6 +218,19 @@ type CurrentPositionInstrument struct {
 type DecisionSupersession struct {
 	DecisionID string
 	PreviousID string
+}
+
+type EligibleCandidate struct {
+	ReceiptID    string
+	ArtifactID   string
+	Authority    string
+	Kind         string
+	Scope        string
+	Value        string
+	Name         string
+	Currency     string
+	ConnectionID string
+	Sequence     int64
 }
 
 type EventLink struct {

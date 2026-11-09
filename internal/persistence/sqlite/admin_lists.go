@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -86,6 +85,25 @@ func decodeAcceptedResource(data []byte, kind string) (application.CanonicalReso
 	return resource, nil
 }
 
+func (s *Store) Accounts(ctx context.Context) ([]application.Account, error) {
+	rows, err := s.queries.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	accounts := make([]application.Account, 0, len(rows))
+	for _, row := range rows {
+		account, err := accountValue(row)
+		if err != nil {
+			return nil, err
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts, nil
+}
+
 func (s *Store) ActivityList(
 	ctx context.Context,
 	query application.ListQuery,
@@ -101,18 +119,10 @@ func (s *Store) ActivityList(
 	return readModel(ctx, s, func(q *sqlc.Queries) (application.ActivityList, error) {
 		out := application.ActivityList{}
 
-		account, err := q.Account(ctx)
-		if err == nil {
-			out.Account, err = accountValue(account)
-		}
-
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return out, err
-		}
-
 		counts, err := q.AdminActivityCount(
 			ctx,
 			sqlc.AdminActivityCountParams{
+				AccountFilter:      options.AccountID,
 				KindFilter:         options.Kind,
 				MissingValues:      options.DisplayMatches.MissingValues,
 				InapplicableValues: options.DisplayMatches.InapplicableValues,
@@ -133,6 +143,7 @@ func (s *Store) ActivityList(
 		rows, err := q.AdminActivityRows(
 			ctx,
 			sqlc.AdminActivityRowsParams{
+				AccountFilter:      options.AccountID,
 				KindFilter:         options.Kind,
 				MissingValues:      options.DisplayMatches.MissingValues,
 				InapplicableValues: options.DisplayMatches.InapplicableValues,
@@ -177,6 +188,7 @@ func (s *Store) ActivityList(
 					State:            state,
 					InstrumentName:   row.InstrumentName,
 					InstrumentTicker: row.InstrumentTicker,
+					AccountName:      row.AccountName,
 					Reference: application.ReferenceMatch{
 						Status:    application.ReferenceStatus(row.ReferenceStatus),
 						Authority: application.SelectionAuthority(row.ReferenceAuthority),

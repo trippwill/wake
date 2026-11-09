@@ -28,7 +28,7 @@ func currentPage(active bool) string {
 }
 
 templ DashboardOverview(view overviewView) {
-	@PageHeader("Overview", "Your account, current work and next useful action.")
+	@PageHeader("Overview", "Your accounts, current work and next useful action.")
 	if view.Storage.Paused {
 		<section class="wake-card wake-priority"><h2>Review recovered access</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
 	} else if view.Account.ID()=="" {
@@ -43,7 +43,21 @@ templ DashboardOverview(view overviewView) {
 		</section>
 	}
 	if view.Account.ID()!="" {
-		<section class="wake-card"><div class="wake-card-heading"><div><h2>{ view.Account.Details().Name() }</h2><p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p></div><div class="wake-actions"><a class="btn btn-primary" href="/activity">Inspect activity</a><a class="btn" href="/positions">Inspect positions</a></div></div></section>
+		<section class="wake-card">
+			<div class="wake-card-heading">
+				<div>
+					<h2>
+						if view.AccountCount > 1 {
+							{ strconv.FormatInt(view.AccountCount,10) } confirmed accounts
+						} else {
+							{ view.Account.Details().Name() }
+						}
+					</h2>
+					<p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p>
+				</div>
+				<div class="wake-actions"><a class="btn btn-primary" href="/activity">Inspect activity</a><a class="btn" href="/positions">Inspect positions</a></div>
+			</div>
+		</section>
 		<div class="wake-columns">
 			<section class="wake-card">
 				<h2>Financial review</h2>
@@ -91,7 +105,7 @@ templ DashboardOverview(view overviewView) {
 								@StateBadge("paused")
 							} else {
 								<dl class="wake-sync-work">
-									for _,work:=range sourceWork(view.sourceView,c) {
+									for _,work:=range sourceWork(c) {
 										<div>
 											<dt>
 												if work.Stream=="" || work.Operation=="discover" {
@@ -138,8 +152,8 @@ templ ConnectionsPage(csrf string, view sourceView) {
 			<article class="wake-source-row">
 				<div>
 					<h3><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a></h3>
-					if view.Account.Connection()==c.ID {
-						<p>{ view.Account.Details().Name() } · Authorized source</p>
+					if c.Account.ID()!="" {
+						<p>{ c.Account.Details().Name() } · Authorized source</p>
 					} else if c.CanDiscover {
 						<p>Account discovery</p>
 					} else if c.CanAcquire {
@@ -147,7 +161,7 @@ templ ConnectionsPage(csrf string, view sourceView) {
 					} else {
 						<p>Supplied evidence</p>
 					}
-					for _,w:=range sourceWork(view,c) {
+					for _,w:=range sourceWork(c) {
 						<p class="wake-help">{ workLabel(w) }: { progressLabel(w.Progress) }</p>
 					}
 				</div>
@@ -159,7 +173,7 @@ templ ConnectionsPage(csrf string, view sourceView) {
 					}
 				</div>
 			</article>
-			if view.Account.ID()=="" && c.CanDiscover {
+			if c.Account.ID()=="" && c.CanDiscover {
 				<p><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Review discovered accounts</a></p>
 			}
 		}
@@ -190,8 +204,8 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 				<p class="wake-notice">This provider is unavailable in this build.</p>
 			} else if !c.CanAcquire && !c.CanDiscover {
 				<p>This source interprets supplied evidence and does not perform automatic acquisition.</p>
-			} else if v.Account.Connection()==c.ID {
-				<p>Authorized account: <strong>{ v.Account.Details().Name() }</strong></p>
+			} else if c.Account.ID()!="" {
+				<p>Authorized account: <strong>{ c.Account.Details().Name() }</strong></p>
 			} else {
 				<p>Account confirmation is required before ongoing synchronization.</p>
 			}
@@ -202,10 +216,13 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 				<p class="wake-notice">Source access is incomplete. <a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair settings and credentials</a>.</p>
 			}
 			<dl>
-				for _,w:=range sourceWork(v,c) {
+				for _,w:=range sourceWork(c) {
 					<dt>{ workLabel(w) }</dt>
 					<dd>
 						@StateBadge(progressLabel(w.Progress))
+						if w.Total > 0 {
+							<span class="wake-help wake-cell-note">{ strconv.FormatInt(w.Completed,10) } of { strconv.FormatInt(w.Total,10) } observed</span>
+						}
 						<span class="wake-help wake-cell-note">Next eligible: { known(w.Next) }</span>
 						if w.Failure!="" {
 							<p class="wake-error-text">{ w.Failure }</p>
@@ -213,26 +230,28 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 					</dd>
 				}
 			</dl>
-			if connectionFailure(v,c) && !v.Storage.Paused {
+			if connectionFailure(c) && !v.Storage.Paused {
 				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry connection</button></form>
+			} else if c.CanDiscover && c.Account.ID()=="" && len(sourceWork(c))==0 && !v.Storage.Paused {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Discover accounts again</button></form>
 			}
 			<a href={ templ.SafeURL(connectionURL(c.ID, "reports")) }>Inspect processing and recent reports</a>
 		</section>
-		if c.CanDiscover && v.Account.ID()=="" {
+		if c.CanDiscover && c.Account.ID()=="" {
 			<section class="wake-card">
-				<h2>Choose your account</h2>@DiscoveredAccounts(c, v)
+				<h2>Choose your account</h2>@DiscoveredAccounts(c)
 				@ListPagination(v.PageInfo)
 			</section>
 		} else if c.CanDiscover {
 			<details class="wake-card" data-disclosure={ "accounts-" + c.ID }>
-				<summary>Discovered account references</summary>@DiscoveredAccounts(c, v)
+				<summary>Discovered account references</summary>@DiscoveredAccounts(c)
 				@ListPagination(v.PageInfo)
 			</details>
 		}
 	}
 }
 
-templ DiscoveredAccounts(c application.ConnectionView, v sourceView) {
+templ DiscoveredAccounts(c application.ConnectionView) {
 	if len(c.Candidates)==0 {
 		<p>Discovery has not returned any accounts yet.</p>
 	} else {
@@ -246,9 +265,9 @@ templ DiscoveredAccounts(c application.ConnectionView, v sourceView) {
 							<td>{ known(candidate.Candidate.Name()) }</td>
 							<td>{ known(currencyText(candidate.Candidate.Currency())) }</td>
 							<td>
-								if v.Account.ID()=="" {
+								if c.Account.ID()=="" {
 									<a href={ templ.SafeURL(confirmURL(c.ID, candidate)) }>Confirm account</a>
-								} else if v.Account.Reference()==candidate.Candidate.Reference()&&v.Account.Connection()==c.ID {
+								} else if c.Account.Reference()==candidate.Candidate.Reference() {
 									Activated
 								} else {
 									Candidate only
@@ -421,7 +440,7 @@ templ ConnectionReports(csrf string, c application.ConnectionView) {
 
 templ ActivityPage(view activityView) {
 	@PageHeader(activityTitle(activityWorkspace(ctx)), activityDescription(activityWorkspace(ctx)))
-	if view.Account.ID()=="" && activityWorkspace(ctx)=="all" {
+	if len(page(ctx).Accounts)==0 && activityWorkspace(ctx)=="all" {
 		<section class="wake-card"><h2>Confirm an account to begin</h2><a class="btn btn-primary" href="/connections">Review source setup</a></section>
 	}
 	if activityWorkspace(ctx)=="review" {
@@ -429,7 +448,7 @@ templ ActivityPage(view activityView) {
 	} else if activityWorkspace(ctx)=="instruments" {
 		@InstrumentsView(view)
 	} else {
-		@ActivityRows(view)
+		@ActivityRows()
 	}
 }
 
@@ -464,9 +483,9 @@ templ ReviewQueue(view activityView) {
 	</section>
 }
 
-templ ActivityRows(view activityView) {
+templ ActivityRows() {
 	<section class="wake-card" id="activity-rows">
-		<div class="wake-card-heading"><div><h2>Financial activity</h2><p>{ known(view.Account.Details().Name()) }</p></div></div>
+		<div class="wake-card-heading"><div><h2>Financial activity</h2></div></div>
 		@Grid("activity", "/grids/activity", "Financial activity")
 	</section>
 }
@@ -481,6 +500,9 @@ templ ListFilters(instruments bool) {
 	<form class="wake-filters" method="get" action={ templ.SafeURL(resetListURL(instruments)) } data-list-filters>
 		<input type="hidden" name="sort" value={ page(ctx).Query.Get("sort") }/>
 		<input type="hidden" name="dir" value={ page(ctx).Query.Get("dir") }/>
+		if !instruments && len(page(ctx).Accounts)>1 {
+			@AccountFilter("activity-account", true)
+		}
 		<p><label for="activity-search">Search</label><input class="input" id="activity-search" name="q" type="search" value={ page(ctx).Query.Get("q") } placeholder="Instrument, date or value"/></p>
 		<p>
 			<label for="activity-kind">Kind</label>
@@ -545,7 +567,7 @@ templ ListPagination(info application.PageInfo) {
 }
 
 templ PositionsPage() {
-	@PageHeader("Positions", "Inspect the latest accepted positions reported for your account.")
+	@PageHeader("Positions", "Inspect the latest accepted positions reported for a confirmed account.")
 	<section class="wake-card">
 		<h2>Reported account positions</h2>
 		@Grid("positions", "/grids/positions", "Reported positions")
@@ -563,6 +585,9 @@ templ PositionsSummary() {
 
 templ PositionsFilters() {
 	<form class="wake-filters" method="get" action="/positions" data-list-filters>
+		if len(page(ctx).Accounts)>1 {
+			@AccountFilter("positions-account", false)
+		}
 		<p><label for="positions-search">Search instruments</label><input class="input" id="positions-search" name="q" type="search" maxlength="256" value={ page(ctx).Query.Get("q") } placeholder="Instrument name or symbol"/></p>
 		<p>
 			<label for="positions-kind">Kind</label>
@@ -576,4 +601,18 @@ templ PositionsFilters() {
 		<p><label for="positions-side">Side</label><select class="select" id="positions-side" name="state"><option value="">All sides</option><option value="long" selected?={ page(ctx).Query.Get("state")=="long" }>Long</option><option value="short" selected?={ page(ctx).Query.Get("state")=="short" }>Short</option></select></p>
 		<button class="btn" type="submit">Apply filters</button><a href="/positions" data-grid-reset-filters>Reset filters</a>
 	</form>
+}
+
+templ AccountFilter(id string, all bool) {
+	<p>
+		<label for={ id }>Account</label>
+		<select class="select" id={ id } name="account">
+			if all {
+				<option value="">All accounts</option>
+			}
+			for _, account := range page(ctx).Accounts {
+				<option value={ account.ID() } selected?={ page(ctx).Query.Get("account")==account.ID() }>{ account.Details().Name() }</option>
+			}
+		</select>
+	</p>
 }

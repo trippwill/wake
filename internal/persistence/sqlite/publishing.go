@@ -347,7 +347,7 @@ func canonicalSnapshot(
 	}
 	switch kind {
 	case "accounts":
-		a, err := q.Account(ctx)
+		a, err := q.AccountByID(ctx, id)
 		if err != nil {
 			return out, why, err
 		}

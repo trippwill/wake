@@ -20,6 +20,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 type Error string
@@ -36,11 +37,16 @@ type (
 	Connection struct {
 		ID, Provider, Name      string
 		Settings                provider.Settings
+		SourceAccount           source.Reference
 		Streams                 []provider.Stream
 		ResetStreams            []string
 		CanAcquire, CanDiscover bool
 	}
-	WorkKey    struct{ Connection, Stream, Operation string }
+	WorkKey      struct{ Connection, Stream, Operation string }
+	PacingBudget struct {
+		Policy, Scope string
+		Spacing       time.Duration
+	}
 	Checkpoint struct {
 		Revision               int64
 		State                  provider.State
@@ -75,7 +81,7 @@ type (
 		) (string, error)
 		ArtifactProvider(context.Context, string) (string, error)
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
-		Reserve(context.Context, string, string, string, time.Time, time.Duration) (provider.Reservation, error)
+		ReserveTogether(context.Context, string, time.Time, ...PacingBudget) (provider.Reservation, error)
 		Delay(context.Context, string, string, string, time.Time) error
 	}
 )
@@ -507,6 +513,9 @@ func (h *Host) step(
 	access := &access{host: h, connection: c, registration: r, key: key, live: true, ctx: work}
 
 	request := provider.Request{Stream: stream, Settings: c.Settings, State: checkpoint.State, Now: now}
+	if !discover {
+		request.SourceAccount = c.SourceAccount
+	}
 
 	var (
 		step       provider.Step
@@ -790,25 +799,38 @@ func (a *access) ReservePacing(
 	id string,
 	scope provider.PacingScope,
 ) (provider.Reservation, error) {
+	return a.ReservePacingTogether(ctx, provider.PacingBudget{Policy: id, Scope: scope})
+}
+
+func (a *access) ReservePacingTogether(
+	ctx context.Context,
+	requested ...provider.PacingBudget,
+) (provider.Reservation, error) {
 	done, err := a.enter(ctx)
 	if err != nil {
 		return provider.Reservation{}, err
 	}
 	defer done()
 
-	p, err := a.policy(id)
-	if err != nil || scope.Digest() == "" {
+	if len(requested) == 0 || len(requested) > 32 {
 		return provider.Reservation{}, provider.ErrInvalid
 	}
 
-	result, err := a.host.store.Reserve(
-		ctx,
-		a.connection.Provider,
-		id,
-		scope.Digest(),
-		a.host.now(),
-		p.Spacing(),
-	)
+	budgets := make([]PacingBudget, 0, len(requested))
+	seen := make(map[provider.PacingBudget]bool, len(requested))
+	for _, budget := range requested {
+		policy, err := a.policy(budget.Policy)
+		scope := budget.Scope.Digest()
+		if err != nil || scope == "" || seen[budget] {
+			return provider.Reservation{}, provider.ErrInvalid
+		}
+
+		seen[budget] = true
+
+		budgets = append(budgets, PacingBudget{Policy: policy.ID(), Scope: scope, Spacing: policy.Spacing()})
+	}
+
+	result, err := a.host.store.ReserveTogether(ctx, a.connection.Provider, a.host.now(), budgets...)
 	if err != nil {
 		return provider.Reservation{}, a.storageFailure(err)
 	}

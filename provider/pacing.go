@@ -4,6 +4,7 @@
 package provider
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
@@ -48,6 +49,18 @@ func (s PacingScope) Digest() string {
 	}
 
 	return hex.EncodeToString(s.digest[:])
+}
+
+// PacingBudget identifies one declared request constraint and its durable scope.
+type PacingBudget struct {
+	Policy string
+	Scope  PacingScope
+}
+
+// GroupPacer is an optional Access capability for a request subject to several
+// budgets. A denied reservation leaves every budget unchanged.
+type GroupPacer interface {
+	ReservePacingTogether(context.Context, ...PacingBudget) (Reservation, error)
 }
 
 type Reservation struct {

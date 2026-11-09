@@ -106,6 +106,11 @@ func activityGrid(data application.ActivityList) gridPage[activityGridRow] {
 			realized.Tone = "review"
 		}
 
+		note := describe(item.Description, activityKindLabel(item.Kind))
+		if item.AccountName != "" {
+			note = describe(note, item.AccountName)
+		}
+
 		rows = append(
 			rows,
 			activityGridRow{
@@ -113,7 +118,7 @@ func activityGrid(data application.ActivityList) gridPage[activityGridRow] {
 				Label: gridCell{
 					Text: item.Label,
 					Href: item.Href,
-					Note: describe(item.Description, activityKindLabel(item.Kind)),
+					Note: note,
 				},
 				Date:      gridCell{Text: item.Date},
 				Quantity:  gridCell{Text: item.Quantity},

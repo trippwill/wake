@@ -89,7 +89,14 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell("Positions", csrf, "Positions", PositionsPage())).ServeHTTP(w, r)
+		accounts, err := workflow.Accounts(r.Context())
+		if err != nil {
+			http.Error(w, "Unable to load account choices", http.StatusInternalServerError)
+			return
+		}
+
+		templ.Handler(SectionShell("Positions", csrf, "Positions", PositionsPage())).
+			ServeHTTP(w, withAccounts(r, accounts))
 	})
 
 	failure := func(w http.ResponseWriter, r *http.Request, csrf string, err error) {
@@ -101,7 +108,9 @@ func registerWorkflowRoutes(
 			message = "Enter an account display name and a valid currency, or leave currency unknown."
 
 		case application.ErrAccountLimit:
-			message = "One account is already activated. Other discovered accounts remain candidates."
+			message = "This connection already has a confirmed account."
+		case application.ErrAccountBound:
+			message = "This source account is already confirmed on another connection."
 		case application.ErrStale, application.ErrAccessReview:
 			message = err.Error()
 		case application.ErrCandidate:
@@ -433,13 +442,10 @@ func registerWorkflowRoutes(
 
 			switch scope {
 			case application.ActivityScope:
-				result, e := workflow.Prerequisites(r.Context())
+				accounts, e := workflow.Accounts(r.Context())
 				err = e
-				view.Account = result.Account
+				r = withAccounts(r, accounts)
 			case application.InstrumentScope:
-				result, e := workflow.Prerequisites(r.Context())
-				err = e
-				view.Account = result.Account
 			case application.ReviewScope:
 				result, e := workflow.ReviewList(r.Context(), query)
 				err = e

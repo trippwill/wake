@@ -26,6 +26,7 @@ import (
 	"go.trippwill.dev/wake/internal/transport/admin"
 	socketapi "go.trippwill.dev/wake/internal/transport/socket"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/providers/snaptrade"
 )
 
 type shell struct {
@@ -57,6 +58,7 @@ func Run(
 // controlled TLS servers through the same daemon/host/store/admin composition.
 type sourceOptions struct {
 	IBKR            ibkrflex.Options
+	SnapTrade       snaptrade.Options
 	ReferenceClient *http.Client
 	ReferenceURL    string
 	Now             func() time.Time
@@ -166,7 +168,20 @@ func run(
 		return err
 	}
 
-	providerHost, err := host.New(ctx, store, envelope, logger, options.Now, registration)
+	snaptradeRegistration, err := snaptrade.Registration(options.SnapTrade)
+	if err != nil {
+		return err
+	}
+
+	providerHost, err := host.New(
+		ctx,
+		store,
+		envelope,
+		logger,
+		options.Now,
+		registration,
+		snaptradeRegistration,
+	)
 	if err != nil {
 		return err
 	}

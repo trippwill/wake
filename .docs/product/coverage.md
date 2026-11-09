@@ -1,9 +1,10 @@
 # Current coverage
 
-Wake supports one IBKR account with automatic Confirmation acquisition, optional
-Activity acquisition for security transfers, non-trade cash postings and reported
-per-activity realized P&L, financial review and
-attributable corrections to existing activity, and a separate latest reported positions view.
+Wake supports IBKR Flex and SnapTrade Personal in the same warehouse, with one
+confirmed account per connection. Flex supplies Confirmation reports and optional
+Activity reports for security transfers, non-trade cash postings, reported realized
+P&L and reported positions. SnapTrade supplies cached purchases and sales for Fidelity
+US and IBKR.
 This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
@@ -12,16 +13,16 @@ the [domain vocabulary](domain.md) owns financial policy.
 
 The workflow is:
 
-1. The operator creates an IBKR connection with its access and saved Confirmation
-   query configuration.
+1. The operator creates a connection with the selected provider’s settings and credentials.
 2. Wake discovers the account information available through that connection.
 3. The operator selects one discovered account and confirms or edits its details.
 4. Wake creates the financial account and binds its reported account reference to
    the connection and provider as its authoritative financial source.
 5. Automatic synchronization and financial processing start for that account.
 
-Discovery may return several candidates; v0.1.0 activates one account. Discovery
-does not create financial accounts or start ongoing history synchronization.
+Discovery may return several candidates. Each connection can activate one. Confirmation
+creates the account and starts ongoing synchronization. Configure separate real accounts
+when using both providers.
 The [domain vocabulary](../product/domain.md#account-source-authority) defines
 account identity, source authority and financial meaning.
 
@@ -34,9 +35,9 @@ the primary instrument identity and naming reference.
 
 | Area | Coverage |
 | --- | --- |
-| Acquisition | One IBKR account, Confirmation and optional Activity queries sharing the same encrypted token; retained original reports, overlapping windows, restart and catch-up. |
+| Acquisition | IBKR Flex Confirmation and optional Activity queries sharing the same encrypted token. SnapTrade Personal cached history for the confirmed account. Both retain original reports and recover after restart. |
 | Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
-| Trades | Execution-level purchases/sales, distinct fills and option legs, reported opening/closing qualification, exact quantities, prices, monetary roles, categorized charges with nested reported totals/components, and dates. |
+| Trades | Flex executions and SnapTrade purchases/sales at their reported grain. Exact quantities, prices, dates and reported opening/closing qualification. Flex includes nested reported charge totals and components. |
 | Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
 | Security transfers | Reported inbound/outbound security movements, separate transfer valuations and aggregate reported costs, counterparty details and exact quantities. Transfer lots remain evidence. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
@@ -65,8 +66,8 @@ Debt activity retains nominal face quantity and exact reported price without a
 quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
 charges remain separate; no combined settlement total is inferred.
 
-This pre-release identity, debt, activity-result, reported-position and structured-charge
-format requires explicit warehouse recreation on upgrade.
+This pre-release warehouse format supports one account per connection and requires
+explicit warehouse recreation on upgrade.
 Older warehouses fail closed and remain untouched; encrypted access seeds retain
 their independent format. Reacquire and confirm source history in the new warehouse.
 Recreating a warehouse discards warehouse-only decisions and evidence; preserve
@@ -77,6 +78,9 @@ Source-established relationships are useful when present. A missing relationship
 does not authorize an inferred stock delivery, cash payment or strategy. Family
 and market examples are representative, not rejection lists
 for otherwise interpretable records.
+
+The [SnapTrade guide](../providers/snaptrade.md) describes its broker coverage, cached
+acquisition and interpretation.
 
 The IBKR provider reads activity terms from Confirmation reports and per-activity
 realized results, transfers and cash postings from an optional Activity query for
@@ -127,8 +131,8 @@ acquisition success. No fresh report or warehouse reset is required.
 - Balances, NAV, unrealized or calculated P&L, historical position queries, position corrections,
   and reconstruction of
   holdings, cash, lots or missing lifecycle outcomes.
-- SnapTrade and other acquisition providers, multiple-account workflows, file
-  imports, automatic source switching and peer-source reconciliation.
+- More than one confirmed account per connection, additional acquisition providers,
+  file imports, automatic source switching and peer-source reconciliation.
 
 Exercise, explicit cancellation/replacement, adjusted-option and representative gilt checks
 use representative evidence or clearly identified synthetic cases. Synthetic

@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"slices"
 	"time"
+
+	"go.trippwill.dev/wake/source"
 )
 
 // Artifact holds a bounded immutable response. Host admission can impose a lower
@@ -17,6 +19,7 @@ type Artifact struct {
 	mediaType                             string
 	retrieved                             time.Time
 	content                               []byte
+	sourceAccount                         source.Reference
 	equivalenceVersion, equivalenceDigest string
 }
 
@@ -39,6 +42,14 @@ func (a Artifact) MediaType() string      { return a.mediaType }
 func (a Artifact) RetrievedAt() time.Time { return a.retrieved }
 func (a Artifact) Content() []byte        { return slices.Clone(a.content) }
 func (a Artifact) IsZero() bool           { return a.format == "" }
+
+// WithSourceAccount attaches host-supplied authority without changing the evidence.
+func (a Artifact) WithSourceAccount(ref source.Reference) Artifact {
+	a.sourceAccount = ref
+	return a
+}
+
+func (a Artifact) SourceAccount() source.Reference { return a.sourceAccount }
 
 // Hash identifies bytes, not event identity or acquisition observation identity.
 func (a Artifact) Hash() string {

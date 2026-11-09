@@ -576,7 +576,7 @@ func TestPositionsConflictsRollbackIdentityChangesAndRestart(t *testing.T) {
 	s, profile := testStore(t)
 	// Reuse the explicit synthetic account authority setup.
 	_, err := s.db.Exec(
-		`INSERT INTO connections(id,provider) VALUES('synthetic','ibkr-flex'); INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('discovery','synthetic','confirmations','discover','fixture','text/plain','2026-10-20T00:00:00Z','fixture',X'00'); INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account',1,'Synthetic','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`,
+		`INSERT INTO connections(id,provider) VALUES('synthetic','ibkr-flex'); INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('discovery','synthetic','confirmations','discover','fixture','text/plain','2026-10-20T00:00:00Z','fixture',X'00'); INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account','Synthetic','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`,
 	)
 	if err != nil {
 		t.Fatal(err)

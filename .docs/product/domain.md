@@ -164,7 +164,8 @@ different outcomes.
 
 A trade is a purchase/sale at its reported grain. Exchange executions, booked stock
 trades, option exercise/assignment/expiration and order membership have distinct
-meanings. An order groups fills or legs; it does not merge their identities.
+meanings. A reported trade preserves a purchase or sale when the source leaves
+execution granularity unspecified. An order groups fills or legs; it does not merge their identities.
 Reported lifecycle relationships do not authorize invented stock deliveries or cash.
 An expiry date alone does not establish an outcome.
 

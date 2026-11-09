@@ -139,8 +139,11 @@ return enabled inputs with opaque configuration identities; the host compares th
 identities to reset only affected continuations. Discovery capability describes how
 a source account can be found, not which financial facts an input may contribute.
 Core code does not interpret provider field keys, query topology or report names.
-Account authority is bound to the connection, provider and qualified source account,
-while every input and report remains traceable provenance. Enabled acquisition and
+Each connection binds at most one account. Confirmation binds its provider and
+qualified source account together, and repeat confirmation preserves the identity.
+The host passes that immutable reference when an API needs it for acquisition or
+when response bytes omit it during replay. Matching and corrections stay within the
+owning account. Every input and report remains traceable provenance. Enabled acquisition and
 configuration changes are persisted atomically; disabling an input preserves history.
 Account confirmation schedules work from the same committed configuration snapshot;
 concurrent settings edits cannot restore removed inputs or omit newly enabled ones.
@@ -529,9 +532,11 @@ Shutdown signals event streams to finish before draining HTTP servers. Ordinary 
 retain their bounded grace period and are joined before storage closes.
 
 Restoring lost access settings invalidates opaque source continuations while preserving retained
-pacing deadlines. Known unchanged settings preserve their continuation. Automatic underlier
-enrichment continues beneath an operator link override, so releasing the decision restores the
-source-established link.
+pacing deadlines. When one request needs several pacing allowances, reserve them
+together so a deferred request leaves the other allowances available. Known
+unchanged settings preserve their continuation. Automatic underlier enrichment
+continues beneath an operator link override, so releasing the decision restores
+the source-established link.
 
 Publishing resolves source-correction endpoints only for corrections related to the activity being
 published, within the same transaction.

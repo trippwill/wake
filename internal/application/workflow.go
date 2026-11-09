@@ -31,6 +31,7 @@ type (
 	WorkStatus struct {
 		Stream, Operation, Failure, Next string
 		Progress                         provider.ProgressPhase
+		Completed, Total                 int64
 		Scheduled                        bool
 	}
 	ProcessingStatus struct {
@@ -42,6 +43,7 @@ type (
 	}
 	ConnectionView struct {
 		ID, Name, Provider                    string
+		Account                               Account
 		Settings                              provider.Settings
 		Descriptor                            provider.Descriptor
 		CredentialKeys                        []string
@@ -281,11 +283,6 @@ func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 		return provider.ErrUnavailable
 	}
 
-	view, err := w.store.Prerequisites(ctx)
-	if err != nil {
-		return err
-	}
-
 	configured, err := registration.ConfigureStreams(connection.Settings)
 	if err != nil {
 		return err
@@ -295,7 +292,7 @@ func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 		stream := configuration.Stream()
 
 		operation := "discover"
-		if view.Account.Connection() == id && registration.Acquirer() != nil {
+		if !connection.SourceAccount.IsZero() && registration.Acquirer() != nil {
 			operation = "acquire"
 		} else if registration.Discoverer() == nil {
 			continue
@@ -476,6 +473,10 @@ func (w *Workflow) Overview(ctx context.Context) (OverviewView, error) {
 	}
 
 	return view, err
+}
+
+func (w *Workflow) Accounts(ctx context.Context) ([]Account, error) {
+	return w.store.Accounts(ctx)
 }
 
 func (w *Workflow) ActivityList(ctx context.Context, query ListQuery) (ActivityList, error) {

@@ -28,7 +28,7 @@ func (q *Queries) AccessReadiness(ctx context.Context, connectionID string) (Acc
 }
 
 const account = `-- name: Account :one
-SELECT revision, id, singleton, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts LIMIT 1
+SELECT revision, id, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts ORDER BY rowid LIMIT 1
 `
 
 func (q *Queries) Account(ctx context.Context) (Account, error) {
@@ -37,7 +37,6 @@ func (q *Queries) Account(ctx context.Context) (Account, error) {
 	err := row.Scan(
 		&i.Revision,
 		&i.ID,
-		&i.Singleton,
 		&i.Name,
 		&i.Currency,
 		&i.ConnectionID,
@@ -52,8 +51,145 @@ func (q *Queries) Account(ctx context.Context) (Account, error) {
 	return i, err
 }
 
+const accountByConnection = `-- name: AccountByConnection :one
+SELECT revision, id, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts WHERE connection_id=?
+`
+
+func (q *Queries) AccountByConnection(ctx context.Context, connectionID string) (Account, error) {
+	row := q.db.QueryRowContext(ctx, accountByConnection, connectionID)
+	var i Account
+	err := row.Scan(
+		&i.Revision,
+		&i.ID,
+		&i.Name,
+		&i.Currency,
+		&i.ConnectionID,
+		&i.Provider,
+		&i.Authority,
+		&i.Kind,
+		&i.Scope,
+		&i.Value,
+		&i.ArtifactID,
+		&i.Rule,
+	)
+	return i, err
+}
+
+const accountByID = `-- name: AccountByID :one
+SELECT revision, id, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts WHERE id=?
+`
+
+func (q *Queries) AccountByID(ctx context.Context, id string) (Account, error) {
+	row := q.db.QueryRowContext(ctx, accountByID, id)
+	var i Account
+	err := row.Scan(
+		&i.Revision,
+		&i.ID,
+		&i.Name,
+		&i.Currency,
+		&i.ConnectionID,
+		&i.Provider,
+		&i.Authority,
+		&i.Kind,
+		&i.Scope,
+		&i.Value,
+		&i.ArtifactID,
+		&i.Rule,
+	)
+	return i, err
+}
+
+const accountBySource = `-- name: AccountBySource :one
+SELECT revision, id, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts WHERE provider=? AND authority=? AND kind=? AND scope=? AND value=?
+`
+
+type AccountBySourceParams struct {
+	Provider  string
+	Authority string
+	Kind      string
+	Scope     string
+	Value     string
+}
+
+func (q *Queries) AccountBySource(ctx context.Context, arg AccountBySourceParams) (Account, error) {
+	row := q.db.QueryRowContext(ctx, accountBySource,
+		arg.Provider,
+		arg.Authority,
+		arg.Kind,
+		arg.Scope,
+		arg.Value,
+	)
+	var i Account
+	err := row.Scan(
+		&i.Revision,
+		&i.ID,
+		&i.Name,
+		&i.Currency,
+		&i.ConnectionID,
+		&i.Provider,
+		&i.Authority,
+		&i.Kind,
+		&i.Scope,
+		&i.Value,
+		&i.ArtifactID,
+		&i.Rule,
+	)
+	return i, err
+}
+
+const accountCount = `-- name: AccountCount :one
+SELECT count(*) FROM accounts
+`
+
+func (q *Queries) AccountCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, accountCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const accounts = `-- name: Accounts :many
+SELECT revision, id, name, currency, connection_id, provider, authority, kind, scope, value, artifact_id, rule FROM accounts ORDER BY rowid
+`
+
+func (q *Queries) Accounts(ctx context.Context) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.Revision,
+			&i.ID,
+			&i.Name,
+			&i.Currency,
+			&i.ConnectionID,
+			&i.Provider,
+			&i.Authority,
+			&i.Kind,
+			&i.Scope,
+			&i.Value,
+			&i.ArtifactID,
+			&i.Rule,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const acquisitionReceipts = `-- name: AcquisitionReceipts :many
-SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
 `
 
 func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
@@ -78,6 +214,7 @@ func (q *Queries) AcquisitionReceipts(ctx context.Context, artifactID string) ([
 			&i.RequestedTo,
 			&i.ReportedFrom,
 			&i.ReportedTo,
+			&i.CandidateSnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -545,7 +682,7 @@ func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullStr
 }
 
 const candidateExists = `-- name: CandidateExists :one
-SELECT count(*) FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? AND candidates.artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.id=candidates.receipt_id AND receipt.operation='discover')
+SELECT count(*) FROM eligible_candidates WHERE connection_id=? AND artifact_id=? AND authority=? AND kind=? AND scope=? AND value=?
 `
 
 type CandidateExistsParams struct {
@@ -2490,7 +2627,7 @@ func (q *Queries) ProjectInstrument(ctx context.Context, arg ProjectInstrumentPa
 }
 
 const putAccount = `-- name: PutAccount :exec
-INSERT INTO accounts(id,singleton,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,1,?,?,?,?,?,?,?,?,?,?)
+INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id,rule) VALUES(?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type PutAccountParams struct {
@@ -2525,21 +2662,22 @@ func (q *Queries) PutAccount(ctx context.Context, arg PutAccountParams) error {
 }
 
 const putAcquisitionReceipt = `-- name: PutAcquisitionReceipt :exec
-INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,digest,requested_from,requested_to,reported_from,reported_to,candidate_snapshot) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type PutAcquisitionReceiptParams struct {
-	ID            string
-	ArtifactID    string
-	Operation     string
-	Retrieved     string
-	Hash          string
-	Policy        string
-	Digest        string
-	RequestedFrom string
-	RequestedTo   string
-	ReportedFrom  string
-	ReportedTo    string
+	ID                string
+	ArtifactID        string
+	Operation         string
+	Retrieved         string
+	Hash              string
+	Policy            string
+	Digest            string
+	RequestedFrom     string
+	RequestedTo       string
+	ReportedFrom      string
+	ReportedTo        string
+	CandidateSnapshot int64
 }
 
 func (q *Queries) PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionReceiptParams) error {
@@ -2555,6 +2693,7 @@ func (q *Queries) PutAcquisitionReceipt(ctx context.Context, arg PutAcquisitionR
 		arg.RequestedTo,
 		arg.ReportedFrom,
 		arg.ReportedTo,
+		arg.CandidateSnapshot,
 	)
 	return err
 }
@@ -3255,7 +3394,7 @@ func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) err
 }
 
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
-SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
+SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
 
 func (q *Queries) RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error) {
@@ -3280,6 +3419,7 @@ func (q *Queries) RecentAcquisitionReceipts(ctx context.Context, artifactID stri
 			&i.RequestedTo,
 			&i.ReportedFrom,
 			&i.ReportedTo,
+			&i.CandidateSnapshot,
 		); err != nil {
 			return nil, err
 		}

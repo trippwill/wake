@@ -151,14 +151,13 @@ func markAmbiguousSubjects(pending []pendingActivity) {
 
 // Each affected source occurrence uses the same identity and completion path.
 // Pending observations contain financial assertions, never synthesized trades.
-func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact string) ([]string, error) {
+func linkActivityObservations(
+	ctx context.Context,
+	q *sqlc.Queries,
+	artifact, accountID string,
+) ([]string, error) {
 	rows, err := q.ActivityToMatch(ctx, artifact)
-	if err != nil {
-		return nil, err
-	}
-
-	account, err := q.Account(ctx)
-	if err != nil {
+	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
 
@@ -208,7 +207,7 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 
 		created := false
 
-		target, ambiguous, e := matchReferences(ctx, q, account.ID, f.Event, f.EventAliases, f.EventDistinct)
+		target, ambiguous, e := matchReferences(ctx, q, accountID, f.Event, f.EventAliases, f.EventDistinct)
 		if e != nil {
 			return nil, e
 		}
@@ -272,7 +271,7 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 				target, e = createActivity(
 					ctx,
 					q,
-					account.ID,
+					accountID,
 					item.row.ArtifactID,
 					item.row.Location,
 					terms,
@@ -330,7 +329,7 @@ func linkActivityObservations(ctx context.Context, q *sqlc.Queries, artifact str
 					if e = q.PutEventLink(
 						ctx,
 						sqlc.PutEventLinkParams{
-							AccountID:     account.ID,
+							AccountID:     accountID,
 							Reference:     referenceKey(ref),
 							ExecutionID:   target,
 							DistinctEvent: boolInt(f.EventDistinct && ref == f.Event),

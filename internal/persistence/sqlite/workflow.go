@@ -141,7 +141,7 @@ func (s *Store) Confirm(
 
 	q := s.queries.WithTx(tx)
 
-	existing, err := q.Account(ctx)
+	existing, err := q.AccountByConnection(ctx, id)
 	if err == nil {
 		if existing.ConnectionID == id && existing.Authority == ref.Authority() && existing.Kind == ref.Kind() &&
 			existing.Scope == ref.Scope() &&
@@ -182,6 +182,21 @@ func (s *Store) Confirm(
 
 	if c.Provider != connection.Provider || !bytes.Equal(c.Settings, settings) {
 		return application.Account{}, application.ErrConnectionChanged
+	}
+
+	_, err = q.AccountBySource(ctx, sqlc.AccountBySourceParams{
+		Provider:  c.Provider,
+		Authority: ref.Authority(),
+		Kind:      ref.Kind(),
+		Scope:     ref.Scope(),
+		Value:     ref.Value(),
+	})
+	if err == nil {
+		return application.Account{}, application.ErrAccountBound
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		return application.Account{}, err
 	}
 
 	a, err := application.NewAccount(

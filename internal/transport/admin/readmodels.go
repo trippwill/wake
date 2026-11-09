@@ -62,7 +62,6 @@ type (
 		Authority              application.SelectionAuthority
 	}
 	activityView struct {
-		Account application.Account
 		application.PageInfo
 		Items       []activityItem
 		Instruments []instrumentItem
@@ -158,7 +157,7 @@ func publishedAmount(v *application.PublishedAmount) string {
 }
 
 func activityList(v application.ActivityList) activityView {
-	out := activityView{Account: v.Account, PageInfo: v.PageInfo}
+	out := activityView{PageInfo: v.PageInfo}
 	for _, item := range v.Items {
 		r := item.Resource
 
@@ -169,6 +168,7 @@ func activityList(v application.ActivityList) activityView {
 			ID:             r.ID,
 			Href:           "/activity/" + r.ID,
 			Date:           a.Date,
+			AccountName:    item.AccountName,
 			Kind:           a.Family,
 			Instrument:     name,
 			Description:    instrumentDescription(item.InstrumentTicker, item.InstrumentName),
@@ -309,6 +309,10 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		options.State = ""
 		options.Sort = ""
 		options.Direction = ""
+	}
+
+	if scope == application.PositionsScope || scope == application.ActivityScope {
+		options.AccountID = params.Get("account")
 	}
 
 	if scope == application.PositionsScope {
