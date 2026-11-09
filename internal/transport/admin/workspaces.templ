@@ -393,7 +393,7 @@ templ ConnectionAccess(csrf string, c application.ConnectionView) {
 	if len(c.Polling)>0 {
 		<section class="wake-card">
 			<h2>Polling intervals</h2>
-			<p class="wake-help">An already scheduled attempt keeps its deadline. The next completed cycle uses the saved interval.</p>
+			<p class="wake-help">Changing an interval reschedules a queued routine poll, subject to provider pacing. Work in progress and retries keep their own deadlines.</p>
 			for _,setting:=range c.Polling {
 				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/polling") }>
 					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="stream" value={ setting.Stream }/>

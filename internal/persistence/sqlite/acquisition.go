@@ -145,7 +145,13 @@ func decodeConnectionSettings(data []byte) (provider.Settings, map[string]time.D
 	return settings, overrides, nil
 }
 
-func (s *Store) SavePolling(ctx context.Context, c host.Connection) error {
+// SavePolling updates the settings and any queued routine poll atomically.
+func (s *Store) SavePolling(
+	ctx context.Context,
+	c host.Connection,
+	stream string,
+	interval time.Duration,
+) error {
 	data, err := encodeConnectionSettings(c)
 	if err != nil {
 		return err
@@ -173,6 +179,12 @@ func (s *Store) SavePolling(ctx context.Context, c host.Connection) error {
 		ID: c.ID, Provider: c.Provider, Name: current.Name, Settings: data,
 	}); err != nil {
 		return err
+	}
+
+	if interval != 0 {
+		if err := reschedulePoll(ctx, q, c.ID, stream, interval); err != nil {
+			return err
+		}
 	}
 
 	return s.commit(ctx, tx)
@@ -385,6 +397,7 @@ func (s *Store) Accept(
 	step provider.Step,
 	candidates []provider.Candidate,
 	p provider.Progress,
+	cycleAt time.Time,
 ) (string, error) {
 	completed, total := p.Completed(), p.Total()
 	if completed > math.MaxInt64 || total > math.MaxInt64 {
@@ -400,7 +413,7 @@ func (s *Store) Accept(
 
 	q := s.queries.WithTx(tx)
 
-	version, payload, err := encodeCheckpointState(k, step)
+	version, payload, err := encodeCheckpointState(k, step, cycleAt)
 	if err != nil {
 		return "", err
 	}

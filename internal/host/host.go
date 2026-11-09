@@ -66,7 +66,7 @@ type (
 		UpstreamAllowed(context.Context) error
 		Configure(context.Context, Connection, map[string][]byte) error
 		Reconfigure(context.Context, Connection) error
-		SavePolling(context.Context, Connection) error
+		SavePolling(context.Context, Connection, string, time.Duration) error
 		Retry(context.Context, WorkKey) error
 		Connection(context.Context, string) (Connection, error)
 		Secret(context.Context, string, string) ([]byte, error)
@@ -81,6 +81,7 @@ type (
 			provider.Step,
 			[]provider.Candidate,
 			provider.Progress,
+			time.Time,
 		) (string, error)
 		ArtifactProvider(context.Context, string) (string, error)
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
@@ -574,7 +575,7 @@ func (h *Host) step(
 		step = step.NotBefore(now.Add(request.PollInterval))
 	}
 
-	artifact, err := h.store.Accept(work, key, checkpoint.Revision, step, candidates, access.progress)
+	artifact, err := h.store.Accept(work, key, checkpoint.Revision, step, candidates, access.progress, now)
 	if err != nil {
 		if errors.Is(err, provider.ErrConflict) {
 			return "", provider.ErrConflict
@@ -1048,7 +1049,7 @@ func (h *Host) Supply(ctx context.Context, id, stream string, artifact provider.
 
 	progress, _ := provider.NewProgress(provider.ProgressRetained, 1, 1)
 
-	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress)
+	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress, time.Time{})
 	if err != nil {
 		if errors.Is(err, provider.ErrConflict) {
 			return "", err

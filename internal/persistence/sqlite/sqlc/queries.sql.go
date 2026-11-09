@@ -3393,6 +3393,27 @@ func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) err
 	return err
 }
 
+const queuedPoll = `-- name: QueuedPoll :one
+SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
+WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
+  AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
+  AND (SELECT paused FROM profile WHERE singleton=1)=0
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
+`
+
+type QueuedPollParams struct {
+	ConnectionID string
+	Stream       string
+	StateVersion string
+}
+
+func (q *Queries) QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, queuedPoll, arg.ConnectionID, arg.Stream, arg.StateVersion)
+	var state []byte
+	err := row.Scan(&state)
+	return state, err
+}
+
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
@@ -4181,6 +4202,21 @@ func (q *Queries) SetPacing(ctx context.Context, arg SetPacingParams) error {
 		arg.Scope,
 		arg.Next,
 	)
+	return err
+}
+
+const setPollDeadline = `-- name: SetPollDeadline :exec
+UPDATE work SET next=? WHERE connection_id=? AND stream=? AND operation='acquire'
+`
+
+type SetPollDeadlineParams struct {
+	Next         string
+	ConnectionID string
+	Stream       string
+}
+
+func (q *Queries) SetPollDeadline(ctx context.Context, arg SetPollDeadlineParams) error {
+	_, err := q.db.ExecContext(ctx, setPollDeadline, arg.Next, arg.ConnectionID, arg.Stream)
 	return err
 }
 

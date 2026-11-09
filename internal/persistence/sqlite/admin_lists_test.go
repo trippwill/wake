@@ -1045,7 +1045,15 @@ func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		id, err := s.Accept(ctx, key, checkpoint.Revision, discovery.Step(), candidates, provider.Progress{})
+		id, err := s.Accept(
+			ctx,
+			key,
+			checkpoint.Revision,
+			discovery.Step(),
+			candidates,
+			provider.Progress{},
+			time.Time{},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}

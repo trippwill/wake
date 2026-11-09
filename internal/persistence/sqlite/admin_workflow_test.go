@@ -275,6 +275,27 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal("unexpected routine poll", before.Next, err)
 	}
 
+	pollingPath := "/connections/" + id + "/polling"
+	for _, edit := range []struct {
+		value string
+		delay time.Duration
+	}{
+		{"3m", 3 * time.Minute},
+		{"1m", 2 * time.Minute},
+		{"8m", 8 * time.Minute},
+		{"", 5 * time.Minute},
+	} {
+		request(http.MethodPost, pollingPath, url.Values{
+			"stream": {key.Stream}, "interval": {edit.value},
+		}, http.StatusSeeOther)
+
+		updated, err := store.Checkpoint(ctx, key)
+		if err != nil || !updated.Next.Equal(now.Add(edit.delay-10*time.Second)) ||
+			updated.Revision != before.Revision || !bytes.Equal(updated.State.Payload(), before.State.Payload()) {
+			t.Fatalf("edit %q produced unexpected checkpoint: deadline %v, %v", edit.value, updated.Next, err)
+		}
+	}
+
 	refresh := request(http.MethodPost, "/refresh", nil, http.StatusSeeOther)
 	if refresh.Header().Get("Location") != "/?refresh=requested" {
 		t.Fatal("refresh did not bring forward the routine poll")

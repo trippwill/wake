@@ -71,8 +71,9 @@ Under **Administration**, **Connections** groups each source's **Status**, **Rep
 and **Access**. Repair its Query ID or token beside the affected source.
 **Access → Polling intervals** lets you set an interval for each recurring stream.
 Clear the field and save to inherit its default. **Status** shows the effective
-interval and the next eligible time. Saving preserves the deadline of work already
-scheduled. The next completed cycle uses the saved interval.
+interval and the next eligible time. Changing the interval recalculates a queued
+routine poll from the previous cycle, subject to provider pacing. In-progress
+work and retries keep their own deadlines.
 
 To set an installation default, add an entry under `[polling.defaults]` in the
 launch configuration. Keys use the registered `provider-id:stream-id` and values

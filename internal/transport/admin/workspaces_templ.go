@@ -1988,7 +1988,7 @@ func ConnectionAccess(csrf string, c application.ConnectionView) templ.Component
 			return templ_7745c5c3_Err
 		}
 		if len(c.Polling) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "<section class=\"wake-card\"><h2>Polling intervals</h2><p class=\"wake-help\">An already scheduled attempt keeps its deadline. The next completed cycle uses the saved interval.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "<section class=\"wake-card\"><h2>Polling intervals</h2><p class=\"wake-help\">Changing an interval reschedules a queued routine poll, subject to provider pacing. Work in progress and retries keep their own deadlines.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

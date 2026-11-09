@@ -56,6 +56,7 @@ func TestRetryAdvancesCheckpointRevision(t *testing.T) {
 				step,
 				nil,
 				provider.Progress{},
+				time.Time{},
 			); !errors.Is(
 				err,
 				provider.ErrConflict,
@@ -174,6 +175,7 @@ func TestWorkflowRetryRefusesActiveDiscovery(t *testing.T) {
 		step,
 		nil,
 		provider.Progress{},
+		time.Time{},
 	); !errors.Is(
 		err,
 		provider.ErrConflict,

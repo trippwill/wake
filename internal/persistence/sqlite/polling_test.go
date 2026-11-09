@@ -11,7 +11,7 @@ import (
 	"go.trippwill.dev/wake/provider"
 )
 
-func TestRefreshPollsLeavesOtherWorkScheduled(t *testing.T) {
+func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 	s := coverageStore(t)
 	ctx := t.Context()
 	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
@@ -37,7 +37,15 @@ func TestRefreshPollsLeavesOtherWorkScheduled(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := s.Accept(ctx, key, 0, entry.step, nil, provider.Progress{}); err != nil {
+		if _, err := s.Accept(
+			ctx,
+			key,
+			0,
+			entry.step,
+			nil,
+			provider.Progress{},
+			now.Add(-time.Minute),
+		); err != nil {
 			t.Fatal(err)
 		}
 
@@ -45,6 +53,22 @@ func TestRefreshPollsLeavesOtherWorkScheduled(t *testing.T) {
 			if err := s.Fail(ctx, key, host.FailureTemporary, "source unavailable"); err != nil {
 				t.Fatal(err)
 			}
+		}
+	}
+
+	for _, stream := range []string{"routine", "continuing", "failed", "disabled"} {
+		if err := reschedulePoll(ctx, s.queries, "synthetic", stream, 20*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+
+		want := later
+		if stream == "routine" {
+			want = now.Add(19 * time.Minute)
+		}
+
+		key := host.WorkKey{Connection: "synthetic", Stream: stream, Operation: "acquire"}
+		if checkpoint, err := s.Checkpoint(ctx, key); err != nil || !checkpoint.Next.Equal(want) {
+			t.Fatalf("%s: edited deadline %s, want %s (%v)", stream, checkpoint.Next, want, err)
 		}
 	}
 

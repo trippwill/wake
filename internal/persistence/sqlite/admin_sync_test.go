@@ -51,7 +51,7 @@ func TestOverviewSyncTiming(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		id, err := s.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{})
+		id, err := s.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}, time.Time{})
 		if err != nil {
 			t.Fatal(err)
 		}

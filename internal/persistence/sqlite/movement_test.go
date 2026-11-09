@@ -810,7 +810,7 @@ func TestMovementInterpretationUpgradeRetriesAtomicallyFromRetainedReports(t *te
 	cp, _ := s.Checkpoint(t.Context(), key)
 	step, _ := provider.NewStep(provider.State{}, artifact, time.Now().Add(time.Hour))
 
-	id, err := s.Accept(t.Context(), key, cp.Revision, step, nil, provider.Progress{})
+	id, err := s.Accept(t.Context(), key, cp.Revision, step, nil, provider.Progress{}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}

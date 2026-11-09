@@ -143,10 +143,10 @@ Streams can declare a recurring interval policy and signal cycle completion. Wak
 resolves the interval from connection, launch and stream defaults and combines
 the resulting deadline with any later provider eligibility deadline. Continuation
 steps and shared request pacing retain their separate schedules. An interval edit
-preserves the saved deadline and applies when a cycle next completes. An operator
-can bring forward a routine poll to its provider eligibility deadline. A refresh
-only changes that schedule and leaves discovery, active work and retries on their
-own paths.
+recalculates a queued routine poll from its recorded cycle time and provider
+eligibility deadline, in the same transaction as the settings update. An operator
+can also bring forward a routine poll to its provider eligibility deadline.
+Discovery, active work and retries retain their separate schedules.
 
 Each connection binds at most one account. Confirmation binds its provider and
 qualified source account together, and repeat confirmation preserves the identity.

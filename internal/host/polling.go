@@ -104,6 +104,7 @@ func (h *Host) UpdatePolling(ctx context.Context, id, stream, value string) erro
 			continue
 		}
 
+		previous := setting.Effective()
 		if value == "" {
 			delete(connection.PollOverrides, stream)
 		} else {
@@ -119,7 +120,14 @@ func (h *Host) UpdatePolling(ctx context.Context, id, stream, value string) erro
 			connection.PollOverrides[stream] = interval
 		}
 
-		if err := h.store.SavePolling(work, connection); err != nil {
+		setting.Override = connection.PollOverrides[stream]
+
+		interval := setting.Effective()
+		if interval == previous {
+			interval = 0
+		}
+
+		if err := h.store.SavePolling(work, connection, stream, interval); err != nil {
 			return ErrStorage
 		}
 
