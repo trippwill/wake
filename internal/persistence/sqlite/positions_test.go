@@ -26,7 +26,7 @@ func reportedPositionsXML(date, sections string) string {
 func holdingXML(date, quantity, cost string) string {
 	extra := ""
 	if cost != "" {
-		extra = ` costBasisMoney="` + cost + `"`
+		extra = ` costBasisPrice="` + cost + `"`
 	}
 
 	return fmt.Sprintf(
@@ -78,7 +78,7 @@ func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.
 	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
 	for _, value := range []string{"1", "2"} {
 		q, _ := financial.NewQuantity(value)
-		p, _ := source.NewPosition(instrument, q, financial.Money{})
+		p, _ := source.NewPosition(instrument, q, financial.Price{})
 		f.Positions = append(f.Positions, p)
 	}
 
@@ -118,7 +118,7 @@ func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) 
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Option, Reference: ref})
 	q, _ := financial.NewQuantity("1")
-	p, _ := source.NewPosition(instrument, q, financial.Money{})
+	p, _ := source.NewPosition(instrument, q, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-04")
 
 	f := source.PositionSetInput{
@@ -462,7 +462,7 @@ func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *t
 	first := readPositions(t, s)
 	if first.Status != "available" || first.AsOf.At != nil || len(first.Positions) != 1 ||
 		first.Positions[0].Quantity.Value != "10.00000000000000100" ||
-		first.Positions[0].CostBasis.Amount != "0.0000" ||
+		first.Positions[0].UnitCostBasis.Amount != "0.0000" ||
 		first.Version == initial.Version {
 		t.Fatal(first)
 	}
@@ -516,7 +516,7 @@ func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *t
 
 	next := readPositions(t, s)
 	if next.Version == first.Version || next.Positions[0].Side != "short" ||
-		next.Positions[0].CostBasis != nil ||
+		next.Positions[0].UnitCostBasis != nil ||
 		len(changes) != 1 {
 		t.Fatal(next)
 	}
@@ -593,8 +593,8 @@ func TestPositionsConflictsRollbackIdentityChangesAndRestart(t *testing.T) {
 	first := readPositions(t, s)
 	conflict := strings.ReplaceAll(
 		holdingXML("2026-11-01", "10", "1.0000"),
-		`costBasisMoney="1.0000"`,
-		`costBasisMoney="2"`,
+		`costBasisPrice="1.0000"`,
+		`costBasisPrice="2"`,
 	)
 	acquireRealized(t, s, reportedPositionsXML("2026-11-01", "<OpenPositions>"+conflict+"</OpenPositions>"))
 
@@ -706,7 +706,7 @@ func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
 	ref, _ := source.NewReference("broker", "security", "", "independent")
 	i, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
 	q, _ := financial.NewQuantity("1.0000")
-	p, _ := source.NewPosition(i, q, financial.Money{})
+	p, _ := source.NewPosition(i, q, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-04")
 	at, _ := financial.ParseTimestamp("2026-11-04T12:00:00.1200Z")
 	f := source.PositionSetInput{
@@ -1043,9 +1043,9 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 
 		f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
 		for _, value := range costs {
-			cost := financial.Money{}
+			cost := financial.Price{}
 			if value != "" {
-				cost, _ = financial.NewMoney(value, usd)
+				cost, _ = financial.NewPrice(value, usd)
 			}
 
 			p, _ := source.NewPosition(instrument, quantity, cost)
@@ -1056,9 +1056,9 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 		// relative to the expensive group must not change the published reason.
 		otherQuantity, _ := financial.NewQuantity("20")
 
-		otherCost, _ := financial.NewMoney("1", usd)
+		otherCost, _ := financial.NewPrice("1", usd)
 		if id == "ambiguous-duplicates" {
-			otherCost, _ = financial.NewMoney("2", usd)
+			otherCost, _ = financial.NewPrice("2", usd)
 		}
 
 		other, _ := source.NewPosition(instrument, otherQuantity, otherCost)
@@ -1139,7 +1139,7 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
 	for _, value := range []string{"1", "2"} {
 		quantity, _ := financial.NewQuantity(value)
-		p, _ := source.NewPosition(instrument, quantity, financial.Money{})
+		p, _ := source.NewPosition(instrument, quantity, financial.Price{})
 		f.Positions = append(f.Positions, p)
 	}
 
@@ -1225,7 +1225,7 @@ CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_clai
 		source.InstrumentInput{Kind: source.Option, Reference: ref, Option: terms},
 	)
 	quantity, _ := financial.NewQuantity("1")
-	p, _ := source.NewPosition(instrument, quantity, financial.Money{})
+	p, _ := source.NewPosition(instrument, quantity, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-03")
 
 	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}

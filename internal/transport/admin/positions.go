@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/source"
 )
 
 type positionGridMeta struct {
@@ -25,7 +26,7 @@ type positionGridRow struct {
 	Name     gridCell `json:"name"`
 	Side     gridCell `json:"side"`
 	Quantity gridCell `json:"quantity"`
-	Cost     gridCell `json:"cost"`
+	UnitCost gridCell `json:"cost"`
 	Terms    gridCell `json:"terms"`
 }
 
@@ -66,6 +67,10 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 		if data.AsOf.At != nil {
 			meta.AsOf += " · " + *data.AsOf.At
 		}
+
+		if data.AsOf.Basis == source.PositionSourceFetched {
+			meta.AsOf += " · SnapTrade fetch time"
+		}
 	}
 
 	if data.Status == "available" {
@@ -80,9 +85,10 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 	rows := make([]positionGridRow, 0, len(data.Items))
 	for _, item := range data.Items {
 		p := item.Position
-		cost := "Not provided"
-		if p.CostBasis != nil {
-			cost = publishedMoney(p.CostBasis)
+		unitCost := gridCell{Text: "Not provided"}
+		if p.UnitCostBasis != nil {
+			unitCost.Text = publishedMoney(&p.UnitCostBasis.PublishedMoney)
+			unitCost.Note = p.UnitCostBasis.Quote
 		}
 
 		note := describe(instrumentDescription(item.Ticker, item.Name), activityKindLabel(item.Kind))
@@ -98,7 +104,7 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 				},
 				Side:     gridCell{Text: stringTitle(p.Side)},
 				Quantity: gridCell{Text: p.Quantity.Value + " " + p.Quantity.Unit},
-				Cost:     gridCell{Text: cost},
+				UnitCost: unitCost,
 				Terms:    positionTerms(p, item.Kind),
 			},
 		)

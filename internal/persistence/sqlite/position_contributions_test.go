@@ -87,7 +87,7 @@ func TestPositionReinterpretationRetainsFirstInstrumentAssertion(t *testing.T) {
 		source.InstrumentInput{Kind: source.Equity, Reference: ref, Name: "Position-only security"},
 	)
 	quantity, _ := financial.NewQuantity("1")
-	position, _ := source.NewPosition(instrument, quantity, financial.Money{})
+	position, _ := source.NewPosition(instrument, quantity, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-04")
 	f := source.PositionSetInput{
 		Location:  "set",
@@ -153,7 +153,7 @@ func positionInput(t *testing.T, instrument source.Instrument) source.PositionSe
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	quantity, _ := financial.NewQuantity("1")
 
-	position, err := source.NewPosition(instrument, quantity, financial.Money{})
+	position, err := source.NewPosition(instrument, quantity, financial.Price{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -85,6 +85,7 @@ type Querier interface {
 	DisableDiscovery(ctx context.Context, connectionID string) error
 	DiscardActivitySupport(ctx context.Context, arg DiscardActivitySupportParams) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
+	EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) error
 	EnsureInstrumentSelection(ctx context.Context, id string) error
 	EnsureWork(ctx context.Context, arg EnsureWorkParams) error
 	EventLink(ctx context.Context, arg EventLinkParams) (string, error)
@@ -198,6 +199,7 @@ type Querier interface {
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
+	ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
 	SeedArtifactBases(ctx context.Context, artifactID string) error
 	SeedInstrumentSelections(ctx context.Context) error

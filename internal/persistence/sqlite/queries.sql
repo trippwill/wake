@@ -52,6 +52,14 @@ INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?) ON CON
 SELECT id FROM connections ORDER BY rowid;
 -- name: SetScheduled :exec
 INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
+-- name: EnsureAccountAcquisitionWork :exec
+INSERT INTO work(connection_id,stream,operation)
+SELECT connection_id,sqlc.arg(stream),'acquire' FROM accounts WHERE provider=sqlc.arg(provider)
+ON CONFLICT DO NOTHING;
+-- name: ScheduleMissingAccountAcquisition :exec
+INSERT INTO scheduled(connection_id,stream,operation,enabled)
+SELECT connection_id,sqlc.arg(stream),'acquire',1 FROM accounts WHERE provider=sqlc.arg(provider)
+ON CONFLICT DO NOTHING;
 -- name: RetryWork :exec
 UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
 -- name: RestartDiscovery :exec

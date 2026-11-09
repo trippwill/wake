@@ -19,7 +19,7 @@ func Positions() (source.PositionSetObservation, error) {
 		return source.PositionSetObservation{}, err
 	}
 	c, _ := financial.ParseCurrency("GBP")
-	cost, _ := financial.NewMoney("0.0000", c)
+	cost, _ := financial.NewPrice("0.0000", c)
 	p, err := source.NewPosition(f.Instrument, q, cost)
 	if err != nil {
 		return source.PositionSetObservation{}, err

@@ -183,18 +183,10 @@ func reportedPosition(row map[string]string, account string) (source.Position, e
 		return source.Position{}, provider.ErrMalformed
 	}
 
-	m := financial.Money{}
-	if row["costBasisMoney"] != "" {
-		c, e := financial.ParseCurrency(row["currency"])
-		if e != nil {
-			return source.Position{}, e
-		}
-
-		m, err = financial.NewMoney(row["costBasisMoney"], c)
-		if err != nil {
-			return source.Position{}, err
-		}
+	var price financial.Price
+	if c, e := financial.ParseCurrency(row["currency"]); e == nil && row["costBasisPrice"] != "" {
+		price, _ = financial.NewPrice(row["costBasisPrice"], c)
 	}
 
-	return source.NewPosition(i, q, m)
+	return source.NewPosition(i, q, price)
 }

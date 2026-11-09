@@ -7,7 +7,8 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
-Wake acquires IBKR Flex reports and cached SnapTrade Personal trade history.
+Wake acquires IBKR Flex reports, cached SnapTrade Personal trade history, and
+reported Fidelity US positions through SnapTrade.
 Confirm one account per connection and inspect activity, instruments and available
 reported positions in the admin console. Wake retains original reports, exact
 financial values and conflicts.

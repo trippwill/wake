@@ -67,7 +67,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Logf("upstream %s at %s", r.URL.Path, now())
 
 		switch r.URL.Path {
-		case "/authorizations", "/accounts/all", "/accounts/synthetic-snaptrade/activities":
+		case "/authorizations",
+			"/accounts/all",
+			"/accounts/synthetic-snaptrade/activities",
+			"/accounts/synthetic-snaptrade/positions/all":
 			if r.Method != http.MethodGet || r.URL.Query().Get("clientId") != "synthetic-personal-client" ||
 				r.Header.Get("Signature") == "" {
 				t.Error("missing SnapTrade Personal authentication")
@@ -86,6 +89,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 				_, _ = io.WriteString(
 					w,
 					`{"results":[{"id":"synthetic-snaptrade","connection_id":"auth-a","institution_id":"fidelity-us","kind":"investment","display_name":"Fidelity fixture"}]}`,
+				)
+			case "/accounts/synthetic-snaptrade/positions/all":
+				_, _ = io.WriteString(
+					w,
+					`{"results":[{"instrument":{"kind":"bond","id":"bond-position","symbol":"SYNBOND","raw_symbol":"SYNBOND"},"units":"12.3400","cost_basis":"14.2300","currency":"USD"}],"data_freshness":{"as_of":"2026-10-20T15:00:00.1200Z"}}`,
 				)
 			default:
 				_, _ = io.WriteString(
@@ -1392,8 +1400,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Poll(`document.body.textContent.includes('21.12345678900001')`, nil),
 	)
 
-	// Inspect positions for each account and verify that switching cannot carry
-	// the other account's availability into the new result.
+	// Switching accounts must replace the rows and their timestamp provenance.
 	check(
 		newDocument(chromedp.Navigate(origin+"/positions?account="+flexAccount)),
 		chromedp.Poll(`document.querySelector('[data-positions-state]').textContent==='Available'`, nil),
@@ -1401,7 +1408,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			strconv.Quote(snapAccount)+`;select.form.requestSubmit()})()`, nil),
 		chromedp.Poll(`new URL(location.href).searchParams.get('account')===`+strconv.Quote(snapAccount), nil),
 		chromedp.Poll(
-			`document.querySelector('[data-positions-account]').textContent==='Confirmed Fidelity account'&&document.querySelector('[data-positions-state]').textContent==='Unavailable'`,
+			`(()=>{const refresh=document.querySelector('[data-grid-refresh]');if(refresh&&!refresh.hidden)refresh.click();return document.querySelector('[data-positions-account]').textContent==='Confirmed Fidelity account'&&document.querySelector('[data-positions-state]').textContent==='Available'&&document.querySelector('[data-positions-as-of]').textContent.includes('SnapTrade fetch time')&&document.querySelector('.tabulator-table')?.textContent.includes('12.3400 units')&&document.querySelector('.tabulator-row [tabulator-field="cost"]')?.textContent==='14.2300 USD'})()`,
 			nil,
 		),
 	)
@@ -1449,5 +1456,43 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		trades[snapAccount][0] != "21.12345678900001" ||
 		!slices.Contains(trades[flexAccount], "400.123456789") {
 		t.Fatalf("socket account isolation: accounts=%v prices=%v", accounts, trades)
+	}
+
+	positionPath := "http://wake/v1/accounts/" + snapAccount + "/positions"
+
+	request, err = http.NewRequestWithContext(ctx, http.MethodGet, positionPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	positions, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = positions.Body.Close() }()
+
+	var view application.PositionsView
+	if err = json.NewDecoder(positions.Body).
+		Decode(&view); err != nil || positions.StatusCode != http.StatusOK ||
+		view.AsOf == nil || view.AsOf.Basis != "source_fetched" || len(view.Positions) != 1 ||
+		view.Positions[0].Quantity.Unit != "units" ||
+		view.Positions[0].InstrumentID == "" || view.Positions[0].UnitCostBasis == nil ||
+		view.Positions[0].UnitCostBasis.Amount != "14.2300" {
+		t.Fatalf("socket positions status=%d view=%+v err=%v", positions.StatusCode, view, err)
+	}
+
+	conditional := request.Clone(ctx)
+	conditional.Header.Set("If-None-Match", positions.Header.Get("ETag"))
+
+	unchanged, err := client.Do(conditional)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = unchanged.Body.Close() }()
+
+	if unchanged.StatusCode != http.StatusNotModified {
+		t.Fatalf("socket positions conditional status=%d", unchanged.StatusCode)
 	}
 }

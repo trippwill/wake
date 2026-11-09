@@ -632,16 +632,16 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 			Quantity struct {
 				Value string `json:"value"`
 			} `json:"quantity"`
-			CostBasis struct {
+			UnitCostBasis struct {
 				Amount string `json:"amount"`
-			} `json:"cost_basis"`
+			} `json:"unit_cost_basis"`
 		} `json:"positions"`
 	}
 	if e = json.Unmarshal(
 		[]byte(strings.TrimSpace(positionOutput.String())),
 		&positions,
 	); e != nil || positions.Status != "available" || positions.AsOf.Date != "2026-07-17" || positions.AsOf.At != nil || len(positions.Positions) != 1 || positions.Positions[0].Quantity.Value != "-2.00000000000000100" ||
-		positions.Positions[0].CostBasis.Amount != "0.0000" {
+		positions.Positions[0].UnitCostBasis.Amount != "0.0000" {
 		t.Fatal("positions-only consumer", positionOutput.String(), positionLogs.String(), e)
 	}
 

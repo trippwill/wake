@@ -47,7 +47,7 @@ func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
 		t.Fatal(got, err)
 	}
 
-	if got.Items[0].Position.Side != "short" || got.Items[0].Position.CostBasis != nil ||
+	if got.Items[0].Position.Side != "short" || got.Items[0].Position.UnitCostBasis != nil ||
 		got.Items[1].Position.Quantity.Value != "9007199254740993.0000000000001" {
 		t.Fatal(got.Items)
 	}
@@ -57,7 +57,7 @@ func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
 	next, err := s.PositionsList(t.Context(), positionsQuery(t, options))
 	if err != nil || len(next.Items) != 1 ||
 		next.Items[0].Position.Quantity.Value != "9007199254740993.0000000000002" ||
-		next.Items[0].Position.CostBasis.Amount != "0.0000" ||
+		next.Items[0].Position.UnitCostBasis.Amount != "0.0000" ||
 		next.Version != got.Version {
 		t.Fatal(next, err)
 	}
@@ -65,8 +65,9 @@ func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
 	options = application.ListOptions{Sort: "cost", Direction: "desc"}
 
 	costs, err := s.PositionsList(t.Context(), positionsQuery(t, options))
-	if err != nil || len(costs.Items) != 3 || costs.Items[0].Position.CostBasis.Amount != "12.0000000000001" ||
-		costs.Items[2].Position.CostBasis != nil {
+	if err != nil || len(costs.Items) != 3 ||
+		costs.Items[0].Position.UnitCostBasis.Amount != "12.0000000000001" ||
+		costs.Items[2].Position.UnitCostBasis != nil {
 		t.Fatal(costs, err)
 	}
 

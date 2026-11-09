@@ -12,7 +12,7 @@
         <CashTransaction transactionID="synthetic-cash" levelOfDetail="DETAIL" type="Dividends" amount="7.89000000001" currency="USD" dateTime="2026-07-16" description="Synthetic socket dividend"/>
       </CashTransactions>
       <OpenPositions>
-        <OpenPosition accountId="U0000001" assetCategory="STK" subCategory="COMMON" conid="99001001" levelOfDetail="SUMMARY" position="-2.00000000000000100" side="Short" currency="USD" costBasisMoney="0.0000" reportDate="2026-07-17"/>
+        <OpenPosition accountId="U0000001" assetCategory="STK" subCategory="COMMON" conid="99001001" levelOfDetail="SUMMARY" position="-2.00000000000000100" side="Short" currency="USD" costBasisPrice="0.0000" reportDate="2026-07-17"/>
       </OpenPositions>
     </FlexStatement>
   </FlexStatements>
