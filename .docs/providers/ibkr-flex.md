@@ -156,6 +156,7 @@ documents both period and dated overrides in its
 [Flex Web Service guide](https://www.ibkrguides.com/adminportal/performanceandstatements/flex3.htm).
 Returned bounds can differ from requested bounds; inspect both in synchronization
 progress. Unavailable ranges remain pending while recent work continues.
+A long routine polling interval leaves earlier unavailable-range retries eligible.
 
 Configure each recurring interval in the connection's **Access** view. See
 [Wake connection settings](../../README.md#connect-and-inspect).

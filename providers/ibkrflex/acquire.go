@@ -220,6 +220,13 @@ func (s *Source) acquire(
 			next := request.Now
 			if len(state.Queue) != 0 {
 				next = request.Now.Add(6 * time.Second)
+			} else if len(state.Missing) != 0 {
+				next = request.Now.Add(pollInterval(request.Stream, request.PollInterval))
+				for _, missing := range state.Missing {
+					if due := time.Unix(missing.Due, 0); due.Before(next) {
+						next = due
+					}
+				}
 			}
 
 			if paceErr = progress(ctx, access, "retained"); paceErr != nil {
@@ -231,7 +238,7 @@ func (s *Source) acquire(
 				step, artifactErr = step.WithCoverage(coverage)
 			}
 
-			if artifactErr == nil && !discovery && len(state.Queue) == 0 {
+			if artifactErr == nil && !discovery && len(state.Queue) == 0 && len(state.Missing) == 0 {
 				step, artifactErr = step.WithPollCompleted()
 			}
 
@@ -346,6 +353,18 @@ func readContinuation(saved provider.State, query string) (continuation, error) 
 	return state, nil
 }
 
+func pollInterval(stream string, interval time.Duration) time.Duration {
+	if interval != 0 {
+		return interval
+	}
+
+	if stream == Activity {
+		return activityInterval
+	}
+
+	return confirmationInterval
+}
+
 func (state *continuation) choose(now time.Time, stream string, interval time.Duration) {
 	if state.Period != 0 {
 		if state.Anchor != civil(now).Format("2006-01-02") {
@@ -360,18 +379,14 @@ func (state *continuation) choose(now time.Time, stream string, interval time.Du
 		return
 	}
 
-	fallback, recentPeriod := confirmationInterval, 2
+	recentPeriod := 2
 	if stream == Activity {
-		fallback, recentPeriod = activityInterval, 7
-	}
-
-	if interval == 0 {
-		interval = fallback
+		recentPeriod = 7
 	}
 
 	lastRecent, _ := time.Parse(time.RFC3339Nano, state.LastRecent)
 	if state.Started && (len(state.Queue) > 0 || len(state.Missing) > 0) &&
-		(lastRecent.IsZero() || !now.Before(lastRecent.Add(interval))) {
+		(lastRecent.IsZero() || !now.Before(lastRecent.Add(pollInterval(stream, interval)))) {
 		state.Period = recentPeriod
 		state.Anchor = civil(now).Format("2006-01-02")
 		state.Recent = true

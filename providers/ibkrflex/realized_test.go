@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,69 @@ func TestActivityNormalizesOnlyExecutionRealizedResults(t *testing.T) {
 		)
 		if _, err = reg.Normalizer().Normalize(t.Context(), input, &testClaims{}); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestActivityRetainsMissingWindowDeadline(t *testing.T) {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	retry := now.Add(12 * time.Hour)
+	state := continuation{
+		Query: "456", Started: true, Reference: "generation",
+		Period: 7, Anchor: "2026-10-22", Recent: true,
+		Missing: []missingWindow{
+			{window{"2026-10-18", "2026-10-18"}, retry.Add(24 * time.Hour).Unix()},
+			{window{"2026-10-19", "2026-10-19"}, retry.Unix()},
+		},
+	}
+
+	checkpoint, err := state.step(provider.Artifact{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "GetStatement") {
+			t.Error("expected to fetch the pending report")
+		}
+
+		_, _ = fmt.Fprint(w, activityReport(realizedRow))
+	}))
+	defer server.Close()
+
+	reg, err := Registration(Options{BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings, _ := provider.NewSettings(map[string]string{"activity_query_id": "456"})
+	for _, tc := range []struct {
+		interval time.Duration
+		want     time.Time
+	}{
+		{7 * 24 * time.Hour, retry},
+		{time.Hour, now.Add(time.Hour)},
+	} {
+		request := provider.Request{
+			Stream: Activity, Settings: settings, Now: now, State: checkpoint.State(), PollInterval: tc.interval,
+		}
+		access := &testAccess{token: []byte("synthetic-token"), now: now}
+
+		step, err := reg.Acquirer().Acquire(t.Context(), request, access)
+		if err != nil || step.Artifact().IsZero() || step.PollCompleted() ||
+			!step.NextEligibleAt().Equal(tc.want) {
+			t.Fatalf(
+				"interval %v: eligible %v, want %v with retry state retained (%v)",
+				tc.interval,
+				step.NextEligibleAt(),
+				tc.want,
+				err,
+			)
+		}
+
+		retained, err := readContinuation(step.State(), "456")
+		if err != nil || !slices.Equal(retained.Missing, state.Missing) {
+			t.Fatal("successful report lost pending unavailable windows", retained.Missing, err)
 		}
 	}
 }
