@@ -29,10 +29,11 @@ type (
 		Candidate provider.Candidate
 	}
 	WorkStatus struct {
-		Stream, Operation, Failure, Next string
-		Progress                         provider.ProgressPhase
-		Completed, Total                 int64
-		Scheduled                        bool
+		Stream, Operation, Failure string
+		Next, LastRetrieved        time.Time
+		Progress                   provider.ProgressPhase
+		Completed, Total           int64
+		Scheduled, RetryBlocked    bool
 	}
 	ProcessingStatus struct {
 		Artifact, Failure, Stream                            string

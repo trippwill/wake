@@ -459,7 +459,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				SettingsStored: true, CredentialStored: true,
 				Work: []application.WorkStatus{
-					{Operation: "discover", Progress: "waiting", Next: "2026-10-26T12:00:00Z", Scheduled: true},
+					{
+						Operation: "discover",
+						Progress:  "waiting",
+						Next:      time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC),
+						Scheduled: true,
+					},
 				},
 				Processing: []application.ProcessingStatus{
 					{Artifact: "synthetic-report", Receipt: "synthetic-receipt", ActivityClaims: 70, Complete: true},

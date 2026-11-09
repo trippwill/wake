@@ -59,7 +59,16 @@ UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM 
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
-SELECT work.*, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation;
+SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
+ coalesce(scheduled.enabled,0)=1 AS scheduled,
+ -- Match PendingWork's terminal failures.
+ CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ -- Find the newest receipt per retained body through receipts_body before comparing bodies.
+ CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
+  SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
+  FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
+ )), '') AS TEXT) AS last_retrieved
+FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream;
 -- name: DisableDiscovery :exec
 UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
 -- name: Account :one

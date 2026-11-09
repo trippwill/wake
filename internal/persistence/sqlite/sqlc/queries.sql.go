@@ -4352,26 +4352,29 @@ func (q *Queries) WakeReference(ctx context.Context) error {
 }
 
 const workStatuses = `-- name: WorkStatuses :many
-SELECT work.connection_id, work.stream, work.operation, work.revision, work.state_version, work.state, work.next, work.observed, work.observed_completed, work.observed_total, work.acknowledged, work.acknowledged_completed, work.acknowledged_total, work.failure, work.failure_code, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation
+SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
+ coalesce(scheduled.enabled,0)=1 AS scheduled,
+ -- Match PendingWork's terminal failures.
+ CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ -- Find the newest receipt per retained body through receipts_body before comparing bodies.
+ CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
+  SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
+  FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
+ )), '') AS TEXT) AS last_retrieved
+FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream
 `
 
 type WorkStatusesRow struct {
-	ConnectionID          string
-	Stream                string
-	Operation             string
-	Revision              int64
-	StateVersion          string
-	State                 []byte
-	Next                  string
-	Observed              string
-	ObservedCompleted     int64
-	ObservedTotal         int64
-	Acknowledged          string
-	AcknowledgedCompleted int64
-	AcknowledgedTotal     int64
-	Failure               string
-	FailureCode           string
-	Scheduled             bool
+	Stream            string
+	Operation         string
+	Observed          string
+	ObservedCompleted int64
+	ObservedTotal     int64
+	Failure           string
+	Next              string
+	Scheduled         bool
+	RetryBlocked      int64
+	LastRetrieved     string
 }
 
 func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]WorkStatusesRow, error) {
@@ -4384,22 +4387,16 @@ func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work
 	for rows.Next() {
 		var i WorkStatusesRow
 		if err := rows.Scan(
-			&i.ConnectionID,
 			&i.Stream,
 			&i.Operation,
-			&i.Revision,
-			&i.StateVersion,
-			&i.State,
-			&i.Next,
 			&i.Observed,
 			&i.ObservedCompleted,
 			&i.ObservedTotal,
-			&i.Acknowledged,
-			&i.AcknowledgedCompleted,
-			&i.AcknowledgedTotal,
 			&i.Failure,
-			&i.FailureCode,
+			&i.Next,
 			&i.Scheduled,
+			&i.RetryBlocked,
+			&i.LastRetrieved,
 		); err != nil {
 			return nil, err
 		}

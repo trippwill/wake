@@ -247,6 +247,17 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(view, err)
 	}
 
+	overview := request(http.MethodGet, "/", nil, http.StatusOK).Body.String()
+	for _, want := range []string{
+		"Last successful retrieval",
+		"Next event",
+		`datetime="` + now.Add(-10*time.Second).Format(time.RFC3339Nano) + `"`,
+	} {
+		if !strings.Contains(overview, want) {
+			t.Fatalf("Overview missing %q", want)
+		}
+	}
+
 	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/executions/" + view.Executions[0].ID(), "/instruments/" + view.Instruments[0].ID(), "/evidence/" + candidate.Artifact} {
 		request(http.MethodGet, path, nil, http.StatusOK)
 	}

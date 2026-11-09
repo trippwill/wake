@@ -50,6 +50,11 @@ the primary instrument identity and naming reference.
 | Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, a separate latest reported positions workspace, compact conflicts, optional linked evidence/rules and correction of existing activity. |
 | Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
 
+Overview shows the last successful report retrieval and next automatic event for
+each scheduled source stream. Repeated reports count as successful retrievals.
+The next event time indicates when Wake can attempt the work, subject to source
+access and pacing.
+
 Some reported bookings lack execution IDs; acceptance cannot universally require
 one. Keep exact reported values, currencies, units and time precision. Source money
 is not recomputed to make an equation agree. Reported settlement dates are not proof
