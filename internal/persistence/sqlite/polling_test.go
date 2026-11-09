@@ -56,6 +56,10 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 		}
 	}
 
+	if _, err := s.db.ExecContext(ctx, "UPDATE profile SET paused=1"); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, stream := range []string{"routine", "continuing", "failed", "disabled"} {
 		if err := reschedulePoll(ctx, s.queries, "synthetic", stream, 20*time.Minute); err != nil {
 			t.Fatal(err)
@@ -72,8 +76,8 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 		}
 	}
 
-	if _, err := s.db.ExecContext(ctx, "UPDATE profile SET paused=1"); err != nil {
-		t.Fatal(err)
+	if work, err := s.PendingWork(ctx, later); err != nil || len(work) != 0 {
+		t.Fatal("editing a deadline admitted paused work", work, err)
 	}
 
 	if n, err := s.RefreshPolls(ctx, now); err != nil || n != 0 {
@@ -82,6 +86,11 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 
 	if _, err := s.db.ExecContext(ctx, "UPDATE profile SET paused=0"); err != nil {
 		t.Fatal(err)
+	}
+
+	if work, err := s.PendingWork(ctx, now.Add(19*time.Minute)); err != nil ||
+		len(work) != 1 || work[0].Stream != "routine" {
+		t.Fatal("resumed work did not use the edited deadline", work, err)
 	}
 
 	if n, err := s.RefreshPolls(ctx, now); err != nil || n != 1 {

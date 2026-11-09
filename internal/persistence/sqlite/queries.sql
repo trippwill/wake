@@ -73,14 +73,12 @@ WHERE operation='acquire'
 SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
 WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
   AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
-  AND (SELECT paused FROM profile WHERE singleton=1)=0
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
 -- name: SetPollDeadline :exec
 UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire';
 -- name: QueuedPollConnections :many
 SELECT id,provider,settings FROM access.configurations
-WHERE (SELECT paused FROM profile WHERE singleton=1)=0
-  AND EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+WHERE EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
    WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
     AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id);

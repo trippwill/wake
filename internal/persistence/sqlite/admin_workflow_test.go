@@ -344,6 +344,10 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		}
 	}
 
+	if _, err := store.db.ExecContext(ctx, "UPDATE profile SET paused=1"); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, launch := range []struct{ interval, delay time.Duration }{
 		{3 * time.Minute, 3 * time.Minute},
 		{time.Minute, 2 * time.Minute},
@@ -355,6 +359,14 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		if err != nil || !updated.Next.Equal(now.Add(launch.delay-10*time.Second)) {
 			t.Fatalf("launch interval %v produced unexpected deadline %v: %v", launch.interval, updated.Next, err)
 		}
+	}
+
+	if pending, err := store.PendingWork(ctx, before.Next); err != nil || len(pending) != 0 {
+		t.Fatal("startup reconciliation admitted paused work", pending, err)
+	}
+
+	if _, err := store.db.ExecContext(ctx, "UPDATE profile SET paused=0"); err != nil {
+		t.Fatal(err)
 	}
 
 	refresh := request(http.MethodPost, "/refresh", nil, http.StatusSeeOther)

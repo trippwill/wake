@@ -145,7 +145,8 @@ the resulting deadline with any later provider eligibility deadline. Continuatio
 steps and shared request pacing retain their separate schedules. An interval edit
 recalculates a queued routine poll from its recorded cycle time and provider
 eligibility deadline, in the same transaction as the settings update. At startup,
-the daemon reconciles queued routine polls whose effective intervals changed. An operator
+the daemon reconciles queued routine polls whose effective intervals changed.
+These deadline changes preserve the recovery gate on acquisition. An operator
 can also bring forward a routine poll to its provider eligibility deadline.
 Discovery, active work and retries retain their separate schedules.
 
