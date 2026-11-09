@@ -216,7 +216,7 @@ func TestActivityAcquisitionSharesTokenPacingButPreservesReportDates(t *testing.
 	access.now, ready = request.Now, true
 	step, err = reg.Acquirer().Acquire(t.Context(), request, access)
 	if err != nil || step.Artifact().Format() != ActivityFormat ||
-		!step.NextEligibleAt().Equal(request.Now.Add(24*time.Hour)) {
+		!step.PollCompleted() || !step.NextEligibleAt().Equal(request.Now) {
 		t.Fatal(step, err)
 	}
 
@@ -238,7 +238,7 @@ func TestActivityAcquisitionSharesTokenPacingButPreservesReportDates(t *testing.
 		t.Fatal(err)
 	}
 
-	state.choose(now.Add(24*time.Hour), Activity)
+	state.choose(now.Add(24*time.Hour), Activity, 0)
 
 	if state.Period != 7 {
 		t.Fatal("Activity recent overlap", state.Period)

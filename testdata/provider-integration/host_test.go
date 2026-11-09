@@ -24,12 +24,13 @@ import (
 )
 
 type fixtureHost struct {
-	diagnostics bytes.Buffer
-	path, id    string
-	store       *persistence.Store
-	host        *host.Host
-	envelope    *credential.Envelope
-	now         time.Time
+	diagnostics  bytes.Buffer
+	path, id     string
+	store        *persistence.Store
+	host         *host.Host
+	envelope     *credential.Envelope
+	now          time.Time
+	pollDefaults map[string]time.Duration
 }
 
 func newFixture(t *testing.T, r provider.Registration) *fixtureHost {
@@ -84,7 +85,7 @@ func (f *fixtureHost) open(t *testing.T, r provider.Registration) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.host, err = host.New(context.Background(), f.store, f.envelope, slog.New(slog.NewJSONHandler(&f.diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug})), func() time.Time { return f.now }, r)
+	f.host, err = host.New(context.Background(), f.store, f.envelope, slog.New(slog.NewJSONHandler(&f.diagnostics, &slog.HandlerOptions{Level: slog.LevelDebug})), func() time.Time { return f.now }, f.pollDefaults, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal("restart lost records", err)
 	}
 	f.host.Close()
-	h, err := host.New(ctx, f.store, nil, nil, nil)
+	h, err := host.New(ctx, f.store, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +518,7 @@ func TestInterruptedAttemptRecoveryAndCredentialFreeNormalization(t *testing.T) 
 		t.Fatal("interrupted attempt not recovered", attempts, err)
 	}
 	f.host.Close()
-	f.host, err = host.New(context.Background(), f.store, nil, nil, nil, registration(t))
+	f.host, err = host.New(context.Background(), f.store, nil, nil, nil, nil, registration(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -769,7 +770,7 @@ func TestNormalizationReceiptSurvivesAccessLossWithoutCredentials(t *testing.T) 
 	}
 	f.open(t, r)
 	f.host.Close()
-	f.host, err = host.New(ctx, f.store, nil, nil, nil, r)
+	f.host, err = host.New(ctx, f.store, nil, nil, nil, nil, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1002,7 +1003,7 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 		t.Fatal(err)
 	}
 	f.host.Close()
-	f.host, err = host.New(t.Context(), f.store, f.envelope, nil, func() time.Time { return f.now }, base, document)
+	f.host, err = host.New(t.Context(), f.store, f.envelope, nil, func() time.Time { return f.now }, nil, base, document)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1074,7 +1075,7 @@ func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, err := host.New(t.Context(), store, seed.envelope, nil, func() time.Time { return seed.now }, registration)
+		h, err := host.New(t.Context(), store, seed.envelope, nil, func() time.Time { return seed.now }, nil, registration)
 		if err != nil {
 			t.Fatal(err)
 		}

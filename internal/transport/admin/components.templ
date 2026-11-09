@@ -170,6 +170,14 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 	if operation!=submissionNone {
 		<form method="post" action={ templ.SafeURL(path) }>
 			<input type="hidden" name="csrf" value={ csrf }/>
+			if operation==submissionPolling {
+				<input type="hidden" name="stream" value={ draft.Get("stream") }/>
+				for _,stream:=range descriptor.Streams() {
+					if stream.ID()==draft.Get("stream") && stream.Polling().Default()!=0 {
+						<p><label for="retry-interval">Polling interval for { stream.ID() }</label><input class="input" id="retry-interval" name="interval" value={ draft.Get("interval") } maxlength="32" aria-describedby="retry-interval-help"/><small id="retry-interval-help">Enter a duration between { pollingValue(stream.Polling().Minimum()) } and { pollingValue(provider.MaxPollInterval) }, or leave empty to inherit the default.</small></p>
+					}
+				}
+			}
 			if operation==submissionConfirm {
 				<label for="retry-name">Name<input class="input" id="retry-name" name="name" value={ draft.Get("name") } required maxlength="256"/></label>
 			}

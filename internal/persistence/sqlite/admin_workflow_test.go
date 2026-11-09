@@ -4,11 +4,14 @@
 package persistence
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +28,8 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	envelope := testEnvelope(t)
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 
+	var reports atomic.Int32
+
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/mapping":
@@ -35,6 +40,10 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 				`<FlexStatementResponse><Status>Success</Status><ReferenceCode>synthetic</ReferenceCode></FlexStatementResponse>`,
 			)
 		default:
+			if reports.Add(1) > 1 {
+				w.Header().Set("Retry-After", "120")
+			}
+
 			_, _ = fmt.Fprint(w, workflowReport(equityRow("U1", "http-fill", "401.000000001")))
 		}
 	}))
@@ -47,7 +56,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, registration)
+	h, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +74,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, refs, nil, nil)
+	workflow := application.New(store, h, refs, func() time.Time { return now }, nil)
 
 	dir := t.TempDir()
 	if err = admin.SetUnlock(dir, []byte("synthetic-http-unlock")); err != nil {
@@ -251,11 +260,59 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	for _, want := range []string{
 		"Last successful retrieval",
 		"Next event",
+		"Refresh now",
 		`datetime="` + now.Add(-10*time.Second).Format(time.RFC3339Nano) + `"`,
 	} {
 		if !strings.Contains(overview, want) {
 			t.Fatalf("Overview missing %q", want)
 		}
+	}
+
+	key := host.WorkKey{Connection: id, Stream: ibkrflex.Confirmations, Operation: "acquire"}
+
+	before, err := store.Checkpoint(ctx, key)
+	if err != nil || !before.Next.Equal(now.Add(5*time.Minute-10*time.Second)) {
+		t.Fatal("unexpected routine poll", before.Next, err)
+	}
+
+	refresh := request(http.MethodPost, "/refresh", nil, http.StatusSeeOther)
+	if refresh.Header().Get("Location") != "/?refresh=requested" {
+		t.Fatal("refresh did not bring forward the routine poll")
+	}
+
+	after, err := store.Checkpoint(ctx, key)
+	if err != nil || !after.Next.Equal(now.Add(110*time.Second)) || before.Revision != after.Revision ||
+		before.State.Version() != after.State.Version() || !bytes.Equal(before.State.Payload(), after.State.Payload()) {
+		t.Fatal("refresh moved the provider deadline or changed its continuation", before.Next, after.Next, err)
+	}
+
+	refreshed, err := workflow.Overview(ctx)
+	if err != nil || len(refreshed.Status.Connections) != 1 {
+		t.Fatal("refresh status unavailable", err)
+	}
+
+	work := refreshed.Status.Connections[0].Work
+	index := slices.IndexFunc(work, func(work application.WorkStatus) bool {
+		return work.Stream == key.Stream && work.Operation == key.Operation
+	})
+	if index < 0 || !work[index].Next.Equal(after.Next) ||
+		!work[index].LastRetrieved.Equal(now.Add(-10*time.Second)) {
+		t.Fatal("Overview timing differs from the refreshed checkpoint", work, after.Next)
+	}
+
+	repeat := request(http.MethodPost, "/refresh", nil, http.StatusSeeOther)
+	if repeat.Header().Get("Location") != "/?refresh=idle" {
+		t.Fatal("repeated refresh moved a poll past the cooldown")
+	}
+
+	pending, err := store.PendingWork(ctx, after.Next.Add(-time.Second))
+	if err != nil || len(pending) != 0 {
+		t.Fatal("poll became runnable before the cooldown", pending, err)
+	}
+
+	pending, err = store.PendingWork(ctx, after.Next)
+	if err != nil || len(pending) != 1 || pending[0] != key {
+		t.Fatal("poll did not become runnable at the cooldown", pending, err)
 	}
 
 	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/executions/" + view.Executions[0].ID(), "/instruments/" + view.Instruments[0].ID(), "/evidence/" + candidate.Artifact} {

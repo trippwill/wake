@@ -3542,6 +3542,34 @@ func (q *Queries) ReferenceSetting(ctx context.Context) (AccessReferenceSetting,
 	return i, err
 }
 
+const refreshPolls = `-- name: RefreshPolls :execrows
+UPDATE work
+SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(?1 AS TEXT)
+              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(?1 AS TEXT) END
+WHERE operation='acquire'
+  AND (SELECT paused FROM profile WHERE singleton=1)=0
+  AND failure='' AND failure_code=''
+  AND julianday(next)>julianday(?1)
+  AND julianday(next)>CASE WHEN state_version=?2
+                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
+`
+
+type RefreshPollsParams struct {
+	Now         string
+	PollVersion string
+}
+
+func (q *Queries) RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, refreshPolls, arg.Now, arg.PollVersion)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
 SELECT c.artifact_id, c.version, c.location, c.account_id, c.kind, c.target, c.replacement, c.status FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.target=e.reference WHERE e.execution_id=?1
 UNION

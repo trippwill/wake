@@ -69,7 +69,7 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(context.Background(), store, envelope, nil, nil, registration)
+	h, err := host.New(context.Background(), store, envelope, nil, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}

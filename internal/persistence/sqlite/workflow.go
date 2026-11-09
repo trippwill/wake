@@ -123,7 +123,7 @@ func (s *Store) Confirm(
 ) (application.Account, error) {
 	id := connection.ID
 
-	settings, err := json.Marshal(connection.Settings.Values())
+	settings, err := encodeConnectionSettings(connection)
 	if err != nil {
 		return application.Account{}, err
 	}

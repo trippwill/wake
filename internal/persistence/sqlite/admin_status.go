@@ -6,7 +6,6 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 
 	"go.trippwill.dev/wake/financial"
@@ -109,12 +108,7 @@ func connectionAccess(
 			return view, e
 		}
 
-		var values map[string]string
-		if json.Unmarshal(configured.Settings, &values) != nil {
-			return view, ErrCorrupt
-		}
-
-		view.Settings, err = provider.NewSettings(values)
+		view.Settings, view.PollOverrides, err = decodeConnectionSettings(configured.Settings)
 		if err != nil {
 			return view, ErrCorrupt
 		}

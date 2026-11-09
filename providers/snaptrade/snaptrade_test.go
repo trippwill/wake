@@ -242,7 +242,7 @@ func TestPersonalDiscoveryAndResumedHistory(t *testing.T) {
 	r.State = resume
 	r.Now = moved.NextEligibleAt()
 	done := acquire(restarted)
-	if !done.State().IsZero() || !done.NextEligibleAt().Equal(r.Now.Add(24*time.Hour)) {
+	if !done.State().IsZero() || !done.PollCompleted() || !done.NextEligibleAt().Equal(r.Now) {
 		t.Fatal("completed history did not schedule a daily scan")
 	}
 

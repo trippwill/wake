@@ -71,7 +71,7 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	mux.HandleFunc("GET /assets/", serveAsset)
 
 	serve := func(w http.ResponseWriter, r *http.Request, view overviewView) {
-		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(view))).
+		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview("synthetic-csrf", view, r.URL.Query().Get("refresh")))).
 			ServeHTTP(w, pageRequest(r))
 	}
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,19 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			current.LastRetrieved = last.Add(time.Minute)
 		}
 
+		if r.URL.Query().Get("refresh") == "requested" {
+			current.Next = next.Add(-time.Minute)
+		}
+
 		serve(w, r, newView(current, confirmations))
+	})
+	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("csrf") != "synthetic-csrf" {
+			http.Error(w, "Missing CSRF token", http.StatusForbidden)
+			return
+		}
+
+		http.Redirect(w, r, "/?refresh=requested", http.StatusSeeOther)
 	})
 	mux.HandleFunc("GET /mixed", func(w http.ResponseWriter, r *http.Request) {
 		serve(w, r, newView(blocked, retry, first))
@@ -113,7 +125,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	defer deadline()
 
 	if err = chromedp.Run(ctx, testbrowser.NewDocument(chromedp.Navigate(server.URL)),
-		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery)); err != nil {
+		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
+		chromedp.WaitVisible(`form[action="/refresh"] button`, chromedp.ByQuery),
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -182,6 +196,20 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			strconv.Quote(last.Add(time.Minute).Format(time.RFC3339Nano)), nil),
 	); err != nil {
 		t.Fatal("live refresh did not replace the retrieval time", err)
+	}
+
+	if err = chromedp.Run(
+		ctx,
+		testbrowser.NewDocument(chromedp.Click(`form[action="/refresh"] button`, chromedp.ByQuery)),
+		chromedp.Poll(
+			`document.querySelector('#synchronization-title').closest('section').textContent.includes('Refresh requested') &&
+			document.querySelectorAll('.wake-sync-work time')[1].dateTime===`+strconv.Quote(
+				next.Add(-time.Minute).Format(time.RFC3339Nano),
+			),
+			nil,
+		),
+	); err != nil {
+		t.Fatal("refresh action did not show the new deadline", err)
 	}
 
 	if err = chromedp.Run(

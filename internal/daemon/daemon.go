@@ -25,6 +25,7 @@ import (
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	socketapi "go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/providers/snaptrade"
 )
@@ -62,6 +63,30 @@ type sourceOptions struct {
 	ReferenceClient *http.Client
 	ReferenceURL    string
 	Now             func() time.Time
+}
+
+func (options sourceOptions) registrations() ([]provider.Registration, error) {
+	ibkr, err := ibkrflex.Registration(options.IBKR)
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := snaptrade.Registration(options.SnapTrade)
+	if err != nil {
+		return nil, err
+	}
+
+	return []provider.Registration{ibkr, snap}, nil
+}
+
+// CheckPollingDefaults validates the launch defaults against this build's providers.
+func CheckPollingDefaults(defaults map[string]time.Duration) error {
+	registrations, err := (sourceOptions{}).registrations()
+	if err != nil {
+		return err
+	}
+
+	return host.CheckPollingDefaults(defaults, registrations)
 }
 
 func run(
@@ -111,6 +136,15 @@ func run(
 
 	if ctx.Err() != nil {
 		return nil
+	}
+
+	registrations, err := options.registrations()
+	if err != nil {
+		return err
+	}
+
+	if err := host.CheckPollingDefaults(cfg.PollDefaults, registrations); err != nil {
+		return err
 	}
 
 	phase("claiming private process paths")
@@ -163,24 +197,14 @@ func run(
 		protected = true
 	}
 
-	registration, err := ibkrflex.Registration(options.IBKR)
-	if err != nil {
-		return err
-	}
-
-	snaptradeRegistration, err := snaptrade.Registration(options.SnapTrade)
-	if err != nil {
-		return err
-	}
-
 	providerHost, err := host.New(
 		ctx,
 		store,
 		envelope,
 		logger,
 		options.Now,
-		registration,
-		snaptradeRegistration,
+		cfg.PollDefaults,
+		registrations...,
 	)
 	if err != nil {
 		return err

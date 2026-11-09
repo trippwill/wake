@@ -115,7 +115,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(t.Context(), s, nil, nil, nil, registration)
+	h, err := host.New(t.Context(), s, nil, nil, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}

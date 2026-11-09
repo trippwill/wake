@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/daemon"
 )
 
 func describeConfig(_ context.Context, c *cli.Command) error {
@@ -21,7 +22,7 @@ func describeConfig(_ context.Context, c *cli.Command) error {
 	}
 
 	if c.Bool("json") {
-		return json.NewEncoder(c.Writer).Encode(config.Settings())
+		return json.NewEncoder(c.Writer).Encode(append(config.Settings(), config.PollingDefaults))
 	}
 
 	writeString(
@@ -41,6 +42,8 @@ func describeConfig(_ context.Context, c *cli.Command) error {
 			s.Description,
 		)
 	}
+
+	writef(c.Writer, "%s\n  TOML table; %s.\n", config.PollingDefaults.Key, config.PollingDefaults.Description)
 
 	return nil
 }
@@ -110,6 +113,10 @@ func checkConfig(_ context.Context, c *cli.Command) error {
 
 	out, err := config.Resolve(c)
 	if err != nil {
+		return failure("configure: %v", err)
+	}
+
+	if err := daemon.CheckPollingDefaults(out.Config.PollDefaults); err != nil {
 		return failure("configure: %v", err)
 	}
 

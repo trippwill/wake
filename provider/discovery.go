@@ -44,7 +44,7 @@ func NewDiscovery(step Step, candidates []Candidate) (Discovery, error) {
 		return Discovery{}, ErrLimit
 	}
 
-	if len(candidates) > 0 && step.Artifact().IsZero() {
+	if step.PollCompleted() || len(candidates) > 0 && step.Artifact().IsZero() {
 		return Discovery{}, ErrInvalid
 	}
 

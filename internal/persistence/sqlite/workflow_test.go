@@ -187,7 +187,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, s, envelope, logger, func() time.Time { return now }, registration)
+	h, err := host.New(ctx, s, envelope, logger, func() time.Time { return now }, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestIdleWorkflowDoesNotLog(t *testing.T) {
 
 	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	h, err := host.New(ctx, s, nil, logger, nil)
+	h, err := host.New(ctx, s, nil, logger, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

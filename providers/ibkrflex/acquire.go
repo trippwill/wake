@@ -77,7 +77,7 @@ func (s *Source) acquire(
 	}
 
 	if state.Reference == "" {
-		state.choose(request.Now, request.Stream)
+		state.choose(request.Now, request.Stream, request.PollInterval)
 	}
 
 	step := provider.Step{}
@@ -217,11 +217,7 @@ func (s *Source) acquire(
 				state.LastFrom, state.LastTo = metadata.lastFrom, metadata.lastTo
 			}
 
-			next := request.Now.Add(5 * time.Minute)
-			if request.Stream == Activity {
-				next = request.Now.Add(24 * time.Hour)
-			}
-
+			next := request.Now
 			if len(state.Queue) != 0 {
 				next = request.Now.Add(6 * time.Second)
 			}
@@ -233,6 +229,10 @@ func (s *Source) acquire(
 			step, artifactErr = state.step(artifact, later(next, until))
 			if artifactErr == nil {
 				step, artifactErr = step.WithCoverage(coverage)
+			}
+
+			if artifactErr == nil && !discovery && len(state.Queue) == 0 {
+				step, artifactErr = step.WithPollCompleted()
 			}
 
 			return artifactErr
@@ -346,7 +346,7 @@ func readContinuation(saved provider.State, query string) (continuation, error) 
 	return state, nil
 }
 
-func (state *continuation) choose(now time.Time, stream string) {
+func (state *continuation) choose(now time.Time, stream string, interval time.Duration) {
 	if state.Period != 0 {
 		if state.Anchor != civil(now).Format("2006-01-02") {
 			selected := periodWindow(state.Anchor, state.Period)
@@ -360,9 +360,13 @@ func (state *continuation) choose(now time.Time, stream string) {
 		return
 	}
 
-	interval, recentPeriod := 5*time.Minute, 2
+	fallback, recentPeriod := confirmationInterval, 2
 	if stream == Activity {
-		interval, recentPeriod = 24*time.Hour, 7
+		fallback, recentPeriod = activityInterval, 7
+	}
+
+	if interval == 0 {
+		interval = fallback
 	}
 
 	lastRecent, _ := time.Parse(time.RFC3339Nano, state.LastRecent)
