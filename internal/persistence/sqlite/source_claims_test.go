@@ -65,7 +65,7 @@ func acquireClaimReport(t *testing.T, s *Store, body string, equivalence bool) s
 		t.Fatal(err)
 	}
 
-	id, err := s.Accept(ctx, key, baseline.Revision, step, nil, provider.Progress{}, time.Time{})
+	id, err := s.Accept(ctx, key, baseline.Revision, step, nil, provider.Progress{}, host.PollCycle{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 		t.Fatal(err)
 	}
 
-	id, err := s.Accept(ctx, discover, baseline.Revision, step, nil, provider.Progress{}, time.Time{})
+	id, err := s.Accept(ctx, discover, baseline.Revision, step, nil, provider.Progress{}, host.PollCycle{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 		t.Fatal(err)
 	}
 
-	same, err := s.Accept(ctx, acquire, baseline.Revision, step, nil, provider.Progress{}, time.Time{})
+	same, err := s.Accept(ctx, acquire, baseline.Revision, step, nil, provider.Progress{}, host.PollCycle{})
 	if err != nil || same != id {
 		t.Fatal(id, same, err)
 	}
@@ -284,7 +284,7 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 		step,
 		nil,
 		provider.Progress{},
-		time.Time{},
+		host.PollCycle{},
 	); err != provider.ErrConflict {
 		t.Fatal("stale acknowledgement accepted", err)
 	}
@@ -437,7 +437,7 @@ func TestReceiptCoverageSurvivesEquivalentBodyReuse(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		id, err := s.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}, time.Time{})
+		id, err := s.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}, host.PollCycle{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -524,7 +524,7 @@ func TestLatestDiscoveryProfileFollowsReceiptsWhenBodyIsReused(t *testing.T) {
 			step,
 			[]provider.Candidate{candidate},
 			provider.Progress{},
-			time.Time{},
+			host.PollCycle{},
 		)
 		if e != nil {
 			t.Fatal(e)

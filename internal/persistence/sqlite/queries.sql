@@ -76,7 +76,14 @@ WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND wo
   AND (SELECT paused FROM profile WHERE singleton=1)=0
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
 -- name: SetPollDeadline :exec
-UPDATE work SET next=? WHERE connection_id=? AND stream=? AND operation='acquire';
+UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire';
+-- name: QueuedPollConnections :many
+SELECT id,provider,settings FROM access.configurations
+WHERE (SELECT paused FROM profile WHERE singleton=1)=0
+  AND EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+   WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
+    AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id);
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many

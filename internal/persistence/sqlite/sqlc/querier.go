@@ -168,6 +168,7 @@ type Querier interface {
 	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
 	QueueInterpretations(ctx context.Context, dollar_1 string) error
 	QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte, error)
+	QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error)
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)

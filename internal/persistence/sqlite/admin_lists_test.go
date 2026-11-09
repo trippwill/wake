@@ -1052,7 +1052,7 @@ func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
 			discovery.Step(),
 			candidates,
 			provider.Progress{},
-			time.Time{},
+			host.PollCycle{},
 		)
 		if err != nil {
 			t.Fatal(err)

@@ -44,7 +44,7 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 			entry.step,
 			nil,
 			provider.Progress{},
-			now.Add(-time.Minute),
+			host.PollCycle{At: now.Add(-time.Minute), Interval: 61 * time.Minute},
 		); err != nil {
 			t.Fatal(err)
 		}

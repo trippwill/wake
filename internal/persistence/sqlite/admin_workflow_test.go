@@ -276,14 +276,33 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	}
 
 	pollingPath := "/connections/" + id + "/polling"
+	for _, values := range []url.Values{
+		{"stream": {key.Stream}},
+		{"stream": {"unknown"}, "interval": {"3m"}},
+		{"stream": {key.Stream}, "interval": {"30s"}},
+	} {
+		rejected := request(http.MethodPost, pollingPath, values, http.StatusBadRequest)
+		if !strings.Contains(rejected.Body.String(), "Enter an interval within the displayed range") {
+			t.Fatal("invalid polling input did not explain how to correct it")
+		}
+
+		unchanged, err := store.Checkpoint(ctx, key)
+		if err != nil || !unchanged.Next.Equal(before.Next) {
+			t.Fatal("invalid polling input moved the deadline", unchanged.Next, err)
+		}
+	}
+
+	accessPath := "/connections/" + id + "?view=access"
 	for _, edit := range []struct {
-		value string
-		delay time.Duration
+		value, shown string
+		delay        time.Duration
 	}{
-		{"3m", 3 * time.Minute},
-		{"1m", 2 * time.Minute},
-		{"8m", 8 * time.Minute},
-		{"", 5 * time.Minute},
+		{"3m", "3m", 3 * time.Minute},
+		{"1m", "1m", 2 * time.Minute},
+		{"8m", "8m", 8 * time.Minute},
+		{"2h", "2h", 2 * time.Hour},
+		{"150s", "2m30s", 150 * time.Second},
+		{"", "", 5 * time.Minute},
 	} {
 		request(http.MethodPost, pollingPath, url.Values{
 			"stream": {key.Stream}, "interval": {edit.value},
@@ -294,12 +313,62 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 			updated.Revision != before.Revision || !bytes.Equal(updated.State.Payload(), before.State.Payload()) {
 			t.Fatalf("edit %q produced unexpected checkpoint: deadline %v, %v", edit.value, updated.Next, err)
 		}
+
+		access := request(http.MethodGet, accessPath, nil, http.StatusOK).Body.String()
+		if !strings.Contains(access, `id="poll-interval-confirmations" name="interval" value="`+edit.shown+`"`) {
+			t.Fatalf("access page lost the saved interval %q", edit.shown)
+		}
+	}
+
+	reconcile := func(interval time.Duration) {
+		t.Helper()
+
+		defaults := map[string]time.Duration{"ibkr-flex:confirmations": interval}
+
+		restarted, err := host.New(
+			ctx,
+			store,
+			envelope,
+			nil,
+			func() time.Time { return now },
+			defaults,
+			registration,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer restarted.Close()
+
+		if err := store.ReconcilePolls(ctx, restarted.PollSettings); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, launch := range []struct{ interval, delay time.Duration }{
+		{3 * time.Minute, 3 * time.Minute},
+		{time.Minute, 2 * time.Minute},
+		{5 * time.Minute, 5 * time.Minute},
+	} {
+		reconcile(launch.interval)
+
+		updated, err := store.Checkpoint(ctx, key)
+		if err != nil || !updated.Next.Equal(now.Add(launch.delay-10*time.Second)) {
+			t.Fatalf("launch interval %v produced unexpected deadline %v: %v", launch.interval, updated.Next, err)
+		}
 	}
 
 	refresh := request(http.MethodPost, "/refresh", nil, http.StatusSeeOther)
 	if refresh.Header().Get("Location") != "/?refresh=requested" {
 		t.Fatal("refresh did not bring forward the routine poll")
 	}
+
+	// Saving the same effective interval keeps the explicitly advanced poll.
+	request(http.MethodPost, pollingPath, url.Values{
+		"stream": {key.Stream}, "interval": {"5m"},
+	}, http.StatusSeeOther)
+
+	// An override keeps the same effective interval when the launch default changes.
+	reconcile(8 * time.Minute)
 
 	after, err := store.Checkpoint(ctx, key)
 	if err != nil || !after.Next.Equal(now.Add(110*time.Second)) || before.Revision != after.Revision ||
@@ -348,6 +417,11 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
+	}
+
+	failedRefresh := request(http.MethodPost, "/refresh", nil, http.StatusServiceUnavailable)
+	if !strings.Contains(failedRefresh.Body.String(), "Refresh unavailable") {
+		t.Fatal("failed refresh did not explain the outcome")
 	}
 
 	for _, path = range []string{"/connections", "/connections/" + id, "/activity", "/connections/" + id + "/confirm?" + url.Values{"artifact": {candidate.Artifact}, "account": {ref.Value()}, "authority": {ref.Authority()}, "kind": {ref.Kind()}, "scope": {ref.Scope()}}.Encode()} {

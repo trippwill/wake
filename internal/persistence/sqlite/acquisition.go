@@ -397,7 +397,7 @@ func (s *Store) Accept(
 	step provider.Step,
 	candidates []provider.Candidate,
 	p provider.Progress,
-	cycleAt time.Time,
+	cycle host.PollCycle,
 ) (string, error) {
 	completed, total := p.Completed(), p.Total()
 	if completed > math.MaxInt64 || total > math.MaxInt64 {
@@ -413,7 +413,7 @@ func (s *Store) Accept(
 
 	q := s.queries.WithTx(tx)
 
-	version, payload, err := encodeCheckpointState(k, step, cycleAt)
+	version, payload, err := encodeCheckpointState(k, step, cycle)
 	if err != nil {
 		return "", err
 	}

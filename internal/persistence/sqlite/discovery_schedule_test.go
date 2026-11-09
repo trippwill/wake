@@ -47,7 +47,15 @@ func TestReconfigureReconcilesEnabledDiscoveryStreams(t *testing.T) {
 	next := time.Now().UTC().Add(time.Hour)
 
 	step, _ := provider.NewStep(state, provider.Artifact{}, next)
-	if _, err = s.Accept(ctx, oldKey, cp.Revision, step, nil, provider.Progress{}, time.Time{}); err != nil {
+	if _, err = s.Accept(
+		ctx,
+		oldKey,
+		cp.Revision,
+		step,
+		nil,
+		provider.Progress{},
+		host.PollCycle{},
+	); err != nil {
 		t.Fatal(err)
 	}
 

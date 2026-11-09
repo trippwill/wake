@@ -122,7 +122,8 @@ work and retries keep their own deadlines.
 To set an installation default, add an entry under `[polling.defaults]` in the
 launch configuration. Keys use the registered `provider-id:stream-id` and values
 are quoted durations, for example `"ibkr-flex:confirmations" = "10m"`.
-Use `wake config check` to validate the file before restarting.
+Use `wake config check` to validate the file before restarting. At startup, Wake
+recalculates queued routine polls whose inherited intervals changed.
 **Instrument reference** manages
 the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
 stays visible until repaired or explicitly cleared for anonymous access.

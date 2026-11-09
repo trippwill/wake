@@ -44,7 +44,12 @@ type (
 		ResetStreams            []string
 		CanAcquire, CanDiscover bool
 	}
-	WorkKey      struct{ Connection, Stream, Operation string }
+	WorkKey struct{ Connection, Stream, Operation string }
+	// PollCycle records the inputs that produced a routine poll deadline.
+	PollCycle struct {
+		At       time.Time
+		Interval time.Duration
+	}
 	PacingBudget struct {
 		Policy, Scope string
 		Spacing       time.Duration
@@ -81,7 +86,7 @@ type (
 			provider.Step,
 			[]provider.Candidate,
 			provider.Progress,
-			time.Time,
+			PollCycle,
 		) (string, error)
 		ArtifactProvider(context.Context, string) (string, error)
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
@@ -575,7 +580,15 @@ func (h *Host) step(
 		step = step.NotBefore(now.Add(request.PollInterval))
 	}
 
-	artifact, err := h.store.Accept(work, key, checkpoint.Revision, step, candidates, access.progress, now)
+	artifact, err := h.store.Accept(
+		work,
+		key,
+		checkpoint.Revision,
+		step,
+		candidates,
+		access.progress,
+		PollCycle{At: now, Interval: request.PollInterval},
+	)
 	if err != nil {
 		if errors.Is(err, provider.ErrConflict) {
 			return "", provider.ErrConflict
@@ -1049,7 +1062,7 @@ func (h *Host) Supply(ctx context.Context, id, stream string, artifact provider.
 
 	progress, _ := provider.NewProgress(provider.ProgressRetained, 1, 1)
 
-	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress, time.Time{})
+	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress, PollCycle{})
 	if err != nil {
 		if errors.Is(err, provider.ErrConflict) {
 			return "", err

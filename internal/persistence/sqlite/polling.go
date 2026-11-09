@@ -23,13 +23,18 @@ const pollCheckpointVersion = "wake:poll-checkpoint/1"
 const pollDeadlineFormat = "2006-01-02T15:04:05.000000000Z"
 
 type pollCheckpoint struct {
-	NotBefore string    `json:"not_before"`
-	Version   string    `json:"version"`
-	Payload   []byte    `json:"payload"`
-	CycleAt   time.Time `json:"cycle_at,omitzero"`
+	NotBefore string        `json:"not_before"`
+	Version   string        `json:"version"`
+	Payload   []byte        `json:"payload"`
+	CycleAt   time.Time     `json:"cycle_at,omitzero"`
+	Interval  time.Duration `json:"interval,omitempty"`
 }
 
-func encodeCheckpointState(key host.WorkKey, step provider.Step, cycleAt time.Time) (string, []byte, error) {
+func encodeCheckpointState(
+	key host.WorkKey,
+	step provider.Step,
+	cycle host.PollCycle,
+) (string, []byte, error) {
 	state := step.State()
 	if key.Operation != "acquire" || !step.PollCompleted() {
 		return state.Version(), state.Payload(), nil
@@ -40,7 +45,8 @@ func encodeCheckpointState(key host.WorkKey, step provider.Step, cycleAt time.Ti
 			NotBefore: step.PollNotBefore().UTC().Format(pollDeadlineFormat),
 			Version:   state.Version(),
 			Payload:   state.Payload(),
-			CycleAt:   cycleAt.UTC(),
+			CycleAt:   cycle.At.UTC(),
+			Interval:  cycle.Interval,
 		},
 	)
 
@@ -102,7 +108,7 @@ func reschedulePoll(
 	}
 
 	checkpoint, floor, err := readPollCheckpoint(payload)
-	if err != nil || checkpoint.CycleAt.IsZero() {
+	if err != nil || checkpoint.CycleAt.IsZero() || checkpoint.Interval == interval {
 		return err
 	}
 
@@ -111,9 +117,50 @@ func reschedulePoll(
 		next = floor
 	}
 
+	checkpoint.Interval = interval
+
+	state, err := json.Marshal(checkpoint)
+	if err != nil {
+		return err
+	}
+
 	return q.SetPollDeadline(ctx, sqlc.SetPollDeadlineParams{
-		ConnectionID: connection, Stream: stream, Next: next.UTC().Format(time.RFC3339Nano),
+		ConnectionID: connection, Stream: stream, State: state, Next: next.UTC().Format(time.RFC3339Nano),
 	})
+}
+
+// ReconcilePolls applies the launch configuration before acquisition starts.
+func (s *Store) ReconcilePolls(
+	ctx context.Context,
+	settings func(string, map[string]time.Duration) []host.PollSetting,
+) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	connections, err := q.QueuedPollConnections(ctx, pollCheckpointVersion)
+	if err != nil {
+		return err
+	}
+
+	for _, connection := range connections {
+		_, overrides, err := decodeConnectionSettings(connection.Settings)
+		if err != nil {
+			return err
+		}
+
+		for _, setting := range settings(connection.Provider, overrides) {
+			if err := reschedulePoll(ctx, q, connection.ID, setting.Stream, setting.Effective()); err != nil {
+				return err
+			}
+		}
+	}
+
+	return s.commit(ctx, tx)
 }
 
 func (s *Store) RefreshPolls(ctx context.Context, now time.Time) (int64, error) {

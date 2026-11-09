@@ -211,6 +211,10 @@ func run(
 	}
 	defer providerHost.Close()
 
+	if err := store.ReconcilePolls(ctx, providerHost.PollSettings); err != nil {
+		return err
+	}
+
 	referenceService, err := reference.New(
 		store,
 		envelope,

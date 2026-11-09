@@ -259,7 +259,7 @@ func TestAtomicEvidenceAcknowledgementAndCandidateRollback(t *testing.T) {
 				t.Fatal(id, err)
 			}
 			step, _ := provider.NewStep(provider.State{}, provider.Artifact{}, f.now.Add(time.Hour))
-			if _, err = f.store.Accept(context.Background(), host.WorkKey{Connection: f.id, Stream: "statements", Operation: operation}, 0, step, nil, provider.Progress{}, time.Time{}); !errors.Is(err, provider.ErrConflict) {
+			if _, err = f.store.Accept(context.Background(), host.WorkKey{Connection: f.id, Stream: "statements", Operation: operation}, 0, step, nil, provider.Progress{}, host.PollCycle{}); !errors.Is(err, provider.ErrConflict) {
 				t.Fatal("stale revision accepted", err)
 			}
 			if f.count(t, "artifacts") != 1 || f.checkpoint(t, operation).Revision != 1 {
@@ -433,7 +433,7 @@ func TestUnknownContinuationAndDurableCooldown(t *testing.T) {
 	cp := f.checkpoint(t, "acquire")
 	state, _ := provider.NewState("future-v99", []byte(`{"page":42}`))
 	step, _ := provider.NewStep(state, provider.Artifact{}, f.now)
-	if _, err := f.store.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}, time.Time{}); err != nil {
+	if _, err := f.store.Accept(ctx, key, cp.Revision, step, nil, provider.Progress{}, host.PollCycle{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.host.Acquire(ctx, f.id, "statements"); !errors.Is(err, provider.ErrUnavailable) {

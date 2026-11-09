@@ -970,7 +970,7 @@ func TestPositionsInterpretationUpgradeUsesRetainedEvidenceWithoutRefetch(t *tes
 
 	step, _ := provider.NewStep(provider.State{}, artifact, time.Now().Add(time.Hour))
 
-	id, err := s.Accept(t.Context(), key, cp.Revision, step, nil, provider.Progress{}, time.Time{})
+	id, err := s.Accept(t.Context(), key, cp.Revision, step, nil, provider.Progress{}, host.PollCycle{})
 	if err != nil {
 		t.Fatal(err)
 	}

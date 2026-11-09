@@ -3414,6 +3414,44 @@ func (q *Queries) QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte,
 	return state, err
 }
 
+const queuedPollConnections = `-- name: QueuedPollConnections :many
+SELECT id,provider,settings FROM access.configurations
+WHERE (SELECT paused FROM profile WHERE singleton=1)=0
+  AND EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+   WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
+    AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id)
+`
+
+type QueuedPollConnectionsRow struct {
+	ID       string
+	Provider string
+	Settings []byte
+}
+
+func (q *Queries) QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, queuedPollConnections, stateVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QueuedPollConnectionsRow
+	for rows.Next() {
+		var i QueuedPollConnectionsRow
+		if err := rows.Scan(&i.ID, &i.Provider, &i.Settings); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
@@ -4206,17 +4244,23 @@ func (q *Queries) SetPacing(ctx context.Context, arg SetPacingParams) error {
 }
 
 const setPollDeadline = `-- name: SetPollDeadline :exec
-UPDATE work SET next=? WHERE connection_id=? AND stream=? AND operation='acquire'
+UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire'
 `
 
 type SetPollDeadlineParams struct {
 	Next         string
+	State        []byte
 	ConnectionID string
 	Stream       string
 }
 
 func (q *Queries) SetPollDeadline(ctx context.Context, arg SetPollDeadlineParams) error {
-	_, err := q.db.ExecContext(ctx, setPollDeadline, arg.Next, arg.ConnectionID, arg.Stream)
+	_, err := q.db.ExecContext(ctx, setPollDeadline,
+		arg.Next,
+		arg.State,
+		arg.ConnectionID,
+		arg.Stream,
+	)
 	return err
 }
 
