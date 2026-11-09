@@ -96,7 +96,7 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		h, err := host.New(ctx, s, envelope, nil, clock, registration)
+		h, err := host.New(ctx, s, envelope, nil, clock, nil, registration)
 		if err != nil {
 			t.Fatal(err)
 		}

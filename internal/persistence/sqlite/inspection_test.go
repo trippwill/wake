@@ -115,23 +115,9 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 			)
 		}
 
-		statuses, e := s.queries.WorkStatuses(ctx, id)
+		view.Work, e = connectionWork(ctx, s.queries, id)
 		if e != nil {
 			return out, e
-		}
-
-		for _, r := range statuses {
-			view.Work = append(
-				view.Work,
-				application.WorkStatus{
-					Operation: r.Operation,
-					Progress:  provider.ProgressPhase(r.Observed),
-					Failure:   r.Failure,
-					Next:      r.Next,
-					Stream:    r.Stream,
-					Scheduled: r.Scheduled,
-				},
-			)
 		}
 
 		processing, e := s.queries.ProcessingStatuses(ctx, id)

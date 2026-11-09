@@ -6,7 +6,6 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 
 	"go.trippwill.dev/wake/financial"
@@ -109,12 +108,7 @@ func connectionAccess(
 			return view, e
 		}
 
-		var values map[string]string
-		if json.Unmarshal(configured.Settings, &values) != nil {
-			return view, ErrCorrupt
-		}
-
-		view.Settings, err = provider.NewSettings(values)
+		view.Settings, view.PollOverrides, err = decodeConnectionSettings(configured.Settings)
 		if err != nil {
 			return view, ErrCorrupt
 		}
@@ -133,25 +127,9 @@ func connectionStatus(
 		return view, err
 	}
 
-	statuses, err := q.WorkStatuses(ctx, connection.ID)
+	view.Work, err = connectionWork(ctx, q, connection.ID)
 	if err != nil {
 		return view, err
-	}
-
-	for _, status := range statuses {
-		view.Work = append(
-			view.Work,
-			application.WorkStatus{
-				Operation: status.Operation,
-				Stream:    status.Stream,
-				Progress:  provider.ProgressPhase(status.Observed),
-				Completed: status.ObservedCompleted,
-				Total:     status.ObservedTotal,
-				Failure:   status.Failure,
-				Next:      status.Next,
-				Scheduled: status.Scheduled,
-			},
-		)
 	}
 
 	processing, err := q.ProcessingStatuses(ctx, connection.ID)
@@ -183,6 +161,36 @@ func connectionStatus(
 	}
 
 	return view, nil
+}
+
+func connectionWork(ctx context.Context, q *sqlc.Queries, id string) ([]application.WorkStatus, error) {
+	statuses, err := q.WorkStatuses(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var work []application.WorkStatus
+	for _, status := range statuses {
+		next, err := parseOptionalTime(status.Next)
+		if err != nil {
+			return nil, err
+		}
+
+		last, err := parseOptionalTime(status.LastRetrieved)
+		if err != nil {
+			return nil, err
+		}
+
+		work = append(work, application.WorkStatus{
+			Operation: status.Operation, Stream: status.Stream,
+			Progress:  provider.ProgressPhase(status.Observed),
+			Completed: status.ObservedCompleted, Total: status.ObservedTotal,
+			Failure: status.Failure, Next: next, LastRetrieved: last,
+			Scheduled: status.Scheduled, RetryBlocked: status.RetryBlocked != 0,
+		})
+	}
+
+	return work, nil
 }
 
 func (s *Store) SourcePage(ctx context.Context, query application.ListQuery) (application.SourcePage, error) {

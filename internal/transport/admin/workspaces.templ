@@ -7,6 +7,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/provider"
 	"strconv"
+	"time"
 )
 
 templ Breadcrumbs(title string) {
@@ -27,7 +28,8 @@ func currentPage(active bool) string {
 	return "false"
 }
 
-templ DashboardOverview(view overviewView) {
+templ DashboardOverview(csrf string, view overviewView, refresh string) {
+	{{ now := time.Now() }}
 	@PageHeader("Overview", "Your accounts, current work and next useful action.")
 	if view.Storage.Paused {
 		<section class="wake-card wake-priority"><h2>Review recovered access</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
@@ -90,7 +92,23 @@ templ DashboardOverview(view overviewView) {
 		</div>
 	}
 	<section class="wake-card" aria-labelledby="synchronization-title">
-		<h2 id="synchronization-title">Synchronization</h2>
+		<div class="wake-card-heading">
+			<h2 id="synchronization-title">Synchronization</h2>
+			if !view.Storage.Paused && view.Account.ID()!="" {
+				<form method="post" action="/refresh">
+					<input type="hidden" name="csrf" value={ csrf }/>
+					<button class="btn" type="submit" aria-describedby="refresh-help">Refresh now</button>
+				</form>
+			}
+		</div>
+		if !view.Storage.Paused && view.Account.ID()!="" {
+			<p class="wake-help" id="refresh-help">Bring forward scheduled polls for confirmed sources, subject to source pacing.</p>
+		}
+		if refresh=="requested" {
+			<p role="status">Refresh requested. Sources run when eligible.</p>
+		} else if refresh=="idle" {
+			<p role="status">No scheduled polls could be brought forward.</p>
+		}
 		if len(view.Connections)==0 {
 			<p>No connections configured.</p>
 		} else {
@@ -99,30 +117,22 @@ templ DashboardOverview(view overviewView) {
 					<li>
 						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a>
 						<div>
+							{{ work := sourceWork(c) }}
+							{{ blocker := "" }}
 							if c.MissingAccess {
-								@StateBadge("Access review required")
+								{{ blocker = "Access review required" }}
 							} else if view.Storage.Paused {
-								@StateBadge("paused")
+								{{ blocker = "Paused" }}
+							}
+							if len(work)==0 {
+								if blocker!="" {
+									@StateBadge(blocker)
+								}
+								<p>No automatic work scheduled.</p>
 							} else {
 								<dl class="wake-sync-work">
-									for _,work:=range sourceWork(c) {
-										<div>
-											<dt>
-												if work.Stream=="" || work.Operation=="discover" {
-													{ workLabel(work) }
-												} else {
-													{ stringTitle(work.Stream) }
-												}
-											</dt>
-											<dd>
-												if work.Failure!="" {
-													@StateBadge("failed")
-													<span class="wake-help">{ work.Failure }</span>
-												} else {
-													{ progressLabel(work.Progress) }
-												}
-											</dd>
-										</div>
+									for _,w:=range work {
+										@OverviewSyncWork(w, blocker, now)
 									}
 								</dl>
 							}
@@ -135,6 +145,59 @@ templ DashboardOverview(view overviewView) {
 			<p>Showing the first 50 connections. <a href="/connections">Inspect all connections</a>.</p>
 		}
 	</section>
+}
+
+templ OverviewSyncWork(work application.WorkStatus, blocker string, now time.Time) {
+	<div>
+		<dt>
+			if work.Stream=="" || work.Operation=="discover" {
+				{ workLabel(work) }
+			} else {
+				{ stringTitle(work.Stream) }
+			}
+		</dt>
+		<dd>
+			if blocker=="" {
+				if work.Failure!="" {
+					@StateBadge("failed")
+					<span class="wake-help">{ work.Failure }</span>
+				} else {
+					<span>{ progressLabel(work.Progress) }</span>
+				}
+			}
+			<span class="wake-help">
+				Last successful retrieval ·
+				if work.LastRetrieved.IsZero() {
+					No successful retrieval yet
+				} else {
+					@SyncTime(work.LastRetrieved)
+				}
+			</span>
+			<span class="wake-help">
+				Next event ·
+				if blocker!="" {
+					{ blocker }
+				} else if work.RetryBlocked {
+					Operator action required
+				} else {
+					if work.Failure!="" || work.Progress==provider.ProgressUnavailable {
+						Retry ·
+					} else {
+						Attempt ·
+					}
+					if work.Next.After(now) {
+						@SyncTime(work.Next)
+					} else {
+						Eligible now
+					}
+				}
+			</span>
+		</dd>
+	</div>
+}
+
+templ SyncTime(at time.Time) {
+	<time datetime={ at.UTC().Format(time.RFC3339Nano) }>{ at.UTC().Format("02 Jan 2006, 15:04:05 UTC") }</time>
 }
 
 templ ConnectionsPage(csrf string, view sourceView) {
@@ -223,7 +286,21 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 						if w.Total > 0 {
 							<span class="wake-help wake-cell-note">{ strconv.FormatInt(w.Completed,10) } of { strconv.FormatInt(w.Total,10) } observed</span>
 						}
-						<span class="wake-help wake-cell-note">Next eligible: { known(w.Next) }</span>
+						if w.Operation=="acquire" {
+							for _,setting:=range c.Polling {
+								if setting.Stream==w.Stream {
+									<span class="wake-help wake-cell-note">Polling interval: { pollingValue(setting.Effective()) }</span>
+								}
+							}
+						}
+						<span class="wake-help wake-cell-note">
+							Next eligible:
+							if w.Next.IsZero() {
+								{ unknownValue }
+							} else {
+								{ w.Next.Format(time.RFC3339Nano) }
+							}
+						</span>
 						if w.Failure!="" {
 							<p class="wake-error-text">{ w.Failure }</p>
 						}
@@ -313,6 +390,20 @@ templ ConnectionAccess(csrf string, c application.ConnectionView) {
 			}
 		}
 	</section>
+	if len(c.Polling)>0 {
+		<section class="wake-card">
+			<h2>Polling intervals</h2>
+			<p class="wake-help">Changing an interval reschedules a queued routine poll, subject to provider pacing. Work in progress and retries keep their own deadlines.</p>
+			for _,setting:=range c.Polling {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/polling") }>
+					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="stream" value={ setting.Stream }/>
+					<p><label for={ "poll-interval-" + setting.Stream }>Polling interval for { setting.Stream }</label><input class="input" id={ "poll-interval-" + setting.Stream } name="interval" value={ pollingValue(setting.Override) } maxlength="32" aria-describedby={ "poll-help-" + setting.Stream }/></p>
+					<p class="wake-help" id={ "poll-help-" + setting.Stream }>Enter { pollingValue(setting.Minimum) } to { pollingValue(provider.MaxPollInterval) }, for example { pollingValue(setting.Default) }. Leave empty to use the default of { pollingValue(setting.Default) }.</p>
+					<button class="btn" type="submit">Save interval for { setting.Stream }</button>
+				</form>
+			}
+		</section>
+	}
 }
 
 templ ConnectionSetup(csrf string, registrations []provider.Registration) {

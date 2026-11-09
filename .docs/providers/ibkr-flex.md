@@ -97,8 +97,9 @@ summaries and dedicated Forex P/L Details remain outside this interpretation. Ex
 sections remain in the original evidence. In particular, an FX conversion trade's
 reported result does not establish the realized gain on currency holdings.
 
-The first Activity acquisition requests 365 days. Daily acquisition requests a
-seven-day overlap, widening for downtime with bounded older catch-up. This cadence
+The first Activity acquisition requests 365 days. Recurring acquisition requests a
+seven-day overlap, widening for downtime with bounded older catch-up. The default
+interval is 24 hours. This cadence
 does not establish live P&L or guarantee discovery of older restatements. Returned
 coverage and source report dates remain distinct from retrieval time. IBKR's
 [P&L-not-ready responses](https://www.ibkrguides.com/adminportal/performanceandstatements/flex3error.htm)
@@ -149,13 +150,16 @@ remain separate outcomes.
 
 Confirmation discovery and the first authorized acquisition independently request
 the preceding 365 days. Ongoing Confirmation synchronization requests two days every
-five minutes and widens
+five minutes by default and widens
 after downtime. Older catch-up uses dated windows of at most 365 days. IBKR
 documents both period and dated overrides in its
 [Flex Web Service guide](https://www.ibkrguides.com/adminportal/performanceandstatements/flex3.htm).
 Returned bounds can differ from requested bounds; inspect both in synchronization
 progress. Unavailable ranges remain pending while recent work continues.
+A long routine polling interval leaves earlier unavailable-range retries eligible.
 
+Configure each recurring interval in the connection's **Access** view. See
+[Wake connection settings](../../README.md#connect-and-inspect).
 Generation polling, pacing and transient retries resume automatically. Invalid
 access or query configuration pauses the affected work. Renew the token or repair
 the saved query configuration, then use the connection's repair/retry controls.

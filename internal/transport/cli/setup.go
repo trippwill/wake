@@ -217,7 +217,12 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 }
 
 func checkSetupStopped(guides ...config.SetupGuidance) error {
-	checked := make(map[config.Config]bool)
+	type processPaths struct {
+		runtime string
+		storage config.Storage
+	}
+
+	checked := make(map[processPaths]bool)
 	for _, guide := range guides {
 		configured := config.Config{Paths: config.Paths{RuntimeDir: guide.RuntimeDir}, Storage: guide.Storage}
 		launch := configured
@@ -246,7 +251,8 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 		}
 
 		for _, paths := range []config.Config{configured, launch} {
-			if checked[paths] {
+			key := processPaths{paths.Paths.RuntimeDir, paths.Storage}
+			if checked[key] {
 				continue
 			}
 
@@ -267,7 +273,7 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 				)
 			}
 
-			checked[paths] = true
+			checked[key] = true
 		}
 	}
 

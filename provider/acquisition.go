@@ -67,6 +67,8 @@ type Request struct {
 	Settings Settings
 	State    State
 	Now      time.Time
+	// PollInterval is Wake’s effective recurring interval, or zero for other work.
+	PollInterval time.Duration
 	// SourceAccount is the confirmed account for acquisition. Discovery leaves it empty.
 	SourceAccount source.Reference
 }
@@ -79,6 +81,7 @@ type Step struct {
 	reason            RetryReason
 	coverage          Coverage
 	candidateSnapshot bool
+	pollNotBefore     time.Time
 }
 
 // NewStep describes the next durable state after one bounded protocol step.
@@ -89,6 +92,32 @@ func NewStep(state State, artifact Artifact, next time.Time) (Step, error) {
 	}
 
 	return Step{state: state, artifact: artifact, next: next.Round(0).UTC()}, nil
+}
+
+// WithPollCompleted marks a completed acquisition cycle and records the current
+// NextEligibleAt as the provider's earliest permitted start for the next cycle.
+func (s Step) WithPollCompleted() (Step, error) {
+	if s.next.IsZero() || s.reason != "" || s.candidateSnapshot {
+		return Step{}, ErrInvalid
+	}
+
+	s.pollNotBefore = s.next
+
+	return s, nil
+}
+
+func (s Step) PollCompleted() bool { return !s.pollNotBefore.IsZero() }
+
+// PollNotBefore returns the provider's earliest eligible time after a cycle.
+func (s Step) PollNotBefore() time.Time { return s.pollNotBefore }
+
+// NotBefore can postpone the next step without changing its outcome.
+func (s Step) NotBefore(at time.Time) Step {
+	if !s.next.IsZero() && at.After(s.next) {
+		s.next = at.Round(0).UTC()
+	}
+
+	return s
 }
 
 func (s Step) State() State              { return s.state }

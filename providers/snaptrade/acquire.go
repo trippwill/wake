@@ -168,7 +168,7 @@ func (a *adapter) attempt(
 	}
 
 	if cursor.Verified {
-		step, err := a.activityStep(ctx, r.Now, access, cursor, reply.body)
+		step, err := a.activityStep(ctx, r.Now, access, cursor, reply)
 
 		return step, nil, err
 	}
@@ -340,12 +340,14 @@ func (a *adapter) fetch(
 		return response{}, step, err
 	case http.StatusOK:
 		if reply.header.Get("X-RateLimit-Remaining") == "0" && customerReset.After(now) {
+			reply.notBefore = customerReset
 			if err = access.DelayPacing(ctx, clientPacing, customer, customerReset); err != nil {
 				return response{}, provider.Step{}, err
 			}
 		}
 
 		if account != "" && reply.header.Get("X-RateLimit-Account-Remaining") == "0" && accountReset.After(now) {
+			reply.notBefore = latest(reply.notBefore, accountReset)
 			if err = access.DelayPacing(ctx, accountPacing, accountScope, accountReset); err != nil {
 				return response{}, provider.Step{}, err
 			}
@@ -399,9 +401,9 @@ func boundary(id string, raw json.RawMessage) string {
 }
 
 func (a *adapter) activityStep(
-	ctx context.Context, now time.Time, access provider.Access, cursor scan, body []byte,
+	ctx context.Context, now time.Time, access provider.Access, cursor scan, reply response,
 ) (provider.Step, error) {
-	page, ids, err := parsePage(body)
+	page, ids, err := parsePage(reply.body)
 	if err != nil {
 		return (scan{Failures: cursor.Failures}).retry(
 			now,
@@ -426,14 +428,13 @@ func (a *adapter) activityStep(
 		)
 	}
 
-	artifact, err := provider.NewArtifact(format, "application/json", now, body)
+	artifact, err := provider.NewArtifact(format, "application/json", now, reply.body)
 	if err != nil {
 		return provider.Step{}, err
 	}
 
 	var state provider.State
 
-	due := now.Add(24 * time.Hour)
 	if next < total {
 		cursor.Offset, cursor.Total = next-1, total
 		cursor.Boundary = boundary(ids[len(ids)-1], page.Data[len(ids)-1])
@@ -443,17 +444,22 @@ func (a *adapter) activityStep(
 		if err != nil {
 			return provider.Step{}, err
 		}
-
-		due = now
 	}
 
 	if err = report(ctx, access, provider.ProgressRetained, next, total); err != nil {
 		return provider.Step{}, err
 	}
 
-	step, err := provider.NewStep(state, artifact, due)
+	step, err := provider.NewStep(state, artifact, now)
 	if err != nil {
 		return provider.Step{}, err
+	}
+
+	if next == total {
+		step, err = step.NotBefore(reply.notBefore).WithPollCompleted()
+		if err != nil {
+			return provider.Step{}, err
+		}
 	}
 
 	end, err := financial.ParseDate(cursor.End)

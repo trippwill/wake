@@ -24,7 +24,8 @@ financial history when repairing credentials. See [Wake setup and recovery](../.
 
 ## Understand the history
 
-A completed scan schedules the next one after 24 hours. Wake reads the available
+A completed scan schedules the next one after 24 hours by default. Configure the
+interval in the connection's **Access** view. Wake reads the available
 cache through a fixed UTC date and rechecks upstream account identity at the start
 of a scan. A resumed scan keeps its original end date. The cache can lag the
 brokerage. Wake retains accepted discovery and activity responses and uses the

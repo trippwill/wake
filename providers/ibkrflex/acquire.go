@@ -77,7 +77,7 @@ func (s *Source) acquire(
 	}
 
 	if state.Reference == "" {
-		state.choose(request.Now, request.Stream)
+		state.choose(request.Now, request.Stream, request.PollInterval)
 	}
 
 	step := provider.Step{}
@@ -217,13 +217,16 @@ func (s *Source) acquire(
 				state.LastFrom, state.LastTo = metadata.lastFrom, metadata.lastTo
 			}
 
-			next := request.Now.Add(5 * time.Minute)
-			if request.Stream == Activity {
-				next = request.Now.Add(24 * time.Hour)
-			}
-
+			next := request.Now
 			if len(state.Queue) != 0 {
 				next = request.Now.Add(6 * time.Second)
+			} else if len(state.Missing) != 0 {
+				next = request.Now.Add(pollInterval(request.Stream, request.PollInterval))
+				for _, missing := range state.Missing {
+					if due := time.Unix(missing.Due, 0); due.Before(next) {
+						next = due
+					}
+				}
 			}
 
 			if paceErr = progress(ctx, access, "retained"); paceErr != nil {
@@ -233,6 +236,10 @@ func (s *Source) acquire(
 			step, artifactErr = state.step(artifact, later(next, until))
 			if artifactErr == nil {
 				step, artifactErr = step.WithCoverage(coverage)
+			}
+
+			if artifactErr == nil && !discovery && len(state.Queue) == 0 && len(state.Missing) == 0 {
+				step, artifactErr = step.WithPollCompleted()
 			}
 
 			return artifactErr
@@ -346,7 +353,19 @@ func readContinuation(saved provider.State, query string) (continuation, error) 
 	return state, nil
 }
 
-func (state *continuation) choose(now time.Time, stream string) {
+func pollInterval(stream string, interval time.Duration) time.Duration {
+	if interval != 0 {
+		return interval
+	}
+
+	if stream == Activity {
+		return activityInterval
+	}
+
+	return confirmationInterval
+}
+
+func (state *continuation) choose(now time.Time, stream string, interval time.Duration) {
 	if state.Period != 0 {
 		if state.Anchor != civil(now).Format("2006-01-02") {
 			selected := periodWindow(state.Anchor, state.Period)
@@ -360,14 +379,14 @@ func (state *continuation) choose(now time.Time, stream string) {
 		return
 	}
 
-	interval, recentPeriod := 5*time.Minute, 2
+	recentPeriod := 2
 	if stream == Activity {
-		interval, recentPeriod = 24*time.Hour, 7
+		recentPeriod = 7
 	}
 
 	lastRecent, _ := time.Parse(time.RFC3339Nano, state.LastRecent)
 	if state.Started && (len(state.Queue) > 0 || len(state.Missing) > 0) &&
-		(lastRecent.IsZero() || !now.Before(lastRecent.Add(interval))) {
+		(lastRecent.IsZero() || !now.Before(lastRecent.Add(pollInterval(stream, interval)))) {
 		state.Period = recentPeriod
 		state.Anchor = civil(now).Format("2006-01-02")
 		state.Recent = true

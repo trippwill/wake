@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"go.trippwill.dev/wake/financial"
@@ -19,7 +20,7 @@ import (
 )
 
 func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[string][]byte) error {
-	data, err := json.Marshal(c.Settings.Values())
+	data, err := encodeConnectionSettings(c)
 	if err != nil {
 		return err
 	}
@@ -82,12 +83,7 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 		return host.Connection{}, err
 	}
 
-	values := map[string]string{}
-	if err = json.Unmarshal(row.Settings, &values); err != nil {
-		return host.Connection{}, ErrCorrupt
-	}
-
-	settings, err := provider.NewSettings(values)
+	settings, overrides, err := decodeConnectionSettings(row.Settings)
 	if err != nil {
 		return host.Connection{}, ErrCorrupt
 	}
@@ -99,8 +95,99 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 		Provider:      row.Provider,
 		Name:          row.Name,
 		Settings:      settings,
+		PollOverrides: overrides,
 		SourceAccount: ref,
 	}, err
+}
+
+// The prefix is outside the provider setting key alphabet. Existing access
+// stores already use this string map, and providers receive only their fields.
+const pollingPrefix = "polling:"
+
+func encodeConnectionSettings(c host.Connection) ([]byte, error) {
+	values := c.Settings.Values()
+	if len(c.PollOverrides) != 0 && values == nil {
+		values = make(map[string]string)
+	}
+
+	for stream, interval := range c.PollOverrides {
+		values[pollingPrefix+stream] = interval.String()
+	}
+
+	return json.Marshal(values)
+}
+
+func decodeConnectionSettings(data []byte) (provider.Settings, map[string]time.Duration, error) {
+	var values map[string]string
+	if json.Unmarshal(data, &values) != nil {
+		return provider.Settings{}, nil, ErrCorrupt
+	}
+
+	overrides := map[string]time.Duration{}
+	for key, value := range values {
+		if stream, ok := strings.CutPrefix(key, pollingPrefix); ok {
+			interval, err := provider.ParsePollInterval(value)
+			if err != nil || stream == "" {
+				return provider.Settings{}, nil, ErrCorrupt
+			}
+
+			overrides[stream] = interval
+
+			delete(values, key)
+		}
+	}
+
+	settings, err := provider.NewSettings(values)
+	if err != nil {
+		return provider.Settings{}, nil, ErrCorrupt
+	}
+
+	return settings, overrides, nil
+}
+
+// SavePolling updates the settings and any queued routine poll atomically.
+func (s *Store) SavePolling(
+	ctx context.Context,
+	c host.Connection,
+	stream string,
+	interval time.Duration,
+) error {
+	data, err := encodeConnectionSettings(c)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	current, err := q.Connection(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+
+	if current.Provider != c.Provider {
+		return ErrAssociation
+	}
+
+	if err := q.UpdateConnection(ctx, sqlc.UpdateConnectionParams{
+		ID: c.ID, Provider: c.Provider, Name: current.Name, Settings: data,
+	}); err != nil {
+		return err
+	}
+
+	if interval != 0 {
+		if err := reschedulePoll(ctx, q, c.ID, stream, interval); err != nil {
+			return err
+		}
+	}
+
+	return s.commit(ctx, tx)
 }
 
 func sourceAccount(ctx context.Context, q *sqlc.Queries, connection string) (source.Reference, error) {
@@ -117,7 +204,7 @@ func sourceAccount(ctx context.Context, q *sqlc.Queries, connection string) (sou
 }
 
 func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
-	data, err := json.Marshal(c.Settings.Values())
+	data, err := encodeConnectionSettings(c)
 	if err != nil {
 		return err
 	}
@@ -215,12 +302,9 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 		return host.Checkpoint{}, err
 	}
 
-	state := provider.State{}
-	if row.StateVersion != "" {
-		state, err = provider.NewState(row.StateVersion, row.State)
-		if err != nil {
-			return host.Checkpoint{}, ErrCorrupt
-		}
+	state, err := decodeCheckpointState(row.StateVersion, row.State)
+	if err != nil {
+		return host.Checkpoint{}, err
 	}
 
 	next, err := parseOptionalTime(row.Next)
@@ -313,6 +397,7 @@ func (s *Store) Accept(
 	step provider.Step,
 	candidates []provider.Candidate,
 	p provider.Progress,
+	cycle host.PollCycle,
 ) (string, error) {
 	completed, total := p.Completed(), p.Total()
 	if completed > math.MaxInt64 || total > math.MaxInt64 {
@@ -328,11 +413,16 @@ func (s *Store) Accept(
 
 	q := s.queries.WithTx(tx)
 
+	version, payload, err := encodeCheckpointState(k, step, cycle)
+	if err != nil {
+		return "", err
+	}
+
 	rows, err := q.AdvanceWork(
 		ctx,
 		sqlc.AdvanceWorkParams{
-			StateVersion:          step.State().Version(),
-			State:                 nonNil(step.State().Payload()),
+			StateVersion:          version,
+			State:                 nonNil(payload),
 			Next:                  step.NextEligibleAt().Format(time.RFC3339Nano),
 			Acknowledged:          string(p.Phase()),
 			AcknowledgedCompleted: int64(completed),

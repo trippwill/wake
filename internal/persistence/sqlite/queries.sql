@@ -56,10 +56,45 @@ INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON
 UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
 -- name: RestartDiscovery :exec
 UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
+-- name: RefreshPolls :execrows
+UPDATE work
+SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(sqlc.arg(now) AS TEXT)
+              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(sqlc.arg(now) AS TEXT) END
+WHERE operation='acquire'
+  AND (SELECT paused FROM profile WHERE singleton=1)=0
+  AND failure='' AND failure_code=''
+  AND julianday(next)>julianday(sqlc.arg(now))
+  AND julianday(next)>CASE WHEN state_version=sqlc.arg(poll_version)
+                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
+-- name: QueuedPoll :one
+SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
+WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
+  AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
+-- name: SetPollDeadline :exec
+UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire';
+-- name: QueuedPollConnections :many
+SELECT id,provider,settings FROM access.configurations
+WHERE EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+   WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
+    AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id);
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
-SELECT work.*, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation;
+SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
+ coalesce(scheduled.enabled,0)=1 AS scheduled,
+ -- Match PendingWork's terminal failures.
+ CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ -- Find the newest receipt per retained body through receipts_body before comparing bodies.
+ CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
+  SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
+  FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
+ )), '') AS TEXT) AS last_retrieved
+FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream;
 -- name: DisableDiscovery :exec
 UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
 -- name: Account :one

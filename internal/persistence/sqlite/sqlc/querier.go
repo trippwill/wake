@@ -167,6 +167,8 @@ type Querier interface {
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
 	QueueInterpretations(ctx context.Context, dollar_1 string) error
+	QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte, error)
+	QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error)
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
 	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)
@@ -174,6 +176,7 @@ type Querier interface {
 	ReferenceFailure(ctx context.Context, failure string) error
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
 	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
+	RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error)
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	RelinkActivityObservation(ctx context.Context, arg RelinkActivityObservationParams) error
@@ -203,6 +206,7 @@ type Querier interface {
 	SetListingFIGI(ctx context.Context, arg SetListingFIGIParams) error
 	SetObservationOutcome(ctx context.Context, arg SetObservationOutcomeParams) error
 	SetPacing(ctx context.Context, arg SetPacingParams) error
+	SetPollDeadline(ctx context.Context, arg SetPollDeadlineParams) error
 	SetReferenceBudget(ctx context.Context, arg SetReferenceBudgetParams) error
 	SetReferenceKey(ctx context.Context, encrypted []byte) error
 	SetScheduled(ctx context.Context, arg SetScheduledParams) error

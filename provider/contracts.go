@@ -109,6 +109,7 @@ type Stream struct {
 	id        string
 	format    string
 	discovery bool
+	polling   Polling
 }
 
 func NewStream(id, format string) (Stream, error) {
