@@ -211,6 +211,10 @@ func run(
 	}
 	defer providerHost.Close()
 
+	if err := store.ScheduleMissingAcquisition(ctx, "snaptrade", "positions"); err != nil {
+		return err
+	}
+
 	if err := store.ReconcilePolls(ctx, providerHost.PollSettings); err != nil {
 		return err
 	}

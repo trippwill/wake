@@ -233,8 +233,8 @@ runnable consumer checks.
 
 Reported positions use a separate complete account-set projection with its own durable
 publication version. Source interpretation contributes typed immutable sets and instrument
-claims; deterministic financial selection uses effective time, account source authority and
-explicit revision relationships. Set content, availability and version commit atomically.
+claims; deterministic selection uses the source-reported snapshot time and basis, account
+source authority and explicit revision relationships. Set content, availability and version commit atomically.
 Each retained report contributes its latest successfully processed interpretation;
 earlier interpreted claims remain evidence without competing with their replacement.
 This controls eligibility of position-derived instrument assertions and bindings as well as

@@ -68,7 +68,7 @@ func (a *adapter) Normalize(
 	artifact provider.Artifact,
 	sink provider.Claims,
 ) (provider.Result, error) {
-	if artifact.Format() != format {
+	if artifact.Format() != format && artifact.Format() != positionsFormat {
 		return provider.Result{}, provider.ErrUnavailable
 	}
 
@@ -79,6 +79,10 @@ func (a *adapter) Normalize(
 
 	if err := validateJSON(ctx, body); err != nil {
 		return provider.Result{}, err
+	}
+
+	if artifact.Format() == positionsFormat {
+		return normalizePositions(ctx, artifact.SourceAccount(), body, sink)
 	}
 
 	// Acquisition preflight also preserves exact authorization and account
@@ -277,7 +281,13 @@ func (row symbol) instrument(tradeCurrency financial.Currency) (source.Instrumen
 		return source.Instrument{}, provider.ErrUnavailable
 	}
 
-	ref, err := source.NewReference("snaptrade", "universal-symbol", "", row.ID)
+	return row.instrumentClaim(kind, "universal-symbol", tradeCurrency)
+}
+
+func (row symbol) instrumentClaim(
+	kind source.InstrumentKind, referenceKind string, tradeCurrency financial.Currency,
+) (source.Instrument, error) {
+	ref, err := source.NewReference("snaptrade", referenceKind, "", row.ID)
 	if err != nil {
 		return source.Instrument{}, err
 	}

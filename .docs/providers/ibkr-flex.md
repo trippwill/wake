@@ -121,8 +121,8 @@ recalculate the broker's result or its allocated cost.
 Include Open Positions at SUMMARY detail for the whole confirmed account, without
 instrument or model filters. Include account and contract references, asset class,
 quantity (`position`), currency, report date, side, available contract terms and
-Cost Basis Money (`costBasisMoney`) when needed. Wake preserves the reported aggregate
-cost, including explicit zero, without deriving it from prices or lots. See IBKR's
+Cost Basis Price (`costBasisPrice`) for unit basis. Wake preserves the reported
+price and currency, including explicit zero. See IBKR's
 [Open Positions reference](https://www.ibkrguides.com/reportingreference/reportguide/open%20positionsfq.htm).
 
 Summary rows establish one common reported date; an explicitly empty section uses the

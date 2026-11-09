@@ -268,23 +268,29 @@ is an observation, not an explanation of how it arose. Derived state is a calcul
 from retained information. Never invent an event to make observations and calculated
 state agree. Tax-relevant source facts differ from a user's tax treatment.
 
-A reported position set describes an account at one effective time. It is independent of
-activity and lots: neither its quantity nor its reported aggregate cost basis explains
-how the holding arose. Keep exact signed quantities, units, dated contract terms and
-source currencies. A known empty set differs from absent or unusable position coverage.
+A reported position set describes an account at one source-reported time. A brokerage
+can state an effective time. An intermediary that supplies only its own snapshot
+fetch time can establish the order of snapshots from that feed, with the time basis
+reported separately. Its quantity and reported unit cost basis are independent of the
+activity and lots that explain how the holding arose. Keep exact signed quantities, units,
+dated contract terms and source currencies. When the source gives a bond quantity
+without specifying its basis, or reports an unclassified instrument, preserve the
+reported units. A known empty set differs
+from absent or unusable position coverage.
 A newer applicable unusable set makes current positions unavailable; an older usable
 set remains evidence without becoming a fallback. Acquisition failures alone do not
 erase established reported state. Undated evidence establishes no newer effective time.
 
 Select whole account sets through source authority and established revision relationships.
 Do not combine independently dated rows or infer revision authority from report generation
-or retrieval order. Unresolved incompatible claims at the same effective time withhold the
-set. Established replacements can retire conflicting revision claims, including correcting
-their effective dates backwards. Conflicting instrument identities withhold bound positions
-until resolved. Repeated instrument/quantity rows have no independent identity established
-by their ordering. Optional costs and terms remain unknown where compatible pairings
-disagree. Reported costs remain distinct from reconstructed lots, valuations and calculated
-P&L.
+or Wake retrieval order. Unresolved incompatible claims at the same source-reported
+time withhold the set. Established replacements can retire conflicting revision claims,
+including correcting their effective dates backwards. Conflicting instrument identities
+withhold bound positions until resolved. Row order gives no independent identity to
+repeated instrument/quantity rows. Optional costs and terms remain unknown where compatible pairings
+disagree. Reported unit cost basis is a price with source currency and any established
+quote convention. It remains distinct from reconstructed lots, valuations and
+calculated P&L.
 Ambiguous pairing work is bounded. If reconciliation cannot establish a usable set within
 that bound, positions are unavailable as incomplete; neither a partial pairing nor an older
 set is served.

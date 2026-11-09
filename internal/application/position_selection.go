@@ -122,7 +122,7 @@ func SelectPositions(ctx context.Context, inputs []PositionCandidate) (result Po
 			return result, nil
 		}
 
-		if !f.At.Equal(result.Source.At) {
+		if !f.At.Equal(result.Source.At) || f.TimeBasis != result.Source.TimeBasis {
 			result.Reason = "conflict"
 			return result, nil
 		}
@@ -311,16 +311,17 @@ func mergePositionGroup(
 						return true
 					}
 
-					instrument, cost := consensus[i].Instrument(), consensus[i].CostBasis()
+					instrument := consensus[i].Instrument()
 					if !samePositionTerms(instrument, p.Instrument()) {
 						instrument = initial[i].Instrument()
 					}
 
-					if !cost.Equal(p.CostBasis()) {
-						cost = initial[i].CostBasis()
+					unitCost := consensus[i].UnitCostBasis()
+					if !unitCost.Equal(p.UnitCostBasis()) {
+						unitCost = initial[i].UnitCostBasis()
 					}
 
-					consensus[i], _ = source.NewPosition(instrument, initial[i].Quantity(), cost)
+					consensus[i], _ = initial[i].WithTerms(instrument, unitCost)
 				}
 			}
 			// No further solution can remove source facts already in the baseline.
@@ -387,7 +388,8 @@ func mergePositionGroup(
 
 func samePositionRow(a, b source.Position) bool {
 	return a.Quantity().Equal(b.Quantity()) && a.Unit() == b.Unit() &&
-		a.CostBasis().Equal(b.CostBasis()) && samePositionTerms(a.Instrument(), b.Instrument())
+		a.UnitCostBasis().Equal(b.UnitCostBasis()) &&
+		samePositionTerms(a.Instrument(), b.Instrument())
 }
 
 func samePositionTerms(a, b source.Instrument) bool {
@@ -410,21 +412,21 @@ func mergePositionRow(prior, next source.Position) (source.Position, bool) {
 		return source.Position{}, false
 	}
 
-	x, y := prior.CostBasis(), next.CostBasis()
-	if x.Amount() != "" && y.Amount() != "" && !x.Equal(y) {
-		return source.Position{}, false
-	}
-
-	if x.Amount() == "" {
-		x = y
-	}
-
 	instrument, err := EnrichInstrument(prior.Instrument(), next.Instrument())
 	if err != nil {
 		return source.Position{}, false
 	}
 
-	v, err := source.NewPosition(instrument, prior.Quantity(), x)
+	unit, nextUnit := prior.UnitCostBasis(), next.UnitCostBasis()
+	if unit.Amount() != "" && nextUnit.Amount() != "" && !unit.Equal(nextUnit) {
+		return source.Position{}, false
+	}
+
+	if unit.Amount() == "" {
+		unit = nextUnit
+	}
+
+	v, err := prior.WithTerms(instrument, unit)
 
 	return v, err == nil
 }

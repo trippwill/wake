@@ -1,7 +1,8 @@
 # SnapTrade Personal
 
 Wake discovers existing Fidelity US and Interactive Brokers investment accounts
-in SnapTrade Personal and reads cached purchases and sales. Link or repair your
+in SnapTrade Personal. Wake reads cached purchases and sales for both brokers
+and reported positions for Fidelity US. Link or repair your
 brokerage in the SnapTrade dashboard. Use a different real account on each Wake
 connection, including direct IBKR Flex connections. See [SnapTrade Personal
 setup](https://docs.snaptrade.com/docs/getting-started#personal-quickstart).
@@ -39,5 +40,21 @@ transaction grain. It preserves exact trade terms and reported fees. Fidelity
 trades contribute a civil date. IBKR trades can also contribute a timestamp.
 Trade cash amounts with an unspecified gross or net role stay in the source
 report. A missing transaction in a later response leaves the retained history
-intact. Positions, balances, and other activity from SnapTrade are outside this
-coverage. See [SnapTrade activities](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_getAccountActivities).
+intact. See [SnapTrade activities](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_getAccountActivities).
+
+## Fidelity US positions
+
+Wake checks for positions every 24 hours by default, independently of trade history.
+Set the positions interval under **Access → Polling intervals** or use
+`"snaptrade:positions"` in `[polling.defaults]`. The minimum is one hour.
+An existing confirmed account starts position sync on upgrade. Open **Positions** and
+select the account to see its latest complete holdings. The time shown is when
+SnapTrade fetched the holdings from Fidelity. Fidelity data can already be up to
+24 hours old at that point.
+
+Wake reads stocks, ADRs, funds, bonds, and equity and ETF options. Bond quantities
+use the units SnapTrade reports. Cash-equivalent funds remain holdings. Positions
+shows the top-level book price as **Unit cost basis** when present. Holdings SnapTrade classifies as
+`other` retain their reported quantity and identity as unclassified instruments.
+An unsupported holding or an unusable required field makes a dated set incomplete. See [Fidelity coverage](https://support.snaptrade.com/Fidelity-ad8feaa69a1c83eca04301cfac6e5071?pvs=21)
+and the [positions endpoint](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_getAllAccountPositions).

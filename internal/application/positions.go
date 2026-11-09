@@ -3,18 +3,26 @@
 
 package application
 
+import "go.trippwill.dev/wake/source"
+
 type PositionTime struct {
-	Date string  `json:"date"`
-	At   *string `json:"at"`
+	Date  string                   `json:"date"`
+	At    *string                  `json:"at"`
+	Basis source.PositionTimeBasis `json:"basis,omitempty"`
 }
 
 type PublishedPosition struct {
-	InstrumentID string            `json:"instrument_id"`
-	Quantity     PublishedQuantity `json:"quantity"`
-	Side         string            `json:"side"`
-	CostBasis    *PublishedMoney   `json:"cost_basis"`
-	Option       *PublishedOption  `json:"option"`
-	Debt         *PublishedDebt    `json:"debt"`
+	InstrumentID  string                  `json:"instrument_id"`
+	Quantity      PublishedQuantity       `json:"quantity"`
+	Side          string                  `json:"side"`
+	UnitCostBasis *PublishedUnitCostBasis `json:"unit_cost_basis,omitempty"`
+	Option        *PublishedOption        `json:"option"`
+	Debt          *PublishedDebt          `json:"debt"`
+}
+
+type PublishedUnitCostBasis struct {
+	PublishedMoney
+	Quote string `json:"quote,omitempty"`
 }
 
 // PositionsView replaces one account's complete current reported position set.

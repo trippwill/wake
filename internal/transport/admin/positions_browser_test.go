@@ -196,7 +196,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 })()`, nil), testbrowser.NewDocument(chromedp.Reload()))
 	poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`)
 	poll(
-		`document.querySelector('.tabulator-col[tabulator-field="cost"] .tabulator-col-title')?.textContent==='Total basis'`,
+		`document.querySelector('.tabulator-col[tabulator-field="cost"] .tabulator-col-title')?.textContent==='Unit cost basis'`,
 	)
 
 	var legacyLayoutRestored bool

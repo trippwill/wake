@@ -353,18 +353,30 @@ components:
     Position:
       type: object
       additionalProperties: false
-      required: [instrument_id, quantity, side, cost_basis, option, debt]
+      required: [instrument_id, quantity, side, option, debt]
       properties:
         instrument_id:
           type: string
           minLength: 1
         quantity:
-          $ref: '#/components/schemas/Quantity'
+          allOf:
+          - $ref: '#/components/schemas/Quantity'
+          description: Unit is shares, contracts, nominal, or units. The units value preserves a reported quantity for an unclassified instrument or for debt with unspecified face amount.
         side:
           type: string
           enum: [long, short]
-        cost_basis:
-          $ref: '#/components/schemas/NullableMoney'
+        unit_cost_basis:
+          type: object
+          additionalProperties: false
+          required: [amount, currency]
+          description: Reported basis price with exact decimal text. The quote convention is included where established. Omitted when unavailable.
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            quote:
+              type: string
         option:
           $ref: '#/components/schemas/NullableOption'
         debt:
@@ -429,6 +441,10 @@ components:
               format: date-time
               x-go-type: string
               nullable: true
+            basis:
+              type: string
+              enum: [source_fetched]
+              description: The time the source fetched holdings from the broker. Omission indicates broker-effective time.
         reason:
           type: string
           nullable: true
@@ -439,7 +455,7 @@ components:
             nullable: true
             items:
               $ref: '#/components/schemas/Position'
-      description: Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. Effective time may be unknown when unavailable.
+      description: Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. The as-of time may be unknown when unavailable.
     Publication:
       type: object
       additionalProperties: false

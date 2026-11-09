@@ -130,8 +130,9 @@ func calculatePositions(
 
 	if !selection.Source.Date.IsZero() {
 		out.AsOf = &application.PositionTime{
-			Date: selection.Source.Date.String(),
-			At:   known(selection.Source.At.String()),
+			Date:  selection.Source.Date.String(),
+			At:    known(selection.Source.At.String()),
+			Basis: selection.Source.TimeBasis,
 		}
 	}
 
@@ -148,15 +149,23 @@ func calculatePositions(
 			side = "short"
 		}
 
+		var unitCostBasis *application.PublishedUnitCostBasis
+		if price := publicPrice(p.UnitCostBasis()); price != nil {
+			unitCostBasis = &application.PublishedUnitCostBasis{
+				PublishedMoney: *price,
+				Quote:          p.UnitCostBasisQuote(),
+			}
+		}
+
 		out.Positions = append(
 			out.Positions,
 			application.PublishedPosition{
-				InstrumentID: selection.InstrumentIDs[i],
-				Quantity:     application.PublishedQuantity{Value: p.Quantity().Value(), Unit: p.Unit()},
-				Side:         side,
-				CostBasis:    publicMoney(p.CostBasis()),
-				Option:       publicOption(p.Instrument().Option()),
-				Debt:         publicDebt(p.Instrument().Debt()),
+				InstrumentID:  selection.InstrumentIDs[i],
+				Quantity:      application.PublishedQuantity{Value: p.Quantity().Value(), Unit: p.Unit()},
+				Side:          side,
+				UnitCostBasis: unitCostBasis,
+				Option:        publicOption(p.Instrument().Option()),
+				Debt:          publicDebt(p.Instrument().Debt()),
 			},
 		)
 	}

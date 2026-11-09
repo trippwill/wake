@@ -77,7 +77,13 @@ func (a testAccess) DelayPacing(
 type testClaims struct {
 	provider.Claims
 	observations []source.ActivityObservation
+	positions    []source.PositionSetObservation
 	rejected     []string
+}
+
+func (s *testClaims) PutPositionSet(_ context.Context, claim source.PositionSetObservation) error {
+	s.positions = append(s.positions, claim)
+	return nil
 }
 
 func (s *testClaims) PutActivity(_ context.Context, claim source.ActivityObservation) error {
@@ -188,6 +194,15 @@ func TestPersonalDiscoveryAndResumedHistory(t *testing.T) {
 	}
 
 	r.State, r.SourceAccount = provider.State{}, last.Candidates()[0].Reference()
+
+	ibkrPositions := r
+	ibkrPositions.Stream = positionsID
+
+	skipped, err := reg.Acquirer().Acquire(t.Context(), ibkrPositions, access)
+	if err != nil || !skipped.Artifact().IsZero() || !skipped.State().IsZero() ||
+		!skipped.PollCompleted() || !skipped.NextEligibleAt().Equal(r.Now) {
+		t.Fatalf("IBKR positions stream should remain idle: %+v %v", skipped, err)
+	}
 
 	acquire := func(reg provider.Registration) provider.Step {
 		t.Helper()

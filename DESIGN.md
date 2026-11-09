@@ -308,8 +308,8 @@ the server without floating-point conversion, keeping currency and unit distinct
 Short tables and decision controls remain native; exact, unrounded choices remain
 available in every appearance.
 Positions presents reported time and availability at account-set level, with exact signed
-quantities, explicit units and long/short wording. Label source-reported aggregate cost basis as
-“Total basis”. Use “Not provided” for missing amounts and preserve explicit zero. Contract
+quantities, explicit units and long/short wording. Label reported per-unit cost basis as
+“Unit cost basis”. Use “Not provided” for missing amounts and preserve explicit zero. Contract
 disclosures show reported option/debt terms without substituting current instrument terms.
 Use “Not provided” for applicable contract terms that were not reported.
 Refresh the metadata and rows together, and distinguish an outdated displayed report from the

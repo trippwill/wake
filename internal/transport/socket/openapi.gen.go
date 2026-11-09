@@ -344,6 +344,21 @@ func (e PositionSide) Valid() bool {
 	}
 }
 
+// Defines values for PositionsViewAsOfBasis.
+const (
+	SourceFetched PositionsViewAsOfBasis = "source_fetched"
+)
+
+// Valid indicates whether the value is a known member of the PositionsViewAsOfBasis enum.
+func (e PositionsViewAsOfBasis) Valid() bool {
+	switch e {
+	case SourceFetched:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PositionsViewReason.
 const (
 	Conflict           PositionsViewReason = "conflict"
@@ -814,15 +829,22 @@ type Option struct {
 
 // Position defines model for Position.
 type Position struct {
-	// CostBasis Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	CostBasis    *NullableMoney `json:"cost_basis"`
-	Debt         *NullableDebt  `json:"debt"`
-	InstrumentId string         `json:"instrument_id"`
+	Debt         *NullableDebt `json:"debt"`
+	InstrumentId string        `json:"instrument_id"`
 
 	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-	Option   *NullableOption `json:"option"`
-	Quantity Quantity        `json:"quantity"`
-	Side     PositionSide    `json:"side"`
+	Option *NullableOption `json:"option"`
+
+	// Quantity Unit is shares, contracts, nominal, or units. The units value preserves a reported quantity for an unclassified instrument or for debt with unspecified face amount.
+	Quantity Quantity     `json:"quantity"`
+	Side     PositionSide `json:"side"`
+
+	// UnitCostBasis Reported basis price with exact decimal text. The quote convention is included where established. Omitted when unavailable.
+	UnitCostBasis *struct {
+		Amount   string  `json:"amount"`
+		Currency string  `json:"currency"`
+		Quote    *string `json:"quote,omitempty"`
+	} `json:"unit_cost_basis,omitempty"`
 }
 
 // PositionSide defines model for Position.Side.
@@ -835,12 +857,15 @@ type PositionsPublication struct {
 	WarehouseId string `json:"warehouse_id"`
 }
 
-// PositionsView Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. Effective time may be unknown when unavailable.
+// PositionsView Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. The as-of time may be unknown when unavailable.
 type PositionsView struct {
 	AccountId string `json:"account_id"`
 	AsOf      *struct {
-		At   *string            `json:"at"`
-		Date openapi_types.Date `json:"date"`
+		At *string `json:"at"`
+
+		// Basis The time the source fetched holdings from the broker. Omission indicates broker-effective time.
+		Basis *PositionsViewAsOfBasis `json:"basis,omitempty"`
+		Date  openapi_types.Date      `json:"date"`
 	} `json:"as_of"`
 	Positions   *[]Position          `json:"positions"`
 	Reason      *PositionsViewReason `json:"reason"`
@@ -849,6 +874,9 @@ type PositionsView struct {
 	WarehouseId string               `json:"warehouse_id"`
 	union       json.RawMessage
 }
+
+// PositionsViewAsOfBasis The time the source fetched holdings from the broker. Omission indicates broker-effective time.
+type PositionsViewAsOfBasis string
 
 // PositionsViewReason defines model for PositionsView.Reason.
 type PositionsViewReason string

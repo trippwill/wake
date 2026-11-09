@@ -627,7 +627,7 @@
       ["name", "Instrument"],
       ["side", "Side"],
       ["quantity", "Quantity"],
-      ["cost", "Total basis"],
+      ["cost", "Unit cost basis"],
       ["terms", "Reported terms"],
     ],
     instruments: [

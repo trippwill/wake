@@ -1307,6 +1307,22 @@ func (q *Queries) EnrichInstrument(ctx context.Context, arg EnrichInstrumentPara
 	return err
 }
 
+const ensureAccountAcquisitionWork = `-- name: EnsureAccountAcquisitionWork :exec
+INSERT INTO work(connection_id,stream,operation)
+SELECT connection_id,?1,'acquire' FROM accounts WHERE provider=?2
+ON CONFLICT DO NOTHING
+`
+
+type EnsureAccountAcquisitionWorkParams struct {
+	Stream   string
+	Provider string
+}
+
+func (q *Queries) EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) error {
+	_, err := q.db.ExecContext(ctx, ensureAccountAcquisitionWork, arg.Stream, arg.Provider)
+	return err
+}
+
 const ensureInstrumentSelection = `-- name: EnsureInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING
 `
@@ -4094,6 +4110,22 @@ type SaveProcessingReceiptParams struct {
 
 func (q *Queries) SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error {
 	_, err := q.db.ExecContext(ctx, saveProcessingReceipt, arg.ArtifactID, arg.Version)
+	return err
+}
+
+const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :exec
+INSERT INTO scheduled(connection_id,stream,operation,enabled)
+SELECT connection_id,?1,'acquire',1 FROM accounts WHERE provider=?2
+ON CONFLICT DO NOTHING
+`
+
+type ScheduleMissingAccountAcquisitionParams struct {
+	Stream   string
+	Provider string
+}
+
+func (q *Queries) ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error {
+	_, err := q.db.ExecContext(ctx, scheduleMissingAccountAcquisition, arg.Stream, arg.Provider)
 	return err
 }
 

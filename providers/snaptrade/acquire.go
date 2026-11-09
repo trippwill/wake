@@ -115,7 +115,8 @@ func (a *adapter) Acquire(
 func (a *adapter) attempt(
 	ctx context.Context, r provider.Request, access provider.Access, discovery bool,
 ) (provider.Step, []provider.Candidate, error) {
-	if r.Stream != streamID {
+	positions := r.Stream == positionsID && !discovery
+	if r.Stream != streamID && !positions {
 		return provider.Step{}, nil, provider.ErrUnavailable
 	}
 
@@ -141,6 +142,18 @@ func (a *adapter) attempt(
 			return provider.Step{}, nil, err
 		}
 
+		if positions && scope.Broker != fidelity {
+			// The shared descriptor schedules both brokers. Only Fidelity has position coverage.
+			step, err := provider.NewStep(provider.State{}, provider.Artifact{}, r.Now)
+			if err != nil {
+				return provider.Step{}, nil, err
+			}
+
+			step, err = step.WithPollCompleted()
+
+			return step, nil, err
+		}
+
 		if cursor.End == "" {
 			cursor.End = r.Now.UTC().Format(time.DateOnly)
 		} else if _, err = financial.ParseDate(cursor.End); err != nil {
@@ -149,12 +162,16 @@ func (a *adapter) attempt(
 
 		if cursor.Verified {
 			account = r.SourceAccount.Value()
-			path = "/accounts/" + account + "/activities"
+			if positions {
+				path = "/accounts/" + account + "/positions/all"
+			} else {
+				path = "/accounts/" + account + "/activities"
 
-			params.Set("endDate", cursor.End)
-			params.Set("offset", strconv.Itoa(cursor.Offset))
-			params.Set("limit", strconv.Itoa(pageLimit))
-			params.Set("type", "BUY,SELL")
+				params.Set("endDate", cursor.End)
+				params.Set("offset", strconv.Itoa(cursor.Offset))
+				params.Set("limit", strconv.Itoa(pageLimit))
+				params.Set("type", "BUY,SELL")
+			}
 		}
 	}
 
@@ -168,14 +185,37 @@ func (a *adapter) attempt(
 	}
 
 	if cursor.Verified {
+		if positions {
+			artifact, err := provider.NewArtifact(positionsFormat, "application/json", r.Now, reply.body)
+			if err != nil {
+				return provider.Step{}, nil, err
+			}
+
+			if err = report(ctx, access, provider.ProgressRetained, 1, 1); err != nil {
+				return provider.Step{}, nil, err
+			}
+
+			step, err := provider.NewStep(provider.State{}, artifact, r.Now)
+			if err != nil {
+				return provider.Step{}, nil, err
+			}
+
+			step, err = step.NotBefore(reply.notBefore).WithPollCompleted()
+
+			return step, nil, err
+		}
+
 		step, err := a.activityStep(ctx, r.Now, access, cursor, reply)
 
 		return step, nil, err
 	}
 
-	artifact, err := provider.NewArtifact(format, "application/json", r.Now, reply.body)
-	if err != nil {
-		return provider.Step{}, nil, err
+	var artifact provider.Artifact
+	if !positions {
+		artifact, err = provider.NewArtifact(format, "application/json", r.Now, reply.body)
+		if err != nil {
+			return provider.Step{}, nil, err
+		}
 	}
 
 	if cursor.Authorizations == nil {
@@ -224,6 +264,16 @@ func (a *adapter) attempt(
 
 	for _, candidate := range candidates {
 		if candidate.Reference() == r.SourceAccount {
+			if positions && positionsPending(reply.body, r.SourceAccount.Value()) {
+				if err = report(ctx, access, provider.ProgressWaiting, 0, 0); err != nil {
+					return provider.Step{}, nil, err
+				}
+
+				step, err := provider.NewStep(provider.State{}, artifact, r.Now.Add(time.Hour))
+
+				return step, nil, err
+			}
+
 			state, err := (scan{Verified: true, End: cursor.End, Failures: cursor.Failures}).state()
 			if err != nil {
 				return provider.Step{}, nil, err

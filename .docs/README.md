@@ -14,7 +14,7 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 - [Repository instructions](../AGENTS.md) — work and delivery constraints.
 
 - [IBKR Flex](providers/ibkr-flex.md) — access and source interpretation.
-- [SnapTrade Personal](providers/snaptrade.md) — account setup and cached trade history.
+- [SnapTrade Personal](providers/snaptrade.md) — account setup, cached trade history and Fidelity positions.
 - [Research](research/README.md) — optional external findings and experiments.
 
 - [Financial socket contract](../api/openapi/v1.yaml) — canonical reads and changes.
