@@ -45,6 +45,8 @@ type (
 		ID, Name, Provider                    string
 		Account                               Account
 		Settings                              provider.Settings
+		PollOverrides                         map[string]time.Duration
+		Polling                               []host.PollSetting
 		Descriptor                            provider.Descriptor
 		CredentialKeys                        []string
 		CanDiscover, CanAcquire, CanNormalize bool
@@ -66,6 +68,7 @@ type (
 		) (Account, error)
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
+		RefreshPolls(context.Context, time.Time) (int64, error)
 		PendingArtifacts(context.Context, time.Time, map[string]string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
 		ProcessingFailure(context.Context, string, time.Time) error
@@ -269,6 +272,25 @@ func (w *Workflow) UpdateConnection(
 	return nil
 }
 
+func (w *Workflow) UpdatePolling(ctx context.Context, id, stream, value string) error {
+	if err := w.host.UpdatePolling(ctx, id, stream, value); err != nil {
+		return err
+	}
+
+	w.notify()
+
+	return nil
+}
+
+func (w *Workflow) RefreshPolls(ctx context.Context) (bool, error) {
+	count, err := w.store.RefreshPolls(ctx, w.now())
+	if err == nil && count != 0 {
+		w.notify()
+	}
+
+	return count != 0, err
+}
+
 func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "acquisition_retry")
 	defer func() { finishLog(resultErr) }()
@@ -394,6 +416,9 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 	}
 
 	connection.Descriptor = registration.Descriptor()
+	if connection.SettingsStored {
+		connection.Polling = w.host.PollSettings(connection.Provider, connection.PollOverrides)
+	}
 
 	connection.CanAcquire = registration.Acquirer() != nil
 

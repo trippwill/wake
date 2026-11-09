@@ -15,9 +15,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/urfave/cli/v3"
+	"go.trippwill.dev/wake/provider"
 )
 
 const directoryMode = 0o700
@@ -85,11 +87,12 @@ func (value Admin) Origin() string {
 
 // Config is the fully resolved and validated process configuration.
 type Config struct {
-	Paths       Paths
-	Storage     Storage
-	Log         Log
-	Credentials Credentials
-	Admin       Admin
+	Paths        Paths
+	Storage      Storage
+	Log          Log
+	Credentials  Credentials
+	Admin        Admin
+	PollDefaults map[string]time.Duration
 }
 
 type fileConfig struct {
@@ -98,6 +101,11 @@ type fileConfig struct {
 	Log         fileLog         `toml:"log"`
 	Credentials fileCredentials `toml:"credentials"`
 	Admin       fileAdmin       `toml:"admin"`
+	Polling     filePolling     `toml:"polling"`
+}
+
+type filePolling struct {
+	Defaults map[string]string `toml:"defaults"`
 }
 
 type filePaths struct {
@@ -182,7 +190,7 @@ func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error
 
 	// Struct decoding is case-insensitive; source admission and attribution are not.
 	// Admit the catalog's exact table/key paths before checking or selecting values.
-	admitted := map[string]bool{}
+	admitted := map[string]bool{"polling": true, "polling.defaults": true}
 	for _, setting := range Settings() {
 		parts := strings.Split(setting.Key, ".")
 		for n := 1; n <= len(parts); n++ {
@@ -191,6 +199,14 @@ func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error
 	}
 
 	for _, key := range metadata.Keys() {
+		if len(key) == 3 && key[0] == "polling" && key[1] == "defaults" {
+			if _, err := provider.ParsePollInterval(cfg.Polling.Defaults[key[2]]); err != nil {
+				return cfg, metadata, fmt.Errorf("%w: invalid interval for %s", ErrInvalid, key.String())
+			}
+
+			continue
+		}
+
 		if !admitted[key.String()] {
 			return cfg, metadata, fmt.Errorf("%w: unknown or noncanonical TOML key: %s", ErrInvalid, key.String())
 		}

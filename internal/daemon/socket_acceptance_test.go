@@ -219,7 +219,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 	now := time.Now()
 
-	providerHost, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, registration)
+	providerHost, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -931,7 +931,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	// Both endpoints already exist; no new financial activity is created.
 	store = open()
 
-	providerHost, err = host.New(ctx, store, envelope, nil, func() time.Time { return now }, registration)
+	providerHost, err = host.New(ctx, store, envelope, nil, func() time.Time { return now }, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}

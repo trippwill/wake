@@ -54,7 +54,9 @@ synchronization for that connection’s selected account. Configure another conn
 for a different brokerage account. Use the account selector in Activity or Positions
 when several accounts are confirmed.
 
-**Overview** shows setup steps, financial review and source work. Use the sidebar's
+**Overview** shows setup steps, financial review and source work. Under
+**Synchronization**, **Refresh now** brings forward routine polls for confirmed
+sources within their pacing limits. It preserves pending retries and continuations. Use the sidebar's
 **Activity**, **Instruments**, **Positions** and **Needs review** destinations to inspect financial
 history, instrument identities, latest reported positions and unresolved questions. Each workspace
 has its own path. Activity, instrument and evidence pages retain a return path to the
@@ -67,6 +69,15 @@ set from unavailable positions and links to instrument details and source report
 
 Under **Administration**, **Connections** groups each source's **Status**, **Reports**
 and **Access**. Repair its Query ID or token beside the affected source.
+**Access → Polling intervals** lets you set an interval for each recurring stream.
+Clear the field and save to inherit its default. **Status** shows the effective
+interval and the next eligible time. Saving preserves the deadline of work already
+scheduled. The next completed cycle uses the saved interval.
+
+To set an installation default, add an entry under `[polling.defaults]` in the
+launch configuration. Keys use the registered `provider-id:stream-id` and values
+are quoted durations, for example `"ibkr-flex:confirmations" = "10m"`.
+Use `wake config check` to validate the file before restarting.
 **Instrument reference** manages
 the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
 stays visible until repaired or explicitly cleared for anonymous access.

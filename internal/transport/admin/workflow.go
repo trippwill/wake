@@ -102,6 +102,8 @@ func registerWorkflowRoutes(
 	failure := func(w http.ResponseWriter, r *http.Request, csrf string, err error) {
 		message := "The operation could not be saved. Retry after checking daemon status."
 		switch err {
+		case host.ErrPollInterval:
+			message = "Enter an interval within the displayed range, or leave it empty to inherit the default."
 		case host.ErrBusy:
 			message = "Connection work is finishing. Wait for its progress to update, then retry."
 		case application.ErrInvalid:
@@ -242,6 +244,23 @@ func registerWorkflowRoutes(
 		})
 	}
 
+	gate("POST /refresh", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		requested, err := workflow.RefreshPolls(r.Context())
+		if err != nil {
+			servePageError(w, r, csrf, http.StatusServiceUnavailable,
+				"Refresh unavailable", "Unable to bring forward polling. Check daemon status and try again.")
+
+			return
+		}
+
+		if requested {
+			http.Redirect(w, r, "/?refresh=requested", http.StatusSeeOther)
+			return
+		}
+
+		http.Redirect(w, r, "/?refresh=idle", http.StatusSeeOther)
+	})
+
 	gate("POST /connections", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		descriptor := requestDescriptor(r, workflow)
 		settings, err := formSettings(r, descriptor)
@@ -290,6 +309,22 @@ func registerWorkflowRoutes(
 		}
 		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
 		http.Redirect(w, r, destination, http.StatusSeeOther)
+	})
+
+	gate("POST /connections/{id}/polling", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		id := r.PathValue("id")
+		streams, intervals := r.PostForm["stream"], r.PostForm["interval"]
+		if len(streams) != 1 || len(intervals) != 1 {
+			failure(w, r, csrf, host.ErrPollInterval)
+			return
+		}
+
+		if err := workflow.UpdatePolling(r.Context(), id, streams[0], intervals[0]); err != nil {
+			failure(w, r, csrf, err)
+			return
+		}
+		//nolint:gosec // connectionURL fixes the local prefix and escapes the ID.
+		http.Redirect(w, r, connectionURL(id, "access"), http.StatusSeeOther)
 	})
 
 	gate("POST /connections/{id}/secrets", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -916,6 +951,7 @@ const (
 	submissionNone submissionKind = iota
 	submissionCreate
 	submissionSettings
+	submissionPolling
 	submissionConfirm
 	submissionSecret
 	submissionReference
@@ -927,6 +963,8 @@ func formSubmission(pattern string) submissionKind {
 		return submissionCreate
 	case "POST /connections/{id}/settings":
 		return submissionSettings
+	case "POST /connections/{id}/polling":
+		return submissionPolling
 	case "POST /connections/{id}/confirm":
 		return submissionConfirm
 	case "POST /connections/{id}/secrets":

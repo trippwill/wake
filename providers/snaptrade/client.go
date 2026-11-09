@@ -73,6 +73,7 @@ func Registration(options Options) (provider.Registration, error) {
 
 	stream, _ := provider.NewStream(streamID, format)
 	stream, _ = stream.WithDiscovery()
+	stream, _ = stream.WithPolling(24*time.Hour, time.Hour)
 	clientID, _ := provider.NewField(clientField, "Personal Client ID", provider.TextField, true)
 	key, _ := provider.NewField(keyField, "Personal consumer key", provider.SecretField, true)
 	customer, _ := provider.NewPacingPolicy(clientPacing, time.Second)
@@ -121,9 +122,10 @@ func signature(path, query string, key []byte) (string, error) {
 }
 
 type response struct {
-	body   []byte
-	header http.Header
-	status int
+	body      []byte
+	header    http.Header
+	status    int
+	notBefore time.Time
 }
 
 func (a *adapter) get(

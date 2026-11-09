@@ -296,14 +296,14 @@ func TestUntrustedXMLAndTimestampLimits(t *testing.T) {
 func TestCatchupAndUnavailableRanges(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	widened := continuation{Query: "123", Started: true, LastTo: "2026-10-10"}
-	widened.choose(now, Confirmations)
+	widened.choose(now, Confirmations, 0)
 
 	if widened.Period <= 2 || widened.Period > 365 {
 		t.Fatal("did not widen after downtime", widened)
 	}
 
 	state := continuation{Query: "123", Started: true, LastTo: "2024-01-01"}
-	state.choose(now, Confirmations)
+	state.choose(now, Confirmations, 0)
 
 	if state.Current == nil || len(state.Queue) == 0 {
 		t.Fatal("no dated catchup", state)
@@ -330,7 +330,7 @@ func TestCatchupAndUnavailableRanges(t *testing.T) {
 		t.Fatal("restart lost unavailable gap", err)
 	}
 
-	restored.choose(now, Confirmations)
+	restored.choose(now, Confirmations, 0)
 
 	if restored.Period != 2 || !restored.Recent {
 		t.Fatal("older unavailable gaps blocked recent work", restored)

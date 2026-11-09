@@ -56,6 +56,19 @@ INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON
 UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
 -- name: RestartDiscovery :exec
 UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
+-- name: RefreshPolls :execrows
+UPDATE work
+SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(sqlc.arg(now) AS TEXT)
+              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(sqlc.arg(now) AS TEXT) END
+WHERE operation='acquire'
+  AND (SELECT paused FROM profile WHERE singleton=1)=0
+  AND failure='' AND failure_code=''
+  AND julianday(next)>julianday(sqlc.arg(now))
+  AND julianday(next)>CASE WHEN state_version=sqlc.arg(poll_version)
+                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
 -- name: PendingWork :many
 SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many

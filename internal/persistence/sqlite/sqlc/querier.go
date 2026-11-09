@@ -174,6 +174,7 @@ type Querier interface {
 	ReferenceFailure(ctx context.Context, failure string) error
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
 	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
+	RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error)
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	RelinkActivityObservation(ctx context.Context, arg RelinkActivityObservationParams) error

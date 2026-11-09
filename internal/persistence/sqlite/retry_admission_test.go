@@ -108,7 +108,7 @@ func TestWorkflowRetryRefusesActiveDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, s, testEnvelope(t), nil, nil, r)
+	h, err := host.New(ctx, s, testEnvelope(t), nil, nil, nil, r)
 	if err != nil {
 		t.Fatal(err)
 	}

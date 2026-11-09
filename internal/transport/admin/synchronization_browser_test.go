@@ -58,7 +58,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	mux.HandleFunc("GET /assets/", serveAsset)
 	mux.Handle(
 		"GET /",
-		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(view))),
+		templ.Handler(
+			SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview("synthetic-csrf", view, "")),
+		),
 	)
 
 	mixed := fixtureOverview(fixtureView{Account: account, Connections: []application.ConnectionView{{
@@ -69,7 +71,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	}}})
 	mux.Handle(
 		"GET /mixed",
-		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(mixed))),
+		templ.Handler(
+			SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview("synthetic-csrf", mixed, "")),
+		),
 	)
 
 	server := httptest.NewServer(mux)
@@ -86,7 +90,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	defer deadline()
 
 	if err = chromedp.Run(ctx, testbrowser.NewDocument(chromedp.Navigate(server.URL)),
-		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery)); err != nil {
+		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
+		chromedp.WaitVisible(`form[action="/refresh"] button`, chromedp.ByQuery),
+	); err != nil {
 		t.Fatal(err)
 	}
 

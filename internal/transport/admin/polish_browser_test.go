@@ -733,7 +733,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				component = RecoveryPage(csrf, fixtureSource(copy))
 			case "/test/overview", "/":
-				component = DashboardOverview(fixtureOverview(view))
+				component = DashboardOverview("synthetic-csrf", fixtureOverview(view), "")
 			default:
 				http.NotFound(w, r)
 				return

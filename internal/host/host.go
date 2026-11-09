@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ type (
 	Connection struct {
 		ID, Provider, Name      string
 		Settings                provider.Settings
+		PollOverrides           map[string]time.Duration
 		SourceAccount           source.Reference
 		Streams                 []provider.Stream
 		ResetStreams            []string
@@ -64,6 +66,7 @@ type (
 		UpstreamAllowed(context.Context) error
 		Configure(context.Context, Connection, map[string][]byte) error
 		Reconfigure(context.Context, Connection) error
+		SavePolling(context.Context, Connection) error
 		Retry(context.Context, WorkKey) error
 		Connection(context.Context, string) (Connection, error)
 		Secret(context.Context, string, string) ([]byte, error)
@@ -91,6 +94,7 @@ type Host struct {
 	store         Store
 	envelope      *credential.Envelope
 	registrations map[string]provider.Registration
+	pollDefaults  map[string]time.Duration
 	now           func() time.Time
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -107,6 +111,7 @@ func New(
 	envelope *credential.Envelope,
 	logger *slog.Logger,
 	now func() time.Time,
+	pollDefaults map[string]time.Duration,
 	registrations ...provider.Registration,
 ) (*Host, error) {
 	if store == nil {
@@ -117,12 +122,17 @@ func New(
 		now = time.Now
 	}
 
+	if err := CheckPollingDefaults(pollDefaults, registrations); err != nil {
+		return nil, err
+	}
+
 	runtime, cancel := context.WithCancel(ctx)
 	h := &Host{
 		logger:        logging.Component(logger, "provider"),
 		store:         store,
 		envelope:      envelope,
 		registrations: map[string]provider.Registration{},
+		pollDefaults:  maps.Clone(pollDefaults),
 		now:           now,
 		ctx:           runtime,
 		cancel:        cancel,
@@ -477,7 +487,7 @@ func (h *Host) step(
 		return "", safeError(err)
 	}
 
-	format := ""
+	var input provider.Stream
 	for _, configuration := range configured {
 		s := configuration.Stream()
 		if s.ID() == stream {
@@ -485,11 +495,11 @@ func (h *Host) step(
 				return "", provider.ErrUnavailable
 			}
 
-			format = s.Format()
+			input = s
 		}
 	}
 
-	if format == "" {
+	if input.ID() == "" {
 		return "", provider.ErrUnavailable
 	}
 
@@ -515,6 +525,7 @@ func (h *Host) step(
 	request := provider.Request{Stream: stream, Settings: c.Settings, State: checkpoint.State, Now: now}
 	if !discover {
 		request.SourceAccount = c.SourceAccount
+		request.PollInterval = h.pollInterval(c.Provider, input, c.PollOverrides[stream])
 	}
 
 	var (
@@ -548,9 +559,19 @@ func (h *Host) step(
 		return "", safe
 	}
 
-	if step.NextEligibleAt().IsZero() || (!step.Artifact().IsZero() && step.Artifact().Format() != format) {
+	if step.NextEligibleAt().IsZero() ||
+		(!step.Artifact().IsZero() && step.Artifact().Format() != input.Format()) {
 		h.fail(work, key, provider.ErrInvalid)
 		return "", provider.ErrInvalid
+	}
+
+	if step.PollCompleted() {
+		if request.PollInterval == 0 {
+			h.fail(work, key, provider.ErrInvalid)
+			return "", provider.ErrInvalid
+		}
+
+		step = step.NotBefore(now.Add(request.PollInterval))
 	}
 
 	artifact, err := h.store.Accept(work, key, checkpoint.Revision, step, candidates, access.progress)
