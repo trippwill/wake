@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -114,6 +115,26 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 	for _, value := range []string{"123.45000 USD", "100.0000", "2026-11-01", "Put/call", "Not provided"} {
 		if !strings.Contains(string(b), value) {
 			t.Fatal(string(b), value)
+		}
+	}
+
+	data.Items[1].Position.Option.Deliverables = []application.PublishedDeliverable{
+		{
+			Security: &application.PublishedReference{
+				Authority: "synthetic", Kind: "symbol", Scope: "exchange", Value: "SYN",
+			},
+			Quantity: new("12.5000"),
+		},
+		{Cash: &application.PublishedMoney{Amount: "3.1400", Currency: "USD"}},
+	}
+
+	facts := positionsGrid(data).Data[1].Terms.Details
+	for _, want := range []gridFact{
+		{Label: "Deliverable", Value: "12.5000 units of synthetic / symbol / exchange / SYN"},
+		{Label: "Cash deliverable", Value: "3.1400 USD"},
+	} {
+		if !slices.Contains(facts, want) {
+			t.Fatalf("position details %v are missing %v", facts, want)
 		}
 	}
 
