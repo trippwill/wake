@@ -57,7 +57,10 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil)
 
-	handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
+	handler, err := NewHandler(auth, Dependencies{
+		Workflow:      workflow,
+		CurrencyCodes: func() []string { return []string{"QZZ", "USD"} },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +96,11 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Error("missing retained draft/current context", want)
 		}
+	}
+
+	if !strings.Contains(body, `<option value="QZZ">QZZ</option>`) ||
+		strings.Contains(body, `<option value="EUR"`) {
+		t.Fatal("stale correction did not use the current currency list")
 	}
 
 	if strings.Contains(body, "original-submission-1234") {

@@ -218,6 +218,31 @@ func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
 	}
 }
 
+func TestCurrencyCachePathAvoidsConfiguredFiles(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, currencycatalog.CacheName)
+	cfg := config.Config{Paths: config.Paths{RuntimeDir: dir, ConfigFile: cache}}
+
+	if got := currencyCachePath(cfg); got != "" {
+		t.Fatal("currency cache would overwrite the configured TOML file", got)
+	}
+
+	cfg.Paths.ConfigFile = ""
+	cfg.Credentials.MasterKeyPath = filepath.Join(dir, "master.key")
+
+	if err := os.WriteFile(cfg.Credentials.MasterKeyPath, []byte("synthetic key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Link(cfg.Credentials.MasterKeyPath, cache); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := currencyCachePath(cfg); got != "" {
+		t.Fatal("currency cache aliases the configured key", got)
+	}
+}
+
 func shellConfig(t *testing.T) config.Config {
 	t.Helper()
 
