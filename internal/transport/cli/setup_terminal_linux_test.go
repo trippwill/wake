@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"golang.org/x/sys/unix"
@@ -42,15 +43,18 @@ func TestSetupThroughTerminal(t *testing.T) {
 		want                int
 		diagnostic          string
 		selection           string
+		refresh             string
+		wantRefresh         bool
 	}{
-		{"matching", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", ""},
-		{"mismatch", "synthetic-unlock", "different-unlock", exitFailure, "do not match", ""},
-		{"weak", "short", "short", exitFailure, "at least 12 bytes", ""},
-		{"alternate flag", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "flag"},
-		{"alternate environment", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "environment"},
-		{"prompted new path", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "prompt"},
-		{"overwrite accepted", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "overwrite"},
-		{"overwrite refused", "", "", exitFailure, "setup canceled", "refuse-overwrite"},
+		{"matching", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "", "", false},
+		{"mismatch", "synthetic-unlock", "different-unlock", exitFailure, "do not match", "", "", false},
+		{"weak", "short", "short", exitFailure, "at least 12 bytes", "", "", false},
+		{"alternate flag", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "flag", "true", true},
+		{"alternate environment", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "environment", "", false},
+		{"prompted new path", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "prompt", "", false},
+		{"overwrite accepted", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "overwrite", "", true},
+		{"disable refresh", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "overwrite", "false", false},
+		{"overwrite refused", "", "", exitFailure, "setup canceled", "refuse-overwrite", "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -75,7 +79,7 @@ func TestSetupThroughTerminal(t *testing.T) {
 				}
 			}
 
-			originalConfig := []byte("[log]\nlevel='debug'\n")
+			originalConfig := []byte("[log]\nlevel='debug'\n[admin]\ncurrency_refresh=true\n")
 			existing := test.selection == "overwrite" || test.selection == "refuse-overwrite"
 			if existing {
 				// #nosec G703 -- Private parent of a synthetic config selected by this test.
@@ -111,7 +115,7 @@ func TestSetupThroughTerminal(t *testing.T) {
 				confirmation = "n"
 			}
 
-			inputs := []string{"", "", filepath.Join(t.TempDir(), "runtime"), "", confirmation}
+			inputs := []string{"", "", filepath.Join(t.TempDir(), "runtime"), "", test.refresh, confirmation}
 			if confirmation == "y" {
 				inputs = append(inputs, test.first, test.second)
 			}
@@ -189,6 +193,21 @@ func TestSetupThroughTerminal(t *testing.T) {
 
 			configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "wake")
 			if test.want == exitOK {
+				saved, err := config.ReadLocalSetup(configPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				guide, err := saved.Guidance()
+				if err != nil || guide.CurrencyRefresh != test.wantRefresh ||
+					!strings.Contains(stderr.String(), fmt.Sprintf("currency list refresh: %t", test.wantRefresh)) {
+					t.Fatal(
+						"setup summary or saved currency refresh did not match the choice",
+						guide.CurrencyRefresh,
+						err,
+					)
+				}
+
 				t.Setenv("XDG_DATA_HOME", t.TempDir())
 				t.Setenv("XDG_STATE_HOME", t.TempDir())
 				t.Setenv("XDG_RUNTIME_DIR", t.TempDir())

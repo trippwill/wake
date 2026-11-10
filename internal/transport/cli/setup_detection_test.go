@@ -172,9 +172,9 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 				}
 			}()
 
-			inputs := []string{"", "", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
+			inputs := []string{"", "", "", "", "", "y", "synthetic-unlock", "synthetic-unlock"}
 			if stage == "paths" || stage == "proposed" {
-				inputs = inputs[:4]
+				inputs = inputs[:5]
 			}
 
 			if stage == "proposed" {
@@ -188,7 +188,7 @@ func TestSetupRechecksDaemonAfterTerminalInput(t *testing.T) {
 					t.Fatal("setup prompt missing")
 				}
 
-				if (stage == "paths" && index == 0) || (stage == "unlock" && index == 6) {
+				if (stage == "paths" && index == 0) || (stage == "unlock" && index == len(inputs)-1) {
 					_, _ = startShellDaemon(t, cfg)
 				}
 

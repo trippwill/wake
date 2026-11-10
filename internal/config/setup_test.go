@@ -24,7 +24,7 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 		roots.base,
 		"access",
 		"credentials.sqlite",
-	) + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\n"
+	) + "'\n[log]\nlevel='debug'\n[admin]\nport=8799\ncurrency_refresh=true\n"
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +32,7 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 	t.Setenv("WAKE_WAREHOUSE_PATH", "/not-persisted")
 	t.Setenv("WAKE_CONNECTIONS_PATH", "/not-persisted-access")
 	t.Setenv("WAKE_ADMIN_PORT", "9999")
+	t.Setenv("WAKE_ADMIN_CURRENCY_REFRESH", "false")
 	t.Setenv("WAKE_LOG_LEVEL", "error")
 
 	setup, err := ReadLocalSetup(path)
@@ -44,18 +45,16 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 		t.Fatal(err)
 	}
 
-	if guide.Storage.WarehousePath != filepath.Join(roots.data, "wake", "wake.db") || guide.AdminPort != 8799 {
+	if guide.Storage.WarehousePath != filepath.Join(roots.data, "wake", "wake.db") ||
+		guide.AdminPort != 8799 || !guide.CurrencyRefresh {
 		t.Fatalf("guide baked in launch overrides: %#v", guide)
 	}
 
-	setup, err = setup.WithLaunchSettings(
-		Storage{
-			WarehousePath:   filepath.Join(roots.base, "chosen-data", "history.sqlite"),
-			ConnectionsPath: guide.Storage.ConnectionsPath,
-		},
-		filepath.Join(roots.base, "chosen-runtime"),
-		8790,
-	)
+	guide.Storage.WarehousePath = filepath.Join(roots.base, "chosen-data", "history.sqlite")
+	guide.RuntimeDir = filepath.Join(roots.base, "chosen-runtime")
+	guide.AdminPort = 8790
+
+	setup, err = setup.WithLaunchSettings(guide)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +76,7 @@ func TestGuidedSetupPreservesAdvancedSettingsAndIgnoresLaunchOverrides(t *testin
 	if decoded.Storage.ConnectionsPath != filepath.Join(roots.base, "access", "credentials.sqlite") ||
 		decoded.Log.Level != "debug" ||
 		*decoded.Admin.Port != 8790 ||
+		decoded.Admin.CurrencyRefresh == nil || !*decoded.Admin.CurrencyRefresh ||
 		strings.Contains(string(content), "not-persisted") {
 		t.Fatalf("guided save lost settings: %s", content)
 	}
@@ -228,12 +228,10 @@ func TestSetupCreatesAlternativeConfigurationWithoutChangingDefault(t *testing.T
 	}
 
 	guide.Storage.WarehousePath = filepath.Join(roots.base, "warehouse.db")
+	guide.RuntimeDir = filepath.Join(roots.base, "runtime")
+	guide.AdminPort = 8790
 
-	setup, err = setup.WithLaunchSettings(
-		guide.Storage,
-		filepath.Join(roots.base, "runtime"),
-		8790,
-	)
+	setup, err = setup.WithLaunchSettings(guide)
 	if err != nil {
 		t.Fatal(err)
 	}

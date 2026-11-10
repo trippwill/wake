@@ -129,12 +129,29 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 		return failure("admin port must be between 1 and 65535")
 	}
 
-	setup, err = setup.WithLaunchSettings(storage, runtime, uint16(port))
+	refreshText, err := promptSetting(
+		ctx,
+		c,
+		"admin-currency-refresh",
+		strconv.FormatBool(guide.CurrencyRefresh),
+	)
+	if err != nil {
+		return failure("read setup settings: %v", err)
+	}
+
+	refresh, err := strconv.ParseBool(refreshText)
+	if err != nil {
+		return failure("currency refresh must be true or false")
+	}
+
+	proposed := config.SetupGuidance{
+		Storage: storage, RuntimeDir: runtime, AdminPort: uint16(port), CurrencyRefresh: refresh,
+	}
+
+	setup, err = setup.WithLaunchSettings(proposed)
 	if err != nil {
 		return failure("configure local setup: %v", err)
 	}
-
-	proposed := config.SetupGuidance{Storage: storage, RuntimeDir: runtime}
 
 	activity.Phase("checking for running Wake at proposed paths")
 
@@ -146,16 +163,17 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 
 	if c.Bool("json") {
 		_ = json.NewEncoder(c.ErrWriter).
-			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "runtime_dir": runtime, "admin_port": port, "overwrite": setup.ConfigExists()})
+			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "runtime_dir": runtime, "admin_port": port, "currency_refresh": refresh, "overwrite": setup.ConfigExists()})
 	} else {
 		writef(
 			c.ErrWriter,
-			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n",
+			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n  currency list refresh: %t\n",
 			setup.ConfigPath,
 			storage.WarehousePath,
 			storage.ConnectionsPath,
 			runtime,
 			port,
+			refresh,
 		)
 	}
 

@@ -18,8 +18,8 @@ them for clients requesting uncompressed content. Asset URLs and cache policy ar
 independent of that representation; readable sources and upstream licenses remain
 in the repository.
 
-Admin forms use the bundled currency list by default. Set
-`admin.currency_refresh = true` to check the public [SIX ISO 4217 currency list](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html)
+Admin forms use the bundled currency list by default. Enable refresh during
+`wake setup` or set `admin.currency_refresh = true` to check the public [SIX ISO 4217 currency list](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html)
 daily in the background when admin is enabled. System → Configuration shows the
 effective setting. The request carries no brokerage credentials or account data
 and is independent of financial synchronization. When refresh is enabled, forms
