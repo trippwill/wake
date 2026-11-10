@@ -234,7 +234,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	check(chromedp.Click("[data-grid-reset]", chromedp.ByQuery))
 	check(chromedp.Focus(".tabulator-cell details summary", chromedp.ByQuery), chromedp.KeyEvent(kb.Enter))
 	poll(
-		`document.querySelector('.tabulator-cell details').open && document.querySelector('.tabulator-cell details').textContent.includes('123.45000 USD') && document.querySelector('.tabulator-cell details dd:last-child').getBoundingClientRect().right<=document.querySelector('.tabulator-cell details').getBoundingClientRect().right+1`,
+		`document.querySelector('.tabulator-cell details').open && document.querySelector('.tabulator-cell details summary').textContent==='Call · 2027-01-15' && document.querySelector('.tabulator-cell details').textContent.includes('123.45000 USD') && document.querySelector('.tabulator-cell details dd:last-child').getBoundingClientRect().right<=document.querySelector('.tabulator-cell details').getBoundingClientRect().right+1`,
 	)
 
 	capture := func(name string) {
@@ -326,7 +326,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	poll(`!document.querySelector('[data-grid-refresh]').hidden`)
 	check(chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil))
 	poll(
-		`document.querySelector('[data-positions-state]').textContent==='Available' && document.querySelector('[data-positions-message]').textContent==='No open positions were reported.' && document.querySelector('[data-positions-as-of]').textContent.includes('10:12:13.123400+01:00')`,
+		`document.querySelector('[data-positions-state]').textContent==='Available' && document.querySelector('[data-positions-message]').textContent==='No open positions were reported.' && !document.querySelector('.tabulator-placeholder') && document.querySelector('[data-positions-as-of]').textContent.includes('10:12:13.123400+01:00')`,
 	)
 	revision.Store(4)
 	check(chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil))

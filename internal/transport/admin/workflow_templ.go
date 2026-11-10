@@ -297,7 +297,7 @@ func ExecutionPage(d application.ExecutionDetail) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if d.Execution.Terms().Fields().Instrument.Kind() == source.Debt {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<dt>Face amount (nominal)</dt><dd>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<dt>Face amount</dt><dd>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

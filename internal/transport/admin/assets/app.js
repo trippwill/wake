@@ -329,20 +329,12 @@
 
   document.querySelector("[data-error-summary]")?.focus();
   const contactDetails = document.querySelector(".wake-contact-details");
-  if (contactDetails) {
-    document.addEventListener("keydown", (event) => {
-      if (
-        event.key === "Escape" &&
-        contactDetails.matches(":hover, :focus-within")
-      )
-        contactDetails.dataset.tooltipDismissed = "true";
-    });
-    const restore = () => {
-      delete contactDetails.dataset.tooltipDismissed;
-    };
-    contactDetails.addEventListener("pointerleave", restore);
-    contactDetails.addEventListener("focusout", restore);
-  }
+  contactDetails?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !contactDetails.open) return;
+    event.stopPropagation();
+    contactDetails.open = false;
+    contactDetails.querySelector("summary").focus();
+  });
   const resetSubmissions = () => {
     for (const form of document.querySelectorAll("form[data-submitting]")) {
       delete form.dataset.submitting;
@@ -677,7 +669,7 @@
     if (value.details?.length) {
       const details = document.createElement("details");
       const summary = document.createElement("summary");
-      summary.textContent = "Show reported terms";
+      summary.textContent = value.text;
       details.append(summary);
       const facts = document.createElement("dl");
       for (const fact of value.details) {
@@ -689,7 +681,7 @@
       }
       details.append(facts);
       details.addEventListener("toggle", () => cell.getRow().normalizeHeight());
-      node.append(details);
+      text.replaceWith(details);
     }
     return node;
   };
@@ -730,10 +722,7 @@
         const preferenceKey = (id, type) =>
           `${id}${artifact && type === "columns" ? "-artifact" : ""}-${type}`;
         const emptyState = document.createElement("span");
-        emptyState.textContent =
-          kind === "positions"
-            ? "No reported rows in this view. See availability and filters above."
-            : "No matching records.";
+        emptyState.textContent = "No matching records.";
         const params = new URL(location.href).searchParams;
         const initialSort = params.get("sort") || gridDefaultSort(region);
         const initialDirection =
@@ -971,7 +960,7 @@
               // Browser preferences must not block table interactions.
             }
           },
-          placeholder: emptyState,
+          placeholder: kind === "positions" ? false : emptyState,
           ajaxURL: region.dataset.gridUrl,
           ajaxRequestFunc: requestData,
           rowFormatter: (row) => {

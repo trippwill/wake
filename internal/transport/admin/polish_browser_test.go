@@ -27,6 +27,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
 	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
@@ -1940,13 +1941,23 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
 		chromedp.Poll(`document.body.dataset.liveState==='stale'`, nil),
 	)
+	check(
+		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
+		chromedp.Click(".wake-contact-trigger", chromedp.ByQuery),
+	)
 	offline.Store(false)
 	expired.Store(true)
 	check(
-		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
 		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
 		chromedp.Poll(
-			`document.querySelector('.wake-sidebar > .wake-contact > #status-sign-in')!==null && document.querySelector('#main-navigation').hidden`,
+			`(()=>{
+				const contact=document.querySelector('.wake-sidebar > .wake-contact');
+				const link=contact.querySelector(':scope > #status-sign-in');
+				const details=contact.querySelector('details');
+				return link && details.open && contact.querySelector('#daemon-contact').textContent==='Sign-in required' &&
+					link.getBoundingClientRect().top>=details.getBoundingClientRect().bottom &&
+					document.querySelector('#main-navigation').hidden;
+			})()`,
 			nil,
 		),
 		chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery),
@@ -2469,7 +2480,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 						),
 					)
 					assert(
-						`document.querySelector('details').textContent.includes('Composite FIGI: synthetic-composite')`,
+						`document.querySelector('main details.wake-card[open]').textContent.includes('Composite FIGI: synthetic-composite')`,
 						"reported FIGI classification",
 					)
 				}
@@ -2546,17 +2557,26 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		return nav.scrollTop>0 && before.top===after.top && after.bottom<=innerHeight && innerHeight-after.bottom<40;
 	})()`, "status moved when scrolling short desktop navigation")
 	check(chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery))
+	assert(`!document.querySelector('.wake-contact-details').open`, "focus opened contact details")
+	check(chromedp.KeyEvent(kb.Enter))
 	assert(`(()=>{
-		const tooltip=document.querySelector('#status-contact-detail');
-		const bounds=tooltip.getBoundingClientRect();
-		const sidebar=tooltip.closest('.wake-sidebar').getBoundingClientRect();
-		return getComputedStyle(tooltip).visibility==='visible' && bounds.top>=sidebar.top && bounds.right<=sidebar.right &&
-			bounds.bottom<=document.querySelector('.wake-contact-trigger').getBoundingClientRect().top;
-	})()`, "desktop contact tooltip clipped or below the trigger")
+		const details=document.querySelector('.wake-contact-details');
+		const bounds=details.querySelector('.wake-contact-panel').getBoundingClientRect();
+		const sidebar=details.closest('.wake-sidebar').getBoundingClientRect();
+		return details.open && bounds.height>0 && bounds.top>=sidebar.top && bounds.right<=sidebar.right &&
+			bounds.bottom<=details.querySelector('summary').getBoundingClientRect().top;
+	})()`, "desktop contact details clipped or below the trigger")
 	check(chromedp.KeyEvent(kb.Escape))
 	assert(
-		`getComputedStyle(document.querySelector('#status-contact-detail')).visibility==='hidden' && document.activeElement.matches('.wake-contact-trigger')`,
-		"Escape did not dismiss contact tooltip and retain focus",
+		`!document.querySelector('.wake-contact-details').open && document.activeElement.matches('.wake-contact-trigger')`,
+		"Escape did not dismiss contact details and retain focus",
+	)
+	check(chromedp.Click(".wake-contact-trigger", chromedp.ByQuery))
+	assert(`document.querySelector('.wake-contact-details').open`, "click did not open contact details")
+	check(chromedp.Click(".wake-contact-trigger", chromedp.ByQuery))
+	assert(
+		`!document.querySelector('.wake-contact-details').open`,
+		"second click did not close contact details",
 	)
 
 	check(
@@ -2579,13 +2599,24 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`document.querySelector('#main-navigation').hidden && document.activeElement.matches('.wake-menu-toggle')`,
 		"Escape focus return",
 	)
-	check(chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery))
+
+	var contactPoint input.TouchPoint
+	check(
+		emulation.SetTouchEmulationEnabled(true),
+		chromedp.Evaluate(`(()=>{
+			const bounds=document.querySelector('.wake-contact-trigger').getBoundingClientRect();
+			return {x:bounds.left+bounds.width/2, y:bounds.top+bounds.height/2};
+		})()`, &contactPoint),
+		input.DispatchTouchEvent(input.TouchStart, []*input.TouchPoint{&contactPoint}),
+		input.DispatchTouchEvent(input.TouchEnd, []*input.TouchPoint{}),
+		chromedp.Poll(`document.querySelector('.wake-contact-details').open`, nil),
+		emulation.SetTouchEmulationEnabled(false),
+	)
 	assert(`(()=>{
-		const tooltip=document.querySelector('#status-contact-detail');
-		const bounds=tooltip.getBoundingClientRect();
-		return getComputedStyle(tooltip).visibility==='visible' && bounds.left>=0 && bounds.right<=innerWidth &&
+		const bounds=document.querySelector('.wake-contact-panel').getBoundingClientRect();
+		return bounds.height>0 && bounds.left>=0 && bounds.right<=innerWidth &&
 			bounds.top>=document.querySelector('.wake-contact-trigger').getBoundingClientRect().bottom;
-	})()`, "narrow contact tooltip clipped or above the trigger")
+	})()`, "narrow contact details clipped or above the trigger")
 	// Text resizing stresses long exact values and native controls independently of display density.
 	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid", "/system/settings"} {
 		check(

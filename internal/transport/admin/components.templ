@@ -125,6 +125,9 @@ templ GridView(kind, endpoint, label, variant string) {
 				<button class="btn btn-sm" type="button" data-grid-reset>Reset columns</button>
 				<details class="wake-grid-help">
 					<summary>Table help</summary>
+					if kind=="positions" {
+						<p class="wake-help">The table shows the latest accepted set from the account’s source. For identity and reference data, <a href="/instruments">open Instruments</a>.</p>
+					}
 					if kind!="observations" {
 						<p class="wake-help">Category selections update the table automatically. Press Enter in the search field or choose Search to apply text.</p>
 					}

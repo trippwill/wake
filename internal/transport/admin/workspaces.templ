@@ -545,7 +545,6 @@ templ ActivityPage(view activityView) {
 
 templ ReviewQueue(view activityView) {
 	<section class="wake-card">
-		<p class="wake-help">Activity disagreements and ambiguous or conflicting instrument identity. Source failures and ordinary reference gaps remain separate.</p>
 		<form class="wake-filters" method="get" action="/review"><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
 		if len(view.Reviews)==0 {
 			if view.Total==0 {
@@ -559,24 +558,24 @@ templ ReviewQueue(view activityView) {
 				for _,r:=range view.Reviews {
 					<li>
 						<div>
-							<span class="wake-help">{ r.Kind }</span>
-							<h3><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></h3>
-							if r.Description!="" {
-								<p class="wake-help">{ r.Description }</p>
-							}
+							<p><strong><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></strong></p>
+							<p class="wake-help">{ describe(r.Description, r.Kind) }</p>
 							<p>{ r.Reason }</p>
-						</div><a class="btn" href={ templ.SafeURL(r.Href) }>Review</a>
+						</div>
 					</li>
 				}
 			</ul>
 		}
 		@ListPagination(view.PageInfo)
+		<details data-disclosure="review-help">
+			<summary>About the review queue</summary>
+			<p>Find source failures in Connections or System, and ordinary reference gaps in Instruments.</p>
+		</details>
 	</section>
 }
 
 templ ActivityRows() {
 	<section class="wake-card" id="activity-rows">
-		<div class="wake-card-heading"><div><h2>Financial activity</h2></div></div>
 		@Grid("activity", "/grids/activity", "Financial activity")
 	</section>
 }
@@ -670,9 +669,8 @@ templ ListPagination(info application.PageInfo) {
 }
 
 templ PositionsPage() {
-	@PageHeader("Positions", "Inspect the latest accepted positions reported for a confirmed account.")
+	@PageHeader("Positions", "")
 	<section class="wake-card">
-		<h2>Reported account positions</h2>
 		@Grid("positions", "/grids/positions", "Reported positions")
 	</section>
 }
@@ -680,9 +678,9 @@ templ PositionsPage() {
 templ PositionsSummary() {
 	<div data-positions-summary aria-live="polite">
 		<p data-positions-account>Loading reported account…</p>
-		<dl><dt>Availability</dt><dd data-positions-state>Loading…</dd><dt>Reported as of</dt><dd data-positions-as-of>Loading…</dd></dl>
+		<dl><dt>Availability</dt><dd data-positions-state>Loading…</dd><dt>As of</dt><dd data-positions-as-of>Loading…</dd></dl>
 		<p class="wake-help" data-positions-message hidden></p>
-		<div class="wake-actions"><a href="/connections" data-positions-source>Inspect source reports</a><a href="/instruments">Inspect instruments</a></div>
+		<a href="/connections" data-positions-source>Inspect source reports</a>
 	</div>
 }
 

@@ -198,7 +198,7 @@ func SectionShell(title string, csrf string, section string, content templ.Compo
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</li></ul></nav><div class=\"wake-contact\"><span class=\"wake-contact-indicator\" aria-hidden=\"true\"></span><div class=\"wake-contact-details\"><button class=\"wake-contact-trigger\" type=\"button\" aria-describedby=\"status-contact-detail\"><span id=\"daemon-contact\" role=\"status\" aria-live=\"polite\">Daemon connected</span></button> <span id=\"status-contact-detail\" class=\"wake-contact-tooltip\" role=\"tooltip\">Authenticated contact is available. Financial freshness is shown in page content.</span></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</li></ul></nav><div class=\"wake-contact\"><span class=\"wake-contact-indicator\" aria-hidden=\"true\"></span> <details class=\"wake-contact-details\"><summary class=\"wake-contact-trigger\"><span id=\"daemon-contact\" role=\"status\" aria-live=\"polite\">Daemon connected</span></summary><p class=\"wake-contact-panel\">This status tracks contact with the daemon. See the relevant workspace for financial freshness.</p></details></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

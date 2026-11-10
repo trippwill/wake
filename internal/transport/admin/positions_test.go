@@ -259,7 +259,7 @@ func TestPositionsAuthenticatedPageGridAndFailures(t *testing.T) {
 			}
 
 			if tc.status == 200 && tc.route == "/positions" {
-				for _, value := range []string{"data-grid=\"positions\"", "Reported as of", "/positions", "Search instruments"} {
+				for _, value := range []string{"data-grid=\"positions\"", "As of", "/positions", "Search instruments"} {
 					if !strings.Contains(res.Body.String(), value) {
 						t.Fatal(value, res.Body.String())
 					}

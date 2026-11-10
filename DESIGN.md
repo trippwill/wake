@@ -233,9 +233,10 @@ financial summaries, comparisons and configuration sections. A light steel canva
 (`#363D44`). Group related fields within each card rather than treating individual
 fields or table rows as separate cards. Pin daemon contact to the bottom of the
 desktop sidebar, with full work status in page content. On narrow screens, keep
-contact visible below the collapsible navigation. Stack simple regions, provide
-dismissible keyboard-accessible navigation and keep genuinely two-dimensional
-tables locally scrollable. Avoid whole-page overflow.
+contact visible below the collapsible navigation. Use a native disclosure for
+contact context and keep session recovery visible when sign-in expires. Stack
+simple regions, provide dismissible keyboard-accessible navigation and keep
+genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
 
 Overview orients the operator and surfaces specific next actions. Activity owns
 financial-history inspection. Positions owns latest reported account sets, with their own
