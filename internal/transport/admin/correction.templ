@@ -47,7 +47,7 @@ templ CorrectionControl(f application.CorrectionForm, field string, c correction
 				<p data-currency-field>
 					<label for="decision-currency">Currency</label>
 					<select class="select" id="decision-currency" name="currency" required?={ c.Required } aria-describedby="decision-help decision-feedback">
-						@currencyOptions(correctionCurrencyChoices(ctx, f.Values[field].Currency), value.Currency, "Choose currency")
+						@currencyOptions(currencyChoicesWithRetained(ctx, f.Values[field].Currency), value.Currency, "Choose currency")
 					</select>
 				</p>
 			}

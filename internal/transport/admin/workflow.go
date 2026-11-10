@@ -125,6 +125,15 @@ func registerWorkflowRoutes(
 			message = "Credential protection is unavailable or the credential is invalid. Configure a master key with wake setup and retry."
 		}
 
+		operation := formSubmission(r.Pattern)
+
+		var discoveredCurrency string
+		if operation == submissionConfirm {
+			if candidate, err := accountConfirmationCandidate(r, workflow, r.PostForm); err == nil {
+				discoveredCurrency = currencyText(candidate.Candidate.Currency())
+			}
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = SectionShell(
@@ -137,7 +146,8 @@ func registerWorkflowRoutes(
 				message,
 				r.PostForm,
 				requestDescriptor(r, workflow),
-				formSubmission(r.Pattern),
+				operation,
+				discoveredCurrency,
 			),
 		).Render(r.Context(), w)
 	}
@@ -360,30 +370,17 @@ func registerWorkflowRoutes(
 		http.Redirect(w, r, connectionURL(r.PathValue("id"), "status"), http.StatusSeeOther)
 	})
 	gate("GET /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		ref, err := source.NewReference(
-			r.URL.Query().Get("authority"),
-			r.URL.Query().Get("kind"),
-			r.URL.Query().Get("scope"),
-			r.URL.Query().Get("account"),
-		)
+		candidate, err := accountConfirmationCandidate(r, workflow, r.URL.Query())
 		if err == nil {
-			candidate, e := workflow.SourceCandidate(
-				r.Context(),
-				r.PathValue("id"),
-				r.URL.Query().Get("artifact"),
-				ref,
-			)
-			if e == nil {
-				templ.Handler(SectionShell("Confirm account", csrf, "Connections", ConfirmAccount(csrf, r.PathValue("id"), candidate))).
-					ServeHTTP(w, r)
+			templ.Handler(SectionShell("Confirm account", csrf, "Connections", ConfirmAccount(csrf, r.PathValue("id"), candidate))).
+				ServeHTTP(w, r)
 
-				return
-			}
+			return
+		}
 
-			if !errors.Is(e, application.ErrCandidate) {
-				http.Error(w, "accounts unavailable", http.StatusServiceUnavailable)
-				return
-			}
+		if !errors.Is(err, application.ErrCandidate) {
+			http.Error(w, "accounts unavailable", http.StatusServiceUnavailable)
+			return
 		}
 
 		servePageError(
@@ -402,12 +399,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		ref, err := source.NewReference(
-			r.PostForm.Get("authority"),
-			r.PostForm.Get("kind"),
-			r.PostForm.Get("scope"),
-			r.PostForm.Get("account"),
-		)
+		ref, err := accountConfirmationReference(r.PostForm)
 		if err != nil {
 			failure(w, r, csrf, application.ErrCandidate)
 			return
@@ -883,6 +875,28 @@ func registerWorkflowRoutes(
 func settingValue(settings provider.Settings, key string) string {
 	value, _ := settings.Get(key)
 	return value
+}
+
+func accountConfirmationReference(values url.Values) (source.Reference, error) {
+	return source.NewReference(
+		values.Get("authority"),
+		values.Get("kind"),
+		values.Get("scope"),
+		values.Get("account"),
+	)
+}
+
+func accountConfirmationCandidate(
+	r *http.Request,
+	workflow *application.Workflow,
+	values url.Values,
+) (application.Candidate, error) {
+	ref, err := accountConfirmationReference(values)
+	if err != nil {
+		return application.Candidate{}, application.ErrCandidate
+	}
+
+	return workflow.SourceCandidate(r.Context(), r.PathValue("id"), values.Get("artifact"), ref)
 }
 
 func requestDescriptor(r *http.Request, workflow *application.Workflow) provider.Descriptor {

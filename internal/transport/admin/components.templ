@@ -24,6 +24,15 @@ func currencyChoices(ctx context.Context) []string {
 	return currencycatalog.BundledCodes()
 }
 
+func currencyChoicesWithRetained(ctx context.Context, retained string) []string {
+	codes := currencyChoices(ctx)
+	if _, err := financial.ParseCurrency(retained); err == nil && !slices.Contains(codes, retained) {
+		return append([]string{retained}, codes...)
+	}
+
+	return codes
+}
+
 templ currencyOptions(codes []string, selected, emptyLabel string) {
 	<option value="">{ emptyLabel }</option>
 	// Keep the original code available for historical or provider-specific currencies.
@@ -192,7 +201,7 @@ func observationID(row application.Observation) string {
 	return fmt.Sprintf("observation-%x", sum)
 }
 
-templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor provider.Descriptor, operation submissionKind) {
+templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor provider.Descriptor, operation submissionKind, discoveredCurrency string) {
 	@PageHeader("Unable to save", "Review the error and retry your intended change.")
 	<p class="wake-notice wake-error" role="alert" tabindex="-1" data-error-summary>{ message }</p>
 	if operation!=submissionNone {
@@ -222,7 +231,7 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 				<p>
 					<label for="retry-currency">Account currency (optional)</label>
 					<select class="select" id="retry-currency" name="currency">
-						@currencyOptions(currencyChoices(ctx), draft.Get("currency"), "Unknown")
+						@currencyOptions(currencyChoicesWithRetained(ctx, discoveredCurrency), draft.Get("currency"), "Unknown")
 					</select>
 				</p>
 				for _,key:=range []string{"artifact","authority","kind","scope","account"} {

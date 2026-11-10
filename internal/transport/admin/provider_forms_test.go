@@ -13,10 +13,105 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
+
+type confirmationRetryStore struct {
+	application.Store
+	candidate application.Candidate
+}
+
+func (s confirmationRetryStore) SourceCandidate(
+	_ context.Context,
+	connection, artifact string,
+	ref source.Reference,
+) (application.Candidate, error) {
+	if connection != "one" || artifact != s.candidate.Artifact || ref != s.candidate.Candidate.Reference() {
+		return application.Candidate{}, application.ErrCandidate
+	}
+
+	return s.candidate, nil
+}
+
+func TestAccountConfirmationRetryKeepsDiscoveredCurrency(t *testing.T) {
+	const origin = "http://127.0.0.1:8787"
+
+	dir := t.TempDir()
+	if err := SetUnlock(dir, []byte("synthetic-confirmation-unlock")); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, _, err := Open(dir, "local", origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer auth.Close()
+
+	ref, err := source.NewReference("synthetic", "account", "", "retained-account")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	currency, err := financial.ParseCurrency("GBX")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidate, err := provider.NewCandidate(ref, "Discovered account", currency)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := confirmationRetryStore{
+		candidate: application.Candidate{Artifact: "discovery", Candidate: candidate},
+	}
+
+	handler, err := NewHandler(auth, Dependencies{
+		Workflow:      application.New(store, nil, nil, nil, nil),
+		CurrencyCodes: func() []string { return []string{"USD"} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	login := httptest.NewRecorder()
+
+	draft := url.Values{
+		"csrf":     {auth.issue(login)},
+		"name":     {" Invalid draft name"},
+		"currency": {"CNH"},
+		"artifact": {
+			"discovery",
+		},
+		"authority": {"synthetic"},
+		"kind":      {"account"},
+		"account":   {"retained-account"},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		origin+"/connections/one/confirm",
+		strings.NewReader(draft.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", origin)
+	request.AddCookie(login.Result().Cookies()[0])
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	body := response.Body.String()
+	if response.Code != http.StatusBadRequest ||
+		!strings.Contains(body, `value=" Invalid draft name"`) ||
+		!strings.Contains(body, `<option value="CNH" selected>CNH</option>`) ||
+		!strings.Contains(body, `<option value="GBX">GBX</option>`) ||
+		!strings.Contains(body, `<option value="USD">USD</option>`) {
+		t.Fatal("retry did not preserve the draft, discovered currency, and catalog", response.Code)
+	}
+}
 
 type formProvider struct{}
 

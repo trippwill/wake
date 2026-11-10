@@ -48,15 +48,6 @@ func correctionEditValue(f application.CorrectionForm, field string) application
 	return v
 }
 
-func correctionCurrencyChoices(ctx context.Context, accepted string) []string {
-	codes := currencyChoices(ctx)
-	if _, err := financial.ParseCurrency(accepted); err == nil && !slices.Contains(codes, accepted) {
-		return append([]string{accepted}, codes...)
-	}
-
-	return codes
-}
-
 func correctionSpec(f application.CorrectionForm, field string) correctionControl {
 	policy, ok := application.CorrectionFieldPolicy(field)
 	c := correctionControl{
