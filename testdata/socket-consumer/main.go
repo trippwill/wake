@@ -427,6 +427,9 @@ func (c *client) sync(ctx context.Context, current *state, db *sql.DB) (bool, er
 	if !replaced && current.Version != "" {
 		for key, raw := range next.Resources {
 			if old, ok := current.Resources[key]; ok {
+				if bytes.Equal(old, raw) {
+					continue
+				}
 				before, _ := metadata(old)
 				after, _ := metadata(raw)
 				if after.Revision < before.Revision || after.Revision == before.Revision && !sameJSON(old, raw) {

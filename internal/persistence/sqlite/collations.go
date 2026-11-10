@@ -72,6 +72,10 @@ func registerCollations() error {
 // Invalid values occupy a separate deterministic partition. Mixing lexical and
 // numeric comparisons within one partition would violate collation transitivity.
 func compareDecimalText(left, right string) int {
+	if left == right {
+		return 0
+	}
+
 	l, le := financial.NewQuantity(left)
 	r, re := financial.NewQuantity(right)
 	if le != nil && re != nil {
