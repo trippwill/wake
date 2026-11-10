@@ -27,6 +27,7 @@ colors:
   wake-sidebar: "#C6CDD3"
   wake-field: "#EDF0F2"
   wake-muted: "#3D4650"
+  wake-pending: "#0059C7"
   wake-control-border: "#687581"
   wake-selection-edge: "#805028"
 typography:
@@ -196,6 +197,8 @@ warning muted ochre and errors clay. Active/disabled connection states are neutr
 being connected is not proof of successful synchronization. Failure, malformed
 and blocked treatments remain visibly distinct. Errors include a next action.
 Never communicate a difference or outcome through color alone.
+Use a vivid blue text accent for pending table filters, with `#0059C7` in light
+appearance and `#7CB9FF` in dark appearance.
 
 Choose Light, Dark or System appearance in System Settings. Apply the browser's
 choice on sign-in and authenticated pages. System follows the browser preference.
@@ -271,6 +274,10 @@ mask failed refreshes or sign-in requirements. Animate running work or meaningfu
 changes; keep unchanged and waiting/blocked states steady.
 
 Preserve drafts, focus/caret, selections and disclosures through live updates.
+Apply category selections immediately and group the Search button with its text
+field. A category change keeps any search draft and filters with the submitted
+query. Keep the previous results visible during the request. Successful filter
+changes start at page one and retain the current sort and page size.
 Retain intentional filter, ordering, page and page-size state in URLs, and selected
 column layout and page-size preferences through Tabulator persistence. Restore column order,
 widths and visibility while taking headings from the current application. Remember

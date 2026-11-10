@@ -9,10 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -80,7 +83,12 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 
 	data := positionsFixture(t)
 
-	var revision atomic.Int32
+	var (
+		revision  atomic.Int32
+		holdShort atomic.Bool
+	)
+
+	shortStarted := make(chan struct{})
 
 	store := positionsReadStore{
 		workspaceStore: workspaceStore{view: fixtureView{Account: data.Account}},
@@ -111,10 +119,13 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 				return application.PositionsList{}, errors.New("synthetic read failure")
 			}
 
-			if query.Options().Search != "" {
-				out.Items = nil
-				out.Matched = 0
-			}
+			opts := query.Options()
+			out.Items = slices.DeleteFunc(out.Items, func(item application.PositionListItem) bool {
+				return opts.Kind != "" && item.Kind != opts.Kind ||
+					opts.State != "" && item.Position.Side != opts.State ||
+					!strings.Contains(strings.ToLower(item.Name), opts.Search)
+			})
+			out.Matched = int64(len(out.Items))
 
 			return out, nil
 		},
@@ -143,7 +154,16 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server.Config.Handler = handler
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/grids/positions" && r.URL.Query().Get("state") == "short" && holdShort.Swap(false) {
+			close(shortStarted)
+			<-r.Context().Done()
+
+			return
+		}
+
+		handler.ServeHTTP(w, r)
+	})
 	server.Start()
 	defer func() { close(stopping); server.Close() }()
 
@@ -319,5 +339,66 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	check(chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil))
 	poll(
 		`document.querySelectorAll('.tabulator-row').length===2 && document.querySelector('[data-positions-as-of]').textContent==='2026-11-04'`,
+	)
+
+	// Category selections compose, supersede slow reads and preserve unsubmitted text.
+	check(
+		chromedp.SendKeys("#positions-search", "synthetic", chromedp.ByQuery),
+		chromedp.KeyEvent(kb.Enter),
+	)
+	poll(
+		`new URLSearchParams(location.search).get('q')==='synthetic' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+	)
+
+	changeCategory := func(id, value string) {
+		t.Helper()
+		check(chromedp.Evaluate(fmt.Sprintf(`(()=>{
+ const select=document.getElementById(%q);
+ select.focus();
+ select.value=%q;
+ select.dispatchEvent(new Event('change',{bubbles:true}));
+})()`, id, value), nil))
+	}
+
+	check(chromedp.Evaluate(`document.querySelector('#positions-search').value='unsent draft'`, nil))
+	holdShort.Store(true)
+	changeCategory("positions-side", "short")
+
+	select {
+	case <-shortStarted:
+	case <-time.After(8 * time.Second):
+		t.Fatal("live Side change did not request filtered positions")
+	}
+
+	poll(
+		`document.querySelector('[data-grid-status]').textContent==='Updating filters…' && document.querySelectorAll('.tabulator-row').length===2 && !new URLSearchParams(location.search).has('state')`,
+	)
+	changeCategory("positions-kind", "option")
+	poll(`(()=>{
+ const params=new URLSearchParams(location.search);
+ return params.get('state')==='short' && params.get('kind')==='option' && params.get('q')==='synthetic' && params.get('page')==='1' &&
+  document.querySelector('#positions-search').value==='unsent draft' && document.activeElement.id==='positions-kind' &&
+  document.querySelector('[data-grid-status]').textContent==='1 of 2 results' && document.querySelectorAll('.tabulator-row').length===1 &&
+  document.querySelector('.tabulator-row').textContent.includes('Synthetic option');
+})()`)
+
+	check(chromedp.Evaluate(`history.back()`, nil))
+	poll(
+		`!new URLSearchParams(location.search).has('state') && document.querySelector('#positions-side').value==='' && document.querySelector('#positions-kind').value==='' && document.querySelector('#positions-search').value==='synthetic' && document.querySelectorAll('.tabulator-row').length===2`,
+	)
+	check(chromedp.Evaluate(`history.forward()`, nil))
+	poll(
+		`document.querySelector('#positions-side').value==='short' && document.querySelector('#positions-kind').value==='option' && document.querySelectorAll('.tabulator-row').length===1`,
+	)
+
+	revision.Store(4)
+	changeCategory("positions-side", "long")
+	poll(
+		`!document.querySelector('[data-grid-retry]').hidden && new URLSearchParams(location.search).get('state')==='short' && document.querySelectorAll('.tabulator-row').length===1`,
+	)
+	revision.Store(0)
+	check(chromedp.Click("[data-grid-retry]", chromedp.ByQuery))
+	poll(
+		`new URLSearchParams(location.search).get('state')==='long' && document.querySelector('[data-grid-retry]').hidden && document.querySelector('[data-positions-message]').textContent.includes('match these filters') && document.querySelectorAll('.tabulator-row').length===0`,
 	)
 }

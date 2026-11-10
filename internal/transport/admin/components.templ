@@ -92,7 +92,13 @@ templ GridView(kind, endpoint, label, variant string) {
 				<button class="btn btn-sm" type="button" data-grid-retry hidden>Retry table</button>
 				<a href="/login" data-grid-signin hidden>Sign in again</a>
 				<button class="btn btn-sm" type="button" data-grid-reset>Reset columns</button>
-				<details class="wake-grid-help"><summary>Table help</summary><p class="wake-help">Sort, filter and page across all matching records. Enter sorts a focused column heading; Alt + arrow keys resize it.</p></details>
+				<details class="wake-grid-help">
+					<summary>Table help</summary>
+					if kind!="observations" {
+						<p class="wake-help">Category selections update the table automatically. Press Enter in the search field or choose Search to apply text.</p>
+					}
+					<p class="wake-help">Sort, filter and page across all matching records. Enter sorts a focused column heading. Alt + arrow keys resize it.</p>
+				</details>
 			</div>
 		</div>
 		<div data-grid-table></div>

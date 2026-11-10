@@ -589,12 +589,14 @@ templ InstrumentsView(view activityView) {
 
 templ ListFilters(instruments bool) {
 	<form class="wake-filters" method="get" action={ templ.SafeURL(resetListURL(instruments)) } data-list-filters>
-		<input type="hidden" name="sort" value={ page(ctx).Query.Get("sort") }/>
-		<input type="hidden" name="dir" value={ page(ctx).Query.Get("dir") }/>
+		if instruments {
+			@GridSearch("activity-search", "Search instruments", "Name or symbol")
+		} else {
+			@GridSearch("activity-search", "Search activity", "Symbol, date, value")
+		}
 		if !instruments && len(page(ctx).Accounts)>1 {
 			@AccountFilter("activity-account", true)
 		}
-		<p><label for="activity-search">Search</label><input class="input" id="activity-search" name="q" type="search" value={ page(ctx).Query.Get("q") } placeholder="Instrument, date or value"/></p>
 		<p>
 			<label for="activity-kind">Kind</label>
 			<select class="select" id="activity-kind" name="kind">
@@ -625,8 +627,18 @@ templ ListFilters(instruments bool) {
 				}
 			</select>
 		</p>
-		<button class="btn" type="submit">Apply filters</button><a href={ templ.SafeURL(resetListURL(instruments)) } data-grid-reset-filters>Reset filters</a>
+		<a href={ templ.SafeURL(resetListURL(instruments)) } data-grid-reset-filters>Reset filters</a>
 	</form>
+}
+
+templ GridSearch(id, label, placeholder string) {
+	<div class="wake-filter-search">
+		<label for={ id }>{ label }</label>
+		<div>
+			<input class="input" id={ id } name="q" type="search" maxlength="256" value={ page(ctx).Query.Get("q") } placeholder={ placeholder }/>
+			<button class="btn" type="submit">Search</button>
+		</div>
+	</div>
 }
 
 templ ReferencePage(csrf string, view sourceView) {
@@ -676,10 +688,10 @@ templ PositionsSummary() {
 
 templ PositionsFilters() {
 	<form class="wake-filters" method="get" action="/positions" data-list-filters>
+		@GridSearch("positions-search", "Search instruments", "Name or symbol")
 		if len(page(ctx).Accounts)>1 {
 			@AccountFilter("positions-account", false)
 		}
-		<p><label for="positions-search">Search instruments</label><input class="input" id="positions-search" name="q" type="search" maxlength="256" value={ page(ctx).Query.Get("q") } placeholder="Instrument name or symbol"/></p>
 		<p>
 			<label for="positions-kind">Kind</label>
 			<select class="select" id="positions-kind" name="kind">
@@ -690,7 +702,7 @@ templ PositionsFilters() {
 			</select>
 		</p>
 		<p><label for="positions-side">Side</label><select class="select" id="positions-side" name="state"><option value="">All sides</option><option value="long" selected?={ page(ctx).Query.Get("state")=="long" }>Long</option><option value="short" selected?={ page(ctx).Query.Get("state")=="short" }>Short</option></select></p>
-		<button class="btn" type="submit">Apply filters</button><a href="/positions" data-grid-reset-filters>Reset filters</a>
+		<a href="/positions" data-grid-reset-filters>Reset filters</a>
 	</form>
 }
 
