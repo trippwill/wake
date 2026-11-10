@@ -20,3 +20,6 @@ for research content and maintenance rules.
   roles, and the limits of Flex configuration documentation.
 - [IBKR FIGI allocation](ibkr-figi-allocation.md) — the observed source convention across 56
   distinct reported identifiers, its adoption and coverage limits.
+
+- [Synthetic warehouse performance](performance-warehouse.md) — reproducible workloads,
+  measurements and limits.

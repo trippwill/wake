@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Measure a disposable synthetic warehouse (quick, representative, or large)"
+set -euo pipefail
+size=${1:-quick}
+case "$size" in quick|representative|large|read-representative|read-large) ;; *) echo 'Usage: mise run performance:warehouse [quick|representative|large|read-representative|read-large]' >&2; exit 2 ;; esac
+workspace=$(mktemp -d)
+trap 'rm -rf "$workspace"' EXIT
+go test -c -o "$workspace/performance.test" ./internal/persistence/sqlite
+(cd testdata/socket-consumer && GOWORK=off go build -o "$workspace/consumer" .)
+printf 'size=%s\n' "$size"
+go version
+uname -a
+printf 'logical_cpus=%s\n' "$(getconf _NPROCESSORS_ONLN)"
+sed -n '/^model name/{p;q;}' /proc/cpuinfo
+sed -n '/^MemTotal:/p;/^SwapTotal:/p' /proc/meminfo
+df -Pk "$workspace" | tail -1
+test_name=TestPerformanceWarehouse
+read_size=
+if [[ "$size" == read-* ]]; then read_size=${size#read-}; test_name=TestPerformanceRead; fi
+WAKE_PERFORMANCE_SIZE="$size" WAKE_PERFORMANCE_READ="$read_size" WAKE_PERFORMANCE_CONSUMER="$workspace/consumer" /usr/bin/time -v "$workspace/performance.test" -test.run "^${test_name}$" -test.v -test.timeout=0 "${@:2}"
