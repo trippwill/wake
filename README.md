@@ -198,6 +198,61 @@ Use command help for exact options.
 To change a forgotten browser unlock, stop Wake and rerun setup with the same
 configuration, then restart. Setup retains the credential key; keep that key safe.
 
+### Read financial data from the CLI
+
+Run these commands as the same Unix user as the Wake daemon. From a source
+checkout, run `mise install` and `mise run build:release`, then put
+`.cache/release/wake` on your PATH. The [Linux user service installer](#run-as-a-linux-user-service)
+also installs the binary. Once `wake` is on PATH, the read commands work from any
+directory.
+
+```sh
+wake --json doctor
+wake --json accounts list
+wake --json accounts get "$ACCOUNT_ID"
+wake --json activity query --account "$ACCOUNT_ID" --from 2026-10-01 --to 2026-10-31 --family trade
+wake --json positions get "$ACCOUNT_ID"
+wake --json request get '/v1/activity/ACTIVITY_ID'
+```
+
+Set `ACCOUNT_ID` to an ID from `resources[].id` in the accounts list.
+The private socket requires no token or browser login. For a different instance,
+pass `--config /absolute/config.toml` or `--socket /absolute/wake.sock` on the
+leaf command, before any positional argument. Profile selection uses `--config`,
+`WAKE_CONFIG`, then the default Wake configuration file. The socket is
+`wake.sock` inside the runtime directory selected by `WAKE_RUNTIME_DIR`,
+`paths.runtime_dir`, or `$XDG_RUNTIME_DIR/wake`, in that order.
+
+Account lists return `warehouse_id`, `version`, and `resources`. Activity
+queries read a complete snapshot for each page and filter it locally. Dates are
+inclusive. Results default to accepted activity, newest civil date first, with
+up to 100 results per page. For example, a page can return
+`{"warehouse_id":"warehouse","version":"version","resources":[],"next_offset":null}`.
+When `next_offset` is an integer, pass it as `--offset` with the same filters.
+Compare `warehouse_id` and `version` across pages when consistency matters.
+Run `wake activity query --help` for the state, family, and limit options.
+
+Exact account and positions reads and raw GETs return the
+[API JSON object](api/openapi/v1.yaml). Position views distinguish an available
+empty array from an unavailable view with `positions: null` and a reason.
+Successful commands write JSON to stdout. With `--json`, errors go to stderr
+as an object such as
+`{"event":"error","code":"operation_failed","message":"Wake API returned HTTP 404","exit_status":1}`.
+
+#### Install the Codex skill
+
+Copy the [wake-read skill](.agents/skills/wake-read/SKILL.md) from a Wake checkout
+into your Codex skills directory. For a new installation, run from the checkout
+root with `CODEX_HOME` set if you use a custom location.
+
+```sh
+codex_skills="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$codex_skills"
+cp -R .agents/skills/wake-read "$codex_skills/"
+```
+
+Start a Codex chat and invoke `$wake-read` with the Wake data you want to inspect.
+
 ### Read from another application
 
 The private Unix socket publishes accepted accounts, instruments, listings and

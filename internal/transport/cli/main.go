@@ -108,7 +108,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			&cli.BoolFlag{Name: "json", Usage: "Structured results and status events"},
 		},
 		Name:                          "wake",
-		Usage:                         "Configure and operate the Wake daemon",
+		Usage:                         "Configure, operate and read from the Wake daemon",
 		Writer:                        stdout,
 		ErrWriter:                     stderr,
 		HideHelpCommand:               true,
@@ -219,6 +219,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action:    discoverCommands,
 		},
 	}
+	root.Commands = append(root.Commands, financialCommands(common)...)
 	for _, c := range root.Commands {
 		configureHelp(c)
 	}
