@@ -181,6 +181,40 @@ func ResolveReadOnly(command *cli.Command) (Resolution, error) {
 	return resolve(command, false)
 }
 
+// ResolveRuntimeDir reads the socket client's runtime setting without preparing
+// directories or resolving unrelated launch overrides.
+func ResolveRuntimeDir(configPath string, explicit bool) (string, error) {
+	path, source, err := SelectConfigPath(configPath, explicit)
+	if err != nil {
+		return "", err
+	}
+
+	content, _, err := readSelectedConfig(path, source)
+	if err != nil {
+		return "", err
+	}
+
+	file, err := decodeFileConfig(content)
+	if err != nil {
+		return "", err
+	}
+
+	if dir, found := os.LookupEnv("WAKE_RUNTIME_DIR"); found {
+		return dir, requireAbsolute("WAKE_RUNTIME_DIR", dir)
+	}
+
+	if file.Paths.RuntimeDir != "" {
+		return file.Paths.RuntimeDir, nil
+	}
+
+	dir, err := defaultRuntimeDir()
+	if err == nil && dir == "" {
+		err = ErrRuntimeDirRequired
+	}
+
+	return dir, err
+}
+
 func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	var out Resolution
 
@@ -190,12 +224,11 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	}
 
 	out.ConfigPath, out.ConfigSource = path, source
-	content, err := readConfigSnapshot(path)
-	if err != nil && (source != "default" || !errors.Is(err, os.ErrNotExist)) {
-		return out, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
-	}
 
-	fileLoaded := err == nil
+	content, fileLoaded, err := readSelectedConfig(path, source)
+	if err != nil {
+		return out, err
+	}
 
 	file, metadata, err := decodeFileConfigSnapshot(content)
 	if err != nil {
@@ -383,16 +416,26 @@ func settingDefaults() (map[string]string, string, error) {
 	defaults["warehouse-path"] = filepath.Join(data, "wake", "wake.db")
 
 	defaults["connections-path"] = filepath.Join(dir, "connections.db")
-	defaults["runtime-dir"] = ""
-	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
-		if err := requireAbsolute("XDG_RUNTIME_DIR", runtime); err != nil {
-			return nil, "", err
-		}
 
-		defaults["runtime-dir"] = filepath.Join(runtime, "wake")
+	defaults["runtime-dir"], err = defaultRuntimeDir()
+	if err != nil {
+		return nil, "", err
 	}
 
 	return defaults, dir, nil
+}
+
+func defaultRuntimeDir() (string, error) {
+	runtime := os.Getenv("XDG_RUNTIME_DIR")
+	if runtime == "" {
+		return "", nil
+	}
+
+	if err := requireAbsolute("XDG_RUNTIME_DIR", runtime); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(runtime, "wake"), nil
 }
 
 func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, error) {
@@ -448,6 +491,19 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		Credentials:  Credentials{MasterKeyPath: file.Credentials.MasterKeyPath},
 		Admin:        admin,
 	}, nil
+}
+
+func readSelectedConfig(path, source string) ([]byte, bool, error) {
+	content, err := readConfigSnapshot(path)
+	if err == nil {
+		return content, true, nil
+	}
+
+	if source == "default" && errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+
+	return nil, false, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
 }
 
 func readConfigSnapshot(path string) ([]byte, error) {
