@@ -11,8 +11,9 @@ WITH current AS (
   json_extract(p.value,'$.side') AS side,
   json_extract(p.value,'$.quantity.unit') AS unit,
   json_extract(p.value,'$.quantity.value') AS quantity,
-  json_extract(p.value,'$.cost_basis.currency') AS currency,
-  json_extract(p.value,'$.cost_basis.amount') AS cost
+  json_extract(p.value,'$.unit_cost_basis.amount') AS cost,
+  json_extract(p.value,'$.unit_cost_basis.currency') AS currency,
+  json_extract(p.value,'$.unit_cost_basis.quote') AS quote
  FROM current c JOIN json_each(c.data,'$.positions') p
  JOIN instruments i ON i.id=json_extract(p.value,'$.instrument_id')
  WHERE json_extract(c.data,'$.status')='available'
@@ -33,6 +34,7 @@ WITH current AS (
  CASE WHEN ?5='quantity' AND ?6='desc' THEN quantity END COLLATE wake_decimal DESC,
  CASE WHEN ?5='cost' THEN cost IS NULL END ASC,
  CASE WHEN ?5='cost' THEN currency END ASC,
+ CASE WHEN ?5='cost' THEN quote END ASC,
  CASE WHEN ?5='cost' AND ?6='asc' THEN cost END COLLATE wake_decimal ASC,
  CASE WHEN ?5='cost' AND ?6='desc' THEN cost END COLLATE wake_decimal DESC,
  coalesce(nullif(ticker,''),name) COLLATE NOCASE ASC,id ASC,ordinal ASC) AS position_order

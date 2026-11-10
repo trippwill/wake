@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify the user installer and systemd unit in a disposable home"
+set -euo pipefail
+
+installer=$PWD/.packaging/install.sh
+workspace=$(mktemp -d)
+trap 'rm -rf -- "$workspace"' EXIT
+
+export HOME="$workspace/home with spaces"
+export XDG_CONFIG_HOME="$workspace/config with spaces"
+export XDG_RUNTIME_DIR="$workspace/runtime"
+unset XDG_DATA_HOME
+mkdir -p -- "$HOME" "$XDG_RUNTIME_DIR"
+chmod 0700 -- "$XDG_RUNTIME_DIR"
+
+source_binary="$workspace/local wake"
+printf '#!/bin/sh\nexit 0\n' > "$source_binary"
+chmod +x -- "$source_binary"
+
+expect_failure() {
+    if sh "$installer" "$@" > "$workspace/error" 2>&1; then
+        printf 'Expected installation to fail for %s\n' "$*" >&2
+        exit 1
+    fi
+}
+
+sh -n "$installer"
+expect_failure
+expect_failure "$workspace/missing"
+expect_failure "$workspace"
+test ! -e "$HOME/.local"
+
+binary=$HOME/.local/bin/wake
+unit=$HOME/.local/share/systemd/user/wake.service
+sh "$installer" "$source_binary"
+cmp -- "$source_binary" "$binary"
+test "$(stat -c %a -- "$binary")" = 755
+test "$(stat -c %a -- "$unit")" = 644
+test ! -e "$XDG_CONFIG_HOME"
+systemd-analyze --user verify --man=no "$unit"
+
+profile=$XDG_CONFIG_HOME/wake
+mkdir -p -- "$profile"
+printf 'existing config\n' > "$profile/config.toml"
+printf 'existing store\n' > "$profile/connections.db"
+cp -a -- "$profile" "$workspace/original-profile"
+
+printf '# upgraded\n' >> "$source_binary"
+sh "$installer" "$source_binary"
+cmp -- "$source_binary" "$binary"
+diff -r -- "$workspace/original-profile" "$profile"
+
+export XDG_DATA_HOME="$workspace/data with spaces"
+custom_unit=$XDG_DATA_HOME/systemd/user/wake.service
+sh "$installer" "$source_binary"
+cmp -- "$unit" "$custom_unit"
+
+cp -- "$binary" "$workspace/installed"
+printf '# rejected update\n' >> "$source_binary"
+printf '# user-owned service\n' > "$custom_unit"
+expect_failure "$source_binary"
+grep -Fxq '# user-owned service' "$custom_unit"
+cmp -- "$workspace/installed" "$binary"
+
+rm -- "$custom_unit"
+ln -s -- "$workspace/missing-target" "$custom_unit"
+expect_failure "$source_binary"
+test -L "$custom_unit"
+test ! -e "$workspace/missing-target"
+cmp -- "$workspace/installed" "$binary"
+diff -r -- "$workspace/original-profile" "$profile"

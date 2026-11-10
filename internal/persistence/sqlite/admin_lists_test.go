@@ -581,7 +581,7 @@ func TestRecoveryReadinessAndRepairPageIncludeLateConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(ctx, s, nil, nil, nil, registration)
+	h, err := host.New(ctx, s, nil, nil, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +657,7 @@ func TestRecoveryAuthorityDoesNotEnumerateMutableUIPages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := host.New(t.Context(), s, nil, nil, nil, registration)
+	h, err := host.New(t.Context(), s, nil, nil, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1045,7 +1045,15 @@ func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		id, err := s.Accept(ctx, key, checkpoint.Revision, discovery.Step(), candidates, provider.Progress{})
+		id, err := s.Accept(
+			ctx,
+			key,
+			checkpoint.Revision,
+			discovery.Step(),
+			candidates,
+			provider.Progress{},
+			host.PollCycle{},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}

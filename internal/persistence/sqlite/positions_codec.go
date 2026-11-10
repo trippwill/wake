@@ -13,9 +13,10 @@ import (
 )
 
 type positionData struct {
-	Instrument instrumentData
-	Quantity   string
-	CostBasis  moneyData
+	Instrument    instrumentData
+	Quantity      string
+	UnitCostBasis *moneyData `json:",omitempty"`
+	Unit          string     `json:",omitempty"`
 }
 
 type positionSetData struct {
@@ -23,6 +24,7 @@ type positionSetData struct {
 	Account, Reference refData
 	Supersedes         []refData
 	Date, At           string
+	TimeBasis          source.PositionTimeBasis `json:",omitempty"`
 	Complete           bool
 	Reason             string
 	Positions          []positionData
@@ -40,6 +42,7 @@ func positionSetWire(o source.PositionSetObservation) positionSetData {
 		Account:   refWire(f.Account),
 		Reference: refWire(f.Reference),
 		At:        f.At.String(),
+		TimeBasis: f.TimeBasis,
 		Complete:  f.Complete,
 		Reason:    f.Reason,
 	}
@@ -52,10 +55,18 @@ func positionSetWire(o source.PositionSetObservation) positionSetData {
 	}
 
 	for _, p := range f.Positions {
-		d.Positions = append(
-			d.Positions,
-			positionData{instrumentWire(p.Instrument()), p.Quantity().Value(), moneyWire(p.CostBasis())},
-		)
+		row := positionData{
+			Instrument: instrumentWire(p.Instrument()), Quantity: p.Quantity().Value(),
+		}
+		if unitCost := p.UnitCostBasis(); unitCost.Amount() != "" {
+			row.UnitCostBasis = &moneyData{unitCost.Amount(), unitCost.Currency().String()}
+		}
+
+		if p.Instrument().Kind() == source.Debt && p.Unit() == "units" {
+			row.Unit = p.Unit()
+		}
+
+		d.Positions = append(d.Positions, row)
 	}
 
 	return d
@@ -68,10 +79,11 @@ func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
 	}
 
 	f := source.PositionSetInput{
-		Location: d.Location,
-		Date:     sourceDate(d.Date),
-		Complete: d.Complete,
-		Reason:   d.Reason,
+		Location:  d.Location,
+		Date:      sourceDate(d.Date),
+		TimeBasis: d.TimeBasis,
+		Complete:  d.Complete,
+		Reason:    d.Reason,
 	}
 
 	var err error
@@ -117,14 +129,33 @@ func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
 			return source.PositionSetObservation{}, e
 		}
 
-		m, e := p.CostBasis.money()
+		var price financial.Price
+		if p.UnitCostBasis != nil {
+			currency, e := financial.ParseCurrency(p.UnitCostBasis.Currency)
+			if e != nil {
+				return source.PositionSetObservation{}, e
+			}
+
+			price, e = financial.NewPrice(p.UnitCostBasis.Amount, currency)
+			if e != nil {
+				return source.PositionSetObservation{}, e
+			}
+		}
+
+		v, e := source.NewPosition(i, q, price)
 		if e != nil {
 			return source.PositionSetObservation{}, e
 		}
 
-		v, e := source.NewPosition(i, q, m)
-		if e != nil {
-			return source.PositionSetObservation{}, e
+		switch p.Unit {
+		case "":
+		case "units":
+			v, e = v.WithReportedUnits()
+			if e != nil {
+				return source.PositionSetObservation{}, e
+			}
+		default:
+			return source.PositionSetObservation{}, ErrCorrupt
 		}
 
 		f.Positions = append(f.Positions, v)

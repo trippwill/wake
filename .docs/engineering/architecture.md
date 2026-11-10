@@ -149,6 +149,17 @@ return enabled inputs with opaque configuration identities; the host compares th
 identities to reset only affected continuations. Discovery capability describes how
 a source account can be found, not which financial facts an input may contribute.
 Core code does not interpret provider field keys, query topology or report names.
+Streams can declare a recurring interval policy and signal cycle completion. Wake
+resolves the interval from connection, launch and stream defaults and combines
+the resulting deadline with any later provider eligibility deadline. Continuation
+steps and shared request pacing retain their separate schedules. An interval edit
+recalculates a queued routine poll from its recorded cycle time and provider
+eligibility deadline, in the same transaction as the settings update. At startup,
+the daemon reconciles queued routine polls whose effective intervals changed.
+These deadline changes preserve the recovery gate on acquisition. An operator
+can also bring forward a routine poll to its provider eligibility deadline.
+Discovery, active work and retries retain their separate schedules.
+
 Each connection binds at most one account. Confirmation binds its provider and
 qualified source account together, and repeat confirmation preserves the identity.
 The host passes that immutable reference when an API needs it for acquisition or
@@ -232,8 +243,8 @@ runnable consumer checks.
 
 Reported positions use a separate complete account-set projection with its own durable
 publication version. Source interpretation contributes typed immutable sets and instrument
-claims; deterministic financial selection uses effective time, account source authority and
-explicit revision relationships. Set content, availability and version commit atomically.
+claims; deterministic selection uses the source-reported snapshot time and basis, account
+source authority and explicit revision relationships. Set content, availability and version commit atomically.
 Each retained report contributes its latest successfully processed interpretation;
 earlier interpreted claims remain evidence without competing with their replacement.
 This controls eligibility of position-derived instrument assertions and bindings as well as

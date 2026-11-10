@@ -69,7 +69,7 @@ func formWorkflow(t *testing.T) (*application.Workflow, *formStore, provider.Des
 
 	store := &formStore{connection: host.Connection{ID: "one", Provider: "synthetic", Name: "Synthetic"}}
 
-	h, err := host.New(t.Context(), store, nil, nil, nil, registration)
+	h, err := host.New(t.Context(), store, nil, nil, nil, nil, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
 
 			store := &formStore{connection: host.Connection{ID: "one", Provider: "synthetic", Name: "Synthetic"}}
 
-			h, err := host.New(t.Context(), store, nil, nil, nil, registration)
+			h, err := host.New(t.Context(), store, nil, nil, nil, nil, registration)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -15,14 +15,16 @@ import (
 )
 
 const (
-	Confirmations       = "confirmations"
-	ConfirmationFormat  = "ibkr-flex-confirmation-xml"
-	Activity            = "activity"
-	ActivityFormat      = "ibkr-flex-activity-xml"
-	Version             = "ibkr-flex-10"
-	continuationVersion = "confirmation-state-1"
-	DefaultBaseURL      = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
-	webBudget           = "web-service"
+	Confirmations        = "confirmations"
+	ConfirmationFormat   = "ibkr-flex-confirmation-xml"
+	Activity             = "activity"
+	ActivityFormat       = "ibkr-flex-activity-xml"
+	Version              = "ibkr-flex-11"
+	continuationVersion  = "confirmation-state-1"
+	DefaultBaseURL       = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
+	webBudget            = "web-service"
+	confirmationInterval = 5 * time.Minute
+	activityInterval     = 24 * time.Hour
 )
 
 type (
@@ -71,7 +73,9 @@ func Registration(options Options) (provider.Registration, error) {
 
 	stream, _ := provider.NewStream(Confirmations, ConfirmationFormat)
 	stream, _ = stream.WithDiscovery()
+	stream, _ = stream.WithPolling(confirmationInterval, time.Minute)
 	activity, _ := provider.NewStream(Activity, ActivityFormat)
+	activity, _ = activity.WithPolling(activityInterval, time.Hour)
 	query, _ := provider.NewField("query_id", "Confirmation Query ID", provider.TextField, true)
 	activityQuery, _ := provider.NewField(
 		"activity_query_id",

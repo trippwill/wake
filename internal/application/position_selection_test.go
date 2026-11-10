@@ -38,9 +38,9 @@ func positionCandidate(t *testing.T, date, at, quantity, cost, reason string) Po
 		q, _ := financial.NewQuantity(quantity)
 
 		c, _ := financial.ParseCurrency("USD")
-		m := financial.Money{}
+		m := financial.Price{}
 		if cost != "" {
-			m, _ = financial.NewMoney(cost, c)
+			m, _ = financial.NewPrice(cost, c)
 		}
 
 		p, err := source.NewPosition(instrument, q, m)
@@ -239,7 +239,7 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 
 			if tc.name == "unknown costs stay unknown" {
 				got := selectPositions(t, []PositionCandidate{set(tc.base, "10.00"), set(tc.next, "10")})
-				if got.Source.Positions[0].CostBasis().Amount() != "" {
+				if got.Source.Positions[0].UnitCostBasis().Amount() != "" {
 					t.Fatal("invented certainty about an unknown cost", got)
 				}
 			}
@@ -259,7 +259,7 @@ func TestPositionDuplicateRowsRequireCompatibleOneToOneMatching(t *testing.T) {
 
 		costs := map[string]int{}
 		for _, p := range got.Source.Positions {
-			costs[positionNumber(p.CostBasis().Amount())]++
+			costs[positionNumber(p.UnitCostBasis().Amount())]++
 		}
 
 		if costs["1"] != 1 || costs["2"] != 1 || len(costs) != 2 {
@@ -296,10 +296,10 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 
 					quantity, _ := financial.NewQuantity("1")
 
-					cost := financial.Money{}
+					cost := financial.Price{}
 					if i < len(costs) && costs[i] != "" {
 						usd, _ := financial.ParseCurrency("USD")
-						cost, _ = financial.NewMoney(costs[i], usd)
+						cost, _ = financial.NewPrice(costs[i], usd)
 					}
 
 					p, err := source.NewPosition(instrument, quantity, cost)
@@ -344,7 +344,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 						term = p.Instrument().Debt().Fields().Maturity.String()
 					}
 
-					costs[term] = positionNumber(p.CostBasis().Amount())
+					costs[term] = positionNumber(p.UnitCostBasis().Amount())
 				}
 
 				if costs[terms[0]] != "2" || costs[terms[1]] != "1" || len(costs) != 2 {
@@ -443,7 +443,7 @@ func TestPositionPairingIgnoresIdentifierOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		p, _ := source.NewPosition(instrument, f.Positions[0].Quantity(), f.Positions[0].CostBasis())
+		p, _ := source.NewPosition(instrument, f.Positions[0].Quantity(), f.Positions[0].UnitCostBasis())
 		f.Positions = nil
 		c.InstrumentIDs = nil
 		for range 9 {
@@ -465,7 +465,7 @@ func TestPositionPairingIgnoresIdentifierOrder(t *testing.T) {
 		}
 
 		for _, p := range got.Source.Positions {
-			if p.CostBasis().Amount() != "1.0000" {
+			if p.UnitCostBasis().Amount() != "1.0000" {
 				t.Fatal("lost reported cost", p)
 			}
 		}

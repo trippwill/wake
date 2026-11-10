@@ -71,7 +71,12 @@ func (c *client) readPositions(ctx context.Context, account string, previous pos
 		if err = json.Unmarshal(row, &p); err != nil {
 			return previous, err
 		}
-		if p.Quantity.Unit != "shares" && p.Quantity.Unit != "contracts" && p.Quantity.Unit != "nominal" || strings.Trim(p.Quantity.Value, "-0.") == "" || (p.Side == "short") != strings.HasPrefix(p.Quantity.Value, "-") {
+		switch p.Quantity.Unit {
+		case "shares", "contracts", "nominal", "units":
+		default:
+			return previous, errors.New("protocol: invalid position quantity unit")
+		}
+		if strings.Trim(p.Quantity.Value, "-0.") == "" || (p.Side == "short") != strings.HasPrefix(p.Quantity.Value, "-") {
 			return previous, errors.New("protocol: invalid position quantity or side")
 		}
 		ids["instruments/"+url.PathEscape(p.InstrumentID)] = "instruments"

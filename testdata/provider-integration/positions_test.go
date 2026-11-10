@@ -44,7 +44,7 @@ func TestExternalPositionSetsRoundTripThroughPublicClaims(t *testing.T) {
 		if r.Kind == "positions" {
 			found = true
 			v := r.PositionSet.Fields()
-			if v.At.String() != "2026-10-20T12:34:56.1200Z" || v.Positions[0].Quantity().Value() != "-2.00000000000000100" || v.Positions[0].CostBasis().Amount() != "0.0000" {
+			if v.At.String() != "2026-10-20T12:34:56.1200Z" || v.Positions[0].Quantity().Value() != "-2.00000000000000100" || v.Positions[0].UnitCostBasis().Amount() != "0.0000" {
 				t.Fatal(v)
 			}
 		}

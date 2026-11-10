@@ -47,30 +47,69 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	view := fixtureOverview(fixtureView{Account: account, Connections: []application.ConnectionView{{
-		ID: "source", Name: "ibkr-flex", CanAcquire: true,
-		Work: []application.WorkStatus{
-			{Stream: "activity", Operation: "acquire", Progress: "retained", Scheduled: true},
-			{Stream: "confirmations", Operation: "acquire", Progress: "retained", Scheduled: true},
-		},
-	}}})
+	now := time.Now().UTC().Truncate(time.Second)
+	last, next := now.Add(-time.Hour), now.Add(time.Hour)
+	newView := func(work ...application.WorkStatus) overviewView {
+		return fixtureOverview(fixtureView{Account: account, Connections: []application.ConnectionView{{
+			ID: "source", Name: "ibkr-flex", CanAcquire: true, Work: work,
+		}}})
+	}
+	activity := application.WorkStatus{
+		Stream: "activity", Operation: "acquire", Progress: "retained",
+		Scheduled: true, LastRetrieved: last, Next: next,
+	}
+	confirmations := application.WorkStatus{
+		Stream: "confirmations", Operation: "acquire", Progress: "retained",
+		Scheduled: true, LastRetrieved: last, Next: next,
+	}
+	blocked, retry := activity, confirmations
+	blocked.Failure, blocked.RetryBlocked = "Source input unavailable", true
+	retry.Failure = "Upstream retry"
+	first := application.WorkStatus{Stream: "initial", Operation: "acquire", Scheduled: true}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /assets/", serveAsset)
-	mux.Handle(
-		"GET /",
-		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(view))),
-	)
 
-	mixed := fixtureOverview(fixtureView{Account: account, Connections: []application.ConnectionView{{
-		ID: "source", Name: "ibkr-flex", CanAcquire: true, Work: []application.WorkStatus{
-			{Stream: "activity", Operation: "acquire", Failure: "Source input unavailable", Scheduled: true},
-			{Stream: "confirmations", Operation: "acquire", Progress: "retained", Scheduled: true},
-		},
-	}}})
-	mux.Handle(
-		"GET /mixed",
-		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview(mixed))),
-	)
+	serve := func(w http.ResponseWriter, r *http.Request, view overviewView) {
+		templ.Handler(SectionShell("Overview", "synthetic-csrf", "Overview", DashboardOverview("synthetic-csrf", view, r.URL.Query().Get("refresh")))).
+			ServeHTTP(w, pageRequest(r))
+	}
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		current := activity
+		if r.Header.Get("HX-Request") == "true" {
+			current.LastRetrieved = last.Add(time.Minute)
+		}
+
+		if r.URL.Query().Get("refresh") == "requested" {
+			current.Next = next.Add(-time.Minute)
+		}
+
+		serve(w, r, newView(current, confirmations))
+	})
+	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("csrf") != "synthetic-csrf" {
+			http.Error(w, "Missing CSRF token", http.StatusForbidden)
+			return
+		}
+
+		http.Redirect(w, r, "/?refresh=requested", http.StatusSeeOther)
+	})
+	mux.HandleFunc("GET /mixed", func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r, newView(blocked, retry, first))
+	})
+	mux.HandleFunc("GET /paused", func(w http.ResponseWriter, r *http.Request) {
+		paused := newView(activity)
+		paused.Storage.Paused = true
+		serve(w, r, paused)
+	})
+	mux.HandleFunc("GET /access", func(w http.ResponseWriter, r *http.Request) {
+		access := newView(activity)
+		access.Connections[0].MissingAccess = true
+		serve(w, r, access)
+	})
+	mux.HandleFunc("GET /idle", func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r, newView())
+	})
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -86,7 +125,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	defer deadline()
 
 	if err = chromedp.Run(ctx, testbrowser.NewDocument(chromedp.Navigate(server.URL)),
-		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery)); err != nil {
+		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
+		chromedp.WaitVisible(`form[action="/refresh"] button`, chromedp.ByQuery),
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -125,7 +166,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 						rows.map(row=>row.querySelector('dt').textContent.trim()).join(',')==='Activity,Confirmations'&&
 						rows.every((row,index)=>{
 							const label=row.querySelector('dt').getBoundingClientRect(),status=row.querySelector('dd').getBoundingClientRect();
-							return row.querySelector('dd').textContent==='Evidence retained'&&label.right<=status.left&&
+							const values=row.querySelectorAll('time');
+							return row.querySelector('dd').textContent.includes('Evidence retained')&&
+								row.querySelector('dd').textContent.includes('Last successful retrieval')&&
+								row.querySelector('dd').textContent.includes('Next event')&&
+								row.querySelector('dd').textContent.includes('Attempt')&&
+								values.length===2&&values[0].textContent.endsWith('UTC')&&
+								values[1].dateTime===`+strconv.Quote(next.Format(time.RFC3339Nano))+`&&label.right<=status.left&&
 								(index===0||rows[index-1].getBoundingClientRect().bottom<=row.getBoundingClientRect().top);
 						})&&document.querySelector('.wake-source-summary a').getAttribute('href')==='/connections/source?view=status';
 				})()`, &valid),
@@ -141,6 +188,32 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 
 	if err = chromedp.Run(
 		ctx,
+		chromedp.Evaluate(
+			`window.htmx.trigger(document.querySelector('#workspace-content'), 'sse:refresh')`,
+			nil,
+		),
+		chromedp.Poll(`document.querySelector('.wake-sync-work time').dateTime===`+
+			strconv.Quote(last.Add(time.Minute).Format(time.RFC3339Nano)), nil),
+	); err != nil {
+		t.Fatal("live refresh did not replace the retrieval time", err)
+	}
+
+	if err = chromedp.Run(
+		ctx,
+		testbrowser.NewDocument(chromedp.Click(`form[action="/refresh"] button`, chromedp.ByQuery)),
+		chromedp.Poll(
+			`document.querySelector('#synchronization-title').closest('section').textContent.includes('Refresh requested') &&
+			document.querySelectorAll('.wake-sync-work time')[1].dateTime===`+strconv.Quote(
+				next.Add(-time.Minute).Format(time.RFC3339Nano),
+			),
+			nil,
+		),
+	); err != nil {
+		t.Fatal("refresh action did not show the new deadline", err)
+	}
+
+	if err = chromedp.Run(
+		ctx,
 		testbrowser.NewDocument(chromedp.Navigate(server.URL+"/mixed")),
 		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
 	); err != nil {
@@ -150,14 +223,18 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	for _, theme := range []string{"light", "dark"} {
 		for _, width := range []int64{1280, 768, 390, 320} {
 			var valid bool
+
 			if err = chromedp.Run(ctx, emulation.SetDeviceMetricsOverride(width, 900, 1, false),
 				chromedp.Evaluate(`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme), nil),
 				chromedp.Evaluate(`(()=>{
      const rows=Array.from(document.querySelectorAll('.wake-sync-work > div'));
-     return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===2&&
+     return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===3&&
       rows[0].querySelector('dt').textContent.trim()==='Activity'&&rows[0].querySelector('dd').textContent.includes('failed')&&
       rows[0].querySelector('dd').textContent.includes('Source input unavailable')&&
-      rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].querySelector('dd').textContent==='Evidence retained';
+      rows[0].textContent.includes('Operator action required')&&rows[0].querySelectorAll('time').length===1&&
+      rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].textContent.includes('Retry ·')&&
+      rows[1].querySelectorAll('time').length===2&&rows[2].querySelectorAll('time').length===0&&
+      rows[2].textContent.includes('No successful retrieval yet')&&rows[2].textContent.includes('Eligible now');
     })()`, &valid)); err != nil || !valid {
 				t.Fatalf("%s at %dpx: a failed stream hid healthy progress: %v", theme, width, err)
 			}
@@ -165,6 +242,28 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			if width == 1280 || width == 390 {
 				capture("synchronization-mixed-" + theme + "-" + strconv.FormatInt(width, 10))
 			}
+		}
+	}
+
+	for _, tc := range []struct {
+		path, state string
+		times       int
+	}{
+		{"/paused", "Paused", 1},
+		{"/access", "Access review required", 1},
+		{"/idle", "No automatic work scheduled", 0},
+	} {
+		if err = chromedp.Run(ctx,
+			testbrowser.NewDocument(chromedp.Navigate(server.URL+tc.path)),
+			chromedp.Poll(`(()=>{
+				const card=document.querySelector('section[aria-labelledby="synchronization-title"]');
+				const last=card.querySelectorAll('time');
+				return card.textContent.includes(`+strconv.Quote(tc.state)+`) &&
+					last.length===`+strconv.Itoa(tc.times)+` &&
+					(last.length===0 || last[0].dateTime===`+strconv.Quote(last.Format(time.RFC3339Nano))+`);
+			})()`, nil),
+		); err != nil {
+			t.Fatal(tc.path, err)
 		}
 	}
 

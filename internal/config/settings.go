@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.trippwill.dev/wake/provider"
 )
 
 var defaultAdmin = Admin{Port: 8787, AuthMode: "local"}
@@ -98,6 +100,12 @@ func Settings() []Setting {
 	}
 
 	return settings
+}
+
+// PollingDefaults describes the TOML-only table whose keys come from the registry.
+var PollingDefaults = Setting{
+	Key: "polling.defaults", Type: "table", Default: "registered stream defaults",
+	Description: "Recurring interval overrides keyed by provider-id:stream-id",
 }
 
 // Flags supplies fresh flags for parsing explicit inputs without reading files or environments.
@@ -274,7 +282,14 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 
 	port := command.Uint16("admin-port")
 
+	if file.Polling.Defaults != nil {
+		out.Values = append(out.Values, Value{PollingDefaults.Key, file.Polling.Defaults, "toml:" + path})
+	} else {
+		out.Values = append(out.Values, Value{PollingDefaults.Key, map[string]string{}, "default"})
+	}
+
 	file = fileConfig{
+		Polling: file.Polling,
 		Storage: Storage{
 			WarehousePath:   command.String("warehouse-path"),
 			ConnectionsPath: command.String("connections-path"),
@@ -415,12 +430,23 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		return Config{}, fmt.Errorf("%w: admin auth mode is empty", ErrInvalid)
 	}
 
+	defaults := make(map[string]time.Duration, len(file.Polling.Defaults))
+	for key, value := range file.Polling.Defaults {
+		interval, err := provider.ParsePollInterval(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("%w: invalid polling interval for %q", ErrInvalid, key)
+		}
+
+		defaults[key] = interval
+	}
+
 	return Config{
-		Paths:       Paths{ConfigDir: dir, RuntimeDir: file.Paths.RuntimeDir},
-		Storage:     file.Storage,
-		Log:         Log{Level: level},
-		Credentials: Credentials{MasterKeyPath: file.Credentials.MasterKeyPath},
-		Admin:       admin,
+		PollDefaults: defaults,
+		Paths:        Paths{ConfigDir: dir, RuntimeDir: file.Paths.RuntimeDir},
+		Storage:      file.Storage,
+		Log:          Log{Level: level},
+		Credentials:  Credentials{MasterKeyPath: file.Credentials.MasterKeyPath},
+		Admin:        admin,
 	}, nil
 }
 

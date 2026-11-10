@@ -623,7 +623,7 @@
       ["name", "Instrument"],
       ["side", "Side"],
       ["quantity", "Quantity"],
-      ["cost", "Total basis"],
+      ["cost", "Unit cost basis"],
       ["terms", "Reported terms"],
     ],
     instruments: [
@@ -778,6 +778,7 @@
           request: null,
           sequence: 0,
           pending: false,
+          filterChange: null,
           focus: null,
           selectionRestored: false,
           restoring: false,
@@ -805,13 +806,17 @@
           parameters,
           background = false,
         ) => {
+          const filterChange = background ? null : state.filterChange;
           if (!background) {
             state.retryForeground = false;
             state.installing = null;
             delete region.dataset.gridReady;
             state.available = false;
             refresh.hidden = true;
-            status.textContent = "Loading table…";
+            status.toggleAttribute("data-filter-pending", !!filterChange);
+            status.textContent = filterChange
+              ? "Updating filters…"
+              : "Loading table…";
           }
           state.request?.abort();
           const sequence = ++state.sequence;
@@ -823,6 +828,10 @@
           signIn.hidden = true;
           const target = new URL(url, location.href);
           const current = new URL(location.href);
+          if (filterChange) {
+            current.search = filterChange.toString();
+            current.searchParams.delete("selected");
+          }
           for (const key of ["q", "kind", "state", "account"])
             if (current.searchParams.has(key))
               target.searchParams.set(key, current.searchParams.get(key));
@@ -854,6 +863,8 @@
               headers: { Accept: "application/json", "HX-Request": "true" },
               signal: controller.signal,
             });
+            if (sequence !== state.sequence)
+              throw new Error("Superseded table request");
             if (response.status === 401 || response.status === 403) {
               signIn.hidden = false;
               throw new Error(
@@ -883,7 +894,11 @@
                   : "No matching records.";
             if (!background) {
               state.installing = result;
-              updateHistory(current);
+              state.filterChange = null;
+              updateHistory(
+                current,
+                !!filterChange && current.href !== location.href,
+              );
             }
             return result;
           } catch (error) {
@@ -899,6 +914,7 @@
             clearTimeout(timeout);
             if (sequence === state.sequence) {
               state.pending = false;
+              status.removeAttribute("data-filter-pending");
               region.removeAttribute("aria-busy");
             }
           }
@@ -1008,18 +1024,23 @@
             document.activeElement === retry;
           const displayed = state.displayed;
           try {
-            const result = await readPage(false);
-            if (table.getPage() > result.last_page) {
-              await table.setPage(result.last_page);
-            } else if (JSON.stringify(displayed) !== JSON.stringify(result)) {
-              table.setMaxPage(result.last_page);
-              await table.replaceData(result.data);
-            }
-            if (!state.retryForeground) {
-              state.installing = null;
-              region.dataset.gridReady = "true";
-              const message = `${state.displayed.last_row} of ${state.displayed.total} results`;
-              if (status.textContent !== message) status.textContent = message;
+            if (state.filterChange) {
+              await table.setData();
+            } else {
+              const result = await readPage(false);
+              if (table.getPage() > result.last_page) {
+                await table.setPage(result.last_page);
+              } else if (JSON.stringify(displayed) !== JSON.stringify(result)) {
+                table.setMaxPage(result.last_page);
+                await table.replaceData(result.data);
+              }
+              if (!state.retryForeground) {
+                state.installing = null;
+                region.dataset.gridReady = "true";
+                const message = `${state.displayed.last_row} of ${state.displayed.total} results`;
+                if (status.textContent !== message)
+                  status.textContent = message;
+              }
             }
           } catch {
             // The shared request path retains rows and presents retry/sign-in feedback.
@@ -1161,29 +1182,33 @@
     },
     true,
   );
+  const applyGridFilter = (control) => {
+    const state = grids.get(control.closest("[data-grid]"));
+    if (!state) return;
+    const params = new URLSearchParams(state.filterChange ?? location.search);
+    if (control.value) params.set(control.name, control.value);
+    else params.delete(control.name);
+    state.filterChange = params;
+    state.table.setData().catch(() => {});
+  };
+  document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-list-filters] select[name]"))
+      applyGridFilter(event.target);
+  });
   document.addEventListener("submit", (event) => {
     const form = event.target.closest(
       "[data-list-filters],[data-observation-filters]",
     );
     if (!form) return;
     event.preventDefault();
-    const region =
-      form.closest("[data-grid]") || document.querySelector("[data-grid]");
-    const state = grids.get(region);
-    if (!state) return;
-    const url = new URL(location.href);
-    for (const [key, value] of new FormData(form))
-      url.searchParams.set(key, value);
-    url.searchParams.set("page", "1");
-    url.searchParams.delete("selected");
-    updateHistory(url, true);
-    state.table.setData().catch(() => {});
+    applyGridFilter(form.elements.namedItem("q"));
   });
 
   window.addEventListener("popstate", (event) => {
     if (event.wakeFragmentNavigation) return;
     const params = new URL(location.href).searchParams;
     for (const [region, state] of grids) {
+      state.filterChange = null;
       const form =
         region.querySelector("[data-observation-filters]") ||
         document.querySelector("[data-list-filters]");

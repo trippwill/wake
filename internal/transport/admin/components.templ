@@ -114,7 +114,13 @@ templ GridView(kind, endpoint, label, variant string) {
 				<button class="btn btn-sm" type="button" data-grid-retry hidden>Retry table</button>
 				<a href="/login" data-grid-signin hidden>Sign in again</a>
 				<button class="btn btn-sm" type="button" data-grid-reset>Reset columns</button>
-				<details class="wake-grid-help"><summary>Table help</summary><p class="wake-help">Sort, filter and page across all matching records. Enter sorts a focused column heading; Alt + arrow keys resize it.</p></details>
+				<details class="wake-grid-help">
+					<summary>Table help</summary>
+					if kind!="observations" {
+						<p class="wake-help">Category selections update the table automatically. Press Enter in the search field or choose Search to apply text.</p>
+					}
+					<p class="wake-help">Sort, filter and page across all matching records. Enter sorts a focused column heading. Alt + arrow keys resize it.</p>
+				</details>
 			</div>
 		</div>
 		<div data-grid-table></div>
@@ -192,6 +198,14 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 	if operation!=submissionNone {
 		<form method="post" action={ templ.SafeURL(path) }>
 			<input type="hidden" name="csrf" value={ csrf }/>
+			if operation==submissionPolling {
+				<input type="hidden" name="stream" value={ draft.Get("stream") }/>
+				for _,stream:=range descriptor.Streams() {
+					if stream.ID()==draft.Get("stream") && stream.Polling().Default()!=0 {
+						<p><label for="retry-interval">Polling interval for { stream.ID() }</label><input class="input" id="retry-interval" name="interval" value={ draft.Get("interval") } maxlength="32" aria-describedby="retry-interval-help"/><small id="retry-interval-help">Enter a duration between { pollingValue(stream.Polling().Minimum()) } and { pollingValue(provider.MaxPollInterval) }, or leave empty to inherit the default.</small></p>
+					}
+				}
+			}
 			if operation==submissionConfirm {
 				<label for="retry-name">Name<input class="input" id="retry-name" name="name" value={ draft.Get("name") } required maxlength="256"/></label>
 			}

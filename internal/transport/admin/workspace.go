@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/financial"
@@ -586,6 +587,22 @@ func comparisonFields(f application.CorrectionForm, c application.CorrectionCand
 	sort.Strings(extra)
 
 	return append(fields, extra...)
+}
+
+func pollingValue(interval time.Duration) string {
+	if interval == 0 {
+		return ""
+	}
+
+	if interval%time.Hour == 0 {
+		return fmt.Sprintf("%dh", interval/time.Hour)
+	}
+
+	if interval%time.Minute == 0 && interval < time.Hour {
+		return fmt.Sprintf("%dm", interval/time.Minute)
+	}
+
+	return interval.String()
 }
 
 func workLabel(work application.WorkStatus) string {

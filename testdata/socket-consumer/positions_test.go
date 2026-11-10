@@ -14,9 +14,9 @@ import (
 	"testing"
 )
 
-const positionsFixture = `{"warehouse_id":"warehouse","account_id":"account","version":"positions-version","status":"available","as_of":{"date":"2026-11-04","at":null},"reason":null,"positions":[{"instrument_id":"instrument","quantity":{"value":"-0.0000000012300","unit":"shares"},"side":"short","cost_basis":{"amount":"0.0000","currency":"USD"},"option":null,"debt":null}]}`
+const positionsFixture = `{"warehouse_id":"warehouse","account_id":"account","version":"positions-version","status":"available","as_of":{"date":"2026-11-04","at":"2026-11-04T12:00:00.1200Z","basis":"source_fetched"},"reason":null,"positions":[{"instrument_id":"instrument","quantity":{"value":"-0.0000000012300","unit":"units"},"side":"short","unit_cost_basis":{"amount":"3.2000","currency":"USD"},"option":null,"debt":null}]}`
 const positionAccount = `{"id":"account","kind":"accounts","revision":1,"account":{"name":"Synthetic","currency":null}}`
-const positionInstrument = `{"id":"instrument","kind":"instruments","revision":1,"instrument":{"name":"Synthetic","ticker":null,"figi":null,"underlier_id":null,"family":"equity","reference_status":"provisional","identifiers":[],"figi_allocation":null,"reference_reason":null}}`
+const positionInstrument = `{"id":"instrument","kind":"instruments","revision":1,"instrument":{"name":"Synthetic","ticker":null,"figi":null,"underlier_id":null,"family":"debt","reference_status":"provisional","identifiers":[],"figi_allocation":null,"reference_reason":null}}`
 
 func TestSeparatePositionsValidateResolveAndKeepPriorOnFailure(t *testing.T) {
 	for _, failure := range []string{"", "availability", "side", "lookup", "duplicate", "quantity"} {

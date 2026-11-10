@@ -35,6 +35,7 @@ html {
   --wake-sidebar: #c6cdd3;
   --wake-field: #edf0f2;
   --wake-muted: #3d4650;
+  --wake-pending: #0059c7;
   --wake-control-border: #687581;
   --wake-selection-edge: #805028;
   --radius-selector: 0.375rem;
@@ -73,6 +74,7 @@ html {
   --wake-sidebar: #363d44;
   --wake-field: #2b3036;
   --wake-muted: #bac2ca;
+  --wake-pending: #7cb9ff;
   --wake-control-border: #8c9aaa;
   --wake-selection-edge: #dc8e57;
 }
@@ -670,6 +672,10 @@ body {
   font-size: 0.875rem;
   padding-block: 0.5rem;
 }
+.wake-grid-controls [data-filter-pending] {
+  color: var(--wake-pending);
+  font-weight: 650;
+}
 .wake-grid .tabulator {
   border: 1px solid var(--color-base-300);
   border-radius: var(--radius-field);
@@ -1074,6 +1080,21 @@ body {
 }
 .wake-main .wake-filters > p:first-child {
   flex-basis: 14rem;
+}
+.wake-filter-search {
+  flex: 2 1 16rem;
+  min-width: 0;
+}
+.wake-filter-search > div {
+  display: flex;
+  gap: 0.5rem;
+}
+.wake-filter-search input {
+  min-width: 0;
+}
+.wake-filter-search input::placeholder {
+  color: var(--wake-muted);
+  opacity: 1;
 }
 .wake-main .wake-filters > a {
   padding-block: 0.5rem;

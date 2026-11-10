@@ -7,7 +7,8 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
-Wake acquires IBKR Flex reports and cached SnapTrade Personal trade history.
+Wake acquires IBKR Flex reports, cached SnapTrade Personal trade history, and
+reported Fidelity US positions through SnapTrade.
 Confirm one account per connection and inspect activity, instruments and available
 reported positions in the admin console. Wake retains original reports, exact
 financial values and conflicts.
@@ -40,6 +41,50 @@ credentials. The new warehouse establishes new financial IDs. The old warehouse
 holds its original evidence and corrections. Startup preserves unsupported data. Use current
 settings from `config describe`; retired acquisition settings are rejected.
 
+#### Run as a Linux user service
+
+On Linux with a systemd user session, install Wake as the account that runs it.
+From a source checkout, build the standalone binary with `mise install` and
+`mise run build:release`:
+
+```sh
+sh .packaging/install.sh .cache/release/wake
+```
+
+You can also copy the installer and a prebuilt Wake binary to the target machine
+and pass that binary's path to the installer. The installer puts `wake` in
+`~/.local/bin` and `wake.service` in the user's XDG data directory.
+
+For a fresh profile, run setup and then enable and start the service:
+
+```sh
+"$HOME/.local/bin/wake" setup --config "${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml"
+systemctl --user enable --now wake.service
+```
+
+Use the same XDG paths in your shell and systemd user manager. To move an existing
+profile to the service, stop the foreground daemon and reuse its configuration.
+Carry any command-line or shell-only path overrides into the TOML file. If the
+file is at a different path, run `systemctl --user edit wake.service` and add
+this drop-in with your absolute path before enabling the service:
+
+```ini
+[Service]
+Environment="WAKE_CONFIG=/absolute/private/path/config.toml"
+```
+
+Check the service and find the admin address in its startup log:
+
+```sh
+systemctl --user status wake.service
+journalctl --user -u wake.service -f
+```
+
+After reinstalling, run `systemctl --user daemon-reload` and
+`systemctl --user restart wake.service` to load the update. The enabled service
+starts with your user manager, normally at login. Run `loginctl enable-linger`
+if you want it to start at boot and keep running after logout.
+
 ### Connect and inspect
 
 Open **Connections → Add source connection** and choose the provider. For IBKR Flex,
@@ -54,7 +99,9 @@ synchronization for that connection’s selected account. Configure another conn
 for a different brokerage account. Use the account selector in Activity or Positions
 when several accounts are confirmed.
 
-**Overview** shows setup steps, financial review and source work. Use the sidebar's
+**Overview** shows setup steps, financial review and source work. Under
+**Synchronization**, **Refresh now** brings forward routine polls for confirmed
+sources within their pacing limits. It preserves pending retries and continuations. Use the sidebar's
 **Activity**, **Instruments**, **Positions** and **Needs review** destinations to inspect financial
 history, instrument identities, latest reported positions and unresolved questions. Each workspace
 has its own path. Activity, instrument and evidence pages retain a return path to the
@@ -67,6 +114,17 @@ set from unavailable positions and links to instrument details and source report
 
 Under **Administration**, **Connections** groups each source's **Status**, **Reports**
 and **Access**. Repair its Query ID or token beside the affected source.
+**Access → Polling intervals** lets you set an interval for each recurring stream.
+Clear the field and save to inherit its default. **Status** shows the effective
+interval and the next eligible time. Changing the interval recalculates a queued
+routine poll from the previous cycle, subject to provider pacing. In-progress
+work and retries keep their own deadlines.
+
+To set an installation default, add an entry under `[polling.defaults]` in the
+launch configuration. Keys use the registered `provider-id:stream-id` and values
+are quoted durations, for example `"ibkr-flex:confirmations" = "10m"`.
+Use `wake config check` to validate the file before restarting. At startup, Wake
+recalculates queued routine polls whose inherited intervals changed.
 **Instrument reference** manages
 the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
 stays visible until repaired or explicitly cleared for anonymous access.

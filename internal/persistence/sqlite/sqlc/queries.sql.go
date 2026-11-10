@@ -1307,6 +1307,22 @@ func (q *Queries) EnrichInstrument(ctx context.Context, arg EnrichInstrumentPara
 	return err
 }
 
+const ensureAccountAcquisitionWork = `-- name: EnsureAccountAcquisitionWork :exec
+INSERT INTO work(connection_id,stream,operation)
+SELECT connection_id,?1,'acquire' FROM accounts WHERE provider=?2
+ON CONFLICT DO NOTHING
+`
+
+type EnsureAccountAcquisitionWorkParams struct {
+	Stream   string
+	Provider string
+}
+
+func (q *Queries) EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) error {
+	_, err := q.db.ExecContext(ctx, ensureAccountAcquisitionWork, arg.Stream, arg.Provider)
+	return err
+}
+
 const ensureInstrumentSelection = `-- name: EnsureInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING
 `
@@ -3393,6 +3409,63 @@ func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) err
 	return err
 }
 
+const queuedPoll = `-- name: QueuedPoll :one
+SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
+WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
+  AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
+`
+
+type QueuedPollParams struct {
+	ConnectionID string
+	Stream       string
+	StateVersion string
+}
+
+func (q *Queries) QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, queuedPoll, arg.ConnectionID, arg.Stream, arg.StateVersion)
+	var state []byte
+	err := row.Scan(&state)
+	return state, err
+}
+
+const queuedPollConnections = `-- name: QueuedPollConnections :many
+SELECT id,provider,settings FROM access.configurations
+WHERE EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+   WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
+    AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id)
+`
+
+type QueuedPollConnectionsRow struct {
+	ID       string
+	Provider string
+	Settings []byte
+}
+
+func (q *Queries) QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, queuedPollConnections, stateVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QueuedPollConnectionsRow
+	for rows.Next() {
+		var i QueuedPollConnectionsRow
+		if err := rows.Scan(&i.ID, &i.Provider, &i.Settings); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recentAcquisitionReceipts = `-- name: RecentAcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50
 `
@@ -3540,6 +3613,34 @@ func (q *Queries) ReferenceSetting(ctx context.Context) (AccessReferenceSetting,
 	var i AccessReferenceSetting
 	err := row.Scan(&i.Singleton, &i.Encrypted, &i.Failure)
 	return i, err
+}
+
+const refreshPolls = `-- name: RefreshPolls :execrows
+UPDATE work
+SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(?1 AS TEXT)
+              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(?1 AS TEXT) END
+WHERE operation='acquire'
+  AND (SELECT paused FROM profile WHERE singleton=1)=0
+  AND failure='' AND failure_code=''
+  AND julianday(next)>julianday(?1)
+  AND julianday(next)>CASE WHEN state_version=?2
+                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
+`
+
+type RefreshPollsParams struct {
+	Now         string
+	PollVersion string
+}
+
+func (q *Queries) RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, refreshPolls, arg.Now, arg.PollVersion)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
@@ -4012,6 +4113,22 @@ func (q *Queries) SaveProcessingReceipt(ctx context.Context, arg SaveProcessingR
 	return err
 }
 
+const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :exec
+INSERT INTO scheduled(connection_id,stream,operation,enabled)
+SELECT connection_id,?1,'acquire',1 FROM accounts WHERE provider=?2
+ON CONFLICT DO NOTHING
+`
+
+type ScheduleMissingAccountAcquisitionParams struct {
+	Stream   string
+	Provider string
+}
+
+func (q *Queries) ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error {
+	_, err := q.db.ExecContext(ctx, scheduleMissingAccountAcquisition, arg.Stream, arg.Provider)
+	return err
+}
+
 const secret = `-- name: Secret :one
 SELECT encrypted FROM access.credentials WHERE connection_id=? AND key=?
 `
@@ -4152,6 +4269,27 @@ func (q *Queries) SetPacing(ctx context.Context, arg SetPacingParams) error {
 		arg.Policy,
 		arg.Scope,
 		arg.Next,
+	)
+	return err
+}
+
+const setPollDeadline = `-- name: SetPollDeadline :exec
+UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire'
+`
+
+type SetPollDeadlineParams struct {
+	Next         string
+	State        []byte
+	ConnectionID string
+	Stream       string
+}
+
+func (q *Queries) SetPollDeadline(ctx context.Context, arg SetPollDeadlineParams) error {
+	_, err := q.db.ExecContext(ctx, setPollDeadline,
+		arg.Next,
+		arg.State,
+		arg.ConnectionID,
+		arg.Stream,
 	)
 	return err
 }
@@ -4352,26 +4490,29 @@ func (q *Queries) WakeReference(ctx context.Context) error {
 }
 
 const workStatuses = `-- name: WorkStatuses :many
-SELECT work.connection_id, work.stream, work.operation, work.revision, work.state_version, work.state, work.next, work.observed, work.observed_completed, work.observed_total, work.acknowledged, work.acknowledged_completed, work.acknowledged_total, work.failure, work.failure_code, coalesce(scheduled.enabled,0)=1 AS scheduled FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY operation
+SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
+ coalesce(scheduled.enabled,0)=1 AS scheduled,
+ -- Match PendingWork's terminal failures.
+ CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ -- Find the newest receipt per retained body through receipts_body before comparing bodies.
+ CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
+  SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
+  FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
+ )), '') AS TEXT) AS last_retrieved
+FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream
 `
 
 type WorkStatusesRow struct {
-	ConnectionID          string
-	Stream                string
-	Operation             string
-	Revision              int64
-	StateVersion          string
-	State                 []byte
-	Next                  string
-	Observed              string
-	ObservedCompleted     int64
-	ObservedTotal         int64
-	Acknowledged          string
-	AcknowledgedCompleted int64
-	AcknowledgedTotal     int64
-	Failure               string
-	FailureCode           string
-	Scheduled             bool
+	Stream            string
+	Operation         string
+	Observed          string
+	ObservedCompleted int64
+	ObservedTotal     int64
+	Failure           string
+	Next              string
+	Scheduled         bool
+	RetryBlocked      int64
+	LastRetrieved     string
 }
 
 func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]WorkStatusesRow, error) {
@@ -4384,22 +4525,16 @@ func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work
 	for rows.Next() {
 		var i WorkStatusesRow
 		if err := rows.Scan(
-			&i.ConnectionID,
 			&i.Stream,
 			&i.Operation,
-			&i.Revision,
-			&i.StateVersion,
-			&i.State,
-			&i.Next,
 			&i.Observed,
 			&i.ObservedCompleted,
 			&i.ObservedTotal,
-			&i.Acknowledged,
-			&i.AcknowledgedCompleted,
-			&i.AcknowledgedTotal,
 			&i.Failure,
-			&i.FailureCode,
+			&i.Next,
 			&i.Scheduled,
+			&i.RetryBlocked,
+			&i.LastRetrieved,
 		); err != nil {
 			return nil, err
 		}

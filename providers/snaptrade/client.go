@@ -21,12 +21,14 @@ import (
 )
 
 const (
-	streamID      = "activities"
-	format        = "snaptrade-json"
-	clientField   = "client_id"
-	keyField      = "consumer_key"
-	clientPacing  = "customer"
-	accountPacing = "account"
+	streamID        = "activities"
+	format          = "snaptrade-json"
+	positionsID     = "positions"
+	positionsFormat = "snaptrade-positions-json"
+	clientField     = "client_id"
+	keyField        = "consumer_key"
+	clientPacing    = "customer"
+	accountPacing   = "account"
 )
 
 type Options struct {
@@ -73,13 +75,16 @@ func Registration(options Options) (provider.Registration, error) {
 
 	stream, _ := provider.NewStream(streamID, format)
 	stream, _ = stream.WithDiscovery()
+	stream, _ = stream.WithPolling(24*time.Hour, time.Hour)
+	positions, _ := provider.NewStream(positionsID, positionsFormat)
+	positions, _ = positions.WithPolling(24*time.Hour, time.Hour)
 	clientID, _ := provider.NewField(clientField, "Personal Client ID", provider.TextField, true)
 	key, _ := provider.NewField(keyField, "Personal consumer key", provider.SecretField, true)
 	customer, _ := provider.NewPacingPolicy(clientPacing, time.Second)
 	account, _ := provider.NewPacingPolicy(accountPacing, 15*time.Second)
 
 	descriptor, err := provider.NewDescriptor(
-		"snaptrade", "SnapTrade Personal", []provider.Stream{stream}, []provider.Field{clientID, key},
+		"snaptrade", "SnapTrade Personal", []provider.Stream{stream, positions}, []provider.Field{clientID, key},
 		[]provider.PacingPolicy{customer, account},
 	)
 	if err != nil {
@@ -88,7 +93,7 @@ func Registration(options Options) (provider.Registration, error) {
 
 	a := &adapter{client: &copyClient, base: strings.TrimSuffix(base, "/"), limit: limit}
 
-	return provider.NewRegistration(descriptor, "snaptrade-1", a, a, a, a)
+	return provider.NewRegistration(descriptor, "snaptrade-3", a, a, a, a)
 }
 
 func (*adapter) PrepareSettings(settings provider.Settings) (provider.Settings, error) {
@@ -121,9 +126,10 @@ func signature(path, query string, key []byte) (string, error) {
 }
 
 type response struct {
-	body   []byte
-	header http.Header
-	status int
+	body      []byte
+	header    http.Header
+	status    int
+	notBefore time.Time
 }
 
 func (a *adapter) get(

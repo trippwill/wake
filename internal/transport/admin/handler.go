@@ -126,7 +126,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 					return
 				}
 
-				templ.Handler(SectionShell("Overview", csrf, "Overview", DashboardOverview(overview(view)))).
+				templ.Handler(SectionShell("Overview", csrf, "Overview", DashboardOverview(csrf, overview(view), r.URL.Query().Get("refresh")))).
 					ServeHTTP(w, r)
 
 				return

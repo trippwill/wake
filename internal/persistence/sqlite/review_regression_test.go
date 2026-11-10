@@ -48,7 +48,7 @@ func TestPausedQueryRepairPreservesDeadline(t *testing.T) {
 
 			step, _ := provider.NewStep(state, provider.Artifact{}, next)
 			progress, _ := provider.NewProgress("retained", 1, 1)
-			if _, err := s.Accept(ctx, key, 0, step, nil, progress); err != nil {
+			if _, err := s.Accept(ctx, key, 0, step, nil, progress, host.PollCycle{}); err != nil {
 				t.Fatal(err)
 			}
 

@@ -65,7 +65,10 @@ func positionsFixture(t *testing.T) application.PositionsList {
 						Value: "9007199254740993.0000000000001",
 						Unit:  "shares",
 					},
-					CostBasis: &application.PublishedMoney{Amount: "0.0000", Currency: "USD"},
+					UnitCostBasis: &application.PublishedUnitCostBasis{
+						PublishedMoney: application.PublishedMoney{Amount: "0.0000", Currency: "USD"},
+						Quote:          "per share",
+					},
 				},
 			},
 			{
@@ -95,8 +98,8 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 	got := positionsGrid(data)
 	if got.Positions.AsOf != "2026-11-04" || got.Positions.State != "Available" ||
 		got.Data[0].Quantity.Text != "9007199254740993.0000000000001 shares" ||
-		got.Data[0].Cost.Text != "0.0000 USD" ||
-		got.Data[1].Cost.Text != "Not provided" ||
+		got.Data[0].UnitCost.Text != "0.0000 USD" || got.Data[0].UnitCost.Note != "per share" ||
+		got.Data[1].UnitCost.Text != "Not provided" ||
 		got.Data[1].Side.Text != "Short" {
 		t.Fatal(got)
 	}

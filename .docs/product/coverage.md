@@ -4,7 +4,7 @@ Wake supports IBKR Flex and SnapTrade Personal in the same warehouse, with one
 confirmed account per connection. Flex supplies Confirmation reports and optional
 Activity reports for security transfers, non-trade cash postings, reported realized
 P&L and reported positions. SnapTrade supplies cached purchases and sales for Fidelity
-US and IBKR.
+US and IBKR, and reported positions for Fidelity US.
 This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
@@ -35,20 +35,25 @@ the primary instrument identity and naming reference.
 
 | Area | Coverage |
 | --- | --- |
-| Acquisition | IBKR Flex Confirmation and optional Activity queries sharing the same encrypted token. SnapTrade Personal cached history for the confirmed account. Both retain original reports and recover after restart. |
+| Acquisition | IBKR Flex Confirmation and optional Activity queries sharing the same encrypted token. SnapTrade Personal cached history and Fidelity US positions for the confirmed account. Both retain original reports and recover after restart. |
 | Instruments | Equity/share-class roots with linked listings; actual US equity/ETF option contracts and underliers; nominal US Treasury and conventional gilt issues. Preserve applicable reported identifiers and terms without making them IBKR-dependent. |
 | Trades | Flex executions and SnapTrade purchases/sales at their reported grain. Exact quantities, prices, dates and reported opening/closing qualification. Flex includes nested reported charge totals and components. |
 | Booked activity | Reported option exercise, assignment and expiration, and their reported stock bookings. An `EXECUTION` detail level does not make every `BookTrade` an exchange execution. |
 | Security transfers | Reported inbound/outbound security movements, separate transfer valuations and aggregate reported costs, counterparty details and exact quantities. Transfer lots remain evidence. |
 | Currency conversion | FX executions reported in Confirmations, with explicit currency/amount roles and unknowns. No FX lot or P&L reconstruction. |
 | Non-trade cash | Detailed funding, cash transfers, dividends, payments in lieu, broker/bond interest, withholding, fees, sales taxes and explicit adjustments. Separate signed postings, shared fee/tax charge totals, optional instruments, source action groups and explicit tax relationships. |
-| Reported positions | Complete current account sets from Activity Open Positions summary detail, with exact signed quantities, dated contract terms and optional aggregate reported cost basis. Explicit empty/unavailable states; no holdings or lot reconstruction. |
+| Reported positions | Complete current account sets from IBKR Activity Open Positions summary detail or SnapTrade Fidelity US holdings, with exact signed quantities and reported contract terms. Both sources can include reported unit cost basis. Explicit empty/unavailable states; no holdings or lot reconstruction. |
 | Realized P&L | Activity execution-level reported gains/losses and allocated costs linked to existing activity, with exact currencies, separate reporting dates, unknowns and source disagreement. No result calculation or lot reconstruction. |
 | Relationships | Preserve reported order membership and explicit lifecycle/correction relationships without merging fills or legs or inventing missing membership. |
 | Corrections | Repeated observations, compatible enrichment, explicit source cancellation/replacement, visible ambiguity and attributable operator corrections to existing activity, fields, names and links, with retained decisions. |
 | Reference data | Allocation-aware OpenFIGI lookup, bounded composite-parent completion, local cache, retained resolution evidence and both anonymous and operator-key pacing profiles. Matching verified identities combine with retained aliases; conflicting choices require review. Refresh failures preserve established identity. |
 | Administration | Authenticated admin workflows: connection/account setup, sync progress and failures, activity/instrument inspection, a separate latest reported positions workspace, compact conflicts, optional linked evidence/rules and correction of existing activity. |
 | Continuity | Durable authority and decisions, repeat-safe replay, joined shutdown, protected credentials and reproducible derived views. |
+
+Overview shows the last successful report retrieval and next automatic event for
+each scheduled source stream. Repeated reports count as successful retrievals.
+The next event time indicates when Wake can attempt the work, subject to source
+access and pacing.
 
 Some reported bookings lack execution IDs; acceptance cannot universally require
 one. Keep exact reported values, currencies, units and time precision. Source money
@@ -176,8 +181,9 @@ Restarts and access-store recovery retain publication with an intact warehouse.
 Warehouse replacement establishes a clearly reported new baseline.
 
 Reported positions have a separate account read, opaque version and ETag. They are excluded
-from complete financial snapshots. Each available set has one effective date and optional
-reported timestamp; instrument IDs resolve through existing lookups. Newer missing,
+from complete financial snapshots. Each available set has an as-of date and optional timestamp.
+For Fidelity through SnapTrade, the timestamp records the source fetch. Instrument IDs
+resolve through existing lookups. Newer missing,
 unsupported or unusable coverage withholds rows. Same-effective-time incompatible claims
 remain unavailable until an unambiguous later state or established source revision supplies
 a usable set. A known empty set remains available. The existing SSE stream announces
@@ -220,9 +226,9 @@ bounded account-candidate page. Result counts and page links preserve intentiona
 URL filters. These bounds limit response memory; filtered counts and sorting still
 require SQLite to inspect the matching history.
 
-The Positions workspace shows account availability and reported effective time alongside
+The Positions workspace shows account availability and reported as-of time alongside
 exact signed quantities, long/short meaning, applicable reported contract terms and optional
-aggregate reported cost basis. Missing cost differs from explicit zero. Empty reported sets,
+reported unit cost basis. Missing cost differs from explicit zero. Empty reported sets,
 unavailable sets and filters with no matches have separate explanations. Instrument and source
 links open existing inspection pages. Updates are offered explicitly and apply metadata and
 rows together; unavailable results contain no earlier fallback positions. Display-label changes
