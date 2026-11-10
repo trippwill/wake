@@ -226,6 +226,27 @@ func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testi
 	}
 }
 
+func TestReviewItemHasOneDescriptiveLink(t *testing.T) {
+	const href = "/executions/synthetic-fill"
+
+	item := reviewItem{Href: href, Label: "Buy SYN", Kind: "Activity", Reason: "Reported prices disagree"}
+	request := pageRequest(httptest.NewRequest(http.MethodGet, "/review", nil))
+
+	var out strings.Builder
+	if err := ReviewQueue(
+		activityView{Reviews: []reviewItem{item}},
+	).Render(request.Context(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	markup := out.String()
+	if strings.Count(markup, `href="`+href+`"`) != 1 ||
+		!strings.Contains(markup, `href="`+href+`">Buy SYN</a>`) ||
+		!strings.Contains(markup, ">Activity</p>") || !strings.Contains(markup, item.Reason) {
+		t.Fatal(markup)
+	}
+}
+
 func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 	for _, test := range []struct {
 		search     string

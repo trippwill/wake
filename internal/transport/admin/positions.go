@@ -54,9 +54,9 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 		case "not_reported":
 			meta.Message = "No usable position set has been reported. Check the source setup and retained reports."
 		case "incomplete":
-			meta.Message = "The latest applicable evidence does not establish a complete position set. Inspect the source reports."
+			meta.Message = "The latest applicable evidence does not establish a complete position set."
 		case "conflict":
-			meta.Message = "Conflicting reports prevent an available position set. Inspect the source reports."
+			meta.Message = "Conflicting reports prevent an available position set."
 		case "identity_unresolved":
 			meta.Message = "Instrument identities need review before positions can be shown. Inspect Instruments and Needs review."
 		}
@@ -140,18 +140,18 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 			strike = publishedMoney(o.Strike)
 		}
 
-		add("Reported strike", strike)
+		add("Strike", strike)
 		add("Premium multiplier", text(o.Multiplier))
-		add("Terms effective from", text(o.EffectiveFrom))
+		add("Effective from", text(o.EffectiveFrom))
 
 		if len(o.Deliverables) == 0 {
-			add("Reported deliverables", "")
+			add("Deliverables", "")
 		}
 
 		for _, d := range o.Deliverables {
 			if d.Security != nil {
 				add(
-					"Reported deliverable",
+					"Deliverable",
 					provided(
 						text(d.Quantity),
 					)+" units of "+d.Security.Authority+" / "+d.Security.Kind+" / "+provided(
@@ -159,14 +159,14 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 					)+" / "+d.Security.Value,
 				)
 			} else if d.Cash != nil {
-				add("Reported cash deliverable", publishedMoney(d.Cash))
+				add("Cash deliverable", publishedMoney(d.Cash))
 			}
 		}
 	}
 
 	if d := p.Debt; d != nil {
 		out.Text = strings.ReplaceAll(provided(text(d.Type)), "-", " ") + " · " + provided(text(d.Maturity))
-		add("Debt issue type", strings.ReplaceAll(text(d.Type), "-", " "))
+		add("Issue type", strings.ReplaceAll(text(d.Type), "-", " "))
 		add("Issue currency", text(d.Currency))
 		add("Maturity", text(d.Maturity))
 		add("Original issue date", text(d.IssueDate))
@@ -176,7 +176,7 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 		}
 
 		if text(d.Type) != "treasury-bill" || d.Coupon != nil {
-			add("Coupon rate (reported)", text(d.Coupon))
+			add("Coupon rate", text(d.Coupon))
 		}
 
 		if text(d.Type) != "treasury-bill" || d.DatedDate != nil {

@@ -868,7 +868,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		)),
 		chromedp.WaitVisible(".wake-card dl", chromedp.ByQuery),
 		chromedp.Evaluate(
-			`document.body.textContent.includes('Face amount (nominal)')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('Reported price')&&document.body.textContent.includes('Trade net cash')&&!document.body.textContent.includes('quotation basis')&&document.body.textContent.includes('Coupon rate (reported)')`,
+			`[...document.querySelectorAll('main dt')].some(label=>label.textContent==='Face amount')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('Reported price')&&document.body.textContent.includes('Trade net cash')&&!document.body.textContent.includes('quotation basis')&&document.body.textContent.includes('Coupon rate (reported)')`,
 			&ok,
 		),
 	)

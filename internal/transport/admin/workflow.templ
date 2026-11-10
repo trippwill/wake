@@ -91,7 +91,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			<dt>Side</dt>
 			<dd>{ string(d.Execution.Terms().Fields().Side) }</dd>
 			if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
-				<dt>Face amount (nominal)</dt>
+				<dt>Face amount</dt>
 				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
 				<dt>Reported price</dt>
 				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
