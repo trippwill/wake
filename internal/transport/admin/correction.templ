@@ -44,7 +44,12 @@ templ CorrectionControl(f application.CorrectionForm, field string, c correction
 				}
 			</p>
 			if c.Monetary {
-				<p data-currency-field><label for="decision-currency">Currency</label><input class="input" id="decision-currency" name="currency" value={ value.Currency } maxlength="3" pattern="[A-Z]{3}" required?={ c.Required } list="decision-currencies" aria-describedby="decision-help decision-feedback"/><datalist id="decision-currencies"><option value="USD"></option><option value="EUR"></option><option value="GBP"></option><option value="JPY"></option><option value="CHF"></option><option value="CAD"></option><option value="AUD"></option></datalist></p>
+				<p data-currency-field>
+					<label for="decision-currency">Currency</label>
+					<select class="select" id="decision-currency" name="currency" required?={ c.Required } aria-describedby="decision-help decision-feedback">
+						@currencyOptions(currencyChoices(ctx), value.Currency, "Choose currency")
+					</select>
+				</p>
 			}
 		</div>
 		if c.Kind=="timestamp" {

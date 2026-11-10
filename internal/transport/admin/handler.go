@@ -25,11 +25,12 @@ type (
 		Status(context.Context) (Status, error)
 	}
 	Dependencies struct {
-		Logger   *slog.Logger
-		Queries  Queries
-		Config   config.Config
-		Workflow *application.Workflow
-		Stopping <-chan struct{}
+		Logger        *slog.Logger
+		Queries       Queries
+		Config        config.Config
+		Workflow      *application.Workflow
+		Stopping      <-chan struct{}
+		CurrencyCodes func() []string
 	}
 )
 
@@ -161,6 +162,10 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 		w.Header().Set("Vary", "HX-Request")
 
 		*r = *pageRequest(r)
+		if deps.CurrencyCodes != nil {
+			*r = *withCurrencyCodes(r, deps.CurrencyCodes())
+		}
+
 		mux.ServeHTTP(w, r)
 	})), nil
 }

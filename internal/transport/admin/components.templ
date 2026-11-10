@@ -4,14 +4,36 @@
 package admin
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/provider"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
+
+func currencyChoices(ctx context.Context) []string {
+	if codes := page(ctx).CurrencyCodes; codes != nil {
+		return codes
+	}
+	return currencycatalog.BundledCodes()
+}
+
+templ currencyOptions(codes []string, selected, emptyLabel string) {
+	<option value="">{ emptyLabel }</option>
+	// Keep the original code available for historical or provider-specific currencies.
+	if _, err := financial.ParseCurrency(selected); err == nil && !slices.Contains(codes, selected) {
+		<option value={ selected } selected>{ selected }</option>
+	}
+	for _, code := range codes {
+		<option value={ code } selected?={ code == selected }>{ code }</option>
+	}
+}
 
 templ PageHeader(title, description string) {
 	<header class="wake-page-header">
@@ -183,7 +205,12 @@ templ SubmissionFailure(csrf, path, message string, draft url.Values, descriptor
 				}
 			}
 			if operation==submissionConfirm {
-				<label for="retry-currency">Account currency (optional)<input class="input" id="retry-currency" name="currency" value={ draft.Get("currency") } maxlength="3" pattern="[A-Z]{3}"/></label>
+				<p>
+					<label for="retry-currency">Account currency (optional)</label>
+					<select class="select" id="retry-currency" name="currency">
+						@currencyOptions(currencyChoices(ctx), draft.Get("currency"), "Unknown")
+					</select>
+				</p>
 				for _,key:=range []string{"artifact","authority","kind","scope","account"} {
 					<input type="hidden" name={ key } value={ draft.Get(key) }/>
 				}

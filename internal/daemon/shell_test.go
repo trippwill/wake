@@ -10,12 +10,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
 
@@ -120,6 +122,99 @@ func TestShellConfiguredMissingKeyFails(t *testing.T) {
 
 	if _, err := os.Stat(cfg.Credentials.MasterKeyPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("startup generated key")
+	}
+}
+
+func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		admin   bool
+		refresh bool
+	}{
+		{"refresh enabled", true, true},
+		{"refresh disabled", true, false},
+		{"admin disabled", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := shellConfig(t)
+			cfg.Admin.CurrencyRefresh = tc.refresh
+
+			if tc.admin {
+				if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-currency-unlock")); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			requested := make(chan struct{}, 1)
+			canceled := make(chan struct{}, 1)
+
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				requested <- struct{}{}
+
+				<-r.Context().Done()
+
+				canceled <- struct{}{}
+			}))
+			defer upstream.Close()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			ready := make(chan struct{})
+			done := make(chan error, 1)
+			options := sourceOptions{
+				CurrencyCatalog: currencycatalog.Options{Client: upstream.Client(), URL: upstream.URL},
+			}
+
+			go func() {
+				done <- run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), options, func(phase string) {
+					if phase == "ready" {
+						close(ready)
+					}
+				})
+			}()
+
+			select {
+			case <-ready:
+			case err := <-done:
+				t.Fatal(err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("currency request blocked startup")
+			}
+
+			if tc.admin && tc.refresh {
+				select {
+				case <-requested:
+				case <-time.After(5 * time.Second):
+					t.Fatal("daemon did not request currency codes")
+				}
+			}
+
+			cancel()
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("currency request blocked shutdown")
+			}
+
+			if tc.admin && tc.refresh {
+				select {
+				case <-canceled:
+				case <-time.After(5 * time.Second):
+					t.Fatal("currency request was not canceled")
+				}
+			}
+
+			select {
+			case <-requested:
+				t.Fatal("unexpected currency request")
+			default:
+			}
+		})
 	}
 }
 

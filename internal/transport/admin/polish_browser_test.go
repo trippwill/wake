@@ -405,6 +405,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	aliasStarted, releaseAlias := make(chan struct{}, 1), make(chan struct{}, 1)
 
 	eventShutdown := make(chan struct{})
+
+	var correctionCurrencies atomic.Pointer[[]string]
+
 	form := application.CorrectionForm{
 		Kind:        "activity",
 		ID:          "synthetic-activity",
@@ -678,6 +681,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				"/activity/synthetic-activity/correct",
 				"/instruments/synthetic-instrument/correct":
 				snapshot := page(r.Context())
+				if codes := correctionCurrencies.Load(); codes != nil {
+					snapshot.CurrencyCodes = *codes
+				}
+
 				correction := form
 				if r.URL.Path == "/instruments/synthetic-instrument/correct" {
 					correction.Kind = "instrument"
@@ -2102,8 +2109,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		),
 	)
 	assert(
-		`document.querySelector('#decision-value').inputMode==='decimal' && !document.querySelector('#decision-currency').disabled`,
-		"decimal control conversion",
+		`document.querySelector('#decision-value').inputMode==='decimal' && document.querySelector('select#decision-currency:required:enabled').value==='USD'`,
+		"decimal and currency controls did not preserve the current price",
 	)
 	assert(
 		`!document.querySelector('#decision-current').hidden && document.querySelector('#decision-current').textContent.includes('9007199254740992.9999999999999 USD')`,
@@ -2130,6 +2137,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			),
 		)
 	}
+	setCurrency := func(code string) {
+		t.Helper()
+		check(
+			chromedp.SetValue("#decision-currency", code, chromedp.ByQuery),
+			chromedp.Evaluate(
+				`document.querySelector('#decision-currency').dispatchEvent(new Event('change',{bubbles:true}))`,
+				nil,
+			),
+		)
+	}
 	ready := func() {
 		t.Helper()
 		check(
@@ -2146,6 +2163,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"malformed decimal accepted locally",
 	)
 	setCorrection("9007199254740993.0000000000001")
+	setCurrency("")
+	assert(
+		`document.querySelector('[data-correction] button[type="submit"]').disabled && document.querySelector('#decision-feedback').textContent==='Choose a currency.'`,
+		"missing currency allowed saving a price",
+	)
+	setCurrency("HKD")
+	correctionCurrencies.Store(new([]string{"QZZ", "USD"}))
 	ready()
 	assert(
 		`document.querySelector('#decision-value').value==='9007199254740993.0000000000001'`,
@@ -2224,7 +2248,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	ready()
 	chooseField("price")
 	assert(
-		`document.querySelector('#decision-value').value==='9007199254740993.0000000000001' && document.querySelector('#decision-currency').value==='USD'`,
+		`document.querySelector('#decision-value').value==='9007199254740993.0000000000001' && document.querySelector('#decision-currency').value==='HKD' && !document.querySelector('#decision-currency option[value="QZZ"]')`,
 		"field-specific draft lost on switching",
 	)
 	ready()
@@ -2232,6 +2256,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`!document.querySelector('#workspace-content').hasAttribute('hx-trigger')`,
 		"correction form is not a stable review snapshot",
 	)
+	check(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction?field=price")),
+		chromedp.WaitVisible("#decision-currency", chromedp.ByQuery),
+	)
+	assert(
+		`document.querySelector('#decision-currency option[value="QZZ"]')!==null && !document.querySelector('#decision-currency option[value="HKD"]')`,
+		"new correction form did not use the latest currency choices",
+	)
+	correctionCurrencies.Store(nil)
+
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction?mode=evidence")),
 		chromedp.WaitVisible("#decision-candidate", chromedp.ByQuery),
@@ -2329,6 +2363,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			chromedp.Click(`nav[aria-label="System views"] a[href="/system/configuration"]`, chromedp.ByQuery),
 		),
 		chromedp.WaitVisible(`//h1[text()='Configuration']`, chromedp.BySearch),
+		chromedp.WaitVisible(
+			`//dt[.='Currency list refresh']/following-sibling::dd[1][normalize-space(.)='Disabled']`,
+			chromedp.BySearch,
+		),
 	)
 	assert(
 		`location.pathname==='/system/configuration'&&!location.search&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/system'`,

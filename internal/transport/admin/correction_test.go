@@ -68,7 +68,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		"submission": {"original-submission-1234"},
 		"scope":      {"price"},
 		"value":      {"3.700000000000001"},
-		"currency":   {"USD"},
+		"currency":   {"CNH"},
 		"rationale":  {"Keep <original> reasoning"},
 		"action":     {"set"},
 	}
@@ -89,7 +89,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		t.Fatal(response.Code, body)
 	}
 
-	for _, want := range []string{`value="3.700000000000001"`, `value="USD"`, `Keep &lt;original&gt; reasoning`, `name="revision" value="8"`, `4.500000000000001 USD`, `Save reviewed correction`} {
+	for _, want := range []string{`value="3.700000000000001"`, `<option value="CNH" selected>CNH</option>`, `Keep &lt;original&gt; reasoning`, `name="revision" value="8"`, `4.500000000000001 USD`, `Save reviewed correction`} {
 		if !strings.Contains(body, want) {
 			t.Error("missing retained draft/current context", want)
 		}

@@ -62,6 +62,14 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 				<dd>{ cfg.Paths.RuntimeDir }</dd>
 				<dt>Admin authentication</dt>
 				<dd>{ cfg.Admin.AuthMode }</dd>
+				<dt>Currency list refresh</dt>
+				<dd>
+					if cfg.Admin.CurrencyRefresh {
+						Enabled
+					} else {
+						Disabled
+					}
+				</dd>
 			</dl>
 			<a href="/connections">Manage source and reference access</a>
 		</section>

@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go.trippwill.dev/wake/internal/config"
 )
 
 func TestShellRoutesAndNavigation(t *testing.T) {
@@ -22,7 +24,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 	}
 	defer auth.Close()
 
-	h, err := NewHandler(auth, Dependencies{})
+	h, err := NewHandler(auth, Dependencies{Config: config.Config{Admin: config.Admin{CurrencyRefresh: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +57,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 			}
 
 			if path == "/system/configuration" {
-				for _, text := range []string{"Configuration", "Manage source and reference access"} {
+				for _, text := range []string{"Configuration", "Manage source and reference access", "<dt>Currency list refresh</dt><dd>Enabled</dd>"} {
 					if !strings.Contains(w.Body.String(), text) {
 						t.Errorf("configuration page missing %q", text)
 					}

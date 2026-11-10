@@ -64,7 +64,12 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 			<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="artifact" value={ candidate.Artifact }/>
 			<input type="hidden" name="authority" value={ candidate.Candidate.Reference().Authority() }/><input type="hidden" name="kind" value={ candidate.Candidate.Reference().Kind() }/><input type="hidden" name="scope" value={ candidate.Candidate.Reference().Scope() }/><input type="hidden" name="account" value={ candidate.Candidate.Reference().Value() }/>
 			<p><label for="account-name">Account display name</label><input class="input" id="account-name" name="name" value={ candidate.Candidate.Name() } required maxlength="256"/></p>
-			<p><label for="account-currency">Account currency (optional)</label><input class="input" id="account-currency" name="currency" value={ currencyText(candidate.Candidate.Currency()) } pattern="[A-Z]{3}" maxlength="3"/></p>
+			<p>
+				<label for="account-currency">Account currency (optional)</label>
+				<select class="select" id="account-currency" name="currency">
+					@currencyOptions(currencyChoices(ctx), currencyText(candidate.Candidate.Currency()), "Unknown")
+				</select>
+			</p>
 			<button class="btn btn-primary" type="submit">Confirm account</button>
 		</form>
 	</section>

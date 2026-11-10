@@ -30,6 +30,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -67,6 +68,22 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Logf("upstream %s at %s", r.URL.Path, now())
 
 		switch r.URL.Path {
+		case "/currencies":
+			if r.Header.Get("If-None-Match") == `"browser-currencies"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+
+			w.Header().Set("ETag", `"browser-currencies"`)
+			_, _ = io.WriteString(w, `<ISO_4217 Pblshd="2026-10-21"><CcyTbl>`)
+
+			for _, code := range currencycatalog.BundledCodes() {
+				if code != "EUR" {
+					_, _ = fmt.Fprintf(w, "<CcyNtry><Ccy>%s</Ccy></CcyNtry>", code)
+				}
+			}
+
+			_, _ = io.WriteString(w, "<CcyNtry><Ccy>QZZ</Ccy></CcyNtry></CcyTbl></ISO_4217>")
 		case "/authorizations", "/accounts/all", "/accounts/synthetic-snaptrade/activities":
 			if r.Method != http.MethodGet || r.URL.Query().Get("clientId") != "synthetic-personal-client" ||
 				r.Header.Get("Signature") == "" {
@@ -153,6 +170,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := shellConfig(t)
+	cfg.Admin.CurrencyRefresh = true
 	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "master.key")
 	if err := credential.CreateMasterKey(cfg.Credentials.MasterKeyPath); err != nil {
 		t.Fatal(err)
@@ -174,8 +192,22 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 		ready := make(chan struct{})
 		done = make(chan error, 1)
+
+		options := sourceOptions{
+			IBKR:            ibkrflex.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL},
+			SnapTrade:       snaptrade.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL},
+			ReferenceClient: upstream.Client(),
+			ReferenceURL:    upstream.URL + "/mapping",
+			CurrencyCatalog: currencycatalog.Options{
+				Client: upstream.Client(),
+				URL:    upstream.URL + "/currencies",
+				Now:    now,
+			},
+			Now: now,
+		}
+
 		go func() {
-			done <- run(daemonContext, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{IBKR: ibkrflex.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL}, SnapTrade: snaptrade.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL}, ReferenceClient: upstream.Client(), ReferenceURL: upstream.URL + "/mapping", Now: now}, func(phase string) {
+			done <- run(daemonContext, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), options, func(phase string) {
 				if phase == "ready" {
 					close(ready)
 				}
@@ -371,8 +403,33 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Poll(`document.querySelector('a[href*="account=U-SYNTHETIC"]') !== null`, nil),
 		chromedp.Evaluate(`document.querySelector('a[href*="account=U-SYNTHETIC"]').click()`, nil),
 		chromedp.WaitVisible("#account-name", chromedp.ByQuery),
-		chromedp.SendKeys("#account-name", "My confirmed account", chromedp.ByQuery),
-		newDocument(chromedp.Click(`button[type="submit"]`, chromedp.ByQuery)),
+		chromedp.WaitVisible("select#account-currency:optional", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('#account-currency option[value="QZZ"]') &&
+			!document.querySelector('#account-currency option[value="EUR"]')`, nil),
+		chromedp.SetValue("#account-currency", "USD", chromedp.ByQuery),
+		chromedp.SetValue("#account-name", " My confirmed account", chromedp.ByQuery),
+		chromedp.Evaluate(
+			`(async () => {
+			const form = document.querySelector('form[action$="/confirm"]');
+			const draft = new FormData(form);
+			draft.set('currency', 'EUR');
+			const response = await fetch(form.action, {method: 'POST', body: new URLSearchParams(draft)});
+			const retry = new DOMParser().parseFromString(await response.text(), 'text/html');
+			return response.status === 400 && retry.querySelector('select#retry-currency:optional')?.value === 'EUR'
+				&& retry.querySelector('#retry-currency option[value="QZZ"]') !== null;
+		})()`,
+			&ok,
+			func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
+		),
+	)
+
+	if !ok {
+		t.Fatal("confirmation retry lost the selected currency")
+	}
+
+	check(
+		chromedp.SetValue("#account-name", "My confirmed account", chromedp.ByQuery),
+		newDocument(chromedp.Click(`form[action$="/confirm"] button[type="submit"]`, chromedp.ByQuery)),
 		chromedp.WaitVisible("#activity-rows", chromedp.ByQuery),
 		chromedp.Poll(
 			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,

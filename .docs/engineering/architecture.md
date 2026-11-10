@@ -18,6 +18,16 @@ them for clients requesting uncompressed content. Asset URLs and cache policy ar
 independent of that representation; readable sources and upstream licenses remain
 in the repository.
 
+Admin forms use the bundled currency list by default. Set
+`admin.currency_refresh = true` to check the public [SIX ISO 4217 currency list](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html)
+daily in the background when admin is enabled. System → Configuration shows the
+effective setting. The request carries no brokerage credentials or account data
+and is independent of financial synchronization. When refresh is enabled, forms
+use the last good list from the private runtime cache, or the bundled list if the
+cache is missing. Existing and submitted currency codes remain selectable even
+after retirement. The list supplies form choices only. Source currency parsing and
+financial validation use their existing contracts.
+
 Launch configuration resolves once on the actual parsed CLI command. Strictly decode
 and validate the selected TOML file before applying higher-priority values; explicit
 flags cannot conceal an invalid file. TOML table and field names use the catalog's exact

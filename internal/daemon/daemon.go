@@ -19,6 +19,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/logging"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
@@ -59,6 +60,7 @@ func Run(
 type sourceOptions struct {
 	IBKR            ibkrflex.Options
 	SnapTrade       snaptrade.Options
+	CurrencyCatalog currencycatalog.Options
 	ReferenceClient *http.Client
 	ReferenceURL    string
 	Now             func() time.Time
@@ -246,6 +248,13 @@ func run(
 	if enabled {
 		defer auth.Close()
 
+		var currencyCodes func() []string
+		if cfg.Admin.CurrencyRefresh {
+			catalog := currencycatalog.Open(currencyCachePath(cfg), logger)
+			currencyCodes = catalog.Codes
+			background.Go(func() { catalog.Run(workContext, options.CurrencyCatalog) })
+		}
+
 		handler, e := admin.NewHandler(
 			auth,
 			admin.Dependencies{
@@ -256,10 +265,11 @@ func run(
 					},
 					warehouseSize: store.WarehouseSize,
 				},
-				Config:   cfg,
-				Workflow: workflow,
-				Stopping: stopping,
-				Logger:   logger,
+				Config:        cfg,
+				Workflow:      workflow,
+				Stopping:      stopping,
+				Logger:        logger,
+				CurrencyCodes: currencyCodes,
 			},
 		)
 		if e != nil {
@@ -343,6 +353,26 @@ func run(
 	serving.Wait()
 
 	return result
+}
+
+// Keep the disposable catalog separate even when operators customize file paths.
+func currencyCachePath(cfg config.Config) string {
+	cache := filepath.Join(cfg.Paths.RuntimeDir, currencycatalog.CacheName)
+	cached, err := os.Stat(cache)
+
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Paths.ConfigFile, cfg.Credentials.MasterKeyPath} {
+		if path == cache {
+			return ""
+		}
+
+		if err == nil && path != "" {
+			if file, statErr := os.Stat(path); statErr == nil && os.SameFile(cached, file) {
+				return ""
+			}
+		}
+	}
+
+	return cache
 }
 
 func shutdownHTTPServers(servers ...*http.Server) {
