@@ -81,11 +81,12 @@ func identityFIGILabel(allocation string) string {
 type (
 	pageKey   struct{}
 	pageState struct {
-		URL      string
-		Query    url.Values
-		Fragment bool
-		Accounts []application.Account
-		Method   string
+		URL           string
+		Query         url.Values
+		Fragment      bool
+		Accounts      []application.Account
+		Method        string
+		CurrencyCodes []string
 	}
 )
 
@@ -100,6 +101,13 @@ func page(ctx context.Context) pageState {
 func withAccounts(r *http.Request, accounts []application.Account) *http.Request {
 	p := page(r.Context())
 	p.Accounts = accounts
+
+	return r.WithContext(context.WithValue(r.Context(), pageKey{}, p))
+}
+
+func withCurrencyCodes(r *http.Request, codes []string) *http.Request {
+	p := page(r.Context())
+	p.CurrencyCodes = codes
 
 	return r.WithContext(context.WithValue(r.Context(), pageKey{}, p))
 }

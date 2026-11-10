@@ -87,6 +87,13 @@ func Settings() []Setting {
 			Type:        "string",
 			Description: "HTTPS browser origin in proxy mode",
 		},
+		{
+			Key:         "admin.currency_refresh",
+			Flag:        "admin-currency-refresh",
+			Type:        "bool",
+			Default:     strconv.FormatBool(defaultAdmin.CurrencyRefresh),
+			Description: "Refresh admin currency choices daily from SIX",
+		},
 	}
 	for i := range settings {
 		settings[i].Environment = "WAKE_" + strings.ToUpper(strings.ReplaceAll(settings[i].Flag, "-", "_"))
@@ -117,6 +124,9 @@ func (s Setting) flag(value string, sources cli.ValueSourceChain) cli.Flag {
 	case "uint16":
 		parsed, _ := strconv.ParseUint(value, 10, 16)
 		return &cli.Uint16Flag{Name: s.Flag, Usage: usage, Value: uint16(parsed), Sources: sources}
+	case "bool":
+		parsed, _ := strconv.ParseBool(value)
+		return &cli.BoolFlag{Name: s.Flag, Usage: usage, Value: parsed, Sources: sources}
 	default:
 		return &cli.StringFlag{Name: s.Flag, Usage: usage, Value: value, Sources: sources}
 	}
@@ -224,9 +234,9 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		}
 
 		if value, found := os.LookupEnv(setting.Environment); found && !explicit {
-			// cli skips empty numeric sources. Reject an explicitly empty number instead.
-			if setting.Type == "uint16" && value == "" {
-				return out, fmt.Errorf("%w: %s requires uint16", ErrInvalid, setting.Environment)
+			// Reject empty values for typed settings, including cli's empty-as-false boolean.
+			if setting.Type != "string" && value == "" {
+				return out, fmt.Errorf("%w: %s requires %s", ErrInvalid, setting.Environment, setting.Type)
 			}
 
 			authority = "environment:" + setting.Environment
@@ -257,6 +267,8 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 			value.Sources = sources
 		case *cli.Uint16Flag:
 			value.Sources = sources
+		case *cli.BoolFlag:
+			value.Sources = sources
 		default:
 			return out, fmt.Errorf("%w: missing native setting flag %s", ErrInvalid, setting.Flag)
 		}
@@ -286,9 +298,10 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		Log:         fileLog{Level: command.String("log-level")},
 		Credentials: fileCredentials{MasterKeyPath: command.String("master-key-path")},
 		Admin: fileAdmin{
-			Port:         &port,
-			AuthMode:     command.String("admin-auth-mode"),
-			PublicOrigin: command.String("admin-public-origin"),
+			Port:            &port,
+			AuthMode:        command.String("admin-auth-mode"),
+			PublicOrigin:    command.String("admin-public-origin"),
+			CurrencyRefresh: new(command.Bool("admin-currency-refresh")),
 		},
 	}
 	out.Config, err = resolvedConfig(file, dir, runtimeRequired)
@@ -305,11 +318,17 @@ func fileSettingValues(file fileConfig) map[string]any {
 		port = *file.Admin.Port
 	}
 
+	var currencyRefresh bool
+	if file.Admin.CurrencyRefresh != nil {
+		currencyRefresh = *file.Admin.CurrencyRefresh
+	}
+
 	return map[string]any{
 		"warehouse-path": file.Storage.WarehousePath, "connections-path": file.Storage.ConnectionsPath,
 		"runtime-dir": file.Paths.RuntimeDir, "log-level": file.Log.Level,
 		"master-key-path": file.Credentials.MasterKeyPath, "admin-port": port,
 		"admin-auth-mode": file.Admin.AuthMode, "admin-public-origin": file.Admin.PublicOrigin,
+		"admin-currency-refresh": currencyRefresh,
 	}
 }
 

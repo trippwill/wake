@@ -299,6 +299,28 @@ func TestExplicitFlagsIgnoreUnusedInvalidEnvironment(t *testing.T) {
 	}
 }
 
+func TestCurrencyRefreshDefaultsOffAndCanBeEnabled(t *testing.T) {
+	configureEnvironment(t, true)
+
+	out, err := resolveForTest(Overrides{})
+	if err != nil || out.Config.Admin.CurrencyRefresh {
+		t.Fatal(out, err)
+	}
+
+	t.Setenv("WAKE_ADMIN_CURRENCY_REFRESH", "true")
+
+	out, err = resolveForTest(Overrides{})
+	if err != nil || !out.Config.Admin.CurrencyRefresh {
+		t.Fatal(out, err)
+	}
+
+	t.Setenv("WAKE_ADMIN_CURRENCY_REFRESH", "")
+
+	if _, err := resolveForTest(Overrides{}); !errors.Is(err, ErrInvalid) {
+		t.Fatal("accepted empty currency refresh setting", err)
+	}
+}
+
 func TestProxySettingsCanCombinePartialFileAndEnvironment(t *testing.T) {
 	roots := configureEnvironment(t, true)
 	path := filepath.Join(roots.base, "partial.toml")

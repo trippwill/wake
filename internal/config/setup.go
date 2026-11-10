@@ -136,6 +136,7 @@ func (s LocalSetup) Save() error {
 		}
 
 		admin["port"] = s.launch.AdminPort
+		admin["currency_refresh"] = s.launch.CurrencyRefresh
 	}
 
 	file, err := os.CreateTemp(filepath.Dir(s.ConfigPath), ".wake-setup-")
@@ -194,9 +195,10 @@ func readSetupFile(path string) ([]byte, bool, error) {
 
 // SetupGuidance carries the small set of settings presented during local setup.
 type SetupGuidance struct {
-	Storage    Storage
-	RuntimeDir string
-	AdminPort  uint16
+	Storage         Storage
+	RuntimeDir      string
+	AdminPort       uint16
+	CurrencyRefresh bool
 }
 
 // Guidance reads existing TOML and XDG defaults, excluding WAKE_* launch overrides.
@@ -230,16 +232,18 @@ func (s LocalSetup) Guidance() (SetupGuidance, error) {
 		return SetupGuidance{}, err
 	}
 
-	return SetupGuidance{Storage: storage, RuntimeDir: runtime, AdminPort: admin.Port}, nil
+	return SetupGuidance{
+		Storage: storage, RuntimeDir: runtime, AdminPort: admin.Port, CurrencyRefresh: admin.CurrencyRefresh,
+	}, nil
 }
 
 // WithLaunchSettings validates a proposed update before any provisioning writes.
-func (s LocalSetup) WithLaunchSettings(storage Storage, runtime string, port uint16) (LocalSetup, error) {
-	if err := checkStorage(storage); err != nil {
+func (s LocalSetup) WithLaunchSettings(proposed SetupGuidance) (LocalSetup, error) {
+	if err := checkStorage(proposed.Storage); err != nil {
 		return s, err
 	}
 
-	if err := requireAbsolute("runtime directory", runtime); err != nil {
+	if err := requireAbsolute("runtime directory", proposed.RuntimeDir); err != nil {
 		return s, err
 	}
 
@@ -248,12 +252,13 @@ func (s LocalSetup) WithLaunchSettings(storage Storage, runtime string, port uin
 		return s, err
 	}
 
-	file.Admin.Port = &port
+	file.Admin.Port = &proposed.AdminPort
+	file.Admin.CurrencyRefresh = &proposed.CurrencyRefresh
 	if _, err := resolveAdmin(file.Admin); err != nil {
 		return s, err
 	}
 
-	s.launch = &SetupGuidance{Storage: storage, RuntimeDir: runtime, AdminPort: port}
+	s.launch = &proposed
 
 	return s, nil
 }

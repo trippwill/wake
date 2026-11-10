@@ -421,11 +421,7 @@
       );
       if (invalid) {
         const hint = editor.querySelector("#decision-help").textContent;
-        message(
-          invalid === currency
-            ? "Enter a three-letter currency code, such as USD."
-            : hint,
-        );
+        message(invalid === currency ? "Choose a currency." : hint);
         return;
       }
       message("Checking this correction…", "checking");

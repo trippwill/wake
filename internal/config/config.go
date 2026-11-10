@@ -66,9 +66,10 @@ type Credentials struct {
 // Admin contains loopback-only browser administration settings. Secrets remain
 // in files and are not loaded by this package.
 type Admin struct {
-	Port         uint16
-	AuthMode     string
-	PublicOrigin string
+	Port            uint16
+	AuthMode        string
+	PublicOrigin    string
+	CurrencyRefresh bool
 }
 
 // Address returns the fixed IPv4 localhost listener address.
@@ -121,9 +122,10 @@ type fileCredentials struct {
 }
 
 type fileAdmin struct {
-	Port         *uint16 `toml:"port"`
-	AuthMode     string  `toml:"auth_mode"`
-	PublicOrigin string  `toml:"public_origin"`
+	Port            *uint16 `toml:"port"`
+	AuthMode        string  `toml:"auth_mode"`
+	PublicOrigin    string  `toml:"public_origin"`
+	CurrencyRefresh *bool   `toml:"currency_refresh"`
 }
 
 // Load resolves configuration and prepares the daemon's private directories.
@@ -391,5 +393,15 @@ func resolveAdmin(fromFile fileAdmin) (Admin, error) {
 		return Admin{}, fmt.Errorf("%w: local admin mode does not allow public_origin", ErrInvalid)
 	}
 
-	return Admin{Port: adminPort, AuthMode: adminMode, PublicOrigin: adminOrigin}, nil
+	currencyRefresh := defaultAdmin.CurrencyRefresh
+	if fromFile.CurrencyRefresh != nil {
+		currencyRefresh = *fromFile.CurrencyRefresh
+	}
+
+	return Admin{
+		Port:            adminPort,
+		AuthMode:        adminMode,
+		PublicOrigin:    adminOrigin,
+		CurrencyRefresh: currencyRefresh,
+	}, nil
 }

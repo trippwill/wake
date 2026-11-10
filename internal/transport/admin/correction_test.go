@@ -35,7 +35,7 @@ func (staleCorrectionStore) CorrectionForm(
 		Label:    "Synthetic investment",
 		Revision: 8,
 		Fields:   []string{"price"},
-		Values:   map[string]application.CorrectionValue{"price": {Value: "4.500000000000001", Currency: "USD"}},
+		Values:   map[string]application.CorrectionValue{"price": {Value: "4.500000000000001", Currency: "GBX"}},
 	}, nil
 }
 
@@ -57,7 +57,10 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil)
 
-	handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
+	handler, err := NewHandler(auth, Dependencies{
+		Workflow:      workflow,
+		CurrencyCodes: func() []string { return []string{"QZZ", "USD"} },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +71,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		"submission": {"original-submission-1234"},
 		"scope":      {"price"},
 		"value":      {"3.700000000000001"},
-		"currency":   {"USD"},
+		"currency":   {"CNH"},
 		"rationale":  {"Keep <original> reasoning"},
 		"action":     {"set"},
 	}
@@ -89,10 +92,23 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		t.Fatal(response.Code, body)
 	}
 
-	for _, want := range []string{`value="3.700000000000001"`, `value="USD"`, `Keep &lt;original&gt; reasoning`, `name="revision" value="8"`, `4.500000000000001 USD`, `Save reviewed correction`} {
+	for _, want := range []string{
+		`value="3.700000000000001"`,
+		`<option value="CNH" selected>CNH</option>`,
+		`<option value="GBX">GBX</option>`,
+		`Keep &lt;original&gt; reasoning`,
+		`name="revision" value="8"`,
+		`4.500000000000001 GBX`,
+		`Save reviewed correction`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Error("missing retained draft/current context", want)
 		}
+	}
+
+	if !strings.Contains(body, `<option value="QZZ">QZZ</option>`) ||
+		strings.Contains(body, `<option value="EUR"`) {
+		t.Fatal("stale correction did not use the current currency list")
 	}
 
 	if strings.Contains(body, "original-submission-1234") {
@@ -152,7 +168,7 @@ func TestSubmissionFailureRetainsPublicFieldsWithoutSecrets(t *testing.T) {
 		"verified-session-csrf",
 		"/connections",
 		"Access needs repair",
-		draft, descriptor, submissionCreate,
+		draft, descriptor, submissionCreate, "",
 	).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
