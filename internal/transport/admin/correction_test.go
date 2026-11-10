@@ -35,7 +35,7 @@ func (staleCorrectionStore) CorrectionForm(
 		Label:    "Synthetic investment",
 		Revision: 8,
 		Fields:   []string{"price"},
-		Values:   map[string]application.CorrectionValue{"price": {Value: "4.500000000000001", Currency: "USD"}},
+		Values:   map[string]application.CorrectionValue{"price": {Value: "4.500000000000001", Currency: "GBX"}},
 	}, nil
 }
 
@@ -92,7 +92,15 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 		t.Fatal(response.Code, body)
 	}
 
-	for _, want := range []string{`value="3.700000000000001"`, `<option value="CNH" selected>CNH</option>`, `Keep &lt;original&gt; reasoning`, `name="revision" value="8"`, `4.500000000000001 USD`, `Save reviewed correction`} {
+	for _, want := range []string{
+		`value="3.700000000000001"`,
+		`<option value="CNH" selected>CNH</option>`,
+		`<option value="GBX">GBX</option>`,
+		`Keep &lt;original&gt; reasoning`,
+		`name="revision" value="8"`,
+		`4.500000000000001 GBX`,
+		`Save reviewed correction`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Error("missing retained draft/current context", want)
 		}

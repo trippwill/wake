@@ -395,7 +395,7 @@ func CorrectionControl(f application.CorrectionForm, field string, c correctionC
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = currencyOptions(currencyChoices(ctx), value.Currency, "Choose currency").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = currencyOptions(correctionCurrencyChoices(ctx, f.Values[field].Currency), value.Currency, "Choose currency").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
