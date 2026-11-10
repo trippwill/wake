@@ -44,9 +44,21 @@ depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:ch
 wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 
 [tasks.'source:check']
-description = "Generate and format sources, then verify no tracked source changes"
+description = "Generate and format sources, then check for unstaged changes and untracked generated files"
 depends = ["gen", "fmt"]
-run = "git diff --exit-code"
+run = '''
+git diff --exit-code || exit
+untracked=$(git ls-files --others --exclude-standard -- \
+  '*_templ.go' \
+  internal/persistence/sqlite/sqlc/ \
+  internal/transport/admin/assetsgzip/ \
+  internal/transport/socket/openapi.gen.go \
+  testdata/socket-consumer/contract.yaml) || exit
+if [ -n "$untracked" ]; then
+  printf 'Untracked generated files:\n%s\n' "$untracked" >&2
+  exit 1
+fi
+'''
 
 [tasks.build]
 description = "Build all Go packages"
@@ -145,15 +157,10 @@ run = "curl --fail --show-error --silent --data-binary @codecov.yml https://api.
 description = "Generate Go code from templ components"
 run = "templ generate"
 
-[tasks.'templ:check']
-description = "Verify generated templ output is current"
-wait_for = ["templ:gen"]
-run = 'templ generate -check && templ fmt . -fail -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
-
 [tasks.'templ:fmt']
 description = "Format all templ files"
 wait_for = ["templ:gen"]
-run = 'templ fmt . -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
+run = 'templ fmt -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME" .'
 
 [tasks.'test:host']
 description = "Run the external-provider proof through the real SQLite-backed host with races"

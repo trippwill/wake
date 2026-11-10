@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify generated templ output and template formatting"
+#MISE wait_for=["templ:gen"]
+set -euo pipefail
+
+# The pinned templ checks can delete watch artifacts and rewrite templates.
+snapshot=$(mktemp -d)
+trap 'rm -rf "$snapshot"' EXIT
+git ls-files -z --cached --others --exclude-standard -- '*.templ' '*_templ.go' > "$snapshot/files"
+cp go.mod biome.json "$snapshot/"
+while IFS= read -r -d '' file; do
+    [[ -f "$file" ]] || continue
+    if [[ "$file" == *_templ.go && ! -f "${file%_templ.go}.templ" ]]; then
+        printf 'Orphaned generated template: %s\n' "$file" >&2
+        exit 1
+    fi
+    cp --parents -- "$file" "$snapshot"
+done < "$snapshot/files"
+
+cd "$snapshot"
+templ generate -check -keep-orphaned-files
+templ fmt -fail -prettier-required -prettier-command 'biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME' .

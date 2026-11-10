@@ -13,14 +13,24 @@ Confirm one account per connection and inspect activity, instruments and availab
 reported positions in the admin console. Wake retains original reports, exact
 financial values and conflicts.
 
-### Set up and start
+### Build or install from source
 
-From a Linux source checkout:
+From the root of a clean source checkout or extracted source release, use the
+Go toolchain declared in [go.mod](go.mod):
 
 ```sh
-mise install
-mise run bin -- setup
-mise run serve
+CGO_ENABLED=0 go install ./cmd/wake
+```
+
+Put the installation directory (`GOBIN`, or `$(go env GOPATH)/bin` by default)
+on your PATH. To build a local executable, use `CGO_ENABLED=0 go build -o ./wake ./cmd/wake`.
+Both commands use the generated files shipped with the source.
+
+### Set up and start
+
+```sh
+wake setup
+wake serve
 ```
 
 Follow setup's prompts for local paths and a browser unlock. Keep the generated
@@ -30,8 +40,8 @@ Keep the terminal running; stop Wake with Ctrl+C.
 For a separate configuration, pass the same absolute path to both commands:
 
 ```sh
-mise run bin -- setup --config /absolute/private/path/config.toml
-mise run bin -- serve --config /absolute/private/path/config.toml
+wake setup --config /absolute/private/path/config.toml
+wake serve --config /absolute/private/path/config.toml
 ```
 
 If startup reports an unsupported development store, stop Wake and preserve a
@@ -44,11 +54,11 @@ settings from `config describe`; retired acquisition settings are rejected.
 #### Run as a Linux user service
 
 On Linux with a systemd user session, install Wake as the account that runs it.
-From a source checkout, build the standalone binary with `mise install` and
-`mise run build:release`:
+From a source checkout, build and install the standalone binary:
 
 ```sh
-sh .packaging/install.sh .cache/release/wake
+CGO_ENABLED=0 go build -o ./wake ./cmd/wake
+sh .packaging/install.sh ./wake
 ```
 
 You can also copy the installer and a prebuilt Wake binary to the target machine
@@ -172,8 +182,8 @@ validation, pacing and cache detail.
 To clear credentials or financial history, stop Wake and preview the configured files:
 
 ```sh
-mise run bin -- reset warehouse
-mise run bin -- reset warehouse --confirm
+wake reset warehouse
+wake reset warehouse --confirm
 ```
 
 Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
@@ -187,10 +197,10 @@ access are retained. See the
 ### Find help
 
 ```sh
-mise run bin -- help
-mise run bin -- help setup
-mise run bin -- config describe
-mise run bin -- config check
+wake help
+wake help setup
+wake config describe
+wake config check
 ```
 
 Use command help for exact options.
@@ -200,11 +210,8 @@ configuration, then restart. Setup retains the credential key; keep that key saf
 
 ### Read financial data from the CLI
 
-Run these commands as the same Unix user as the Wake daemon. From a source
-checkout, run `mise install` and `mise run build:release`, then put
-`.cache/release/wake` on your PATH. The [Linux user service installer](#run-as-a-linux-user-service)
-also installs the binary. Once `wake` is on PATH, the read commands work from any
-directory.
+Run these commands as the same Unix user as the Wake daemon. Once `wake` is on
+PATH, the read commands work from any directory.
 
 ```sh
 wake --json doctor

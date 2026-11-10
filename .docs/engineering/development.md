@@ -80,10 +80,30 @@ Check generated-source freshness and exercise the handwritten boundaries that
 produce and consume it. Coverage thresholds still apply to handwritten code.
 
 Keep source stable while generators or checks read it. SQL, public contract and templ source
-changes require their generated-output checks. Stage completed code/generated/docs
-changes and run `mise run source:check` before code delivery. Documentation-only
-changes check links, ownership, preservation of intent and diffs; do not run
-unrelated generators or application suites.
+changes require their generated-output checks. Documentation-only changes check
+links, ownership, preservation of intent and diffs.
+
+## Generated sources
+
+Keep templ for typed HTML components, sqlc for typed queries against the schema,
+and OpenAPI generation for socket wire models. Deterministic gzip copies let Wake
+serve embedded assets compressed without compressing them at runtime. These
+outputs and the independent socket consumer's contract copy are checked in.
+A clean source release builds and installs with Go alone, as shown in the
+[README](../../README.md#build-or-install-from-source).
+
+Mise pins and runs authoring tools for local development and CI. Keep generator
+executables out of the application module's dependency graph. Go tool directives
+could pin the Go-based generators, but would couple their dependency resolution
+to the application module while Mise still orchestrates generation and checks.
+Runtime packages imported by generated code remain ordinary Go dependencies.
+
+Use `mise run gen` to regenerate outputs. The `templ:check`, `sqlc:check`,
+`openapi:check` and `assets:check` tasks verify the corresponding output without
+changing the checkout. Stage source changes and all corresponding generated
+additions and deletions. Run `mise run source:check` before code delivery.
+It regenerates and formats sources, then checks for differences from the index
+and untracked files in the generated output paths.
 
 ## Changes affecting retained data
 
