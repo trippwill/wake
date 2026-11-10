@@ -1373,7 +1373,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 	check(
 		chromedp.Evaluate(`(()=>{const select=document.querySelector('#activity-account');select.value=`+
-			strconv.Quote(snapAccount)+`;select.form.requestSubmit()})()`, nil),
+			strconv.Quote(snapAccount)+`;select.dispatchEvent(new Event('change',{bubbles:true}))})()`, nil),
 		chromedp.Poll(`new URL(location.href).searchParams.get('account')===`+strconv.Quote(snapAccount), nil),
 		chromedp.Poll(
 			`(()=>{const refresh=document.querySelector('[data-grid-refresh]');if(refresh&&!refresh.hidden)refresh.click();const rows=document.querySelectorAll('.tabulator-row');return rows.length===1&&rows[0].textContent.includes('19.12345678900001 USD')&&rows[0].textContent.includes('Confirmed Fidelity account')})()`,
@@ -1405,7 +1405,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		newDocument(chromedp.Navigate(origin+"/positions?account="+flexAccount)),
 		chromedp.Poll(`document.querySelector('[data-positions-state]').textContent==='Available'`, nil),
 		chromedp.Evaluate(`(()=>{const select=document.querySelector('#positions-account');select.value=`+
-			strconv.Quote(snapAccount)+`;select.form.requestSubmit()})()`, nil),
+			strconv.Quote(snapAccount)+`;select.dispatchEvent(new Event('change',{bubbles:true}))})()`, nil),
 		chromedp.Poll(`new URL(location.href).searchParams.get('account')===`+strconv.Quote(snapAccount), nil),
 		chromedp.Poll(
 			`(()=>{const refresh=document.querySelector('[data-grid-refresh]');if(refresh&&!refresh.hidden)refresh.click();return document.querySelector('[data-positions-account]').textContent==='Confirmed Fidelity account'&&document.querySelector('[data-positions-state]').textContent==='Available'&&document.querySelector('[data-positions-as-of]').textContent.includes('SnapTrade fetch time')&&document.querySelector('.tabulator-table')?.textContent.includes('12.3400 units')&&document.querySelector('.tabulator-row [tabulator-field="cost"]')?.textContent==='14.2300 USD'})()`,
