@@ -62,21 +62,26 @@ func explainActivityFields(
 		}
 	}
 
+	fieldDetail := func(path, key string) application.PublishedFieldDetail {
+		detail := application.PublishedFieldDetail{Path: path, Reason: application.FieldNotReported}
+		switch {
+		case slices.Contains(selection.OperatorFields, key):
+			detail.Reason = application.FieldOperatorWithheld
+		case slices.Contains(selection.Conflicts, key):
+			detail.Reason = application.FieldUnresolved
+		case explicit[source.ActivityFieldName(key)]:
+			detail.Reason = application.FieldReportedUnavailable
+		}
+
+		return detail
+	}
+
 	add := func(path string, name source.ActivityFieldName, absent bool) {
 		if !absent {
 			return
 		}
 
-		detail := application.PublishedFieldDetail{Path: path, Reason: application.FieldNotReported}
-		switch {
-		case slices.Contains(selection.OperatorFields, string(name)):
-			detail.Reason = application.FieldOperatorWithheld
-		case slices.Contains(selection.Conflicts, string(name)):
-			detail.Reason = application.FieldUnresolved
-		case explicit[name]:
-			detail.Reason = application.FieldReportedUnavailable
-		}
-
+		detail := fieldDetail(path, string(name))
 		if policy != nil && name != "" {
 			expectation := policy.ActivityFieldExpectation(a.Family, name)
 			if expectation == provider.Expected || expectation == provider.NotExpected {
@@ -89,32 +94,38 @@ func explainActivityFields(
 	}
 
 	terms := func(t application.PublishedInstrumentTerms) {
+		addTerm := func(name string, absent bool) {
+			if absent {
+				out = append(out, fieldDetail("/instrument_terms/"+name, t.Family+"."+name))
+			}
+		}
+
 		switch t.Family {
 		case "option":
 			f := t.Option
-			add("/instrument_terms/right", "", f.Right == nil)
-			add("/instrument_terms/expiry", "", f.Expiry == nil)
-			add("/instrument_terms/strike", "", f.Strike == nil)
-			add("/instrument_terms/multiplier", "", f.Multiplier == nil)
-			add("/instrument_terms/effective_from", "", f.EffectiveFrom == nil)
-			add("/instrument_terms/deliverables", "", f.Deliverables == nil)
+			addTerm("right", f.Right == nil)
+			addTerm("expiry", f.Expiry == nil)
+			addTerm("strike", f.Strike == nil)
+			addTerm("multiplier", f.Multiplier == nil)
+			addTerm("effective_from", f.EffectiveFrom == nil)
+			addTerm("deliverables", f.Deliverables == nil)
 		case "debt":
 			f := t.Debt
-			add("/instrument_terms/type", "", f.Type == nil)
-			add("/instrument_terms/currency", "", f.Currency == nil)
-			add("/instrument_terms/maturity", "", f.Maturity == nil)
-			add("/instrument_terms/issue_date", "", f.IssueDate == nil)
+			addTerm("type", f.Type == nil)
+			addTerm("currency", f.Currency == nil)
+			addTerm("maturity", f.Maturity == nil)
+			addTerm("issue_date", f.IssueDate == nil)
 
 			if f.DatedDate == nil && f.Type != nil && *f.Type == string(source.TreasuryBill) {
 				out = append(out, application.PublishedFieldDetail{
 					Path: "/instrument_terms/dated_date", Reason: application.FieldNotApplicable,
 				})
 			} else {
-				add("/instrument_terms/dated_date", "", f.DatedDate == nil)
+				addTerm("dated_date", f.DatedDate == nil)
 			}
 
-			add("/instrument_terms/coupon_rate", "", f.CouponRate == nil)
-			add("/instrument_terms/payments_per_year", "", f.PaymentsPerYear == nil)
+			addTerm("coupon_rate", f.CouponRate == nil)
+			addTerm("payments_per_year", f.PaymentsPerYear == nil)
 		}
 	}
 

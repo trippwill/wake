@@ -127,6 +127,133 @@ func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.
 	}
 }
 
+func TestFieldExplanationFollowsActiveScalarClears(t *testing.T) {
+	s := coverageStore(t)
+	f := partialTrade(t).Fields()
+	f.At, _ = financial.ParseTimestamp("2026-10-20T12:00:00Z")
+	f.SettlementDate, _ = financial.ParseDate("2026-10-21")
+	f.NetCash, _ = financial.ParseMoney("-200.0000", f.Price.Currency())
+
+	trade, err := source.NewTrade(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processPartial(t, s, "baseline", trade.Observation())
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+	for _, scope := range []string{"at", "settlement_date", "net_cash"} {
+		t.Run(scope, func(t *testing.T) {
+			retainDecision(t, s, "activity", id, scope, "", "", "set")
+			assertFieldReason(t, s, id, "/"+scope, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, scope, "", "", "release")
+			assertFieldReason(t, s, id, "/"+scope, "")
+		})
+	}
+}
+
+func TestFieldExplanationDistinguishesInstrumentTermConflictsClearsAndOmissions(t *testing.T) {
+	for _, family := range []source.InstrumentKind{source.Option, source.Debt} {
+		t.Run(string(family), func(t *testing.T) {
+			s := coverageStore(t)
+			f := partialTrade(t).Fields()
+			instrument := f.Instrument.Fields()
+			instrument.Kind = family
+
+			term, omitted, values := "multiplier", "expiry", []string{"100", "50"}
+			if family == source.Debt {
+				term, omitted, values = "coupon_rate", "maturity", []string{"4.125", "4.250"}
+			}
+
+			withTerm := func(value string) source.ActivityObservation {
+				t.Helper()
+
+				var err error
+				if family == source.Option {
+					multiplier, _ := financial.ParseQuantity(value)
+					instrument.Option, err = source.NewOptionTerms(source.OptionInput{Multiplier: multiplier})
+				} else {
+					rate, _ := financial.ParseQuantity(value)
+					instrument.Debt, err = source.NewDebtTerms(source.DebtInput{CouponRate: rate})
+				}
+
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				f.Instrument, err = source.NewInstrument(instrument)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				trade, err := source.NewTrade(f)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				return trade.Observation()
+			}
+
+			processPartial(t, s, "baseline", withTerm(""))
+			processPartial(t, s, "first-term", withTerm(values[0]))
+			processPartial(t, s, "competing-term", withTerm(values[1]))
+
+			rows, err := s.queries.Executions(t.Context())
+			if err != nil || len(rows) != 1 {
+				t.Fatal(rows, err)
+			}
+
+			id := rows[0].ID
+			path := "/instrument_terms/" + term
+			scope := string(family) + "." + term
+
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+			assertFieldReason(t, s, id, "/instrument_terms/"+omitted, application.FieldNotReported)
+
+			baseline := observationKey(
+				sqlc.RecordValue{ArtifactID: "baseline", Version: partialVersion, Location: f.Location},
+			)
+			retainDecision(t, s, "activity", id, "evidence/instrument", baseline, "", "set")
+			assertFieldReason(t, s, id, path, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, "evidence/instrument", "", "", "release")
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+			retainDecision(t, s, "activity", id, scope, values[0], "", "set")
+			assertFieldReason(t, s, id, path, "")
+			retainDecision(t, s, "activity", id, scope, "", "", "set")
+			assertFieldReason(t, s, id, path, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, scope, "", "", "release")
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+		})
+	}
+}
+
+func assertFieldReason(t *testing.T, s *Store, id, path string, want application.FieldAbsenceReason) {
+	t.Helper()
+	resource := realizedActivity(t, s, id)
+
+	why, err := s.Explanation(t.Context(), "activity", id, resource.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got application.FieldAbsenceReason
+	for _, field := range why.Fields {
+		if field.Path == path {
+			got = field.Reason
+			break
+		}
+	}
+
+	if got != want {
+		t.Fatalf("%s absence reason = %q, want %q", path, got, want)
+	}
+}
+
 func retainPartial(t testing.TB, s *Store, id string, values ...source.ActivityObservation) {
 	t.Helper()
 

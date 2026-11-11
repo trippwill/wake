@@ -4,6 +4,7 @@
 package application
 
 import (
+	"maps"
 	"net/url"
 	"reflect"
 	"slices"
@@ -265,6 +266,31 @@ func SelectActivityFields(
 			out.OperatorFields = append(out.OperatorFields, key)
 		}
 
+		if key == string(source.FieldInstrument) && (disputed || choices[key] != "") {
+			withheld := map[string]bool{}
+			for _, term := range instrumentTermFields(baseline[key].Fields().Instrument) {
+				withheld[term] = true
+			}
+
+			for _, claim := range all[key] {
+				for _, term := range instrumentTermFields(claim.value.Fields().Instrument) {
+					withheld[term] = true
+				}
+			}
+
+			for _, term := range instrumentTermFields(value.Fields().Instrument) {
+				delete(withheld, term)
+			}
+
+			for _, term := range slices.Sorted(maps.Keys(withheld)) {
+				if choices[key] != "" {
+					out.OperatorFields = append(out.OperatorFields, term)
+				} else {
+					conflicts[term] = true
+				}
+			}
+		}
+
 		if value.Name() != "" {
 			out.Fields = append(out.Fields, value)
 			out.Sources[key] = support
@@ -289,6 +315,40 @@ func SelectActivityFields(
 	sort.Slice(out.Baseline, func(i, j int) bool { return out.Baseline[i].Key() < out.Baseline[j].Key() })
 
 	return out, nil
+}
+
+// The instrument is selected as a unit. Record which asserted terms its
+// selection withheld so absence details can distinguish them from omissions.
+func instrumentTermFields(instrument source.Instrument) []string {
+	var fields []string
+
+	add := func(key string, present bool) {
+		if present {
+			fields = append(fields, key)
+		}
+	}
+
+	switch instrument.Kind() {
+	case source.Option:
+		f := instrument.Option().Fields()
+		add("option.right", f.Right != "")
+		add("option.expiry", !f.Expiry.IsZero())
+		add("option.strike", f.Strike.Amount() != "")
+		add("option.multiplier", f.Multiplier.Value() != "")
+		add("option.effective_from", !f.EffectiveFrom.IsZero())
+		add("option.deliverables", len(f.Deliverables) != 0)
+	case source.Debt:
+		f := instrument.Debt().Fields()
+		add("debt.type", f.Type != "")
+		add("debt.currency", f.Currency != (financial.Currency{}))
+		add("debt.maturity", !f.Maturity.IsZero())
+		add("debt.issue_date", !f.IssueDate.IsZero())
+		add("debt.dated_date", !f.DatedDate.IsZero())
+		add("debt.coupon_rate", f.CouponRate.Value() != "")
+		add("debt.payments_per_year", f.PaymentsPerYear != 0 || f.Type == source.TreasuryBill)
+	}
+
+	return fields
 }
 
 func chargeCategories(field source.ActivityField) map[string]source.ChargeCategory {
@@ -727,6 +787,12 @@ func completeActivitySelection(
 		if e != nil {
 			for _, field := range group.fields {
 				delete(selected.Sources, field.Key())
+
+				if field.Name() == source.FieldInstrument {
+					selected.Conflicts = append(
+						selected.Conflicts, instrumentTermFields(field.Fields().Instrument)...,
+					)
+				}
 			}
 
 			continue
