@@ -180,6 +180,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 		}
 	})
 
+	logSnapshotSize(t, s)
+
 	var activity string
 
 	conflict := false
@@ -479,6 +481,8 @@ func TestPerformanceRead(t *testing.T) {
 		}
 	})
 
+	logSnapshotSize(t, s)
+
 	consumer := os.Getenv("WAKE_PERFORMANCE_CONSUMER")
 	if consumer == "" {
 		t.Fatal("missing consumer")
@@ -614,4 +618,18 @@ func seedPerformanceRead(t *testing.T, count int) *Store {
 	}
 
 	return s
+}
+
+// logSnapshotSize measures the serialized resources without allocating another
+// full response. Framing and the warehouse/version envelope are excluded.
+func logSnapshotSize(t testing.TB, s *Store) {
+	t.Helper()
+
+	var size int64
+	if err := s.db.QueryRowContext(t.Context(), `SELECT coalesce(sum(length(snapshot)),0) FROM published_resources`).
+		Scan(&size); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("snapshot resource bytes=%d", size)
 }
