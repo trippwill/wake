@@ -53,24 +53,24 @@ func (o ActivityObservation) activityInputs() (string, TradeInput, LifecycleInpu
 			t.Quantity, l.Quantity = f.Quantity, f.Quantity
 		case FieldPrice:
 			t.Price = f.Price
-		case FieldTradeDate:
-			t.TradeDate, l.Date, c.Date = f.Date, f.Date, f.Date
-		case FieldExecutedAt:
-			t.ExecutedAt, l.At, c.At = f.Timestamp, f.Timestamp, f.Timestamp
+		case FieldDate:
+			t.Date, l.Date, c.Date = f.Date, f.Date, f.Date
+		case FieldAt:
+			t.At, l.At, c.At = f.Timestamp, f.Timestamp, f.Timestamp
 		case FieldSettlementDate:
 			t.SettlementDate = f.Date
 		case FieldOrder:
 			t.Order, l.Order, c.Order = f.Reference, f.Reference, f.Reference
 		case FieldPositionEffect:
 			t.PositionEffect = PositionEffect(f.Text)
-		case FieldGross:
-			t.Gross, c.Gross = f.Money, f.Money
+		case FieldGrossAmount:
+			t.GrossAmount, c.GrossAmount = f.Money, f.Money
 		case FieldProceeds:
 			t.Proceeds, c.Proceeds = f.Money, f.Money
-		case FieldNet:
-			t.Net, c.Net = f.Money, f.Money
-		case FieldNetBillable:
-			t.NetWithBillable, c.NetWithBillable = f.Money, f.Money
+		case FieldNetCash:
+			t.NetCash, c.NetCash = f.Money, f.Money
+		case FieldNetCashWithBillable:
+			t.NetCashWithBillable, c.NetCashWithBillable = f.Money, f.Money
 		case FieldAccruedInterest:
 			t.AccruedInterest = f.Money
 		case FieldRelationship:
@@ -119,8 +119,8 @@ func (o ActivityObservation) Trade() (Trade, error) {
 
 	if f, ok := o.Field(
 		FieldPrice,
-	); ok && f.Known() && f.Fields().PriceBasis != "" &&
-		f.Fields().PriceBasis != v.PriceBasis() {
+	); ok && f.Known() && f.Fields().QuotationBasis != "" &&
+		f.Fields().QuotationBasis != v.QuotationBasis() {
 		return Trade{}, ErrInvalidActivity
 	}
 

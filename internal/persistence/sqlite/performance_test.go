@@ -196,8 +196,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 
 	for _, r := range snap.Snapshot.Resources {
 		if r.Kind == "activity" {
-			if r.Activity == nil || r.Activity.Price == nil ||
-				!strings.HasPrefix(r.Activity.Price.Amount, "9007199254740993.000000000000") {
+			if r.Activity == nil || r.Activity.Trade == nil || r.Activity.Trade.Price == nil ||
+				!strings.HasPrefix(r.Activity.Trade.Price.Amount, "9007199254740993.000000000000") {
 				t.Fatal("snapshot lost exact price", r)
 			}
 
@@ -273,8 +273,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 		changedVersion = r.Snapshot.Version
 		found := false
 		for _, item := range r.Snapshot.Resources {
-			if item.ID == activity && item.Activity != nil && item.Activity.Price != nil &&
-				item.Activity.Price.Amount == "12.000000000000001" {
+			if item.ID == activity && item.Activity != nil && item.Activity.Trade.Price != nil &&
+				item.Activity.Trade.Price.Amount == "12.000000000000001" {
 				found = true
 			}
 		}
@@ -295,8 +295,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 	})
 
 	retained, err := s.Resource(ctx, "activity", activity)
-	if err != nil || retained.Activity == nil || retained.Activity.Price == nil ||
-		retained.Activity.Price.Amount != "12.000000000000001" {
+	if err != nil || retained.Activity == nil || retained.Activity.Trade.Price == nil ||
+		retained.Activity.Trade.Price.Amount != "12.000000000000001" {
 		t.Fatal("reinterpretation lost active decision", err)
 	}
 
@@ -316,8 +316,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 			}
 
 			for _, item := range r.Items {
-				if item.Resource.Activity == nil || item.Resource.Activity.Price == nil ||
-					item.Resource.Activity.Price.Amount != "9007199254740993.0000000000001" {
+				if item.Resource.Activity == nil || item.Resource.Activity.Trade.Price == nil ||
+					item.Resource.Activity.Trade.Price.Amount != "9007199254740993.0000000000001" {
 					t.Fatal("exact price order changed", item)
 				}
 			}
@@ -462,7 +462,7 @@ func TestPerformanceRead(t *testing.T) {
 			}
 
 			for _, item := range result.Items {
-				if item.Resource.Activity.Price.Amount != "9007199254740993.0000000000001" {
+				if item.Resource.Activity.Trade.Price.Amount != "9007199254740993.0000000000001" {
 					t.Fatal("incorrect order")
 				}
 			}

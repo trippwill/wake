@@ -708,7 +708,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		}
 
 		if r.Activity.Transfer != nil {
-			if r.Activity.Transfer.Direction != "out" || r.Activity.Quantity.Value != "2.00000000001" {
+			if r.Activity.Transfer.Direction != "out" || r.Activity.Quantity().Value != "2.00000000001" {
 				t.Fatal("socket transfer terms", r)
 			}
 
@@ -734,7 +734,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 			continue
 		}
 
-		for _, charge := range resource.Activity.Charges {
+		for _, charge := range resource.Activity.Charges() {
 			if charge.Category != "commission" {
 				continue
 			}
@@ -757,13 +757,14 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 
 	debtCount := 0
 	for _, r := range before.Resources {
-		if r.Activity == nil || r.Activity.Quantity == nil || r.Activity.Quantity.Unit != "nominal" {
+		if r.Activity == nil || r.Activity.Quantity() == nil || r.Activity.Quantity().Unit != "nominal" {
 			continue
 		}
 
 		debtCount++
 
-		if r.Activity.PriceBasis != nil || r.Activity.Price == nil || r.Activity.AccruedInterest == nil {
+		if r.Activity.Trade.QuotationBasis != nil || r.Activity.Trade == nil || r.Activity.Trade.Price == nil ||
+			r.Activity.Trade.AccruedInterest == nil {
 			t.Fatal("independent mirror changed debt monetary roles or asserted a quotation basis", r)
 		}
 	}
@@ -1033,7 +1034,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	survivor := *original.Activity.InstrumentID
+	survivor := *original.Activity.InstrumentID()
 
 	roots, err := store.InstrumentList(ctx, instrumentQuery)
 	if err != nil {
@@ -1095,8 +1096,8 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	}
 
 	for _, resource := range after.Resources {
-		if resource.Activity != nil && resource.Activity.InstrumentID != nil &&
-			*resource.Activity.InstrumentID == retired {
+		if resource.Activity != nil && resource.Activity.InstrumentID() != nil &&
+			*resource.Activity.InstrumentID() == retired {
 			t.Fatal("mirror contains old root link")
 		}
 	}
@@ -1125,7 +1126,8 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("old explanation transferred to survivor", response.StatusCode)
 	}
 
-	if after.Resources["activity/"+id].Activity.Price.Amount != "402.0000" || after.Version == before.Version {
+	if after.Resources["activity/"+id].Activity.Trade.Price.Amount != "402.0000" ||
+		after.Version == before.Version {
 		t.Fatal("snapshot lost latest disconnected correction", after.Version)
 	}
 

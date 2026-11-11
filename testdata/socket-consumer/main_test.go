@@ -24,11 +24,13 @@ import (
 
 var account = json.RawMessage(`{"id":"account","kind":"accounts","revision":1,"account":{"name":"Synthetic account","currency":null}}`)
 
+var instrument = json.RawMessage(`{"id":"instrument","kind":"instruments","revision":1,"instrument":{"name":"Synthetic","ticker":null,"figi":null,"underlier_id":null,"family":"equity","reference_status":"provisional","identifiers":[],"figi_allocation":null,"reference_reason":null}}`)
+
 func sample(revision int, price string) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"id":"a","kind":"activity","revision":%d,"activity":{"reported_realized_pnl":null,"instrument_id":null,"listing_id":null,"at":"2026-10-20T13:30:00.120Z","trade_kind":"execution","side":"buy","position_effect":null,"price_basis":"shares","settlement_date":null,"lifecycle_kind":null,"rate_base":null,"family":"trade","account_id":"account","state":"accepted","conflict":false,"date":"2026-10-20","order":null,"relationships":[],"quantity":{"value":"1.0000","unit":"shares"},"charges":[],"sent":null,"received":null,"option":null,"debt":null,"price":{"amount":%q,"currency":"USD"},"rate":null,"gross":null,"proceeds":null,"net":null,"net_with_billable":null,"accrued_interest":null}}`, revision, price))
+	return json.RawMessage(fmt.Sprintf(`{"id":"a","kind":"activity","revision":%d,"activity":{"reported_realized_pnl":null,"instrument_id":"instrument","listing_id":null,"at":"2026-10-20T13:30:00.120Z","trade_kind":"execution","side":"buy","position_effect":null,"quotation_basis":"per_share","settlement_date":null,"family":"trade","account_id":"account","state":"accepted","conflict":false,"date":"2026-10-20","order":null,"relationships":[],"quantity":{"value":"1.0000","unit":"shares"},"charges":[],"price":{"amount":%q,"currency":"USD"},"gross_amount":null,"proceeds":null,"net_cash":null,"net_cash_with_billable":null,"accrued_interest":null,"instrument_terms":{"family":"equity"}}}`, revision, price))
 }
 func fixture(version string, revision int, price string) snapshot {
-	return snapshot{"warehouse", version, []json.RawMessage{account, sample(revision, price)}}
+	return snapshot{"warehouse", version, []json.RawMessage{account, instrument, sample(revision, price)}}
 }
 func mirrorDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -125,7 +127,7 @@ func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 				case "missing-envelope":
 					data = []byte(`{"version":"next","resources":[]}`)
 				case "missing-field":
-					data = []byte(strings.Replace(string(data), `"price_basis":"shares",`, "", 1))
+					data = []byte(strings.Replace(string(data), `"quotation_basis":"per_share",`, "", 1))
 				case "unknown-field":
 					data = []byte(strings.Replace(string(data), `"family":"trade"`, `"unrecognized":true,"family":"trade"`, 1))
 				case "unknown-reference":
@@ -374,15 +376,17 @@ func TestFollowRetriesVerificationAfterMirrorCommit(t *testing.T) {
 			return
 		}
 		kind, id := parts[1], parts[2]
-		if kind == "accounts" {
+		if kind == "accounts" || kind == "instruments" {
 			revision = 1
 		}
 		if len(parts) == 4 && parts[3] == "explanation" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "kind": kind, "revision": revision, "identity": nil, "selection": "automatic", "conflict": false, "corrections": []any{}, "decisions": []any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "kind": kind, "revision": revision, "identity": nil, "selection": "automatic", "conflict": false, "corrections": []any{}, "decisions": []any{}, "fields": []any{}})
 			return
 		}
 		if kind == "accounts" {
 			_, _ = w.Write(account)
+		} else if kind == "instruments" {
+			_, _ = w.Write(instrument)
 		} else {
 			_, _ = w.Write(sample(revision, price))
 		}

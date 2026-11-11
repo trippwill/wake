@@ -60,15 +60,16 @@ func positionsFixture(t *testing.T) application.PositionsList {
 				Ticker: "SYN",
 				Kind:   "equity",
 				Position: application.PublishedPosition{
-					InstrumentID: "equity",
-					Side:         "long",
+					InstrumentID:    "equity",
+					InstrumentTerms: application.PublishedInstrumentTerms{Family: "equity"},
+					Side:            "long",
 					Quantity: application.PublishedQuantity{
 						Value: "9007199254740993.0000000000001",
 						Unit:  "shares",
 					},
 					UnitCostBasis: &application.PublishedUnitCostBasis{
 						PublishedMoney: application.PublishedMoney{Amount: "0.0000", Currency: "USD"},
-						Quote:          "per share",
+						QuotationBasis: new("per_share"),
 					},
 				},
 			},
@@ -81,12 +82,15 @@ func positionsFixture(t *testing.T) application.PositionsList {
 					InstrumentID: "option",
 					Side:         "short",
 					Quantity:     application.PublishedQuantity{Value: "-2.000000000001", Unit: "contracts"},
-					Option: &application.PublishedOption{
-						Right:         new("call"),
-						Expiry:        new("2027-01-15"),
-						Strike:        &application.PublishedMoney{Amount: "123.45000", Currency: "USD"},
-						Multiplier:    new("100.0000"),
-						EffectiveFrom: new("2026-11-01"),
+					InstrumentTerms: application.PublishedInstrumentTerms{
+						Family: "option",
+						Option: &application.PublishedOption{
+							Right:         new("call"),
+							Expiry:        new("2027-01-15"),
+							Strike:        &application.PublishedMoney{Amount: "123.45000", Currency: "USD"},
+							Multiplier:    new("100.0000"),
+							EffectiveFrom: new("2026-11-01"),
+						},
 					},
 				},
 			},
@@ -118,7 +122,7 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 		}
 	}
 
-	data.Items[1].Position.Option.Deliverables = []application.PublishedDeliverable{
+	data.Items[1].Position.InstrumentTerms.Option.Deliverables = []application.PublishedDeliverable{
 		{
 			Security: &application.PublishedReference{
 				Authority: "synthetic", Kind: "symbol", Scope: "exchange", Value: "SYN",
@@ -145,15 +149,14 @@ func TestPositionsGridFinancialMeaningAndNavigation(t *testing.T) {
 
 	debt := positionTerms(
 		application.PublishedPosition{
-			Debt: &application.PublishedDebt{
+			InstrumentTerms: application.PublishedInstrumentTerms{Family: "debt", Debt: &application.PublishedDebt{
 				Type:            new("treasury-bill"),
 				Currency:        new("USD"),
 				Maturity:        new("2027-01-01"),
-				Coupon:          new("0.0000"),
+				CouponRate:      new("0.0000"),
 				PaymentsPerYear: new(0),
-			},
+			}},
 		},
-		"debt",
 	)
 
 	b, _ = json.Marshal(debt)
@@ -203,15 +206,17 @@ func TestPositionsGridAvailability(t *testing.T) {
 }
 
 func TestPositionsGridDistinguishesMissingAndInapplicableContractTerms(t *testing.T) {
-	for _, kind := range []string{"equity", "fund", "option", "debt"} {
+	for _, kind := range []string{"equity", "fund", "option", "debt", "unclassified"} {
 		data := positionsFixture(t)
 		data.Items[1].Kind = kind
-		data.Items[1].Position.Option = nil
-		data.Items[1].Position.Debt = nil
+		data.Items[1].Position.InstrumentTerms = application.PublishedInstrumentTerms{Family: kind}
 
 		want := notApplicableValue
-		if kind == "option" || kind == "debt" {
+		switch kind {
+		case "option", "debt":
 			want = "Not provided"
+		case "unclassified":
+			want = "Unclassified instrument"
 		}
 
 		if got := positionsGrid(data).Data[1].Terms; got.Text != want || len(got.Details) != 0 {

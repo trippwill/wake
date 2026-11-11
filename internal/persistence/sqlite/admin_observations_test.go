@@ -341,7 +341,7 @@ func TestObservationRuleOrderingIncludesNormalizationVersion(t *testing.T) {
 
 		for j, version := range []string{"z-version", "a-version"} {
 			fields := observedTrade(t, records[0].Observation).Fields()
-			fields.Price, _ = financial.NewPrice(fmt.Sprint(200+i*2+j), fields.Price.Currency())
+			fields.Price, _ = financial.ParsePrice(fmt.Sprint(200+i*2+j), fields.Price.Currency())
 
 			trade, err := source.NewTrade(fields)
 			if err != nil {

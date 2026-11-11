@@ -127,17 +127,17 @@ func TestDerivedNumConversion(t *testing.T) {
 		strings.Repeat("9", 256), "0." + strings.Repeat("0", 253) + "1",
 	} {
 		t.Run(exact, func(t *testing.T) {
-			money, err := financial.NewMoney(exact, usd)
+			money, err := financial.ParseMoney(exact, usd)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			quantity, err := financial.NewQuantity(exact)
+			quantity, err := financial.ParseQuantity(exact)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			price, err := financial.NewPrice(exact, usd)
+			price, err := financial.ParsePrice(exact, usd)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -214,9 +214,9 @@ func TestDerivedNumCalculationsPreservePrecision(t *testing.T) {
 func TestFinancialConstructorsRejectInvalidInputs(t *testing.T) {
 	usd := parseCurrency(t, "USD")
 	for _, text := range []string{"", " ", "NaN", "Inf", "1/2", "0x10", "1.2.3", "1e", "1e129", "1e-129", "--1", strings.Repeat("1", 257)} {
-		_, m := financial.NewMoney(text, usd)
-		_, q := financial.NewQuantity(text)
-		_, p := financial.NewPrice(text, usd)
+		_, m := financial.ParseMoney(text, usd)
+		_, q := financial.ParseQuantity(text)
+		_, p := financial.ParsePrice(text, usd)
 		for _, err := range []error{m, q, p} {
 			if !errors.Is(err, financial.ErrInvalidNumber) {
 				t.Fatalf("%q: %v", text, err)
@@ -224,11 +224,23 @@ func TestFinancialConstructorsRejectInvalidInputs(t *testing.T) {
 		}
 	}
 
-	if _, err := financial.NewMoney("0", financial.Currency{}); !errors.Is(err, financial.ErrInvalidCurrency) {
+	if _, err := financial.ParseMoney(
+		"0",
+		financial.Currency{},
+	); !errors.Is(
+		err,
+		financial.ErrInvalidCurrency,
+	) {
 		t.Fatal(err)
 	}
 
-	if _, err := financial.NewPrice("0", financial.Currency{}); !errors.Is(err, financial.ErrInvalidCurrency) {
+	if _, err := financial.ParsePrice(
+		"0",
+		financial.Currency{},
+	); !errors.Is(
+		err,
+		financial.ErrInvalidCurrency,
+	) {
 		t.Fatal(err)
 	}
 
@@ -393,12 +405,12 @@ func TestZeroDateCannotBeMarshaled(t *testing.T) {
 
 func TestPrecisionIndependentEqualityAndZero(t *testing.T) {
 	usd := parseCurrency(t, "USD")
-	a, _ := financial.NewMoney("1.2300", usd)
-	b, _ := financial.NewMoney("1.23", usd)
-	p, _ := financial.NewPrice("1.2300", usd)
+	a, _ := financial.ParseMoney("1.2300", usd)
+	b, _ := financial.ParseMoney("1.23", usd)
+	p, _ := financial.ParsePrice("1.2300", usd)
 
-	q, _ := financial.NewPrice("1.23", usd)
-	zero, _ := financial.NewQuantity("0.0000")
+	q, _ := financial.ParsePrice("1.23", usd)
+	zero, _ := financial.ParseQuantity("0.0000")
 	missing := financial.Quantity{}
 	if !a.Equal(b) || !p.Equal(q) || zero.Positive() || zero.Equal(missing) {
 		t.Fatal("scale changed numeric meaning")

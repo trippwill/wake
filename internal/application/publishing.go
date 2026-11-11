@@ -3,7 +3,13 @@
 
 package application
 
-import "slices"
+import (
+	"bytes"
+	"encoding/json"
+	"slices"
+
+	"go.trippwill.dev/wake/provider"
+)
 
 const ErrNotFound Error = "financial resource not found"
 
@@ -91,23 +97,120 @@ type PublishedDebt struct {
 	Maturity        *string `json:"maturity"`
 	IssueDate       *string `json:"issue_date"`
 	DatedDate       *string `json:"dated_date"`
-	Coupon          *string `json:"coupon"`
+	CouponRate      *string `json:"coupon_rate"`
 	PaymentsPerYear *int    `json:"payments_per_year"`
 }
+
+// PublishedInstrumentTerms describes the security at the activity or position date.
+type PublishedInstrumentTerms struct {
+	Family string           `json:"family"`
+	Option *PublishedOption `json:"-"`
+	Debt   *PublishedDebt   `json:"-"`
+}
+
+func (t PublishedInstrumentTerms) MarshalJSON() ([]byte, error) {
+	type family struct {
+		Family string `json:"family"`
+	}
+	switch t.Family {
+	case "option":
+		if t.Option == nil || t.Debt != nil {
+			return nil, ErrInvalid
+		}
+
+		return json.Marshal(struct {
+			family
+			*PublishedOption
+		}{family{t.Family}, t.Option})
+	case "debt":
+		if t.Debt == nil || t.Option != nil {
+			return nil, ErrInvalid
+		}
+
+		return json.Marshal(struct {
+			family
+			*PublishedDebt
+		}{family{t.Family}, t.Debt})
+	case "equity", "fund", "unclassified":
+		if t.Option != nil || t.Debt != nil {
+			return nil, ErrInvalid
+		}
+
+		return json.Marshal(family{t.Family})
+	default:
+		return nil, ErrInvalid
+	}
+}
+
+// publishedFamily reads the discriminator without decoding the full body twice
+// on storage reads. Wake writes the family first. Other field orders and
+// escaped strings use the ordinary JSON decoder.
+func publishedFamily(data []byte) (string, error) {
+	if rest, ok := bytes.CutPrefix(data, []byte(`{"family":"`)); ok {
+		if family, _, found := bytes.Cut(rest, []byte{'"'}); found && !bytes.ContainsRune(family, '\\') {
+			return string(family), nil
+		}
+	}
+
+	var header struct {
+		Family string `json:"family"`
+	}
+
+	err := json.Unmarshal(data, &header)
+
+	return header.Family, err
+}
+
+func (t *PublishedInstrumentTerms) UnmarshalJSON(data []byte) error {
+	family, err := publishedFamily(data)
+	if err != nil {
+		return err
+	}
+
+	out := PublishedInstrumentTerms{Family: family}
+
+	switch out.Family {
+	case "option":
+		out.Option = new(PublishedOption)
+		if err := json.Unmarshal(data, out.Option); err != nil {
+			return err
+		}
+	case "debt":
+		out.Debt = new(PublishedDebt)
+		if err := json.Unmarshal(data, out.Debt); err != nil {
+			return err
+		}
+	case "equity", "fund", "unclassified":
+	default:
+		return ErrInvalid
+	}
+
+	*t = out
+
+	return nil
+}
+
 type PublishedTransfer struct {
-	DeliveringBroker    *string         `json:"delivering_broker"`
-	Direction           string          `json:"direction"`
-	Method              *string         `json:"method"`
-	Company             *string         `json:"company"`
-	CounterpartyAccount *string         `json:"counterparty_account"`
-	CounterpartyName    *string         `json:"counterparty_name"`
-	ReportDate          *string         `json:"report_date"`
-	Price               *PublishedMoney `json:"price"`
-	PositionValue       *PublishedMoney `json:"position_value"`
-	ReportedCost        *PublishedMoney `json:"reported_cost"`
-	ReportedPnL         *PublishedMoney `json:"reported_pnl"`
+	PublishedSecurity
+	InstrumentTerms     PublishedInstrumentTerms `json:"instrument_terms"`
+	Quantity            *PublishedQuantity       `json:"quantity"`
+	SettlementDate      *string                  `json:"settlement_date"`
+	DeliveringBroker    *string                  `json:"delivering_broker"`
+	Direction           string                   `json:"direction"`
+	Method              *string                  `json:"method"`
+	Company             *string                  `json:"company"`
+	CounterpartyAccount *string                  `json:"counterparty_account"`
+	CounterpartyName    *string                  `json:"counterparty_name"`
+	ReportDate          *string                  `json:"report_date"`
+	Price               *PublishedMoney          `json:"price"`
+	PositionValue       *PublishedMoney          `json:"position_value"`
+	ReportedCost        *PublishedMoney          `json:"reported_cost"`
+	ReportedPnL         *PublishedMoney          `json:"reported_pnl"`
 }
 type PublishedCash struct {
+	PublishedSecurity
+	SettlementDate          *string             `json:"settlement_date"`
+	Charges                 []PublishedCharge   `json:"charges"`
 	AvailableForTradingDate *string             `json:"available_for_trading_date"`
 	Category                string              `json:"category"`
 	Amount                  PublishedMoney      `json:"amount"`
@@ -118,41 +221,244 @@ type PublishedCash struct {
 	ExDate                  *string             `json:"ex_date"`
 	Action                  *PublishedReference `json:"action"`
 }
-type PublishedActivity struct {
-	Cash                *PublishedCash          `json:"cash,omitempty"`
-	Transfer            *PublishedTransfer      `json:"transfer,omitempty"`
-	ReportedRealizedPnL *PublishedRealizedPnL   `json:"reported_realized_pnl"`
+type PublishedActivityHeader struct {
 	Family              string                  `json:"family"`
 	AccountID           string                  `json:"account_id"`
-	InstrumentID        *string                 `json:"instrument_id"`
-	ListingID           *string                 `json:"listing_id"`
 	State               string                  `json:"state"`
 	Conflict            bool                    `json:"conflict"`
 	Date                string                  `json:"date"`
 	At                  *string                 `json:"at"`
-	Order               *PublishedReference     `json:"order"`
 	Relationships       []PublishedRelationship `json:"relationships"`
-	TradeKind           *string                 `json:"trade_kind"`
-	Side                *string                 `json:"side"`
-	PositionEffect      *string                 `json:"position_effect"`
-	Quantity            *PublishedQuantity      `json:"quantity"`
-	Price               *PublishedMoney         `json:"price"`
-	PriceBasis          *string                 `json:"price_basis"`
-	SettlementDate      *string                 `json:"settlement_date"`
-	LifecycleKind       *string                 `json:"lifecycle_kind"`
-	Sent                *PublishedAmount        `json:"sent"`
-	Received            *PublishedAmount        `json:"received"`
-	RateBase            *string                 `json:"rate_base"`
-	Rate                *PublishedMoney         `json:"rate"`
-	Gross               *PublishedMoney         `json:"gross"`
-	Proceeds            *PublishedMoney         `json:"proceeds"`
-	Net                 *PublishedMoney         `json:"net"`
-	NetWithBillable     *PublishedMoney         `json:"net_with_billable"`
-	AccruedInterest     *PublishedMoney         `json:"accrued_interest"`
-	Charges             []PublishedCharge       `json:"charges"`
-	// Terms retain the contract/issue terms used for this activity, independently of reference refresh.
-	Option *PublishedOption `json:"option"`
-	Debt   *PublishedDebt   `json:"debt"`
+	ReportedRealizedPnL *PublishedRealizedPnL   `json:"reported_realized_pnl"`
+}
+
+// PublishedActivity contains the one accepted variant selected by Family.
+type PublishedActivity struct {
+	PublishedActivityHeader
+	Trade      *PublishedTrade
+	Lifecycle  *PublishedLifecycle
+	Conversion *PublishedConversion
+	Transfer   *PublishedTransfer
+	Cash       *PublishedCash
+}
+
+type PublishedSecurity struct {
+	InstrumentID *string `json:"instrument_id"`
+	ListingID    *string `json:"listing_id"`
+}
+
+type PublishedTradeCash struct {
+	GrossAmount         *PublishedMoney `json:"gross_amount"`
+	Proceeds            *PublishedMoney `json:"proceeds"`
+	NetCash             *PublishedMoney `json:"net_cash"`
+	NetCashWithBillable *PublishedMoney `json:"net_cash_with_billable"`
+}
+
+type PublishedTrade struct {
+	PublishedSecurity
+	PublishedTradeCash
+	InstrumentTerms PublishedInstrumentTerms `json:"instrument_terms"`
+	Order           *PublishedReference      `json:"order"`
+	TradeKind       *string                  `json:"trade_kind"`
+	Side            *string                  `json:"side"`
+	PositionEffect  *string                  `json:"position_effect"`
+	Quantity        *PublishedQuantity       `json:"quantity"`
+	Price           *PublishedMoney          `json:"price"`
+	QuotationBasis  *string                  `json:"quotation_basis"`
+	SettlementDate  *string                  `json:"settlement_date"`
+	AccruedInterest *PublishedMoney          `json:"accrued_interest"`
+	Charges         []PublishedCharge        `json:"charges"`
+}
+
+type PublishedLifecycle struct {
+	PublishedSecurity
+	InstrumentTerms PublishedInstrumentTerms `json:"instrument_terms"`
+	Order           *PublishedReference      `json:"order"`
+	LifecycleKind   *string                  `json:"lifecycle_kind"`
+	Quantity        *PublishedQuantity       `json:"quantity"`
+}
+
+type PublishedConversion struct {
+	PublishedTradeCash
+	Order    *PublishedReference `json:"order"`
+	Sent     *PublishedAmount    `json:"sent"`
+	Received *PublishedAmount    `json:"received"`
+	RateBase *string             `json:"rate_base"`
+	Rate     *PublishedMoney     `json:"rate"`
+	Charges  []PublishedCharge   `json:"charges"`
+}
+
+// InstrumentID returns the linked instrument, when the activity has one.
+func (a PublishedActivity) InstrumentID() *string {
+	switch a.Family {
+	case "trade":
+		return a.Trade.InstrumentID
+	case "lifecycle":
+		return a.Lifecycle.InstrumentID
+	case "security-transfer":
+		return a.Transfer.InstrumentID
+	case "cash":
+		return a.Cash.InstrumentID
+	default:
+		return nil
+	}
+}
+
+func (a PublishedActivity) Quantity() *PublishedQuantity {
+	switch a.Family {
+	case "trade":
+		return a.Trade.Quantity
+	case "lifecycle":
+		return a.Lifecycle.Quantity
+	case "security-transfer":
+		return a.Transfer.Quantity
+	default:
+		return nil
+	}
+}
+
+func (a PublishedActivity) Charges() []PublishedCharge {
+	switch a.Family {
+	case "trade":
+		return a.Trade.Charges
+	case "conversion":
+		return a.Conversion.Charges
+	case "cash":
+		return a.Cash.Charges
+	default:
+		return nil
+	}
+}
+
+func (a PublishedActivity) MarshalJSON() ([]byte, error) {
+	if a.variantCount() != 1 || !a.matchesFamily() {
+		return nil, ErrInvalid
+	}
+
+	switch a.Family {
+	case "trade":
+		return json.Marshal(struct {
+			PublishedActivityHeader
+			*PublishedTrade
+		}{a.PublishedActivityHeader, a.Trade})
+	case "lifecycle":
+		return json.Marshal(struct {
+			PublishedActivityHeader
+			*PublishedLifecycle
+		}{a.PublishedActivityHeader, a.Lifecycle})
+	case "conversion":
+		return json.Marshal(struct {
+			PublishedActivityHeader
+			*PublishedConversion
+		}{a.PublishedActivityHeader, a.Conversion})
+	case "security-transfer":
+		return json.Marshal(struct {
+			PublishedActivityHeader
+			*PublishedTransfer
+		}{a.PublishedActivityHeader, a.Transfer})
+	case "cash":
+		return json.Marshal(struct {
+			PublishedActivityHeader
+			*PublishedCash
+		}{a.PublishedActivityHeader, a.Cash})
+	}
+
+	return nil, ErrInvalid
+}
+
+func (a *PublishedActivity) UnmarshalJSON(data []byte) error {
+	family, err := publishedFamily(data)
+	if err != nil {
+		return err
+	}
+
+	var out PublishedActivity
+
+	switch family {
+	case "trade":
+		out.Trade = new(PublishedTrade)
+		if err := json.Unmarshal(data, &struct {
+			*PublishedActivityHeader
+			*PublishedTrade
+		}{&out.PublishedActivityHeader, out.Trade}); err != nil {
+			return err
+		}
+	case "lifecycle":
+		out.Lifecycle = new(PublishedLifecycle)
+		if err := json.Unmarshal(data, &struct {
+			*PublishedActivityHeader
+			*PublishedLifecycle
+		}{&out.PublishedActivityHeader, out.Lifecycle}); err != nil {
+			return err
+		}
+	case "conversion":
+		out.Conversion = new(PublishedConversion)
+		if err := json.Unmarshal(data, &struct {
+			*PublishedActivityHeader
+			*PublishedConversion
+		}{&out.PublishedActivityHeader, out.Conversion}); err != nil {
+			return err
+		}
+	case "security-transfer":
+		out.Transfer = new(PublishedTransfer)
+		if err := json.Unmarshal(data, &struct {
+			*PublishedActivityHeader
+			*PublishedTransfer
+		}{&out.PublishedActivityHeader, out.Transfer}); err != nil {
+			return err
+		}
+	case "cash":
+		out.Cash = new(PublishedCash)
+		if err := json.Unmarshal(data, &struct {
+			*PublishedActivityHeader
+			*PublishedCash
+		}{&out.PublishedActivityHeader, out.Cash}); err != nil {
+			return err
+		}
+	default:
+		return ErrInvalid
+	}
+
+	if out.Family != family {
+		return ErrInvalid
+	}
+
+	*a = out
+
+	return nil
+}
+
+func (a PublishedActivity) variantCount() int {
+	n := 0
+	if a.Trade != nil {
+		n++
+	}
+
+	if a.Lifecycle != nil {
+		n++
+	}
+
+	if a.Conversion != nil {
+		n++
+	}
+
+	if a.Transfer != nil {
+		n++
+	}
+
+	if a.Cash != nil {
+		n++
+	}
+
+	return n
+}
+
+func (a PublishedActivity) matchesFamily() bool {
+	return a.Family == "trade" && a.Trade != nil ||
+		a.Family == "lifecycle" && a.Lifecycle != nil ||
+		a.Family == "conversion" && a.Conversion != nil ||
+		a.Family == "security-transfer" && a.Transfer != nil ||
+		a.Family == "cash" && a.Cash != nil
 }
 
 type PublishedRealizedPnL struct {
@@ -175,7 +481,25 @@ type PublishedIdentity struct {
 	Reason     *string `json:"reason"`
 	Rule       string  `json:"rule"`
 }
+type FieldAbsenceReason string
+
+const (
+	FieldNotReported         FieldAbsenceReason = "not_reported"
+	FieldReportedUnavailable FieldAbsenceReason = "reported_unavailable"
+	FieldUnresolved          FieldAbsenceReason = "unresolved"
+	FieldNotApplicable       FieldAbsenceReason = "not_applicable"
+	FieldOperatorWithheld    FieldAbsenceReason = "operator_withheld"
+)
+
+type PublishedFieldDetail struct {
+	Path           string                     `json:"path"`
+	Reason         FieldAbsenceReason         `json:"reason"`
+	Expectation    *provider.FieldExpectation `json:"expectation"`
+	Interpretation *string                    `json:"interpretation"`
+}
+
 type Explanation struct {
+	Fields      []PublishedFieldDetail        `json:"fields"`
 	RealizedPnL *PublishedRealizedExplanation `json:"reported_realized_pnl,omitempty"`
 	Identity    *PublishedIdentity            `json:"identity"`
 	ID          string                        `json:"id"`

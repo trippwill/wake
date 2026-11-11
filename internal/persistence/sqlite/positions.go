@@ -136,6 +136,10 @@ func calculatePositions(
 		}
 	}
 
+	if out.AsOf != nil && out.AsOf.Basis == "" {
+		out.AsOf.Basis = source.PositionBrokerEffective
+	}
+
 	out.Reason = known(selection.Reason)
 	if selection.Reason != "" {
 		return out, nil
@@ -153,19 +157,18 @@ func calculatePositions(
 		if price := publicPrice(p.UnitCostBasis()); price != nil {
 			unitCostBasis = &application.PublishedUnitCostBasis{
 				PublishedMoney: *price,
-				Quote:          p.UnitCostBasisQuote(),
+				QuotationBasis: known(string(p.UnitCostBasisQuotationBasis())),
 			}
 		}
 
 		out.Positions = append(
 			out.Positions,
 			application.PublishedPosition{
-				InstrumentID:  selection.InstrumentIDs[i],
-				Quantity:      application.PublishedQuantity{Value: p.Quantity().Value(), Unit: p.Unit()},
-				Side:          side,
-				UnitCostBasis: unitCostBasis,
-				Option:        publicOption(p.Instrument().Option()),
-				Debt:          publicDebt(p.Instrument().Debt()),
+				InstrumentID:    selection.InstrumentIDs[i],
+				Quantity:        application.PublishedQuantity{Value: p.Quantity().Value(), Unit: p.Unit()},
+				Side:            side,
+				UnitCostBasis:   unitCostBasis,
+				InstrumentTerms: publicInstrumentTerms(p.Instrument()),
 			},
 		)
 	}

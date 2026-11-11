@@ -56,7 +56,10 @@ Providers use deliberate published contracts that an external Go package can
 implement. They receive neither SQL nor private storage/UI dependencies. Providers
 report source meaning; core decides financial identity and acceptance. Small
 internal collaborator interfaces belong to their consumers. Published signatures,
-source-claim shapes and their proofs belong in code and contract tests.
+source-claim shapes and their proofs belong in code and contract tests. Accepted publication uses
+activity variants and dated instrument terms. Partial observations retain their independent claim
+structure. Compact explanations expose applicable absence reasons and versioned provider
+expectations alongside the existing selection and conflict facts.
 
 ## Evidence before conclusions
 

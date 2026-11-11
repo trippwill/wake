@@ -101,7 +101,7 @@ type Money struct {
 	currency Currency
 }
 
-func NewMoney(amount string, currency Currency) (Money, error) {
+func ParseMoney(amount string, currency Currency) (Money, error) {
 	text, err := parseExactNumber(amount)
 	if err != nil {
 		return Money{}, err
@@ -114,9 +114,8 @@ func NewMoney(amount string, currency Currency) (Money, error) {
 	return Money{amount: text, currency: currency}, nil
 }
 
-func ParseMoney(amount string, currency Currency) (Money, error) { return NewMoney(amount, currency) }
-func (value Money) Amount() string                               { return value.amount }
-func (value Money) Currency() Currency                           { return value.currency }
+func (value Money) Amount() string     { return value.amount }
+func (value Money) Currency() Currency { return value.currency }
 
 // Num converts exactly for calculation or display, preserving decimal precision.
 func (value Money) Num() (num.Num, error) { return derivedNumber(value.amount) }
@@ -124,7 +123,7 @@ func (value Money) Num() (num.Num, error) { return derivedNumber(value.amount) }
 // Quantity is an exact decimal count or measure. Record constructors enforce sign constraints.
 type Quantity struct{ value string }
 
-func NewQuantity(value string) (Quantity, error) {
+func ParseQuantity(value string) (Quantity, error) {
 	text, err := parseExactNumber(value)
 	if err != nil {
 		return Quantity{}, err
@@ -132,9 +131,8 @@ func NewQuantity(value string) (Quantity, error) {
 
 	return Quantity{value: text}, nil
 }
-func ParseQuantity(value string) (Quantity, error) { return NewQuantity(value) }
-func (value Quantity) Value() string               { return value.value }
-func (value Quantity) Num() (num.Num, error)       { return derivedNumber(value.value) }
+func (value Quantity) Value() string         { return value.value }
+func (value Quantity) Num() (num.Num, error) { return derivedNumber(value.value) }
 
 // Positive checks the exact value without a rounded conversion.
 func (value Quantity) Positive() bool {
@@ -144,13 +142,14 @@ func (value Quantity) Positive() bool {
 // Abs preserves exact magnitude without arithmetic conversion.
 func (value Quantity) Abs() Quantity { return Quantity{value: strings.TrimPrefix(value.value, "-")} }
 
-// Price is an exact decimal amount and currency per unit.
+// Price is an exact decimal amount in a stated currency. Its quotation basis
+// belongs to the reported context and may be unavailable.
 type Price struct {
 	amount   string
 	currency Currency
 }
 
-func NewPrice(amount string, currency Currency) (Price, error) {
+func ParsePrice(amount string, currency Currency) (Price, error) {
 	text, err := parseExactNumber(amount)
 	if err != nil {
 		return Price{}, err
@@ -163,10 +162,9 @@ func NewPrice(amount string, currency Currency) (Price, error) {
 	return Price{amount: text, currency: currency}, nil
 }
 
-func ParsePrice(amount string, currency Currency) (Price, error) { return NewPrice(amount, currency) }
-func (value Price) Amount() string                               { return value.amount }
-func (value Price) Currency() Currency                           { return value.currency }
-func (value Price) Num() (num.Num, error)                        { return derivedNumber(value.amount) }
+func (value Price) Amount() string        { return value.amount }
+func (value Price) Currency() Currency    { return value.currency }
+func (value Price) Num() (num.Num, error) { return derivedNumber(value.amount) }
 
 // parseExactNumber expands finite base-ten notation while retaining fractional scale
 // without arithmetic or a bounded Num conversion. Input and expanded output

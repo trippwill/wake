@@ -56,8 +56,8 @@ func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
 		t.Fatal(first, err)
 	}
 
-	if first.Items[0].Resource.Activity.Price.Amount != "1.0000000000001" ||
-		first.Items[1].Resource.Activity.Price.Amount != "9007199254740993.0000000000001" {
+	if first.Items[0].Resource.Activity.Trade.Price.Amount != "1.0000000000001" ||
+		first.Items[1].Resource.Activity.Trade.Price.Amount != "9007199254740993.0000000000001" {
 		t.Fatal("exact price ordering lost", first)
 	}
 
@@ -71,7 +71,7 @@ func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
 
 	second, err := s.ActivityList(ctx, query)
 	if err != nil || len(second.Items) != 1 ||
-		second.Items[0].Resource.Activity.Price.Amount != "9007199254740993.0000000000002" {
+		second.Items[0].Resource.Activity.Trade.Price.Amount != "9007199254740993.0000000000002" {
 		t.Fatal("server page did not continue exact order", second, err)
 	}
 
@@ -389,7 +389,7 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 		)
 		page, e := s.ActivityList(ctx, query)
 		if e != nil || len(page.Items) != 54 || page.Items[53].Resource.Activity.Family != "conversion" ||
-			page.Items[53].Resource.Activity.Rate != nil {
+			page.Items[53].Resource.Activity.Conversion.Rate != nil {
 			t.Fatal("unknown price was not last", direction, page, e)
 		}
 	}
@@ -634,8 +634,8 @@ func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
 	)
 
 	first, err := s.ActivityList(ctx, query)
-	if err != nil || len(first.Items) != 1 || first.Items[0].Resource.Activity.Side == nil ||
-		*first.Items[0].Resource.Activity.Side != "buy" {
+	if err != nil || len(first.Items) != 1 || first.Items[0].Resource.Activity.Trade.Side == nil ||
+		*first.Items[0].Resource.Activity.Trade.Side != "buy" {
 		t.Fatal("label order differs from visible action order", first, err)
 	}
 
@@ -995,7 +995,7 @@ func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
 		t,
 		s,
 		"instrument",
-		*selected.Resource.Activity.InstrumentID,
+		*selected.Resource.Activity.InstrumentID(),
 		"name",
 		selected.InstrumentName,
 		"",

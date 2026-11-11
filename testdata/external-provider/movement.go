@@ -15,7 +15,7 @@ func SecurityTransfer() (source.SecurityTransfer, error) {
 	}
 	f := t.Fields()
 	event, _ := source.NewReference("fixture-broker", "transfer", "account-1", "transfer-1")
-	return source.NewSecurityTransfer(source.SecurityTransferInput{Location: "transfer:1", Account: f.Account, Event: event, EventDistinct: true, Instrument: f.Instrument, Direction: source.TransferIn, Quantity: f.Quantity, Date: f.TradeDate})
+	return source.NewSecurityTransfer(source.SecurityTransferInput{Location: "transfer:1", Account: f.Account, Event: event, EventDistinct: true, Instrument: f.Instrument, Direction: source.TransferIn, Quantity: f.Quantity, Date: f.Date})
 }
 
 func CashActivity() (source.CashActivity, error) {
@@ -26,6 +26,6 @@ func CashActivity() (source.CashActivity, error) {
 	f := t.Fields()
 	event, _ := source.NewReference("fixture-broker", "cash", "account-1", "cash-1")
 	c, _ := financial.ParseCurrency("GBP")
-	amount, _ := financial.NewMoney("-0.000000000000000012300", c)
-	return source.NewCashActivity(source.CashActivityInput{Location: "cash:1", Account: f.Account, Event: event, EventDistinct: true, Category: source.CashFee, Amount: amount, Date: f.TradeDate, Description: "Synthetic external fee"})
+	amount, _ := financial.ParseMoney("-0.000000000000000012300", c)
+	return source.NewCashActivity(source.CashActivityInput{Location: "cash:1", Account: f.Account, Event: event, EventDistinct: true, Category: source.CashFee, Amount: amount, Date: f.Date, Description: "Synthetic external fee"})
 }

@@ -35,12 +35,12 @@ func positionCandidate(t *testing.T, date, at, quantity, cost, reason string) Po
 
 	ids := []string{}
 	if quantity != "" && reason == "" {
-		q, _ := financial.NewQuantity(quantity)
+		q, _ := financial.ParseQuantity(quantity)
 
 		c, _ := financial.ParseCurrency("USD")
 		m := financial.Price{}
 		if cost != "" {
-			m, _ = financial.NewPrice(cost, c)
+			m, _ = financial.ParsePrice(cost, c)
 		}
 
 		p, err := source.NewPosition(instrument, q, m)
@@ -282,7 +282,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				for i, term := range terms {
 					input := source.InstrumentInput{Kind: kind, Name: "Synthetic contract"}
 					if kind == source.Option {
-						multiplier, _ := financial.NewQuantity(term)
+						multiplier, _ := financial.ParseQuantity(term)
 						input.Option, _ = source.NewOptionTerms(source.OptionInput{Multiplier: multiplier})
 					} else {
 						maturity, _ := financial.ParseDate(term)
@@ -294,12 +294,12 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					quantity, _ := financial.NewQuantity("1")
+					quantity, _ := financial.ParseQuantity("1")
 
 					cost := financial.Price{}
 					if i < len(costs) && costs[i] != "" {
 						usd, _ := financial.ParseCurrency("USD")
-						cost, _ = financial.NewPrice(costs[i], usd)
+						cost, _ = financial.ParsePrice(costs[i], usd)
 					}
 
 					p, err := source.NewPosition(instrument, quantity, cost)

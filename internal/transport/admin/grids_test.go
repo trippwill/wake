@@ -210,9 +210,13 @@ func TestInstrumentIdentityLeadsWithTickerAcrossAdminViews(t *testing.T) {
 			}
 
 			activity := &application.PublishedActivity{
-				Family:       "trade",
-				Side:         new("buy"),
-				InstrumentID: new("equity"),
+				PublishedActivityHeader: application.PublishedActivityHeader{
+					Family: "trade",
+				},
+				Trade: &application.PublishedTrade{
+					Side:              new("buy"),
+					PublishedSecurity: application.PublishedSecurity{InstrumentID: new("equity")},
+				},
 			}
 
 			activities := activityGrid(application.ActivityList{Items: []application.ActivityListItem{{

@@ -93,7 +93,7 @@ func Registration(options Options) (provider.Registration, error) {
 
 	a := &adapter{client: &copyClient, base: strings.TrimSuffix(base, "/"), limit: limit}
 
-	return provider.NewRegistration(descriptor, "snaptrade-3", a, a, a, a)
+	return provider.NewRegistration(descriptor, "snaptrade-4", a, a, a, a)
 }
 
 func (*adapter) PrepareSettings(settings provider.Settings) (provider.Settings, error) {

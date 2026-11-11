@@ -195,9 +195,31 @@ func TestReviewPresentationRetainsStructuredLabelsAndFilteredEmptyState(t *testi
 		activity application.PublishedActivity
 		want     string
 	}{
-		{application.PublishedActivity{Family: "trade", Side: &side}, "Buy Zebra"},
-		{application.PublishedActivity{Family: "lifecycle", LifecycleKind: &lifecycle}, "Assignment · Zebra"},
-		{application.PublishedActivity{Family: "conversion", Sent: &application.PublishedAmount{Currency: "EUR"}, Received: &application.PublishedAmount{Currency: "USD"}}, "Convert EUR → USD"},
+		{application.PublishedActivity{
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family: "trade",
+			},
+			Trade: &application.PublishedTrade{
+				Side: &side,
+			},
+		}, "Buy Zebra"},
+		{application.PublishedActivity{
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family: "lifecycle",
+			},
+			Lifecycle: &application.PublishedLifecycle{
+				LifecycleKind: &lifecycle,
+			},
+		}, "Assignment · Zebra"},
+		{application.PublishedActivity{
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family: "conversion",
+			},
+			Conversion: &application.PublishedConversion{
+				Sent:     &application.PublishedAmount{Currency: "EUR"},
+				Received: &application.PublishedAmount{Currency: "USD"},
+			},
+		}, "Convert EUR → USD"},
 	} {
 		rows := reviewItems(
 			application.ReviewList{

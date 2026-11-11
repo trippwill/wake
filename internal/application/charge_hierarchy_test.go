@@ -18,7 +18,7 @@ func TestChargeHierarchyContributionsAndIndependentSelection(t *testing.T) {
 
 		var money financial.Money
 		if amount != "" {
-			money, _ = financial.NewMoney(amount, usd)
+			money, _ = financial.ParseMoney(amount, usd)
 		}
 
 		c, err := source.NewCharge(
@@ -101,7 +101,7 @@ func TestChargeHierarchyContributionsAndIndependentSelection(t *testing.T) {
 
 func TestChargeCompatibilityIncludesSharedAncestorCategories(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-0.00100", usd)
+	money, _ := financial.ParseMoney("-0.00100", usd)
 
 	charge := func(category source.ChargeCategory, field string, child ...source.Charge) source.Charge {
 		t.Helper()
@@ -140,7 +140,7 @@ func TestChargeCompatibilityIncludesSharedAncestorCategories(t *testing.T) {
 
 func TestChargeAncestorSelectionPreservesBaselineAndExplicitChoices(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-0.00100", usd)
+	money, _ := financial.ParseMoney("-0.00100", usd)
 	makeTrade := func(category source.ChargeCategory, field string) source.Trade {
 		t.Helper()
 
@@ -199,7 +199,7 @@ func TestChargeAncestorSelectionPreservesBaselineAndExplicitChoices(t *testing.T
 
 func TestChargeAncestorExclusionsSurviveUnrelatedInvariantFallback(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-0.00100", usd)
+	money, _ := financial.ParseMoney("-0.00100", usd)
 	charge := func(category source.ChargeCategory, field string, components ...source.Charge) source.Charge {
 		t.Helper()
 

@@ -96,12 +96,12 @@ func (v CashActivity) Observation() ActivityObservation {
 		{Name: FieldCashCategory, Text: string(f.Category)},
 		{Name: FieldCashAmount, Money: f.Amount},
 		{Name: FieldInstrument, Instrument: f.Instrument},
-		{Name: FieldTradeDate, Date: f.Date},
+		{Name: FieldDate, Date: f.Date},
 		{Name: FieldReportDate, Date: f.ReportDate},
 		{Name: FieldAvailableForTradingDate, Date: f.AvailableForTradingDate},
 		{Name: FieldSettlementDate, Date: f.SettlementDate},
 		{Name: FieldExDate, Date: f.ExDate},
-		{Name: FieldExecutedAt, Timestamp: f.At},
+		{Name: FieldAt, Timestamp: f.At},
 		{Name: FieldReportedType, Text: f.ReportedType},
 		{Name: FieldDescription, Text: f.Description},
 		{Name: FieldSourceCode, Text: f.Code},
@@ -143,7 +143,7 @@ func (o ActivityObservation) CashActivity() (CashActivity, error) {
 			f.Amount = x.Money
 		case FieldInstrument:
 			f.Instrument = x.Instrument
-		case FieldTradeDate:
+		case FieldDate:
 			f.Date = x.Date
 		case FieldReportDate:
 			f.ReportDate = x.Date
@@ -153,7 +153,7 @@ func (o ActivityObservation) CashActivity() (CashActivity, error) {
 			f.AvailableForTradingDate = x.Date
 		case FieldExDate:
 			f.ExDate = x.Date
-		case FieldExecutedAt:
+		case FieldAt:
 			f.At = x.Timestamp
 		case FieldReportedType:
 			f.ReportedType = x.Text

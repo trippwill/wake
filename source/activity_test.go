@@ -14,7 +14,7 @@ func TestPartialActivityObservationOwnsAssertionsAndPreservesUnknowns(t *testing
 	account, _ := NewReference("source", "account", "", "one")
 	event, _ := NewReference("source", "event", "one", "event")
 	eur, _ := financial.ParseCurrency("EUR")
-	zero, _ := financial.NewMoney("0.00000000000000000", eur)
+	zero, _ := financial.ParseMoney("0.00000000000000000", eur)
 	date, _ := financial.ParseDate("2026-10-24")
 
 	known, err := NewActivityField(ActivityFieldInput{Name: FieldRealizedPnL, Money: zero, ReportedOn: date})
@@ -72,12 +72,12 @@ func TestPartialActivityObservationOwnsAssertionsAndPreservesUnknowns(t *testing
 func TestActivityAssertionsRejectUntypedOrContradictoryPayloads(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
 
-	money, _ := financial.NewMoney("1", usd)
-	quantity, _ := financial.NewQuantity("1")
+	money, _ := financial.ParseMoney("1", usd)
+	quantity, _ := financial.ParseQuantity("1")
 	for _, input := range []ActivityFieldInput{
 		{Name: "arbitrary-provider-property", Money: money},
-		{Name: FieldNet, Money: money, Text: "hidden"},
-		{Name: FieldNet, Unknown: true, Money: money},
+		{Name: FieldNetCash, Money: money, Text: "hidden"},
+		{Name: FieldNetCash, Unknown: true, Money: money},
 		{Name: FieldPrice, Money: money},
 		{Name: FieldQuantity, Quantity: quantity},
 		{Name: FieldQuantity, Quantity: quantity, QuantityUnit: "unqualified"},

@@ -3,8 +3,8 @@
 
 CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CAST(json_extract(CAST(snapshot AS TEXT),'$.activity.instrument_id') AS TEXT) END,
 CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CAST(json_extract(CAST(snapshot AS TEXT),'$.activity.date') AS TEXT) END,
-CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CAST(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.amount'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate.amount'),json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.price.amount')) AS TEXT) END,
-CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN coalesce(nullif(CAST(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.currency'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate.currency'),'') || CASE WHEN coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price_basis'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate_base'),'') = '' THEN '' ELSE '/' || coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price_basis'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate_base'),'') END AS TEXT),''),json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.price.currency'),'') END,
+CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CAST(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.amount'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate.amount')) AS TEXT) END,
+CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN coalesce(nullif(CAST(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.currency'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate.currency'),'') || CASE WHEN coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.quotation_basis'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate_base'),'') = '' THEN '' ELSE '/' || coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.quotation_basis'),json_extract(CAST(snapshot AS TEXT),'$.activity.rate_base'),'') END AS TEXT),''),json_extract(CAST(snapshot AS TEXT),'$.activity.price.currency'),'') END,
 CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN
  wake_fold(' ' || coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.family'),'') || ' ' || id || ' ' ||
   coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.date'),'') || ' ' ||
@@ -21,15 +21,15 @@ CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN
   coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.reported_realized_pnl.amount.amount'),'') || ' ' ||
   coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.reported_realized_pnl.amount.currency'),'')) END,
 CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN
- wake_fold(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.direction'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.method'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.price.amount'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.price.currency'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.category'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.description'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.amount.amount'),'') || ' ' ||
-  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.amount.currency'),'')) END,
+ wake_fold(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.direction'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.method'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.amount'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.price.currency'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.category'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.description'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.amount.amount'),'') || ' ' ||
+  coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.amount.currency'),'')) END,
 CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.side'),json_extract(CAST(snapshot AS TEXT),'$.activity.lifecycle_kind')) IS NOT NULL THEN wake_fold(coalesce(json_extract(CAST(snapshot AS TEXT),'$.activity.side'),json_extract(CAST(snapshot AS TEXT),'$.activity.lifecycle_kind'))) END END,
-CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN json_extract(CAST(snapshot AS TEXT),'$.activity.cash.category') IS NOT NULL THEN wake_fold(replace(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.category'),'-',' ')) END END,
-CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN nullif(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.description'),'') IS NOT NULL THEN wake_fold(json_extract(CAST(snapshot AS TEXT),'$.activity.cash.description')) END END,
-CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.direction') IS NOT NULL THEN wake_fold(json_extract(CAST(snapshot AS TEXT),'$.activity.transfer.direction')) END END
+CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN json_extract(CAST(snapshot AS TEXT),'$.activity.category') IS NOT NULL THEN wake_fold(replace(json_extract(CAST(snapshot AS TEXT),'$.activity.category'),'-',' ')) END END,
+CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN nullif(json_extract(CAST(snapshot AS TEXT),'$.activity.description'),'') IS NOT NULL THEN wake_fold(json_extract(CAST(snapshot AS TEXT),'$.activity.description')) END END,
+CASE WHEN json_valid(CAST(snapshot AS TEXT)) THEN CASE WHEN json_extract(CAST(snapshot AS TEXT),'$.activity.direction') IS NOT NULL THEN wake_fold(json_extract(CAST(snapshot AS TEXT),'$.activity.direction')) END END

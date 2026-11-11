@@ -129,7 +129,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 	}
 	debt := func(value source.DebtTerms) {
 		terms := value.Fields()
-		text("debt.coupon", terms.Coupon.Value())
+		text("debt.coupon_rate", terms.CouponRate.Value())
 		text("debt.maturity", comparisonDate(terms.Maturity))
 		text("debt.type", string(terms.Type))
 		text("debt.currency", comparisonCurrency(terms.Currency))
@@ -173,10 +173,10 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				source.FieldPositionValue,
 				source.FieldTransferCost,
 				source.FieldTransferPnL,
-				source.FieldGross,
+				source.FieldGrossAmount,
 				source.FieldProceeds,
-				source.FieldNet,
-				source.FieldNetBillable,
+				source.FieldNetCash,
+				source.FieldNetCashWithBillable,
 				source.FieldAccruedInterest,
 				source.FieldRealizedPnL,
 				source.FieldReportedCostBasis:
@@ -185,7 +185,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				price(key, f.Price)
 
 				v := values[key]
-				v.Unit = f.PriceBasis
+				v.Unit = string(f.QuotationBasis)
 				if f.Name == source.FieldRate {
 					if base, ok := o.Field(source.FieldRateBase); ok && base.Known() {
 						v.Unit = "per " + base.Fields().Currency.String()
@@ -195,13 +195,13 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 				values[key] = v
 			case source.FieldQuantity:
 				values[key] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: f.QuantityUnit}
-			case source.FieldTradeDate,
+			case source.FieldDate,
 				source.FieldSettlementDate,
 				source.FieldReportDate,
 				source.FieldExDate,
 				source.FieldAvailableForTradingDate:
 				text(key, f.Date.String())
-			case source.FieldExecutedAt:
+			case source.FieldAt:
 				text(key, f.Timestamp.String())
 			case source.FieldInstrument:
 				text("reported.instrument", comparisonInstrument(f.Instrument))
@@ -295,17 +295,17 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		price("price", f.Price)
 
 		v = values["price"]
-		v.Unit = t.PriceBasis()
+		v.Unit = string(t.QuotationBasis())
 		values["price"] = v
 
 		text("side", string(f.Side))
-		text("trade_date", f.TradeDate.String())
-		text("executed_at", f.ExecutedAt.String())
+		text("date", f.Date.String())
+		text("at", f.At.String())
 		text("settlement_date", comparisonDate(f.SettlementDate))
-		money("gross", f.Gross)
+		money("gross_amount", f.GrossAmount)
 		money("proceeds", f.Proceeds)
-		money("net", f.Net)
-		money("net_billable", f.NetWithBillable)
+		money("net_cash", f.NetCash)
+		money("net_cash_with_billable", f.NetCashWithBillable)
 		money("accrued_interest", f.AccruedInterest)
 		text("position_effect", string(f.PositionEffect))
 
@@ -330,8 +330,8 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		text("reported.instrument", comparisonInstrument(f.Instrument))
 		values["quantity"] = application.CorrectionValue{Value: f.Quantity.Value(), Unit: "contracts"}
 		text("kind", string(f.Kind))
-		text("trade_date", f.Date.String())
-		text("executed_at", f.At.String())
+		text("date", f.Date.String())
+		text("at", f.At.String())
 		option(f.Instrument.Option())
 		activity(l.Observation())
 	case "conversion":
@@ -360,12 +360,12 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			values["rate"] = v
 		}
 
-		text("trade_date", f.Date.String())
-		text("executed_at", f.At.String())
-		money("gross", f.Gross)
+		text("date", f.Date.String())
+		text("at", f.At.String())
+		money("gross_amount", f.GrossAmount)
 		money("proceeds", f.Proceeds)
-		money("net", f.Net)
-		money("net_billable", f.NetWithBillable)
+		money("net_cash", f.NetCash)
+		money("net_cash_with_billable", f.NetCashWithBillable)
 		activity(c.Observation())
 	default:
 		return nil, application.ErrInvalid

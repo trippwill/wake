@@ -15,12 +15,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/provider"
 )
 
 type Error string
@@ -32,12 +34,15 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-connection-accounts-1"
+	schemaVersion              = "wake-financial-variants-1"
 	accessSchemaVersion        = "wake-simplification-4"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
-type Profile struct{ WarehousePath, ConnectionsPath string }
+type Profile struct {
+	WarehousePath, ConnectionsPath string
+	Registrations                  []provider.Registration
+}
 
 func (p Profile) paths() [2]string {
 	return [2]string{p.WarehousePath, p.ConnectionsPath}
@@ -76,6 +81,7 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
+	registrations          []provider.Registration
 	db                     *sql.DB
 	activityDB             *sql.DB
 	activityQuery          *sql.Stmt
@@ -169,7 +175,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 		}
 	}
 
-	s := &Store{logger: logger}
+	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations)}
 	defer func() {
 		if result == nil {
 			_ = s.Close()

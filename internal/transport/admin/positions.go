@@ -88,7 +88,7 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 		unitCost := gridCell{Text: "Not provided"}
 		if p.UnitCostBasis != nil {
 			unitCost.Text = publishedMoney(&p.UnitCostBasis.PublishedMoney)
-			unitCost.Note = p.UnitCostBasis.Quote
+			unitCost.Note = quotationLabel(text(p.UnitCostBasis.QuotationBasis))
 		}
 
 		note := describe(instrumentDescription(item.Ticker, item.Name), activityKindLabel(item.Kind))
@@ -105,7 +105,7 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 				Side:     gridCell{Text: stringTitle(p.Side)},
 				Quantity: gridCell{Text: p.Quantity.Value + " " + p.Quantity.Unit},
 				UnitCost: unitCost,
-				Terms:    positionTerms(p, item.Kind),
+				Terms:    positionTerms(p),
 			},
 		)
 	}
@@ -116,16 +116,20 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 	return out
 }
 
-func positionTerms(p application.PublishedPosition, kind string) gridCell {
+func positionTerms(p application.PublishedPosition) gridCell {
+	kind := p.InstrumentTerms.Family
 	out := gridCell{Text: notApplicableValue}
-	if kind == "option" || kind == "debt" {
+	switch kind {
+	case "option", "debt":
 		out.Text = "Not provided"
+	case "unclassified":
+		out.Text = "Unclassified instrument"
 	}
 
 	add := func(label, value string) {
 		out.Details = append(out.Details, gridFact{Label: label, Value: provided(value)})
 	}
-	if o := p.Option; o != nil {
+	if o := p.InstrumentTerms.Option; o != nil {
 		right := "Option"
 		if o.Right != nil {
 			right = stringTitle(*o.Right)
@@ -144,8 +148,10 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 		add("Premium multiplier", text(o.Multiplier))
 		add("Effective from", text(o.EffectiveFrom))
 
-		if len(o.Deliverables) == 0 {
+		if o.Deliverables == nil {
 			add("Deliverables", "")
+		} else if len(o.Deliverables) == 0 {
+			add("Deliverables", "None reported in the complete set")
 		}
 
 		for _, d := range o.Deliverables {
@@ -164,7 +170,7 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 		}
 	}
 
-	if d := p.Debt; d != nil {
+	if d := p.InstrumentTerms.Debt; d != nil {
 		out.Text = strings.ReplaceAll(provided(text(d.Type)), "-", " ") + " · " + provided(text(d.Maturity))
 		add("Issue type", strings.ReplaceAll(text(d.Type), "-", " "))
 		add("Issue currency", text(d.Currency))
@@ -175,8 +181,8 @@ func positionTerms(p application.PublishedPosition, kind string) gridCell {
 			add("Coupon payments", "None (Treasury bill)")
 		}
 
-		if text(d.Type) != "treasury-bill" || d.Coupon != nil {
-			add("Coupon rate", text(d.Coupon))
+		if text(d.Type) != "treasury-bill" || d.CouponRate != nil {
+			add("Coupon rate", text(d.CouponRate))
 		}
 
 		if text(d.Type) != "treasury-bill" || d.DatedDate != nil {

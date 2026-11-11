@@ -82,8 +82,9 @@ debt terms belong to dated observations and accepted activity. Different terms o
 distinct transactions do not dispute their shared identity. Conflicting financial
 terms for the same activity still require resolution.
 
-Treasuries and gilts represent individual debt issues. Nominal quantity, coupon,
-maturity, reported price and accrued interest have separate meanings. Wake retains
+Treasuries and gilts represent individual debt issues. Nominal quantity, coupon rate,
+maturity, reported price and accrued interest have separate meanings. The coupon rate is
+expressed in annual percentage points. Wake retains
 the reported debt price without asserting a quotation basis or deriving principal
 from quantity and price. Principal, proceeds, trade net cash, accrued interest and
 charges remain independent reported roles; trade net cash does not establish a
@@ -189,6 +190,12 @@ postings and attached trade terms are not a calculated cash ledger.
 A cash asset identifies account and currency without asserting a balance. FX activity
 preserves reported currencies and amount roles; missing legs stay missing. Attached
 charges retain their reporting scope. A summary fee is not copied onto each fill.
+
+Activity family establishes which financial fields apply. An applicable field can lack an
+accepted value. Absence can reflect an omitted assertion, an explicitly unavailable source value,
+an unresolved selection or an operator decision. Conflict is independent of value presence.
+Reporting expectation belongs to an established report interpretation. Source omission alone
+establishes neither a reporting expectation nor a financial applicability rule.
 
 Keep exact reported values, units, quotation meanings, currencies and time precision.
 Retain trailing decimal scale. Numerically equal observations with different scale

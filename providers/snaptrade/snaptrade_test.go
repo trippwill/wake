@@ -283,8 +283,8 @@ func TestPersonalDiscoveryAndResumedHistory(t *testing.T) {
 		f.Price.Amount() != "4.56700" ||
 		len(f.Charges) != 1 ||
 		f.Charges[0].Total().Amount() != "0.000" ||
-		f.Net.Amount() != "" ||
-		f.ExecutedAt.String() != "2026-10-20T15:30:00.1200Z" ||
+		f.NetCash.Amount() != "" ||
+		f.At.String() != "2026-10-20T15:30:00.1200Z" ||
 		f.SettlementDate.String() != "2026-10-21" ||
 		!f.EventDistinct ||
 		f.Event.Value() != "activity-a" ||
@@ -316,7 +316,7 @@ func TestPersonalDiscoveryAndResumedHistory(t *testing.T) {
 	}
 
 	trade, err = fidelitySink.observations[0].Trade()
-	if err != nil || !trade.Fields().ExecutedAt.IsZero() || trade.Fields().TradeDate.String() != "2026-10-20" {
+	if err != nil || !trade.Fields().At.IsZero() || trade.Fields().Date.String() != "2026-10-20" {
 		t.Fatalf("Fidelity date: %v", err)
 	}
 }

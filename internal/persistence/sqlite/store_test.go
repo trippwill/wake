@@ -70,10 +70,10 @@ func TestUnsupportedStoreIsUntouched(t *testing.T) {
 	}
 }
 
-func TestUnsupportedPositionsFormatPreservesStores(t *testing.T) {
+func TestPreviousWarehouseFormatPreservesStores(t *testing.T) {
 	s, path := testStore(t)
 	if _, err := s.db.Exec(
-		`UPDATE store_metadata SET version='wake-reported-positions-3' WHERE singleton=1`,
+		`UPDATE store_metadata SET version='wake-connection-accounts-1' WHERE singleton=1`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -107,13 +107,13 @@ func TestUnsupportedPositionsFormatPreservesStores(t *testing.T) {
 	}
 
 	if !errors.Is(err, ErrUnsupportedSchema) {
-		t.Fatal("old positions format did not fail closed", err)
+		t.Fatal("previous warehouse format did not fail closed", err)
 	}
 
 	for file, data := range before {
 		after, err := directory.ReadFile(filepath.Base(file))
 		if err != nil || !bytes.Equal(data, after) {
-			t.Fatal("unsupported positions format changed a retained store", file, err)
+			t.Fatal("previous warehouse format changed a retained store", file, err)
 		}
 	}
 }

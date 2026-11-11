@@ -44,7 +44,7 @@ func TestFinancialCalculationIsDeterministicAndKeepsSourceDisagreement(t *testin
 		SourceState: state,
 		Decisions: []FieldSelection{
 			{Scope: "quantity", Text: "12.00000000000000001"},
-			{Scope: "executed_at", Text: "2026-10-20T13:30:00.120000000Z"},
+			{Scope: "at", Text: "2026-10-20T13:30:00.120000000Z"},
 		},
 	}
 	original := append([]FieldSelection(nil), in.Decisions...)
@@ -60,7 +60,7 @@ func TestFinancialCalculationIsDeterministicAndKeepsSourceDisagreement(t *testin
 	}
 
 	if result.Terms.Trade().Fields().Quantity.Value() != "12.00000000000000001" ||
-		result.Terms.Trade().Fields().ExecutedAt.String() != "2026-10-20T13:30:00.120000000Z" ||
+		result.Terms.Trade().Fields().At.String() != "2026-10-20T13:30:00.120000000Z" ||
 		result.State.Lifecycle() != Cancelled ||
 		result.State.ReviewReasons()&ConflictingClaims == 0 ||
 		result.State.Authority() != OperatorSelection {
@@ -104,9 +104,9 @@ func TestIncompleteAutomaticRateDoesNotBlockIndependentEvidenceChoice(t *testing
 
 	baseline, _ := ConversionTerms(conversion)
 	subject := baseline.Observation().Fields()
-	rate, _ := financial.NewPrice("0.9", eur)
+	rate, _ := financial.ParsePrice("0.9", eur)
 
-	money, _ := financial.NewMoney("1", usd)
+	money, _ := financial.ParseMoney("1", usd)
 	rateClaim := ActivityClaim{
 		Key: "rate",
 		Value: observationWith(
@@ -115,7 +115,7 @@ func TestIncompleteAutomaticRateDoesNotBlockIndependentEvidenceChoice(t *testing
 			asserted(t, source.ActivityFieldInput{Name: source.FieldRate, Price: rate}),
 		),
 	}
-	for _, field := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldNet} {
+	for _, field := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldNetCash} {
 		t.Run(string(field), func(t *testing.T) {
 			choice := asserted(t, source.ActivityFieldInput{Name: field, Money: money})
 			state, _ := NewActivityState(Accepted, 0, AutomaticSelection)
@@ -170,7 +170,7 @@ func TestFallbackRetainsCoupledRateWhenIndependentChargeExceedsLimit(t *testing.
 	sent, _ := source.NewCurrencyAmount(usd, "10")
 	received, _ := source.NewCurrencyAmount(eur, "")
 
-	money, _ := financial.NewMoney("-1", usd)
+	money, _ := financial.ParseMoney("-1", usd)
 	charges := make([]source.Charge, 32)
 	for i := range charges {
 		var err error
@@ -199,7 +199,7 @@ func TestFallbackRetainsCoupledRateWhenIndependentChargeExceedsLimit(t *testing.
 
 	baseline, _ := ConversionTerms(conversion)
 	subject := baseline.Observation().Fields()
-	rate, _ := financial.NewPrice("0.9", eur)
+	rate, _ := financial.ParsePrice("0.9", eur)
 	extra, _ := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: "overflow", Total: money})
 
 	overflow := asserted(t, source.ActivityFieldInput{Name: source.FieldCharge, Charge: extra})

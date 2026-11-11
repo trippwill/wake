@@ -617,7 +617,7 @@ func observationLabel(r sqlc.RecordValue) string {
 			label = "Partial activity evidence"
 
 			summaries := []string{}
-			for _, name := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldReportedCostBasis, source.FieldPrice, source.FieldQuantity, source.FieldSettlementDate, source.FieldNet, source.FieldGross} {
+			for _, name := range []source.ActivityFieldName{source.FieldRealizedPnL, source.FieldReportedCostBasis, source.FieldPrice, source.FieldQuantity, source.FieldSettlementDate, source.FieldNetCash, source.FieldGrossAmount} {
 				field, ok := o.Field(name)
 				if !ok || !field.Known() {
 					continue
@@ -655,7 +655,7 @@ func observationLabel(r sqlc.RecordValue) string {
 	case "trade":
 		if t, err := decodeTrade(r.Data); err == nil {
 			f := t.Fields()
-			label = f.TradeDate.String() + " · " + string(
+			label = f.Date.String() + " · " + string(
 				f.Side,
 			) + " · " + f.Quantity.Value() + " " + t.QuantityUnit() + " · " + f.Price.Amount() + " " + f.Price.Currency().
 				String()

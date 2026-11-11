@@ -68,9 +68,11 @@ func TestMovementHTTPDetailsGridAndCorrectionChoices(t *testing.T) {
 	instrument, ticker, description := "security", "SYN", "Synthetic <refund>"
 	resources := map[string]application.CanonicalResource{
 		"activity/cash": {ID: "cash", Activity: &application.PublishedActivity{
-			Family: "cash",
-			Date:   "2026-10-20",
-			State:  "accepted",
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family: "cash",
+				Date:   "2026-10-20",
+				State:  "accepted",
+			},
 			Cash: &application.PublishedCash{
 				Category:    "fee",
 				Description: &description,
@@ -78,17 +80,19 @@ func TestMovementHTTPDetailsGridAndCorrectionChoices(t *testing.T) {
 			},
 		}},
 		"activity/transfer": {ID: "transfer", Activity: &application.PublishedActivity{
-			Family:       "security-transfer",
-			Date:         "2026-10-21",
-			State:        "accepted",
-			Conflict:     true,
-			InstrumentID: &instrument,
-			Quantity:     &application.PublishedQuantity{Value: "12.00000000001", Unit: "shares"},
-			Transfer: &application.PublishedTransfer{
-				Direction: "out",
-				Price:     &application.PublishedMoney{Amount: "123.4500", Currency: "USD"},
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family:        "security-transfer",
+				Date:          "2026-10-21",
+				State:         "accepted",
+				Conflict:      true,
+				Relationships: []application.PublishedRelationship{{Kind: "transfer"}},
 			},
-			Relationships: []application.PublishedRelationship{{Kind: "transfer"}},
+			Transfer: &application.PublishedTransfer{
+				Quantity:          &application.PublishedQuantity{Value: "12.00000000001", Unit: "shares"},
+				Direction:         "out",
+				Price:             &application.PublishedMoney{Amount: "123.4500", Currency: "USD"},
+				PublishedSecurity: application.PublishedSecurity{InstrumentID: &instrument},
+			},
 		}},
 		"instruments/security": {ID: "security", Instrument: &application.PublishedInstrument{Ticker: &ticker}},
 	}

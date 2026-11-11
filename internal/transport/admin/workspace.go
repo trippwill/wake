@@ -245,7 +245,7 @@ func fieldGroup(field string) string {
 		return "Identity and links"
 	case strings.HasPrefix(field, "option.") || strings.HasPrefix(field, "debt."):
 		return "Contract terms"
-	case strings.Contains(field, "date") || field == "executed_at":
+	case strings.Contains(field, "date") || field == "at":
 		return "Dates and time"
 	default:
 		return "Financial terms"

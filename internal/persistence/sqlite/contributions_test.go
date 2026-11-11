@@ -29,7 +29,7 @@ func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *t
 	base.EventAliases = nil
 	usd, _ := financial.ParseCurrency("USD")
 	for _, amount := range []string{"1", "2"} {
-		money, _ := financial.NewMoney(amount, usd)
+		money, _ := financial.ParseMoney(amount, usd)
 		charge, _ := source.NewCharge(
 			source.ChargeInput{Category: source.Fee, Field: "reported-fee", Total: money},
 		)
@@ -372,7 +372,7 @@ func TestSubjectContributionsKeepConflictsAndEnrichmentIndependently(t *testing.
 
 	detail, err := s.ExecutionDetail(t.Context(), id)
 	if err != nil || detail.Execution.Terms().Fields().Price.Amount() != "120" ||
-		detail.Execution.Terms().Fields().Net.Amount() != "-100" {
+		detail.Execution.Terms().Fields().NetCash.Amount() != "-100" {
 		t.Fatal("source retention affected operator choice or enrichment", detail, err)
 	}
 

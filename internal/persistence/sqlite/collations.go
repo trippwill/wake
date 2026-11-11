@@ -164,8 +164,8 @@ func compareMagnitudes(left string, l decimalOrder, right string, r decimalOrder
 }
 
 func compareUnnormalizedDecimals(left, right string) int {
-	l, le := financial.NewQuantity(left)
-	r, re := financial.NewQuantity(right)
+	l, le := financial.ParseQuantity(left)
+	r, re := financial.ParseQuantity(right)
 	if le != nil && re != nil {
 		return strings.Compare(left, right)
 	}

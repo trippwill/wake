@@ -49,7 +49,7 @@ func securityTransfer(row map[string]string, parent, loc string) (source.Activit
 		return source.ActivityObservation{}, err
 	}
 
-	f.Quantity, err = financial.NewQuantity(row["quantity"])
+	f.Quantity, err = financial.ParseQuantity(row["quantity"])
 	if err != nil {
 		return source.ActivityObservation{}, err
 	}
@@ -94,7 +94,7 @@ func securityTransfer(row map[string]string, parent, loc string) (source.Activit
 	}
 
 	if row["transferPrice"] != "" {
-		f.TransferPrice, err = financial.NewPrice(row["transferPrice"], c)
+		f.TransferPrice, err = financial.ParsePrice(row["transferPrice"], c)
 		if err != nil {
 			return source.ActivityObservation{}, err
 		}
@@ -105,7 +105,7 @@ func securityTransfer(row map[string]string, parent, loc string) (source.Activit
 		target *financial.Money
 	}{{"positionAmount", &f.PositionValue}, {"cost", &f.ReportedCost}, {"pnlAmount", &f.ReportedPnL}} {
 		if row[entry.key] != "" {
-			*entry.target, err = financial.NewMoney(row[entry.key], c)
+			*entry.target, err = financial.ParseMoney(row[entry.key], c)
 			if err != nil {
 				return source.ActivityObservation{}, err
 			}

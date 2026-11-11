@@ -420,8 +420,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			"quantity",
 			"instrument",
 			"listing",
-			"trade_date",
-			"executed_at",
+			"date",
+			"at",
 			"side",
 			"option.right",
 			"option.expiry",
@@ -430,10 +430,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			"price":      {Value: "9007199254740992.9999999999999", Currency: "USD"},
 			"quantity":   {Value: "0.000000000000123", Unit: "shares"},
 			"instrument": {Value: "instrument-one", Label: "Synthetic first option (ONE)"},
-			"trade_date": {
+			"date": {
 				Value: "2026-10-20",
 			},
-			"executed_at":  {Value: "2026-10-20T13:30:00.120000000Z"},
+			"at":           {Value: "2026-10-20T13:30:00.120000000Z"},
 			"side":         {Value: "buy"},
 			"option.right": {Value: "call"},
 		},
@@ -569,17 +569,17 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			case "price":
 				currency, e := financial.ParseCurrency(r.Form.Get("currency"))
 				if e == nil {
-					_, e = financial.NewPrice(value, currency)
+					_, e = financial.ParsePrice(value, currency)
 				}
 
 				valid = e == nil
 			case "quantity":
-				q, e := financial.NewQuantity(value)
+				q, e := financial.ParseQuantity(value)
 				valid = e == nil && q.Positive()
-			case "trade_date", "option.expiry":
+			case "date", "option.expiry":
 				_, e := financial.ParseDate(value)
 				valid = e == nil || field == "option.expiry" && value == ""
-			case "executed_at":
+			case "at":
 				_, e := financial.ParseTimestamp(value)
 				valid = e == nil || value == ""
 			case "side":
@@ -2199,7 +2199,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`document.querySelector('#decision-value').tagName==='SELECT' && document.querySelector('#decision-value').value==='buy'`,
 		"side is not a typed choice",
 	)
-	chooseField("trade_date")
+	chooseField("date")
 	assert(`document.querySelector('#decision-value').type==='date'`, "calendar date control missing")
 	check(
 		chromedp.Evaluate[chromedp.Void](
@@ -2212,7 +2212,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	setCorrection("2028-02-29")
 	ready()
-	chooseField("executed_at")
+	chooseField("at")
 	assert(
 		`document.querySelector('#decision-value').type==='hidden' && document.querySelector('#decision-time').value==='13:30:00.120000000' && document.querySelector('#decision-zone').value==='Z'`,
 		"timestamp precision lost while configuring controls",
@@ -2385,7 +2385,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		check(chromedp.Evaluate[chromedp.Void](`localStorage.setItem('wake.theme',` + strconv.Quote(theme) + `)`))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
-			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration", "/system/settings"} {
+			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration", "/system/settings"} {
 				check(
 					testbrowser.SetViewport(width, 1000),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
@@ -2632,7 +2632,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			bounds.top>=document.querySelector('.wake-contact-trigger').getBoundingClientRect().bottom;
 	})()`, "narrow contact details clipped or above the trigger")
 	// Text resizing stresses long exact values and native controls independently of display density.
-	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid", "/system/settings"} {
+	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid", "/system/settings"} {
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+path)),
 			chromedp.WaitVisible(chromedp.CSS("h1")),

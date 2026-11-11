@@ -22,10 +22,10 @@ func TestMovementPartialObservationsCollectivelyEstablishRequiredTerms(t *testin
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	event, _ := source.NewReference("fixture", "movement", "U1", "partial")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Ticker: "SYN"})
-	quantity, _ := financial.NewQuantity("1.2300")
+	quantity, _ := financial.ParseQuantity("1.2300")
 	date, _ := financial.ParseDate("2026-10-20")
 	currency, _ := financial.ParseCurrency("USD")
-	amount, _ := financial.NewMoney("-12.3400", currency)
+	amount, _ := financial.ParseMoney("-12.3400", currency)
 
 	transfer, _ := source.NewSecurityTransfer(
 		source.SecurityTransferInput{
@@ -202,11 +202,11 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 				}
 
 				value := realizedActivity(t, s, id).Activity
-				if value.InstrumentID == nil || value.Cash.Amount.Amount != "13.0000" {
+				if value.InstrumentID() == nil || value.Cash.Amount.Amount != "13.0000" {
 					t.Fatal("evidence did not bind the posting or lost another decision", value)
 				}
 
-				root, err := s.queries.Instrument(t.Context(), *value.InstrumentID)
+				root, err := s.queries.Instrument(t.Context(), *value.InstrumentID())
 				if err != nil || root.Ticker != "B" {
 					t.Fatal("selected a different instrument", root, err)
 				}
@@ -233,21 +233,21 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 
 				retainDecision(t, s, "activity", id, "instrument", explicitID, "", "set")
 
-				if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != explicitID {
+				if v := realizedActivity(t, s, id).Activity.InstrumentID(); v == nil || *v != explicitID {
 					t.Fatal("evidence displaced an explicit link decision")
 				}
 
 				retainDecision(t, s, "activity", id, "instrument", "", "", "release")
 
-				if v := realizedActivity(t, s, id).Activity.InstrumentID; v == nil || *v != root.ID {
+				if v := realizedActivity(t, s, id).Activity.InstrumentID(); v == nil || *v != root.ID {
 					t.Fatal("link release lost active instrument evidence")
 				}
 
 				retainDecision(t, s, "activity", id, scope, "", "", "release")
 
 				value = realizedActivity(t, s, id).Activity
-				if automaticID == "" && value.InstrumentID != nil ||
-					automaticID != "" && (value.InstrumentID == nil || *value.InstrumentID != automaticID) ||
+				if automaticID == "" && value.InstrumentID() != nil ||
+					automaticID != "" && (value.InstrumentID() == nil || *value.InstrumentID() != automaticID) ||
 					value.Cash.Amount.Amount != "13.0000" {
 					t.Fatal("release did not restore automatic binding and independent decisions", value)
 				}
@@ -349,7 +349,7 @@ func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) 
 		t.Fatal("save", err)
 	}
 
-	selected := realizedActivity(t, s, id).Activity.InstrumentID
+	selected := realizedActivity(t, s, id).Activity.InstrumentID()
 	if selected == nil {
 		t.Fatal("selected option was not bound")
 	}
@@ -367,7 +367,7 @@ func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) 
 	retainDecision(t, s, "activity", id, "evidence/instrument", "", "", "release")
 
 	value := realizedActivity(t, s, id).Activity
-	if value.InstrumentID == nil || *value.InstrumentID != base.InstrumentID.String {
+	if value.InstrumentID() == nil || *value.InstrumentID() != base.InstrumentID.String {
 		t.Fatal("release did not restore the original automatic option", value)
 	}
 }
@@ -518,7 +518,7 @@ func TestMovementListUsesDisplayedLabelsAndPlaceholders(t *testing.T) {
 			case "cash":
 				label += "/" + *a.Cash.Description
 			case "trade":
-				label += "/" + *a.Side
+				label += "/" + *a.Trade.Side
 			case "security-transfer":
 				label += "/" + a.Transfer.Direction + "/" + item.InstrumentName
 			}
@@ -630,7 +630,7 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 					retainDecision(t, s, "activity", cashID, "instrument", "", "", "release")
 
 					value := realizedActivity(t, s, cashID).Activity
-					if value.InstrumentID == nil || *value.InstrumentID != root.ID {
+					if value.InstrumentID() == nil || *value.InstrumentID() != root.ID {
 						t.Fatal("release lost the original family binding", value)
 					}
 				},
@@ -674,18 +674,18 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 			}
 
 			if tc.ambiguous {
-				if value.InstrumentID != nil || !value.Conflict || tableCount(t, s, "instruments") != 0 {
+				if value.InstrumentID() != nil || !value.Conflict || tableCount(t, s, "instruments") != 0 {
 					t.Fatal("ambiguous instruments established an automatic link", value)
 				}
 
 				return
 			}
 
-			if value.InstrumentID == nil || tableCount(t, s, "instrument_claims") == 0 {
+			if value.InstrumentID() == nil || tableCount(t, s, "instrument_claims") == 0 {
 				t.Fatal("later instrument evidence was not bound", value)
 			}
 
-			instrument, err := s.Resource(t.Context(), "instruments", *value.InstrumentID)
+			instrument, err := s.Resource(t.Context(), "instruments", *value.InstrumentID())
 			if err != nil || instrument.Instrument == nil || instrument.Instrument.Ticker == nil ||
 				*instrument.Instrument.Ticker != "TEST" {
 				t.Fatal("instrument claims were not published", instrument, err)
@@ -702,7 +702,7 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 			retainDecision(t, s, "activity", id, "cash_amount", "", "", "release")
 
 			value = realizedActivity(t, s, id).Activity
-			if value.InstrumentID == nil || value.Cash.Amount.Amount != "12.34000000000000001" {
+			if value.InstrumentID() == nil || value.Cash.Amount.Amount != "12.34000000000000001" {
 				t.Fatal("release lost the enriched link or original amount", value)
 			}
 		})
@@ -738,7 +738,7 @@ func TestCashPostingsStayDistinctAndResolveTaxRelationships(t *testing.T) {
 
 	id := *taxValue.Activity.Relationships[0].TargetID
 	v := realizedActivity(t, s, id)
-	if v.Activity.Cash.Amount.Amount != "12.34000000000000001" || v.Activity.InstrumentID != nil ||
+	if v.Activity.Cash.Amount.Amount != "12.34000000000000001" || v.Activity.InstrumentID() != nil ||
 		v.Activity.At != nil || v.Activity.Cash.AvailableForTradingDate == nil || *v.Activity.Cash.AvailableForTradingDate != "2026-10-23" {
 		t.Fatal(v)
 	}
@@ -865,7 +865,7 @@ func TestMovementInterpretationUpgradeRetriesAtomicallyFromRetainedReports(t *te
 	}
 
 	if tableCount(t, s, "executions") != 3 ||
-		realizedActivity(t, s, existing).Activity.Price.Amount != "99.0000" {
+		realizedActivity(t, s, existing).Activity.Trade.Price.Amount != "99.0000" {
 		t.Fatal("upgrade lost identities or decisions")
 	}
 
@@ -906,9 +906,9 @@ func TestSecurityTransfersReconcileCorrectAndPublish(t *testing.T) {
 	id := rows[0].ID
 
 	v := realizedActivity(t, s, id)
-	if v.Activity.Family != "security-transfer" || v.Activity.Quantity.Value != "12.0000000000001" ||
+	if v.Activity.Family != "security-transfer" || v.Activity.Quantity().Value != "12.0000000000001" ||
 		v.Activity.Transfer.ReportedCost.Amount != "999.0000" ||
-		v.Activity.Price != nil || v.Activity.Transfer.DeliveringBroker == nil || *v.Activity.Transfer.DeliveringBroker != "Synthetic delivering broker" {
+		v.Activity.Transfer.DeliveringBroker == nil || *v.Activity.Transfer.DeliveringBroker != "Synthetic delivering broker" {
 		t.Fatal(v)
 	}
 
@@ -936,7 +936,7 @@ func TestSecurityTransfersReconcileCorrectAndPublish(t *testing.T) {
 	acquireRealized(t, s, movementReport("Transfers", changed))
 
 	v = realizedActivity(t, s, id)
-	if !v.Activity.Conflict || v.Activity.Quantity.Value != "12.0000000000001" {
+	if !v.Activity.Conflict || v.Activity.Quantity().Value != "12.0000000000001" {
 		t.Fatal("conflict replaced baseline", v)
 	}
 

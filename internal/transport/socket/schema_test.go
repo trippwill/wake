@@ -70,14 +70,18 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 			Kind:     "activity",
 			Revision: 1,
 			Activity: &application.PublishedActivity{
-				Family:        "conversion",
-				AccountID:     "account",
-				State:         "accepted",
-				Date:          "2026-10-20",
-				Sent:          &application.PublishedAmount{Currency: "EUR"},
-				Received:      &application.PublishedAmount{Currency: "USD", Amount: new("0.0000")},
-				Charges:       []application.PublishedCharge{},
-				Relationships: []application.PublishedRelationship{},
+				PublishedActivityHeader: application.PublishedActivityHeader{
+					Family:        "conversion",
+					AccountID:     "account",
+					State:         "accepted",
+					Date:          "2026-10-20",
+					Relationships: []application.PublishedRelationship{},
+				},
+				Conversion: &application.PublishedConversion{
+					Sent:     &application.PublishedAmount{Currency: "EUR"},
+					Received: &application.PublishedAmount{Currency: "USD", Amount: new("0.0000")},
+					Charges:  []application.PublishedCharge{},
+				},
 			},
 		},
 	}

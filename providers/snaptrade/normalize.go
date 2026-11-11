@@ -54,7 +54,7 @@ type activity struct {
 	Units          json.RawMessage `json:"units"`
 	Price          json.RawMessage `json:"price"`
 	Fee            json.RawMessage `json:"fee"`
-	TradeDate      string          `json:"trade_date"`
+	Date           string          `json:"trade_date"`
 	SettlementDate string          `json:"settlement_date"`
 	Currency       struct {
 		Code string `json:"code"`
@@ -202,7 +202,7 @@ func (row activity) trade(
 		return source.Trade{}, provider.ErrMalformed
 	}
 
-	date, at, err := reportedDate(row.TradeDate)
+	date, at, err := reportedDate(row.Date)
 	if err != nil {
 		return source.Trade{}, err
 	}
@@ -223,7 +223,7 @@ func (row activity) trade(
 
 	input := source.TradeInput{
 		Kind: source.ReportedTrade, Location: location, Account: account, Event: event, EventDistinct: true,
-		Side: side, Quantity: quantity.Abs(), Price: price, TradeDate: date, ExecutedAt: at,
+		Side: side, Quantity: quantity.Abs(), Price: price, Date: date, At: at,
 	}
 
 	if row.SettlementDate != "" {
@@ -388,4 +388,16 @@ func (row option) instrument() (source.Instrument, error) {
 	}
 
 	return source.NewInstrument(input)
+}
+
+// ActivityFieldExpectation describes the supported cached purchase/sale format.
+func (a *adapter) ActivityFieldExpectation(
+	family string,
+	field source.ActivityFieldName,
+) provider.FieldExpectation {
+	if family == "trade" && field == source.FieldNetCashWithBillable {
+		return provider.NotExpected
+	}
+
+	return ""
 }

@@ -16,7 +16,7 @@ func TestMovementCorrectionsPreserveExactTermsAndRelease(t *testing.T) {
 
 	transfer, err := source.NewSecurityTransfer(source.SecurityTransferInput{
 		Location: "synthetic", Account: trade.Account, Instrument: trade.Instrument,
-		Direction: source.TransferIn, Quantity: trade.Quantity, Date: trade.TradeDate,
+		Direction: source.TransferIn, Quantity: trade.Quantity, Date: trade.Date,
 		TransferPrice: trade.Price,
 	})
 	if err != nil {
@@ -24,11 +24,11 @@ func TestMovementCorrectionsPreserveExactTermsAndRelease(t *testing.T) {
 	}
 
 	usd, _ := financial.ParseCurrency("USD")
-	amount, _ := financial.NewMoney("-1.2300", usd)
+	amount, _ := financial.ParseMoney("-1.2300", usd)
 
 	cash, err := source.NewCashActivity(source.CashActivityInput{
 		Location: "synthetic", Account: trade.Account, Category: source.CashFee,
-		Amount: amount, Date: trade.TradeDate, Description: "Original fee",
+		Amount: amount, Date: trade.Date, Description: "Original fee",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -47,8 +47,8 @@ func TestMovementCorrectionsPreserveExactTermsAndRelease(t *testing.T) {
 		{"transfer valuation", transferTerms, FieldSelection{Scope: "transfer_price", Text: "100.000000000001", Currency: "USD"}, "100.000000000001", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().TransferPrice.Amount() }},
 		{"unknown transfer valuation", transferTerms, FieldSelection{Scope: "transfer_price"}, "", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().TransferPrice.Amount() }},
 		{"transfer cost", transferTerms, FieldSelection{Scope: "transfer_cost", Text: "-0.00100", Currency: "USD"}, "-0.00100", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().ReportedCost.Amount() }},
-		{"transfer date", transferTerms, FieldSelection{Scope: "trade_date", Text: "2026-11-01"}, "2026-11-01", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().Date.String() }},
-		{"reported time", transferTerms, FieldSelection{Scope: "executed_at", Text: "2026-10-20T13:30:00.120000000Z"}, "2026-10-20T13:30:00.120000000Z", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().At.String() }},
+		{"transfer date", transferTerms, FieldSelection{Scope: "date", Text: "2026-11-01"}, "2026-11-01", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().Date.String() }},
+		{"reported time", transferTerms, FieldSelection{Scope: "at", Text: "2026-10-20T13:30:00.120000000Z"}, "2026-10-20T13:30:00.120000000Z", func(v ActivityTerms) string { return v.SecurityTransfer().Fields().At.String() }},
 		{"cash refund", cashTerms, FieldSelection{Scope: "cash_amount", Text: "0.000000000000001", Currency: "EUR"}, "0.000000000000001 EUR", func(v ActivityTerms) string {
 			f := v.Cash().Fields()
 			return f.Amount.Amount() + " " + f.Amount.Currency().String()
@@ -93,8 +93,8 @@ func TestMovementCorrectionsPreserveExactTermsAndRelease(t *testing.T) {
 	for _, edit := range []FieldSelection{
 		{Scope: "quantity", Text: "0"},
 		{Scope: "quantity", Text: "invalid"},
-		{Scope: "trade_date", Text: "2026-02-30"},
-		{Scope: "executed_at", Text: "invalid"},
+		{Scope: "date", Text: "2026-02-30"},
+		{Scope: "at", Text: "invalid"},
 		{Scope: "transfer_price", Text: "1", Currency: "invalid"},
 	} {
 		_, e := CalculateActivity(ActivityCalculationInput{

@@ -17,8 +17,8 @@ func TestTradeCorrectionsPreserveExactValuesAndOtherFacts(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "instrument", "", "one")
 	debt, _ := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryNote, Currency: usd})
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Debt, Debt: debt})
-	quantity, _ := financial.NewQuantity("1")
-	price, _ := financial.NewPrice("100", usd)
+	quantity, _ := financial.ParseQuantity("1")
+	price, _ := financial.ParsePrice("100", usd)
 	date, _ := financial.ParseDate("2026-10-20")
 
 	base, err := source.NewTrade(
@@ -29,16 +29,16 @@ func TestTradeCorrectionsPreserveExactValuesAndOtherFacts(t *testing.T) {
 			Quantity:   quantity,
 			Price:      price,
 			Side:       source.Buy,
-			TradeDate:  date,
+			Date:       date,
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	q, _ := financial.NewQuantity("2.00000000001")
-	p, _ := financial.NewPrice("99.00000000001", usd)
-	money, _ := financial.NewMoney("-123.00000000001", usd)
+	q, _ := financial.ParseQuantity("2.00000000001")
+	p, _ := financial.ParsePrice("99.00000000001", usd)
+	money, _ := financial.ParseMoney("-123.00000000001", usd)
 	next, _ := financial.ParseDate("2026-10-21")
 	at, _ := financial.ParseTimestamp("2026-10-20T09:30:00.120Z")
 
@@ -49,13 +49,18 @@ func TestTradeCorrectionsPreserveExactValuesAndOtherFacts(t *testing.T) {
 		{"quantity", q.Value(), "", func(f *source.TradeInput) { f.Quantity = q }},
 		{"price", p.Amount(), "USD", func(f *source.TradeInput) { f.Price = p }},
 		{"side", "sell", "", func(f *source.TradeInput) { f.Side = source.Sell }},
-		{"trade_date", next.String(), "", func(f *source.TradeInput) { f.TradeDate = next }},
-		{"executed_at", at.String(), "", func(f *source.TradeInput) { f.ExecutedAt = at }},
+		{"date", next.String(), "", func(f *source.TradeInput) { f.Date = next }},
+		{"at", at.String(), "", func(f *source.TradeInput) { f.At = at }},
 		{"settlement_date", next.String(), "", func(f *source.TradeInput) { f.SettlementDate = next }},
-		{"gross", money.Amount(), "USD", func(f *source.TradeInput) { f.Gross = money }},
+		{"gross_amount", money.Amount(), "USD", func(f *source.TradeInput) { f.GrossAmount = money }},
 		{"proceeds", money.Amount(), "USD", func(f *source.TradeInput) { f.Proceeds = money }},
-		{"net", money.Amount(), "USD", func(f *source.TradeInput) { f.Net = money }},
-		{"net_billable", money.Amount(), "USD", func(f *source.TradeInput) { f.NetWithBillable = money }},
+		{"net_cash", money.Amount(), "USD", func(f *source.TradeInput) { f.NetCash = money }},
+		{
+			"net_cash_with_billable",
+			money.Amount(),
+			"USD",
+			func(f *source.TradeInput) { f.NetCashWithBillable = money },
+		},
 		{"accrued_interest", money.Amount(), "USD", func(f *source.TradeInput) { f.AccruedInterest = money }},
 		{"position_effect", "closing", "", func(f *source.TradeInput) { f.PositionEffect = source.Closing }},
 	}
@@ -72,13 +77,13 @@ func TestTradeCorrectionsPreserveExactValuesAndOtherFacts(t *testing.T) {
 		})
 	}
 
-	for _, tc := range []struct{ scope, text, currency string }{{"quantity", "0", ""}, {"price", "1", "invalid"}, {"trade_date", "not-a-date", ""}, {"executed_at", "yesterday", ""}, {"net", "1", "invalid"}, {"side", "unknown", ""}, {"unknown", "x", ""}} {
+	for _, tc := range []struct{ scope, text, currency string }{{"quantity", "0", ""}, {"price", "1", "invalid"}, {"date", "not-a-date", ""}, {"at", "yesterday", ""}, {"net_cash", "1", "invalid"}, {"side", "unknown", ""}, {"unknown", "x", ""}} {
 		if _, e := ApplyTradeField(base, tc.scope, tc.text, tc.currency); e == nil {
 			t.Fatal("invalid correction accepted", tc.scope)
 		}
 	}
 
-	for _, scope := range []string{"executed_at", "settlement_date", "net"} {
+	for _, scope := range []string{"at", "settlement_date", "net_cash"} {
 		got, e := ApplyTradeField(base, scope, "", "")
 		if e != nil || !reflect.DeepEqual(got.Fields(), original) {
 			t.Fatal("explicit optional clearing changed unrelated facts", scope, e)
@@ -92,7 +97,7 @@ func TestOptionDebtAndFXCorrectionRoles(t *testing.T) {
 	account, _ := source.NewReference("synthetic", "account", "", "one")
 	ref, _ := source.NewReference("synthetic", "instrument", "", "one")
 	date, _ := financial.ParseDate("2026-10-20")
-	q, _ := financial.NewQuantity("2")
+	q, _ := financial.ParseQuantity("2")
 	terms, _ := source.NewOptionTerms(source.OptionInput{})
 	option, _ := source.NewInstrument(
 		source.InstrumentInput{Reference: ref, Kind: source.Option, Option: terms},
@@ -118,8 +123,8 @@ func TestOptionDebtAndFXCorrectionRoles(t *testing.T) {
 	}{
 		{"quantity", "3.0001", "", func(f source.LifecycleInput) bool { return f.Quantity.Value() == "3.0001" }},
 		{"kind", "expiration", "", func(f source.LifecycleInput) bool { return f.Kind == source.Expiration }},
-		{"trade_date", "2026-10-21", "", func(f source.LifecycleInput) bool { return f.Date.String() == "2026-10-21" }},
-		{"executed_at", "2026-10-20T09:30:00.120Z", "", func(f source.LifecycleInput) bool { return f.At.String() == "2026-10-20T09:30:00.120Z" }},
+		{"date", "2026-10-21", "", func(f source.LifecycleInput) bool { return f.Date.String() == "2026-10-21" }},
+		{"at", "2026-10-20T09:30:00.120Z", "", func(f source.LifecycleInput) bool { return f.At.String() == "2026-10-20T09:30:00.120Z" }},
 		{"option.strike", "100.00001", "USD", func(f source.LifecycleInput) bool {
 			return f.Instrument.Option().Fields().Strike.Amount() == "100.00001"
 		}},
@@ -149,7 +154,7 @@ func TestOptionDebtAndFXCorrectionRoles(t *testing.T) {
 		scope, text string
 		check       func(source.DebtInput) bool
 	}{
-		{"debt.coupon", "4.125000001", func(f source.DebtInput) bool { return f.Coupon.Value() == "4.125000001" }},
+		{"debt.coupon_rate", "4.125000001", func(f source.DebtInput) bool { return f.CouponRate.Value() == "4.125000001" }},
 		{"debt.maturity", "2030-10-20", func(f source.DebtInput) bool { return f.Maturity.String() == "2030-10-20" }},
 		{"debt.payments", "2", func(f source.DebtInput) bool { return f.PaymentsPerYear == 2 }},
 	} {
@@ -161,7 +166,7 @@ func TestOptionDebtAndFXCorrectionRoles(t *testing.T) {
 
 	sent, _ := source.NewCurrencyAmount(usd, "1")
 	received, _ := source.NewCurrencyAmount(gbp, "")
-	rate, _ := financial.NewPrice("0.75", gbp)
+	rate, _ := financial.ParsePrice("0.75", gbp)
 
 	fx, err := source.NewConversion(
 		source.ConversionInput{
@@ -189,12 +194,12 @@ func TestOptionDebtAndFXCorrectionRoles(t *testing.T) {
 		{"rate", "0.750001", "", func(f source.ConversionInput) bool {
 			return f.Rate.Amount() == "0.750001" && f.Rate.Currency() == gbp && f.RateBase == usd
 		}},
-		{"trade_date", "2026-10-21", "", func(f source.ConversionInput) bool { return f.Date.String() == "2026-10-21" }},
-		{"executed_at", "2026-10-20T09:30:00Z", "", func(f source.ConversionInput) bool { return f.At.String() == "2026-10-20T09:30:00Z" }},
-		{"gross", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.Gross.Amount() == "-2.0001" }},
+		{"date", "2026-10-21", "", func(f source.ConversionInput) bool { return f.Date.String() == "2026-10-21" }},
+		{"at", "2026-10-20T09:30:00Z", "", func(f source.ConversionInput) bool { return f.At.String() == "2026-10-20T09:30:00Z" }},
+		{"gross_amount", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.GrossAmount.Amount() == "-2.0001" }},
 		{"proceeds", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.Proceeds.Amount() == "-2.0001" }},
-		{"net", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.Net.Amount() == "-2.0001" }},
-		{"net_billable", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.NetWithBillable.Amount() == "-2.0001" }},
+		{"net_cash", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.NetCash.Amount() == "-2.0001" }},
+		{"net_cash_with_billable", "-2.0001", "USD", func(f source.ConversionInput) bool { return f.NetCashWithBillable.Amount() == "-2.0001" }},
 	} {
 		got, e := ApplyConversionField(fx, tc.scope, tc.text, tc.currency)
 		if e != nil || !tc.check(got.Fields()) || got.Fields().Account != account {

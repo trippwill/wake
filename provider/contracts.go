@@ -269,3 +269,18 @@ func validText(text string, limit int) bool {
 	return text != "" && len(text) <= limit && utf8.ValidString(text) && strings.TrimSpace(text) == text &&
 		strings.IndexFunc(text, unicode.IsControl) < 0
 }
+
+// FieldExpectation describes the report contract for a financial field.
+type FieldExpectation string
+
+const (
+	Expected    FieldExpectation = "expected"
+	NotExpected FieldExpectation = "not_expected"
+)
+
+// ActivityReportingPolicy is an optional normalizer capability. Its result
+// belongs to the normalizer's registered interpretation version. The zero
+// value leaves the expectation unspecified.
+type ActivityReportingPolicy interface {
+	ActivityFieldExpectation(family string, field source.ActivityFieldName) FieldExpectation
+}

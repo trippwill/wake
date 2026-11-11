@@ -13,7 +13,7 @@ WITH current AS MATERIALIZED (
   json_extract(p.value,'$.quantity.value') AS quantity,
   json_extract(p.value,'$.unit_cost_basis.amount') AS cost,
   json_extract(p.value,'$.unit_cost_basis.currency') AS currency,
-  json_extract(p.value,'$.unit_cost_basis.quote') AS quote
+  json_extract(p.value,'$.unit_cost_basis.quotation_basis') AS quote
  FROM current c JOIN jsonb_each(c.data,'$.positions') p
  JOIN instruments i ON i.id=json_extract(p.value,'$.instrument_id')
  WHERE json_extract(c.data,'$.status')='available'

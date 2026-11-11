@@ -56,17 +56,17 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 		source.FieldPositionValue,
 		source.FieldTransferCost,
 		source.FieldTransferPnL,
-		source.FieldGross,
+		source.FieldGrossAmount,
 		source.FieldProceeds,
-		source.FieldNet,
-		source.FieldNetBillable,
+		source.FieldNetCash,
+		source.FieldNetCashWithBillable,
 		source.FieldAccruedInterest,
 		source.FieldRealizedPnL,
 		source.FieldReportedCostBasis:
 		return x.Money.Equal(y.Money)
 	case source.FieldPrice, source.FieldRate, source.FieldTransferPrice:
 		return x.Price.Equal(y.Price) &&
-			(x.PriceBasis == "" || y.PriceBasis == "" || x.PriceBasis == y.PriceBasis)
+			(x.QuotationBasis == "" || y.QuotationBasis == "" || x.QuotationBasis == y.QuotationBasis)
 	case source.FieldQuantity:
 		return x.Quantity.Equal(y.Quantity) && x.QuantityUnit == y.QuantityUnit
 	case source.FieldInstrument:
@@ -91,7 +91,7 @@ func CompatibleActivityFields(a, b source.ActivityField) bool {
 		}
 
 		return CompatibleInstrument(left, right)
-	case source.FieldExecutedAt:
+	case source.FieldAt:
 		return x.Timestamp.Contains(y.Timestamp) || y.Timestamp.Contains(x.Timestamp)
 	case source.FieldCharge:
 		return slices.Equal(x.ChargeParents, y.ChargeParents) && equalCharge(x.Charge, y.Charge)
@@ -552,7 +552,7 @@ func enrichActivityField(base, incoming source.ActivityField) (source.ActivityFi
 		f.Instrument = value
 
 		return source.NewActivityField(f)
-	case source.FieldExecutedAt:
+	case source.FieldAt:
 		if f.Timestamp.Contains(g.Timestamp) {
 			return incoming, nil
 		}
@@ -561,8 +561,8 @@ func enrichActivityField(base, incoming source.ActivityField) (source.ActivityFi
 			return incoming, nil
 		}
 	case source.FieldPrice:
-		if f.PriceBasis == "" && g.PriceBasis != "" {
-			f.PriceBasis = g.PriceBasis
+		if f.QuotationBasis == "" && g.QuotationBasis != "" {
+			f.QuotationBasis = g.QuotationBasis
 			return source.NewActivityField(f)
 		}
 	}

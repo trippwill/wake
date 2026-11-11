@@ -13,7 +13,7 @@ func TestMovementConstructorsPreserveUnitsSignsAndOwnership(t *testing.T) {
 	account, _ := NewReference("fixture", "account", "", "A")
 	event, _ := NewReference("fixture", "transfer", "A", "T")
 	instrument, _ := NewInstrument(InstrumentInput{Kind: Equity, Ticker: "SYN"})
-	quantity, _ := financial.NewQuantity("0.000000000012300")
+	quantity, _ := financial.ParseQuantity("0.000000000012300")
 	date, _ := financial.ParseDate("2026-10-20")
 	input := SecurityTransferInput{
 		Location:     "row",
@@ -58,15 +58,15 @@ func TestMovementConstructorsPreserveUnitsSignsAndOwnership(t *testing.T) {
 
 	currency, _ := financial.ParseCurrency("USD")
 
-	price, _ := financial.NewPrice("1.0000", currency)
+	price, _ := financial.ParsePrice("1.0000", currency)
 	if _, err = NewActivityField(
-		ActivityFieldInput{Name: FieldTransferPrice, Price: price, PriceBasis: "per share"},
+		ActivityFieldInput{Name: FieldTransferPrice, Price: price, QuotationBasis: PerShare},
 	); err == nil {
 		t.Fatal("transfer price accepted an unsupported quotation basis")
 	}
 
 	for _, text := range []string{"-0.000000000012300", "0.0000", "12.34000000000000001"} {
-		amount, _ := financial.NewMoney(text, currency)
+		amount, _ := financial.ParseMoney(text, currency)
 
 		cash, e := NewCashActivity(
 			CashActivityInput{Location: "cash", Account: account, Category: CashFee, Amount: amount, Date: date},
