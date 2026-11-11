@@ -5,6 +5,7 @@ package socket
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -158,6 +159,45 @@ func TestPublishedSchemaAcceptsUnknownObjectsWithoutWeakeningKnownObjects(t *tes
 
 			delete(fields, otherBody)
 		}
+	}
+
+	activity := document.Components.Schemas["Activity"].Value
+	body := bodies["activity"].(map[string]any)
+	for _, wrong := range []struct {
+		field string
+		value any
+	}{
+		{"price", nil},
+		{"family", "trade"},
+		{"date", "2026-13-20"},
+		{"at", "2026-10-20T01:02:03.1234567890Z"},
+		{"received", map[string]any{"currency": "usd", "amount": "0.0000"}},
+		{"received", map[string]any{"currency": "USD", "amount": "1e-4"}},
+	} {
+		candidate := maps.Clone(body)
+		candidate[wrong.field] = wrong.value
+		if activity.VisitJSON(candidate) == nil {
+			t.Errorf("conversion accepted invalid %s: %v", wrong.field, wrong.value)
+		}
+	}
+
+	// Encoding the map places account_id first instead of the discriminator.
+	reordered, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded application.PublishedActivity
+	if err = json.Unmarshal(reordered, &decoded); err != nil || decoded.Conversion == nil ||
+		decoded.Conversion.Received.Amount == nil || *decoded.Conversion.Received.Amount != "0.0000" {
+		t.Fatalf("failed to decode reordered variant: %+v %v", decoded, err)
+	}
+
+	missing := maps.Clone(body)
+	delete(missing, "at")
+
+	if activity.VisitJSON(missing) == nil {
+		t.Error("conversion accepted an omitted nullable field")
 	}
 
 	money := document.Components.Schemas["Money"].Value

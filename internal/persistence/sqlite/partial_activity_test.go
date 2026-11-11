@@ -90,6 +90,43 @@ func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
 	}
 }
 
+func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	full := partialTrade(t).Observation()
+	processPartial(t, s, "baseline", full)
+
+	before, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.queries.Executions(ctx)
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+	original := realizedActivity(t, s, id)
+	explicit := partialObservation(t, full.Fields(), partialField(t,
+		source.ActivityFieldInput{Name: source.FieldSettlementDate, Unknown: true}))
+	processPartial(t, s, "explicitly-unavailable", explicit)
+
+	updated := realizedActivity(t, s, id)
+	why, err := s.Explanation(ctx, "activity", id, updated.Revision)
+	if err != nil || updated.Revision <= original.Revision || updated.Activity.Trade.SettlementDate != nil ||
+		!slices.ContainsFunc(why.Fields, func(detail application.PublishedFieldDetail) bool {
+			return detail.Path == "/settlement_date" && detail.Reason == application.FieldReportedUnavailable
+		}) {
+		t.Fatalf("field explanation did not advance with explicit unavailability: %+v %+v %v", updated, why, err)
+	}
+
+	after, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
+	if err != nil || after.Unchanged || after.Snapshot.Version == before.Snapshot.Version {
+		t.Fatalf("explanation-only change did not publish: %+v %v", after, err)
+	}
+}
+
 func retainPartial(t testing.TB, s *Store, id string, values ...source.ActivityObservation) {
 	t.Helper()
 
