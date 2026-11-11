@@ -129,6 +129,10 @@ func NewPositionSetObservation(f PositionSetInput) (PositionSetObservation, erro
 		}
 	}
 
+	if f.TimeBasis == PositionBrokerEffective {
+		f.TimeBasis = ""
+	}
+
 	f.Positions = slices.Clone(f.Positions)
 	f.Supersedes = slices.Clone(f.Supersedes)
 

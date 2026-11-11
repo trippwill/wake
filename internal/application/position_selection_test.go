@@ -61,6 +61,39 @@ func positionCandidate(t *testing.T, date, at, quantity, cost, reason string) Po
 	return PositionCandidate{o, ids}
 }
 
+func TestPositionSelectionTreatsExplicitBrokerEffectiveAsDefault(t *testing.T) {
+	const at = "2026-11-03T12:00:00Z"
+
+	base := positionCandidate(t, "2026-11-03", at, "10", "", "")
+	other := base
+	input := other.Observation.Fields()
+	input.TimeBasis = source.PositionBrokerEffective
+
+	var err error
+
+	other.Observation, err = source.NewPositionSetObservation(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := SelectPositions(t.Context(), []PositionCandidate{base, other})
+	if err != nil || got.Reason != "" || len(got.Source.Positions) != 1 {
+		t.Fatalf("equivalent time bases did not reconcile: %+v, %v", got, err)
+	}
+
+	input.TimeBasis = source.PositionSourceFetched
+
+	other.Observation, err = source.NewPositionSetObservation(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = SelectPositions(t.Context(), []PositionCandidate{base, other})
+	if err != nil || got.Reason != "conflict" {
+		t.Fatalf("distinct time bases reconciled: %+v, %v", got, err)
+	}
+}
+
 func TestPositionSelectionUsesCompleteEffectiveSetsAndExplicitRevisions(t *testing.T) {
 	old := positionCandidate(t, "2026-11-03", "", "10.00", "1.2300", "")
 	next := positionCandidate(t, "2026-11-04", "", "-5.0000", "0.0000", "")
