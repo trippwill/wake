@@ -1943,7 +1943,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
+		chromedp.Poll(
+			`matchMedia('(max-width: 64rem)').matches && document.querySelector('#main-navigation').hidden`,
+			nil,
+		),
 		chromedp.Click(".wake-contact-trigger", chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('.wake-contact-details').open`, nil),
 	)
 	offline.Store(false)
 	expired.Store(true)
