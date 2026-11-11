@@ -23,3 +23,5 @@ for research content and maintenance rules.
 
 - [Synthetic warehouse performance](performance-warehouse.md) — reproducible workloads,
   measurements and limits.
+- [SQLite indexes for Activity browsing](sqlite-activity-browsing.md) — query plans, FTS5
+  availability and the tradeoff of compiling SQLite as C.
