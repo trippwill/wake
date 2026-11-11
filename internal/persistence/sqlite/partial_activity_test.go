@@ -157,6 +157,50 @@ func TestFieldExplanationFollowsActiveScalarClears(t *testing.T) {
 	}
 }
 
+func TestFieldExplanationForIncompleteConversionRate(t *testing.T) {
+	s := coverageStore(t)
+	trade := partialTrade(t).Fields()
+	usd := trade.Price.Currency()
+	eur, _ := financial.ParseCurrency("EUR")
+	sent, _ := source.NewCurrencyAmount(eur, "100")
+	received, _ := source.NewCurrencyAmount(usd, "120")
+
+	conversion, err := source.NewConversion(source.ConversionInput{
+		Location: trade.Location, Account: trade.Account, Event: trade.Event, EventDistinct: true,
+		Date: trade.Date, Sent: sent, Received: received,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	full := conversion.Observation()
+	processPartial(t, s, "baseline", full)
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+
+	assertFieldReason(t, s, id, "/rate", application.FieldNotReported)
+	assertFieldReason(t, s, id, "/rate_base", application.FieldNotReported)
+
+	rate, _ := financial.ParsePrice("1.20", usd)
+	processPartial(t, s, "incomplete-rate", partialObservation(t, full.Fields(),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRate, Price: rate}),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRateBase, Unknown: true}),
+	))
+	assertFieldReason(t, s, id, "/rate", application.FieldUnresolved)
+	assertFieldReason(t, s, id, "/rate_base", application.FieldReportedUnavailable)
+
+	processPartial(t, s, "rate-base", partialObservation(t, full.Fields(),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRateBase, Currency: eur}),
+	))
+	assertFieldReason(t, s, id, "/rate", "")
+	assertFieldReason(t, s, id, "/rate_base", "")
+}
+
 func TestFieldExplanationDistinguishesInstrumentTermConflictsClearsAndOmissions(t *testing.T) {
 	for _, family := range []source.InstrumentKind{source.Option, source.Debt} {
 		t.Run(string(family), func(t *testing.T) {

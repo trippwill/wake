@@ -159,6 +159,7 @@ func explainActivityFields(
 		add("/sent/amount", source.FieldSent, f.Sent.Amount == nil)
 		add("/received/amount", source.FieldReceived, f.Received.Amount == nil)
 		add("/rate", source.FieldRate, f.Rate == nil)
+		add("/rate_base", source.FieldRateBase, f.RateBase == nil)
 		add("/order", source.FieldOrder, f.Order == nil)
 		money(f.PublishedTradeCash)
 	case "lifecycle":

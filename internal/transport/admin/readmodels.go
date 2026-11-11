@@ -539,7 +539,7 @@ func fieldDetailText(field application.PublishedFieldDetail) string {
 	case application.FieldReportedUnavailable:
 		return "Reported as unavailable"
 	case application.FieldUnresolved:
-		return "Unavailable because source claims disagree"
+		return "Unavailable because source claims could not be reconciled"
 	case application.FieldOperatorWithheld:
 		return "Withheld by operator selection"
 	}

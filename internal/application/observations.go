@@ -786,7 +786,19 @@ func completeActivitySelection(
 		complete, e := CompleteActivityTerms(subject, candidate)
 		if e != nil {
 			for _, field := range group.fields {
+				if !field.Known() && !slices.ContainsFunc(retained, func(current source.ActivityField) bool {
+					return current.Key() == field.Key() && current.Known()
+				}) {
+					// An explicit unavailable assertion adds no value to the rejected terms.
+					retained = overlayActivityFields(retained, []source.ActivityField{field})
+					continue
+				}
+
 				delete(selected.Sources, field.Key())
+
+				if field.Known() && !slices.Contains(selected.Conflicts, field.Key()) {
+					selected.Conflicts = append(selected.Conflicts, field.Key())
+				}
 
 				if field.Name() == source.FieldInstrument {
 					selected.Conflicts = append(
