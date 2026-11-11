@@ -128,31 +128,29 @@ func TestBrowserPollingIntervals(t *testing.T) {
 	access := origin + "/connections/" + id + "?view=access"
 	navigate := testbrowser.NewDocument
 
-	if err := chromedp.Run(
+	if err := chromedp.Do(
 		ctx,
 		navigate(chromedp.Navigate(origin+"/login")),
-		chromedp.SetValue("#unlock", "synthetic-polling-unlock", chromedp.ByQuery),
-		navigate(chromedp.Click(`form[action="/login"] button[type="submit"]`, chromedp.ByQuery)),
+		chromedp.SetValue(chromedp.CSS("#unlock"), "synthetic-polling-unlock"),
+		navigate(chromedp.Click(chromedp.CSS(`form[action="/login"] button[type="submit"]`))),
 		navigate(chromedp.Navigate(access)),
-		chromedp.WaitVisible(input, chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.WaitVisible(chromedp.CSS(input)),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('#poll-help-sample-records').textContent.includes('default of 8h')`,
-			nil,
 		),
-		chromedp.SetValue(input, "5m", chromedp.ByQuery),
-		chromedp.Click(save, chromedp.ByQuery),
-		chromedp.WaitVisible("#retry-interval", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('#retry-interval').value==='5m'`, nil),
-		chromedp.SetValue("#retry-interval", "6h", chromedp.ByQuery),
-		navigate(chromedp.Click(save, chromedp.ByQuery)),
-		chromedp.Poll(`document.querySelector('#poll-interval-sample-records').value==='6h'`, nil),
+		chromedp.SetValue(chromedp.CSS(input), "5m"),
+		chromedp.Click(chromedp.CSS(save)),
+		chromedp.WaitVisible(chromedp.CSS("#retry-interval")),
+		chromedp.Poll[chromedp.Void](`document.querySelector('#retry-interval').value==='5m'`),
+		chromedp.SetValue(chromedp.CSS("#retry-interval"), "6h"),
+		navigate(chromedp.Click(chromedp.CSS(save))),
+		chromedp.Poll[chromedp.Void](`document.querySelector('#poll-interval-sample-records').value==='6h'`),
 		navigate(chromedp.Reload()),
-		chromedp.Poll(`document.querySelector('#poll-interval-sample-records').value==='6h'`, nil),
-		chromedp.Clear(input, chromedp.ByQuery),
-		navigate(chromedp.Click(save, chromedp.ByQuery)),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](`document.querySelector('#poll-interval-sample-records').value==='6h'`),
+		chromedp.Clear(chromedp.CSS(input)),
+		navigate(chromedp.Click(chromedp.CSS(save))),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('#poll-interval-sample-records').value===''&&document.querySelector('#poll-help-sample-records').textContent.includes('default of 8h')`,
-			nil,
 		),
 	); err != nil {
 		t.Fatal(err)

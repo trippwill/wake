@@ -3,11 +3,11 @@ locked = true
 idiomatic_version_file_enable_tools = ["go", "golangci-lint"]
 
 [tools]
-biome = "2.5.15"
-"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "v2.8.0"
+biome = "2.6.6"
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "v2.8.2"
 "aqua:sqlc-dev/sqlc" = "1.31.1"
-"aqua:a-h/templ" = "0.3.1020"
-"go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
+"aqua:a-h/templ" = "0.3.1100"
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.9.0"
 
 [env]
 GOFLAGS = "-modcacherw"
@@ -148,12 +148,12 @@ run = "templ generate"
 [tasks.'templ:check']
 description = "Verify generated templ output is current"
 wait_for = ["templ:gen"]
-run = 'templ generate -check && templ fmt . -fail -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
+run = '''templ generate -check && templ fmt -fail -v -prettier-required -prettier-command 'biome format --write --html-formatter-enabled=true --stdin-file-path "$TEMPL_PRETTIER_FILENAME"' .'''
 
 [tasks.'templ:fmt']
 description = "Format all templ files"
 wait_for = ["templ:gen"]
-run = 'templ fmt . -v -prettier-required -prettier-command "biome format --stdin-filepath $TEMPL_PRETTIER_FILENAME"'
+run = '''templ fmt -v -prettier-required -prettier-command 'biome format --write --html-formatter-enabled=true --stdin-file-path "$TEMPL_PRETTIER_FILENAME"' .'''
 
 [tasks.'test:host']
 description = "Run the external-provider proof through the real SQLite-backed host with races"

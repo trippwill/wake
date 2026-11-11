@@ -13,8 +13,8 @@ import (
 // SettleAnimations waits for live finite transitions and their final paint.
 // Polling avoids retaining promises after animation targets disappear.
 // Paused and scroll-driven animations need input, not elapsed time, to finish.
-func SettleAnimations() chromedp.Action {
-	return chromedp.Evaluate(
+func SettleAnimations() chromedp.Action[chromedp.Void] {
+	return chromedp.Evaluate[chromedp.Void](
 		`(async()=>{
  const paint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
  const active=()=>document.getAnimations().some(a=>a.timeline===document.timeline&&a.playState==='running'&&!a.pending&&Number.isFinite(a.effect?.getComputedTiming().endTime));
@@ -26,7 +26,6 @@ func SettleAnimations() chromedp.Action {
  await paint();
  globalThis.wakeCapturePhase='settled';
 })()`,
-		nil,
-		func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
+		func(p *runtime.EvaluateParams) { p.AwaitPromise = new(true) },
 	)
 }

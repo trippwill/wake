@@ -784,7 +784,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 240*time.Second)
 	defer deadline()
 
-	if err := chromedp.Run(ctx); err != nil {
+	if err := chromedp.Do(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -792,7 +792,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		exceptions          atomic.Int64
 		navigationTransport atomic.Bool
 	)
-	chromedp.ListenTarget(ctx, func(event any) {
+	if err := chromedp.Listen(ctx, func(event any) {
 		if _, ok := event.(*runtime.EventExceptionThrown); ok {
 			exceptions.Add(1)
 		}
@@ -804,22 +804,24 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				navigationTransport.Store(true)
 			}
 		}
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
-	check := func(actions ...chromedp.Action) {
+	check := func(actions ...chromedp.Action[chromedp.Void]) {
 		t.Helper()
 
 		step, cancelStep := context.WithTimeout(ctx, 20*time.Second)
 		defer cancelStep()
 
-		if err := chromedp.Run(step, actions...); err != nil {
+		if err := chromedp.Do(step, actions...); err != nil {
 			var location, body, grid string
 
-			_ = chromedp.Run(
+			_ = chromedp.Do(
 				ctx,
-				chromedp.Location(&location),
-				chromedp.Text("body", &body, chromedp.ByQuery),
-				chromedp.Evaluate(
+				testbrowser.Capture(&location, chromedp.Location()),
+				testbrowser.Capture(&body, chromedp.Text(chromedp.CSS("body"))),
+				testbrowser.Evaluate(
 					`JSON.stringify({ready:document.querySelector('[data-grid]')?.dataset.gridReady,size:window.Tabulator?.findTable('.tabulator')[0]?.getPageSize(),rows:document.querySelectorAll('.tabulator-row').length,choice:document.querySelector('.tabulator-page-size')?.value,active:document.activeElement.tagName})`,
 					&grid,
 				),
@@ -831,14 +833,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		t.Helper()
 
 		var ok bool
-		check(chromedp.Evaluate(script, &ok))
+		check(testbrowser.Evaluate(script, &ok))
 
 		if !ok {
 			var overflow string
 
-			_ = chromedp.Run(
+			_ = chromedp.Do(
 				ctx,
-				chromedp.Evaluate(
+				testbrowser.Evaluate(
 					`JSON.stringify({viewport:innerWidth,scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth,body:document.body.scrollWidth,grid:[...document.querySelectorAll('.wake-grid-header,.tabulator,.tabulator-header,.tabulator-tableholder,.tabulator-footer,.tabulator-row:nth-child(-n+6)')].map(n=>({cls:n.className,rect:n.getBoundingClientRect().toJSON()})),elements:[...document.querySelectorAll('body *')].map(n=>({tag:n.tagName,cls:n.className,text:n.textContent.slice(0,60),scroll:n.scrollWidth,client:n.clientWidth,right:n.getBoundingClientRect().right,width:n.getBoundingClientRect().width})).filter(n=>n.width&&(n.right>innerWidth+1||n.scroll>n.client+1)).slice(0,12)})`,
 					&overflow,
 				),
@@ -847,29 +849,29 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 	}
 
-	applyGridUpdate := chromedp.Tasks{
-		chromedp.Poll(
+	applyGridUpdate := chromedp.Steps(
+		chromedp.Poll[chromedp.Void](
 			`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && !document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
-		chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`document.querySelector('[data-grid-refresh]').click()`),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-refresh]').hidden && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
-			nil,
 		),
-	}
+	)
 
 	check(
-		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
+		testbrowser.SetViewport(1440, 1000),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible("#unlock", chromedp.ByQuery),
-		chromedp.SendKeys("#unlock", "synthetic-polish-unlock", chromedp.ByQuery),
-		chromedp.Click(`button[type="submit"]`, chromedp.ByQuery),
-		chromedp.WaitVisible("#main-navigation", chromedp.ByQuery),
-		chromedp.Evaluate(`localStorage.setItem('tabulator-wake-activity-columns','invalid JSON')`, nil),
+		chromedp.WaitVisible(chromedp.CSS("#unlock")),
+		chromedp.SendKeys(chromedp.CSS("#unlock"), "synthetic-polish-unlock"),
+		chromedp.Click(chromedp.CSS(`button[type="submit"]`)),
+		chromedp.WaitVisible(chromedp.CSS("#main-navigation")),
+		chromedp.Evaluate[chromedp.Void](
+			`localStorage.setItem('tabulator-wake-activity-columns','invalid JSON')`,
+		),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.WaitVisible(".tabulator", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('.tabulator-row')!==null`, nil),
+		chromedp.WaitVisible(chromedp.CSS(".tabulator")),
+		chromedp.Poll[chromedp.Void](`document.querySelector('.tabulator-row')!==null`),
 	)
 	assert(
 		`(()=>{const icons=[...document.querySelectorAll('.wake-nav-link use')];return icons.length===7 && new Set(icons.map(icon=>icon.getAttribute('href'))).size===icons.length})()`,
@@ -884,7 +886,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	for _, path := range []string{"/activity/synthetic-activity", "/instruments/synthetic-instrument"} {
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+path+"/correct?mode=decisions")),
-			chromedp.WaitVisible("[data-parent-breadcrumb]", chromedp.ByQuery),
+			chromedp.WaitVisible(chromedp.CSS("[data-parent-breadcrumb]")),
 		)
 		assert(
 			`(()=>{const parent=document.querySelector('[data-parent-breadcrumb]');return !parent.hidden&&new URL(parent.querySelector('a').href).pathname===`+strconv.Quote(
@@ -893,9 +895,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			"direct correction lost its canonical parent",
 		)
 		check(
-			chromedp.Evaluate(
+			chromedp.Evaluate[chromedp.Void](
 				`history.replaceState({wakeNavigation:{workspace:'/review',trail:['/review','/evidence/synthetic-report']}},'');dispatchEvent(new PopStateEvent('popstate'))`,
-				nil,
 			),
 		)
 		assert(
@@ -903,7 +904,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			"contextual parent was not applied",
 		)
 		check(
-			chromedp.Evaluate(`history.replaceState(null,'');dispatchEvent(new PopStateEvent('popstate'))`, nil),
+			chromedp.Evaluate[chromedp.Void](
+				`history.replaceState(null,'');dispatchEvent(new PopStateEvent('popstate'))`,
+			),
 		)
 		assert(
 			`(()=>{const parent=document.querySelector('[data-parent-breadcrumb]');return !parent.hidden&&new URL(parent.querySelector('a').href).pathname===`+strconv.Quote(
@@ -916,15 +919,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	for _, suffix := range []string{"", "/correct?mode=decisions"} {
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=retained-filter&size=25")),
-			chromedp.WaitVisible("h1", chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.WaitVisible(chromedp.CSS("h1")),
+			chromedp.Evaluate[chromedp.Void](
 				`(()=>{const a=document.createElement('a');a.id='alias-proof';a.href='/instruments/retired-instrument'+`+strconv.Quote(
 					suffix,
 				)+`;a.textContent='Inspect retired instrument';document.body.append(a)})()`,
-				nil,
 			),
-			testbrowser.NewDocument(chromedp.Click("#alias-proof", chromedp.ByQuery)),
-			chromedp.Poll(`history.state?.wakeNavigation?.workspace==='/review'`, nil),
+			testbrowser.NewDocument(chromedp.Click(chromedp.CSS("#alias-proof"))),
+			chromedp.Poll[chromedp.Void](`history.state?.wakeNavigation?.workspace==='/review'`),
 		)
 		assert(
 			`location.pathname.startsWith('/instruments/synthetic-instrument')&&new URL(document.querySelector('[data-return]').href).pathname==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='retained-filter'&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/review'`,
@@ -932,7 +934,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		)
 		check(
 			testbrowser.NewDocument(chromedp.Reload()),
-			chromedp.Poll(`history.state?.wakeNavigation?.workspace==='/review'`, nil),
+			chromedp.Poll[chromedp.Void](`history.state?.wakeNavigation?.workspace==='/review'`),
 		)
 	}
 
@@ -940,13 +942,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		holdAlias.Store(true)
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=delayed-filter&size=25")),
-			chromedp.WaitVisible("h1", chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.WaitVisible(chromedp.CSS("h1")),
+			chromedp.Evaluate[chromedp.Void](
 				`(()=>{const a=document.createElement('a');a.id='delayed-alias';a.href='/instruments/retired-instrument';a.textContent='Open retired instrument';document.body.append(a)})()`,
-				nil,
 			),
-			testbrowser.NewDocument(chromedp.Click("#delayed-alias", chromedp.ByQuery)),
-			chromedp.ActionFunc(func(ctx context.Context) error {
+			testbrowser.NewDocument(chromedp.Click(chromedp.CSS("#delayed-alias"))),
+			chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 				select {
 				case <-aliasStarted:
 					return nil
@@ -954,9 +955,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					return ctx.Err()
 				}
 			}),
-			chromedp.Evaluate(
+			chromedp.Evaluate[chromedp.Void](
 				`(()=>{const form=document.createElement('form');form.id='delayed-form';form.method='get';form.action='/instruments/synthetic-instrument/correct';form.innerHTML='<input name="mode" value="decisions" type="hidden"><button type="submit" id="delayed-submit">Open corrections</button>';document.body.append(form);const a=document.createElement('a');a.id='delayed-link';a.href='/instruments/synthetic-instrument/correct?mode=decisions';a.textContent='Correct instrument data';document.body.append(a)})()`,
-				nil,
 			),
 		)
 
@@ -967,23 +967,22 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 		var waiting bool
 		check(
-			testbrowser.NewDocument(chromedp.Tasks{
-				chromedp.Click(selector, chromedp.ByQuery),
-				chromedp.Evaluate(
+			testbrowser.NewDocument(chromedp.Steps(
+				chromedp.Click(chromedp.CSS(selector)),
+				testbrowser.Evaluate(
 					`location.pathname==='/instruments/synthetic-instrument'&&document.querySelector('[aria-busy="true"]')!==null`,
 					&waiting,
 				),
-				chromedp.ActionFunc(func(context.Context) error {
+				chromedp.Func(func(_ context.Context, _ *chromedp.Target) error {
 					holdAlias.Store(false)
 
 					releaseAlias <- struct{}{}
 
 					return nil
 				}),
-			}),
-			chromedp.Poll(
+			)),
+			chromedp.Poll[chromedp.Void](
 				`history.state?.wakeNavigation?.workspace==='/review'&&location.pathname.endsWith('/correct')`,
-				nil,
 			),
 		)
 
@@ -999,53 +998,50 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/review")),
-		chromedp.WaitVisible("h1", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.WaitVisible(chromedp.CSS("h1")),
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{sessionStorage.setItem('wake.navigation.pending',JSON.stringify({from:location.pathname,to:'/instruments/unrelated-instrument',navigation:{workspace:'/review',trail:['/review']}}));const a=document.createElement('a');a.id='unrelated-proof';a.href='/instruments/synthetic-instrument';a.textContent='Open unrelated destination';a.addEventListener('click',event=>event.stopPropagation());document.body.append(a)})()`,
-			nil,
 		),
-		testbrowser.NewDocument(chromedp.Click("#unrelated-proof", chromedp.ByQuery)),
-		chromedp.Poll(
+		testbrowser.NewDocument(chromedp.Click(chromedp.CSS("#unrelated-proof"))),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid]')?.dataset.gridReady==='true'&&history.state?.wakeNavigation?.workspace==='/instruments'`,
-			nil,
 		),
 	)
 	assert(`history.state?.wakeNavigation?.trail.length===0`, "unrelated handoff adopted navigation context")
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/review?q=fragment-filter&size=25")),
-		chromedp.WaitVisible("h1", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.WaitVisible(chromedp.CSS("h1")),
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const a=document.createElement('a');a.id='fragment-report';a.href='/evidence/synthetic-report';a.textContent='Inspect source report';document.body.append(a)})()`,
-			nil,
 		),
-		testbrowser.NewDocument(chromedp.Click("#fragment-report", chromedp.ByQuery)),
-		chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
-		chromedp.Evaluate(`window.fragmentContext=JSON.stringify(history.state.wakeNavigation)`, nil),
+		testbrowser.NewDocument(chromedp.Click(chromedp.CSS("#fragment-report"))),
+		chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`),
+		chromedp.Evaluate[chromedp.Void](`window.fragmentContext=JSON.stringify(history.state.wakeNavigation)`),
 	)
 	assert(
 		`new URL(location.href).searchParams.get('sort')==='report'&&new URL(location.href).searchParams.get('dir')==='desc'&&[...document.querySelectorAll('.tabulator-col[tabulator-field]')].filter(column=>column.getClientRects().length).length===4`,
 		"artifact table wrote invalid default ordering into its URL",
 	)
 	check(
-		chromedp.Click(`a[href="#original-content"]`, chromedp.ByQuery),
-		chromedp.Poll(`location.hash==='#original-content'`, nil),
+		chromedp.Click(chromedp.CSS(`a[href="#original-content"]`)),
+		chromedp.Poll[chromedp.Void](`location.hash==='#original-content'`),
 	)
 	assert(
 		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='fragment-filter'`,
 		"in-page report navigation discarded its return context",
 	)
 	check(
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Poll(`location.hash===''`, nil),
+		chromedp.Evaluate[chromedp.Void](`history.back()`),
+		chromedp.Poll[chromedp.Void](`location.hash===''`),
 	)
 	assert(
 		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext`,
 		"fragment Back lost navigation context",
 	)
 	check(
-		chromedp.Evaluate(`history.forward()`, nil),
-		chromedp.Poll(`location.hash==='#original-content'`, nil),
+		chromedp.Evaluate[chromedp.Void](`history.forward()`),
+		chromedp.Poll[chromedp.Void](`location.hash==='#original-content'`),
 	)
 	assert(
 		`JSON.stringify(history.state?.wakeNavigation)===window.fragmentContext`,
@@ -1053,7 +1049,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		testbrowser.NewDocument(chromedp.Reload()),
-		chromedp.Poll(`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`, nil),
+		chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`),
 	)
 	assert(
 		`history.state.wakeNavigation.workspace==='/review'&&new URL(document.querySelector('[data-return]').href).searchParams.get('q')==='fragment-filter'`,
@@ -1064,88 +1060,92 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"artifact default ordering did not survive reload",
 	)
 	check(
-		chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
-		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil),
-		chromedp.Evaluate(`window.Tabulator.findTable('.tabulator')[0].setSort('outcome','asc')`, nil),
-		chromedp.Poll(
+		chromedp.SetValue(chromedp.CSS("#observation-search"), "TradeConfirm[75]"),
+		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`,
+		),
+		chromedp.Evaluate[chromedp.Void](`window.Tabulator.findTable('.tabulator')[0].setSort('outcome','asc')`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('sort')==='outcome'&&new URL(location.href).searchParams.get('dir')==='asc'&&document.querySelector('[data-grid]').dataset.gridReady==='true'`,
-			nil,
 		),
 		testbrowser.NewDocument(chromedp.Reload()),
-		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`,
+		),
 	)
 	assert(
 		`new URL(location.href).searchParams.get('sort')==='outcome'&&new URL(location.href).searchParams.get('dir')==='asc'&&document.querySelector('.tabulator-col[tabulator-field="outcome"]').getAttribute('aria-sort')==='ascending'`,
 		"artifact selected ordering did not survive reload",
 	)
 	check(
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.back()`),
+		chromedp.Poll[chromedp.Void](
 			`!new URL(location.href).searchParams.has('q')&&new URL(location.href).searchParams.get('sort')==='report'&&document.querySelector('[data-grid-status]').textContent==='75 of 75 results'`,
-			nil,
 		),
-		chromedp.Evaluate(`history.forward()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.forward()`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('q')==='TradeConfirm[75]'&&new URL(location.href).searchParams.get('sort')==='outcome'&&document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`,
-			nil,
 		),
 	)
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(".tabulator-row")),
 	)
 
 	visitGrid := func(path string, size, rows int) {
 		t.Helper()
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+path)),
-			chromedp.Poll(fmt.Sprintf(
+			chromedp.Poll[chromedp.Void](fmt.Sprintf(
 				`document.querySelector('[data-grid]')?.dataset.gridReady==='true' && document.querySelector('.tabulator-page-size')?.value==='%d' && document.querySelectorAll('.tabulator-row').length===%d`,
 				size,
 				rows,
-			), nil),
+			)),
 		)
 	}
 	chooseSize := func(size, rows int) {
 		t.Helper()
 		check(
-			chromedp.Focus(".tabulator-page-size", chromedp.ByQuery),
-			chromedp.SetValue(".tabulator-page-size", strconv.Itoa(size), chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.Focus(chromedp.CSS(".tabulator-page-size")),
+			chromedp.SetValue(chromedp.CSS(".tabulator-page-size"), strconv.Itoa(size)),
+			chromedp.Evaluate[chromedp.Void](
 				`document.querySelector('.tabulator-page-size').dispatchEvent(new Event('change',{bubbles:true}))`,
-				nil,
 			),
-			chromedp.Poll(fmt.Sprintf(
+			chromedp.Poll[chromedp.Void](fmt.Sprintf(
 				`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && document.querySelector('[data-grid]').dataset.gridReady==='true' && document.querySelectorAll('.tabulator-row').length===%d && document.querySelector('.tabulator-page-size').value==='%d'`,
 				rows,
 				size,
-			), nil),
+			)),
 		)
 		assert(`document.activeElement.matches('.tabulator-page-size')`, "page-size change lost keyboard focus")
 	}
 
 	// Resize the same populated document across the former width and height breakpoints.
 	for _, theme := range []string{"light", "dark"} {
-		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
+		check(chromedp.Evaluate[chromedp.Void](`localStorage.setItem('wake.theme',` + strconv.Quote(theme) + `)`))
 
 		for _, size := range []int{50, 200} {
-			check(emulation.SetDeviceMetricsOverride(1280, 720, 1, false))
+			check(
+				testbrowser.SetViewport(1280, 720),
+			)
 			visitGrid("/test/dense-grid?size="+strconv.Itoa(size), size, min(size, 70))
-			check(chromedp.Evaluate(`window.resizedGrid=document.querySelector('[data-grid]')`, nil))
+			check(chromedp.Evaluate[chromedp.Void](`window.resizedGrid=document.querySelector('[data-grid]')`))
 
 			for _, viewport := range [][2]int64{{1280, 720}, {768, 640}, {768, 639}, {320, 700}, {390, 844}, {768, 639}, {768, 640}, {1280, 720}} {
 				width, height := viewport[0], viewport[1]
 				check(
-					emulation.SetDeviceMetricsOverride(width, height, 1, false),
-					chromedp.Poll(fmt.Sprintf(`(()=>{
+					testbrowser.SetViewport(width, height),
+					chromedp.Poll[chromedp.Void](fmt.Sprintf(`(()=>{
 						const holder=document.querySelector('.tabulator-tableholder');
 						const grid=document.querySelector('[data-grid]').getBoundingClientRect();
 						const footer=document.querySelector('.tabulator-footer').getBoundingClientRect();
 						return innerWidth===%d && innerHeight===%d && holder.clientHeight>100 && holder.scrollHeight>holder.clientHeight && footer.bottom<=grid.bottom+1;
-					})()`, width, height), nil),
-					chromedp.Evaluate(`document.querySelector('[data-grid]').scrollIntoView({block:'start'})`, nil),
+					})()`, width, height)),
+					chromedp.Evaluate[chromedp.Void](
+						`document.querySelector('[data-grid]').scrollIntoView({block:'start'})`,
+					),
 				)
 				assert(`(()=>{
 					const grid=document.querySelector('[data-grid]');
@@ -1180,7 +1180,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 				if folder := os.Getenv("WAKE_SCREENSHOT_DIR"); folder != "" && size == 50 {
 					var png []byte
-					check(chromedp.FullScreenshot(&png, 90))
+					check(testbrowser.Capture(&png, chromedp.FullScreenshot(90)))
 
 					//nolint:gosec // Caller-selected synthetic screenshot directory.
 					if err := os.MkdirAll(folder, 0o700); err != nil {
@@ -1197,21 +1197,23 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 
 		check(
-			chromedp.Focus(".wake-grid-help summary", chromedp.ByQuery),
-			chromedp.SendKeys(".wake-grid-help summary", "\r", chromedp.ByQuery),
+			chromedp.Focus(chromedp.CSS(".wake-grid-help summary")),
+			chromedp.SendKeys(chromedp.CSS(".wake-grid-help summary"), "\r"),
 		)
 		assert(
 			`document.querySelector('.wake-grid-help').open && document.querySelector('.wake-grid-help').textContent.includes('Alt + arrow keys') && document.querySelector('.tabulator-tableholder').clientHeight>100`,
 			"table keyboard help is unavailable or crowds out the rows",
 		)
-		check(chromedp.SendKeys(".wake-grid-help summary", "\r", chromedp.ByQuery))
+		check(chromedp.SendKeys(chromedp.CSS(".wake-grid-help summary"), "\r"))
 		assert(
 			`!document.querySelector('.wake-grid-help').open && document.activeElement.matches('.wake-grid-help summary')`,
 			"closing table help lost focus",
 		)
 	}
 
-	check(emulation.SetDeviceMetricsOverride(1440, 1000, 1, false))
+	check(
+		testbrowser.SetViewport(1440, 1000),
+	)
 
 	// Exercise the native selector, then carry its size through filtering and history.
 	visitGrid("/test/grid?size=50&q=investment&sort=price&dir=asc&page=2&selected=precision-025", 50, 20)
@@ -1220,11 +1222,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"page-size selector choices or label",
 	)
 	check(
-		chromedp.Focus(".tabulator-page-size", chromedp.ByQuery),
-		chromedp.SendKeys(".tabulator-page-size", kb.ArrowUp, chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Focus(chromedp.CSS(".tabulator-page-size")),
+		chromedp.SendKeys(chromedp.CSS(".tabulator-page-size"), kb.ArrowUp),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===25 && new URL(location.href).searchParams.get('size')==='25' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	assert(
@@ -1232,26 +1233,22 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"keyboard page-size change lost query state, focus, or retained the old page/selection",
 	)
 	check(
-		chromedp.Evaluate(`window.Tabulator.findTable('.tabulator')[0].setPage(2)`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`window.Tabulator.findTable('.tabulator')[0].setPage(2)`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const url=new URL(location.href);url.searchParams.set('selected','precision-025');history.replaceState(history.state,'',url);document.querySelector('[data-list-filters]').requestSubmit()})()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	chooseSize(100, 70)
 	check(
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.back()`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && new URL(location.href).searchParams.get('size')==='25' && document.querySelector('.tabulator-page-size').value==='25' && document.querySelectorAll('.tabulator-row').length===25 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	assert(
@@ -1259,10 +1256,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"history size restoration cleared its selected record",
 	)
 	check(
-		chromedp.Evaluate(`history.forward()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.forward()`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('size')==='100' && new URL(location.href).searchParams.get('page')==='1' && document.querySelectorAll('.tabulator-row').length===70 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	chooseSize(200, 70)
@@ -1271,7 +1267,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"selected size did not reach the owning URL",
 	)
 	chooseSize(25, 25)
-	check(chromedp.Click("[data-grid-reset]", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS("[data-grid-reset]")))
 	visitGrid("/test/grid", 25, 25)
 	assert(
 		`Object.keys(JSON.parse(localStorage.getItem('tabulator-wake-activity-page'))).join(',')==='paginationSize'`,
@@ -1298,15 +1294,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	for _, saved := range []string{"invalid JSON", `{"paginationSize":201}`, `{"paginationSize":[25]}`} {
 		check(
-			chromedp.Evaluate(`localStorage.setItem('tabulator-wake-activity-page',`+strconv.Quote(saved)+`)`, nil),
+			chromedp.Evaluate[chromedp.Void](
+				`localStorage.setItem('tabulator-wake-activity-page',` + strconv.Quote(saved) + `)`,
+			),
 		)
 		visitGrid("/test/grid?size=invalid", 50, 50)
 	}
 
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`localStorage.setItem('tabulator-wake-activity-page','{"paginationSize":25,"paginationInitialPage":2}')`,
-			nil,
 		),
 	)
 	visitGrid("/test/grid?size=201", 25, 25)
@@ -1315,24 +1312,27 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	// Unsupported URL sizes must reach browser fallback through the production HTML route.
 	for _, kind := range []string{"activity", "instruments"} {
 		check(
-			chromedp.Evaluate(`localStorage.setItem('tabulator-wake-`+kind+`-page','{"paginationSize":25}')`, nil),
+			chromedp.Evaluate[chromedp.Void](
+				`localStorage.setItem('tabulator-wake-` + kind + `-page','{"paginationSize":25}')`,
+			),
 		)
 
 		for _, size := range []string{"invalid", "201", "20"} {
 			visitGrid("/"+kind+"?size="+size, 25, 0)
 		}
 
-		check(chromedp.Evaluate(`localStorage.removeItem('tabulator-wake-`+kind+`-page')`, nil))
+		check(chromedp.Evaluate[chromedp.Void](`localStorage.removeItem('tabulator-wake-` + kind + `-page')`))
 		visitGrid("/"+kind+"?size=invalid", 50, 0)
 	}
 
 	// Block storage before initialization as well as while changing the control.
 	var blockedStorage cdppage.ScriptIdentifier
 
-	check(chromedp.ActionFunc(func(ctx context.Context) error {
-		var e error
-
-		blockedStorage, e = cdppage.AddScriptToEvaluateOnNewDocument(`
+	check(chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
+		result, err := chromedp.Call(
+			ctx,
+			cdppage.AddScriptToEvaluateOnNewDocument,
+			cdppage.AddScriptToEvaluateOnNewDocumentParams{Source: `
 			for(const method of ['getItem','setItem']) {
 				const original=Storage.prototype[method];
 				Storage.prototype[method]=function(key,...args) {
@@ -1340,9 +1340,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					return original.call(this,key,...args);
 				};
 			}
-		`).Do(ctx)
+		`},
+		)
 
-		return e
+		blockedStorage = result.Identifier
+
+		return err
 	}))
 	visitGrid("/test/grid", 50, 50)
 	chooseSize(100, 70)
@@ -1352,10 +1355,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		visitGrid(path+"&q=investment&size=50&page=2&selected=one", 50, 0)
 		chooseSize(25, 0)
 		check(
-			testbrowser.NewDocument(chromedp.Click("[data-grid-reset-filters]", chromedp.ByQuery)),
-			chromedp.Poll(
+			testbrowser.NewDocument(chromedp.Click(chromedp.CSS("[data-grid-reset-filters]"))),
+			chromedp.Poll[chromedp.Void](
 				`document.querySelector('[data-grid]')?.dataset.gridReady==='true' && document.querySelector('.tabulator-page-size')?.value==='25'`,
-				nil,
 			),
 		)
 		assert(
@@ -1364,17 +1366,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		)
 	}
 
-	check(cdppage.RemoveScriptToEvaluateOnNewDocument(blockedStorage))
+	check(
+		testbrowser.Command(
+			cdppage.RemoveScriptToEvaluateOnNewDocument,
+			cdppage.RemoveScriptToEvaluateOnNewDocumentParams{Identifier: blockedStorage},
+		),
+	)
 	visitGrid("/test/grid?size=100", 100, 70)
 
 	refreshFailed.Store(true)
 	check(
-		chromedp.SetValue(".tabulator-page-size", "25", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.SetValue(chromedp.CSS(".tabulator-page-size"), "25"),
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('.tabulator-page-size').dispatchEvent(new Event('change',{bubbles:true}))`,
-			nil,
 		),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===70`,
@@ -1382,10 +1388,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===25 && new URL(location.href).searchParams.get('size')==='25' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	emptyGrid.Store(true)
@@ -1393,24 +1398,23 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	emptyGrid.Store(false)
 	chooseSize(50, 50)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`for(const kind of ['activity','instruments','observations']) localStorage.removeItem('tabulator-wake-'+kind+'-page')`,
-			nil,
 		),
 	)
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/reference-evidence")),
-		chromedp.WaitVisible("#original-content summary", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#original-content summary")),
 	)
 	assert(
 		`!document.querySelector('#original-content').open&&!document.querySelector('a[href="#original-content"]')`,
 		"duplicate evidence action",
 	)
 	check(
-		chromedp.Focus("#original-content summary", chromedp.ByQuery),
-		chromedp.SendKeys("#original-content summary", "\r", chromedp.ByQuery),
-		chromedp.WaitVisible(`pre[aria-label="Retained response"]`, chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS("#original-content summary")),
+		chromedp.SendKeys(chromedp.CSS("#original-content summary"), "\r"),
+		chromedp.WaitVisible(chromedp.CSS(`pre[aria-label="Retained response"]`)),
 	)
 	assert(
 		`document.querySelector('#original-content').open&&document.querySelector('pre[aria-label="Retained request"]').textContent.includes('\n    "idType"')`,
@@ -1418,16 +1422,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(".tabulator-row")),
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.proofGrid=window.Tabulator.findTable('.tabulator')[0];window.proofGrid.setSort('price','asc')`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('.tabulator-row [tabulator-field=price]')?.textContent==='-1.0000000000000001 USD' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	assert(
@@ -1435,56 +1437,47 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"remote grid downloaded more than one bounded page",
 	)
 	check(
-		chromedp.Evaluate(`window.proofGrid.setPage(2)`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`window.proofGrid.setPage(2)`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===20 && Array.from(document.querySelectorAll('.tabulator-row')).at(-1)?.querySelector('[tabulator-field=price]')?.textContent==='9007199254740993.0000000000001 USD'`,
-			nil,
 		),
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const input=document.querySelector('#activity-search');input.value='Synthetic investment 69';input.form.requestSubmit()})()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='1 of 70 results' && document.querySelectorAll('.tabulator-row').length===1`,
-			nil,
 		),
 	)
 	assert(`window.proofGrid.getPageMax()===1`, "server filtering did not update pagination")
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const input=document.querySelector('#activity-search');input.value='investment';input.form.requestSubmit()})()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && new URL(location.href).searchParams.get('page')==='1'`,
-			nil,
 		),
 	)
 	// Same-document browser history restores the filter form, server query and page.
 	check(
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.back()`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('q')==='Synthetic investment 69' && document.querySelector('#activity-search').value==='Synthetic investment 69' && document.querySelector('[data-grid-status]').textContent==='1 of 70 results' && document.querySelectorAll('.tabulator-row').length===1`,
-			nil,
 		),
-		chromedp.Evaluate(`history.back()`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.back()`),
+		chromedp.Poll[chromedp.Void](
 			`!new URL(location.href).searchParams.has('q') && new URL(location.href).searchParams.get('page')==='2' && document.querySelector('#activity-search').value==='' && document.querySelectorAll('.tabulator-row').length===20`,
-			nil,
 		),
-		chromedp.Evaluate(`history.go(2)`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`history.go(2)`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('q')==='investment' && new URL(location.href).searchParams.get('page')==='1' && document.querySelector('#activity-search').value==='investment' && document.querySelectorAll('.tabulator-row').length===50`,
-			nil,
 		),
 	)
 	// A denied preference write must leave keyboard/layout interactions usable.
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const write=Storage.prototype.setItem;try{Storage.prototype.setItem=()=>{throw new DOMException('Blocked','SecurityError')};window.proofGrid.getColumn('label').setWidth(334)}finally{Storage.prototype.setItem=write}})()`,
-			nil,
 		),
 	)
 	assert(
@@ -1492,30 +1485,29 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"blocked preference storage prevented table interactions",
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.proofGrid.getColumn('label').setWidth(310);window.proofGrid.setSort('price','desc');document.activeElement.blur()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('.tabulator-row [tabulator-field=price]')?.textContent==='9007199254740993.0000000000001 USD' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	check(
-		chromedp.Evaluate(`window.proofGrid.setPage(2);document.querySelector('#view-notes').open=true`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](
+			`window.proofGrid.setPage(2);document.querySelector('#view-notes').open=true`,
+		),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===20`,
-			nil,
 		),
 	)
 
 	// A real polling tick must leave an unchanged page in place throughout the
 	// download and after completion, including its row nodes and scroll position.
-	check(chromedp.Evaluate(`
+	check(chromedp.Evaluate[chromedp.Void](`
 		window.beforePollRow=document.querySelector('.tabulator-row');
 		document.querySelector('.tabulator-tableholder').scrollTop=150;
 		window.beforePollScroll=document.querySelector('.tabulator-tableholder').scrollTop;
-	`, nil))
+	`))
 	holdRefresh.Store(true)
 
 	select {
@@ -1531,7 +1523,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	releaseRefresh <- struct{}{}
 
-	check(chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil))
+	check(chromedp.Poll[chromedp.Void](`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`))
 	assert(
 		`window.beforePollRow===document.querySelector('.tabulator-row') && document.querySelector('.tabulator-tableholder').scrollTop===window.beforePollScroll && new URL(location.href).searchParams.get('page')==='2' && document.querySelector('[data-grid-refresh]').hidden`,
 		"unchanged polling response rebuilt the table or reset the current view",
@@ -1539,8 +1531,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 	assert(
 		`window.beforePollRow===document.querySelector('.tabulator-row') && document.querySelectorAll('.tabulator-row').length===20 && document.querySelector('[data-grid-status]').textContent.includes('Updated results are available')`,
@@ -1548,13 +1542,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	// If fresh results return to the displayed state, there is no net change
 	// left to accept and the notice disappears without touching the rows.
-	check(chromedp.Focus("[data-grid-refresh]", chromedp.ByQuery))
+	check(chromedp.Focus(chromedp.CSS("[data-grid-refresh]")))
 	extra.Store(false)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.Poll[chromedp.Void](
 			`!document.querySelector('[data-grid]').hasAttribute('aria-busy') && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
 	)
 	assert(
@@ -1566,22 +1561,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"reverted update left focus on a hidden refresh button",
 	)
 	extra.Store(true)
+	// Refresh fetches the current response rather than installing the snapshot
+	// that first raised the notice; a last-moment reversion keeps the rows intact.
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.
-
-			// Refresh fetches the current response rather than installing the snapshot
-			// that first raised the notice; a last-moment reversion keeps the rows intact.
-			ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 
 	extra.Store(false)
 	check(
-		chromedp.Focus("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS("[data-grid-refresh]")),
 		chromedp.KeyEvent("\r"),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-refresh]').hidden && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
-			nil,
 		),
 	)
 	assert(
@@ -1590,15 +1584,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 	check(
-		chromedp.Focus("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS("[data-grid-refresh]")),
 		chromedp.KeyEvent("\r"),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && document.querySelectorAll('.tabulator-row').length===21`,
-			nil,
 		),
 	)
 	assert(
@@ -1614,8 +1609,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	extra.Store(false)
 	holdRefresh.Store(true)
 	check(
-		chromedp.Focus(`.tabulator-col[tabulator-field="label"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Focus(chromedp.CSS(`.tabulator-col[tabulator-field="label"]`)),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
 	)
 
 	select {
@@ -1625,17 +1622,18 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 
 	check(
-		chromedp.Focus("#activity-search", chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('#activity-search').value='unsubmitted filter draft'`, nil),
+		chromedp.Focus(chromedp.CSS("#activity-search")),
+		chromedp.Evaluate[chromedp.Void](
+			`document.querySelector('#activity-search').value='unsubmitted filter draft'`,
+		),
 	)
 
 	releaseRefresh <- struct{}{}
 
 	check(
 		applyGridUpdate,
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelectorAll('.tabulator-row').length===20`,
-			nil,
 		),
 	)
 	assert(
@@ -1643,16 +1641,17 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"JSON refresh changed focused draft",
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('#activity-search').value='investment';document.activeElement.blur()`,
-			nil,
 		),
 	)
 	extra.Store(true)
 	refreshFailed.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===20 && document.querySelector('[data-grid-status]').textContent.includes('Previous results') && document.querySelector('#view-notes').open`,
@@ -1660,23 +1659,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
 		applyGridUpdate,
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='71 of 71 results' && new URL(location.href).searchParams.get('page')==='2'`,
-			nil,
 		),
 	)
 	// Focus follows the operator's latest choice within the grid, including
 	// entering a row after a background request has already started.
 
 	for _, initial := range []string{`document.querySelector('.tabulator-col[tabulator-field="label"]').focus()`, `document.activeElement.blur()`} {
-		check(chromedp.Evaluate(initial, nil))
+		check(chromedp.Evaluate[chromedp.Void](initial))
 		holdMovedFocus.Store(true)
 		check(
-			chromedp.Evaluate(
+			chromedp.Evaluate[chromedp.Void](
 				`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
-				nil,
 			),
 		)
 
@@ -1687,9 +1684,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		}
 
 		check(
-			chromedp.Evaluate(
+			chromedp.Evaluate[chromedp.Void](
 				`(()=>{const link=document.querySelectorAll('.tabulator-row a')[1];link.focus();document.querySelector('[data-grid]').dataset.focusTarget=link.closest('[data-record]').dataset.record})()`,
-				nil,
 			),
 		)
 
@@ -1703,9 +1699,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 		check(
 			applyGridUpdate,
-			chromedp.Poll(
+			chromedp.Poll[chromedp.Void](
 				`!document.querySelector('[data-grid]').hasAttribute('aria-busy')&&document.querySelector('[data-grid]').dataset.gridReady==='true'`,
-				nil,
 			),
 		)
 
@@ -1715,7 +1710,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		)
 
 		check(
-			chromedp.Evaluate(
+			testbrowser.Evaluate(
 				`document.activeElement.closest('[data-record]')?.dataset.record===document.querySelector('[data-grid]').dataset.focusTarget`,
 				&focusOK,
 			),
@@ -1723,7 +1718,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 		if !focusOK {
 			check(
-				chromedp.Evaluate(
+				testbrowser.Evaluate(
 					`JSON.stringify({active:document.activeElement.tagName,record:document.activeElement.closest('[data-record]')?.dataset.record,href:document.activeElement.getAttribute('href'),expected:document.querySelector('[data-grid]').dataset.focusTarget})`,
 					&trace,
 				),
@@ -1734,16 +1729,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	// Copying an exact displayed amount must survive both a queued refresh and a
 	// response that was already downloading when selection began.
-	check(chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil))
+	check(chromedp.Poll[chromedp.Void](`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`))
 
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('.tabulator-row [tabulator-field="price"]'));document.getSelection().removeAllRanges();document.getSelection().addRange(range);window.copiedExactValue=document.getSelection().toString();window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')})()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 
@@ -1752,10 +1745,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"background check disturbed selected exact text",
 	)
 
-	check(chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.getSelection().removeAllRanges()`))
 	holdSelection.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
 	)
 
 	select {
@@ -1766,23 +1761,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	extra.Store(false)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('.tabulator-row [tabulator-field="price"]'));document.getSelection().removeAllRanges();document.getSelection().addRange(range);window.copiedExactValue=document.getSelection().toString()})()`,
-			nil,
 		),
 	)
 	close(releaseSelection)
-	check(chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery))
+	check(chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")))
 	assert(
 		`document.getSelection().toString()===window.copiedExactValue&&window.copiedExactValue!==''&&document.querySelectorAll('.tabulator-row').length===21`,
 		"in-flight response erased selected exact text",
 	)
 	check(
-		chromedp.Evaluate(`document.getSelection().removeAllRanges()`, nil),
+		chromedp.Evaluate[chromedp.Void](`document.getSelection().removeAllRanges()`),
 		applyGridUpdate,
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent==='70 of 70 results'&&document.querySelectorAll('.tabulator-row').length===20`,
-			nil,
 		),
 	)
 
@@ -1790,16 +1783,19 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	// available page. A later increase updates the pagination controls on refresh.
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(`window.proofGrid.setPageSize(70).then(()=>window.proofGrid.setPage(2))`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](
+			`window.proofGrid.setPageSize(70).then(()=>window.proofGrid.setPage(2))`,
+		),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===1 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	extra.Store(false)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 	assert(
 		`window.proofGrid.getPage()===2 && document.querySelectorAll('.tabulator-row').length===1`,
@@ -1807,14 +1803,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		applyGridUpdate,
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('.tabulator-page[data-page="1"]').classList.contains('active') && document.querySelector('.tabulator-page[data-page="next"]').disabled && document.querySelectorAll('.tabulator-row').length===70`,
-			nil,
 		),
 	)
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
 		applyGridUpdate,
 	)
 	assert(
@@ -1826,70 +1823,65 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	// earlier background-error test still requires an explicit Refresh afterward.
 	refreshFailed.Store(true)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const input=document.querySelector('#activity-search');input.value='Synthetic investment 69';input.form.requestSubmit()})()`,
-			nil,
 		),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent==='1 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const input=document.querySelector('#activity-search');input.value='investment';input.form.requestSubmit()})()`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===70 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	refreshFailed.Store(true)
 	check(
-		chromedp.Evaluate(`window.proofGrid.setSort('price','asc')`, nil),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](`window.proofGrid.setSort('price','asc')`),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('dir')==='asc' && document.querySelector('.tabulator-row [tabulator-field=price]').textContent==='-1.0000000000000001 USD' && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
 	)
 	refreshFailed.Store(true)
 	check(
-		chromedp.Evaluate(`window.proofGrid.setPage(2)`, nil),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](`window.proofGrid.setPage(2)`),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
 	)
 	extra.Store(false)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 	refreshFailed.Store(true)
 	check(
-		chromedp.Click("[data-grid-refresh]", chromedp.ByQuery),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Click(chromedp.CSS("[data-grid-refresh]")),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	refreshFailed.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='1' && document.querySelectorAll('.tabulator-row').length===70 && document.querySelector('[data-grid-status]').textContent==='70 of 70 results' && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
 	)
 
@@ -1897,24 +1889,24 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	// Empty results, a failed fallback and Retry must never retain stale rows.
 	extra.Store(true)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.Tabulator.findTable('.tabulator')[0].setData().then(()=>window.Tabulator.findTable('.tabulator')[0].setPage(2))`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===1 && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	emptyGrid.Store(true)
 	check(
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.WaitVisible("[data-grid-refresh]", chromedp.ByQuery),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
 	)
 	failFirstPage.Store(true)
 	check(
-		chromedp.Click("[data-grid-refresh]", chromedp.ByQuery),
-		chromedp.WaitVisible("[data-grid-retry]", chromedp.ByQuery),
+		chromedp.Click(chromedp.CSS("[data-grid-refresh]")),
+		chromedp.WaitVisible(chromedp.CSS("[data-grid-retry]")),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===1 && document.querySelector('[data-grid-status]').textContent.includes('Previous results')`,
@@ -1922,13 +1914,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	failFirstPage.Store(false)
 	check(
-		chromedp.Click("[data-grid-retry]", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS("[data-grid-retry]")),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-status]').textContent==='0 of 71 results' && document.querySelector('[data-grid-refresh]').hidden`,
-			nil,
 		),
-		chromedp.Evaluate(`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`, nil),
-		chromedp.Poll(`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`, nil),
+		chromedp.Evaluate[chromedp.Void](
+			`window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
+		),
+		chromedp.Poll[chromedp.Void](`!document.querySelector('[data-grid]').hasAttribute('aria-busy')`),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-grid-refresh]').hidden`,
@@ -1938,23 +1931,22 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	offline.Store(true)
 	check(
-		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
-		chromedp.Poll(`document.body.dataset.liveState==='stale'`, nil),
+		chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new FocusEvent('focusout'))`),
+		chromedp.Poll[chromedp.Void](`document.body.dataset.liveState==='stale'`),
 	)
 	check(
-		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
-		chromedp.Poll(
+		testbrowser.SetViewport(320, 800),
+		chromedp.Poll[chromedp.Void](
 			`matchMedia('(max-width: 64rem)').matches && document.querySelector('#main-navigation').hidden`,
-			nil,
 		),
-		chromedp.Click(".wake-contact-trigger", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('.wake-contact-details').open`, nil),
+		chromedp.Click(chromedp.CSS(".wake-contact-trigger")),
+		chromedp.Poll[chromedp.Void](`document.querySelector('.wake-contact-details').open`),
 	)
 	offline.Store(false)
 	expired.Store(true)
 	check(
-		chromedp.Evaluate(`document.dispatchEvent(new FocusEvent('focusout'))`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new FocusEvent('focusout'))`),
+		chromedp.Poll[chromedp.Void](
 			`(()=>{
 				const contact=document.querySelector('.wake-sidebar > .wake-contact');
 				const link=contact.querySelector(':scope > #status-sign-in');
@@ -1963,15 +1955,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 					link.getBoundingClientRect().top>=details.getBoundingClientRect().bottom &&
 					document.querySelector('#main-navigation').hidden;
 			})()`,
-			nil,
 		),
-		chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS(".wake-contact-trigger")),
 		chromedp.KeyEvent(kb.Tab),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.activeElement.id==='status-sign-in' && document.activeElement.pathname==='/login'`,
-			nil,
 		),
-		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
+		testbrowser.SetViewport(1440, 1000),
 	)
 	expired.Store(false)
 
@@ -1979,16 +1969,14 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		testbrowser.NewDocument(chromedp.Navigate(
 			origin+"/instruments/synthetic-instrument?q=synthetic&sort=location&dir=asc",
 		)),
-		chromedp.WaitVisible(".tabulator-row", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(".tabulator-row")),
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.observationGrid=window.Tabulator.findTable('.tabulator')[0];window.observationGrid.setPageSize(1).then(()=>window.observationGrid.setPage(2))`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('page')==='2' && document.querySelectorAll('.tabulator-row').length===1`,
-			nil,
 		),
 	)
 	assert(
@@ -1996,10 +1984,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"evidence link retained the previous observation page",
 	)
 	check(
-		chromedp.Evaluate(`window.observationGrid.setSort('location','desc')`, nil),
-		chromedp.Poll(
+		chromedp.Evaluate[chromedp.Void](`window.observationGrid.setSort('location','desc')`),
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('dir')==='desc' && new URL(location.href).searchParams.get('page')==='1' && !document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-			nil,
 		),
 	)
 	assert(
@@ -2007,8 +1994,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"evidence link retained the previous observation order",
 	)
 	check(
-		chromedp.Click(`[data-refresh-accepted]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`.tabulator-row`, chromedp.ByQuery),
+		chromedp.Click(chromedp.CSS(`[data-refresh-accepted]`)),
+		chromedp.WaitVisible(chromedp.CSS(`.tabulator-row`)),
 	)
 	assert(
 		`new URL(location.href).searchParams.get('q')==='synthetic'&&new URL(location.href).searchParams.get('dir')==='desc'&&document.querySelector('#observation-search').value==='synthetic'`,
@@ -2017,14 +2004,13 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/reports")),
-		chromedp.WaitVisible(`[data-disclosure="receipt-synthetic-receipt"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(`[data-disclosure="receipt-synthetic-receipt"]`)),
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('[data-disclosure="receipt-synthetic-receipt"]').open=true;document.querySelector('.wake-brand').focus();document.getSelection().removeAllRanges();document.querySelector('#workspace-content').dataset.probe='pending';window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
-			nil,
 		),
-		chromedp.Poll(`!document.querySelector('#workspace-content').hasAttribute('data-probe')`, nil),
+		chromedp.Poll[chromedp.Void](`!document.querySelector('#workspace-content').hasAttribute('data-probe')`),
 	)
 	assert(
 		`document.querySelector('[data-disclosure="receipt-synthetic-receipt"]').open`,
@@ -2036,12 +2022,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 			extra.Store(true)
 
 			check(
-				chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil),
-				emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
+				chromedp.Evaluate[chromedp.Void](`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`),
+				testbrowser.SetViewport(width, 1000),
 				testbrowser.NewDocument(chromedp.Navigate(origin+"/test/observations")),
-				chromedp.Poll(
+				chromedp.Poll[chromedp.Void](
 					`document.querySelector('[data-grid="observations"]')?.dataset.gridReady==='true'`,
-					nil,
 				),
 			)
 			assert(
@@ -2060,7 +2045,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				}
 
 				var png []byte
-				check(chromedp.FullScreenshot(&png, 90))
+				check(testbrowser.Capture(&png, chromedp.FullScreenshot(90)))
 				//nolint:gosec // Caller-selected synthetic screenshot directory and fixed names.
 				if err := os.WriteFile(
 					filepath.Join(folder, fmt.Sprintf("m5-observation-table-%s-%d.png", theme, width)),
@@ -2073,14 +2058,12 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 			extra.Store(false)
 			check(
-				chromedp.Evaluate(
+				chromedp.Evaluate[chromedp.Void](
 					`document.activeElement.blur();window.htmx.trigger(document.querySelector('#workspace-content'),'sse:refresh')`,
-					nil,
 				),
 				applyGridUpdate,
-				chromedp.Poll(
+				chromedp.Poll[chromedp.Void](
 					`document.querySelector('.tabulator-row:last-child').textContent.includes('needs review')`,
-					nil,
 				),
 			)
 			assert(
@@ -2092,22 +2075,21 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	// Reset uses fresh definitions after native persistence has loaded a layout.
 	check(
-		emulation.SetDeviceMetricsOverride(1440, 1000, 1, false),
+		testbrowser.SetViewport(1440, 1000),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil),
+		chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]').dataset.gridReady==='true'`),
 	)
 	assert(
 		`window.Tabulator.findTable('.tabulator')[0].getColumn('label').getWidth()===310`,
 		"saved column layout was not loaded before reset",
 	)
 	check(
-		chromedp.Click(`[data-grid-reset]`, chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.Click(chromedp.CSS(`[data-grid-reset]`)),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('.tabulator-col[tabulator-field="label"]').style.width!=='310px'`,
-			nil,
 		),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil),
+		chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]').dataset.gridReady==='true'`),
 	)
 	assert(
 		`window.Tabulator.findTable('.tabulator')[0].getColumn('label').getWidth()!==310`,
@@ -2116,17 +2098,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction")),
-		chromedp.WaitVisible("#decision-scope", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#decision-scope")),
 	)
 	assert(
 		`document.querySelector('#decision-scope').value==='' && document.querySelector('[data-correction]').hidden && !document.querySelector('#decision-value')`,
 		"explicit choice or comparison",
 	)
 	check(
-		chromedp.SetValue("#decision-scope", "price", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.SetValue(chromedp.CSS("#decision-scope"), "price"),
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
-			nil,
 		),
 	)
 	assert(
@@ -2141,39 +2122,35 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	chooseField := func(field string) {
 		t.Helper()
 		check(
-			chromedp.SetValue("#decision-scope", field, chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.SetValue(chromedp.CSS("#decision-scope"), field),
+			chromedp.Evaluate[chromedp.Void](
 				`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
-				nil,
 			),
 		)
 	}
 	setCorrection := func(value string) {
 		t.Helper()
 		check(
-			chromedp.SetValue("#decision-value", value, chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.SetValue(chromedp.CSS("#decision-value"), value),
+			chromedp.Evaluate[chromedp.Void](
 				`document.querySelector('#decision-value').dispatchEvent(new Event('input',{bubbles:true}))`,
-				nil,
 			),
 		)
 	}
 	setCurrency := func(code string) {
 		t.Helper()
 		check(
-			chromedp.SetValue("#decision-currency", code, chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.SetValue(chromedp.CSS("#decision-currency"), code),
+			chromedp.Evaluate[chromedp.Void](
 				`document.querySelector('#decision-currency').dispatchEvent(new Event('change',{bubbles:true}))`,
-				nil,
 			),
 		)
 	}
 	ready := func() {
 		t.Helper()
 		check(
-			chromedp.Poll(
+			chromedp.Poll[chromedp.Void](
 				`document.querySelector('#decision-feedback').dataset.state==='valid' && !document.querySelector('[data-correction] button[type="submit"]').disabled`,
-				nil,
 			),
 		)
 	}
@@ -2198,13 +2175,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	chooseField("quantity")
 	setCorrection("0")
-	check(chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='invalid'`, nil))
+	check(
+		chromedp.Poll[chromedp.Void](`document.querySelector('#decision-feedback').dataset.state==='invalid'`),
+	)
 	assert(
 		`document.querySelector('[data-correction] button[type="submit"]').disabled`,
 		"zero quantity accepted by live check",
 	)
 	chooseField("instrument")
-	check(chromedp.SendKeys("#decision-link-search", "second", chromedp.ByQuery))
+	check(chromedp.SendKeys(chromedp.CSS("#decision-link-search"), "second"))
 	assert(
 		`document.querySelector('#decision-value').tagName==='SELECT' && document.querySelector('#decision-value').value==='instrument-one' && !document.querySelector('#decision-value option[value="instrument-three"]')`,
 		"searchable links changed the selection or kept unrelated matches",
@@ -2223,9 +2202,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	chooseField("trade_date")
 	assert(`document.querySelector('#decision-value').type==='date'`, "calendar date control missing")
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector("#decision-value").value="2026-02-30";document.querySelector("#decision-value").dispatchEvent(new Event("input",{bubbles:true}))`,
-			nil,
 		),
 	)
 	assert(
@@ -2240,11 +2218,10 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"timestamp precision lost while configuring controls",
 	)
 	check(
-		chromedp.SetValue("#decision-time", "14:05:06.120000000", chromedp.ByQuery),
-		chromedp.SetValue("#decision-zone", "+01:30", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.SetValue(chromedp.CSS("#decision-time"), "14:05:06.120000000"),
+		chromedp.SetValue(chromedp.CSS("#decision-zone"), "+01:30"),
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('#decision-zone').dispatchEvent(new Event('input',{bubbles:true}))`,
-			nil,
 		),
 	)
 	ready()
@@ -2254,18 +2231,17 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	offline.Store(true)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('#decision-zone').dispatchEvent(new Event('input',{bubbles:true}))`,
-			nil,
 		),
-		chromedp.WaitVisible("[data-check-again]", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("[data-check-again]")),
 	)
 	assert(
 		`document.querySelector('[data-correction] button[type="submit"]').disabled`,
 		"validation failure allowed saving",
 	)
 	offline.Store(false)
-	check(chromedp.Click("[data-check-again]", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS("[data-check-again]")))
 	ready()
 	chooseField("price")
 	assert(
@@ -2279,7 +2255,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction?field=price")),
-		chromedp.WaitVisible("#decision-currency", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#decision-currency")),
 	)
 	assert(
 		`document.querySelector('#decision-currency option[value="QZZ"]')!==null && !document.querySelector('#decision-currency option[value="HKD"]')`,
@@ -2289,16 +2265,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction?mode=evidence")),
-		chromedp.WaitVisible("#decision-candidate", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#decision-candidate")),
 	)
 	assert(
 		`document.querySelector('#decision-candidate').value==='' && !document.querySelector('[data-candidate]')`,
 		"candidate selected implicitly",
 	)
 	check(
-		chromedp.SetValue("#decision-candidate", "candidate-one", chromedp.ByQuery),
-		chromedp.Click(`form[aria-label="Compare retained evidence"] button`, chromedp.ByQuery),
-		chromedp.WaitVisible("[data-candidate]", chromedp.ByQuery),
+		chromedp.SetValue(chromedp.CSS("#decision-candidate"), "candidate-one"),
+		chromedp.Click(chromedp.CSS(`form[aria-label="Compare retained evidence"] button`)),
+		chromedp.WaitVisible(chromedp.CSS("[data-candidate]")),
 	)
 	assert(
 		`document.querySelector('[data-different="true"]').textContent.includes('9007199254740993.0000000000001')`,
@@ -2309,7 +2285,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		testbrowser.NewDocument(
 			chromedp.Navigate(origin+"/evidence/synthetic-report"),
 		),
-		chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil),
+		chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]').dataset.gridReady==='true'`),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===50 && !new URL(location.href).searchParams.has('location')`,
@@ -2320,43 +2296,47 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"related activity link contains view parameters",
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.reportTable=window.Tabulator.findTable('.tabulator')[0]; window.reportTable.setPageSize(25).then(()=>window.reportTable.setPage(2))`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-status]').textContent.includes('75 of 75') && new URL(location.href).searchParams.get('page')==='2'`,
-			nil,
 		),
 	)
 	assert(
 		`document.querySelectorAll('.tabulator-row').length===25`,
 		"report table paging lost bounds",
 	)
-	check(chromedp.SetValue("#observation-search", "no additional contribution", chromedp.ByQuery),
-		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='50 of 75 results'`, nil))
+	check(
+		chromedp.SetValue(chromedp.CSS("#observation-search"), "no additional contribution"),
+		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent==='50 of 75 results'`,
+		),
+	)
 	assert(
 		`[...document.querySelectorAll('.tabulator-row [tabulator-field="outcome"]')].every(cell=>cell.textContent==='no additional contribution')`,
 		"report contribution label was not displayed or searchable",
 	)
-	check(chromedp.SetValue("#observation-search", "TradeConfirm[75]", chromedp.ByQuery),
-		chromedp.Click("[data-observation-filters] button", chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`, nil))
+	check(
+		chromedp.SetValue(chromedp.CSS("#observation-search"), "TradeConfirm[75]"),
+		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent==='1 of 75 results'`,
+		),
+	)
 	assert(
 		`document.querySelector('.tabulator-row').textContent.includes('/r[1]'.repeat(200)+'/TradeConfirm[75]')`,
 		"long source path is missing from filtered observation",
 	)
 	check(
-		chromedp.Focus(`.tabulator-col[tabulator-field="location"]`, chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS(`.tabulator-col[tabulator-field="location"]`)),
 		chromedp.KeyEvent(kb.Enter),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`new URL(location.href).searchParams.get('sort')==='location' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
-			nil,
 		),
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.previousObservationColumns=localStorage.getItem('tabulator-wake-observations-columns');window.reportTable.getColumn('location').setWidth(410)`,
-			nil,
 		),
 	)
 	assert(
@@ -2365,7 +2345,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/system")),
-		chromedp.WaitVisible("h1", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("h1")),
 	)
 	assert(
 		`document.body.textContent.includes('128.4 MiB (134637824 bytes)') && !document.body.textContent.includes('Operator workspaces')`,
@@ -2373,20 +2353,20 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	warehouseBytes.Store(268435456)
 	check(
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.body.textContent.includes('256.0 MiB (268435456 bytes)')`,
-			nil,
 			chromedp.WithPollingTimeout(15*time.Second),
 		),
 	)
 	check(
 		testbrowser.NewDocument(
-			chromedp.Click(`nav[aria-label="System views"] a[href="/system/configuration"]`, chromedp.ByQuery),
+			chromedp.Click(chromedp.CSS(`nav[aria-label="System views"] a[href="/system/configuration"]`)),
 		),
-		chromedp.WaitVisible(`//h1[text()='Configuration']`, chromedp.BySearch),
+		chromedp.WaitVisible(chromedp.Search(`//h1[text()='Configuration']`)),
 		chromedp.WaitVisible(
-			`//dt[.='Currency list refresh']/following-sibling::dd[1][normalize-space(.)='Disabled']`,
-			chromedp.BySearch,
+			chromedp.Search(
+				`//dt[.='Currency list refresh']/following-sibling::dd[1][normalize-space(.)='Disabled']`,
+			),
 		),
 	)
 	assert(
@@ -2395,30 +2375,36 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	)
 	check(
 		testbrowser.NewDocument(
-			chromedp.Click(`nav[aria-label="System views"] a[href="/system"]`, chromedp.ByQuery),
+			chromedp.Click(chromedp.CSS(`nav[aria-label="System views"] a[href="/system"]`)),
 		),
-		chromedp.WaitVisible(`//h1[text()='Daemon status']`, chromedp.BySearch),
+		chromedp.WaitVisible(chromedp.Search(`//h1[text()='Daemon status']`)),
 	)
 
 	// Review every representative page in both themes, with layout checks at all selected widths.
 	for _, theme := range []string{"light", "dark"} {
-		check(chromedp.Evaluate(`localStorage.setItem('wake.theme',`+strconv.Quote(theme)+`)`, nil))
+		check(chromedp.Evaluate[chromedp.Void](`localStorage.setItem('wake.theme',` + strconv.Quote(theme) + `)`))
 
 		for _, width := range []int64{320, 768, 1024, 1440} {
 			for _, path := range []string{"/login", "/test/overview", "/test/connections", "/test/source", "/test/access", "/test/reports", "/test/new", "/test/reference", "/test/reference-evidence", "/test/bill", "/test/instrument", "/test/recovery", "/evidence/synthetic-report", "/evidence/empty-report", "/test/grid", "/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/correction?mode=decisions", "/system", "/system/configuration", "/system/settings"} {
 				check(
-					emulation.SetDeviceMetricsOverride(width, 1000, 1, false),
+					testbrowser.SetViewport(width, 1000),
 					testbrowser.NewDocument(chromedp.Navigate(origin+path)),
-					chromedp.WaitVisible("h1", chromedp.ByQuery),
-					chromedp.Poll(`document.documentElement.dataset.wakeReady==='true'`, nil),
+					chromedp.WaitVisible(chromedp.CSS("h1")),
+					chromedp.Poll[chromedp.Void](`document.documentElement.dataset.wakeReady==='true'`),
 				)
 
 				if strings.Contains(path, "?field=") {
-					check(chromedp.Poll(`document.querySelector('#decision-feedback').dataset.state==='valid'`, nil))
+					check(
+						chromedp.Poll[chromedp.Void](
+							`document.querySelector('#decision-feedback').dataset.state==='valid'`,
+						),
+					)
 				}
 
 				if strings.HasPrefix(path, "/evidence/") {
-					check(chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil))
+					check(
+						chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]').dataset.gridReady==='true'`),
+					)
 					assert(
 						`window.Tabulator.findTable('.tabulator')[0].getColumns().filter(c=>c.isVisible()).length===4`,
 						"report table lost its four-column layout",
@@ -2426,7 +2412,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				}
 
 				if path == "/test/grid" {
-					check(chromedp.Poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`, nil))
+					check(
+						chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]').dataset.gridReady==='true'`),
+					)
 					assert(
 						`(()=>{const s=document.querySelector('.tabulator-page-size');const r=s.getBoundingClientRect();const table=s.closest('.tabulator').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=table.top && r.bottom<=table.bottom && r.height>=40 && getComputedStyle(s).color===getComputedStyle(document.body).color})()`,
 						fmt.Sprintf("page-size control clipped or unthemed %s %d", theme, width),
@@ -2434,32 +2422,35 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 					if width == 1440 {
 						check(
-							chromedp.Evaluate(
+							chromedp.Evaluate[chromedp.Void](
 								`document.querySelector('[data-grid]').scrollIntoView({block:'start'})`,
-								nil,
 							),
 						)
 						assert(
 							`(()=>{const holder=document.querySelector('.tabulator-tableholder');const bounds=holder.getBoundingClientRect();return holder.clientHeight>512 && [...holder.querySelectorAll('.tabulator-row')].filter(row=>{const r=row.getBoundingClientRect();return r.top>=Math.max(0,bounds.top) && r.bottom<=Math.min(innerHeight,bounds.bottom)}).length>=10})()`,
 							fmt.Sprintf("desktop grid did not show more rows %s", theme),
 						)
-						check(chromedp.Evaluate(`
+						check(chromedp.Evaluate[chromedp.Void](`
 							const holder=document.querySelector('.tabulator-tableholder');
 							window.gridChrome=[...document.querySelectorAll('[data-list-filters],.tabulator-header,.tabulator-footer')].map(n=>n.getBoundingClientRect().top);
 							holder.scrollTop=holder.scrollHeight;
-						`, nil))
+						`))
 						assert(
 							`(()=>{const holder=document.querySelector('.tabulator-tableholder');const last=holder.querySelector('.tabulator-row:last-child').getBoundingClientRect();return holder.scrollTop>0 && last.bottom<=holder.getBoundingClientRect().bottom+1 && [...document.querySelectorAll('[data-list-filters],.tabulator-header,.tabulator-footer')].every((n,i)=>Math.abs(n.getBoundingClientRect().top-window.gridChrome[i])<1)})()`,
 							fmt.Sprintf("scrolling rows moved filters, headings or pagination %s", theme),
 						)
-						check(chromedp.Evaluate(`document.querySelector('.tabulator-tableholder').scrollTop=0`, nil))
+						check(
+							chromedp.Evaluate[chromedp.Void](
+								`document.querySelector('.tabulator-tableholder').scrollTop=0`,
+							),
+						)
 					}
 				}
 
 				if path == "/test/reference-evidence" {
 					check(
-						chromedp.Click("#original-content summary", chromedp.ByQuery),
-						chromedp.WaitVisible(`pre[aria-label="Retained response"]`, chromedp.ByQuery),
+						chromedp.Click(chromedp.CSS("#original-content summary")),
+						chromedp.WaitVisible(chromedp.CSS(`pre[aria-label="Retained response"]`)),
 					)
 				}
 
@@ -2480,8 +2471,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				if path == "/test/instrument" {
 					check(
 						chromedp.Click(
-							`//summary[text()='Reported references and reference evidence']`,
-							chromedp.BySearch,
+							chromedp.Search(`//summary[text()='Reported references and reference evidence']`),
 						),
 					)
 					assert(
@@ -2521,7 +2511,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 							Replace(path)
 						capture := func(suffix string) {
 							var png []byte
-							check(chromedp.FullScreenshot(&png, 90))
+							check(testbrowser.Capture(&png, chromedp.FullScreenshot(90)))
 							//nolint:gosec // Caller-selected synthetic screenshot directory and fixed page names.
 							if err := os.WriteFile(filepath.Join(folder, name+suffix+".png"), png, 0o600); err != nil {
 								t.Fatal(err)
@@ -2530,14 +2520,16 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 						capture("")
 
 						if path == "/system/settings" && width == 1440 {
-							check(emulation.SetDeviceMetricsOverride(width, 420, 1, false))
+							check(
+								testbrowser.SetViewport(width, 420),
+							)
 							capture("-short")
 						}
 
 						if path == "/system/settings" && width == 320 {
 							check(
-								emulation.SetDeviceMetricsOverride(width, 1500, 1, false),
-								chromedp.Evaluate(`document.documentElement.style.fontSize='200%'`, nil),
+								testbrowser.SetViewport(width, 1500),
+								chromedp.Evaluate[chromedp.Void](`document.documentElement.style.fontSize='200%'`),
 								testbrowser.SettleAnimations(),
 							)
 							capture("-text-200")
@@ -2549,9 +2541,9 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	}
 
 	check(
-		emulation.SetDeviceMetricsOverride(1280, 420, 1, false),
+		testbrowser.SetViewport(1280, 420),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/system/settings")),
-		chromedp.WaitVisible(".wake-sidebar .wake-contact", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(".wake-sidebar .wake-contact")),
 	)
 	assert(`(()=>{
 		const nav=document.querySelector('#main-navigation');
@@ -2561,7 +2553,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		const after=contact.getBoundingClientRect();
 		return nav.scrollTop>0 && before.top===after.top && after.bottom<=innerHeight && innerHeight-after.bottom<40;
 	})()`, "status moved when scrolling short desktop navigation")
-	check(chromedp.Focus(".wake-contact-trigger", chromedp.ByQuery))
+	check(chromedp.Focus(chromedp.CSS(".wake-contact-trigger")))
 	assert(`!document.querySelector('.wake-contact-details').open`, "focus opened contact details")
 	check(chromedp.KeyEvent(kb.Enter))
 	assert(`(()=>{
@@ -2576,28 +2568,27 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		`!document.querySelector('.wake-contact-details').open && document.activeElement.matches('.wake-contact-trigger')`,
 		"Escape did not dismiss contact details and retain focus",
 	)
-	check(chromedp.Click(".wake-contact-trigger", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS(".wake-contact-trigger")))
 	assert(`document.querySelector('.wake-contact-details').open`, "click did not open contact details")
-	check(chromedp.Click(".wake-contact-trigger", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS(".wake-contact-trigger")))
 	assert(
 		`!document.querySelector('.wake-contact-details').open`,
 		"second click did not close contact details",
 	)
 
 	check(
-		emulation.SetDeviceMetricsOverride(320, 800, 1, false),
+		testbrowser.SetViewport(320, 800),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/correction")),
-		chromedp.WaitVisible("h1", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("h1")),
 	)
 	assert(
 		`document.querySelector('#main-navigation').hidden && document.querySelector('.wake-sidebar > .wake-contact').getBoundingClientRect().height>0`,
 		"narrow navigation must collapse independently of status",
 	)
 	check(
-		chromedp.Click(".wake-menu-toggle", chromedp.ByQuery),
-		chromedp.Evaluate(
+		chromedp.Click(chromedp.CSS(".wake-menu-toggle")),
+		chromedp.Evaluate[chromedp.Void](
 			`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`,
-			nil,
 		),
 	)
 	assert(
@@ -2607,15 +2598,33 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	var contactPoint input.TouchPoint
 	check(
-		emulation.SetTouchEmulationEnabled(true),
-		chromedp.Evaluate(`(()=>{
+		testbrowser.Command(
+			emulation.SetTouchEmulationEnabled,
+			emulation.SetTouchEmulationEnabledParams{Enabled: true},
+		),
+		testbrowser.Evaluate(`(()=>{
 			const bounds=document.querySelector('.wake-contact-trigger').getBoundingClientRect();
 			return {x:bounds.left+bounds.width/2, y:bounds.top+bounds.height/2};
 		})()`, &contactPoint),
-		input.DispatchTouchEvent(input.TouchStart, []*input.TouchPoint{&contactPoint}),
-		input.DispatchTouchEvent(input.TouchEnd, []*input.TouchPoint{}),
-		chromedp.Poll(`document.querySelector('.wake-contact-details').open`, nil),
-		emulation.SetTouchEmulationEnabled(false),
+		testbrowser.Command(
+			input.DispatchTouchEvent,
+			input.DispatchTouchEventParams{
+				Type:        input.DispatchTouchEventTypeTouchStart,
+				TouchPoints: []*input.TouchPoint{&contactPoint},
+			},
+		),
+		testbrowser.Command(
+			input.DispatchTouchEvent,
+			input.DispatchTouchEventParams{
+				Type:        input.DispatchTouchEventTypeTouchEnd,
+				TouchPoints: []*input.TouchPoint{},
+			},
+		),
+		chromedp.Poll[chromedp.Void](`document.querySelector('.wake-contact-details').open`),
+		testbrowser.Command(
+			emulation.SetTouchEmulationEnabled,
+			emulation.SetTouchEmulationEnabledParams{Enabled: false},
+		),
 	)
 	assert(`(()=>{
 		const bounds=document.querySelector('.wake-contact-panel').getBoundingClientRect();
@@ -2626,12 +2635,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 	for _, path := range []string{"/test/correction", "/test/correction?field=price", "/test/correction?field=instrument", "/test/correction?field=executed_at", "/test/correction?mode=evidence&candidate=candidate-one", "/test/connections", "/test/grid", "/system/settings"} {
 		check(
 			testbrowser.NewDocument(chromedp.Navigate(origin+path)),
-			chromedp.WaitVisible("h1", chromedp.ByQuery),
-			chromedp.Evaluate(`document.documentElement.style.fontSize='200%'`, nil),
-			chromedp.Evaluate(
+			chromedp.WaitVisible(chromedp.CSS("h1")),
+			chromedp.Evaluate[chromedp.Void](`document.documentElement.style.fontSize='200%'`),
+			chromedp.Evaluate[chromedp.Void](
 				`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`,
-				nil,
-				func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) },
+				func(p *runtime.EvaluateParams) { p.AwaitPromise = new(true) },
 			),
 		)
 		assert(`document.documentElement.scrollWidth<=innerWidth+1`, "200 percent text overflow: "+path)
@@ -2646,12 +2654,11 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 
 	check(
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-		chromedp.WaitVisible(".tabulator", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS(".tabulator")),
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`(()=>{const h=document.querySelector('.tabulator-col[tabulator-field="label"]');h.focus();window.beforeWidth=window.Tabulator.findTable('.tabulator')[0].getColumn('label').getWidth();h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',altKey:true,bubbles:true}))})()`,
-			nil,
 		),
 	)
 	assert(
@@ -2659,9 +2666,8 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		"keyboard column resize",
 	)
 	check(
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('.tabulator-col[tabulator-field="price"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
-			nil,
 		),
 	)
 	assert(
@@ -2675,12 +2681,15 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 		document, closeDocument := chromedp.NewContext(ctx)
 
 		step, stopStep := context.WithTimeout(document, 20*time.Second)
-		err := chromedp.Run(
+		err := chromedp.Do(
 			step,
-			network.SetCacheDisabled(true),
-			emulation.SetScriptExecutionDisabled(disabled),
+			testbrowser.Command(network.SetCacheDisabled, network.SetCacheDisabledParams{CacheDisabled: true}),
+			testbrowser.Command(
+				emulation.SetScriptExecutionDisabled,
+				emulation.SetScriptExecutionDisabledParams{Value: disabled},
+			),
 			testbrowser.NewDocument(chromedp.Navigate(origin+"/test/grid")),
-			chromedp.WaitVisible("[data-grid]", chromedp.ByQuery),
+			chromedp.WaitVisible(chromedp.CSS("[data-grid]")),
 		)
 
 		var clear bool
@@ -2690,7 +2699,7 @@ func TestBrowserPolishedWorkflowsAndGrids(t *testing.T) {
 				predicate = `!document.querySelector('table') && document.querySelector('noscript').textContent.includes('JavaScript is required')`
 			}
 
-			err = chromedp.Run(step, chromedp.Poll(predicate, &clear))
+			err = chromedp.Do(step, testbrowser.Poll(predicate, &clear))
 		}
 
 		stopStep()

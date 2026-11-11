@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"go.trippwill.dev/wake/internal/testbrowser"
 )
 
 func TestBrowserProxySession(t *testing.T) {
@@ -61,53 +62,52 @@ func TestBrowserProxySession(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 45*time.Second)
 	defer deadline()
 
-	if err := chromedp.Run(
+	if err := chromedp.Do(
 		ctx,
 		chromedp.Navigate(strings.Replace(entry.URL, "127.0.0.1", "localhost", 1)),
-		chromedp.WaitVisible("#wake", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#wake")),
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	response, err := chromedp.RunResponse(ctx, chromedp.Click("#wake", chromedp.ByQuery))
+	response, err := chromedp.RunResponse(ctx, chromedp.Click(chromedp.CSS("#wake")))
 	if err != nil || response == nil || response.Status != http.StatusOK ||
 		response.URL != proxy.URL+"/connections/reference" {
 		t.Fatal("cross-site entry did not serve the requested page", response, err)
 	}
 
 	var before, after string
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
-		chromedp.WaitVisible(`form[action="/reference/key"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &before),
+		chromedp.WaitVisible(chromedp.CSS(`form[action="/reference/key"]`)),
+		testbrowser.Evaluate(`document.querySelector('input[name="csrf"]').value`, &before),
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	now.Add(int64(auth.lifetime.Seconds()) + 1)
 
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.htmx.ajax("GET", "/system/contact", {source: document.body, swap: "none"});`,
-			nil,
 		),
-		chromedp.WaitVisible("#status-sign-in", chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
+		chromedp.WaitVisible(chromedp.CSS("#status-sign-in")),
+		testbrowser.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
 	); err != nil || before != after {
 		t.Fatal("background expiry changed the form token", err)
 	}
 
-	response, err = chromedp.RunResponse(ctx, chromedp.Click("#status-sign-in", chromedp.ByQuery))
+	response, err = chromedp.RunResponse(ctx, chromedp.Click(chromedp.CSS("#status-sign-in")))
 	if err != nil || response == nil || response.Status != http.StatusOK {
 		t.Fatal("proxy recovery navigation", response, err)
 	}
 
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
 		chromedp.Navigate(proxy.URL+"/connections/reference"),
-		chromedp.WaitVisible(`form[action="/reference/key"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
+		chromedp.WaitVisible(chromedp.CSS(`form[action="/reference/key"]`)),
+		testbrowser.Evaluate(`document.querySelector('input[name="csrf"]').value`, &after),
 	); err != nil ||
 		before == after {
 		t.Fatal("document navigation did not renew the session", err)

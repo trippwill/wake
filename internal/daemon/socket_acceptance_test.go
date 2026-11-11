@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -405,8 +406,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		case <-time.After(15 * time.Second):
 			_ = daemon.Process.Kill()
 
-			<-daemonDone
-			t.Fatal("daemon did not join")
+			t.Fatal("daemon did not join", <-daemonDone)
 		}
 
 		daemon = nil
@@ -683,8 +683,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			_ = eventFollower.Process.Kill()
 
-			<-eventDone
-			t.Error("SSE follower did not stop")
+			t.Error("SSE follower did not stop", <-eventDone)
 		}
 	}()
 
@@ -816,7 +815,9 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	interruptedError := interrupted.Run()
 	_ = cutServer.Close()
 
-	<-cutDone
+	if e := <-cutDone; e != nil && !errors.Is(e, http.ErrServerClosed) {
+		t.Fatal("interrupted test server shutdown", e)
+	}
 
 	if interruptedError == nil || !strings.Contains(interruptedOutput.String(), "interrupted response") ||
 		mirror().Version != before.Version {
@@ -918,8 +919,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		_ = concurrentConsumer.Process.Kill()
 
-		<-concurrentDone
-		t.Fatal("concurrent snapshot client did not stop")
+		t.Fatal("concurrent snapshot client did not stop", <-concurrentDone)
 	}
 
 	if !installed {
@@ -1204,8 +1204,7 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		_ = following.Process.Kill()
 
-		<-followingDone
-		t.Fatal("follow did not stop")
+		t.Fatal("follow did not stop", <-followingDone)
 	}
 
 	if !strings.Contains(followLogs.String(), "Still synchronizing") {

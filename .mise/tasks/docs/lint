@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 #MISE description="Lint repository Markdown, including hidden directories"
-#MISE tools = { "github:mrueg/goldmark-lint" = "0.6.1" }
+#MISE tools = { "github:mrueg/goldmark-lint" = "0.6.3" }
 set -euo pipefail
 
 inventory=$(mktemp)

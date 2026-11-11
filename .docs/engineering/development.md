@@ -191,12 +191,12 @@ working controls and keyboard access in each slice. Keep browser tests for behav
 that needs a browser, such as persisted theme preferences, focus and authenticated
 workflows; check route responses and static navigation in HTTP/rendering tests.
 
-Specify query modes in browser actions: `chromedp.ByQuery` for one CSS match,
-`chromedp.ByQueryAll` for a set, and explicit `chromedp.BySearch` for intentional
-XPath queries. The implicit general search also matches attribute text: an opaque
-CSRF token containing `h1` can match a heading search and make a visibility wait
-block on hidden metadata. Keep random security values intact and make selection
-unambiguous. Browser waits must observe the intended page or UI state.
+Use `chromedp.CSS` for one CSS match, `chromedp.CSSAll` for all matches, and
+`chromedp.Search` for intentional XPath queries. The default search also matches
+attribute text. An opaque CSRF token containing `h1` can match a heading search
+and make a visibility wait block on hidden metadata. Keep random security values
+intact and make selection unambiguous. Browser waits must observe the intended
+page or UI state.
 
 PR and main CI run the same complete browser suite. A smaller smoke profile does
 not establish that interactive workflows pass.
