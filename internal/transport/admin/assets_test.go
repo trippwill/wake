@@ -246,7 +246,7 @@ func TestAssetPreconditionFailuresOverHTTP(t *testing.T) {
 				{"Range", "bytes=999999999-", http.StatusRequestedRangeNotSatisfiable},
 			} {
 				t.Run(encoding+"/"+method+"/"+tc.header, func(t *testing.T) {
-					r, err := http.NewRequest(method, server.URL+"/assets/vendor/daisyui-5.5.14/daisyui.css", nil)
+					r, err := http.NewRequest(method, server.URL+"/assets/vendor/daisyui-5.7.50/daisyui.css", nil)
 					if err != nil {
 						t.Fatal(err)
 					}

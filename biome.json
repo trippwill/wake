@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
   "files": {
     "includes": ["**", "!internal/transport/admin/assets/vendor/**"]
   },
@@ -7,7 +7,7 @@
   "html": { "experimentalFullSupportEnabled": true, "formatter": { "enabled": false } },
   "linter": {
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "nursery": { "useControlLabel": "error" }
     }
   }

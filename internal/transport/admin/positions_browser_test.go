@@ -182,21 +182,26 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 90*time.Second)
 	defer deadline()
 
-	check := func(actions ...chromedp.Action) {
+	check := func(actions ...chromedp.Action[chromedp.Void]) {
 		t.Helper()
 
-		if err := chromedp.Run(ctx, actions...); err != nil {
+		if err := chromedp.Do(ctx, actions...); err != nil {
 			t.Fatal(err)
 		}
 	}
 	poll := func(expression string) {
 		t.Helper()
-		check(chromedp.Poll(expression, nil, chromedp.WithPollingTimeout(8*time.Second)))
+		check(chromedp.Poll[chromedp.Void](expression, chromedp.WithPollingTimeout(8*time.Second)))
 	}
 
-	check(network.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
-		return network.SetCookie(cookie.Name, cookie.Value).WithURL(origin).WithHTTPOnly(true).Do(ctx)
-	}), testbrowser.NewDocument(chromedp.Navigate(origin+"/positions")))
+	check(
+		testbrowser.Command(network.Enable, network.EnableParams{}),
+		testbrowser.Command(
+			network.SetCookie,
+			network.SetCookieParams{Name: cookie.Name, Value: cookie.Value, URL: origin, HTTPOnly: new(true)},
+		),
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/positions")),
+	)
 	poll(
 		`document.querySelector('[data-positions-state]')?.textContent==='Available' && document.querySelectorAll('.tabulator-row').length===2 && document.querySelector('[data-positions-message]').hidden && document.querySelector('[data-positions-message]').textContent===''`,
 	)
@@ -207,13 +212,13 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		`document.querySelector('.tabulator-row a[href="/instruments/equity"]').textContent==='SYN' && document.querySelector('.tabulator-row [tabulator-field="name"]').textContent.includes('Synthetic equity')`,
 	)
 	// Legacy column preferences must preserve layout without restoring obsolete headings.
-	check(chromedp.Evaluate(`(()=>{
+	check(chromedp.Evaluate[chromedp.Void](`(()=>{
  const columns=window.Tabulator.findTable('.tabulator')[0].getColumnLayout();
  const cost=columns.find(column=>column.field==='cost');
  cost.title='Reported cost basis';cost.width=246;
  columns.splice(columns.indexOf(cost),1);columns.splice(2,0,cost);
  localStorage.setItem('tabulator-wake-positions-columns',JSON.stringify(columns));
-})()`, nil), testbrowser.NewDocument(chromedp.Reload()))
+})()`), testbrowser.NewDocument(chromedp.Reload()))
 	poll(`document.querySelector('[data-grid]').dataset.gridReady==='true'`)
 	poll(
 		`document.querySelector('.tabulator-col[tabulator-field="cost"] .tabulator-col-title')?.textContent==='Unit cost basis'`,
@@ -221,7 +226,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 
 	var legacyLayoutRestored bool
 	check(
-		chromedp.Evaluate(
+		testbrowser.Evaluate(
 			`(()=>{const table=window.Tabulator.findTable('.tabulator')[0];return table.getColumn('cost').getWidth()===246 && table.getColumnLayout()[2].field==='cost'})()`,
 			&legacyLayoutRestored,
 		),
@@ -231,8 +236,8 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		t.Fatal("updated heading discarded the saved column width or order")
 	}
 
-	check(chromedp.Click("[data-grid-reset]", chromedp.ByQuery))
-	check(chromedp.Focus(".tabulator-cell details summary", chromedp.ByQuery), chromedp.KeyEvent(kb.Enter))
+	check(chromedp.Click(chromedp.CSS("[data-grid-reset]")))
+	check(chromedp.Focus(chromedp.CSS(".tabulator-cell details summary")), chromedp.KeyEvent(kb.Enter))
 	poll(
 		`document.querySelector('.tabulator-cell details').open && document.querySelector('.tabulator-cell details summary').textContent==='Call · 2027-01-15' && document.querySelector('.tabulator-cell details').textContent.includes('123.45000 USD') && document.querySelector('.tabulator-cell details dd:last-child').getBoundingClientRect().right<=document.querySelector('.tabulator-cell details').getBoundingClientRect().right+1`,
 	)
@@ -246,7 +251,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		}
 
 		var png []byte
-		check(testbrowser.SettleAnimations(), chromedp.FullScreenshot(&png, 90))
+		check(testbrowser.SettleAnimations(), testbrowser.Capture(&png, chromedp.FullScreenshot(90)))
 		//nolint:gosec // Caller-selected synthetic screenshot directory.
 		if err := os.MkdirAll(folder, 0o700); err != nil {
 			t.Fatal(err)
@@ -269,46 +274,46 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 
 	check(
 		chromedp.EmulateViewport(1366, 900),
-		chromedp.Click(".tabulator-cell details summary", chromedp.ByQuery),
+		chromedp.Click(chromedp.CSS(".tabulator-cell details summary")),
 	)
 	// A linked instrument keeps the canonical URL and returns to the originating grid entry.
-	check(testbrowser.NewDocument(chromedp.Click("a[href='/instruments/equity']", chromedp.ByQuery)))
+	check(testbrowser.NewDocument(chromedp.Click(chromedp.CSS("a[href='/instruments/equity']"))))
 	poll(
 		`location.pathname==='/instruments/equity' && document.querySelector('[data-return]').textContent==='Return to Positions' && document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/positions'`,
 	)
 	poll(
 		`document.querySelector('h1').textContent==='SYN' && document.querySelector('.wake-page-header').textContent.includes('Synthetic equity')`,
 	)
-	check(testbrowser.NewDocument(chromedp.Click("[data-return]", chromedp.ByQuery)))
+	check(testbrowser.NewDocument(chromedp.Click(chromedp.CSS("[data-return]"))))
 	poll(
 		`location.pathname==='/positions' && document.querySelector('[data-positions-state]')?.textContent==='Available'`,
 	)
 	// An unchanged check preserves the operator's open terms and focus.
 	check(
-		chromedp.Focus(".tabulator-cell details summary", chromedp.ByQuery),
+		chromedp.Focus(chromedp.CSS(".tabulator-cell details summary")),
 		chromedp.KeyEvent(kb.Enter),
-		chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil),
+		chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`),
 	)
 	poll(
 		`document.querySelector('[data-grid-refresh]').hidden && !document.querySelector('[data-grid]').hasAttribute('aria-busy') && document.querySelector('.tabulator-cell details').open`,
 	)
 	revision.Store(1)
-	check(chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`))
 	poll(`!document.querySelector('[data-grid-refresh]').hidden`)
 	poll(
 		`document.querySelector('.tabulator-table').textContent.includes('Synthetic equity') && !document.querySelector('.tabulator-table').textContent.includes('Renamed equity')`,
 	)
-	check(chromedp.Click("[data-grid-refresh]", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS("[data-grid-refresh]")))
 	poll(
 		`document.querySelector('.tabulator-table').textContent.includes('Renamed equity') && document.querySelector('[data-grid-refresh]').hidden`,
 	)
 	// A newer unusable set replaces both metadata and rows only when applied.
 	revision.Store(2)
-	check(chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`))
 	poll(
 		`!document.querySelector('[data-grid-refresh]').hidden && document.querySelector('[data-positions-as-of]').textContent==='2026-11-04'`,
 	)
-	check(chromedp.Click("[data-grid-refresh]", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS("[data-grid-refresh]")))
 	poll(
 		`document.querySelector('[data-positions-state]').textContent==='Unavailable' && !document.querySelector('[data-positions-message]').hidden && document.querySelector('[data-positions-as-of]').textContent==='2026-11-05' && document.querySelectorAll('.tabulator-row').length===0 && document.querySelector('[data-positions-message]').textContent.includes('complete position set')`,
 	)
@@ -322,28 +327,28 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	}
 
 	revision.Store(3)
-	check(chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`))
 	poll(`!document.querySelector('[data-grid-refresh]').hidden`)
-	check(chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.querySelector('[data-grid-refresh]').click()`))
 	poll(
 		`document.querySelector('[data-positions-state]').textContent==='Available' && document.querySelector('[data-positions-message]').textContent==='No open positions were reported.' && !document.querySelector('.tabulator-placeholder') && document.querySelector('[data-positions-as-of]').textContent.includes('10:12:13.123400+01:00')`,
 	)
 	revision.Store(4)
-	check(chromedp.Evaluate(`document.dispatchEvent(new Event('sse:refresh'))`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`))
 	poll(
 		`!document.querySelector('[data-grid-retry]').hidden && document.querySelector('[data-positions-state]').textContent==='Available' && document.querySelector('[data-grid-status]').textContent.includes('retry')`,
 	)
 	revision.Store(0)
-	check(chromedp.Evaluate(`document.querySelector('[data-grid-retry]').click()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.querySelector('[data-grid-retry]').click()`))
 	poll(`!document.querySelector('[data-grid-refresh]').hidden`)
-	check(chromedp.Evaluate(`document.querySelector('[data-grid-refresh]').click()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.querySelector('[data-grid-refresh]').click()`))
 	poll(
 		`document.querySelectorAll('.tabulator-row').length===2 && document.querySelector('[data-positions-as-of]').textContent==='2026-11-04'`,
 	)
 
 	// Category selections compose, supersede slow reads and preserve unsubmitted text.
 	check(
-		chromedp.SendKeys("#positions-search", "synthetic", chromedp.ByQuery),
+		chromedp.SendKeys(chromedp.CSS("#positions-search"), "synthetic"),
 		chromedp.KeyEvent(kb.Enter),
 	)
 	poll(
@@ -352,15 +357,15 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 
 	changeCategory := func(id, value string) {
 		t.Helper()
-		check(chromedp.Evaluate(fmt.Sprintf(`(()=>{
+		check(chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`(()=>{
  const select=document.getElementById(%q);
  select.focus();
  select.value=%q;
  select.dispatchEvent(new Event('change',{bubbles:true}));
-})()`, id, value), nil))
+})()`, id, value)))
 	}
 
-	check(chromedp.Evaluate(`document.querySelector('#positions-search').value='unsent draft'`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`document.querySelector('#positions-search').value='unsent draft'`))
 	holdShort.Store(true)
 	changeCategory("positions-side", "short")
 
@@ -382,11 +387,11 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
   document.querySelector('.tabulator-row').textContent.includes('Synthetic option');
 })()`)
 
-	check(chromedp.Evaluate(`history.back()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`history.back()`))
 	poll(
 		`!new URLSearchParams(location.search).has('state') && document.querySelector('#positions-side').value==='' && document.querySelector('#positions-kind').value==='' && document.querySelector('#positions-search').value==='synthetic' && document.querySelectorAll('.tabulator-row').length===2`,
 	)
-	check(chromedp.Evaluate(`history.forward()`, nil))
+	check(chromedp.Evaluate[chromedp.Void](`history.forward()`))
 	poll(
 		`document.querySelector('#positions-side').value==='short' && document.querySelector('#positions-kind').value==='option' && document.querySelectorAll('.tabulator-row').length===1`,
 	)
@@ -397,7 +402,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 		`!document.querySelector('[data-grid-retry]').hidden && new URLSearchParams(location.search).get('state')==='short' && document.querySelectorAll('.tabulator-row').length===1`,
 	)
 	revision.Store(0)
-	check(chromedp.Click("[data-grid-retry]", chromedp.ByQuery))
+	check(chromedp.Click(chromedp.CSS("[data-grid-retry]")))
 	poll(
 		`new URLSearchParams(location.search).get('state')==='long' && document.querySelector('[data-grid-retry]').hidden && document.querySelector('[data-positions-message]').textContent.includes('match these filters') && document.querySelectorAll('.tabulator-row').length===0`,
 	)

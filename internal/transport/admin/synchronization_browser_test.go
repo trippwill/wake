@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/testbrowser"
@@ -124,9 +123,11 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	ctx, deadline := context.WithTimeout(ctx, 45*time.Second)
 	defer deadline()
 
-	if err = chromedp.Run(ctx, testbrowser.NewDocument(chromedp.Navigate(server.URL)),
-		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
-		chromedp.WaitVisible(`form[action="/refresh"] button`, chromedp.ByQuery),
+	if err = chromedp.Do(
+		ctx,
+		testbrowser.NewDocument(chromedp.Navigate(server.URL)),
+		chromedp.WaitVisible(chromedp.CSS("#synchronization-title")),
+		chromedp.WaitVisible(chromedp.CSS(`form[action="/refresh"] button`)),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -138,9 +139,12 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		}
 
 		var png []byte
-		if err = chromedp.Run(
+		if err = chromedp.Do(
 			ctx,
-			chromedp.Screenshot(`section[aria-labelledby="synchronization-title"]`, &png, chromedp.ByQuery),
+			testbrowser.Capture(
+				&png,
+				chromedp.Screenshot(chromedp.CSS(`section[aria-labelledby="synchronization-title"]`)),
+			),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -157,10 +161,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	for _, theme := range []string{"light", "dark"} {
 		for _, width := range []int64{1280, 768, 390, 320} {
 			var valid bool
-			if err = chromedp.Run(ctx,
-				emulation.SetDeviceMetricsOverride(width, 900, 1, false),
-				chromedp.Evaluate(`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme), nil),
-				chromedp.Evaluate(`(()=>{
+			if err = chromedp.Do(
+				ctx,
+				testbrowser.SetViewport(width, 900),
+				chromedp.Evaluate[chromedp.Void](
+					`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme),
+				),
+				testbrowser.Evaluate(`(()=>{
 					const rows=Array.from(document.querySelectorAll('.wake-sync-work > div'));
 					return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===2&&
 						rows.map(row=>row.querySelector('dt').textContent.trim()).join(',')==='Activity,Confirmations'&&
@@ -176,7 +183,8 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 								(index===0||rows[index-1].getBoundingClientRect().bottom<=row.getBoundingClientRect().top);
 						})&&document.querySelector('.wake-source-summary a').getAttribute('href')==='/connections/source?view=status';
 				})()`, &valid),
-			); err != nil || !valid {
+			); err != nil ||
+				!valid {
 				t.Fatalf("%s at %dpx: stream rows overlap, overflow or lose their meaning: %v", theme, width, err)
 			}
 
@@ -186,36 +194,34 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		}
 	}
 
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`window.htmx.trigger(document.querySelector('#workspace-content'), 'sse:refresh')`,
-			nil,
 		),
-		chromedp.Poll(`document.querySelector('.wake-sync-work time').dateTime===`+
-			strconv.Quote(last.Add(time.Minute).Format(time.RFC3339Nano)), nil),
+		chromedp.Poll[chromedp.Void](`document.querySelector('.wake-sync-work time').dateTime===`+
+			strconv.Quote(last.Add(time.Minute).Format(time.RFC3339Nano))),
 	); err != nil {
 		t.Fatal("live refresh did not replace the retrieval time", err)
 	}
 
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
-		testbrowser.NewDocument(chromedp.Click(`form[action="/refresh"] button`, chromedp.ByQuery)),
-		chromedp.Poll(
+		testbrowser.NewDocument(chromedp.Click(chromedp.CSS(`form[action="/refresh"] button`))),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('#synchronization-title').closest('section').textContent.includes('Refresh requested') &&
 			document.querySelectorAll('.wake-sync-work time')[1].dateTime===`+strconv.Quote(
 				next.Add(-time.Minute).Format(time.RFC3339Nano),
 			),
-			nil,
 		),
 	); err != nil {
 		t.Fatal("refresh action did not show the new deadline", err)
 	}
 
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
 		testbrowser.NewDocument(chromedp.Navigate(server.URL+"/mixed")),
-		chromedp.WaitVisible("#synchronization-title", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("#synchronization-title")),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -224,9 +230,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		for _, width := range []int64{1280, 768, 390, 320} {
 			var valid bool
 
-			if err = chromedp.Run(ctx, emulation.SetDeviceMetricsOverride(width, 900, 1, false),
-				chromedp.Evaluate(`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme), nil),
-				chromedp.Evaluate(`(()=>{
+			if err = chromedp.Do(
+				ctx,
+				testbrowser.SetViewport(width, 900),
+				chromedp.Evaluate[chromedp.Void](
+					`document.documentElement.dataset.theme=`+strconv.Quote("wake-"+theme),
+				),
+				testbrowser.Evaluate(`(()=>{
      const rows=Array.from(document.querySelectorAll('.wake-sync-work > div'));
      return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===3&&
       rows[0].querySelector('dt').textContent.trim()==='Activity'&&rows[0].querySelector('dd').textContent.includes('failed')&&
@@ -235,7 +245,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
       rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].textContent.includes('Retry ·')&&
       rows[1].querySelectorAll('time').length===2&&rows[2].querySelectorAll('time').length===0&&
       rows[2].textContent.includes('No successful retrieval yet')&&rows[2].textContent.includes('Eligible now');
-    })()`, &valid)); err != nil || !valid {
+    })()`, &valid),
+			); err != nil ||
+				!valid {
 				t.Fatalf("%s at %dpx: a failed stream hid healthy progress: %v", theme, width, err)
 			}
 
@@ -253,21 +265,22 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		{"/access", "Access review required", 1},
 		{"/idle", "No automatic work scheduled", 0},
 	} {
-		if err = chromedp.Run(ctx,
+		if err = chromedp.Do(
+			ctx,
 			testbrowser.NewDocument(chromedp.Navigate(server.URL+tc.path)),
-			chromedp.Poll(`(()=>{
+			chromedp.Poll[chromedp.Void](`(()=>{
 				const card=document.querySelector('section[aria-labelledby="synchronization-title"]');
 				const last=card.querySelectorAll('time');
 				return card.textContent.includes(`+strconv.Quote(tc.state)+`) &&
 					last.length===`+strconv.Itoa(tc.times)+` &&
 					(last.length===0 || last[0].dateTime===`+strconv.Quote(last.Format(time.RFC3339Nano))+`);
-			})()`, nil),
+			})()`),
 		); err != nil {
 			t.Fatal(tc.path, err)
 		}
 	}
 
-	if err = chromedp.Run(ctx, chromedp.Evaluate(`(()=>{
+	if err = chromedp.Do(ctx, chromedp.Evaluate[chromedp.Void](`(()=>{
 		document.body.style.minHeight='200vh';
 		const make=options=>{
 			const node=document.createElement('div');document.body.append(node);
@@ -284,21 +297,21 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
    if(window.finiteCapture.playState==='finished')window.finalCapturePaint=true;
    callback(time);
   });
-	})()`, nil)); err != nil {
+	})()`)); err != nil {
 		t.Fatal(err)
 	}
 
 	settle, stopSettle := context.WithTimeout(ctx, 2*time.Second)
 	defer stopSettle()
 
-	if err = chromedp.Run(settle, testbrowser.SettleAnimations()); err != nil {
+	if err = chromedp.Do(settle, testbrowser.SettleAnimations()); err != nil {
 		t.Fatal("capture must not wait for paused, progress or scroll-driven animations", err)
 	}
 
 	var settled bool
-	if err = chromedp.Run(
+	if err = chromedp.Do(
 		ctx,
-		chromedp.Evaluate(`window.finalCapturePaint&&window.finiteCapture.playState==='finished'&&
+		testbrowser.Evaluate(`window.finalCapturePaint&&window.finiteCapture.playState==='finished'&&
 		window.pausedCapture.playState==='paused'&&window.progressCapture.playState==='running'&&
 		window.scrollCapture.playState!=='finished'`, &settled),
 	); err != nil ||

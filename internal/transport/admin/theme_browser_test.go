@@ -69,38 +69,40 @@ func TestBrowserThemePreference(t *testing.T) {
 	defer deadline()
 
 	var gzipAssets atomic.Int64
-	chromedp.ListenTarget(ctx, func(event any) {
+	if err := chromedp.Listen(ctx, func(event any) {
 		if response, ok := event.(*network.EventResponseReceived); ok &&
 			strings.Contains(response.Response.URL, "/assets/") &&
 			response.Response.Headers["Content-Encoding"] == "gzip" {
 			gzipAssets.Add(1)
 		}
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	session := httptest.NewRecorder()
 	auth.issue(session)
 	cookie := session.Result().Cookies()[0]
-	check := func(actions ...chromedp.Action) {
+	check := func(actions ...chromedp.Action[chromedp.Void]) {
 		t.Helper()
 
-		if err := chromedp.Run(ctx, actions...); err != nil {
+		if err := chromedp.Do(ctx, actions...); err != nil {
 			t.Fatal(err)
 		}
 	}
 	check(
-		network.Enable(),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return network.SetCookie(cookie.Name, cookie.Value).WithURL(origin).WithHTTPOnly(true).Do(ctx)
-		}),
-		testbrowser.NewDocument(chromedp.Navigate(origin+"/system")),
-		chromedp.Poll(`!document.querySelector('.wake-toolbar,[data-theme-preference]')`, nil),
-		testbrowser.NewDocument(
-			chromedp.Click(`nav[aria-label="System views"] a[href="/system/settings"]`, chromedp.ByQuery),
+		testbrowser.Command(network.Enable, network.EnableParams{}),
+		testbrowser.Command(
+			network.SetCookie,
+			network.SetCookieParams{Name: cookie.Name, Value: cookie.Value, URL: origin, HTTPOnly: new(true)},
 		),
-		chromedp.WaitVisible("[data-theme-preference]", chromedp.ByQuery),
-		chromedp.Poll(
+		testbrowser.NewDocument(chromedp.Navigate(origin+"/system")),
+		chromedp.Poll[chromedp.Void](`!document.querySelector('.wake-toolbar,[data-theme-preference]')`),
+		testbrowser.NewDocument(
+			chromedp.Click(chromedp.CSS(`nav[aria-label="System views"] a[href="/system/settings"]`)),
+		),
+		chromedp.WaitVisible(chromedp.CSS("[data-theme-preference]")),
+		chromedp.Poll[chromedp.Void](
 			`document.querySelector('nav[aria-label="System views"] [aria-current="page"]')?.textContent==='Settings'`,
-			nil,
 		),
 	)
 
@@ -111,10 +113,9 @@ func TestBrowserThemePreference(t *testing.T) {
 	choose := func(preference string) {
 		t.Helper()
 		check(
-			chromedp.SetValue("[data-theme-preference]", preference, chromedp.ByQuery),
-			chromedp.Evaluate(
+			chromedp.SetValue(chromedp.CSS("[data-theme-preference]"), preference),
+			chromedp.Evaluate[chromedp.Void](
 				`document.querySelector('[data-theme-preference]').dispatchEvent(new Event('change',{bubbles:true}))`,
-				nil,
 			),
 		)
 	}
@@ -124,52 +125,47 @@ func TestBrowserThemePreference(t *testing.T) {
 			` && localStorage.getItem('wake.theme')===` + strconv.Quote(preference)
 		choose(preference)
 		check(
-			chromedp.Poll(ready, nil),
+			chromedp.Poll[chromedp.Void](ready),
 			testbrowser.NewDocument(chromedp.Reload()),
-			chromedp.WaitVisible("h1", chromedp.ByQuery),
-			chromedp.Poll(ready, nil),
+			chromedp.WaitVisible(chromedp.CSS("h1")),
+			chromedp.Poll[chromedp.Void](ready),
 		)
 	}
 
 	check(
 		chromedp.NavigateBack(),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`location.pathname==='/system' && document.documentElement.dataset.theme==='wake-dark'`,
-			nil,
 		),
 		chromedp.NavigateForward(),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`location.pathname==='/system/settings' && document.querySelector('[data-theme-preference]')?.value==='dark'`,
-			nil,
 		),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible("#unlock", chromedp.ByQuery),
-		chromedp.Poll(
+		chromedp.WaitVisible(chromedp.CSS("#unlock")),
+		chromedp.Poll[chromedp.Void](
 			`document.documentElement.dataset.theme==='wake-dark' && !document.querySelector('.wake-toolbar,[data-theme-preference],#daemon-contact')`,
-			nil,
 		),
 		chromedp.NavigateBack(),
-		chromedp.WaitVisible("[data-theme-preference]", chromedp.ByQuery),
+		chromedp.WaitVisible(chromedp.CSS("[data-theme-preference]")),
 	)
 	choose("system")
 
 	var wrappedLabels []string
 	check(
-		chromedp.Poll(`localStorage.getItem('wake.theme')==='system'`, nil),
+		chromedp.Poll[chromedp.Void](`localStorage.getItem('wake.theme')==='system'`),
 		testbrowser.EmulateSystemTheme("dark"),
 		testbrowser.EmulateSystemTheme("light"),
 		// Headless browser history may reload instead of restoring a cached page.
-		chromedp.Evaluate(
+		chromedp.Evaluate[chromedp.Void](
 			`localStorage.setItem('wake.theme','dark'); window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}))`,
-			nil,
 		),
-		chromedp.Poll(
+		chromedp.Poll[chromedp.Void](
 			`document.documentElement.dataset.theme==='wake-dark' && document.querySelector('[data-theme-preference]')?.value==='dark'`,
-			nil,
 		),
 		chromedp.EmulateViewport(320, 800),
-		chromedp.Evaluate(`document.documentElement.style.fontSize='200%'`, nil),
-		chromedp.Evaluate(`(()=>{
+		chromedp.Evaluate[chromedp.Void](`document.documentElement.style.fontSize='200%'`),
+		testbrowser.Evaluate(`(()=>{
 			const range=document.createRange();
 			return [...document.querySelectorAll('nav[aria-label="System views"] a,.wake-appearance h2')].filter(label=>{
 				range.selectNodeContents(label);

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -19,12 +20,14 @@ import (
 
 // NewDocument waits for a successful full-document load. Unlike the default
 // navigation wait, grid History API updates cannot satisfy its loader-bound wait.
-func NewDocument(action chromedp.Action) chromedp.Action {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		tree, err := page.GetFrameTree().Do(ctx)
+func NewDocument(action chromedp.Action[chromedp.Void]) chromedp.Action[chromedp.Void] {
+	return chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+		result, err := cdp.Call(ctx, target, page.GetFrameTree, cdp.Empty{})
 		if err != nil {
 			return err
 		}
+
+		frame := result.FrameTree.Frame.ID
 
 		listen, stop := context.WithCancel(ctx)
 		defer stop()
@@ -32,23 +35,27 @@ func NewDocument(action chromedp.Action) chromedp.Action {
 		events := make(chan *page.EventLifecycleEvent, 32)
 
 		var response atomic.Pointer[network.Response]
-		chromedp.ListenTarget(listen, func(event any) {
+
+		err = chromedp.Listen(listen, func(event any) {
 			switch event := event.(type) {
 			case *page.EventLifecycleEvent:
-				if event.FrameID == tree.Frame.ID && (event.Name == "init" || event.Name == "load") {
+				if event.FrameID == frame && (event.Name == "init" || event.Name == "load") {
 					select {
 					case events <- event:
 					default:
 					}
 				}
 			case *network.EventResponseReceived:
-				if event.FrameID == tree.Frame.ID && event.Type == network.ResourceTypeDocument {
+				if event.FrameID == frame && event.Type == network.ResourceTypeDocument {
 					response.Store(event.Response)
 				}
 			}
 		})
+		if err != nil {
+			return err
+		}
 
-		if err := action.Do(ctx); err != nil {
+		if _, err := action(ctx, target); err != nil {
 			return err
 		}
 

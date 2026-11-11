@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 #MISE description="Verify Markdown discovery and failures using disposable documents"
-#MISE tools = { "github:mrueg/goldmark-lint" = "0.6.1", "aqua:lycheeverse/lychee" = "0.24.2" }
+#MISE tools = { "github:mrueg/goldmark-lint" = "0.6.3", "aqua:lycheeverse/lychee" = "0.24.2" }
 set -euo pipefail
 root=$PWD
 workspace=$(mktemp -d)

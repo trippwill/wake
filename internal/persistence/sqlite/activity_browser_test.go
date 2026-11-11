@@ -23,6 +23,7 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
 
@@ -89,10 +90,10 @@ func TestBrowserActivityPerformance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(tab, 5*time.Minute)
 	defer cancel()
 
-	run := func(actions ...chromedp.Action) {
+	run := func(actions ...chromedp.Action[chromedp.Void]) {
 		t.Helper()
 
-		if err := chromedp.Run(ctx, actions...); err != nil {
+		if err := chromedp.Do(ctx, actions...); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -105,27 +106,30 @@ func TestBrowserActivityPerformance(t *testing.T) {
 	}
 
 	run(
-		network.SetCookie(cookie.Name, cookie.Value).WithURL(origin).WithHTTPOnly(true),
+		testbrowser.Command(
+			network.SetCookie,
+			network.SetCookieParams{Name: cookie.Name, Value: cookie.Value, URL: origin, HTTPOnly: new(true)},
+		),
 		chromedp.Navigate(initialPage),
-		chromedp.Poll(ready, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll[chromedp.Void](ready, chromedp.WithPollingTimeout(10*time.Second)),
 	)
 
 	// Timestamp the event handled by the grid. A new request must remove the
 	// ready marker before Tabulator reinstalls it. Two animation frames after
 	// rows exist allow the browser a paint opportunity before recording time.
-	measure := func(eventName, selector string, action chromedp.Action) float64 {
+	measure := func(eventName, selector string, action chromedp.Action[chromedp.Void]) float64 {
 		t.Helper()
-		run(chromedp.Evaluate(`(() => {
+		run(chromedp.Evaluate[chromedp.Void](`(() => {
 		  const grid = document.querySelector('[data-grid="activity"]');
 		  delete grid.dataset.activitySample;
-		  document.addEventListener(`+fmt.Sprintf("%q", eventName)+`, (event) => {
+		  document.addEventListener(` + fmt.Sprintf("%q", eventName) + `, (event) => {
             window.activityTarget = event.target.outerHTML.slice(0, 150);
-            if (!event.target.closest(`+fmt.Sprintf("%q", selector)+`)) return;
+            if (!event.target.closest(` + fmt.Sprintf("%q", selector) + `)) return;
 		    const start = performance.now();
 		    let requested = false;
 		    const observer = new MutationObserver(() => {
 		      requested ||= !grid.hasAttribute('data-grid-ready') || grid.hasAttribute('aria-busy');
-		      if (!requested || !(`+ready+`)) return;
+		      if (!requested || !(` + ready + `)) return;
 		      observer.disconnect();
 		      requestAnimationFrame(() => requestAnimationFrame(() => {
 		        grid.dataset.activitySample = String(performance.now() - start);
@@ -134,13 +138,13 @@ func TestBrowserActivityPerformance(t *testing.T) {
 		    });
 		    observer.observe(grid, {attributeFilter:['data-grid-ready','aria-busy']});
 		  }, {capture:true, once:true});
-		})()`, nil))
+		})()`))
 
 		var elapsed float64
-		if err := chromedp.Run(
+		if err := chromedp.Do(
 			ctx,
 			action,
-			chromedp.Poll(
+			testbrowser.Poll(
 				`Number(document.querySelector('[data-grid="activity"]').dataset.activitySample)`,
 				&elapsed,
 				chromedp.WithPollingMutation(),
@@ -149,7 +153,7 @@ func TestBrowserActivityPerformance(t *testing.T) {
 		); err != nil {
 			var state string
 
-			_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
+			_ = chromedp.Do(ctx, testbrowser.Evaluate(`JSON.stringify({
 			 url: location.href, target: window.activityTarget,
 			 ready: `+ready+`, sample: document.querySelector('[data-grid="activity"]').dataset.activitySample,
 			 status: document.querySelector('[data-grid-status]')?.textContent
@@ -197,7 +201,7 @@ func TestBrowserActivityPerformance(t *testing.T) {
 	}
 
 	click := func(selector string) float64 {
-		return measure("click", selector, chromedp.Click(selector, chromedp.ByQuery))
+		return measure("click", selector, chromedp.Click(chromedp.CSS(selector)))
 	}
 
 	fields := []string{"date", "quantity", "price"}
@@ -230,7 +234,7 @@ func TestBrowserActivityPerformance(t *testing.T) {
 	searchTimes := make([][]float64, len(searches))
 	for i := range samples + 1 {
 		for j, search := range searches {
-			run(chromedp.SetValue("#activity-search", search.value, chromedp.ByQuery))
+			run(chromedp.SetValue(chromedp.CSS("#activity-search"), search.value))
 
 			duration := click(`[data-list-filters] button[type="submit"]`)
 			if i > 0 {
@@ -325,8 +329,8 @@ WHERE e.kind=? AND e.id<>?`, template, family.kind, template); err != nil {
 
 func measureActivityKinds(
 	t *testing.T,
-	run func(...chromedp.Action),
-	measure func(string, string, chromedp.Action) float64,
+	run func(...chromedp.Action[chromedp.Void]),
+	measure func(string, string, chromedp.Action[chromedp.Void]) float64,
 	report func(string, []float64),
 	samples, total int,
 ) {
@@ -361,7 +365,7 @@ func measureActivityKinds(
 
 			for _, value := range []string{previous, kind.kind} {
 				var selected string
-				run(chromedp.Value(selector, &selected, chromedp.ByQuery))
+				run(testbrowser.Capture(&selected, chromedp.Value(chromedp.CSS(selector))))
 
 				if selected == value {
 					continue
@@ -374,7 +378,7 @@ func measureActivityKinds(
 			}
 
 			var rendered []string
-			run(chromedp.Evaluate(`[
+			run(testbrowser.Evaluate(`[
  new URL(location.href).searchParams.get('kind') || '',
  document.querySelector('[data-grid-status]').textContent
 ]`, &rendered))
@@ -389,12 +393,12 @@ func measureActivityKinds(
 	}
 }
 
-func selectActivityKind(value string) chromedp.Action {
-	return chromedp.Evaluate(fmt.Sprintf(`(() => {
+func selectActivityKind(value string) chromedp.Action[chromedp.Void] {
+	return chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`(() => {
  const select = document.querySelector('#activity-kind');
  select.value = %q;
  select.dispatchEvent(new Event('change', {bubbles: true}));
-})()`, value), nil)
+})()`, value))
 }
 
 func activityPerformanceServer(t *testing.T, s *Store, observe func(*http.Request)) (string, *http.Cookie) {

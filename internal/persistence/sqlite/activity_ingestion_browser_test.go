@@ -16,6 +16,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -23,9 +24,12 @@ import (
 const activityIngestionBatch = 200
 
 func measureActivityIngestion(
-	t *testing.T, s *Store,
-	run func(...chromedp.Action), measure func(string, string, chromedp.Action) float64,
-	report func(string, []float64), samples, original int,
+	t *testing.T,
+	s *Store,
+	run func(...chromedp.Action[chromedp.Void]),
+	measure func(string, string, chromedp.Action[chromedp.Void]) float64,
+	report func(string, []float64),
+	samples, original int,
 	ingesting, overlapped *atomic.Bool,
 ) {
 	t.Helper()
@@ -71,8 +75,8 @@ DELETE FROM publishing_dirty;`); err != nil {
 	for _, search := range []string{"2026-", "2026-12-31"} {
 		const searchButton = `[data-list-filters] button[type="submit"]`
 
-		run(chromedp.SetValue("#activity-search", search, chromedp.ByQuery))
-		measure("click", searchButton, chromedp.Click(searchButton, chromedp.ByQuery))
+		run(chromedp.SetValue(chromedp.CSS("#activity-search"), search))
+		measure("click", searchButton, chromedp.Click(chromedp.CSS(searchButton)))
 
 		durations := make([][]float64, len(activityKindSizes)+1)
 		overlaps := make([]int, len(durations))
@@ -143,8 +147,12 @@ DELETE FROM publishing_dirty;`); err != nil {
 }
 
 func measureIngestingKind(
-	t *testing.T, run func(...chromedp.Action), measure func(string, string, chromedp.Action) float64,
-	overlapped *atomic.Bool, kind, search, sort string, matched, original int,
+	t *testing.T,
+	run func(...chromedp.Action[chromedp.Void]),
+	measure func(string, string, chromedp.Action[chromedp.Void]) float64,
+	overlapped *atomic.Bool,
+	kind, search, sort string,
+	matched, original int,
 ) (float64, bool) {
 	t.Helper()
 
@@ -154,7 +162,7 @@ func measureIngestingKind(
 	overlap := overlapped.Load()
 
 	var rendered []string
-	run(chromedp.Evaluate(`(() => {
+	run(testbrowser.Evaluate(`(() => {
  const query = new URL(location.href).searchParams;
  return [query.get('kind') || '', query.get('q'), query.get('sort'), query.get('dir'), query.get('page'),
   document.querySelector('[data-grid-status]').textContent];
