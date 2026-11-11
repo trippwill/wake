@@ -77,7 +77,7 @@ func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.
 
 	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
 	for _, value := range []string{"1", "2"} {
-		q, _ := financial.NewQuantity(value)
+		q, _ := financial.ParseQuantity(value)
 		p, _ := source.NewPosition(instrument, q, financial.Price{})
 		f.Positions = append(f.Positions, p)
 	}
@@ -117,7 +117,7 @@ func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) 
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Option, Reference: ref})
-	q, _ := financial.NewQuantity("1")
+	q, _ := financial.ParseQuantity("1")
 	p, _ := source.NewPosition(instrument, q, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-04")
 
@@ -705,7 +705,7 @@ func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref, _ := source.NewReference("broker", "security", "", "independent")
 	i, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
-	q, _ := financial.NewQuantity("1.0000")
+	q, _ := financial.ParseQuantity("1.0000")
 	p, _ := source.NewPosition(i, q, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-04")
 	at, _ := financial.ParseTimestamp("2026-11-04T12:00:00.1200Z")
@@ -1007,7 +1007,7 @@ func TestPositionsInterpretationUpgradeUsesRetainedEvidenceWithoutRefetch(t *tes
 
 	after := readPositions(t, s)
 	if after.Status != "available" || after.Version == before.Version ||
-		realizedActivity(t, s, executions[0].ID).Activity.Price.Amount != "99.0000" {
+		realizedActivity(t, s, executions[0].ID).Activity.Trade.Price.Amount != "99.0000" {
 		t.Fatal(after)
 	}
 
@@ -1036,7 +1036,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
 	date, _ := financial.ParseDate("2026-11-02")
-	quantity, _ := financial.NewQuantity("10")
+	quantity, _ := financial.ParseQuantity("10")
 	usd, _ := financial.ParseCurrency("USD")
 	admit := func(id string, costs []string) {
 		t.Helper()
@@ -1045,7 +1045,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 		for _, value := range costs {
 			cost := financial.Price{}
 			if value != "" {
-				cost, _ = financial.NewPrice(value, usd)
+				cost, _ = financial.ParsePrice(value, usd)
 			}
 
 			p, _ := source.NewPosition(instrument, quantity, cost)
@@ -1054,11 +1054,11 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 
 		// A separate quantity group has a cheap, definite conflict. Its ordering
 		// relative to the expensive group must not change the published reason.
-		otherQuantity, _ := financial.NewQuantity("20")
+		otherQuantity, _ := financial.ParseQuantity("20")
 
-		otherCost, _ := financial.NewPrice("1", usd)
+		otherCost, _ := financial.ParsePrice("1", usd)
 		if id == "ambiguous-duplicates" {
-			otherCost, _ = financial.NewPrice("2", usd)
+			otherCost, _ = financial.ParsePrice("2", usd)
 		}
 
 		other, _ := source.NewPosition(instrument, otherQuantity, otherCost)
@@ -1138,7 +1138,7 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 
 	f := source.PositionSetInput{Location: "set", Account: account, Date: date, Complete: true}
 	for _, value := range []string{"1", "2"} {
-		quantity, _ := financial.NewQuantity(value)
+		quantity, _ := financial.ParseQuantity(value)
 		p, _ := source.NewPosition(instrument, quantity, financial.Price{})
 		f.Positions = append(f.Positions, p)
 	}
@@ -1224,7 +1224,7 @@ CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_clai
 	instrument, _ := source.NewInstrument(
 		source.InstrumentInput{Kind: source.Option, Reference: ref, Option: terms},
 	)
-	quantity, _ := financial.NewQuantity("1")
+	quantity, _ := financial.ParseQuantity("1")
 	p, _ := source.NewPosition(instrument, quantity, financial.Price{})
 	date, _ := financial.ParseDate("2026-11-03")
 

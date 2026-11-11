@@ -42,7 +42,7 @@ func TestGeneratedUnavailablePositionsAlwaysReplaceRowsWithNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, initial := range []string{"", `{"warehouse_id":"w","account_id":"a","version":"v","status":"available","as_of":{"date":"2026-11-04","at":null},"reason":null,"positions":[{"instrument_id":"old"}]}`} {
+	for _, initial := range []string{"", `{"warehouse_id":"w","account_id":"a","version":"v","status":"available","as_of":{"date":"2026-11-04","at":null,"basis":"broker_effective"},"reason":null,"positions":[{"instrument_id":"old"}]}`} {
 		model := PositionsView{WarehouseId: "w", AccountId: "a", Version: "v"}
 		if initial != "" {
 			if err := json.Unmarshal([]byte(initial), &model); err != nil {
@@ -101,7 +101,7 @@ func TestPositionRouteConditionalReadsSchemaAndUnavailableSets(t *testing.T) {
 			Status:      status,
 		}
 		if status == "available" {
-			v.AsOf = &application.PositionTime{Date: "2026-11-04"}
+			v.AsOf = &application.PositionTime{Date: "2026-11-04", Basis: "broker_effective"}
 			v.Positions = []application.PublishedPosition{}
 		} else {
 			v.Reason = new("not_reported")

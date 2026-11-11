@@ -14,9 +14,9 @@ func TestPositionSetsSealExactReportedValuesAndCompleteness(t *testing.T) {
 	account, _ := source.NewReference("broker", "account", "", "one")
 	ref, _ := source.NewReference("broker", "security", "", "security")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
-	quantity, _ := financial.NewQuantity("-0.0000000000000012300")
+	quantity, _ := financial.ParseQuantity("-0.0000000000000012300")
 	currency, _ := financial.ParseCurrency("USD")
-	cost, _ := financial.NewPrice("0.0000", currency)
+	cost, _ := financial.ParsePrice("0.0000", currency)
 
 	p, err := source.NewPosition(instrument, quantity, cost)
 	if err != nil || p.Unit() != "shares" || p.Quantity().Value() != quantity.Value() ||

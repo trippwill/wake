@@ -11,17 +11,18 @@ import (
 )
 
 type activityFieldData struct {
-	Name                                                                source.ActivityFieldName
-	Unknown                                                             bool
-	ReportedOn                                                          string
-	Text, Quantity, Date, Timestamp, Currency, QuantityUnit, PriceBasis string
-	Money, Price                                                        moneyData
-	Instrument                                                          *instrumentData
-	Reference                                                           refData
-	CurrencyAmount                                                      *currencyAmountData
-	Charge                                                              *chargeData
-	ChargeParents                                                       []chargeRoleData
-	Relationship                                                        *relationshipData
+	Name                                                    source.ActivityFieldName
+	Unknown                                                 bool
+	ReportedOn                                              string
+	Text, Quantity, Date, Timestamp, Currency, QuantityUnit string
+	QuotationBasis                                          source.QuotationBasis
+	Money, Price                                            moneyData
+	Instrument                                              *instrumentData
+	Reference                                               refData
+	CurrencyAmount                                          *currencyAmountData
+	Charge                                                  *chargeData
+	ChargeParents                                           []chargeRoleData
+	Relationship                                            *relationshipData
 }
 type observationData struct {
 	Location       string
@@ -42,17 +43,17 @@ func optionalSourceDate(value financial.Date) string {
 func activityFieldWire(value source.ActivityField) activityFieldData {
 	f := value.Fields()
 	d := activityFieldData{
-		Name:         f.Name,
-		Unknown:      f.Unknown,
-		ReportedOn:   optionalSourceDate(f.ReportedOn),
-		Text:         f.Text,
-		QuantityUnit: f.QuantityUnit,
-		PriceBasis:   f.PriceBasis,
-		Money:        moneyWire(f.Money),
-		Quantity:     f.Quantity.Value(),
-		Date:         optionalSourceDate(f.Date),
-		Timestamp:    f.Timestamp.String(),
-		Reference:    refWire(f.Reference),
+		Name:           f.Name,
+		Unknown:        f.Unknown,
+		ReportedOn:     optionalSourceDate(f.ReportedOn),
+		Text:           f.Text,
+		QuantityUnit:   f.QuantityUnit,
+		QuotationBasis: f.QuotationBasis,
+		Money:          moneyWire(f.Money),
+		Quantity:       f.Quantity.Value(),
+		Date:           optionalSourceDate(f.Date),
+		Timestamp:      f.Timestamp.String(),
+		Reference:      refWire(f.Reference),
 	}
 	if f.Price.Amount() != "" {
 		d.Price = moneyData{f.Price.Amount(), f.Price.Currency().String()}
@@ -94,11 +95,11 @@ func activityFieldWire(value source.ActivityField) activityFieldData {
 
 func (d activityFieldData) field() (source.ActivityField, error) {
 	f := source.ActivityFieldInput{
-		Name:         d.Name,
-		Unknown:      d.Unknown,
-		Text:         d.Text,
-		QuantityUnit: d.QuantityUnit,
-		PriceBasis:   d.PriceBasis,
+		Name:           d.Name,
+		Unknown:        d.Unknown,
+		Text:           d.Text,
+		QuantityUnit:   d.QuantityUnit,
+		QuotationBasis: d.QuotationBasis,
 	}
 
 	var err error
@@ -120,14 +121,14 @@ func (d activityFieldData) field() (source.ActivityField, error) {
 			return source.ActivityField{}, e
 		}
 
-		f.Price, err = financial.NewPrice(d.Price.Amount, c)
+		f.Price, err = financial.ParsePrice(d.Price.Amount, c)
 		if err != nil {
 			return source.ActivityField{}, err
 		}
 	}
 
 	if d.Quantity != "" {
-		f.Quantity, err = financial.NewQuantity(d.Quantity)
+		f.Quantity, err = financial.ParseQuantity(d.Quantity)
 		if err != nil {
 			return source.ActivityField{}, err
 		}

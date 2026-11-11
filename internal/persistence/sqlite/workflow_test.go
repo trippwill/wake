@@ -351,7 +351,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 
 	fields := view.Executions[0].Terms().Fields()
 	if fields.Quantity.Value() != "0.000000000123" || fields.Price.Amount() != "401.000000001" ||
-		fields.ExecutedAt.String() != "2026-10-20T13:30:00.120Z" ||
+		fields.At.String() != "2026-10-20T13:30:00.120Z" ||
 		fields.PositionEffect != "opening" ||
 		fields.Charges[0].Total().Amount() != "-0.000000000001" ||
 		fields.Proceeds.Amount() != "-0.000000049323000000123" {

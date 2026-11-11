@@ -10,15 +10,19 @@ import (
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
-func (s *Store) sourceInstructions(ctx context.Context, id string) ([]application.CorrectionReview, error) {
-	rows, err := s.queries.RelatedSourceCorrections(ctx, id)
+func sourceInstructions(
+	ctx context.Context,
+	q *sqlc.Queries,
+	id string,
+) ([]application.CorrectionReview, error) {
+	rows, err := q.RelatedSourceCorrections(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
 	out := []application.CorrectionReview{}
 	for _, r := range rows {
-		targets, e := s.queries.EventLinks(
+		targets, e := q.EventLinks(
 			ctx,
 			sqlc.EventLinksParams{AccountID: r.AccountID, Reference: r.Target},
 		)
@@ -26,7 +30,7 @@ func (s *Store) sourceInstructions(ctx context.Context, id string) ([]applicatio
 			return nil, e
 		}
 
-		replacements, e := s.queries.EventLinks(
+		replacements, e := q.EventLinks(
 			ctx,
 			sqlc.EventLinksParams{AccountID: r.AccountID, Reference: r.Replacement},
 		)

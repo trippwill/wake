@@ -275,6 +275,20 @@ func CalculateActivity(in ActivityCalculationInput) (ActivityCalculation, error)
 			if err != nil {
 				return ActivityCalculation{}, err
 			}
+
+			if d.Text == "" {
+				key := d.Scope
+				switch key {
+				case "sent_amount":
+					key = string(source.FieldSent)
+				case "received_amount":
+					key = string(source.FieldReceived)
+				}
+
+				if !slices.Contains(out.Fields.OperatorFields, key) {
+					out.Fields.OperatorFields = append(out.Fields.OperatorFields, key)
+				}
+			}
 		}
 
 		out.Explanation.AppliedScopes = append(out.Explanation.AppliedScopes, d.Scope)

@@ -123,7 +123,7 @@ func TestPublishingEndpointLookupsIgnoreUnrelatedCorrections(t *testing.T) {
 	coverageReport(t, s, "correction-history", rows.String())
 	counter := &endpointCountingDB{DBTX: s.db}
 
-	resource, why, err := canonicalSnapshot(t.Context(), sqlc.New(counter), "activity", id)
+	resource, why, err := canonicalSnapshot(t.Context(), sqlc.New(counter), "activity", id, nil)
 	if err != nil || resource.Activity.State != "cancelled" || len(why.Corrections) != 1 ||
 		len(why.Corrections[0].TargetIDs) != 1 ||
 		why.Corrections[0].TargetIDs[0] != id {

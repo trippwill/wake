@@ -214,8 +214,8 @@ func enrichDebt(a, b source.DebtTerms) (source.DebtTerms, error) {
 		x.Currency = y.Currency
 	}
 
-	if x.Coupon.Value() == "" {
-		x.Coupon = y.Coupon
+	if x.CouponRate.Value() == "" {
+		x.CouponRate = y.CouponRate
 	}
 
 	if x.Maturity.IsZero() {
@@ -263,24 +263,24 @@ func mergeCharges(a, b []source.Charge) ([]source.Charge, error) {
 
 func enrichTrade(a, b source.Trade) (source.Trade, error) {
 	f, g := a.Fields(), b.Fields()
-	if f.Gross.Amount() == "" {
-		f.Gross = g.Gross
+	if f.GrossAmount.Amount() == "" {
+		f.GrossAmount = g.GrossAmount
 	}
 
 	if f.Proceeds.Amount() == "" {
 		f.Proceeds = g.Proceeds
 	}
 
-	if f.Net.Amount() == "" {
-		f.Net = g.Net
+	if f.NetCash.Amount() == "" {
+		f.NetCash = g.NetCash
 	}
 
 	if f.AccruedInterest.Amount() == "" {
 		f.AccruedInterest = g.AccruedInterest
 	}
 
-	if f.NetWithBillable.Amount() == "" {
-		f.NetWithBillable = g.NetWithBillable
+	if f.NetCashWithBillable.Amount() == "" {
+		f.NetCashWithBillable = g.NetCashWithBillable
 	}
 
 	if f.PositionEffect == "" {
@@ -298,8 +298,8 @@ func enrichTrade(a, b source.Trade) (source.Trade, error) {
 		f.SettlementDate = g.SettlementDate
 	}
 
-	if f.ExecutedAt.IsZero() || (!g.ExecutedAt.IsZero() && f.ExecutedAt.Contains(g.ExecutedAt)) {
-		f.ExecutedAt = g.ExecutedAt
+	if f.At.IsZero() || (!g.At.IsZero() && f.At.Contains(g.At)) {
+		f.At = g.At
 	}
 
 	if f.Order.IsZero() {
@@ -359,20 +359,20 @@ func enrichConversion(a, b source.Conversion) (source.Conversion, error) {
 		f.Order = g.Order
 	}
 
-	if f.Gross.Amount() == "" {
-		f.Gross = g.Gross
+	if f.GrossAmount.Amount() == "" {
+		f.GrossAmount = g.GrossAmount
 	}
 
 	if f.Proceeds.Amount() == "" {
 		f.Proceeds = g.Proceeds
 	}
 
-	if f.Net.Amount() == "" {
-		f.Net = g.Net
+	if f.NetCash.Amount() == "" {
+		f.NetCash = g.NetCash
 	}
 
-	if f.NetWithBillable.Amount() == "" {
-		f.NetWithBillable = g.NetWithBillable
+	if f.NetCashWithBillable.Amount() == "" {
+		f.NetCashWithBillable = g.NetCashWithBillable
 	}
 
 	charges, chargeErr := mergeCharges(f.Charges, g.Charges)

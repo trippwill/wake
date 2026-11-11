@@ -16,11 +16,11 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 	account, _ := source.NewReference("synthetic", "account", "", "one")
 	instrumentRef, _ := source.NewReference("synthetic", "instrument", "", "one")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Reference: instrumentRef})
-	quantity, _ := financial.NewQuantity("1")
-	price, _ := financial.NewPrice("100", usd)
+	quantity, _ := financial.ParseQuantity("1")
+	price, _ := financial.ParsePrice("100", usd)
 	date, _ := financial.ParseDate("2026-10-20")
 	charge := func(field, amount string, currency financial.Currency) source.Charge {
-		money, _ := financial.NewMoney(amount, currency)
+		money, _ := financial.ParseMoney(amount, currency)
 
 		value, err := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: field, Total: money})
 		if err != nil {
@@ -36,7 +36,7 @@ func TestChargeRolesAllowEnrichmentAndReordering(t *testing.T) {
 		value, err := source.NewTrade(source.TradeInput{
 			Location: "synthetic", Account: account,
 			Instrument: instrument, Side: source.Buy, Quantity: quantity, Price: price,
-			TradeDate: date, Charges: charges,
+			Date: date, Charges: charges,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -71,9 +71,9 @@ func TestConversionChargeRolesAllowEnrichment(t *testing.T) {
 	sent, _ := source.NewCurrencyAmount(usd, "1")
 	received, _ := source.NewCurrencyAmount(gbp, "")
 	date, _ := financial.ParseDate("2026-10-20")
-	totalMoney, _ := financial.NewMoney("-1", usd)
-	componentMoney, _ := financial.NewMoney("-0.25", gbp)
-	changedMoney, _ := financial.NewMoney("-2", usd)
+	totalMoney, _ := financial.ParseMoney("-1", usd)
+	componentMoney, _ := financial.ParseMoney("-0.25", gbp)
+	changedMoney, _ := financial.ParseMoney("-2", usd)
 	total, _ := source.NewCharge(
 		source.ChargeInput{Category: source.Fee, Field: "commission", Total: totalMoney},
 	)

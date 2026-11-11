@@ -173,7 +173,7 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 			continue
 		}
 		terms := observedTrade(t, record.Observation).Fields()
-		if terms.Quantity.Value() != "1.0000000000000000000000000001" || terms.Price.Amount() != "123.4500000000000000000000000001" || terms.ExecutedAt.String() != "2026-10-23T12:00:00.1200Z" || terms.Event.Scope() != "account-1" {
+		if terms.Quantity.Value() != "1.0000000000000000000000000001" || terms.Price.Amount() != "123.4500000000000000000000000001" || terms.At.String() != "2026-10-23T12:00:00.1200Z" || terms.Event.Scope() != "account-1" {
 			t.Fatal("normalized exact/source terms changed")
 		}
 	}
@@ -672,7 +672,7 @@ func TestDebtExternalClaimRoundTrip(t *testing.T) {
 				t.Fatal(records, err)
 			}
 			terms := observedTrade(t, records[0].Observation).Fields()
-			if terms.Instrument.Debt().Fields().Coupon.Value() != "4.125000000000001" || observedTrade(t, records[0].Observation).PriceBasis() != "" || terms.AccruedInterest.Amount() != "-12.345" {
+			if terms.Instrument.Debt().Fields().CouponRate.Value() != "4.125000000000001" || observedTrade(t, records[0].Observation).QuotationBasis() != "" || terms.AccruedInterest.Amount() != "-12.345" {
 				t.Fatal("debt terms lost", terms)
 			}
 		})

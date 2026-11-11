@@ -42,6 +42,9 @@ Trade cash amounts with an unspecified gross or net role stay in the source
 report. A missing transaction in a later response leaves the retained history
 intact. See [SnapTrade activities](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_getAccountActivities).
 
+The cached purchase and sale interpretation does not include the separate net cash with billable
+role. Wake's activity explanation identifies that field as not expected from this report.
+
 ## Fidelity US positions
 
 Wake checks for positions every 24 hours by default, independently of trade history.

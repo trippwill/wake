@@ -224,9 +224,9 @@ func reportedRealized(row map[string]string, parent, loc string) (source.Activit
 		return source.ActivityObservation{}, err
 	}
 
-	fields = append(fields, source.ActivityFieldInput{Name: source.FieldTradeDate, Date: date})
+	fields = append(fields, source.ActivityFieldInput{Name: source.FieldDate, Date: date})
 	if row["quantity"] != "" && kind != "conversion" {
-		q, e := financial.NewQuantity(row["quantity"])
+		q, e := financial.ParseQuantity(row["quantity"])
 		if e != nil {
 			return source.ActivityObservation{}, e
 		}
@@ -259,7 +259,7 @@ func reportedRealized(row map[string]string, parent, loc string) (source.Activit
 		name  source.ActivityFieldName
 	}{{"fifoPnlRealized", source.FieldRealizedPnL}, {"cost", source.FieldReportedCostBasis}} {
 		if row[entry.field] != "" {
-			money, e := financial.NewMoney(row[entry.field], currency)
+			money, e := financial.ParseMoney(row[entry.field], currency)
 			if e != nil {
 				return source.ActivityObservation{}, e
 			}

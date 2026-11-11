@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -74,13 +75,23 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 				}
 
 				accepted, e := s.Resource(t.Context(), "activity", activity)
-				if e != nil || !accepted.Activity.Conflict || accepted.Activity.Option == nil ||
-					publishedString(accepted.Activity.Option.Multiplier) != want {
+
+				var option *application.PublishedOption
+				if e == nil {
+					if accepted.Activity.Trade != nil {
+						option = accepted.Activity.Trade.InstrumentTerms.Option
+					} else if accepted.Activity.Lifecycle != nil {
+						option = accepted.Activity.Lifecycle.InstrumentTerms.Option
+					}
+				}
+
+				if e != nil || !accepted.Activity.Conflict || option == nil ||
+					publishedString(option.Multiplier) != want {
 					t.Fatalf(
 						"same-activity terms lost want=%s activity=%+v option=%+v err=%v",
 						want,
 						accepted.Activity,
-						accepted.Activity.Option,
+						option,
 						e,
 					)
 				}
@@ -148,7 +159,7 @@ func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 		i := f.Instrument.Fields()
 		d := i.Debt.Fields()
 
-		d.Coupon, err = financial.NewQuantity(coupon)
+		d.CouponRate, err = financial.ParseQuantity(coupon)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,18 +197,18 @@ func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 
 	detail, err := s.InstrumentDetail(t.Context(), base.Instrument())
 	if err != nil || detail.Instrument.Status().NeedsReview() ||
-		detail.Instrument.Reported().Debt().Fields().Coupon.Value() != "" {
+		detail.Instrument.Reported().Debt().Fields().CouponRate.Value() != "" {
 		t.Fatal("debt terms contaminated identity", detail, err)
 	}
 
 	accepted, e := s.Resource(t.Context(), "activity", base.ID())
-	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Debt == nil ||
-		publishedString(accepted.Activity.Debt.Coupon) != "" {
+	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Trade.InstrumentTerms.Debt == nil ||
+		publishedString(accepted.Activity.Trade.InstrumentTerms.Debt.CouponRate) != "" {
 		t.Fatalf(
 			"activity=%+v debt=%+v option=%+v err=%v",
 			accepted.Activity,
-			accepted.Activity.Debt,
-			accepted.Activity.Option,
+			accepted.Activity.Trade.InstrumentTerms.Debt,
+			accepted.Activity.Trade.InstrumentTerms.Option,
 			e,
 		)
 	}
@@ -219,7 +230,7 @@ func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
 		i.Reference = source.Reference{}
 		o := i.Option.Fields()
 
-		o.Multiplier, err = financial.NewQuantity(multiplier)
+		o.Multiplier, err = financial.ParseQuantity(multiplier)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -262,13 +273,13 @@ func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
 	}
 
 	accepted, e := s.Resource(t.Context(), "activity", base.ID())
-	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Option == nil ||
-		publishedString(accepted.Activity.Option.Multiplier) != "" {
+	if e != nil || !accepted.Activity.Conflict || accepted.Activity.Trade.InstrumentTerms.Option == nil ||
+		publishedString(accepted.Activity.Trade.InstrumentTerms.Option.Multiplier) != "" {
 		t.Fatalf(
 			"activity=%+v debt=%+v option=%+v err=%v",
 			accepted.Activity,
-			accepted.Activity.Debt,
-			accepted.Activity.Option,
+			accepted.Activity.Trade.InstrumentTerms.Debt,
+			accepted.Activity.Trade.InstrumentTerms.Option,
 			e,
 		)
 	}

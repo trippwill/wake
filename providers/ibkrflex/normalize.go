@@ -170,14 +170,14 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 		return source.TradeInput{}, err
 	}
 
-	quantity, err := financial.NewQuantity(row["quantity"])
+	quantity, err := financial.ParseQuantity(row["quantity"])
 	if err != nil {
 		return source.TradeInput{}, err
 	}
 
 	price := financial.Price{}
 	if row["price"] != "" {
-		price, err = financial.NewPrice(row["price"], currency)
+		price, err = financial.ParsePrice(row["price"], currency)
 	}
 
 	if err != nil {
@@ -207,7 +207,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 		Side:       side,
 		Quantity:   quantity.Abs(),
 		Price:      price,
-		TradeDate:  date,
+		Date:       date,
 	}
 	for _, entry := range []struct{ field, kind string }{{"execID", "execution-id"}, {"tradeID", "trade-id"}} {
 		value := nativeValue(row[entry.field])
@@ -243,7 +243,7 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	}
 
 	if value := row["dateTime"]; value != "" {
-		fields.ExecutedAt, err = parseReportedTimestamp(value)
+		fields.At, err = parseReportedTimestamp(value)
 		if err != nil {
 			return source.TradeInput{}, err
 		}
@@ -277,9 +277,9 @@ func rowFields(row map[string]string, parent, loc string) (source.TradeInput, er
 	for _, entry := range []struct {
 		field  string
 		target *financial.Money
-	}{{"amount", &fields.Gross}, {"proceeds", &fields.Proceeds}, {"netCash", &fields.Net}, {"accruedInt", &fields.AccruedInterest}, {"netCashWithBillable", &fields.NetWithBillable}} {
+	}{{"amount", &fields.GrossAmount}, {"proceeds", &fields.Proceeds}, {"netCash", &fields.NetCash}, {"accruedInt", &fields.AccruedInterest}, {"netCashWithBillable", &fields.NetCashWithBillable}} {
 		if row[entry.field] != "" {
-			*entry.target, err = financial.NewMoney(row[entry.field], currency)
+			*entry.target, err = financial.ParseMoney(row[entry.field], currency)
 			if err != nil {
 				return source.TradeInput{}, err
 			}
@@ -363,14 +363,14 @@ func optionTerms(row map[string]string) (source.OptionTerms, error) {
 			return source.OptionTerms{}, e
 		}
 
-		f.Strike, err = financial.NewPrice(row["strike"], c)
+		f.Strike, err = financial.ParsePrice(row["strike"], c)
 		if err != nil {
 			return source.OptionTerms{}, err
 		}
 	}
 
 	if row["multiplier"] != "" {
-		f.Multiplier, err = financial.NewQuantity(row["multiplier"])
+		f.Multiplier, err = financial.ParseQuantity(row["multiplier"])
 		if err != nil {
 			return source.OptionTerms{}, err
 		}
@@ -436,8 +436,8 @@ func optionLifecycle(row map[string]string, parent, loc string) (source.Lifecycl
 			Instrument:    f.Instrument,
 			Kind:          outcome(row),
 			Quantity:      f.Quantity,
-			Date:          f.TradeDate,
-			At:            f.ExecutedAt,
+			Date:          f.Date,
+			At:            f.At,
 		},
 	)
 }
@@ -473,8 +473,8 @@ func conversion(row map[string]string, parent, loc string) (source.Conversion, e
 	}
 
 	quoteText := ""
-	if f.Gross.Amount() != "" {
-		q, e := financial.NewQuantity(f.Gross.Amount())
+	if f.GrossAmount.Amount() != "" {
+		q, e := financial.ParseQuantity(f.GrossAmount.Amount())
 		if e != nil {
 			return source.Conversion{}, e
 		}
@@ -496,23 +496,23 @@ func conversion(row map[string]string, parent, loc string) (source.Conversion, e
 
 	return source.NewConversion(
 		source.ConversionInput{
-			Location:        loc,
-			Account:         f.Account,
-			Event:           f.Event,
-			EventAliases:    f.EventAliases,
-			EventDistinct:   f.EventDistinct,
-			Order:           f.Order,
-			Date:            f.TradeDate,
-			At:              f.ExecutedAt,
-			Sent:            sent,
-			Received:        received,
-			RateBase:        base,
-			Rate:            f.Price,
-			Gross:           f.Gross,
-			Proceeds:        f.Proceeds,
-			Net:             f.Net,
-			NetWithBillable: f.NetWithBillable,
-			Charges:         f.Charges,
+			Location:            loc,
+			Account:             f.Account,
+			Event:               f.Event,
+			EventAliases:        f.EventAliases,
+			EventDistinct:       f.EventDistinct,
+			Order:               f.Order,
+			Date:                f.Date,
+			At:                  f.At,
+			Sent:                sent,
+			Received:            received,
+			RateBase:            base,
+			Rate:                f.Price,
+			GrossAmount:         f.GrossAmount,
+			Proceeds:            f.Proceeds,
+			NetCash:             f.NetCash,
+			NetCashWithBillable: f.NetCashWithBillable,
+			Charges:             f.Charges,
 		},
 	)
 }

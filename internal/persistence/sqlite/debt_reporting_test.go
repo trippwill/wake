@@ -52,9 +52,14 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 
 			terms := execution.Terms()
 			f := terms.Fields()
-			if terms.QuantityUnit() != "nominal" || terms.PriceBasis() != "" || f.Quantity.Value() != tc.quantity ||
-				f.Price.Amount() != tc.price || f.Price.Currency().String() != tc.currency || f.Gross.Amount() != tc.principal ||
-				f.Proceeds.Amount() != tc.proceeds || f.Net.Amount() != tc.net || f.NetWithBillable.Amount() != tc.net ||
+			if terms.QuantityUnit() != "nominal" || terms.QuotationBasis() != "" ||
+				f.Quantity.Value() != tc.quantity ||
+				f.Price.Amount() != tc.price ||
+				f.Price.Currency().String() != tc.currency ||
+				f.GrossAmount.Amount() != tc.principal ||
+				f.Proceeds.Amount() != tc.proceeds ||
+				f.NetCash.Amount() != tc.net ||
+				f.NetCashWithBillable.Amount() != tc.net ||
 				f.AccruedInterest.Amount() != tc.accrued {
 				t.Fatal("reported values were inferred, combined or rounded", f)
 			}
@@ -86,13 +91,15 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 			}
 
 			published, err := s.Resource(ctx, "activity", execution.ID())
-			if err != nil || published.Activity.PriceBasis != nil || published.Activity.Price.Amount != tc.price ||
-				published.Activity.Net.Amount != tc.net || published.Activity.AccruedInterest.Amount != tc.accrued {
+			if err != nil || published.Activity.Trade.QuotationBasis != nil ||
+				published.Activity.Trade.Price.Amount != tc.price ||
+				published.Activity.Trade.NetCash.Amount != tc.net ||
+				published.Activity.Trade.AccruedInterest.Amount != tc.accrued {
 				t.Fatal("published debt values", published, err)
 			}
 
 			wire, err := json.Marshal(published)
-			if err != nil || !bytes.Contains(wire, []byte(`"price_basis":null`)) {
+			if err != nil || !bytes.Contains(wire, []byte(`"quotation_basis":null`)) {
 				t.Fatal("debt price basis must be explicit null", string(wire), err)
 			}
 
@@ -111,7 +118,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 			command, err := application.NewDecision(application.DecisionInput{
 				TargetKind:       "activity",
 				TargetID:         execution.ID(),
-				Scope:            "net",
+				Scope:            "net_cash",
 				Text:             "-1234.5678900001",
 				Currency:         tc.currency,
 				Action:           "set",
@@ -126,26 +133,26 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				t.Fatal("net correction preflight", err)
 			}
 
-			retainDecision(t, s, "activity", execution.ID(), "net", "-1234.5678900001", tc.currency, "set")
+			retainDecision(t, s, "activity", execution.ID(), "net_cash", "-1234.5678900001", tc.currency, "set")
 			coverageReport(t, s, "repeat", row)
 
 			corrected, err := s.ExecutionDetail(ctx, execution.ID())
-			if err != nil || corrected.Execution.Terms().Fields().Net.Amount() != "-1234.5678900001" ||
+			if err != nil || corrected.Execution.Terms().Fields().NetCash.Amount() != "-1234.5678900001" ||
 				corrected.Execution.Terms().Fields().AccruedInterest != f.AccruedInterest {
 				t.Fatal("repeat overwrote correction or combined interest", corrected, err)
 			}
 
-			retainDecision(t, s, "activity", execution.ID(), "net", "", "", "release")
+			retainDecision(t, s, "activity", execution.ID(), "net_cash", "", "", "release")
 
 			restored, err := s.ExecutionDetail(ctx, execution.ID())
-			if err != nil || restored.Execution.Terms().Fields().Net != f.Net {
+			if err != nil || restored.Execution.Terms().Fields().NetCash != f.NetCash {
 				t.Fatal("release changed reported net", restored, err)
 			}
 
 			coverageReport(t, s, "disputed", strings.Replace(row, `netCash="`+tc.net+`"`, `netCash="-1.00"`, 1))
 
 			disputed, err := s.Resource(ctx, "activity", execution.ID())
-			if err != nil || !disputed.Activity.Conflict || disputed.Activity.Net.Amount != tc.net {
+			if err != nil || !disputed.Activity.Conflict || disputed.Activity.Trade.NetCash.Amount != tc.net {
 				t.Fatal("monetary disagreement lost", disputed, err)
 			}
 		})
@@ -167,9 +174,9 @@ func TestDebtMissingMonetaryRolesStayUnknown(t *testing.T) {
 	}
 
 	f := view.Executions[0].Terms().Fields()
-	if f.Gross.Amount() != "" || f.Net.Amount() != "" || f.Proceeds.Amount() != "" ||
+	if f.GrossAmount.Amount() != "" || f.NetCash.Amount() != "" || f.Proceeds.Amount() != "" ||
 		f.AccruedInterest.Amount() != "" ||
-		f.NetWithBillable.Amount() != "" {
+		f.NetCashWithBillable.Amount() != "" {
 		t.Fatal("missing monetary roles were calculated", f)
 	}
 }

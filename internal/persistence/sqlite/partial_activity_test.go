@@ -5,11 +5,13 @@ package persistence
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -51,6 +53,21 @@ func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
 		t.Errorf("unknown monetary values erased reporting dates: %#v", value)
 	}
 
+	resource := realizedActivity(t, s, id)
+
+	explanation, err := s.Explanation(t.Context(), "activity", id, resource.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/reported_realized_pnl/amount", "/reported_realized_pnl/cost_basis"} {
+		if !slices.ContainsFunc(explanation.Fields, func(detail application.PublishedFieldDetail) bool {
+			return detail.Path == path && detail.Reason == application.FieldReportedUnavailable
+		}) {
+			t.Errorf("explicit unavailable source assertion missing from explanation: %s", path)
+		}
+	}
+
 	form, err := s.CorrectionForm(t.Context(), "activity", id)
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +87,214 @@ func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
 
 	if !found {
 		t.Fatal("dated unknown source candidate missing")
+	}
+}
+
+func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.T) {
+	s := coverageStore(t)
+	ctx := t.Context()
+	full := partialTrade(t).Observation()
+	processPartial(t, s, "baseline", full)
+
+	before, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.queries.Executions(ctx)
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+	original := realizedActivity(t, s, id)
+	explicit := partialObservation(t, full.Fields(), partialField(t,
+		source.ActivityFieldInput{Name: source.FieldSettlementDate, Unknown: true}))
+	processPartial(t, s, "explicitly-unavailable", explicit)
+
+	updated := realizedActivity(t, s, id)
+	why, err := s.Explanation(ctx, "activity", id, updated.Revision)
+	if err != nil || updated.Revision <= original.Revision || updated.Activity.Trade.SettlementDate != nil ||
+		!slices.ContainsFunc(why.Fields, func(detail application.PublishedFieldDetail) bool {
+			return detail.Path == "/settlement_date" && detail.Reason == application.FieldReportedUnavailable
+		}) {
+		t.Fatalf("field explanation did not advance with explicit unavailability: %+v %+v %v", updated, why, err)
+	}
+
+	after, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
+	if err != nil || after.Unchanged || after.Snapshot.Version == before.Snapshot.Version {
+		t.Fatalf("explanation-only change did not publish: %+v %v", after, err)
+	}
+}
+
+func TestFieldExplanationFollowsActiveScalarClears(t *testing.T) {
+	s := coverageStore(t)
+	f := partialTrade(t).Fields()
+	f.At, _ = financial.ParseTimestamp("2026-10-20T12:00:00Z")
+	f.SettlementDate, _ = financial.ParseDate("2026-10-21")
+	f.NetCash, _ = financial.ParseMoney("-200.0000", f.Price.Currency())
+
+	trade, err := source.NewTrade(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processPartial(t, s, "baseline", trade.Observation())
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+	for _, scope := range []string{"at", "settlement_date", "net_cash"} {
+		t.Run(scope, func(t *testing.T) {
+			retainDecision(t, s, "activity", id, scope, "", "", "set")
+			assertFieldReason(t, s, id, "/"+scope, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, scope, "", "", "release")
+			assertFieldReason(t, s, id, "/"+scope, "")
+		})
+	}
+}
+
+func TestFieldExplanationForIncompleteConversionRate(t *testing.T) {
+	s := coverageStore(t)
+	trade := partialTrade(t).Fields()
+	usd := trade.Price.Currency()
+	eur, _ := financial.ParseCurrency("EUR")
+	sent, _ := source.NewCurrencyAmount(eur, "100")
+	received, _ := source.NewCurrencyAmount(usd, "120")
+
+	conversion, err := source.NewConversion(source.ConversionInput{
+		Location: trade.Location, Account: trade.Account, Event: trade.Event, EventDistinct: true,
+		Date: trade.Date, Sent: sent, Received: received,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	full := conversion.Observation()
+	processPartial(t, s, "baseline", full)
+
+	rows, err := s.queries.Executions(t.Context())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(rows, err)
+	}
+
+	id := rows[0].ID
+
+	assertFieldReason(t, s, id, "/rate", application.FieldNotReported)
+	assertFieldReason(t, s, id, "/rate_base", application.FieldNotReported)
+
+	rate, _ := financial.ParsePrice("1.20", usd)
+	processPartial(t, s, "incomplete-rate", partialObservation(t, full.Fields(),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRate, Price: rate}),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRateBase, Unknown: true}),
+	))
+	assertFieldReason(t, s, id, "/rate", application.FieldUnresolved)
+	assertFieldReason(t, s, id, "/rate_base", application.FieldReportedUnavailable)
+
+	processPartial(t, s, "rate-base", partialObservation(t, full.Fields(),
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRateBase, Currency: eur}),
+	))
+	assertFieldReason(t, s, id, "/rate", "")
+	assertFieldReason(t, s, id, "/rate_base", "")
+}
+
+func TestFieldExplanationDistinguishesInstrumentTermConflictsClearsAndOmissions(t *testing.T) {
+	for _, family := range []source.InstrumentKind{source.Option, source.Debt} {
+		t.Run(string(family), func(t *testing.T) {
+			s := coverageStore(t)
+			f := partialTrade(t).Fields()
+			instrument := f.Instrument.Fields()
+			instrument.Kind = family
+
+			term, omitted, values := "multiplier", "expiry", []string{"100", "50"}
+			if family == source.Debt {
+				term, omitted, values = "coupon_rate", "maturity", []string{"4.125", "4.250"}
+			}
+
+			withTerm := func(value string) source.ActivityObservation {
+				t.Helper()
+
+				var err error
+				if family == source.Option {
+					multiplier, _ := financial.ParseQuantity(value)
+					instrument.Option, err = source.NewOptionTerms(source.OptionInput{Multiplier: multiplier})
+				} else {
+					rate, _ := financial.ParseQuantity(value)
+					instrument.Debt, err = source.NewDebtTerms(source.DebtInput{CouponRate: rate})
+				}
+
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				f.Instrument, err = source.NewInstrument(instrument)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				trade, err := source.NewTrade(f)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				return trade.Observation()
+			}
+
+			processPartial(t, s, "baseline", withTerm(""))
+			processPartial(t, s, "first-term", withTerm(values[0]))
+			processPartial(t, s, "competing-term", withTerm(values[1]))
+
+			rows, err := s.queries.Executions(t.Context())
+			if err != nil || len(rows) != 1 {
+				t.Fatal(rows, err)
+			}
+
+			id := rows[0].ID
+			path := "/instrument_terms/" + term
+			scope := string(family) + "." + term
+
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+			assertFieldReason(t, s, id, "/instrument_terms/"+omitted, application.FieldNotReported)
+
+			baseline := observationKey(
+				sqlc.RecordValue{ArtifactID: "baseline", Version: partialVersion, Location: f.Location},
+			)
+			retainDecision(t, s, "activity", id, "evidence/instrument", baseline, "", "set")
+			assertFieldReason(t, s, id, path, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, "evidence/instrument", "", "", "release")
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+			retainDecision(t, s, "activity", id, scope, values[0], "", "set")
+			assertFieldReason(t, s, id, path, "")
+			retainDecision(t, s, "activity", id, scope, "", "", "set")
+			assertFieldReason(t, s, id, path, application.FieldOperatorWithheld)
+			retainDecision(t, s, "activity", id, scope, "", "", "release")
+			assertFieldReason(t, s, id, path, application.FieldUnresolved)
+		})
+	}
+}
+
+func assertFieldReason(t *testing.T, s *Store, id, path string, want application.FieldAbsenceReason) {
+	t.Helper()
+	resource := realizedActivity(t, s, id)
+
+	why, err := s.Explanation(t.Context(), "activity", id, resource.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got application.FieldAbsenceReason
+	for _, field := range why.Fields {
+		if field.Path == path {
+			got = field.Reason
+			break
+		}
+	}
+
+	if got != want {
+		t.Fatalf("%s absence reason = %q, want %q", path, got, want)
 	}
 }
 
@@ -167,8 +392,8 @@ func partialTrade(t testing.TB) source.Trade {
 		source.InstrumentInput{Reference: ref, Kind: source.Equity, Name: "Partial equity", Ticker: "PAR"},
 	)
 	usd, _ := financial.ParseCurrency("USD")
-	price, _ := financial.NewPrice("100.000000000001", usd)
-	q, _ := financial.NewQuantity("2.00000000000001")
+	price, _ := financial.ParsePrice("100.000000000001", usd)
+	q, _ := financial.ParseQuantity("2.00000000000001")
 	date, _ := financial.ParseDate("2026-10-20")
 
 	v, err := source.NewTrade(
@@ -181,7 +406,7 @@ func partialTrade(t testing.TB) source.Trade {
 			Side:          source.Buy,
 			Quantity:      q,
 			Price:         price,
-			TradeDate:     date,
+			Date:          date,
 		},
 	)
 	if err != nil {
@@ -215,7 +440,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	full := partialTrade(t).Observation()
 	subject := full.Fields()
 	eur, _ := financial.ParseCurrency("EUR")
-	amount, _ := financial.NewMoney("0.00000000000000001", eur)
+	amount, _ := financial.ParseMoney("0.00000000000000001", eur)
 	date, _ := financial.ParseDate("2026-10-24")
 	gain := partialObservation(
 		t,
@@ -253,8 +478,8 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	id := rows[0].ID
 
 	value := realizedActivity(t, s, id)
-	if value.Activity.Price.Amount != "100.000000000001" ||
-		value.Activity.Quantity.Value != "2.00000000000001" ||
+	if value.Activity.Trade.Price.Amount != "100.000000000001" ||
+		value.Activity.Quantity().Value != "2.00000000000001" ||
 		value.Activity.ReportedRealizedPnL.Amount.Amount != amount.Amount() ||
 		value.Activity.ReportedRealizedPnL.Amount.Currency != "EUR" ||
 		*value.Activity.ReportedRealizedPnL.ReportDate != "2026-10-24" {
@@ -262,14 +487,14 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	}
 
 	usd, _ := financial.ParseCurrency("USD")
-	newPrice, _ := financial.NewPrice("101.0000", usd)
-	newGain, _ := financial.NewMoney("13.340000000000001", eur)
+	newPrice, _ := financial.ParsePrice("101.0000", usd)
+	newGain, _ := financial.ParseMoney("13.340000000000001", eur)
 	priceOnly := partialObservation(
 		t,
 		subject,
 		partialField(
 			t,
-			source.ActivityFieldInput{Name: source.FieldPrice, Price: newPrice, PriceBasis: "per share"},
+			source.ActivityFieldInput{Name: source.FieldPrice, Price: newPrice, QuotationBasis: source.PerShare},
 		),
 	)
 	gainOnly := partialObservation(
@@ -310,7 +535,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	assertPublication(true)
 
 	value = realizedActivity(t, s, id)
-	if value.Activity.Price.Amount != newPrice.Amount() ||
+	if value.Activity.Trade.Price.Amount != newPrice.Amount() ||
 		value.Activity.ReportedRealizedPnL.Amount.Amount != newGain.Amount() {
 		t.Fatal("independent selections replaced one another", value)
 	}
@@ -319,7 +544,7 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 	assertPublication(true)
 
 	value = realizedActivity(t, s, id)
-	if value.Activity.Price.Amount != "100.000000000001" ||
+	if value.Activity.Trade.Price.Amount != "100.000000000001" ||
 		value.Activity.ReportedRealizedPnL.Amount.Amount != newGain.Amount() {
 		t.Fatal("field release erased another selection", value)
 	}
@@ -396,7 +621,7 @@ func TestPartialActivityRequiresIdentityAndRejectsWrongUnits(t *testing.T) {
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "complete", full)
 	subject := full.Fields()
-	quantity, _ := financial.NewQuantity("2.00000000000001")
+	quantity, _ := financial.ParseQuantity("2.00000000000001")
 	wrong := partialObservation(
 		t,
 		subject,
@@ -448,7 +673,7 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	processPartial(t, s, "execution", full)
 	subject := full.Fields()
 	usd, _ := financial.ParseCurrency("USD")
-	fee, _ := financial.NewMoney("-0.010000000000000001", usd)
+	fee, _ := financial.ParseMoney("-0.010000000000000001", usd)
 	charge, _ := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: "commission", Total: fee})
 	date, _ := financial.ParseDate("2026-10-23")
 	late := partialObservation(
@@ -462,9 +687,9 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	id := rows[0].ID
 
 	value := realizedActivity(t, s, id)
-	if value.Activity.SettlementDate == nil || *value.Activity.SettlementDate != "2026-10-23" ||
-		len(value.Activity.Charges) != 1 ||
-		value.Activity.Charges[0].Total.Amount != fee.Amount() {
+	if value.Activity.Trade.SettlementDate == nil || *value.Activity.Trade.SettlementDate != "2026-10-23" ||
+		len(value.Activity.Charges()) != 1 ||
+		value.Activity.Charges()[0].Total.Amount != fee.Amount() {
 		t.Fatal("late ordinary fields did not enrich", value)
 	}
 
@@ -476,8 +701,8 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	processPartial(t, s, "unknown-date", unknown)
 
 	value = realizedActivity(t, s, id)
-	if value.Activity.SettlementDate == nil || *value.Activity.SettlementDate != "2026-10-23" ||
-		len(value.Activity.Charges) != 1 {
+	if value.Activity.Trade.SettlementDate == nil || *value.Activity.Trade.SettlementDate != "2026-10-23" ||
+		len(value.Activity.Charges()) != 1 {
 		t.Fatal("unknown or omitted fields erased evidence", value)
 	}
 
@@ -500,8 +725,8 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 	retainDecision(t, s, "activity", id, "observation", choice, "", "set")
 
 	value = realizedActivity(t, s, id)
-	if value.Activity.Price.Amount != "100.000000000001" ||
-		value.Activity.Quantity.Value != "2.00000000000001" {
+	if value.Activity.Trade.Price.Amount != "100.000000000001" ||
+		value.Activity.Quantity().Value != "2.00000000000001" {
 		t.Fatal("choosing partial fees replaced complete trade terms", value)
 	}
 }
@@ -536,9 +761,12 @@ func TestPartialInterpretationVersionReusesEvidenceAndPreservesDecisions(t *test
 	before, _ := snapshotState(t.Context(), s)
 	count := tableCount(t, s, "artifacts")
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-2.0000000000001", usd)
+	money, _ := financial.ParseMoney("-2.0000000000001", usd)
 	f := full.Fields()
-	f.Fields = append(f.Fields, partialField(t, source.ActivityFieldInput{Name: source.FieldNet, Money: money}))
+	f.Fields = append(
+		f.Fields,
+		partialField(t, source.ActivityFieldInput{Name: source.FieldNetCash, Money: money}),
+	)
 
 	reinterpreted, err := source.NewActivityObservation(f)
 	if err != nil {
@@ -569,13 +797,14 @@ func TestPartialInterpretationVersionReusesEvidenceAndPreservesDecisions(t *test
 
 	value := realizedActivity(t, s, id)
 	after, _ := snapshotState(t.Context(), s)
-	if value.Activity.Price.Amount != "99.0000000001" || value.Activity.Net.Amount != "-2.0000000000001" ||
+	if value.Activity.Trade.Price.Amount != "99.0000000001" ||
+		value.Activity.Trade.NetCash.Amount != "-2.0000000000001" ||
 		after.Version == before.Version ||
 		tableCount(t, s, "artifacts") != count {
 		t.Fatalf(
 			"interpretation result: price=%s net=%s before=%s after=%s artifacts=%d expected=%d",
-			value.Activity.Price.Amount,
-			value.Activity.Net.Amount,
+			value.Activity.Trade.Price.Amount,
+			value.Activity.Trade.NetCash.Amount,
 			before.Version,
 			after.Version,
 			tableCount(t, s, "artifacts"),
@@ -609,7 +838,7 @@ func TestPartialSharedAliasCannotAssembleDifferentDistinctFills(t *testing.T) {
 	group.EventDistinct = false
 	group.Location = "group"
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("1.00", usd)
+	money, _ := financial.ParseMoney("1.00", usd)
 	first := partialObservation(t, a, a.Fields[:3]...)
 	second := partialObservation(t, b, b.Fields[3:]...)
 	ambiguous := partialObservation(

@@ -512,7 +512,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+instrumentTitle(detail.Context.InstrumentTicker, detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail))).
+		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+instrumentTitle(detail.Context.InstrumentTicker, detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail, detail.Context.FieldDetails))).
 			ServeHTTP(w, r)
 	})
 
@@ -524,11 +524,11 @@ func registerWorkflowRoutes(
 		); err == nil && d.Activity != nil &&
 			(d.Activity.Family == "security-transfer" || d.Activity.Family == "cash") {
 			name, description := "Security", ""
-			if d.Activity.InstrumentID != nil {
+			if d.Activity.InstrumentID() != nil {
 				if instrument, e := workflow.Resource(
 					r.Context(),
 					"instruments",
-					*d.Activity.InstrumentID,
+					*d.Activity.InstrumentID(),
 				); e == nil &&
 					instrument.Instrument != nil {
 					name = instrumentTitle(text(instrument.Instrument.Ticker), text(instrument.Instrument.Name))
@@ -539,21 +539,22 @@ func registerWorkflowRoutes(
 				}
 			}
 
-			templ.Handler(SectionShell(activityKindLabel(d.Activity.Family), csrf, "Activity", MovementPage(d, name, description))).
+			templ.Handler(SectionShell(activityKindLabel(d.Activity.Family), csrf, "Activity", MovementPage(d, name, description, workflow.ActivityFieldDetails(r.Context(), d.ID, d.Revision)))).
 				ServeHTTP(w, r)
 
 			return
 		}
 
 		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d))).
+			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d, d.Context.FieldDetails))).
 				ServeHTTP(w, r)
 
 			return
 		}
 
 		if d, err := workflow.ConversionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d))).ServeHTTP(w, r)
+			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d, d.Context.FieldDetails))).
+				ServeHTTP(w, r)
 
 			return
 		}
@@ -572,7 +573,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d))).
+		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d, d.Context.FieldDetails))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {

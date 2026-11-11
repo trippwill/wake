@@ -73,7 +73,7 @@ func TestConflictingEnrichmentsRetainEverySelectableSource(t *testing.T) {
 	for i := range claims {
 		key := strconv.Itoa(i)
 
-		money, err := financial.NewMoney(key, usd)
+		money, err := financial.ParseMoney(key, usd)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,9 +170,9 @@ func TestPartialFieldsUseOneBaselineAndIndependentEvidenceSelection(t *testing.T
 	base := selectionTrade(t, source.Equity, nil, source.DebtTerms{}).Observation()
 	usd, _ := financial.ParseCurrency("USD")
 	eur, _ := financial.ParseCurrency("EUR")
-	a, _ := financial.NewMoney("12.34000000000000001", eur)
-	b, _ := financial.NewMoney("13.3400", eur)
-	cost, _ := financial.NewMoney("-100.00000000000000001", usd)
+	a, _ := financial.ParseMoney("12.34000000000000001", eur)
+	b, _ := financial.ParseMoney("13.3400", eur)
+	cost, _ := financial.ParseMoney("-100.00000000000000001", usd)
 	amountDate, _ := financial.ParseDate("2026-10-24")
 	costDate, _ := financial.ParseDate("2026-10-23")
 	left := observationWith(

@@ -123,25 +123,25 @@ func (m moneyData) money() (financial.Money, error) {
 		return financial.Money{}, err
 	}
 
-	return financial.NewMoney(m.Amount, c)
+	return financial.ParseMoney(m.Amount, c)
 }
 
 type tradeData struct {
-	AccruedInterest, NetWithBillable                                 moneyData
-	Kind                                                             source.TradeKind
-	Relationships                                                    []relationshipData
-	Location                                                         string
-	Account, Event                                                   refData
-	Instrument                                                       instrumentData
-	Side                                                             source.Side
-	Quantity, Price, Currency, TradeDate, ExecutedAt, SettlementDate string
-	Gross, Net                                                       moneyData
-	Proceeds                                                         moneyData
-	Order                                                            refData
-	EventAliases                                                     []refData
-	EventDistinct                                                    bool
-	PositionEffect                                                   source.PositionEffect
-	Charges                                                          []chargeData
+	AccruedInterest, NetCashWithBillable                moneyData
+	Kind                                                source.TradeKind
+	Relationships                                       []relationshipData
+	Location                                            string
+	Account, Event                                      refData
+	Instrument                                          instrumentData
+	Side                                                source.Side
+	Quantity, Price, Currency, Date, At, SettlementDate string
+	GrossAmount, NetCash                                moneyData
+	Proceeds                                            moneyData
+	Order                                               refData
+	EventAliases                                        []refData
+	EventDistinct                                       bool
+	PositionEffect                                      source.PositionEffect
+	Charges                                             []chargeData
 }
 type chargeData struct {
 	Field      string
@@ -189,26 +189,26 @@ func decodeCharge(d chargeData, depth int) (source.Charge, error) {
 func encodeTrade(t source.Trade) ([]byte, error) {
 	f := t.Fields()
 	data := tradeData{
-		AccruedInterest: moneyWire(f.AccruedInterest),
-		NetWithBillable: moneyWire(f.NetWithBillable),
-		Kind:            f.Kind,
-		Relationships:   relationshipsWire(f.Relationships),
-		Location:        f.Location,
-		Account:         refWire(f.Account),
-		Event:           refWire(f.Event),
-		EventDistinct:   f.EventDistinct,
-		Instrument:      instrumentWire(f.Instrument),
-		Side:            f.Side,
-		Quantity:        f.Quantity.Value(),
-		Price:           f.Price.Amount(),
-		Currency:        f.Price.Currency().String(),
-		TradeDate:       f.TradeDate.String(),
-		ExecutedAt:      f.ExecutedAt.String(),
-		Gross:           moneyWire(f.Gross),
-		Net:             moneyWire(f.Net),
-		Proceeds:        moneyWire(f.Proceeds),
-		Order:           refWire(f.Order),
-		PositionEffect:  f.PositionEffect,
+		AccruedInterest:     moneyWire(f.AccruedInterest),
+		NetCashWithBillable: moneyWire(f.NetCashWithBillable),
+		Kind:                f.Kind,
+		Relationships:       relationshipsWire(f.Relationships),
+		Location:            f.Location,
+		Account:             refWire(f.Account),
+		Event:               refWire(f.Event),
+		EventDistinct:       f.EventDistinct,
+		Instrument:          instrumentWire(f.Instrument),
+		Side:                f.Side,
+		Quantity:            f.Quantity.Value(),
+		Price:               f.Price.Amount(),
+		Currency:            f.Price.Currency().String(),
+		Date:                f.Date.String(),
+		At:                  f.At.String(),
+		GrossAmount:         moneyWire(f.GrossAmount),
+		NetCash:             moneyWire(f.NetCash),
+		Proceeds:            moneyWire(f.Proceeds),
+		Order:               refWire(f.Order),
+		PositionEffect:      f.PositionEffect,
 	}
 	for _, r := range f.EventAliases {
 		data.EventAliases = append(data.EventAliases, refWire(r))
@@ -246,7 +246,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 		return source.Trade{}, err
 	}
 
-	quantity, err := financial.NewQuantity(wire.Quantity)
+	quantity, err := financial.ParseQuantity(wire.Quantity)
 	if err != nil {
 		return source.Trade{}, err
 	}
@@ -256,19 +256,19 @@ func decodeTrade(data []byte) (source.Trade, error) {
 		return source.Trade{}, err
 	}
 
-	price, err := financial.NewPrice(wire.Price, currency)
+	price, err := financial.ParsePrice(wire.Price, currency)
 	if err != nil {
 		return source.Trade{}, err
 	}
 
-	date, err := financial.ParseDate(wire.TradeDate)
+	date, err := financial.ParseDate(wire.Date)
 	if err != nil {
 		return source.Trade{}, err
 	}
 
 	at := financial.Timestamp{}
-	if wire.ExecutedAt != "" {
-		at, err = financial.ParseTimestamp(wire.ExecutedAt)
+	if wire.At != "" {
+		at, err = financial.ParseTimestamp(wire.At)
 		if err != nil {
 			return source.Trade{}, err
 		}
@@ -282,12 +282,12 @@ func decodeTrade(data []byte) (source.Trade, error) {
 		}
 	}
 
-	gross, err := wire.Gross.money()
+	gross, err := wire.GrossAmount.money()
 	if err != nil {
 		return source.Trade{}, err
 	}
 
-	net, err := wire.Net.money()
+	net, err := wire.NetCash.money()
 	if err != nil {
 		return source.Trade{}, err
 	}
@@ -327,7 +327,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 		return source.Trade{}, err
 	}
 
-	billable, err := wire.NetWithBillable.money()
+	billable, err := wire.NetCashWithBillable.money()
 	if err != nil {
 		return source.Trade{}, err
 	}
@@ -339,7 +339,7 @@ func decodeTrade(data []byte) (source.Trade, error) {
 
 	return source.NewTrade(
 		source.TradeInput{
-			AccruedInterest: accrued, NetWithBillable: billable,
+			AccruedInterest: accrued, NetCashWithBillable: billable,
 			Location: wire.Location,
 			Kind:     wire.Kind, Relationships: relationships,
 			Account:        account,
@@ -349,11 +349,11 @@ func decodeTrade(data []byte) (source.Trade, error) {
 			Side:           wire.Side,
 			Quantity:       quantity,
 			Price:          price,
-			TradeDate:      date,
-			ExecutedAt:     at,
+			Date:           date,
+			At:             at,
 			SettlementDate: settlement,
-			Gross:          gross,
-			Net:            net,
+			GrossAmount:    gross,
+			NetCash:        net,
 			Proceeds:       proceeds,
 			Order:          order,
 			EventAliases:   aliases,
@@ -436,7 +436,7 @@ func (d *optionData) option() (source.OptionTerms, error) {
 	}
 
 	if d.Multiplier != "" {
-		f.Multiplier, err = financial.NewQuantity(d.Multiplier)
+		f.Multiplier, err = financial.ParseQuantity(d.Multiplier)
 		if err != nil {
 			return source.OptionTerms{}, err
 		}
@@ -448,7 +448,7 @@ func (d *optionData) option() (source.OptionTerms, error) {
 			return source.OptionTerms{}, e
 		}
 
-		f.Strike, err = financial.NewPrice(d.Strike.Amount, c)
+		f.Strike, err = financial.ParsePrice(d.Strike.Amount, c)
 		if err != nil {
 			return source.OptionTerms{}, err
 		}
@@ -462,7 +462,7 @@ func (d *optionData) option() (source.OptionTerms, error) {
 				return source.OptionTerms{}, e
 			}
 
-			q, e := financial.NewQuantity(v.Quantity)
+			q, e := financial.ParseQuantity(v.Quantity)
 			if e != nil {
 				return source.OptionTerms{}, e
 			}
@@ -535,8 +535,8 @@ func encodeLifecycle(l source.Lifecycle) ([]byte, error) {
 		Order:         refWire(f.Order),
 		Instrument:    instrumentWire(f.Instrument),
 		Quantity:      f.Quantity.Value(),
-		TradeDate:     f.Date.String(),
-		ExecutedAt:    f.At.String(),
+		Date:          f.Date.String(),
+		At:            f.At.String(),
 		Relationships: relationshipsWire(f.Relationships),
 	}
 	for _, r := range f.EventAliases {
@@ -576,18 +576,18 @@ func decodeLifecycle(data []byte) (source.Lifecycle, error) {
 		return source.Lifecycle{}, err
 	}
 
-	f.Quantity, err = financial.NewQuantity(d.Trade.Quantity)
+	f.Quantity, err = financial.ParseQuantity(d.Trade.Quantity)
 	if err != nil {
 		return source.Lifecycle{}, err
 	}
 
-	f.Date, err = financial.ParseDate(d.Trade.TradeDate)
+	f.Date, err = financial.ParseDate(d.Trade.Date)
 	if err != nil {
 		return source.Lifecycle{}, err
 	}
 
-	if d.Trade.ExecutedAt != "" {
-		f.At, err = financial.ParseTimestamp(d.Trade.ExecutedAt)
+	if d.Trade.At != "" {
+		f.At, err = financial.ParseTimestamp(d.Trade.At)
 		if err != nil {
 			return source.Lifecycle{}, err
 		}
@@ -611,14 +611,14 @@ func decodeLifecycle(data []byte) (source.Lifecycle, error) {
 }
 
 type debtData struct {
-	Type                                             source.DebtType
-	Currency, Maturity, IssueDate, DatedDate, Coupon string
-	PaymentsPerYear                                  int
+	Type                                                 source.DebtType
+	Currency, Maturity, IssueDate, DatedDate, CouponRate string
+	PaymentsPerYear                                      int
 }
 
 func debtWire(d source.DebtTerms) *debtData {
 	f := d.Fields()
-	out := &debtData{Type: f.Type, Coupon: f.Coupon.Value(), PaymentsPerYear: f.PaymentsPerYear}
+	out := &debtData{Type: f.Type, CouponRate: f.CouponRate.Value(), PaymentsPerYear: f.PaymentsPerYear}
 	if f.Currency != (financial.Currency{}) {
 		out.Currency = f.Currency.String()
 	}
@@ -653,8 +653,8 @@ func (d *debtData) debt() (source.DebtTerms, error) {
 		}
 	}
 
-	if d.Coupon != "" {
-		f.Coupon, err = financial.NewQuantity(d.Coupon)
+	if d.CouponRate != "" {
+		f.CouponRate, err = financial.ParseQuantity(d.CouponRate)
 		if err != nil {
 			return source.DebtTerms{}, err
 		}
@@ -678,34 +678,34 @@ func (d *debtData) debt() (source.DebtTerms, error) {
 type (
 	currencyAmountData struct{ Currency, Amount string }
 	conversionData     struct {
-		Location                              string
-		Account, Event, Order                 refData
-		EventAliases                          []refData
-		EventDistinct                         bool
-		Date, At, RateBase                    string
-		Rate                                  moneyData
-		Sent, Received                        currencyAmountData
-		Gross, Proceeds, Net, NetWithBillable moneyData
-		Charges                               []chargeData
+		Location                                            string
+		Account, Event, Order                               refData
+		EventAliases                                        []refData
+		EventDistinct                                       bool
+		Date, At, RateBase                                  string
+		Rate                                                moneyData
+		Sent, Received                                      currencyAmountData
+		GrossAmount, Proceeds, NetCash, NetCashWithBillable moneyData
+		Charges                                             []chargeData
 	}
 )
 
 func encodeConversion(c source.Conversion) ([]byte, error) {
 	f := c.Fields()
 	d := conversionData{
-		Location:        f.Location,
-		Account:         refWire(f.Account),
-		Event:           refWire(f.Event),
-		EventDistinct:   f.EventDistinct,
-		Order:           refWire(f.Order),
-		Date:            f.Date.String(),
-		At:              f.At.String(),
-		Sent:            currencyAmountData{f.Sent.Currency().String(), f.Sent.Amount()},
-		Received:        currencyAmountData{f.Received.Currency().String(), f.Received.Amount()},
-		Gross:           moneyWire(f.Gross),
-		Proceeds:        moneyWire(f.Proceeds),
-		Net:             moneyWire(f.Net),
-		NetWithBillable: moneyWire(f.NetWithBillable),
+		Location:            f.Location,
+		Account:             refWire(f.Account),
+		Event:               refWire(f.Event),
+		EventDistinct:       f.EventDistinct,
+		Order:               refWire(f.Order),
+		Date:                f.Date.String(),
+		At:                  f.At.String(),
+		Sent:                currencyAmountData{f.Sent.Currency().String(), f.Sent.Amount()},
+		Received:            currencyAmountData{f.Received.Currency().String(), f.Received.Amount()},
+		GrossAmount:         moneyWire(f.GrossAmount),
+		Proceeds:            moneyWire(f.Proceeds),
+		NetCash:             moneyWire(f.NetCash),
+		NetCashWithBillable: moneyWire(f.NetCashWithBillable),
 	}
 	if f.Rate.Amount() != "" {
 		d.RateBase = f.RateBase.String()
@@ -780,7 +780,7 @@ func decodeConversion(data []byte) (source.Conversion, error) {
 			return source.Conversion{}, e
 		}
 
-		f.Rate, err = financial.NewPrice(d.Rate.Amount, c)
+		f.Rate, err = financial.ParsePrice(d.Rate.Amount, c)
 		if err != nil {
 			return source.Conversion{}, err
 		}
@@ -789,7 +789,7 @@ func decodeConversion(data []byte) (source.Conversion, error) {
 	for _, m := range []struct {
 		v      moneyData
 		target *financial.Money
-	}{{d.Gross, &f.Gross}, {d.Proceeds, &f.Proceeds}, {d.Net, &f.Net}, {d.NetWithBillable, &f.NetWithBillable}} {
+	}{{d.GrossAmount, &f.GrossAmount}, {d.Proceeds, &f.Proceeds}, {d.NetCash, &f.NetCash}, {d.NetCashWithBillable, &f.NetCashWithBillable}} {
 		*m.target, err = m.v.money()
 		if err != nil {
 			return source.Conversion{}, err

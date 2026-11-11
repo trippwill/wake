@@ -14,12 +14,12 @@ func Positions() (source.PositionSetObservation, error) {
 		return source.PositionSetObservation{}, err
 	}
 	f := trade.Fields()
-	q, err := financial.NewQuantity("-2.00000000000000100")
+	q, err := financial.ParseQuantity("-2.00000000000000100")
 	if err != nil {
 		return source.PositionSetObservation{}, err
 	}
 	c, _ := financial.ParseCurrency("GBP")
-	cost, _ := financial.NewPrice("0.0000", c)
+	cost, _ := financial.ParsePrice("0.0000", c)
 	p, err := source.NewPosition(f.Instrument, q, cost)
 	if err != nil {
 		return source.PositionSetObservation{}, err
@@ -28,5 +28,5 @@ func Positions() (source.PositionSetObservation, error) {
 	if err != nil {
 		return source.PositionSetObservation{}, err
 	}
-	return source.NewPositionSetObservation(source.PositionSetInput{Location: "positions", Account: f.Account, Date: f.TradeDate, At: at, Complete: true, Positions: []source.Position{p}})
+	return source.NewPositionSetObservation(source.PositionSetInput{Location: "positions", Account: f.Account, Date: f.Date, At: at, Complete: true, Positions: []source.Position{p}})
 }

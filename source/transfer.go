@@ -68,10 +68,10 @@ func (v SecurityTransfer) Observation() ActivityObservation {
 		{Name: FieldInstrument, Instrument: f.Instrument},
 		{Name: FieldDirection, Text: string(f.Direction)},
 		{Name: FieldQuantity, Quantity: f.Quantity, QuantityUnit: quantityUnit(f.Instrument.Kind())},
-		{Name: FieldTradeDate, Date: f.Date},
+		{Name: FieldDate, Date: f.Date},
 		{Name: FieldReportDate, Date: f.ReportDate},
 		{Name: FieldSettlementDate, Date: f.SettlementDate},
-		{Name: FieldExecutedAt, Timestamp: f.At},
+		{Name: FieldAt, Timestamp: f.At},
 		{Name: FieldTransferMethod, Text: f.Method},
 		{Name: FieldTransferCompany, Text: f.Company},
 		{Name: FieldDeliveringBroker, Text: f.DeliveringBroker},
@@ -117,13 +117,13 @@ func (o ActivityObservation) SecurityTransfer() (SecurityTransfer, error) {
 			if x.QuantityUnit != quantityUnit(familyInstrument(o)) {
 				return SecurityTransfer{}, ErrInvalidActivity
 			}
-		case FieldTradeDate:
+		case FieldDate:
 			f.Date = x.Date
 		case FieldReportDate:
 			f.ReportDate = x.Date
 		case FieldSettlementDate:
 			f.SettlementDate = x.Date
-		case FieldExecutedAt:
+		case FieldAt:
 			f.At = x.Timestamp
 		case FieldTransferMethod:
 			f.Method = x.Text

@@ -49,7 +49,7 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 	}
 
 	conflictFields := partialTrade(t).Fields()
-	conflictFields.Price, _ = financial.NewPrice("101", conflictFields.Price.Currency())
+	conflictFields.Price, _ = financial.ParsePrice("101", conflictFields.Price.Currency())
 
 	conflict, err := source.NewTrade(conflictFields)
 	if err != nil {
@@ -200,7 +200,7 @@ func TestReportRepeatedLinkedIdentityReviewRemainsVisible(t *testing.T) {
 	processPartial(t, s, "first", first.Observation())
 	meaning := first.Observation().Fields()
 	meaning.Event, meaning.EventAliases, meaning.EventDistinct = alias, nil, false
-	amount, _ := financial.NewMoney("1", f.Price.Currency())
+	amount, _ := financial.ParseMoney("1", f.Price.Currency())
 	partial := partialObservation(
 		t,
 		meaning,

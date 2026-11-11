@@ -83,12 +83,12 @@ func TestDuplicateComparisonPreservesSelection(t *testing.T) {
 	for index, value := range []string{"1.00", "1.000", "2"} {
 		f := base.Fields()
 		f.Location = fmt.Sprintf("report/%d", index)
-		f.Net, _ = financial.NewMoney(value, usd)
-		f.ExecutedAt, _ = financial.ParseTimestamp(
+		f.NetCash, _ = financial.ParseMoney(value, usd)
+		f.At, _ = financial.ParseTimestamp(
 			[]string{"2026-10-20T12:00:00Z", "2026-10-20T12:00:00.000Z", "2026-10-20T12:00:00.001Z"}[index],
 		)
 		i := f.Instrument.Fields()
-		multiplier, _ := financial.NewQuantity(value)
+		multiplier, _ := financial.ParseQuantity(value)
 		i.Option, _ = source.NewOptionTerms(source.OptionInput{Multiplier: multiplier})
 		f.Instrument, _ = source.NewInstrument(i)
 
@@ -107,7 +107,7 @@ func TestDuplicateComparisonPreservesSelection(t *testing.T) {
 		Instrument: base.Fields().Instrument,
 		Kind:       source.Exercise,
 		Quantity:   base.Fields().Quantity,
-		Date:       base.Fields().TradeDate,
+		Date:       base.Fields().Date,
 	}
 
 	lifecycle, err := source.NewLifecycle(lf)
@@ -119,7 +119,7 @@ func TestDuplicateComparisonPreservesSelection(t *testing.T) {
 	for _, trade := range tradeVariants[1:] {
 		f := lf
 		f.Instrument = trade.Fields().Instrument
-		f.At = trade.Fields().ExecutedAt
+		f.At = trade.Fields().At
 
 		v, e := source.NewLifecycle(f)
 		if e != nil {
@@ -144,7 +144,7 @@ func TestDuplicateComparisonPreservesSelection(t *testing.T) {
 	cf := source.ConversionInput{
 		Location: "base",
 		Account:  base.Fields().Account,
-		Date:     base.Fields().TradeDate,
+		Date:     base.Fields().Date,
 		Sent:     sent,
 		Received: received,
 	}
@@ -157,8 +157,8 @@ func TestDuplicateComparisonPreservesSelection(t *testing.T) {
 	conversions := []source.Conversion{conversion}
 	for _, trade := range tradeVariants[1:] {
 		f := cf
-		f.Net = trade.Fields().Net
-		f.At = trade.Fields().ExecutedAt
+		f.NetCash = trade.Fields().NetCash
+		f.At = trade.Fields().At
 
 		v, e := source.NewConversion(f)
 		if e != nil {
@@ -210,7 +210,7 @@ func TestDistinctConflictingObservationsStopBeforeScanningHistory(t *testing.T) 
 	observations := make([]source.Trade, 1152)
 	for i := range observations {
 		f := base.Fields()
-		f.Net, _ = financial.NewMoney(fmt.Sprint(i+1), f.Price.Currency())
+		f.NetCash, _ = financial.ParseMoney(fmt.Sprint(i+1), f.Price.Currency())
 		observations[i], _ = source.NewTrade(f)
 	}
 

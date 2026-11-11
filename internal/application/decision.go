@@ -81,35 +81,35 @@ func ApplyTradeField(t source.Trade, scope, text, currency string) (source.Trade
 	var err error
 	switch scope {
 	case "quantity":
-		f.Quantity, err = financial.NewQuantity(text)
+		f.Quantity, err = financial.ParseQuantity(text)
 	case "price":
 		c, e := financial.ParseCurrency(currency)
 		if e != nil {
 			return source.Trade{}, ErrInvalid
 		}
 
-		f.Price, err = financial.NewPrice(text, c)
+		f.Price, err = financial.ParsePrice(text, c)
 	case "side":
 		f.Side = source.Side(text)
-	case "trade_date":
-		f.TradeDate, err = financial.ParseDate(text)
-	case "executed_at":
-		f.ExecutedAt, err = optionalTimestamp(text)
+	case "date":
+		f.Date, err = financial.ParseDate(text)
+	case "at":
+		f.At, err = optionalTimestamp(text)
 	case "settlement_date":
 		f.SettlementDate, err = optionalDate(text)
-	case "gross", "proceeds", "net", "net_billable", "accrued_interest":
+	case "gross_amount", "proceeds", "net_cash", "net_cash_with_billable", "accrued_interest":
 		m, e := optionalMoney(text, currency)
 		err = e
 
 		switch scope {
-		case "gross":
-			f.Gross = m
+		case "gross_amount":
+			f.GrossAmount = m
 		case "proceeds":
 			f.Proceeds = m
-		case "net":
-			f.Net = m
-		case "net_billable":
-			f.NetWithBillable = m
+		case "net_cash":
+			f.NetCash = m
+		case "net_cash_with_billable":
+			f.NetCashWithBillable = m
 		case "accrued_interest":
 			f.AccruedInterest = m
 		}
@@ -132,12 +132,12 @@ func ApplyLifecycleField(l source.Lifecycle, scope, text, currency string) (sour
 	var err error
 	switch scope {
 	case "quantity":
-		f.Quantity, err = financial.NewQuantity(text)
+		f.Quantity, err = financial.ParseQuantity(text)
 	case "kind":
 		f.Kind = source.LifecycleKind(text)
-	case "trade_date":
+	case "date":
 		f.Date, err = financial.ParseDate(text)
-	case "executed_at":
+	case "at":
 		f.At, err = optionalTimestamp(text)
 	default:
 		f.Instrument, err = applyInstrumentTerm(f.Instrument, scope, text, currency)
@@ -160,24 +160,24 @@ func ApplyConversionField(v source.Conversion, scope, text, currency string) (so
 	case "received_amount":
 		f.Received, err = source.NewCurrencyAmount(f.Received.Currency(), text)
 	case "rate":
-		f.Rate, err = financial.NewPrice(text, f.Rate.Currency())
-	case "trade_date":
+		f.Rate, err = financial.ParsePrice(text, f.Rate.Currency())
+	case "date":
 		f.Date, err = financial.ParseDate(text)
-	case "executed_at":
+	case "at":
 		f.At, err = optionalTimestamp(text)
-	case "gross", "proceeds", "net", "net_billable":
+	case "gross_amount", "proceeds", "net_cash", "net_cash_with_billable":
 		m, e := optionalMoney(text, currency)
 		err = e
 
 		switch scope {
-		case "gross":
-			f.Gross = m
+		case "gross_amount":
+			f.GrossAmount = m
 		case "proceeds":
 			f.Proceeds = m
-		case "net":
-			f.Net = m
-		case "net_billable":
-			f.NetWithBillable = m
+		case "net_cash":
+			f.NetCash = m
+		case "net_cash_with_billable":
+			f.NetCashWithBillable = m
 		}
 	default:
 		return source.Conversion{}, ErrInvalid
@@ -200,7 +200,7 @@ func optionalMoney(text, currency string) (financial.Money, error) {
 		return financial.Money{}, err
 	}
 
-	return financial.NewMoney(text, c)
+	return financial.ParseMoney(text, c)
 }
 
 func optionalDate(text string) (financial.Date, error) {
@@ -233,7 +233,7 @@ func applyInstrumentTerm(i source.Instrument, scope, text, currency string) (sou
 				return source.Instrument{}, ErrInvalid
 			}
 
-			o.Strike, err = financial.NewPrice(text, c)
+			o.Strike, err = financial.ParsePrice(text, c)
 		case "option.multiplier":
 			o.Multiplier, err = optionalQuantity(text)
 		case "option.right":
@@ -250,8 +250,8 @@ func applyInstrumentTerm(i source.Instrument, scope, text, currency string) (sou
 	case strings.HasPrefix(scope, "debt.") && i.Kind() == source.Debt:
 		d := i.Debt().Fields()
 		switch scope {
-		case "debt.coupon":
-			d.Coupon, err = optionalQuantity(text)
+		case "debt.coupon_rate":
+			d.CouponRate, err = optionalQuantity(text)
 		case "debt.maturity":
 			d.Maturity, err = optionalDate(text)
 		case "debt.payments":
@@ -279,5 +279,5 @@ func optionalQuantity(text string) (financial.Quantity, error) {
 		return financial.Quantity{}, nil
 	}
 
-	return financial.NewQuantity(text)
+	return financial.ParseQuantity(text)
 }

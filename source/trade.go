@@ -36,14 +36,14 @@ const (
 // TradeInput is one reported purchase or sale. Native event identity and time
 // can be absent; location, account, exact terms and civil trade date cannot.
 type TradeInput struct {
-	AccruedInterest, NetWithBillable financial.Money
-	Location                         string
-	Kind                             TradeKind
-	Relationships                    []Relationship
-	Account                          Reference
-	Instrument                       Instrument
-	Event                            Reference
-	EventAliases                     []Reference
+	AccruedInterest, NetCashWithBillable financial.Money
+	Location                             string
+	Kind                                 TradeKind
+	Relationships                        []Relationship
+	Account                              Reference
+	Instrument                           Instrument
+	Event                                Reference
+	EventAliases                         []Reference
 	// EventDistinct states that Event identifies one event within its qualified scope.
 	// Its native kind and value remain opaque to the core.
 	EventDistinct  bool
@@ -54,11 +54,11 @@ type TradeInput struct {
 	Side           Side
 	Quantity       financial.Quantity
 	Price          financial.Price
-	TradeDate      financial.Date
-	ExecutedAt     financial.Timestamp
+	Date           financial.Date
+	At             financial.Timestamp
 	SettlementDate financial.Date
-	Gross          financial.Money
-	Net            financial.Money
+	GrossAmount    financial.Money
+	NetCash        financial.Money
 }
 type Trade struct{ input TradeInput }
 
@@ -79,7 +79,7 @@ func NewTrade(input TradeInput) (Trade, error) {
 		(input.Side != Buy && input.Side != Sell) ||
 		!input.Quantity.Positive() ||
 		input.Price.Amount() == "" ||
-		input.TradeDate.IsZero() {
+		input.Date.IsZero() {
 		return Trade{}, ErrInvalidTrade
 	}
 
@@ -127,14 +127,6 @@ func (t Trade) QuantityUnit() string {
 	return "shares"
 }
 
-func (t Trade) PriceBasis() string {
-	if t.input.Instrument.Kind() == Option {
-		return "premium per underlying unit"
-	}
-
-	if t.input.Instrument.Kind() == Debt {
-		return ""
-	}
-
-	return "per share"
+func (t Trade) QuotationBasis() QuotationBasis {
+	return quotationBasis(t.input.Instrument.Kind())
 }

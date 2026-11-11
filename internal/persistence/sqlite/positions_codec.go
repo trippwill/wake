@@ -124,7 +124,7 @@ func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
 			return source.PositionSetObservation{}, e
 		}
 
-		q, e := financial.NewQuantity(p.Quantity)
+		q, e := financial.ParseQuantity(p.Quantity)
 		if e != nil {
 			return source.PositionSetObservation{}, e
 		}
@@ -136,7 +136,7 @@ func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
 				return source.PositionSetObservation{}, e
 			}
 
-			price, e = financial.NewPrice(p.UnitCostBasis.Amount, currency)
+			price, e = financial.ParsePrice(p.UnitCostBasis.Amount, currency)
 			if e != nil {
 				return source.PositionSetObservation{}, e
 			}

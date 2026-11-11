@@ -29,10 +29,10 @@ func TestObservationContributionsRetainNewAssertionsAndPrecision(t *testing.T) {
 	} {
 		f := base.Fields()
 		if step.net != "" {
-			f.Net, _ = financial.NewMoney(step.net, usd)
+			f.NetCash, _ = financial.ParseMoney(step.net, usd)
 		}
 
-		f.ExecutedAt, _ = financial.ParseTimestamp(step.at)
+		f.At, _ = financial.ParseTimestamp(step.at)
 
 		value, err := source.NewTrade(f)
 		if err != nil {
@@ -113,7 +113,7 @@ func TestObservationContributionsDeduplicateInternallyConflictingCharges(t *test
 
 		input.Fields = append([]source.ActivityField{}, base.Fields...)
 		for _, amount := range step.amounts {
-			money, _ := financial.NewMoney(amount, usd)
+			money, _ := financial.ParseMoney(amount, usd)
 			charge, _ := source.NewCharge(
 				source.ChargeInput{Category: source.Fee, Field: "reported-fee", Total: money},
 			)
@@ -252,7 +252,7 @@ func TestInstrumentContributionsOwnIdentityAndUnderlierRelationship(t *testing.T
 			t.Fatal(err)
 		}
 
-		multiplier, _ := financial.NewQuantity(step.multiplier)
+		multiplier, _ := financial.ParseQuantity(step.multiplier)
 		option, _ := source.NewOptionTerms(source.OptionInput{Underlier: u, Multiplier: multiplier})
 
 		f := source.InstrumentInput{Kind: source.Option, Reference: ref, Name: step.name, Option: option}

@@ -170,6 +170,12 @@ credentials are not repository fixtures.
 
 The versioned read-only socket publishes complete accepted accounts, instruments,
 listings and activity snapshots, individual resources and revision-bound explanations.
+Activity bodies distinguish trades, option outcomes, currency conversions, security transfers and
+cash postings. Each body carries its applicable fields. Dated instrument terms distinguish option,
+debt, equity, fund and unclassified instruments. Null denotes a field without an accepted value.
+Explanations distinguish an omitted source assertion, an explicit unavailable assertion,
+unresolved selection and established reporting expectations. Zero remains a reported value.
+
 Each snapshot has warehouse identity and an opaque publication version. Conditional
 GET avoids unchanged downloads. Accepted source/operator corrections, conflicts and
 relevant reference/link changes advance publication; repeated known claims do not.

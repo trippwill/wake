@@ -18,7 +18,7 @@ type (
 		Type                           DebtType
 		Currency                       financial.Currency
 		Maturity, IssueDate, DatedDate financial.Date
-		Coupon                         financial.Quantity
+		CouponRate                     financial.Quantity
 		PaymentsPerYear                int
 	}
 	DebtTerms struct{ input *DebtInput }
@@ -31,12 +31,12 @@ func NewDebtTerms(f DebtInput) (DebtTerms, error) {
 		return DebtTerms{}, ErrInvalidInstrument
 	}
 
-	if f.Coupon.Value() != "" && f.Coupon.Value()[0] == '-' || f.PaymentsPerYear < 0 ||
+	if f.CouponRate.Value() != "" && f.CouponRate.Value()[0] == '-' || f.PaymentsPerYear < 0 ||
 		f.PaymentsPerYear > 366 {
 		return DebtTerms{}, ErrInvalidInstrument
 	}
 
-	if f.Type == TreasuryBill && (f.Coupon.Positive() || f.PaymentsPerYear != 0) {
+	if f.Type == TreasuryBill && (f.CouponRate.Positive() || f.PaymentsPerYear != 0) {
 		return DebtTerms{}, ErrInvalidInstrument
 	}
 

@@ -167,7 +167,7 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 			Instrument:    f.Instrument,
 			Kind:          source.Exercise,
 			Quantity:      f.Quantity,
-			Date:          f.TradeDate,
+			Date:          f.Date,
 			Relationships: []source.Relationship{link},
 		},
 	)
@@ -267,10 +267,10 @@ func TestDebtNominalMissingTermsAndReferenceSubject(t *testing.T) {
 
 	e := view.Executions[0]
 	f := e.Terms().Fields()
-	if e.Listing() != "" || e.Terms().QuantityUnit() != "nominal" || e.Terms().PriceBasis() != "" ||
+	if e.Listing() != "" || e.Terms().QuantityUnit() != "nominal" || e.Terms().QuotationBasis() != "" ||
 		f.AccruedInterest.Amount() != "-12.3456789" ||
 		!f.Instrument.Debt().Fields().Maturity.IsZero() ||
-		f.Instrument.Debt().Fields().Coupon.Value() != "" {
+		f.Instrument.Debt().Fields().CouponRate.Value() != "" {
 		t.Fatal("invented debt terms or listing", f)
 	}
 
@@ -305,7 +305,7 @@ func TestConversionUnknownCounterpartAndIndependentMoney(t *testing.T) {
 		f.Received.Amount() != "" ||
 		f.Rate.Amount() != "1.234567890123" ||
 		f.Proceeds.Amount() != "123.45" ||
-		f.Net.Amount() != "123.25" ||
+		f.NetCash.Amount() != "123.25" ||
 		f.Charges[0].Total().Currency().String() != "GBP" {
 		t.Fatal("conversion roles changed", f)
 	}
@@ -339,7 +339,7 @@ func TestCompatibleEnrichmentAndCompetingOptionalClaims(t *testing.T) {
 	coverageReport(t, s, "enrichment", enriched)
 
 	d, err := s.ExecutionDetail(ctx, id)
-	if err != nil || d.Execution.Terms().Fields().Net.Amount() != "-2.0000000001" ||
+	if err != nil || d.Execution.Terms().Fields().NetCash.Amount() != "-2.0000000001" ||
 		d.Execution.Revision() <= revision {
 		t.Fatal("optional enrichment", d, err)
 	}
@@ -357,7 +357,7 @@ func TestCompatibleEnrichmentAndCompetingOptionalClaims(t *testing.T) {
 	coverageReport(t, s, "competing-enrichment", competing)
 
 	d, err = s.ExecutionDetail(ctx, id)
-	if err != nil || !d.Execution.State().NeedsReview() || d.Execution.Terms().Fields().Net.Amount() != "" {
+	if err != nil || !d.Execution.State().NeedsReview() || d.Execution.Terms().Fields().NetCash.Amount() != "" {
 		t.Fatal("arrival order selected optional claim", d, err)
 	}
 }
@@ -553,12 +553,12 @@ func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 	f := original.Terms().Fields()
 	i := f.Instrument.Fields()
 	o := i.Option.Fields()
-	o.Multiplier, _ = financial.NewQuantity("50")
+	o.Multiplier, _ = financial.ParseQuantity("50")
 	o.EffectiveFrom, _ = financial.ParseDate("2026-10-21")
-	units, _ := financial.NewQuantity("12.5")
+	units, _ := financial.ParseQuantity("12.5")
 	security, _ := source.NewSecurityDeliverable(o.Underlier.Reference(), units)
 	usd, _ := financial.ParseCurrency("USD")
-	cash, _ := financial.NewMoney("0.75", usd)
+	cash, _ := financial.ParseMoney("0.75", usd)
 	cashComponent, _ := source.NewCashDeliverable(cash)
 	o.Deliverables = []source.Deliverable{security, cashComponent}
 
@@ -575,7 +575,7 @@ func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 	f.Location = "synthetic:reported-adjustment"
 	f.Event, _ = source.NewReference("ibkr", "execution-id", "U1", "adjusted-fill")
 	f.EventAliases = nil
-	f.TradeDate, _ = financial.ParseDate("2026-10-22")
+	f.Date, _ = financial.ParseDate("2026-10-22")
 
 	adjusted, err := source.NewTrade(f)
 	if err != nil {

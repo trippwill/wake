@@ -164,7 +164,7 @@ func reportedPosition(row map[string]string, account string) (source.Position, e
 		return source.Position{}, err
 	}
 
-	q, err := financial.NewQuantity(row["position"])
+	q, err := financial.ParseQuantity(row["position"])
 	if err != nil {
 		return source.Position{}, err
 	}
@@ -185,7 +185,7 @@ func reportedPosition(row map[string]string, account string) (source.Position, e
 
 	var price financial.Price
 	if c, e := financial.ParseCurrency(row["currency"]); e == nil && row["costBasisPrice"] != "" {
-		price, _ = financial.NewPrice(row["costBasisPrice"], c)
+		price, _ = financial.ParsePrice(row["costBasisPrice"], c)
 	}
 
 	return source.NewPosition(i, q, price)

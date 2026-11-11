@@ -18,7 +18,7 @@ func testCharge(t *testing.T, category ChargeCategory, field, amount string, chi
 
 	var total financial.Money
 	if amount != "" {
-		total, _ = financial.NewMoney(amount, usd)
+		total, _ = financial.ParseMoney(amount, usd)
 	}
 
 	c, err := NewCharge(ChargeInput{Category: category, Field: field, Total: total, Components: children})
@@ -34,7 +34,7 @@ func TestChargeHierarchyPreservesIndependentTotalsAndImmutableComponents(t *test
 	reg := testCharge(t, RegulatoryFee, "regulatory", "", fee)
 	children := []Charge{reg}
 	usd, _ := financial.ParseCurrency("USD")
-	total, _ := financial.NewMoney("-1.2300", usd)
+	total, _ := financial.ParseMoney("-1.2300", usd)
 
 	commission, err := NewCharge(
 		ChargeInput{Category: Commission, Field: "commission", Total: total, Components: children},

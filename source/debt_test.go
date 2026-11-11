@@ -10,8 +10,10 @@ import (
 )
 
 func TestDebtIssueInvariants(t *testing.T) {
-	coupon, _ := financial.NewQuantity("1.25")
-	if _, err := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryBill, Coupon: coupon}); err == nil {
+	coupon, _ := financial.ParseQuantity("1.25")
+	if _, err := source.NewDebtTerms(
+		source.DebtInput{Type: source.TreasuryBill, CouponRate: coupon},
+	); err == nil {
 		t.Fatal("coupon-bearing bill")
 	}
 
@@ -23,9 +25,9 @@ func TestDebtIssueInvariants(t *testing.T) {
 		}
 
 		d, err := source.NewDebtTerms(
-			source.DebtInput{Type: kind, Currency: c, Coupon: coupon, PaymentsPerYear: 2},
+			source.DebtInput{Type: kind, Currency: c, CouponRate: coupon, PaymentsPerYear: 2},
 		)
-		if err != nil || d.Fields().Coupon.Value() != "1.25" {
+		if err != nil || d.Fields().CouponRate.Value() != "1.25" {
 			t.Fatal(kind, err)
 		}
 	}

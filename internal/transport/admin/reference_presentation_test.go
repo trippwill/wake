@@ -24,7 +24,7 @@ func TestDebtFactsDistinguishesAbsentAndInapplicableTerms(t *testing.T) {
 	}{
 		{"bill", source.DebtInput{Type: source.TreasuryBill}, []string{"None (Treasury bill)", "Not provided", "Maturity", "Original issue date"}, []string{"Unknown", "Coupon rate (reported)", "Payments per year", "Dated date"}},
 		{"dated bill", source.DebtInput{Type: source.TreasuryBill, Maturity: maturity, IssueDate: issueDate}, []string{"2027-02-01", "2026-11-01"}, []string{"0000-00-00"}},
-		{"explicit bill zero", source.DebtInput{Type: source.TreasuryBill, Coupon: zero}, []string{"Coupon rate (reported)", "0.000"}, []string{"Unknown", "Payments per year"}},
+		{"explicit bill zero", source.DebtInput{Type: source.TreasuryBill, CouponRate: zero}, []string{"Coupon rate (reported)", "0.000"}, []string{"Unknown", "Payments per year"}},
 		{"bond", source.DebtInput{Type: source.TreasuryBond}, []string{"Coupon rate (reported)", "Payments per year", "Dated date", "Not provided"}, []string{"Unknown", "None (Treasury bill)"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -35,12 +35,12 @@ func positionCandidate(t *testing.T, date, at, quantity, cost, reason string) Po
 
 	ids := []string{}
 	if quantity != "" && reason == "" {
-		q, _ := financial.NewQuantity(quantity)
+		q, _ := financial.ParseQuantity(quantity)
 
 		c, _ := financial.ParseCurrency("USD")
 		m := financial.Price{}
 		if cost != "" {
-			m, _ = financial.NewPrice(cost, c)
+			m, _ = financial.ParsePrice(cost, c)
 		}
 
 		p, err := source.NewPosition(instrument, q, m)
@@ -59,6 +59,39 @@ func positionCandidate(t *testing.T, date, at, quantity, cost, reason string) Po
 	}
 
 	return PositionCandidate{o, ids}
+}
+
+func TestPositionSelectionTreatsExplicitBrokerEffectiveAsDefault(t *testing.T) {
+	const at = "2026-11-03T12:00:00Z"
+
+	base := positionCandidate(t, "2026-11-03", at, "10", "", "")
+	other := base
+	input := other.Observation.Fields()
+	input.TimeBasis = source.PositionBrokerEffective
+
+	var err error
+
+	other.Observation, err = source.NewPositionSetObservation(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := SelectPositions(t.Context(), []PositionCandidate{base, other})
+	if err != nil || got.Reason != "" || len(got.Source.Positions) != 1 {
+		t.Fatalf("equivalent time bases did not reconcile: %+v, %v", got, err)
+	}
+
+	input.TimeBasis = source.PositionSourceFetched
+
+	other.Observation, err = source.NewPositionSetObservation(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = SelectPositions(t.Context(), []PositionCandidate{base, other})
+	if err != nil || got.Reason != "conflict" {
+		t.Fatalf("distinct time bases reconciled: %+v, %v", got, err)
+	}
 }
 
 func TestPositionSelectionUsesCompleteEffectiveSetsAndExplicitRevisions(t *testing.T) {
@@ -282,7 +315,7 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 				for i, term := range terms {
 					input := source.InstrumentInput{Kind: kind, Name: "Synthetic contract"}
 					if kind == source.Option {
-						multiplier, _ := financial.NewQuantity(term)
+						multiplier, _ := financial.ParseQuantity(term)
 						input.Option, _ = source.NewOptionTerms(source.OptionInput{Multiplier: multiplier})
 					} else {
 						maturity, _ := financial.ParseDate(term)
@@ -294,12 +327,12 @@ func TestPositionDuplicateRowsPairReportedContractTerms(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					quantity, _ := financial.NewQuantity("1")
+					quantity, _ := financial.ParseQuantity("1")
 
 					cost := financial.Price{}
 					if i < len(costs) && costs[i] != "" {
 						usd, _ := financial.ParseCurrency("USD")
-						cost, _ = financial.NewPrice(costs[i], usd)
+						cost, _ = financial.ParsePrice(costs[i], usd)
 					}
 
 					p, err := source.NewPosition(instrument, quantity, cost)

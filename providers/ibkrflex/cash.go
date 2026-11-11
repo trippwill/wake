@@ -90,7 +90,7 @@ func cashPostingAs(
 		return source.ActivityObservation{}, err
 	}
 
-	f.Amount, err = financial.NewMoney(row["amount"], c)
+	f.Amount, err = financial.ParseMoney(row["amount"], c)
 	if err != nil {
 		return source.ActivityObservation{}, err
 	}
@@ -234,7 +234,7 @@ func transferActivities(row map[string]string, parent, loc string) ([]source.Act
 
 	security := false
 	if row["quantity"] != "" {
-		q, err := financial.NewQuantity(row["quantity"])
+		q, err := financial.ParseQuantity(row["quantity"])
 		if err != nil {
 			return nil, err
 		}
@@ -257,12 +257,12 @@ func transferActivities(row map[string]string, parent, loc string) ([]source.Act
 			return nil, err
 		}
 
-		m, err := financial.NewMoney(row["cashTransfer"], c)
+		m, err := financial.ParseMoney(row["cashTransfer"], c)
 		if err != nil {
 			return nil, err
 		}
 
-		q, _ := financial.NewQuantity(m.Amount())
+		q, _ := financial.ParseQuantity(m.Amount())
 		if q.Abs().Positive() {
 			copyRow := maps.Clone(row)
 			copyRow["amount"] = m.Amount()

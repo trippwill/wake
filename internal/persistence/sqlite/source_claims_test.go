@@ -357,14 +357,14 @@ func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing
 		},
 		func(d *observationData) {
 			for i := range d.Fields {
-				if d.Fields[i].Name == source.FieldExecutedAt {
+				if d.Fields[i].Name == source.FieldAt {
 					d.Fields[i].Timestamp = strings.Replace(d.Fields[i].Timestamp, ".120", ".12", 1)
 				}
 			}
 		},
 		func(d *observationData) { d.Event[2] = "other-scope" },
 		func(d *observationData) {
-			d.Fields = slices.DeleteFunc(d.Fields, func(f activityFieldData) bool { return f.Name == source.FieldNet })
+			d.Fields = slices.DeleteFunc(d.Fields, func(f activityFieldData) bool { return f.Name == source.FieldNetCash })
 		},
 		func(d *observationData) { d.Fields = append(d.Fields, d.Fields[len(d.Fields)-1]) },
 	} {

@@ -46,17 +46,17 @@ const (
 	FieldRateBase                ActivityFieldName = "rate_base"
 	FieldInstrument              ActivityFieldName = "instrument"
 	FieldOrder                   ActivityFieldName = "order"
-	FieldTradeDate               ActivityFieldName = "trade_date"
-	FieldExecutedAt              ActivityFieldName = "executed_at"
+	FieldDate                    ActivityFieldName = "date"
+	FieldAt                      ActivityFieldName = "at"
 	FieldSettlementDate          ActivityFieldName = "settlement_date"
 	FieldSent                    ActivityFieldName = "sent"
 	FieldReceived                ActivityFieldName = "received"
 	FieldCharge                  ActivityFieldName = "charge"
 	FieldRelationship            ActivityFieldName = "relationship"
-	FieldGross                   ActivityFieldName = "gross"
+	FieldGrossAmount             ActivityFieldName = "gross_amount"
 	FieldProceeds                ActivityFieldName = "proceeds"
-	FieldNet                     ActivityFieldName = "net"
-	FieldNetBillable             ActivityFieldName = "net_billable"
+	FieldNetCash                 ActivityFieldName = "net_cash"
+	FieldNetCashWithBillable     ActivityFieldName = "net_cash_with_billable"
 	FieldAccruedInterest         ActivityFieldName = "accrued_interest"
 	FieldRealizedPnL             ActivityFieldName = "realized_pnl"
 	FieldReportedCostBasis       ActivityFieldName = "reported_cost_basis"
@@ -68,7 +68,7 @@ type ActivityFieldInput struct {
 	Name           ActivityFieldName
 	Unknown        bool
 	QuantityUnit   string
-	PriceBasis     string
+	QuotationBasis QuotationBasis
 	ReportedOn     financial.Date
 	Text           string
 	Quantity       financial.Quantity
@@ -158,11 +158,11 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		}
 	case FieldPrice:
 		if !f.Unknown {
-			expected.PriceBasis = f.PriceBasis
+			expected.QuotationBasis = f.QuotationBasis
 		}
 
 		valid = f.Unknown ||
-			(f.Price.Amount() != "" && (f.PriceBasis == "" || f.PriceBasis == "per share" || f.PriceBasis == "premium per underlying unit"))
+			(f.Price.Amount() != "" && (f.QuotationBasis == "" || f.QuotationBasis == PerShare || f.QuotationBasis == PerUnderlyingUnit))
 		if !f.Unknown {
 			expected.Price = f.Price
 		}
@@ -186,12 +186,12 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Reference = f.Reference
 		}
-	case FieldTradeDate:
+	case FieldDate:
 		valid = f.Unknown || (!f.Date.IsZero())
 		if !f.Unknown {
 			expected.Date = f.Date
 		}
-	case FieldExecutedAt:
+	case FieldAt:
 		valid = f.Unknown || (!f.Timestamp.IsZero())
 		if !f.Unknown {
 			expected.Timestamp = f.Timestamp
@@ -227,7 +227,7 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Relationship = f.Relationship
 		}
-	case FieldGross, FieldPositionValue, FieldTransferCost, FieldTransferPnL, FieldCashAmount:
+	case FieldGrossAmount, FieldPositionValue, FieldTransferCost, FieldTransferPnL, FieldCashAmount:
 		valid = f.Unknown || (f.Money.Amount() != "")
 		if !f.Unknown {
 			expected.Money = f.Money
@@ -237,12 +237,12 @@ func NewActivityField(f ActivityFieldInput) (ActivityField, error) {
 		if !f.Unknown {
 			expected.Money = f.Money
 		}
-	case FieldNet:
+	case FieldNetCash:
 		valid = f.Unknown || (f.Money.Amount() != "")
 		if !f.Unknown {
 			expected.Money = f.Money
 		}
-	case FieldNetBillable:
+	case FieldNetCashWithBillable:
 		valid = f.Unknown || (f.Money.Amount() != "")
 		if !f.Unknown {
 			expected.Money = f.Money
@@ -419,16 +419,16 @@ func tradeObservationFields(f TradeInput) []ActivityFieldInput {
 		{Name: FieldInstrument, Instrument: f.Instrument},
 		{Name: FieldSide, Text: string(f.Side)},
 		{Name: FieldQuantity, Quantity: f.Quantity, QuantityUnit: quantityUnit(f.Instrument.Kind())},
-		{Name: FieldPrice, Price: f.Price, PriceBasis: priceBasis(f.Instrument.Kind())},
-		{Name: FieldTradeDate, Date: f.TradeDate},
-		{Name: FieldExecutedAt, Timestamp: f.ExecutedAt},
+		{Name: FieldPrice, Price: f.Price, QuotationBasis: quotationBasis(f.Instrument.Kind())},
+		{Name: FieldDate, Date: f.Date},
+		{Name: FieldAt, Timestamp: f.At},
 		{Name: FieldSettlementDate, Date: f.SettlementDate},
 		{Name: FieldOrder, Reference: f.Order},
 		{Name: FieldPositionEffect, Text: string(f.PositionEffect)},
-		{Name: FieldGross, Money: f.Gross},
+		{Name: FieldGrossAmount, Money: f.GrossAmount},
 		{Name: FieldProceeds, Money: f.Proceeds},
-		{Name: FieldNet, Money: f.Net},
-		{Name: FieldNetBillable, Money: f.NetWithBillable},
+		{Name: FieldNetCash, Money: f.NetCash},
+		{Name: FieldNetCashWithBillable, Money: f.NetCashWithBillable},
 		{Name: FieldAccruedInterest, Money: f.AccruedInterest},
 	}
 	for _, c := range ChargeFields(f.Charges) {
@@ -470,8 +470,8 @@ func (l Lifecycle) Observation() ActivityObservation {
 		{Name: FieldKind, Text: string(f.Kind)},
 		{Name: FieldInstrument, Instrument: f.Instrument},
 		{Name: FieldQuantity, Quantity: f.Quantity, QuantityUnit: "contracts"},
-		{Name: FieldTradeDate, Date: f.Date},
-		{Name: FieldExecutedAt, Timestamp: f.At},
+		{Name: FieldDate, Date: f.Date},
+		{Name: FieldAt, Timestamp: f.At},
 		{Name: FieldOrder, Reference: f.Order},
 	}
 	for _, r := range f.Relationships {
@@ -489,17 +489,17 @@ func (v Conversion) Observation() ActivityObservation {
 	f := v.Fields()
 	fields := []ActivityFieldInput{
 		{Name: FieldFamily, Text: "conversion"},
-		{Name: FieldTradeDate, Date: f.Date},
-		{Name: FieldExecutedAt, Timestamp: f.At},
+		{Name: FieldDate, Date: f.Date},
+		{Name: FieldAt, Timestamp: f.At},
 		{Name: FieldOrder, Reference: f.Order},
 		{Name: FieldSent, CurrencyAmount: f.Sent},
 		{Name: FieldReceived, CurrencyAmount: f.Received},
 		{Name: FieldRateBase, Currency: f.RateBase},
 		{Name: FieldRate, Price: f.Rate},
-		{Name: FieldGross, Money: f.Gross},
+		{Name: FieldGrossAmount, Money: f.GrossAmount},
 		{Name: FieldProceeds, Money: f.Proceeds},
-		{Name: FieldNet, Money: f.Net},
-		{Name: FieldNetBillable, Money: f.NetWithBillable},
+		{Name: FieldNetCash, Money: f.NetCash},
+		{Name: FieldNetCashWithBillable, Money: f.NetCashWithBillable},
 	}
 	for _, c := range ChargeFields(f.Charges) {
 		fields = append(fields, c.Fields())
@@ -519,14 +519,22 @@ func quantityUnit(kind InstrumentKind) string {
 	}
 }
 
-func priceBasis(kind InstrumentKind) string {
+// QuotationBasis describes the established denominator of a reported price.
+type QuotationBasis string
+
+const (
+	PerShare          QuotationBasis = "per_share"
+	PerUnderlyingUnit QuotationBasis = "per_underlying_unit"
+)
+
+func quotationBasis(kind InstrumentKind) QuotationBasis {
 	switch kind {
 	case Option:
-		return "premium per underlying unit"
+		return PerUnderlyingUnit
 	case Debt:
 		return ""
 	default:
-		return "per share"
+		return PerShare
 	}
 }
 
@@ -568,7 +576,7 @@ func activityFieldApplies(family string, name ActivityFieldName) bool {
 		return family == "trade" || family == "lifecycle" || family == "security-transfer"
 	case FieldCharge:
 		return family == "trade" || family == "conversion" || family == "cash"
-	case FieldGross, FieldProceeds, FieldNet, FieldNetBillable:
+	case FieldGrossAmount, FieldProceeds, FieldNetCash, FieldNetCashWithBillable:
 		return family == "trade" || family == "conversion"
 	}
 

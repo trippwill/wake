@@ -87,9 +87,9 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
 	gbp, _ := financial.ParseCurrency("GBP")
 	reference, _ := source.NewReference("synthetic", "security", "delivery", "underlier-one")
-	quantity, _ := financial.NewQuantity("12.50000000001")
+	quantity, _ := financial.ParseQuantity("12.50000000001")
 	security, _ := source.NewSecurityDeliverable(reference, quantity)
-	cashValue, _ := financial.NewMoney("0.75000000001", usd)
+	cashValue, _ := financial.ParseMoney("0.75000000001", usd)
 	cash, _ := source.NewCashDeliverable(cashValue)
 	option := optionTrade.Fields().Instrument.Option().Fields()
 	option.EffectiveFrom = date("2026-01-01")
@@ -191,7 +191,7 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 		"2026-02-01",
 	)
 	changed = option
-	quantity, _ = financial.NewQuantity("13.50000000001")
+	quantity, _ = financial.ParseQuantity("13.50000000001")
 	otherSecurity, _ := source.NewSecurityDeliverable(reference, quantity)
 	changed.Deliverables = []source.Deliverable{otherSecurity, cash}
 	assertComparison(
@@ -228,7 +228,7 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 		"underlier-two",
 	)
 	changed = option
-	cashValue, _ = financial.NewMoney("0.75000000001", gbp)
+	cashValue, _ = financial.ParseMoney("0.75000000001", gbp)
 	otherCash, _ := source.NewCashDeliverable(cashValue)
 	changed.Deliverables = []source.Deliverable{security, security, otherCash}
 	assertComparison(

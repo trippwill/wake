@@ -18,7 +18,7 @@ import (
 func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
 	s := coverageStore(t)
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-0.00100", usd)
+	money, _ := financial.ParseMoney("-0.00100", usd)
 	trade := func(category source.ChargeCategory, field string) source.Trade {
 		t.Helper()
 
@@ -63,7 +63,7 @@ func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
 
 func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
-	money, _ := financial.NewMoney("-0.00100", usd)
+	money, _ := financial.ParseMoney("-0.00100", usd)
 	trade := func(category source.ChargeCategory, field string) source.Trade {
 		t.Helper()
 
@@ -105,7 +105,7 @@ func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T)
 
 				id := rows[0].ID
 
-				charges := realizedActivity(t, s, id).Activity.Charges
+				charges := realizedActivity(t, s, id).Activity.Charges()
 				chosenCategory, chosenRole := "other-fee", "a"
 				if sameBatch {
 					if len(charges) != 1 || len(charges[0].Components) != 1 {
@@ -137,7 +137,7 @@ func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T)
 
 				retainDecision(t, s, "activity", id, "observation", chosen, "", "set")
 
-				charges = realizedActivity(t, s, id).Activity.Charges
+				charges = realizedActivity(t, s, id).Activity.Charges()
 				if len(charges) != 1 || charges[0].Category != chosenCategory || len(charges[0].Components) != 1 ||
 					charges[0].Components[0].Role != chosenRole {
 					t.Fatal("explicit source choice could not replace incompatible descendants", charges)
@@ -195,7 +195,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root := resource.Activity.Charges[0]
+	root := resource.Activity.Charges()[0]
 	if root.Total.Amount != "-0.000000000001" || root.Category != "commission" || len(root.Components) != 1 ||
 		len(root.Components[0].Components) != 2 {
 		t.Fatal("nested wire values lost", root)
@@ -260,7 +260,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 	restored, err := reopened.Resource(t.Context(), "activity", id)
 	current, _ := snapshotState(t.Context(), reopened)
 	if err != nil || current.Version != after.Version ||
-		!reflect.DeepEqual(restored.Activity.Charges, resource.Activity.Charges) {
+		!reflect.DeepEqual(restored.Activity.Charges(), resource.Activity.Charges()) {
 		t.Fatal("restart changed charge hierarchy", restored, err)
 	}
 }
@@ -289,9 +289,9 @@ func TestStandaloneChargeTotalFollowsCashCorrectionWithoutCombiningTax(t *testin
 			id := ""
 			for _, row := range rows {
 				value := realizedActivity(t, s, row.ID).Activity
-				if len(value.Charges) != 1 || value.Charges[0].Total == nil ||
-					*value.Charges[0].Total != value.Cash.Amount ||
-					len(value.Charges[0].Components) != 0 {
+				if len(value.Charges()) != 1 || value.Charges()[0].Total == nil ||
+					*value.Charges()[0].Total != value.Cash.Amount ||
+					len(value.Charges()[0].Components) != 0 {
 					t.Fatal("posting charge invented a combined total", value)
 				}
 
@@ -305,14 +305,14 @@ func TestStandaloneChargeTotalFollowsCashCorrectionWithoutCombiningTax(t *testin
 			retainDecision(t, s, "activity", id, "cash_amount", "13.0000", "USD", "set")
 
 			corrected := realizedActivity(t, s, id).Activity
-			if corrected.Cash.Amount.Amount != "13.0000" || corrected.Charges[0].Total.Amount != "13.0000" {
+			if corrected.Cash.Amount.Amount != "13.0000" || corrected.Charges()[0].Total.Amount != "13.0000" {
 				t.Fatal("cash correction left an independent charge total", corrected)
 			}
 
 			retainDecision(t, s, "activity", id, "cash_amount", "", "", "release")
 
 			released := realizedActivity(t, s, id).Activity
-			if released.Charges[0].Total.Amount != "12.34000000000000001" {
+			if released.Charges()[0].Total.Amount != "12.34000000000000001" {
 				t.Fatal("release lost exact source total", released)
 			}
 		})

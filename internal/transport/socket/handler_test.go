@@ -42,15 +42,19 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		Kind:     "activity",
 		Revision: 42,
 		Activity: &application.PublishedActivity{
-			Family:        "conversion",
-			AccountID:     "account",
-			State:         "accepted",
-			Date:          "2026-10-20",
-			Sent:          &application.PublishedAmount{Currency: "EUR"},
-			Received:      &application.PublishedAmount{Currency: "USD", Amount: new("0.0000")},
-			Rate:          &application.PublishedMoney{Amount: "1.23000000000000000100", Currency: "USD"},
-			Charges:       []application.PublishedCharge{},
-			Relationships: []application.PublishedRelationship{},
+			PublishedActivityHeader: application.PublishedActivityHeader{
+				Family:        "conversion",
+				AccountID:     "account",
+				State:         "accepted",
+				Date:          "2026-10-20",
+				Relationships: []application.PublishedRelationship{},
+			},
+			Conversion: &application.PublishedConversion{
+				Sent:     &application.PublishedAmount{Currency: "EUR"},
+				Received: &application.PublishedAmount{Currency: "USD", Amount: new("0.0000")},
+				Rate:     &application.PublishedMoney{Amount: "1.23000000000000000100", Currency: "USD"},
+				Charges:  []application.PublishedCharge{},
+			},
 		},
 	}
 	for _, path := range []string{"/v1/snapshot", "/v1/activity/financial-id", "/v1/activity/financial-id/explanation?revision=42"} {
@@ -80,9 +84,14 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if activity.Activity.Sent.Amount != nil || *activity.Activity.Received.Amount != "0.0000" ||
-				activity.Activity.Rate.Amount != "1.23000000000000000100" ||
-				activity.Activity.At != nil {
+			conversion, err := activity.Activity.AsConversionActivity()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if conversion.Sent.Amount != nil || *conversion.Received.Amount != "0.0000" ||
+				conversion.Rate.Amount != "1.23000000000000000100" ||
+				conversion.At != nil {
 				t.Fatal("unknown/zero/precision lost", w.Body.String())
 			}
 		}

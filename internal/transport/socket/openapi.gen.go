@@ -8,6 +8,7 @@ package socket
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/oapi-codegen/runtime"
@@ -56,6 +57,21 @@ func (e ActivityFamily) Valid() bool {
 	}
 }
 
+// Defines values for ActivityResourceKind.
+const (
+	ActivityResourceKindActivity ActivityResourceKind = "activity"
+)
+
+// Valid indicates whether the value is a known member of the ActivityResourceKind enum.
+func (e ActivityResourceKind) Valid() bool {
+	switch e {
+	case ActivityResourceKindActivity:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ActivityState.
 const (
 	Accepted  ActivityState = "accepted"
@@ -77,57 +93,57 @@ func (e ActivityState) Valid() bool {
 	}
 }
 
-// Defines values for ActivityResourceKind.
+// Defines values for CashActivityCategory.
 const (
-	ActivityResourceKindActivity ActivityResourceKind = "activity"
+	CashActivityCategoryAdjustment    CashActivityCategory = "adjustment"
+	CashActivityCategoryDividend      CashActivityCategory = "dividend"
+	CashActivityCategoryFee           CashActivityCategory = "fee"
+	CashActivityCategoryFunding       CashActivityCategory = "funding"
+	CashActivityCategoryInterest      CashActivityCategory = "interest"
+	CashActivityCategoryOther         CashActivityCategory = "other"
+	CashActivityCategoryPaymentInLieu CashActivityCategory = "payment-in-lieu"
+	CashActivityCategoryTax           CashActivityCategory = "tax"
+	CashActivityCategoryTransfer      CashActivityCategory = "transfer"
+	CashActivityCategoryWithholding   CashActivityCategory = "withholding"
 )
 
-// Valid indicates whether the value is a known member of the ActivityResourceKind enum.
-func (e ActivityResourceKind) Valid() bool {
+// Valid indicates whether the value is a known member of the CashActivityCategory enum.
+func (e CashActivityCategory) Valid() bool {
 	switch e {
-	case ActivityResourceKindActivity:
+	case CashActivityCategoryAdjustment:
+		return true
+	case CashActivityCategoryDividend:
+		return true
+	case CashActivityCategoryFee:
+		return true
+	case CashActivityCategoryFunding:
+		return true
+	case CashActivityCategoryInterest:
+		return true
+	case CashActivityCategoryOther:
+		return true
+	case CashActivityCategoryPaymentInLieu:
+		return true
+	case CashActivityCategoryTax:
+		return true
+	case CashActivityCategoryTransfer:
+		return true
+	case CashActivityCategoryWithholding:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for CashCategory.
+// Defines values for CashActivityFamily.
 const (
-	CashCategoryAdjustment    CashCategory = "adjustment"
-	CashCategoryDividend      CashCategory = "dividend"
-	CashCategoryFee           CashCategory = "fee"
-	CashCategoryFunding       CashCategory = "funding"
-	CashCategoryInterest      CashCategory = "interest"
-	CashCategoryOther         CashCategory = "other"
-	CashCategoryPaymentInLieu CashCategory = "payment-in-lieu"
-	CashCategoryTax           CashCategory = "tax"
-	CashCategoryTransfer      CashCategory = "transfer"
-	CashCategoryWithholding   CashCategory = "withholding"
+	CashActivityFamilyCash CashActivityFamily = "cash"
 )
 
-// Valid indicates whether the value is a known member of the CashCategory enum.
-func (e CashCategory) Valid() bool {
+// Valid indicates whether the value is a known member of the CashActivityFamily enum.
+func (e CashActivityFamily) Valid() bool {
 	switch e {
-	case CashCategoryAdjustment:
-		return true
-	case CashCategoryDividend:
-		return true
-	case CashCategoryFee:
-		return true
-	case CashCategoryFunding:
-		return true
-	case CashCategoryInterest:
-		return true
-	case CashCategoryOther:
-		return true
-	case CashCategoryPaymentInLieu:
-		return true
-	case CashCategoryTax:
-		return true
-	case CashCategoryTransfer:
-		return true
-	case CashCategoryWithholding:
+	case CashActivityFamilyCash:
 		return true
 	default:
 		return false
@@ -182,6 +198,78 @@ func (e ChargeCategory) Valid() bool {
 	}
 }
 
+// Defines values for ConversionActivityFamily.
+const (
+	ConversionActivityFamilyConversion ConversionActivityFamily = "conversion"
+)
+
+// Valid indicates whether the value is a known member of the ConversionActivityFamily enum.
+func (e ConversionActivityFamily) Valid() bool {
+	switch e {
+	case ConversionActivityFamilyConversion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebtTermsFamily.
+const (
+	DebtTermsFamilyDebt DebtTermsFamily = "debt"
+)
+
+// Valid indicates whether the value is a known member of the DebtTermsFamily enum.
+func (e DebtTermsFamily) Valid() bool {
+	switch e {
+	case DebtTermsFamilyDebt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DebtTermsType.
+const (
+	DebtTermsTypeConventionalGilt DebtTermsType = "conventional-gilt"
+	DebtTermsTypeLessThannil      DebtTermsType = "<nil>"
+	DebtTermsTypeTreasuryBill     DebtTermsType = "treasury-bill"
+	DebtTermsTypeTreasuryBond     DebtTermsType = "treasury-bond"
+	DebtTermsTypeTreasuryNote     DebtTermsType = "treasury-note"
+)
+
+// Valid indicates whether the value is a known member of the DebtTermsType enum.
+func (e DebtTermsType) Valid() bool {
+	switch e {
+	case DebtTermsTypeConventionalGilt:
+		return true
+	case DebtTermsTypeLessThannil:
+		return true
+	case DebtTermsTypeTreasuryBill:
+		return true
+	case DebtTermsTypeTreasuryBond:
+		return true
+	case DebtTermsTypeTreasuryNote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EquityTermsFamily.
+const (
+	EquityTermsFamilyEquity EquityTermsFamily = "equity"
+)
+
+// Valid indicates whether the value is a known member of the EquityTermsFamily enum.
+func (e EquityTermsFamily) Valid() bool {
+	switch e {
+	case EquityTermsFamilyEquity:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ErrorCode.
 const (
 	InternalError    ErrorCode = "internal_error"
@@ -221,6 +309,69 @@ func (e ExplanationReportedRealizedPnlSelection) Valid() bool {
 	case ExplanationReportedRealizedPnlSelectionAutomatic:
 		return true
 	case ExplanationReportedRealizedPnlSelectionOperator:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FieldDetailExpectation.
+const (
+	FieldDetailExpectationExpected    FieldDetailExpectation = "expected"
+	FieldDetailExpectationLessThannil FieldDetailExpectation = "<nil>"
+	FieldDetailExpectationNotExpected FieldDetailExpectation = "not_expected"
+)
+
+// Valid indicates whether the value is a known member of the FieldDetailExpectation enum.
+func (e FieldDetailExpectation) Valid() bool {
+	switch e {
+	case FieldDetailExpectationExpected:
+		return true
+	case FieldDetailExpectationLessThannil:
+		return true
+	case FieldDetailExpectationNotExpected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FieldDetailReason.
+const (
+	FieldDetailReasonNotApplicable       FieldDetailReason = "not_applicable"
+	FieldDetailReasonNotReported         FieldDetailReason = "not_reported"
+	FieldDetailReasonOperatorWithheld    FieldDetailReason = "operator_withheld"
+	FieldDetailReasonReportedUnavailable FieldDetailReason = "reported_unavailable"
+	FieldDetailReasonUnresolved          FieldDetailReason = "unresolved"
+)
+
+// Valid indicates whether the value is a known member of the FieldDetailReason enum.
+func (e FieldDetailReason) Valid() bool {
+	switch e {
+	case FieldDetailReasonNotApplicable:
+		return true
+	case FieldDetailReasonNotReported:
+		return true
+	case FieldDetailReasonOperatorWithheld:
+		return true
+	case FieldDetailReasonReportedUnavailable:
+		return true
+	case FieldDetailReasonUnresolved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FundTermsFamily.
+const (
+	FundTermsFamilyFund FundTermsFamily = "fund"
+)
+
+// Valid indicates whether the value is a known member of the FundTermsFamily enum.
+func (e FundTermsFamily) Valid() bool {
+	switch e {
+	case FundTermsFamilyFund:
 		return true
 	default:
 		return false
@@ -293,6 +444,42 @@ func (e InstrumentResourceKind) Valid() bool {
 	}
 }
 
+// Defines values for LifecycleActivityFamily.
+const (
+	LifecycleActivityFamilyLifecycle LifecycleActivityFamily = "lifecycle"
+)
+
+// Valid indicates whether the value is a known member of the LifecycleActivityFamily enum.
+func (e LifecycleActivityFamily) Valid() bool {
+	switch e {
+	case LifecycleActivityFamilyLifecycle:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LifecycleActivityLifecycleKind.
+const (
+	Assignment LifecycleActivityLifecycleKind = "assignment"
+	Exercise   LifecycleActivityLifecycleKind = "exercise"
+	Expiration LifecycleActivityLifecycleKind = "expiration"
+)
+
+// Valid indicates whether the value is a known member of the LifecycleActivityLifecycleKind enum.
+func (e LifecycleActivityLifecycleKind) Valid() bool {
+	switch e {
+	case Assignment:
+		return true
+	case Exercise:
+		return true
+	case Expiration:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListingResourceKind.
 const (
 	Listings ListingResourceKind = "listings"
@@ -302,6 +489,27 @@ const (
 func (e ListingResourceKind) Valid() bool {
 	switch e {
 	case Listings:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NullableQuotationBasis.
+const (
+	NullableQuotationBasisLessThannil       NullableQuotationBasis = "<nil>"
+	NullableQuotationBasisPerShare          NullableQuotationBasis = "per_share"
+	NullableQuotationBasisPerUnderlyingUnit NullableQuotationBasis = "per_underlying_unit"
+)
+
+// Valid indicates whether the value is a known member of the NullableQuotationBasis enum.
+func (e NullableQuotationBasis) Valid() bool {
+	switch e {
+	case NullableQuotationBasisLessThannil:
+		return true
+	case NullableQuotationBasisPerShare:
+		return true
+	case NullableQuotationBasisPerUnderlyingUnit:
 		return true
 	default:
 		return false
@@ -320,6 +528,42 @@ func (e NullableRealizedPnLSelection) Valid() bool {
 	case NullableRealizedPnLSelectionAutomatic:
 		return true
 	case NullableRealizedPnLSelectionOperator:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OptionTermsFamily.
+const (
+	OptionTermsFamilyOption OptionTermsFamily = "option"
+)
+
+// Valid indicates whether the value is a known member of the OptionTermsFamily enum.
+func (e OptionTermsFamily) Valid() bool {
+	switch e {
+	case OptionTermsFamilyOption:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OptionTermsRight.
+const (
+	OptionTermsRightCall        OptionTermsRight = "call"
+	OptionTermsRightLessThannil OptionTermsRight = "<nil>"
+	OptionTermsRightPut         OptionTermsRight = "put"
+)
+
+// Valid indicates whether the value is a known member of the OptionTermsRight enum.
+func (e OptionTermsRight) Valid() bool {
+	switch e {
+	case OptionTermsRightCall:
+		return true
+	case OptionTermsRightLessThannil:
+		return true
+	case OptionTermsRightPut:
 		return true
 	default:
 		return false
@@ -346,12 +590,15 @@ func (e PositionSide) Valid() bool {
 
 // Defines values for PositionsViewAsOfBasis.
 const (
-	SourceFetched PositionsViewAsOfBasis = "source_fetched"
+	BrokerEffective PositionsViewAsOfBasis = "broker_effective"
+	SourceFetched   PositionsViewAsOfBasis = "source_fetched"
 )
 
 // Valid indicates whether the value is a known member of the PositionsViewAsOfBasis enum.
 func (e PositionsViewAsOfBasis) Valid() bool {
 	switch e {
+	case BrokerEffective:
+		return true
 	case SourceFetched:
 		return true
 	default:
@@ -361,22 +608,22 @@ func (e PositionsViewAsOfBasis) Valid() bool {
 
 // Defines values for PositionsViewReason.
 const (
-	Conflict           PositionsViewReason = "conflict"
-	IdentityUnresolved PositionsViewReason = "identity_unresolved"
-	Incomplete         PositionsViewReason = "incomplete"
-	NotReported        PositionsViewReason = "not_reported"
+	PositionsViewReasonConflict           PositionsViewReason = "conflict"
+	PositionsViewReasonIdentityUnresolved PositionsViewReason = "identity_unresolved"
+	PositionsViewReasonIncomplete         PositionsViewReason = "incomplete"
+	PositionsViewReasonNotReported        PositionsViewReason = "not_reported"
 )
 
 // Valid indicates whether the value is a known member of the PositionsViewReason enum.
 func (e PositionsViewReason) Valid() bool {
 	switch e {
-	case Conflict:
+	case PositionsViewReasonConflict:
 		return true
-	case IdentityUnresolved:
+	case PositionsViewReasonIdentityUnresolved:
 		return true
-	case Incomplete:
+	case PositionsViewReasonIncomplete:
 		return true
-	case NotReported:
+	case PositionsViewReasonNotReported:
 		return true
 	default:
 		return false
@@ -446,14 +693,56 @@ func (e PositionsView1Status) Valid() bool {
 	}
 }
 
-// Defines values for TransferDirection.
+// Defines values for QuantityUnit.
 const (
-	In  TransferDirection = "in"
-	Out TransferDirection = "out"
+	Contracts QuantityUnit = "contracts"
+	Nominal   QuantityUnit = "nominal"
+	Shares    QuantityUnit = "shares"
+	Units     QuantityUnit = "units"
 )
 
-// Valid indicates whether the value is a known member of the TransferDirection enum.
-func (e TransferDirection) Valid() bool {
+// Valid indicates whether the value is a known member of the QuantityUnit enum.
+func (e QuantityUnit) Valid() bool {
+	switch e {
+	case Contracts:
+		return true
+	case Nominal:
+		return true
+	case Shares:
+		return true
+	case Units:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuotationBasis.
+const (
+	QuotationBasisPerShare          QuotationBasis = "per_share"
+	QuotationBasisPerUnderlyingUnit QuotationBasis = "per_underlying_unit"
+)
+
+// Valid indicates whether the value is a known member of the QuotationBasis enum.
+func (e QuotationBasis) Valid() bool {
+	switch e {
+	case QuotationBasisPerShare:
+		return true
+	case QuotationBasisPerUnderlyingUnit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecurityTransferActivityDirection.
+const (
+	In  SecurityTransferActivityDirection = "in"
+	Out SecurityTransferActivityDirection = "out"
+)
+
+// Valid indicates whether the value is a known member of the SecurityTransferActivityDirection enum.
+func (e SecurityTransferActivityDirection) Valid() bool {
 	switch e {
 	case In:
 		return true
@@ -464,10 +753,118 @@ func (e TransferDirection) Valid() bool {
 	}
 }
 
+// Defines values for SecurityTransferActivityFamily.
+const (
+	SecurityTransferActivityFamilySecurityTransfer SecurityTransferActivityFamily = "security-transfer"
+)
+
+// Valid indicates whether the value is a known member of the SecurityTransferActivityFamily enum.
+func (e SecurityTransferActivityFamily) Valid() bool {
+	switch e {
+	case SecurityTransferActivityFamilySecurityTransfer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TradeActivityFamily.
+const (
+	TradeActivityFamilyTrade TradeActivityFamily = "trade"
+)
+
+// Valid indicates whether the value is a known member of the TradeActivityFamily enum.
+func (e TradeActivityFamily) Valid() bool {
+	switch e {
+	case TradeActivityFamilyTrade:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TradeActivityPositionEffect.
+const (
+	TradeActivityPositionEffectClosing     TradeActivityPositionEffect = "closing"
+	TradeActivityPositionEffectLessThannil TradeActivityPositionEffect = "<nil>"
+	TradeActivityPositionEffectMixed       TradeActivityPositionEffect = "mixed"
+	TradeActivityPositionEffectOpening     TradeActivityPositionEffect = "opening"
+)
+
+// Valid indicates whether the value is a known member of the TradeActivityPositionEffect enum.
+func (e TradeActivityPositionEffect) Valid() bool {
+	switch e {
+	case TradeActivityPositionEffectClosing:
+		return true
+	case TradeActivityPositionEffectLessThannil:
+		return true
+	case TradeActivityPositionEffectMixed:
+		return true
+	case TradeActivityPositionEffectOpening:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TradeActivitySide.
+const (
+	Buy  TradeActivitySide = "buy"
+	Sell TradeActivitySide = "sell"
+)
+
+// Valid indicates whether the value is a known member of the TradeActivitySide enum.
+func (e TradeActivitySide) Valid() bool {
+	switch e {
+	case Buy:
+		return true
+	case Sell:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TradeActivityTradeKind.
+const (
+	Execution     TradeActivityTradeKind = "execution"
+	ReportedTrade TradeActivityTradeKind = "reported-trade"
+	StockBooking  TradeActivityTradeKind = "stock-booking"
+)
+
+// Valid indicates whether the value is a known member of the TradeActivityTradeKind enum.
+func (e TradeActivityTradeKind) Valid() bool {
+	switch e {
+	case Execution:
+		return true
+	case ReportedTrade:
+		return true
+	case StockBooking:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnclassifiedTermsFamily.
+const (
+	Unclassified UnclassifiedTermsFamily = "unclassified"
+)
+
+// Valid indicates whether the value is a known member of the UnclassifiedTermsFamily enum.
+func (e UnclassifiedTermsFamily) Valid() bool {
+	switch e {
+	case Unclassified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account defines model for Account.
 type Account struct {
-	Currency *string `json:"currency"`
-	Name     string  `json:"name"`
+	Currency *NullableCurrencyCode `json:"currency"`
+	Name     string                `json:"name"`
 }
 
 // AccountResource defines model for AccountResource.
@@ -481,80 +878,16 @@ type AccountResource struct {
 // AccountResourceKind defines model for AccountResource.Kind.
 type AccountResourceKind string
 
-// Activity Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
+// Activity defines model for Activity.
 type Activity struct {
-	AccountId string `json:"account_id"`
-
-	// AccruedInterest Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	AccruedInterest *NullableMoney `json:"accrued_interest"`
-	At              *string        `json:"at"`
-	Cash            *Cash          `json:"cash,omitempty"`
-	Charges         []Charge       `json:"charges"`
-	Conflict        bool           `json:"conflict"`
-	Date            string         `json:"date"`
-	Debt            *NullableDebt  `json:"debt"`
-	Family          ActivityFamily `json:"family"`
-
-	// Gross Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Gross         *NullableMoney `json:"gross"`
-	InstrumentId  *string        `json:"instrument_id"`
-	LifecycleKind *string        `json:"lifecycle_kind"`
-	ListingId     *string        `json:"listing_id"`
-
-	// Net Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Net *NullableMoney `json:"net"`
-
-	// NetWithBillable Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	NetWithBillable *NullableMoney `json:"net_with_billable"`
-
-	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-	Option *NullableOption `json:"option"`
-
-	// Order Qualified reported relationship identity, never an unqualified Wake resource ID.
-	Order          *NullableReference `json:"order"`
-	PositionEffect *string            `json:"position_effect"`
-
-	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Price *NullableMoney `json:"price"`
-
-	// PriceBasis Price unit convention for supported instruments. Null for debt; no quotation basis is asserted.
-	PriceBasis *string `json:"price_basis"`
-
-	// Proceeds Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Proceeds *NullableMoney    `json:"proceeds"`
-	Quantity *NullableQuantity `json:"quantity"`
-
-	// Rate Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Rate     *NullableMoney `json:"rate"`
-	RateBase *string        `json:"rate_base"`
-
-	// Received Known currency; null amount is unknown and differs from zero.
-	Received      *NullableAmount `json:"received"`
-	Relationships []Relationship  `json:"relationships"`
-
-	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
-	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
-
-	// Sent Known currency; null amount is unknown and differs from zero.
-	Sent           *NullableAmount `json:"sent"`
-	SettlementDate *string         `json:"settlement_date"`
-	Side           *string         `json:"side"`
-	State          ActivityState   `json:"state"`
-
-	// TradeKind Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
-	TradeKind *string   `json:"trade_kind"`
-	Transfer  *Transfer `json:"transfer,omitempty"`
+	union json.RawMessage
 }
 
-// ActivityFamily defines model for Activity.Family.
+// ActivityFamily defines model for ActivityFamily.
 type ActivityFamily string
-
-// ActivityState defines model for Activity.State.
-type ActivityState string
 
 // ActivityResource defines model for ActivityResource.
 type ActivityResource struct {
-	// Activity Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD; at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary roles are reported, never recomputed. Trade option/debt terms describe that activity independently of later reference refresh.
 	Activity Activity             `json:"activity"`
 	Id       string               `json:"id"`
 	Kind     ActivityResourceKind `json:"kind"`
@@ -564,30 +897,51 @@ type ActivityResource struct {
 // ActivityResourceKind defines model for ActivityResource.Kind.
 type ActivityResourceKind string
 
+// ActivityState defines model for ActivityState.
+type ActivityState string
+
 // Amount Known currency; null amount is unknown and differs from zero.
 type Amount struct {
-	Amount   *string `json:"amount"`
-	Currency string  `json:"currency"`
+	Amount   *NullableDecimal `json:"amount"`
+	Currency CurrencyCode     `json:"currency"`
 }
 
-// Cash defines model for Cash.
-type Cash struct {
+// CashActivity defines model for CashActivity.
+type CashActivity struct {
+	AccountId string `json:"account_id"`
+
 	// Action Qualified reported relationship identity, never an unqualified Wake resource ID.
 	Action *NullableReference `json:"action"`
 
 	// Amount Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Amount                  Money        `json:"amount"`
-	AvailableForTradingDate *string      `json:"available_for_trading_date"`
-	Category                CashCategory `json:"category"`
-	Code                    *string      `json:"code"`
-	Description             *string      `json:"description"`
-	ExDate                  *string      `json:"ex_date"`
-	ReportDate              *string      `json:"report_date"`
-	ReportedType            *string      `json:"reported_type"`
+	Amount                  Money                `json:"amount"`
+	At                      *NullableTimestamp   `json:"at"`
+	AvailableForTradingDate *NullableCivilDate   `json:"available_for_trading_date"`
+	Category                CashActivityCategory `json:"category"`
+	Charges                 []Charge             `json:"charges"`
+	Code                    *string              `json:"code"`
+	Conflict                bool                 `json:"conflict"`
+	Date                    CivilDate            `json:"date"`
+	Description             *string              `json:"description"`
+	ExDate                  *NullableCivilDate   `json:"ex_date"`
+	Family                  CashActivityFamily   `json:"family"`
+	InstrumentId            *string              `json:"instrument_id"`
+	ListingId               *string              `json:"listing_id"`
+	Relationships           []Relationship       `json:"relationships"`
+	ReportDate              *NullableCivilDate   `json:"report_date"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
+	ReportedType        *string              `json:"reported_type"`
+	SettlementDate      *NullableCivilDate   `json:"settlement_date"`
+	State               ActivityState        `json:"state"`
 }
 
-// CashCategory defines model for Cash.Category.
-type CashCategory string
+// CashActivityCategory defines model for CashActivity.Category.
+type CashActivityCategory string
+
+// CashActivityFamily defines model for CashActivity.Family.
+type CashActivityFamily string
 
 // Charge A reported monetary role with an optional total and independently reported components. Components need not sum to the total. Separate postings are not combined.
 type Charge struct {
@@ -602,6 +956,52 @@ type Charge struct {
 // ChargeCategory defines model for Charge.Category.
 type ChargeCategory string
 
+// CivilDate defines model for CivilDate.
+type CivilDate = string
+
+// ConversionActivity defines model for ConversionActivity.
+type ConversionActivity struct {
+	AccountId string                   `json:"account_id"`
+	At        *NullableTimestamp       `json:"at"`
+	Charges   []Charge                 `json:"charges"`
+	Conflict  bool                     `json:"conflict"`
+	Date      CivilDate                `json:"date"`
+	Family    ConversionActivityFamily `json:"family"`
+
+	// GrossAmount Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	GrossAmount *NullableMoney `json:"gross_amount"`
+
+	// NetCash Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	NetCash *NullableMoney `json:"net_cash"`
+
+	// NetCashWithBillable Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	NetCashWithBillable *NullableMoney `json:"net_cash_with_billable"`
+
+	// Order Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Order *NullableReference `json:"order"`
+
+	// Proceeds Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Proceeds *NullableMoney `json:"proceeds"`
+
+	// Rate Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Rate     *NullableMoney        `json:"rate"`
+	RateBase *NullableCurrencyCode `json:"rate_base"`
+
+	// Received Known currency; null amount is unknown and differs from zero.
+	Received      Amount         `json:"received"`
+	Relationships []Relationship `json:"relationships"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
+
+	// Sent Known currency; null amount is unknown and differs from zero.
+	Sent  Amount        `json:"sent"`
+	State ActivityState `json:"state"`
+}
+
+// ConversionActivityFamily defines model for ConversionActivity.Family.
+type ConversionActivityFamily string
+
 // Correction defines model for Correction.
 type Correction struct {
 	Kind           string   `json:"kind"`
@@ -610,16 +1010,30 @@ type Correction struct {
 	TargetIds      []string `json:"target_ids"`
 }
 
-// Debt defines model for Debt.
-type Debt struct {
-	Coupon          *string `json:"coupon"`
-	Currency        *string `json:"currency"`
-	DatedDate       *string `json:"dated_date"`
-	IssueDate       *string `json:"issue_date"`
-	Maturity        *string `json:"maturity"`
-	PaymentsPerYear *int64  `json:"payments_per_year"`
-	Type            *string `json:"type"`
+// CurrencyCode defines model for CurrencyCode.
+type CurrencyCode = string
+
+// DebtTerms defines model for DebtTerms.
+type DebtTerms struct {
+	// CouponRate Exact annual percentage points, for example 4.125 represents 4.125 percent.
+	CouponRate      *NullableDecimal      `json:"coupon_rate"`
+	Currency        *NullableCurrencyCode `json:"currency"`
+	DatedDate       *NullableCivilDate    `json:"dated_date"`
+	Family          DebtTermsFamily       `json:"family"`
+	IssueDate       *NullableCivilDate    `json:"issue_date"`
+	Maturity        *NullableCivilDate    `json:"maturity"`
+	PaymentsPerYear *int64                `json:"payments_per_year"`
+	Type            *DebtTermsType        `json:"type"`
 }
+
+// DebtTermsFamily defines model for DebtTerms.Family.
+type DebtTermsFamily string
+
+// DebtTermsType defines model for DebtTerms.Type.
+type DebtTermsType string
+
+// Decimal defines model for Decimal.
+type Decimal = string
 
 // Decision defines model for Decision.
 type Decision struct {
@@ -631,12 +1045,20 @@ type Decision struct {
 // Deliverable defines model for Deliverable.
 type Deliverable struct {
 	// Cash Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Cash     *NullableMoney `json:"cash"`
-	Quantity *string        `json:"quantity"`
+	Cash     *NullableMoney   `json:"cash"`
+	Quantity *NullableDecimal `json:"quantity"`
 
 	// Security Qualified reported relationship identity, never an unqualified Wake resource ID.
 	Security *NullableReference `json:"security"`
 }
+
+// EquityTerms defines model for EquityTerms.
+type EquityTerms struct {
+	Family EquityTermsFamily `json:"family"`
+}
+
+// EquityTermsFamily defines model for EquityTerms.Family.
+type EquityTermsFamily string
 
 // Error defines model for Error.
 type Error struct {
@@ -649,11 +1071,11 @@ type ErrorCode string
 
 // Explanation Compact accepted selection, active operator choices and source correction/conflict state for this exact resource revision. No raw reports, private evidence traversal, credentials or configuration.
 type Explanation struct {
-	Cash        *Cash        `json:"cash,omitempty"`
-	Conflict    bool         `json:"conflict"`
-	Corrections []Correction `json:"corrections"`
-	Decisions   []Decision   `json:"decisions"`
-	Id          string       `json:"id"`
+	Conflict    bool          `json:"conflict"`
+	Corrections []Correction  `json:"corrections"`
+	Decisions   []Decision    `json:"decisions"`
+	Fields      []FieldDetail `json:"fields"`
+	Id          string        `json:"id"`
 	Identity    *struct {
 		Allocation *string `json:"allocation"`
 		Figi       *string `json:"figi"`
@@ -666,13 +1088,30 @@ type Explanation struct {
 		Rule      string                                  `json:"rule"`
 		Selection ExplanationReportedRealizedPnlSelection `json:"selection"`
 	} `json:"reported_realized_pnl,omitempty"`
-	Revision  int64     `json:"revision"`
-	Selection string    `json:"selection"`
-	Transfer  *Transfer `json:"transfer,omitempty"`
+	Revision  int64  `json:"revision"`
+	Selection string `json:"selection"`
 }
 
 // ExplanationReportedRealizedPnlSelection defines model for Explanation.ReportedRealizedPnl.Selection.
 type ExplanationReportedRealizedPnlSelection string
+
+// FieldDetail defines model for FieldDetail.
+type FieldDetail struct {
+	Expectation *FieldDetailExpectation `json:"expectation"`
+
+	// Interpretation Registered source interpretation version that established the expectation.
+	Interpretation *string `json:"interpretation"`
+
+	// Path JSON Pointer relative to the activity body.
+	Path   string            `json:"path"`
+	Reason FieldDetailReason `json:"reason"`
+}
+
+// FieldDetailExpectation defines model for FieldDetail.Expectation.
+type FieldDetailExpectation string
+
+// FieldDetailReason defines model for FieldDetail.Reason.
+type FieldDetailReason string
 
 // FinancialSnapshot defines model for FinancialSnapshot.
 type FinancialSnapshot struct {
@@ -683,6 +1122,14 @@ type FinancialSnapshot struct {
 	Version     string `json:"version"`
 	WarehouseId string `json:"warehouse_id"`
 }
+
+// FundTerms defines model for FundTerms.
+type FundTerms struct {
+	Family FundTermsFamily `json:"family"`
+}
+
+// FundTermsFamily defines model for FundTerms.Family.
+type FundTermsFamily string
 
 // Identifier defines model for Identifier.
 type Identifier struct {
@@ -724,13 +1171,46 @@ type InstrumentResource struct {
 // InstrumentResourceKind defines model for InstrumentResource.Kind.
 type InstrumentResourceKind string
 
+// InstrumentTerms defines model for InstrumentTerms.
+type InstrumentTerms struct {
+	union json.RawMessage
+}
+
+// LifecycleActivity defines model for LifecycleActivity.
+type LifecycleActivity struct {
+	AccountId       string                         `json:"account_id"`
+	At              *NullableTimestamp             `json:"at"`
+	Conflict        bool                           `json:"conflict"`
+	Date            CivilDate                      `json:"date"`
+	Family          LifecycleActivityFamily        `json:"family"`
+	InstrumentId    string                         `json:"instrument_id"`
+	InstrumentTerms OptionTerms                    `json:"instrument_terms"`
+	LifecycleKind   LifecycleActivityLifecycleKind `json:"lifecycle_kind"`
+	ListingId       *string                        `json:"listing_id"`
+
+	// Order Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Order         *NullableReference `json:"order"`
+	Quantity      Quantity           `json:"quantity"`
+	Relationships []Relationship     `json:"relationships"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
+	State               ActivityState        `json:"state"`
+}
+
+// LifecycleActivityFamily defines model for LifecycleActivity.Family.
+type LifecycleActivityFamily string
+
+// LifecycleActivityLifecycleKind defines model for LifecycleActivity.LifecycleKind.
+type LifecycleActivityLifecycleKind string
+
 // Listing defines model for Listing.
 type Listing struct {
-	Currency     string  `json:"currency"`
-	Figi         *string `json:"figi"`
-	InstrumentId string  `json:"instrument_id"`
-	Ticker       *string `json:"ticker"`
-	Venue        *string `json:"venue"`
+	Currency     CurrencyCode `json:"currency"`
+	Figi         *string      `json:"figi"`
+	InstrumentId string       `json:"instrument_id"`
+	Ticker       *string      `json:"ticker"`
+	Venue        *string      `json:"venue"`
 }
 
 // ListingResource defines model for ListingResource.
@@ -746,50 +1226,27 @@ type ListingResourceKind string
 
 // Money Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 type Money struct {
-	Amount   string `json:"amount"`
-	Currency string `json:"currency"`
+	Amount   Decimal      `json:"amount"`
+	Currency CurrencyCode `json:"currency"`
 }
 
-// NullableAmount Known currency; null amount is unknown and differs from zero.
-type NullableAmount struct {
-	Amount   *string `json:"amount"`
-	Currency string  `json:"currency"`
-}
+// NullableCivilDate defines model for NullableCivilDate.
+type NullableCivilDate = string
 
-// NullableDebt defines model for NullableDebt.
-type NullableDebt struct {
-	Coupon          *string `json:"coupon"`
-	Currency        *string `json:"currency"`
-	DatedDate       *string `json:"dated_date"`
-	IssueDate       *string `json:"issue_date"`
-	Maturity        *string `json:"maturity"`
-	PaymentsPerYear *int64  `json:"payments_per_year"`
-	Type            *string `json:"type"`
-}
+// NullableCurrencyCode defines model for NullableCurrencyCode.
+type NullableCurrencyCode = string
+
+// NullableDecimal defines model for NullableDecimal.
+type NullableDecimal = string
 
 // NullableMoney Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 type NullableMoney struct {
-	Amount   string `json:"amount"`
-	Currency string `json:"currency"`
+	Amount   Decimal      `json:"amount"`
+	Currency CurrencyCode `json:"currency"`
 }
 
-// NullableOption Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-type NullableOption struct {
-	Deliverables  []Deliverable `json:"deliverables"`
-	EffectiveFrom *string       `json:"effective_from"`
-	Expiry        *string       `json:"expiry"`
-	Multiplier    *string       `json:"multiplier"`
-	Right         *string       `json:"right"`
-
-	// Strike Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Strike *NullableMoney `json:"strike"`
-}
-
-// NullableQuantity defines model for NullableQuantity.
-type NullableQuantity struct {
-	Unit  string `json:"unit"`
-	Value string `json:"value"`
-}
+// NullableQuotationBasis defines model for NullableQuotationBasis.
+type NullableQuotationBasis string
 
 // NullableRealizedPnL Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
 type NullableRealizedPnL struct {
@@ -799,8 +1256,8 @@ type NullableRealizedPnL struct {
 
 	// CostBasis Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	CostBasis           *NullableMoney               `json:"cost_basis"`
-	CostBasisReportDate *string                      `json:"cost_basis_report_date"`
-	ReportDate          *string                      `json:"report_date"`
+	CostBasisReportDate *NullableCivilDate           `json:"cost_basis_report_date"`
+	ReportDate          *NullableCivilDate           `json:"report_date"`
 	Selection           NullableRealizedPnLSelection `json:"selection"`
 }
 
@@ -815,36 +1272,47 @@ type NullableReference struct {
 	Value     string `json:"value"`
 }
 
-// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-type Option struct {
-	Deliverables  []Deliverable `json:"deliverables"`
-	EffectiveFrom *string       `json:"effective_from"`
-	Expiry        *string       `json:"expiry"`
-	Multiplier    *string       `json:"multiplier"`
-	Right         *string       `json:"right"`
+// NullableTimestamp defines model for NullableTimestamp.
+type NullableTimestamp = string
+
+// NullableUnitCostBasis Reported unit cost basis in the original currency.
+type NullableUnitCostBasis struct {
+	Amount         Decimal                 `json:"amount"`
+	Currency       CurrencyCode            `json:"currency"`
+	QuotationBasis *NullableQuotationBasis `json:"quotation_basis"`
+}
+
+// OptionTerms defines model for OptionTerms.
+type OptionTerms struct {
+	// Deliverables Null means unreported. An array contains established deliverables.
+	Deliverables  *[]Deliverable     `json:"deliverables"`
+	EffectiveFrom *NullableCivilDate `json:"effective_from"`
+	Expiry        *NullableCivilDate `json:"expiry"`
+	Family        OptionTermsFamily  `json:"family"`
+	Multiplier    *NullableDecimal   `json:"multiplier"`
+	Right         *OptionTermsRight  `json:"right"`
 
 	// Strike Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	Strike *NullableMoney `json:"strike"`
 }
 
+// OptionTermsFamily defines model for OptionTerms.Family.
+type OptionTermsFamily string
+
+// OptionTermsRight defines model for OptionTerms.Right.
+type OptionTermsRight string
+
 // Position defines model for Position.
 type Position struct {
-	Debt         *NullableDebt `json:"debt"`
-	InstrumentId string        `json:"instrument_id"`
-
-	// Option Reported contract terms. Empty deliverables are unknown; a multiplier never implies stock delivery.
-	Option *NullableOption `json:"option"`
+	InstrumentId    string          `json:"instrument_id"`
+	InstrumentTerms InstrumentTerms `json:"instrument_terms"`
 
 	// Quantity Unit is shares, contracts, nominal, or units. The units value preserves a reported quantity for an unclassified instrument or for debt with unspecified face amount.
 	Quantity Quantity     `json:"quantity"`
 	Side     PositionSide `json:"side"`
 
-	// UnitCostBasis Reported basis price with exact decimal text. The quote convention is included where established. Omitted when unavailable.
-	UnitCostBasis *struct {
-		Amount   string  `json:"amount"`
-		Currency string  `json:"currency"`
-		Quote    *string `json:"quote,omitempty"`
-	} `json:"unit_cost_basis,omitempty"`
+	// UnitCostBasis Reported unit cost basis in the original currency.
+	UnitCostBasis *NullableUnitCostBasis `json:"unit_cost_basis"`
 }
 
 // PositionSide defines model for Position.Side.
@@ -863,9 +1331,9 @@ type PositionsView struct {
 	AsOf      *struct {
 		At *string `json:"at"`
 
-		// Basis The time the source fetched holdings from the broker. Omission indicates broker-effective time.
-		Basis *PositionsViewAsOfBasis `json:"basis,omitempty"`
-		Date  openapi_types.Date      `json:"date"`
+		// Basis Broker-effective time or the time the source fetched holdings.
+		Basis PositionsViewAsOfBasis `json:"basis"`
+		Date  openapi_types.Date     `json:"date"`
 	} `json:"as_of"`
 	Positions   *[]Position          `json:"positions"`
 	Reason      *PositionsViewReason `json:"reason"`
@@ -875,7 +1343,7 @@ type PositionsView struct {
 	union       json.RawMessage
 }
 
-// PositionsViewAsOfBasis The time the source fetched holdings from the broker. Omission indicates broker-effective time.
+// PositionsViewAsOfBasis Broker-effective time or the time the source fetched holdings.
 type PositionsViewAsOfBasis string
 
 // PositionsViewReason defines model for PositionsView.Reason.
@@ -916,9 +1384,15 @@ type Publication struct {
 
 // Quantity defines model for Quantity.
 type Quantity struct {
-	Unit  string `json:"unit"`
-	Value string `json:"value"`
+	Unit  QuantityUnit `json:"unit"`
+	Value Decimal      `json:"value"`
 }
+
+// QuantityUnit defines model for Quantity.Unit.
+type QuantityUnit string
+
+// QuotationBasis defines model for QuotationBasis.
+type QuotationBasis string
 
 // Reference Qualified reported relationship identity, never an unqualified Wake resource ID.
 type Reference struct {
@@ -942,31 +1416,119 @@ type Resource struct {
 	union json.RawMessage
 }
 
-// Transfer defines model for Transfer.
-type Transfer struct {
-	Company             *string           `json:"company"`
-	CounterpartyAccount *string           `json:"counterparty_account"`
-	CounterpartyName    *string           `json:"counterparty_name"`
-	DeliveringBroker    *string           `json:"delivering_broker"`
-	Direction           TransferDirection `json:"direction"`
-	Method              *string           `json:"method"`
+// SecurityTransferActivity defines model for SecurityTransferActivity.
+type SecurityTransferActivity struct {
+	AccountId           string                            `json:"account_id"`
+	At                  *NullableTimestamp                `json:"at"`
+	Company             *string                           `json:"company"`
+	Conflict            bool                              `json:"conflict"`
+	CounterpartyAccount *string                           `json:"counterparty_account"`
+	CounterpartyName    *string                           `json:"counterparty_name"`
+	Date                CivilDate                         `json:"date"`
+	DeliveringBroker    *string                           `json:"delivering_broker"`
+	Direction           SecurityTransferActivityDirection `json:"direction"`
+	Family              SecurityTransferActivityFamily    `json:"family"`
+	InstrumentId        string                            `json:"instrument_id"`
+	InstrumentTerms     InstrumentTerms                   `json:"instrument_terms"`
+	ListingId           *string                           `json:"listing_id"`
+	Method              *string                           `json:"method"`
 
 	// PositionValue Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	PositionValue *NullableMoney `json:"position_value"`
 
 	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
-	Price      *NullableMoney `json:"price"`
-	ReportDate *string        `json:"report_date"`
+	Price         *NullableMoney     `json:"price"`
+	Quantity      Quantity           `json:"quantity"`
+	Relationships []Relationship     `json:"relationships"`
+	ReportDate    *NullableCivilDate `json:"report_date"`
 
 	// ReportedCost Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	ReportedCost *NullableMoney `json:"reported_cost"`
 
 	// ReportedPnl Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
 	ReportedPnl *NullableMoney `json:"reported_pnl"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
+	SettlementDate      *NullableCivilDate   `json:"settlement_date"`
+	State               ActivityState        `json:"state"`
 }
 
-// TransferDirection defines model for Transfer.Direction.
-type TransferDirection string
+// SecurityTransferActivityDirection defines model for SecurityTransferActivity.Direction.
+type SecurityTransferActivityDirection string
+
+// SecurityTransferActivityFamily defines model for SecurityTransferActivity.Family.
+type SecurityTransferActivityFamily string
+
+// Timestamp defines model for Timestamp.
+type Timestamp = string
+
+// TradeActivity defines model for TradeActivity.
+type TradeActivity struct {
+	AccountId string `json:"account_id"`
+
+	// AccruedInterest Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	AccruedInterest *NullableMoney      `json:"accrued_interest"`
+	At              *NullableTimestamp  `json:"at"`
+	Charges         []Charge            `json:"charges"`
+	Conflict        bool                `json:"conflict"`
+	Date            CivilDate           `json:"date"`
+	Family          TradeActivityFamily `json:"family"`
+
+	// GrossAmount Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	GrossAmount     *NullableMoney  `json:"gross_amount"`
+	InstrumentId    string          `json:"instrument_id"`
+	InstrumentTerms InstrumentTerms `json:"instrument_terms"`
+	ListingId       *string         `json:"listing_id"`
+
+	// NetCash Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	NetCash *NullableMoney `json:"net_cash"`
+
+	// NetCashWithBillable Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	NetCashWithBillable *NullableMoney `json:"net_cash_with_billable"`
+
+	// Order Qualified reported relationship identity, never an unqualified Wake resource ID.
+	Order          *NullableReference           `json:"order"`
+	PositionEffect *TradeActivityPositionEffect `json:"position_effect"`
+
+	// Price Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Price Money `json:"price"`
+
+	// Proceeds Exact validated decimal text; trailing zeros are significant source precision. No binary float conversion.
+	Proceeds       *NullableMoney          `json:"proceeds"`
+	Quantity       Quantity                `json:"quantity"`
+	QuotationBasis *NullableQuotationBasis `json:"quotation_basis"`
+	Relationships  []Relationship          `json:"relationships"`
+
+	// ReportedRealizedPnl Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+	ReportedRealizedPnl *NullableRealizedPnL `json:"reported_realized_pnl"`
+	SettlementDate      *NullableCivilDate   `json:"settlement_date"`
+	Side                TradeActivitySide    `json:"side"`
+	State               ActivityState        `json:"state"`
+
+	// TradeKind Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
+	TradeKind TradeActivityTradeKind `json:"trade_kind"`
+}
+
+// TradeActivityFamily defines model for TradeActivity.Family.
+type TradeActivityFamily string
+
+// TradeActivityPositionEffect defines model for TradeActivity.PositionEffect.
+type TradeActivityPositionEffect string
+
+// TradeActivitySide defines model for TradeActivity.Side.
+type TradeActivitySide string
+
+// TradeActivityTradeKind Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
+type TradeActivityTradeKind string
+
+// UnclassifiedTerms defines model for UnclassifiedTerms.
+type UnclassifiedTerms struct {
+	Family UnclassifiedTermsFamily `json:"family"`
+}
+
+// UnclassifiedTermsFamily defines model for UnclassifiedTerms.Family.
+type UnclassifiedTermsFamily string
 
 // Id defines model for id.
 type Id = string
@@ -1007,6 +1569,424 @@ type ExplainListingsParams struct {
 type SnapshotParams struct {
 	// IfNoneMatch A previous ETag; weak validators and lists are supported.
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
+// AsTradeActivity returns the union data inside the Activity as a TradeActivity
+func (t Activity) AsTradeActivity() (TradeActivity, error) {
+	var body TradeActivity
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTradeActivity overwrites any union data inside the Activity as the provided TradeActivity
+func (t *Activity) FromTradeActivity(v TradeActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"trade"}`))
+	t.union = b
+	return err
+}
+
+// MergeTradeActivity performs a merge with any union data inside the Activity, using the provided TradeActivity
+func (t *Activity) MergeTradeActivity(v TradeActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"trade"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsLifecycleActivity returns the union data inside the Activity as a LifecycleActivity
+func (t Activity) AsLifecycleActivity() (LifecycleActivity, error) {
+	var body LifecycleActivity
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromLifecycleActivity overwrites any union data inside the Activity as the provided LifecycleActivity
+func (t *Activity) FromLifecycleActivity(v LifecycleActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"lifecycle"}`))
+	t.union = b
+	return err
+}
+
+// MergeLifecycleActivity performs a merge with any union data inside the Activity, using the provided LifecycleActivity
+func (t *Activity) MergeLifecycleActivity(v LifecycleActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"lifecycle"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsConversionActivity returns the union data inside the Activity as a ConversionActivity
+func (t Activity) AsConversionActivity() (ConversionActivity, error) {
+	var body ConversionActivity
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromConversionActivity overwrites any union data inside the Activity as the provided ConversionActivity
+func (t *Activity) FromConversionActivity(v ConversionActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"conversion"}`))
+	t.union = b
+	return err
+}
+
+// MergeConversionActivity performs a merge with any union data inside the Activity, using the provided ConversionActivity
+func (t *Activity) MergeConversionActivity(v ConversionActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"conversion"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSecurityTransferActivity returns the union data inside the Activity as a SecurityTransferActivity
+func (t Activity) AsSecurityTransferActivity() (SecurityTransferActivity, error) {
+	var body SecurityTransferActivity
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSecurityTransferActivity overwrites any union data inside the Activity as the provided SecurityTransferActivity
+func (t *Activity) FromSecurityTransferActivity(v SecurityTransferActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"security-transfer"}`))
+	t.union = b
+	return err
+}
+
+// MergeSecurityTransferActivity performs a merge with any union data inside the Activity, using the provided SecurityTransferActivity
+func (t *Activity) MergeSecurityTransferActivity(v SecurityTransferActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"security-transfer"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCashActivity returns the union data inside the Activity as a CashActivity
+func (t Activity) AsCashActivity() (CashActivity, error) {
+	var body CashActivity
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCashActivity overwrites any union data inside the Activity as the provided CashActivity
+func (t *Activity) FromCashActivity(v CashActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"cash"}`))
+	t.union = b
+	return err
+}
+
+// MergeCashActivity performs a merge with any union data inside the Activity, using the provided CashActivity
+func (t *Activity) MergeCashActivity(v CashActivity) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"cash"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t Activity) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"family"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t Activity) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "cash":
+		return t.AsCashActivity()
+	case "conversion":
+		return t.AsConversionActivity()
+	case "lifecycle":
+		return t.AsLifecycleActivity()
+	case "security-transfer":
+		return t.AsSecurityTransferActivity()
+	case "trade":
+		return t.AsTradeActivity()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t Activity) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *Activity) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsEquityTerms returns the union data inside the InstrumentTerms as a EquityTerms
+func (t InstrumentTerms) AsEquityTerms() (EquityTerms, error) {
+	var body EquityTerms
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromEquityTerms overwrites any union data inside the InstrumentTerms as the provided EquityTerms
+func (t *InstrumentTerms) FromEquityTerms(v EquityTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"equity"}`))
+	t.union = b
+	return err
+}
+
+// MergeEquityTerms performs a merge with any union data inside the InstrumentTerms, using the provided EquityTerms
+func (t *InstrumentTerms) MergeEquityTerms(v EquityTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"equity"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsFundTerms returns the union data inside the InstrumentTerms as a FundTerms
+func (t InstrumentTerms) AsFundTerms() (FundTerms, error) {
+	var body FundTerms
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFundTerms overwrites any union data inside the InstrumentTerms as the provided FundTerms
+func (t *InstrumentTerms) FromFundTerms(v FundTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"fund"}`))
+	t.union = b
+	return err
+}
+
+// MergeFundTerms performs a merge with any union data inside the InstrumentTerms, using the provided FundTerms
+func (t *InstrumentTerms) MergeFundTerms(v FundTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"fund"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsOptionTerms returns the union data inside the InstrumentTerms as a OptionTerms
+func (t InstrumentTerms) AsOptionTerms() (OptionTerms, error) {
+	var body OptionTerms
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromOptionTerms overwrites any union data inside the InstrumentTerms as the provided OptionTerms
+func (t *InstrumentTerms) FromOptionTerms(v OptionTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"option"}`))
+	t.union = b
+	return err
+}
+
+// MergeOptionTerms performs a merge with any union data inside the InstrumentTerms, using the provided OptionTerms
+func (t *InstrumentTerms) MergeOptionTerms(v OptionTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"option"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDebtTerms returns the union data inside the InstrumentTerms as a DebtTerms
+func (t InstrumentTerms) AsDebtTerms() (DebtTerms, error) {
+	var body DebtTerms
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDebtTerms overwrites any union data inside the InstrumentTerms as the provided DebtTerms
+func (t *InstrumentTerms) FromDebtTerms(v DebtTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"debt"}`))
+	t.union = b
+	return err
+}
+
+// MergeDebtTerms performs a merge with any union data inside the InstrumentTerms, using the provided DebtTerms
+func (t *InstrumentTerms) MergeDebtTerms(v DebtTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"debt"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnclassifiedTerms returns the union data inside the InstrumentTerms as a UnclassifiedTerms
+func (t InstrumentTerms) AsUnclassifiedTerms() (UnclassifiedTerms, error) {
+	var body UnclassifiedTerms
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnclassifiedTerms overwrites any union data inside the InstrumentTerms as the provided UnclassifiedTerms
+func (t *InstrumentTerms) FromUnclassifiedTerms(v UnclassifiedTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"unclassified"}`))
+	t.union = b
+	return err
+}
+
+// MergeUnclassifiedTerms performs a merge with any union data inside the InstrumentTerms, using the provided UnclassifiedTerms
+func (t *InstrumentTerms) MergeUnclassifiedTerms(v UnclassifiedTerms) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"family":"unclassified"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t InstrumentTerms) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"family"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t InstrumentTerms) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "debt":
+		return t.AsDebtTerms()
+	case "equity":
+		return t.AsEquityTerms()
+	case "fund":
+		return t.AsFundTerms()
+	case "option":
+		return t.AsOptionTerms()
+	case "unclassified":
+		return t.AsUnclassifiedTerms()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t InstrumentTerms) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *InstrumentTerms) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
 }
 
 // AsPositionsView0 returns the union data inside the PositionsView as a PositionsView0

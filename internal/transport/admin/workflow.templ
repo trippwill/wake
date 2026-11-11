@@ -75,9 +75,9 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 	</section>
 }
 
-templ ExecutionPage(d application.ExecutionDetail) {
+templ ExecutionPage(d application.ExecutionDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Activity detail")
-	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().TradeDate.String()))
+	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().Date.String()))
 	@AcceptedDetailScope()
 	<section class="wake-card">
 		<div class="wake-card-heading">
@@ -98,11 +98,11 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			} else {
 				<dt>{ "Quantity ("+d.Execution.Terms().QuantityUnit()+")" }</dt>
 				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
-				<dt>{ "Price ("+d.Execution.Terms().PriceBasis()+")" }</dt>
+				<dt>{ "Price ("+quotationLabel(string(d.Execution.Terms().QuotationBasis()))+")" }</dt>
 				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
 			}
 			<dt>Trade date</dt>
-			<dd>{ d.Execution.Terms().Fields().TradeDate.String() }</dd>
+			<dd>{ d.Execution.Terms().Fields().Date.String() }</dd>
 			if d.Execution.Terms().Fields().Kind==source.ReportedTrade {
 				<dt>Trade grain</dt>
 				<dd>Reported trade</dd>
@@ -110,19 +110,19 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			} else {
 				<dt>Execution time (reported precision)</dt>
 			}
-			<dd>{ known(d.Execution.Terms().Fields().ExecutedAt.String()) }</dd>
+			<dd>{ known(d.Execution.Terms().Fields().At.String()) }</dd>
 		</dl>
 		<a href={ templ.SafeURL("/instruments/" + d.Execution.Instrument()) }>Inspect instrument</a>
 	</section>
 	<section class="wake-card">
 		<h2>Monetary terms</h2>
 		if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
-			<dl><dt>Reported principal</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Trade net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd></dl>
+			<dl><dt>Reported principal</dt><dd>{ moneyText(d.Execution.Terms().Fields().GrossAmount) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Trade net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd></dl>
 			<p class="wake-help">Trade net cash and accrued interest are separate reported amounts. No combined settlement total is calculated.</p>
-			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
 		} else {
-			<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().Gross) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().Net) }</dd></dl>
-			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetWithBillable) }</dd></dl></details>
+			<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().GrossAmount) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd></dl>
+			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
 		}
 		@ChargesTable(d.Execution.Terms().Fields().Charges)
 	</section>
@@ -143,6 +143,7 @@ templ ExecutionPage(d application.ExecutionDetail) {
 			<summary>Retained observations and acceptance rules</summary>@ObservationHistory("activity", d.Execution.ID())
 		</details>
 	</section>
+	@ActivityFieldDetails(fields)
 }
 
 templ InstrumentPage(d application.InstrumentDetail) {
@@ -318,7 +319,7 @@ templ RelationshipLinks(links []application.Relationship) {
 	</ul>
 }
 
-templ LifecyclePage(d application.LifecycleDetail) {
+templ LifecyclePage(d application.LifecycleDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Option outcome")
 	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String()))
 	@AcceptedDetailScope()
@@ -346,6 +347,7 @@ templ LifecyclePage(d application.LifecycleDetail) {
 			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Lifecycle.ID())
 		</details>
 	</section>
+	@ActivityFieldDetails(fields)
 }
 
 templ DebtFacts(terms source.DebtTerms) {
@@ -361,9 +363,9 @@ templ DebtFacts(terms source.DebtTerms) {
 				<dt>Coupon payments</dt>
 				<dd>None (Treasury bill)</dd>
 			}
-			if terms.Fields().Type!=source.TreasuryBill || terms.Fields().Coupon.Value()!="" {
+			if terms.Fields().Type!=source.TreasuryBill || terms.Fields().CouponRate.Value()!="" {
 				<dt>Coupon rate (reported)</dt>
-				<dd>{ provided(terms.Fields().Coupon.Value()) }</dd>
+				<dd>{ provided(terms.Fields().CouponRate.Value()) }</dd>
 			}
 			<dt>Original issue date</dt>
 			<dd>{ providedDate(terms.Fields().IssueDate) }</dd>
@@ -389,7 +391,7 @@ func currencyAmountText(a source.CurrencyAmount) string {
 	return known(a.Amount()) + " " + currencyText(a.Currency())
 }
 
-templ ConversionPage(d application.ConversionDetail) {
+templ ConversionPage(d application.ConversionDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Currency conversion")
 	@PageHeader("Convert "+currencyText(d.Conversion.Terms().Fields().Sent.Currency())+" to "+currencyText(d.Conversion.Terms().Fields().Received.Currency()), d.Context.AccountName+" · "+d.Conversion.Terms().Fields().Date.String())
 	@AcceptedDetailScope()
@@ -422,8 +424,8 @@ templ ConversionPage(d application.ConversionDetail) {
 	</section>
 	<section class="wake-card">
 		<h2>Monetary terms</h2>
-		<dl><dt>Net cash</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Net) }</dd></dl>@ChargesTable(d.Conversion.Terms().Fields().Charges)
-		<details><summary>Additional monetary roles</summary><dl><dt>Gross</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Gross) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetWithBillable) }</dd></dl></details>
+		<dl><dt>Net cash</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCash) }</dd></dl>@ChargesTable(d.Conversion.Terms().Fields().Charges)
+		<details><summary>Additional monetary roles</summary><dl><dt>Gross</dt><dd>{ moneyText(d.Conversion.Terms().Fields().GrossAmount) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
 	</section>
 	<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Conversion.ID() }</dd></dl></details>
 	<section class="wake-card">
@@ -432,6 +434,7 @@ templ ConversionPage(d application.ConversionDetail) {
 			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Conversion.ID())
 		</details>
 	</section>
+	@ActivityFieldDetails(fields)
 }
 
 templ CorrectionReviews(rows []application.CorrectionReview) {
@@ -549,9 +552,9 @@ func fieldLabel(s string) string {
 		return "Report date"
 	case "side":
 		return "Buy or sell"
-	case "gross":
+	case "gross_amount":
 		return "Gross amount"
-	case "net":
+	case "net_cash":
 		return "Net cash"
 	case "proceeds":
 		return "Proceeds"
@@ -589,19 +592,19 @@ func fieldLabel(s string) string {
 		return "Option put/call"
 	case "option.expiry":
 		return "Option expiry"
-	case "debt.coupon":
+	case "debt.coupon_rate":
 		return "Debt coupon rate"
 	case "debt.maturity":
 		return "Debt maturity"
-	case "executed_at":
+	case "at":
 		return "Reported timestamp"
-	case "trade_date":
+	case "date":
 		return "Activity date"
 	case "settlement_date":
 		return "Reported settlement date"
 	case "accrued_interest":
 		return "Accrued interest"
-	case "net_billable":
+	case "net_cash_with_billable":
 		return "Net cash with billable"
 	case "sent_amount":
 		return "Sent amount"

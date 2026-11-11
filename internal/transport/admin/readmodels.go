@@ -140,6 +140,17 @@ func referenceLabel(status application.ReferenceStatus, authority application.Se
 	return label
 }
 
+func quotationLabel(basis string) string {
+	switch basis {
+	case "per_share":
+		return "per share"
+	case "per_underlying_unit":
+		return "premium per underlying unit"
+	default:
+		return ""
+	}
+}
+
 func publishedMoney(v *application.PublishedMoney) string {
 	if v == nil {
 		return unknownValue
@@ -172,7 +183,7 @@ func activityList(v application.ActivityList) activityView {
 			Kind:           a.Family,
 			Instrument:     name,
 			Description:    instrumentDescription(item.InstrumentTicker, item.InstrumentName),
-			InstrumentID:   text(a.InstrumentID),
+			InstrumentID:   text(a.InstrumentID()),
 			Reference:      referenceLabel(item.Reference.Status, item.Reference.Authority),
 			State:          activityStatus(item.State),
 			FinancialState: item.State,
@@ -188,21 +199,24 @@ func activityList(v application.ActivityList) activityView {
 		case "cash":
 			row.Label = activityLabel(a, name)
 			row.Amount = publishedMoney(&a.Cash.Amount)
-			row.Quantity, row.Price, row.Realized = notApplicableValue, notApplicableValue, notApplicableValue
+			row.Quantity, row.Price = notApplicableValue, notApplicableValue
+			if a.ReportedRealizedPnL == nil {
+				row.Realized = notApplicableValue
+			}
 		case "trade":
 			row.Href = "/executions/" + r.ID
 			row.Label = activityLabel(a, name)
 			row.Quantity = known("")
-			if a.Quantity != nil {
-				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
+			if a.Trade.Quantity != nil {
+				row.Quantity = a.Trade.Quantity.Value + " " + a.Trade.Quantity.Unit
 			}
 
-			row.Price = publishedMoney(a.Price)
-			row.Basis = text(a.PriceBasis)
+			row.Price = publishedMoney(a.Trade.Price)
+			row.Basis = quotationLabel(text(a.Trade.QuotationBasis))
 		case "security-transfer":
 			row.Label = activityLabel(a, name)
-			if a.Quantity != nil {
-				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
+			if a.Transfer.Quantity != nil {
+				row.Quantity = a.Transfer.Quantity.Value + " " + a.Transfer.Quantity.Unit
 			}
 
 			row.Price = publishedMoney(a.Transfer.Price)
@@ -210,15 +224,18 @@ func activityList(v application.ActivityList) activityView {
 		case "lifecycle":
 			row.Label = activityLabel(a, name)
 			row.Price = notApplicableValue
-			if a.Quantity != nil {
-				row.Quantity = a.Quantity.Value + " " + a.Quantity.Unit
+			if a.Lifecycle.Quantity != nil {
+				row.Quantity = a.Lifecycle.Quantity.Value + " " + a.Lifecycle.Quantity.Unit
 			}
 		case "conversion":
 			row.Label = activityLabel(a, name)
-			row.Quantity = conversionQuantity(publishedAmount(a.Sent), publishedAmount(a.Received))
-			row.Price = publishedMoney(a.Rate)
-			if a.Rate != nil {
-				row.Basis = "per " + known(text(a.RateBase))
+			row.Quantity = conversionQuantity(
+				publishedAmount(a.Conversion.Sent),
+				publishedAmount(a.Conversion.Received),
+			)
+			row.Price = publishedMoney(a.Conversion.Rate)
+			if a.Conversion.Rate != nil {
+				row.Basis = "per " + known(text(a.Conversion.RateBase))
 			}
 		}
 
@@ -424,21 +441,21 @@ func activityLabel(a *application.PublishedActivity, name string) string {
 			)
 		}
 	case "trade":
-		return stringTitle(text(a.Side)) + " " + name
+		return stringTitle(text(a.Trade.Side)) + " " + name
 	case "security-transfer":
 		if a.Transfer != nil {
 			return transferLabelPrefix + a.Transfer.Direction + movementLabelSeparator + name
 		}
 	case "lifecycle":
-		return stringTitle(text(a.LifecycleKind)) + lifecycleLabelSeparator + name
+		return stringTitle(text(a.Lifecycle.LifecycleKind)) + lifecycleLabelSeparator + name
 	case "conversion":
 		sent, received := unknownValue, unknownValue
-		if a.Sent != nil {
-			sent = known(a.Sent.Currency)
+		if a.Conversion.Sent != nil {
+			sent = known(a.Conversion.Sent.Currency)
 		}
 
-		if a.Received != nil {
-			received = known(a.Received.Currency)
+		if a.Conversion.Received != nil {
+			received = known(a.Conversion.Received.Currency)
 		}
 
 		return conversionLabelPrefix + sent + conversionPairSeparator + received
@@ -497,4 +514,44 @@ func reviewSearchMatches(search string) []application.ReviewMatch {
 	}
 
 	return matches
+}
+
+func movementSettlementDate(a *application.PublishedActivity) *string {
+	if a.Cash != nil {
+		return a.Cash.SettlementDate
+	}
+
+	if a.Transfer != nil {
+		return a.Transfer.SettlementDate
+	}
+
+	return nil
+}
+
+func fieldDetailLabel(path string) string {
+	return stringTitle(strings.NewReplacer("_", " ", "/", " / ").Replace(strings.TrimPrefix(path, "/")))
+}
+
+func fieldDetailText(field application.PublishedFieldDetail) string {
+	switch field.Reason {
+	case application.FieldNotApplicable:
+		return notApplicableValue
+	case application.FieldReportedUnavailable:
+		return "Reported as unavailable"
+	case application.FieldUnresolved:
+		return "Unavailable because source claims could not be reconciled"
+	case application.FieldOperatorWithheld:
+		return "Withheld by operator selection"
+	}
+
+	if field.Expectation != nil {
+		switch string(*field.Expectation) {
+		case "not_expected":
+			return "Not expected from this source"
+		case "expected":
+			return "Expected but not provided"
+		}
+	}
+
+	return "Not provided"
 }

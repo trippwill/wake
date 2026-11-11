@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 const positionRow = `<OpenPosition accountId="U1" assetCategory="STK" conid="100" symbol="SYN" levelOfDetail="SUMMARY" position="-0.0000000012300" side="Short" currency="USD" costBasisPrice="0.1234567890000" costBasisMoney="0.0000" reportDate="2026-11-04"/>`
@@ -56,7 +57,7 @@ func TestPositionSummaryPreservesExactValuesAndWithholdsIncompleteSets(t *testin
 			if tc.count > 0 &&
 				(f.Positions[0].Quantity().Value() != "-0.0000000012300" ||
 					f.Positions[0].UnitCostBasis().Amount() != "0.1234567890000" ||
-					f.Positions[0].UnitCostBasisQuote() != "per share") {
+					f.Positions[0].UnitCostBasisQuotationBasis() != source.PerShare) {
 				t.Fatal(f)
 			}
 		})

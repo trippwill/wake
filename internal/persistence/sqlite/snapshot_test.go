@@ -35,7 +35,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	for _, resource := range first.Snapshot.Resources {
 		if resource.Kind == "activity" {
 			activity = resource.ID
-			if resource.Activity.Price.Amount != "9007199254740993.0000000000001" {
+			if resource.Activity.Trade.Price.Amount != "9007199254740993.0000000000001" {
 				t.Fatal("snapshot lost exact precision", resource)
 			}
 		}
@@ -62,7 +62,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	}
 
 	for _, resource := range changed.Snapshot.Resources {
-		if resource.ID == activity && resource.Activity.Price.Amount != "12.000000000000001" {
+		if resource.ID == activity && resource.Activity.Trade.Price.Amount != "12.000000000000001" {
 			t.Fatal("snapshot mixed resource state", resource)
 		}
 	}
@@ -208,7 +208,7 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 	}
 
 	for _, r := range downloaded.Resources {
-		if r.ID == activity.ID && r.Activity.Price.Amount != "10.0000" {
+		if r.ID == activity.ID && r.Activity.Trade.Price.Amount != "10.0000" {
 			t.Fatal("response mixed later accepted state", r)
 		}
 	}

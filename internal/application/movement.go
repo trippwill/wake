@@ -56,7 +56,7 @@ func applyMovementField(o source.ActivityObservation, d FieldSelection) (source.
 		f.Timestamp, err = optionalTimestamp(d.Text)
 		f.Unknown = d.Text == "" && policy.Optional()
 	case DecimalCorrection:
-		f.Quantity, err = financial.NewQuantity(d.Text)
+		f.Quantity, err = financial.ParseQuantity(d.Text)
 		if old, exists := o.Field(source.FieldQuantity); exists {
 			f.QuantityUnit = old.Fields().QuantityUnit
 		}
@@ -69,7 +69,7 @@ func applyMovementField(o source.ActivityObservation, d FieldSelection) (source.
 
 				c, err = financial.ParseCurrency(d.Currency)
 				if err == nil {
-					f.Price, err = financial.NewPrice(d.Text, c)
+					f.Price, err = financial.ParsePrice(d.Text, c)
 				}
 			}
 		} else {

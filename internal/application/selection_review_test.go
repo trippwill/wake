@@ -29,8 +29,8 @@ func selectionTrade(
 		t.Fatal(err)
 	}
 
-	quantity, _ := financial.NewQuantity("1")
-	price, _ := financial.NewPrice("100", usd)
+	quantity, _ := financial.ParseQuantity("1")
+	price, _ := financial.ParsePrice("100", usd)
 	date, _ := financial.ParseDate("2026-10-20")
 
 	v, err := source.NewTrade(
@@ -41,7 +41,7 @@ func selectionTrade(
 			Quantity:   quantity,
 			Price:      price,
 			Side:       source.Buy,
-			TradeDate:  date,
+			Date:       date,
 			Charges:    charges,
 		},
 	)
@@ -55,7 +55,7 @@ func selectionTrade(
 func TestSelectionMergesChargeRolesAndRetainsOverflow(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
 	gbp, _ := financial.ParseCurrency("GBP")
-	money, _ := financial.NewMoney("-1", usd)
+	money, _ := financial.ParseMoney("-1", usd)
 	charge := func(field string) source.Charge {
 		c, e := source.NewCharge(source.ChargeInput{Category: source.Fee, Field: field, Total: money})
 		if e != nil {
@@ -80,7 +80,7 @@ func TestSelectionMergesChargeRolesAndRetainsOverflow(t *testing.T) {
 			source.ConversionInput{
 				Location: "synthetic",
 				Account:  base.Fields().Account,
-				Date:     base.Fields().TradeDate,
+				Date:     base.Fields().Date,
 				Sent:     sent,
 				Received: received,
 				Charges:  charges,
@@ -151,8 +151,8 @@ func TestDebtCombinedInvariantsBecomeDisagreement(t *testing.T) {
 func TestDeliverableOrderDoesNotCreateFinancialDisagreement(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
 	security, _ := source.NewReference("synthetic", "instrument", "", "underlier")
-	quantity, _ := financial.NewQuantity("12.5")
-	cash, _ := financial.NewMoney("0.75", usd)
+	quantity, _ := financial.ParseQuantity("12.5")
+	cash, _ := financial.ParseMoney("0.75", usd)
 	shares, _ := source.NewSecurityDeliverable(security, quantity)
 	payment, _ := source.NewCashDeliverable(cash)
 	terms := func(deliverables []source.Deliverable) source.OptionTerms {
@@ -200,7 +200,7 @@ func TestDeliverableOrderDoesNotCreateFinancialDisagreement(t *testing.T) {
 		t.Fatal("deliverable multiplicity was lost")
 	}
 
-	changedCash, _ := financial.NewMoney("0.50", usd)
+	changedCash, _ := financial.ParseMoney("0.50", usd)
 
 	changed, _ := source.NewCashDeliverable(changedCash)
 	if CompatibleOption(first.Fields().Instrument.Option(), terms([]source.Deliverable{shares, changed})) {

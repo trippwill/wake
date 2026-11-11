@@ -18,6 +18,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -89,7 +90,7 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 			return e
 		}
 
-		resource, explanation, err := canonicalSnapshot(ctx, q, k.kind, k.id)
+		resource, explanation, err := canonicalSnapshot(ctx, q, k.kind, k.id, s.registrations)
 		if err != nil {
 			return err
 		}
@@ -281,6 +282,26 @@ func publicDate(d financial.Date) *string {
 	return known(d.String())
 }
 
+func publicInstrumentTerms(i source.Instrument) application.PublishedInstrumentTerms {
+	t := application.PublishedInstrumentTerms{Family: string(i.Kind())}
+	switch i.Kind() {
+	case source.Option:
+		t.Option = publicOption(i.Option())
+		if t.Option == nil {
+			t.Option = new(application.PublishedOption)
+		}
+	case source.Debt:
+		t.Debt = publicDebt(i.Debt())
+		if t.Debt == nil {
+			t.Debt = new(application.PublishedDebt)
+		}
+	case source.UnknownInstrument:
+		t.Family = "unclassified"
+	}
+
+	return t
+}
+
 func publicOption(o source.OptionTerms) *application.PublishedOption {
 	if o.IsZero() {
 		return nil
@@ -293,7 +314,6 @@ func publicOption(o source.OptionTerms) *application.PublishedOption {
 		Strike:        publicPrice(f.Strike),
 		Multiplier:    known(f.Multiplier.Value()),
 		EffectiveFrom: publicDate(f.EffectiveFrom),
-		Deliverables:  []application.PublishedDeliverable{},
 	}
 	for _, d := range f.Deliverables {
 		out.Deliverables = append(
@@ -316,11 +336,11 @@ func publicDebt(d source.DebtTerms) *application.PublishedDebt {
 
 	f := d.Fields()
 	out := &application.PublishedDebt{
-		Type:      known(string(f.Type)),
-		Maturity:  publicDate(f.Maturity),
-		IssueDate: publicDate(f.IssueDate),
-		DatedDate: publicDate(f.DatedDate),
-		Coupon:    known(f.Coupon.Value()),
+		Type:       known(string(f.Type)),
+		Maturity:   publicDate(f.Maturity),
+		IssueDate:  publicDate(f.IssueDate),
+		DatedDate:  publicDate(f.DatedDate),
+		CouponRate: known(f.CouponRate.Value()),
 	}
 	if f.Currency != (financial.Currency{}) {
 		out.Currency = known(f.Currency.String())
@@ -337,9 +357,11 @@ func canonicalSnapshot(
 	ctx context.Context,
 	q *sqlc.Queries,
 	kind, id string,
+	registrations []provider.Registration,
 ) (application.CanonicalResource, application.Explanation, error) {
 	out := application.CanonicalResource{ID: id, Kind: kind}
 	why := application.Explanation{
+		Fields:      []application.PublishedFieldDetail{},
 		ID:          id,
 		Kind:        kind,
 		Corrections: []application.PublishedCorrection{},
@@ -436,16 +458,18 @@ func canonicalSnapshot(
 			return out, why, err
 		}
 
-		a := &application.PublishedActivity{
+		a := &application.PublishedActivity{PublishedActivityHeader: application.PublishedActivityHeader{
 			Family:        row.Kind,
 			AccountID:     row.AccountID,
-			InstrumentID:  known(row.InstrumentID.String),
-			ListingID:     known(row.ListingID.String),
 			State:         string(state.Lifecycle()),
 			Conflict:      state.NeedsReview(),
 			Relationships: []application.PublishedRelationship{},
-			Charges:       []application.PublishedCharge{},
+		}}
+		security := application.PublishedSecurity{
+			InstrumentID: known(row.InstrumentID.String),
+			ListingID:    known(row.ListingID.String),
 		}
+
 		if state.Lifecycle() == application.Superseded {
 			a.State = "replaced"
 		}
@@ -453,11 +477,16 @@ func canonicalSnapshot(
 		why.Selection = row.Rule
 		why.Conflict = a.Conflict
 
-		a.ReportedRealizedPnL, err = publishedRealized(ctx, q, id)
+		selection, err := loadActivitySelection(ctx, q, id)
 		if err != nil {
 			return out, why, err
 		}
 
+		a.ReportedRealizedPnL = reportedRealizedFields(
+			selection.Fields,
+			selection.Conflicts,
+			selection.OperatorFields,
+		)
 		if a.ReportedRealizedPnL != nil {
 			why.RealizedPnL = &application.PublishedRealizedExplanation{
 				Rule:      string(application.RetainedClaimsRule),
@@ -474,9 +503,11 @@ func canonicalSnapshot(
 			}
 
 			f := terms.Cash().Fields()
-			a.Charges = publicCharges(terms.Cash().Charges())
-			a.Date, a.At, a.SettlementDate = f.Date.String(), known(f.At.String()), publicDate(f.SettlementDate)
+			a.Date, a.At = f.Date.String(), known(f.At.String())
 			a.Cash = &application.PublishedCash{
+				PublishedSecurity:       security,
+				SettlementDate:          publicDate(f.SettlementDate),
+				Charges:                 publicCharges(terms.Cash().Charges()),
 				AvailableForTradingDate: publicDate(f.AvailableForTradingDate),
 				Category:                string(f.Category),
 				Amount:                  *publicMoney(f.Amount),
@@ -494,13 +525,18 @@ func canonicalSnapshot(
 			}
 
 			f := terms.SecurityTransfer().Fields()
-			a.Date, a.At, a.SettlementDate = f.Date.String(), known(f.At.String()), publicDate(f.SettlementDate)
-			a.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: ""}
+			a.Date, a.At = f.Date.String(), known(f.At.String())
+
+			quantity := &application.PublishedQuantity{Value: f.Quantity.Value()}
 			if field, ok := terms.Observation().Field(source.FieldQuantity); ok {
-				a.Quantity.Unit = field.Fields().QuantityUnit
+				quantity.Unit = field.Fields().QuantityUnit
 			}
 
 			a.Transfer = &application.PublishedTransfer{
+				PublishedSecurity:   security,
+				InstrumentTerms:     publicInstrumentTerms(f.Instrument),
+				Quantity:            quantity,
+				SettlementDate:      publicDate(f.SettlementDate),
 				DeliveringBroker:    known(f.DeliveringBroker),
 				Direction:           string(f.Direction),
 				Method:              known(f.Method),
@@ -513,7 +549,6 @@ func canonicalSnapshot(
 				ReportedCost:        publicMoney(f.ReportedCost),
 				ReportedPnL:         publicMoney(f.ReportedPnL),
 			}
-			a.Option, a.Debt = publicOption(f.Instrument.Option()), publicDebt(f.Instrument.Debt())
 		case "trade":
 			t, err := decodeTrade(row.Accepted)
 			if err != nil {
@@ -521,35 +556,39 @@ func canonicalSnapshot(
 			}
 
 			f := t.Fields()
-			a.Date, a.At, a.Order = f.TradeDate.String(), known(f.ExecutedAt.String()), publicReference(f.Order)
-			a.TradeKind, a.Side, a.PositionEffect = known(
+			a.Date, a.At = f.Date.String(), known(f.At.String())
+			a.Trade = &application.PublishedTrade{
+				PublishedSecurity: security,
+				InstrumentTerms:   publicInstrumentTerms(f.Instrument),
+			}
+			a.Trade.Order = publicReference(f.Order)
+			a.Trade.TradeKind, a.Trade.Side, a.Trade.PositionEffect = known(
 				string(f.Kind),
 			), known(
 				string(f.Side),
 			), known(
 				string(f.PositionEffect),
 			)
-			a.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: t.QuantityUnit()}
-			a.Price, a.PriceBasis, a.SettlementDate = publicPrice(
+			a.Trade.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: t.QuantityUnit()}
+			a.Trade.Price, a.Trade.QuotationBasis, a.Trade.SettlementDate = publicPrice(
 				f.Price,
 			), known(
-				t.PriceBasis(),
+				string(t.QuotationBasis()),
 			), publicDate(
 				f.SettlementDate,
 			)
-			a.Gross, a.Proceeds, a.Net, a.NetWithBillable, a.AccruedInterest = publicMoney(
-				f.Gross,
+			a.Trade.GrossAmount, a.Trade.Proceeds, a.Trade.NetCash, a.Trade.NetCashWithBillable, a.Trade.AccruedInterest = publicMoney(
+				f.GrossAmount,
 			), publicMoney(
 				f.Proceeds,
 			), publicMoney(
-				f.Net,
+				f.NetCash,
 			), publicMoney(
-				f.NetWithBillable,
+				f.NetCashWithBillable,
 			), publicMoney(
 				f.AccruedInterest,
 			)
-			a.Charges = publicCharges(f.Charges)
-			a.Option, a.Debt = publicOption(f.Instrument.Option()), publicDebt(f.Instrument.Debt())
+			a.Trade.Charges = publicCharges(f.Charges)
 		case "lifecycle":
 			l, err := decodeLifecycle(row.Accepted)
 			if err != nil {
@@ -557,10 +596,14 @@ func canonicalSnapshot(
 			}
 
 			f := l.Fields()
-			a.Date, a.At, a.Order = f.Date.String(), known(f.At.String()), publicReference(f.Order)
-			a.LifecycleKind = known(string(f.Kind))
-			a.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: "contracts"}
-			a.Option = publicOption(f.Instrument.Option())
+			a.Date, a.At = f.Date.String(), known(f.At.String())
+			a.Lifecycle = &application.PublishedLifecycle{
+				PublishedSecurity: security,
+				InstrumentTerms:   publicInstrumentTerms(f.Instrument),
+			}
+			a.Lifecycle.Order = publicReference(f.Order)
+			a.Lifecycle.LifecycleKind = known(string(f.Kind))
+			a.Lifecycle.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: "contracts"}
 		case "conversion":
 			c, err := decodeConversion(row.Accepted)
 			if err != nil {
@@ -568,31 +611,33 @@ func canonicalSnapshot(
 			}
 
 			f := c.Fields()
-			a.Date, a.At, a.Order = f.Date.String(), known(f.At.String()), publicReference(f.Order)
+			a.Date, a.At = f.Date.String(), known(f.At.String())
+			a.Conversion = &application.PublishedConversion{}
+			a.Conversion.Order = publicReference(f.Order)
 
-			a.Sent = &application.PublishedAmount{
+			a.Conversion.Sent = &application.PublishedAmount{
 				Amount:   known(f.Sent.Amount()),
 				Currency: f.Sent.Currency().String(),
 			}
-			a.Received = &application.PublishedAmount{
+			a.Conversion.Received = &application.PublishedAmount{
 				Amount:   known(f.Received.Amount()),
 				Currency: f.Received.Currency().String(),
 			}
-			a.Rate = publicPrice(f.Rate)
+			a.Conversion.Rate = publicPrice(f.Rate)
 			if f.RateBase != (financial.Currency{}) {
-				a.RateBase = known(f.RateBase.String())
+				a.Conversion.RateBase = known(f.RateBase.String())
 			}
 
-			a.Gross, a.Proceeds, a.Net, a.NetWithBillable = publicMoney(
-				f.Gross,
+			a.Conversion.GrossAmount, a.Conversion.Proceeds, a.Conversion.NetCash, a.Conversion.NetCashWithBillable = publicMoney(
+				f.GrossAmount,
 			), publicMoney(
 				f.Proceeds,
 			), publicMoney(
-				f.Net,
+				f.NetCash,
 			), publicMoney(
-				f.NetWithBillable,
+				f.NetCashWithBillable,
 			)
-			a.Charges = publicCharges(f.Charges)
+			a.Conversion.Charges = publicCharges(f.Charges)
 		default:
 			return out, why, ErrCorrupt
 		}
@@ -695,6 +740,12 @@ func canonicalSnapshot(
 			return out, why, err
 		}
 
+		policy, version, err := reportingPolicy(ctx, q, registrations, row.AccountID, selection)
+		if err != nil {
+			return out, why, err
+		}
+
+		why.Fields = explainActivityFields(a, selection, policy, version)
 		out.Activity = a
 	default:
 		return out, why, ErrCorrupt
@@ -782,19 +833,28 @@ func (s *Store) published(
 
 	defer func() { _ = tx.Rollback() }()
 
-	var (
-		revision          int64
-		data, explanation []byte
-	)
-
 	target, e := canonicalID(ctx, s.queries.WithTx(tx), kind, id)
 	if e != nil {
 		return out, why, e
 	}
 
-	id = target
+	return readPublished(ctx, tx, kind, target)
+}
 
-	err = tx.QueryRowContext(ctx, publishingStatement("Current"), kind, id).Scan(&revision, &data, &explanation)
+func readPublished(
+	ctx context.Context,
+	tx *sql.Tx,
+	kind, id string,
+) (application.CanonicalResource, application.Explanation, error) {
+	var (
+		out               application.CanonicalResource
+		why               application.Explanation
+		revision          int64
+		data, explanation []byte
+	)
+
+	err := tx.QueryRowContext(ctx, publishingStatement("Current"), kind, id).
+		Scan(&revision, &data, &explanation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, why, application.ErrNotFound
 	}

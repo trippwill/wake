@@ -375,7 +375,7 @@ func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing
 	}
 
 	if detail.Execution.State().NeedsReview() || detail.Execution.Terms().Fields().Price.Amount() != "12" ||
-		detail.Execution.Terms().Fields().Net.Amount() != "-100.000000000001" {
+		detail.Execution.Terms().Fields().NetCash.Amount() != "-100.000000000001" {
 		t.Fatal("source enrichment and operator choice diverged", detail)
 	}
 
@@ -413,7 +413,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 
 	fields := view.Executions[0].Terms().Fields()
 	currency, _ := financial.ParseCurrency("USD")
-	fields.Net, _ = financial.NewMoney("-200", currency)
+	fields.NetCash, _ = financial.ParseMoney("-200", currency)
 	fields.Location = "conflicting-net"
 	target, _ := source.NewReference("synthetic", "event", "account", "related")
 	relationship, _ := source.NewRelationship(source.LifecycleLink, target)
@@ -444,7 +444,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !detail.Execution.State().NeedsReview() || detail.Execution.Terms().Fields().Net.Amount() != "" ||
+	if !detail.Execution.State().NeedsReview() || detail.Execution.Terms().Fields().NetCash.Amount() != "" ||
 		detail.Execution.Terms().Fields().Price.Amount() != "12" {
 		t.Fatal("disputed enrichment did not retain source anchor and independent operator choice", detail)
 	}
@@ -469,7 +469,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 	}
 	// Existing disagreement must not turn the next distinct contradiction into
 	// corroboration merely because automatic selection returned the unknown anchor.
-	fields.Net, _ = financial.NewMoney("-300", currency)
+	fields.NetCash, _ = financial.ParseMoney("-300", currency)
 	fields.Location = "later-conflicting-net"
 	laterTarget, _ := source.NewReference("synthetic", "event", "account", "later-related")
 	laterRelationship, _ := source.NewRelationship(source.LifecycleLink, laterTarget)

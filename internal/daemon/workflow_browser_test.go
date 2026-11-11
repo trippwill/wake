@@ -880,7 +880,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	check(
-		chromedp.SetValue(chromedp.CSS("#decision-scope"), "net"),
+		chromedp.SetValue(chromedp.CSS("#decision-scope"), "net_cash"),
 		chromedp.Evaluate[chromedp.Void](
 			`document.querySelector('#decision-scope').dispatchEvent(new Event('change',{bubbles:true}))`,
 		),
@@ -1489,8 +1489,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			accounts[resource.ID] = resource.Account.Name
 		}
 
-		if activity := resource.Activity; activity != nil && activity.Price != nil {
-			trades[activity.AccountID] = append(trades[activity.AccountID], activity.Price.Amount)
+		if activity := resource.Activity; activity != nil && activity.Trade != nil &&
+			activity.Trade.Price != nil {
+			trades[activity.AccountID] = append(trades[activity.AccountID], activity.Trade.Price.Amount)
 		}
 	}
 

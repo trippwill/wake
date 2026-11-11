@@ -42,7 +42,7 @@ func reportedCharges(row map[string]string, currency financial.Currency) ([]sour
 
 		var err error
 		if amount := row[mapping.field]; amount != "" {
-			f.Total, err = financial.NewMoney(amount, currency)
+			f.Total, err = financial.ParseMoney(amount, currency)
 			if err != nil {
 				return source.Charge{}, err
 			}

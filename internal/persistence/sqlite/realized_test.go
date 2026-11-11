@@ -104,7 +104,7 @@ func TestRealizedReportsEnrichActivityWithoutChangingTradesOrRepeatingPublicatio
 		pnl.CostBasis.Amount != "-100.0000" ||
 		pnl.Amount.Currency != "USD" ||
 		pnl.Conflict ||
-		value.Activity.Price.Amount != "100" {
+		value.Activity.Trade.Price.Amount != "100" {
 		t.Fatal(value)
 	}
 
@@ -130,7 +130,7 @@ func TestRealizedReportsEnrichActivityWithoutChangingTradesOrRepeatingPublicatio
 
 	again, _ := snapshotState(t.Context(), s)
 	value = realizedActivity(t, s, id)
-	if again.Version != corrected.Version || value.Activity.Price.Amount != "200.0000" ||
+	if again.Version != corrected.Version || value.Activity.Trade.Price.Amount != "200.0000" ||
 		value.Activity.ReportedRealizedPnL.Amount.Amount != pnl.Amount.Amount {
 		t.Fatal("trade correction changed source result", value)
 	}

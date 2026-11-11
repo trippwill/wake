@@ -243,3 +243,24 @@ The results cover a warm local warehouse and this report size. Searches still
 scan candidates to calculate exact counts, and the reader shares SQLite's
 rollback-journal lock at commit. Larger warehouses, longer write transactions
 and first-open index build time need separate measurements.
+
+## Financial contract variants
+
+On 2026-11-11, rerunning the synthetic workloads on the Core Ultra 5 228V Linux host
+with Go 1.27.4 produced the following comparisons against the flat contract at
+`009316a`. The byte count sums serialized resources and excludes the outer snapshot
+envelope. The changed sync column uses the median of five observations for the
+representative read and one observation for the other workloads.
+
+| Workload | Snapshot resource bytes | Materialize snapshot | Changed consumer sync | Peak RSS (KiB) |
+| --- | ---: | ---: | ---: | ---: |
+| Quick | 1,132,713 → 1,087,713 | 9.4 → 13.4 ms | 0.359 → 0.349 s | 156,660 → 159,340 |
+| Representative read | 22,520,608 → 21,620,608 | 147 → 195 ms | 5.82 → 5.95 s | 363,088 → 358,768 |
+| Large read | 112,600,608 → 108,100,608 | 0.767 → 0.939 s | 26.23 → 26.68 s | 1,863,036 → 1,528,200 |
+
+Resource bytes fell by about 4% in these trade-heavy fixtures. The server spent more
+time materializing the typed variants. Its allocations for a changed sync rose from
+207 to 237 MB in the representative read and from 1,011 to 1,158 MB in the large read.
+The consumer still completed the large read within the existing 128 MiB response bound.
+These are local comparisons of the specified fixtures. The RSS samples do not measure
+combined server and consumer memory or establish a general capacity limit.

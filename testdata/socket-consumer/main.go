@@ -478,6 +478,7 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			Conflict    bool              `json:"conflict"`
 			Corrections []json.RawMessage `json:"corrections"`
 			Decisions   []json.RawMessage `json:"decisions"`
+			Fields      []json.RawMessage `json:"fields"`
 		}
 		if err = c.get(ctx, path+"/explanation?revision="+fmt.Sprint(expected.Revision), &why); err != nil {
 			var failure protocolError
@@ -486,7 +487,7 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			}
 			return err
 		}
-		if why.ID != expected.ID || why.Kind != expected.Kind || why.Revision != expected.Revision || why.Selection == "" || why.Corrections == nil || why.Decisions == nil {
+		if why.ID != expected.ID || why.Kind != expected.Kind || why.Revision != expected.Revision || why.Selection == "" || why.Corrections == nil || why.Decisions == nil || why.Fields == nil {
 			return errors.New("protocol: inconsistent explanation revision")
 		}
 	}

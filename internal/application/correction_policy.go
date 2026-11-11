@@ -86,7 +86,7 @@ var correctionPolicies = []FieldPolicy{
 	{"price", MoneyCorrection, false, SignedDecimal, 256, tradeFields, ""},
 	{"side", ChoiceCorrection, false, SignedDecimal, 2048, tradeFields, ""},
 	{
-		"trade_date",
+		"date",
 		DateCorrection,
 		false,
 		SignedDecimal,
@@ -95,7 +95,7 @@ var correctionPolicies = []FieldPolicy{
 		"",
 	},
 	{
-		"executed_at",
+		"at",
 		TimestampCorrection,
 		true,
 		SignedDecimal,
@@ -112,10 +112,10 @@ var correctionPolicies = []FieldPolicy{
 		tradeFields | transferFields | cashFields,
 		"",
 	},
-	{"gross", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
+	{"gross_amount", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
 	{"proceeds", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
-	{"net", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
-	{"net_billable", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
+	{"net_cash", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
+	{"net_cash_with_billable", MoneyCorrection, true, SignedDecimal, 256, tradeFields | conversionFields, ""},
 	{"accrued_interest", MoneyCorrection, true, SignedDecimal, 256, tradeFields, ""},
 	{"position_effect", ChoiceCorrection, true, SignedDecimal, 2048, tradeFields, ""},
 	{
@@ -154,7 +154,7 @@ var correctionPolicies = []FieldPolicy{
 		tradeFields | lifecycleFields | transferFields,
 		source.Option,
 	},
-	{"debt.coupon", DecimalCorrection, true, NonnegativeDecimal, 256, tradeFields, source.Debt},
+	{"debt.coupon_rate", DecimalCorrection, true, NonnegativeDecimal, 256, tradeFields, source.Debt},
 	{"debt.maturity", DateCorrection, true, SignedDecimal, 2048, tradeFields, source.Debt},
 	{
 		"instrument",

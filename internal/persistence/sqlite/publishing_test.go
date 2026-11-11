@@ -41,10 +41,11 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 
 	var id string
 	for _, r := range page.Items {
-		if r.Activity.Price != nil && r.Activity.Price.Amount == "100.0000" {
+		if r.Activity.Trade != nil && r.Activity.Trade.Price != nil &&
+			r.Activity.Trade.Price.Amount == "100.0000" {
 			id = r.ID
 			if r.Activity.At == nil || *r.Activity.At != "2026-10-20T13:30:00.120Z" ||
-				r.Activity.Quantity.Value != "0.000000000123" {
+				r.Activity.Quantity().Value != "0.000000000123" {
 				t.Fatal("precision lost", r)
 			}
 		}
@@ -148,7 +149,7 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 	}
 
 	after, err := s.Resource(ctx, "activity", id)
-	if err != nil || after.Revision != latest.Revision || after.Activity.Price.Amount == "999" {
+	if err != nil || after.Revision != latest.Revision || after.Activity.Trade.Price.Amount == "999" {
 		t.Fatal("partial accepted write", err)
 	}
 

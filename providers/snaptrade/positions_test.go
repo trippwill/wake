@@ -77,7 +77,9 @@ func TestNormalizeFidelityPositionSets(t *testing.T) {
 			if tc.name == "mixed" {
 				equity, bond, option, fund := set.Positions[0], set.Positions[1], set.Positions[2], set.Positions[3]
 				if equity.Quantity().Value() != "1.230000000000000001" ||
-					equity.UnitCostBasis().Amount() != "3.200" || equity.UnitCostBasisQuote() != "per share" ||
+					equity.UnitCostBasis().
+						Amount() !=
+						"3.200" || equity.UnitCostBasisQuotationBasis() != source.PerShare ||
 					bond.UnitCostBasis().Amount() != "" ||
 					bond.Unit() != "units" || bond.Quantity().Value() != "10.00" || fund.Instrument().Kind() != source.Fund {
 					t.Fatalf("lost position terms: %+v", set)

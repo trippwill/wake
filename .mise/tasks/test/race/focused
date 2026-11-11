@@ -6,6 +6,6 @@
 #MISE wait_for=["test:coverage"]
 set -euo pipefail
 mkdir -p .cache/test-results
-# Keep the complete SQLite package on the full race profile's time budget.
-go test -json -race -count=1 -timeout=10m ./internal/credential ./internal/daemon ./internal/persistence/sqlite ./internal/transport/cli ./internal/architecture \
+# Leave time for setup and artifact upload within the 15-minute CI job.
+go test -json -race -count=1 -timeout=13m ./internal/credential ./internal/daemon ./internal/persistence/sqlite ./internal/transport/cli ./internal/architecture \
   | tee .cache/test-results/focused.jsonl

@@ -11,7 +11,7 @@ import (
 
 func TestReportedAdjustedDeliverablesAreImmutable(t *testing.T) {
 	ref, _ := source.NewReference("synthetic", "security", "", "adjusted-delivery")
-	q, _ := financial.NewQuantity("12.5")
+	q, _ := financial.ParseQuantity("12.5")
 	component, _ := source.NewSecurityDeliverable(ref, q)
 	components := []source.Deliverable{component}
 
@@ -28,7 +28,7 @@ func TestReportedAdjustedDeliverablesAreImmutable(t *testing.T) {
 		t.Fatal("mutable deliverable")
 	}
 
-	bad, _ := financial.NewQuantity("-1")
+	bad, _ := financial.ParseQuantity("-1")
 	if _, err = source.NewOptionTerms(source.OptionInput{Multiplier: bad}); err == nil {
 		t.Fatal("negative multiplier")
 	}

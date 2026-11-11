@@ -71,7 +71,7 @@ func (row positionRow) unitCostBasis() financial.Price {
 		return financial.Price{}
 	}
 
-	price, _ := financial.NewPrice(amount, currency)
+	price, _ := financial.ParsePrice(amount, currency)
 
 	return price
 }
@@ -170,7 +170,7 @@ func (row positionRow) position() (source.Position, error) {
 		return source.Position{}, nil
 	}
 
-	quantity, err := financial.NewQuantity(row.Units)
+	quantity, err := financial.ParseQuantity(row.Units)
 	if err != nil {
 		return source.Position{}, err
 	}
@@ -261,20 +261,20 @@ func (i positionInstrument) option(raw json.RawMessage) (source.Instrument, erro
 
 	terms := source.OptionInput{Right: right, Expiry: expiry, Underlier: underlier}
 	if detail.Multiplier != "" {
-		terms.Multiplier, err = financial.NewQuantity(detail.Multiplier)
+		terms.Multiplier, err = financial.ParseQuantity(detail.Multiplier)
 		if err != nil {
 			return source.Instrument{}, err
 		}
 	}
 
 	if detail.Strike != "" {
-		strike, e := financial.NewQuantity(detail.Strike)
+		strike, e := financial.ParseQuantity(detail.Strike)
 		if e != nil || strings.HasPrefix(strike.Value(), "-") {
 			return source.Instrument{}, provider.ErrMalformed
 		}
 
 		if currency, e := financial.ParseCurrency(detail.Underlying.Currency); e == nil {
-			terms.Strike, err = financial.NewPrice(strike.Value(), currency)
+			terms.Strike, err = financial.ParsePrice(strike.Value(), currency)
 			if err != nil {
 				return source.Instrument{}, err
 			}

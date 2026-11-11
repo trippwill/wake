@@ -24,7 +24,7 @@ func NewCurrencyAmount(c financial.Currency, amount string) (CurrencyAmount, err
 
 	var err error
 	if amount != "" {
-		q, err = financial.NewQuantity(amount)
+		q, err = financial.ParseQuantity(amount)
 		if err != nil || q.Value()[0] == '-' {
 			return CurrencyAmount{}, ErrInvalidTrade
 		}
@@ -41,14 +41,14 @@ type ConversionInput struct {
 	EventAliases          []Reference
 	// EventDistinct states that Event identifies one event within its qualified scope.
 	// Its native kind and value remain opaque to the core.
-	EventDistinct                         bool
-	Date                                  financial.Date
-	At                                    financial.Timestamp
-	Sent, Received                        CurrencyAmount
-	RateBase                              financial.Currency
-	Rate                                  financial.Price
-	Gross, Proceeds, Net, NetWithBillable financial.Money
-	Charges                               []Charge
+	EventDistinct                                       bool
+	Date                                                financial.Date
+	At                                                  financial.Timestamp
+	Sent, Received                                      CurrencyAmount
+	RateBase                                            financial.Currency
+	Rate                                                financial.Price
+	GrossAmount, Proceeds, NetCash, NetCashWithBillable financial.Money
+	Charges                                             []Charge
 }
 type Conversion struct{ input ConversionInput }
 
@@ -64,7 +64,7 @@ func NewConversion(f ConversionInput) (Conversion, error) {
 	}
 
 	if f.Rate.Amount() != "" {
-		q, err := financial.NewQuantity(f.Rate.Amount())
+		q, err := financial.ParseQuantity(f.Rate.Amount())
 		direct := f.RateBase == f.Sent.currency && f.Rate.Currency() == f.Received.currency
 		inverse := f.RateBase == f.Received.currency && f.Rate.Currency() == f.Sent.currency
 		if err != nil || !q.Positive() || f.RateBase == (financial.Currency{}) ||

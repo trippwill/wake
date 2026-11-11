@@ -839,3 +839,24 @@ func (w *Workflow) CheckCorrection(ctx context.Context, d Decision) error {
 func (w *Workflow) Resource(ctx context.Context, kind, id string) (CanonicalResource, error) {
 	return w.store.Resource(ctx, kind, id)
 }
+
+// ActivityFieldDetails returns field explanations for the displayed revision.
+func (w *Workflow) ActivityFieldDetails(
+	ctx context.Context,
+	id string,
+	revision int64,
+) []PublishedFieldDetail {
+	reader, ok := w.store.(interface {
+		Explanation(context.Context, string, string, int64) (Explanation, error)
+	})
+	if !ok || revision < 1 {
+		return nil
+	}
+
+	explanation, err := reader.Explanation(ctx, "activity", id, revision)
+	if err != nil {
+		return nil
+	}
+
+	return explanation.Fields
+}

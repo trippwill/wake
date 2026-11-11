@@ -25,7 +25,7 @@ func Compatible(a, b source.Trade) bool {
 		x.Side != y.Side ||
 		!x.Quantity.Equal(y.Quantity) ||
 		!x.Price.Equal(y.Price) ||
-		x.TradeDate != y.TradeDate ||
+		x.Date != y.Date ||
 		x.Instrument.Kind() != y.Instrument.Kind() ||
 		!CompatibleInstrument(x.Instrument, y.Instrument) {
 		return false
@@ -36,8 +36,8 @@ func Compatible(a, b source.Trade) bool {
 		return false
 	}
 
-	if !x.ExecutedAt.IsZero() && !y.ExecutedAt.IsZero() && !x.ExecutedAt.Contains(y.ExecutedAt) &&
-		!y.ExecutedAt.Contains(x.ExecutedAt) {
+	if !x.At.IsZero() && !y.At.IsZero() && !x.At.Contains(y.At) &&
+		!y.At.Contains(x.At) {
 		return false
 	}
 
@@ -53,7 +53,7 @@ func Compatible(a, b source.Trade) bool {
 		return false
 	}
 
-	for _, pair := range [][2]financial.Money{{x.Gross, y.Gross}, {x.Net, y.Net}, {x.Proceeds, y.Proceeds}, {x.AccruedInterest, y.AccruedInterest}, {x.NetWithBillable, y.NetWithBillable}} {
+	for _, pair := range [][2]financial.Money{{x.GrossAmount, y.GrossAmount}, {x.NetCash, y.NetCash}, {x.Proceeds, y.Proceeds}, {x.AccruedInterest, y.AccruedInterest}, {x.NetCashWithBillable, y.NetCashWithBillable}} {
 		if pair[0].Amount() != "" && pair[1].Amount() != "" && !pair[0].Equal(pair[1]) {
 			return false
 		}
@@ -112,7 +112,7 @@ func CompatibleDebt(a, b source.DebtTerms) bool {
 
 	compatible := (x.Type == "" || y.Type == "" || x.Type == y.Type) &&
 		(x.Currency == (financial.Currency{}) || y.Currency == (financial.Currency{}) || x.Currency == y.Currency) &&
-		(x.Coupon.Value() == "" || y.Coupon.Value() == "" || x.Coupon.Equal(y.Coupon)) &&
+		(x.CouponRate.Value() == "" || y.CouponRate.Value() == "" || x.CouponRate.Equal(y.CouponRate)) &&
 		(x.Maturity.IsZero() || y.Maturity.IsZero() || x.Maturity == y.Maturity) &&
 		(x.IssueDate.IsZero() || y.IssueDate.IsZero() || x.IssueDate == y.IssueDate) &&
 		(x.DatedDate.IsZero() || y.DatedDate.IsZero() || x.DatedDate == y.DatedDate) &&
@@ -151,7 +151,7 @@ func CompatibleConversion(a, b source.Conversion) bool {
 		return false
 	}
 
-	for _, p := range [][2]financial.Money{{x.Gross, y.Gross}, {x.Proceeds, y.Proceeds}, {x.Net, y.Net}, {x.NetWithBillable, y.NetWithBillable}} {
+	for _, p := range [][2]financial.Money{{x.GrossAmount, y.GrossAmount}, {x.Proceeds, y.Proceeds}, {x.NetCash, y.NetCash}, {x.NetCashWithBillable, y.NetCashWithBillable}} {
 		if p[0].Amount() != "" && p[1].Amount() != "" && !p[0].Equal(p[1]) {
 			return false
 		}
@@ -206,8 +206,8 @@ func CompatibleInstrumentKind(a, b source.InstrumentKind) bool {
 }
 
 func equalAmount(a, b source.CurrencyAmount) bool {
-	x, _ := financial.NewQuantity(a.Amount())
-	y, _ := financial.NewQuantity(b.Amount())
+	x, _ := financial.ParseQuantity(a.Amount())
+	y, _ := financial.ParseQuantity(b.Amount())
 
 	return a.Currency() == b.Currency() && x.Equal(y)
 }

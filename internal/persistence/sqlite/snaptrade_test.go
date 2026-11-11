@@ -138,6 +138,8 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		s.registrations = []provider.Registration{registration}
+
 		h, err := host.New(ctx, s, envelope, nil, clock, nil, registration)
 		if err != nil {
 			t.Fatal(err)
@@ -290,9 +292,17 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 
 	for _, item := range list.Items {
 		activity := item.Resource.Activity
-		if activity.AccountID != account.ID() || activity.Price.Amount != "1.1200" ||
-			activity.TradeKind == nil || *activity.TradeKind != "reported-trade" {
+		if activity.AccountID != account.ID() || activity.Trade.Price.Amount != "1.1200" ||
+			activity.Trade.TradeKind == nil || *activity.Trade.TradeKind != "reported-trade" {
 			t.Fatalf("retained activity lost its scope or terms: %+v", activity)
+		}
+
+		why, err := s.Explanation(ctx, "activity", item.Resource.ID, item.Resource.Revision)
+		if err != nil || !slices.ContainsFunc(why.Fields, func(field application.PublishedFieldDetail) bool {
+			return field.Path == "/net_cash_with_billable" && field.Reason == application.FieldNotReported &&
+				field.Expectation != nil && *field.Expectation == provider.NotExpected && field.Interpretation != nil
+		}) {
+			t.Fatalf("expected a source reporting explanation: %+v %v", why.Fields, err)
 		}
 	}
 

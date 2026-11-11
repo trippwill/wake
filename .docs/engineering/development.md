@@ -152,6 +152,12 @@ history using retained connection settings and credentials. Previous formats, in
 the observation-contribution format, fail closed without modification. There is no
 migration, automatic reset or conversion; the encrypted access format is unchanged.
 
+The financial variants development format changes stored accepted publications and financial
+assertion keys. It requires explicit warehouse recreation. Preserve any required old evidence and
+operator decisions, stop Wake, and preview then confirm `wake reset warehouse` with the same
+configuration. Earlier formats fail closed without modification. The encrypted access store
+remains reusable. Reconfirm accounts and reacquire history with the retained connection settings.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL

@@ -130,7 +130,7 @@ func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 
 func TestCandidateComparisonIncludesAncestorChargeCategories(t *testing.T) {
 	usd, _ := financial.ParseCurrency("USD")
-	amount, _ := financial.NewMoney("-0.00100", usd)
+	amount, _ := financial.ParseMoney("-0.00100", usd)
 	leaf, _ := source.NewCharge(source.ChargeInput{Category: source.RegulatoryFee, Field: "taf", Total: amount})
 	account, _ := source.NewReference("synthetic", "account", "", "U1")
 	encode := func(category source.ChargeCategory) []byte {

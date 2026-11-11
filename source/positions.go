@@ -14,7 +14,10 @@ const ErrInvalidPositions Error = "invalid reported position set"
 type PositionTimeBasis string
 
 // The zero basis denotes broker-effective time.
-const PositionSourceFetched PositionTimeBasis = "source_fetched"
+const (
+	PositionSourceFetched   PositionTimeBasis = "source_fetched"
+	PositionBrokerEffective PositionTimeBasis = "broker_effective"
+)
 
 // Position is a reported holding, independently of the events or lots explaining it.
 type Position struct {
@@ -66,11 +69,11 @@ func (p Position) WithTerms(instrument Instrument, unitCostBasis financial.Price
 
 func (p Position) UnitCostBasis() financial.Price { return p.unitCostBasis }
 
-// UnitCostBasisQuote identifies the quote convention where established.
-func (p Position) UnitCostBasisQuote() string {
+// UnitCostBasisQuotationBasis identifies the quote convention where established.
+func (p Position) UnitCostBasisQuotationBasis() QuotationBasis {
 	switch p.instrument.Kind() {
 	case Equity, Fund, Option:
-		return priceBasis(p.instrument.Kind())
+		return quotationBasis(p.instrument.Kind())
 	default:
 		return ""
 	}
@@ -110,7 +113,7 @@ func NewPositionSetObservation(f PositionSetInput) (PositionSetObservation, erro
 		(f.Complete && (f.Date.IsZero() || f.Reason != "")) ||
 		(!f.Complete && (len(f.Positions) != 0 || (f.Reason != "not_reported" && f.Reason != "incomplete"))) ||
 		(f.Date.IsZero() && !f.At.IsZero()) ||
-		(f.TimeBasis != "" && (f.TimeBasis != PositionSourceFetched || f.At.IsZero())) {
+		(f.TimeBasis != "" && f.TimeBasis != PositionBrokerEffective && (f.TimeBasis != PositionSourceFetched || f.At.IsZero())) {
 		return PositionSetObservation{}, ErrInvalidPositions
 	}
 
@@ -124,6 +127,10 @@ func NewPositionSetObservation(f PositionSetInput) (PositionSetObservation, erro
 		if r.IsZero() || r == f.Reference || f.Reference.IsZero() {
 			return PositionSetObservation{}, ErrInvalidPositions
 		}
+	}
+
+	if f.TimeBasis == PositionBrokerEffective {
+		f.TimeBasis = ""
 	}
 
 	f.Positions = slices.Clone(f.Positions)

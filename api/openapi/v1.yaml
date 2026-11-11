@@ -14,7 +14,7 @@ info:
     Retired instrument/listing lookups redirect to their current IDs; explanations for retired IDs
     return stale_revision. Instrument resources describe identity; financial terms belong to activity.
     Reported account positions have a separate versioned read and positions events, and are excluded
-    from the financial snapshot. Unknown values are explicit null, distinct from decimal zero. Unknown or duplicate parameters and
+    from the financial snapshot. An unavailable value in a selected variant is explicit null, distinct from decimal zero. Unknown or duplicate parameters and
     mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
 paths:
   /v1/events:
@@ -63,8 +63,8 @@ paths:
       description: |
         Latest accepted reported position set for one account, independently versioned and excluded
         from the financial snapshot. One effective time applies to the entire set. Date-only evidence
-        has a null timestamp. Quantities are signed (positive long, negative short); costs are reported
-        aggregate amounts in their original currency. No holdings or cost reconstruction is performed.
+        has a null timestamp. Quantities are signed (positive long, negative short); unit cost basis is reported
+        in its original currency. No holdings or cost reconstruction is performed.
         An available empty set is []; unavailable rows are null with an explicit reason. Newer
         unusable evidence withholds the set without falling back to older positions. Acquisition
         failures alone do not erase established state. Source generation/retrieval times do not
@@ -336,6 +336,56 @@ paths:
           $ref: '#/components/responses/Error'
 components:
   schemas:
+    Decimal:
+      type: string
+      pattern: ^-?(0|[1-9][0-9]*)(\.[0-9]+)?$
+      maxLength: 256
+    CurrencyCode:
+      type: string
+      pattern: ^[A-Z]{3}$
+    CivilDate:
+      type: string
+      format: date
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+      x-go-type: string
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$
+      x-go-type: string
+    QuotationBasis:
+      type: string
+      enum:
+      - per_share
+      - per_underlying_unit
+    NullableDecimal:
+      type: string
+      pattern: ^-?(0|[1-9][0-9]*)(\.[0-9]+)?$
+      maxLength: 256
+      nullable: true
+    NullableCurrencyCode:
+      type: string
+      pattern: ^[A-Z]{3}$
+      nullable: true
+    NullableCivilDate:
+      type: string
+      format: date
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+      x-go-type: string
+      nullable: true
+    NullableTimestamp:
+      type: string
+      format: date-time
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$
+      x-go-type: string
+      nullable: true
+    NullableQuotationBasis:
+      type: string
+      enum:
+      - per_share
+      - per_underlying_unit
+      - null
+      nullable: true
     PositionsPublication:
       type: object
       additionalProperties: false
@@ -353,7 +403,12 @@ components:
     Position:
       type: object
       additionalProperties: false
-      required: [instrument_id, quantity, side, option, debt]
+      required:
+      - instrument_id
+      - quantity
+      - side
+      - unit_cost_basis
+      - instrument_terms
       properties:
         instrument_id:
           type: string
@@ -361,26 +416,33 @@ components:
         quantity:
           allOf:
           - $ref: '#/components/schemas/Quantity'
-          description: Unit is shares, contracts, nominal, or units. The units value preserves a reported quantity for an unclassified instrument or for debt with unspecified face amount.
+          description: Unit is shares, contracts, nominal, or units. The units value preserves a reported quantity
+            for an unclassified instrument or for debt with unspecified face amount.
         side:
           type: string
-          enum: [long, short]
+          enum:
+          - long
+          - short
         unit_cost_basis:
-          type: object
-          additionalProperties: false
-          required: [amount, currency]
-          description: Reported basis price with exact decimal text. The quote convention is included where established. Omitted when unavailable.
-          properties:
-            amount:
-              type: string
-            currency:
-              type: string
-            quote:
-              type: string
-        option:
-          $ref: '#/components/schemas/NullableOption'
-        debt:
-          $ref: '#/components/schemas/NullableDebt'
+          $ref: '#/components/schemas/NullableUnitCostBasis'
+        instrument_terms:
+          $ref: '#/components/schemas/InstrumentTerms'
+    NullableUnitCostBasis:
+      type: object
+      additionalProperties: false
+      required:
+      - amount
+      - currency
+      - quotation_basis
+      properties:
+        amount:
+          $ref: '#/components/schemas/Decimal'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        quotation_basis:
+          $ref: '#/components/schemas/NullableQuotationBasis'
+      nullable: true
+      description: Reported unit cost basis in the original currency.
     PositionsView:
       type: object
       additionalProperties: false
@@ -431,7 +493,7 @@ components:
           type: object
           nullable: true
           additionalProperties: false
-          required: [date, at]
+          required: [date, at, basis]
           properties:
             date:
               type: string
@@ -443,8 +505,8 @@ components:
               nullable: true
             basis:
               type: string
-              enum: [source_fetched]
-              description: The time the source fetched holdings from the broker. Omission indicates broker-effective time.
+              enum: [broker_effective, source_fetched]
+              description: Broker-effective time or the time the source fetched holdings.
         reason:
           type: string
           nullable: true
@@ -474,23 +536,22 @@ components:
       additionalProperties: false
       properties:
         amount:
-          type: string
+          $ref: '#/components/schemas/Decimal'
         currency:
-          type: string
+          $ref: '#/components/schemas/CurrencyCode'
       required:
       - amount
       - currency
-      description: Exact validated decimal text; trailing zeros are significant source precision. No binary
-        float conversion.
+      description: Exact validated decimal text; trailing zeros are significant source precision. No binary float
+        conversion.
     Amount:
       type: object
       additionalProperties: false
       properties:
         amount:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableDecimal'
         currency:
-          type: string
+          $ref: '#/components/schemas/CurrencyCode'
       required:
       - amount
       - currency
@@ -500,9 +561,14 @@ components:
       additionalProperties: false
       properties:
         value:
-          type: string
+          $ref: '#/components/schemas/Decimal'
         unit:
           type: string
+          enum:
+          - shares
+          - contracts
+          - nominal
+          - units
       required:
       - value
       - unit
@@ -592,79 +658,137 @@ components:
         security:
           $ref: '#/components/schemas/NullableReference'
         quantity:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableDecimal'
         cash:
           $ref: '#/components/schemas/NullableMoney'
       required:
       - security
       - quantity
       - cash
-    Option:
+    InstrumentTerms:
+      oneOf:
+      - $ref: '#/components/schemas/EquityTerms'
+      - $ref: '#/components/schemas/FundTerms'
+      - $ref: '#/components/schemas/OptionTerms'
+      - $ref: '#/components/schemas/DebtTerms'
+      - $ref: '#/components/schemas/UnclassifiedTerms'
+      discriminator:
+        propertyName: family
+        mapping:
+          equity: '#/components/schemas/EquityTerms'
+          fund: '#/components/schemas/FundTerms'
+          option: '#/components/schemas/OptionTerms'
+          debt: '#/components/schemas/DebtTerms'
+          unclassified: '#/components/schemas/UnclassifiedTerms'
+    EquityTerms:
       type: object
       additionalProperties: false
-      properties:
-        right:
-          type: string
-          nullable: true
-        expiry:
-          type: string
-          nullable: true
-        multiplier:
-          type: string
-          nullable: true
-        effective_from:
-          type: string
-          nullable: true
-        strike:
-          $ref: '#/components/schemas/NullableMoney'
-        deliverables:
-          type: array
-          items:
-            $ref: '#/components/schemas/Deliverable'
       required:
+      - family
+      properties:
+        family:
+          type: string
+          enum:
+          - equity
+    FundTerms:
+      type: object
+      additionalProperties: false
+      required:
+      - family
+      properties:
+        family:
+          type: string
+          enum:
+          - fund
+    OptionTerms:
+      type: object
+      additionalProperties: false
+      required:
+      - family
       - right
       - expiry
       - multiplier
       - effective_from
       - strike
       - deliverables
-      description: Reported contract terms. Empty deliverables are unknown; a multiplier never implies
-        stock delivery.
-    Debt:
+      properties:
+        family:
+          type: string
+          enum:
+          - option
+        right:
+          type: string
+          nullable: true
+          enum:
+          - put
+          - call
+          - null
+        expiry:
+          $ref: '#/components/schemas/NullableCivilDate'
+        multiplier:
+          $ref: '#/components/schemas/NullableDecimal'
+        effective_from:
+          $ref: '#/components/schemas/NullableCivilDate'
+        strike:
+          $ref: '#/components/schemas/NullableMoney'
+        deliverables:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Deliverable'
+          description: Null means unreported. An array contains established deliverables.
+    DebtTerms:
       type: object
       additionalProperties: false
-      properties:
-        type:
-          type: string
-          nullable: true
-        currency:
-          type: string
-          nullable: true
-        maturity:
-          type: string
-          nullable: true
-        issue_date:
-          type: string
-          nullable: true
-        dated_date:
-          type: string
-          nullable: true
-        coupon:
-          type: string
-          nullable: true
-        payments_per_year:
-          type: integer
-          format: int64
-          nullable: true
       required:
+      - family
       - type
       - currency
       - maturity
       - issue_date
       - dated_date
-      - coupon
       - payments_per_year
+      - coupon_rate
+      properties:
+        family:
+          type: string
+          enum:
+          - debt
+        type:
+          type: string
+          nullable: true
+          enum:
+          - treasury-bill
+          - treasury-note
+          - treasury-bond
+          - conventional-gilt
+          - null
+        currency:
+          $ref: '#/components/schemas/NullableCurrencyCode'
+        maturity:
+          $ref: '#/components/schemas/NullableCivilDate'
+        issue_date:
+          $ref: '#/components/schemas/NullableCivilDate'
+        dated_date:
+          $ref: '#/components/schemas/NullableCivilDate'
+        payments_per_year:
+          type: integer
+          format: int64
+          nullable: true
+        coupon_rate:
+          allOf:
+          - $ref: '#/components/schemas/NullableDecimal'
+          description: Exact annual percentage points, for example 4.125 represents 4.125 percent.
+    UnclassifiedTerms:
+      type: object
+      additionalProperties: false
+      required:
+      - family
+      properties:
+        family:
+          type: string
+          enum:
+          - unclassified
     Account:
       type: object
       additionalProperties: false
@@ -672,8 +796,7 @@ components:
         name:
           type: string
         currency:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCurrencyCode'
       required:
       - name
       - currency
@@ -739,7 +862,7 @@ components:
           type: string
           nullable: true
         currency:
-          type: string
+          $ref: '#/components/schemas/CurrencyCode'
         figi:
           type: string
           nullable: true
@@ -749,16 +872,285 @@ components:
       - ticker
       - currency
       - figi
-    Transfer:
+    Activity:
+      oneOf:
+      - $ref: '#/components/schemas/TradeActivity'
+      - $ref: '#/components/schemas/LifecycleActivity'
+      - $ref: '#/components/schemas/ConversionActivity'
+      - $ref: '#/components/schemas/SecurityTransferActivity'
+      - $ref: '#/components/schemas/CashActivity'
+      discriminator:
+        propertyName: family
+        mapping:
+          trade: '#/components/schemas/TradeActivity'
+          lifecycle: '#/components/schemas/LifecycleActivity'
+          conversion: '#/components/schemas/ConversionActivity'
+          security-transfer: '#/components/schemas/SecurityTransferActivity'
+          cash: '#/components/schemas/CashActivity'
+    ActivityFamily:
+      type: string
+      enum:
+      - trade
+      - lifecycle
+      - conversion
+      - security-transfer
+      - cash
+    ActivityState:
+      type: string
+      enum:
+      - accepted
+      - cancelled
+      - replaced
+    TradeActivity:
       type: object
       additionalProperties: false
+      required:
+      - family
+      - account_id
+      - date
+      - at
+      - state
+      - conflict
+      - relationships
+      - reported_realized_pnl
+      - instrument_id
+      - listing_id
+      - instrument_terms
+      - trade_kind
+      - side
+      - position_effect
+      - quantity
+      - price
+      - quotation_basis
+      - settlement_date
+      - order
+      - charges
+      - gross_amount
+      - proceeds
+      - net_cash
+      - net_cash_with_billable
+      - accrued_interest
       properties:
+        family:
+          type: string
+          enum:
+          - trade
+        account_id: &id001
+          type: string
+        date: &id002
+          $ref: '#/components/schemas/CivilDate'
+        at: &id003
+          $ref: '#/components/schemas/NullableTimestamp'
+        state: &id004
+          $ref: '#/components/schemas/ActivityState'
+        conflict: &id005
+          type: boolean
+        relationships: &id006
+          type: array
+          items:
+            $ref: '#/components/schemas/Relationship'
+        reported_realized_pnl: &id007
+          $ref: '#/components/schemas/NullableRealizedPnL'
+        instrument_id:
+          type: string
+          minLength: 1
+        listing_id: &id008
+          type: string
+          nullable: true
+        instrument_terms: &id016
+          $ref: '#/components/schemas/InstrumentTerms'
+        trade_kind:
+          type: string
+          enum:
+          - execution
+          - stock-booking
+          - reported-trade
+          description: Exchange execution, stock booking, or reported-trade when the source does not establish
+            execution granularity.
+        side:
+          type: string
+          enum:
+          - buy
+          - sell
+        position_effect:
+          type: string
+          nullable: true
+          enum:
+          - opening
+          - closing
+          - mixed
+          - null
+        quantity: &id009
+          $ref: '#/components/schemas/Quantity'
+        price:
+          $ref: '#/components/schemas/Money'
+        quotation_basis:
+          $ref: '#/components/schemas/NullableQuotationBasis'
+        settlement_date: &id017
+          $ref: '#/components/schemas/NullableCivilDate'
+        order: &id010
+          $ref: '#/components/schemas/NullableReference'
+        charges: &id011
+          type: array
+          items:
+            $ref: '#/components/schemas/Charge'
+        gross_amount: &id012
+          $ref: '#/components/schemas/NullableMoney'
+        proceeds: &id013
+          $ref: '#/components/schemas/NullableMoney'
+        net_cash: &id014
+          $ref: '#/components/schemas/NullableMoney'
+        net_cash_with_billable: &id015
+          $ref: '#/components/schemas/NullableMoney'
+        accrued_interest:
+          $ref: '#/components/schemas/NullableMoney'
+    LifecycleActivity:
+      type: object
+      additionalProperties: false
+      required:
+      - family
+      - account_id
+      - date
+      - at
+      - state
+      - conflict
+      - relationships
+      - reported_realized_pnl
+      - instrument_id
+      - listing_id
+      - lifecycle_kind
+      - quantity
+      - order
+      - instrument_terms
+      properties:
+        family:
+          type: string
+          enum:
+          - lifecycle
+        account_id: *id001
+        date: *id002
+        at: *id003
+        state: *id004
+        conflict: *id005
+        relationships: *id006
+        reported_realized_pnl: *id007
+        instrument_id:
+          type: string
+          minLength: 1
+        listing_id: *id008
+        lifecycle_kind:
+          type: string
+          enum:
+          - assignment
+          - exercise
+          - expiration
+        quantity: *id009
+        order: *id010
+        instrument_terms:
+          $ref: '#/components/schemas/OptionTerms'
+    ConversionActivity:
+      type: object
+      additionalProperties: false
+      required:
+      - family
+      - account_id
+      - date
+      - at
+      - state
+      - conflict
+      - relationships
+      - reported_realized_pnl
+      - sent
+      - received
+      - rate_base
+      - rate
+      - order
+      - charges
+      - gross_amount
+      - proceeds
+      - net_cash
+      - net_cash_with_billable
+      properties:
+        family:
+          type: string
+          enum:
+          - conversion
+        account_id: *id001
+        date: *id002
+        at: *id003
+        state: *id004
+        conflict: *id005
+        relationships: *id006
+        reported_realized_pnl: *id007
+        sent:
+          $ref: '#/components/schemas/Amount'
+        received:
+          $ref: '#/components/schemas/Amount'
+        rate_base:
+          $ref: '#/components/schemas/NullableCurrencyCode'
+        rate:
+          $ref: '#/components/schemas/NullableMoney'
+        order: *id010
+        charges: *id011
+        gross_amount: *id012
+        proceeds: *id013
+        net_cash: *id014
+        net_cash_with_billable: *id015
+    SecurityTransferActivity:
+      type: object
+      additionalProperties: false
+      required:
+      - family
+      - account_id
+      - date
+      - at
+      - state
+      - conflict
+      - relationships
+      - reported_realized_pnl
+      - instrument_id
+      - listing_id
+      - instrument_terms
+      - quantity
+      - settlement_date
+      - delivering_broker
+      - direction
+      - method
+      - company
+      - counterparty_account
+      - counterparty_name
+      - report_date
+      - price
+      - position_value
+      - reported_cost
+      - reported_pnl
+      properties:
+        family:
+          type: string
+          enum:
+          - security-transfer
+        account_id: *id001
+        date: *id002
+        at: *id003
+        state: *id004
+        conflict: *id005
+        relationships: *id006
+        reported_realized_pnl: *id007
+        instrument_id:
+          type: string
+          minLength: 1
+        listing_id: *id008
+        instrument_terms: *id016
+        quantity: *id009
+        settlement_date: *id017
         delivering_broker:
           type: string
           nullable: true
         direction:
           type: string
-          enum: [in, out]
+          enum:
+          - in
+          - out
         method:
           type: string
           nullable: true
@@ -772,8 +1164,7 @@ components:
           type: string
           nullable: true
         report_date:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCivilDate'
         price:
           $ref: '#/components/schemas/NullableMoney'
         position_value:
@@ -782,17 +1173,64 @@ components:
           $ref: '#/components/schemas/NullableMoney'
         reported_pnl:
           $ref: '#/components/schemas/NullableMoney'
-      required: [delivering_broker, direction, method, company, counterparty_account, counterparty_name, report_date, price, position_value, reported_cost, reported_pnl]
-    Cash:
+    CashActivity:
       type: object
       additionalProperties: false
+      required:
+      - family
+      - account_id
+      - date
+      - at
+      - state
+      - conflict
+      - relationships
+      - reported_realized_pnl
+      - instrument_id
+      - listing_id
+      - settlement_date
+      - charges
+      - available_for_trading_date
+      - category
+      - amount
+      - reported_type
+      - description
+      - code
+      - report_date
+      - ex_date
+      - action
       properties:
-        available_for_trading_date:
+        family:
+          type: string
+          enum:
+          - cash
+        account_id: *id001
+        date: *id002
+        at: *id003
+        state: *id004
+        conflict: *id005
+        relationships: *id006
+        reported_realized_pnl: *id007
+        instrument_id:
           type: string
           nullable: true
+        listing_id: *id008
+        settlement_date: *id017
+        charges: *id011
+        available_for_trading_date:
+          $ref: '#/components/schemas/NullableCivilDate'
         category:
           type: string
-          enum: [funding, transfer, dividend, payment-in-lieu, interest, withholding, fee, tax, adjustment, other]
+          enum:
+          - funding
+          - transfer
+          - dividend
+          - payment-in-lieu
+          - interest
+          - withholding
+          - fee
+          - tax
+          - adjustment
+          - other
         amount:
           $ref: '#/components/schemas/Money'
         reported_type:
@@ -805,146 +1243,11 @@ components:
           type: string
           nullable: true
         report_date:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCivilDate'
         ex_date:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCivilDate'
         action:
           $ref: '#/components/schemas/NullableReference'
-      required: [available_for_trading_date, category, amount, reported_type, description, code, report_date, ex_date, action]
-    Activity:
-      type: object
-      additionalProperties: false
-      properties:
-        cash:
-          $ref: '#/components/schemas/Cash'
-        transfer:
-          $ref: '#/components/schemas/Transfer'
-        reported_realized_pnl:
-          $ref: '#/components/schemas/NullableRealizedPnL'
-        instrument_id:
-          type: string
-          nullable: true
-        listing_id:
-          type: string
-          nullable: true
-        at:
-          type: string
-          nullable: true
-        trade_kind:
-          type: string
-          nullable: true
-          description: Exchange execution, stock booking, or reported-trade when the source does not establish execution granularity.
-        side:
-          type: string
-          nullable: true
-        position_effect:
-          type: string
-          nullable: true
-        price_basis:
-          description: Price unit convention for supported instruments. Null for debt; no quotation basis is asserted.
-          type: string
-          nullable: true
-        settlement_date:
-          type: string
-          nullable: true
-        lifecycle_kind:
-          type: string
-          nullable: true
-        rate_base:
-          type: string
-          nullable: true
-        family:
-          type: string
-          enum:
-          - trade
-          - lifecycle
-          - conversion
-          - security-transfer
-          - cash
-        account_id:
-          type: string
-        state:
-          type: string
-          enum:
-          - accepted
-          - cancelled
-          - replaced
-        conflict:
-          type: boolean
-        date:
-          type: string
-        order:
-          $ref: '#/components/schemas/NullableReference'
-        relationships:
-          type: array
-          items:
-            $ref: '#/components/schemas/Relationship'
-        quantity:
-          $ref: '#/components/schemas/NullableQuantity'
-        charges:
-          type: array
-          items:
-            $ref: '#/components/schemas/Charge'
-        sent:
-          $ref: '#/components/schemas/NullableAmount'
-        received:
-          $ref: '#/components/schemas/NullableAmount'
-        option:
-          $ref: '#/components/schemas/NullableOption'
-        debt:
-          $ref: '#/components/schemas/NullableDebt'
-        price:
-          $ref: '#/components/schemas/NullableMoney'
-        rate:
-          $ref: '#/components/schemas/NullableMoney'
-        gross:
-          $ref: '#/components/schemas/NullableMoney'
-        proceeds:
-          $ref: '#/components/schemas/NullableMoney'
-        net:
-          $ref: '#/components/schemas/NullableMoney'
-        net_with_billable:
-          $ref: '#/components/schemas/NullableMoney'
-        accrued_interest:
-          $ref: '#/components/schemas/NullableMoney'
-      required:
-      - reported_realized_pnl
-      - instrument_id
-      - listing_id
-      - at
-      - trade_kind
-      - side
-      - position_effect
-      - price_basis
-      - settlement_date
-      - lifecycle_kind
-      - rate_base
-      - family
-      - account_id
-      - state
-      - conflict
-      - date
-      - order
-      - relationships
-      - quantity
-      - charges
-      - sent
-      - received
-      - option
-      - debt
-      - price
-      - rate
-      - gross
-      - proceeds
-      - net
-      - net_with_billable
-      - accrued_interest
-      description: Selected trade, option outcome, FX conversion, security transfer or cash posting. Civil dates stay YYYY-MM-DD;
-        at is nullable RFC3339 UTC with reported fractional precision including trailing zeros. Monetary
-        roles are reported, never recomputed. Trade option/debt terms describe that activity independently
-        of later reference refresh.
     Resource:
       oneOf:
       - $ref: '#/components/schemas/AccountResource'
@@ -1072,14 +1375,34 @@ components:
       - id
       - scope
       - action
+    FieldDetail:
+      type: object
+      additionalProperties: false
+      required: [path, reason, expectation, interpretation]
+      properties:
+        path:
+          type: string
+          pattern: '^/'
+          description: JSON Pointer relative to the activity body.
+        reason:
+          type: string
+          enum: [not_reported, reported_unavailable, unresolved, not_applicable, operator_withheld]
+        expectation:
+          type: string
+          nullable: true
+          enum: [expected, not_expected, null]
+        interpretation:
+          type: string
+          nullable: true
+          description: Registered source interpretation version that established the expectation.
     Explanation:
       type: object
       additionalProperties: false
       properties:
-        cash:
-          $ref: '#/components/schemas/Cash'
-        transfer:
-          $ref: '#/components/schemas/Transfer'
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldDetail'
         reported_realized_pnl:
           type: object
           additionalProperties: false
@@ -1088,10 +1411,15 @@ components:
               type: string
             selection:
               type: string
-              enum: [automatic, operator]
+              enum:
+              - automatic
+              - operator
             conflict:
               type: boolean
-          required: [rule, selection, conflict]
+          required:
+          - rule
+          - selection
+          - conflict
         identity:
           type: object
           nullable: true
@@ -1108,7 +1436,11 @@ components:
               nullable: true
             rule:
               type: string
-          required: [figi, allocation, reason, rule]
+          required:
+          - figi
+          - allocation
+          - reason
+          - rule
         id:
           type: string
         kind:
@@ -1129,6 +1461,7 @@ components:
           items:
             $ref: '#/components/schemas/Decision'
       required:
+      - fields
       - identity
       - id
       - kind
@@ -1137,9 +1470,8 @@ components:
       - conflict
       - corrections
       - decisions
-      description: Compact accepted selection, active operator choices and source correction/conflict
-        state for this exact resource revision. No raw reports, private evidence traversal, credentials
-        or configuration.
+      description: Compact accepted selection, active operator choices and source correction/conflict state for
+        this exact resource revision. No raw reports, private evidence traversal, credentials or configuration.
     Error:
       type: object
       additionalProperties: false
@@ -1157,113 +1489,20 @@ components:
       required:
       - code
       - message
-    NullableAmount:
-      type: object
-      nullable: true
-      additionalProperties: false
-      properties:
-        amount:
-          type: string
-          nullable: true
-        currency:
-          type: string
-      required:
-      - amount
-      - currency
-      description: Known currency; null amount is unknown and differs from zero.
-    NullableDebt:
-      type: object
-      nullable: true
-      additionalProperties: false
-      properties:
-        type:
-          type: string
-          nullable: true
-        currency:
-          type: string
-          nullable: true
-        maturity:
-          type: string
-          nullable: true
-        issue_date:
-          type: string
-          nullable: true
-        dated_date:
-          type: string
-          nullable: true
-        coupon:
-          type: string
-          nullable: true
-        payments_per_year:
-          type: integer
-          format: int64
-          nullable: true
-      required:
-      - type
-      - currency
-      - maturity
-      - issue_date
-      - dated_date
-      - coupon
-      - payments_per_year
     NullableMoney:
       type: object
-      nullable: true
       additionalProperties: false
       properties:
         amount:
-          type: string
+          $ref: '#/components/schemas/Decimal'
         currency:
-          type: string
+          $ref: '#/components/schemas/CurrencyCode'
       required:
       - amount
       - currency
-      description: Exact validated decimal text; trailing zeros are significant source precision. No binary
-        float conversion.
-    NullableOption:
-      type: object
+      description: Exact validated decimal text; trailing zeros are significant source precision. No binary float
+        conversion.
       nullable: true
-      additionalProperties: false
-      properties:
-        right:
-          type: string
-          nullable: true
-        expiry:
-          type: string
-          nullable: true
-        multiplier:
-          type: string
-          nullable: true
-        effective_from:
-          type: string
-          nullable: true
-        strike:
-          $ref: '#/components/schemas/NullableMoney'
-        deliverables:
-          type: array
-          items:
-            $ref: '#/components/schemas/Deliverable'
-      required:
-      - right
-      - expiry
-      - multiplier
-      - effective_from
-      - strike
-      - deliverables
-      description: Reported contract terms. Empty deliverables are unknown; a multiplier never implies
-        stock delivery.
-    NullableQuantity:
-      type: object
-      nullable: true
-      additionalProperties: false
-      properties:
-        value:
-          type: string
-        unit:
-          type: string
-      required:
-      - value
-      - unit
     NullableReference:
       type: object
       nullable: true
@@ -1310,25 +1549,33 @@ components:
       type: object
       nullable: true
       additionalProperties: false
-      description: Source-reported result for this activity, independent of corrected trade terms or reconstructed lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates and may be unknown. Reporting currency need not equal trade-price currency. These values are not period totals or tax calculations.
+      description: Source-reported result for this activity, independent of corrected trade terms or reconstructed
+        lots. Null means no linked result. Amount and allocated cost retain their own currencies and source dates
+        and may be unknown. Reporting currency need not equal trade-price currency. These values are not period
+        totals or tax calculations.
       properties:
         amount:
           $ref: '#/components/schemas/NullableMoney'
         cost_basis:
           $ref: '#/components/schemas/NullableMoney'
         report_date:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCivilDate'
         cost_basis_report_date:
-          type: string
-          nullable: true
+          $ref: '#/components/schemas/NullableCivilDate'
         conflict:
           type: boolean
         selection:
           type: string
-          enum: [automatic, operator]
-      required: [amount, cost_basis, report_date, cost_basis_report_date, conflict, selection]
-
+          enum:
+          - automatic
+          - operator
+      required:
+      - amount
+      - cost_basis
+      - report_date
+      - cost_basis_report_date
+      - conflict
+      - selection
   parameters:
     id:
       name: id

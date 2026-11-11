@@ -78,12 +78,12 @@ func occIdentifier(symbol string, terms source.OptionTerms) (source.Identifier, 
 		return source.Identifier{}, false
 	}
 
-	strike, err := financial.NewQuantity(symbol[13:18] + "." + symbol[18:])
+	strike, err := financial.ParseQuantity(symbol[13:18] + "." + symbol[18:])
 	if err != nil {
 		return source.Identifier{}, false
 	}
 
-	reported, err := financial.NewQuantity(f.Strike.Amount())
+	reported, err := financial.ParseQuantity(f.Strike.Amount())
 	if err != nil || !strike.Equal(reported) {
 		return source.Identifier{}, false
 	}
