@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,41 @@ func TestMovementPartialObservationsCollectivelyEstablishRequiredTerms(t *testin
 			after, _ := snapshotState(t.Context(), s)
 			if before.Version != after.Version {
 				t.Fatal("repeated partial changed publication")
+			}
+
+			fields := map[string]source.ActivityFieldName{
+				"/reported_type": source.FieldReportedType,
+				"/code":          source.FieldSourceCode,
+			}
+			if tc.name == "security-transfer" {
+				fields = map[string]source.ActivityFieldName{
+					"/delivering_broker":    source.FieldDeliveringBroker,
+					"/method":               source.FieldTransferMethod,
+					"/company":              source.FieldTransferCompany,
+					"/counterparty_account": source.FieldCounterpartyAccount,
+					"/counterparty_name":    source.FieldCounterpartyName,
+				}
+			}
+
+			rows, err := s.queries.Executions(t.Context())
+			if err != nil || len(rows) != 1 {
+				t.Fatal(rows, err)
+			}
+
+			id := rows[0].ID
+			unavailable := make([]source.ActivityField, 0, len(fields))
+			for path, name := range fields {
+				assertFieldReason(t, s, id, path, application.FieldNotReported)
+				unavailable = append(
+					unavailable,
+					partialField(t, source.ActivityFieldInput{Name: name, Unknown: true}),
+				)
+			}
+
+			processPartial(t, s, "unavailable-fields", partialObservation(t, subject, unavailable...))
+
+			for path := range fields {
+				assertFieldReason(t, s, id, path, application.FieldReportedUnavailable)
 			}
 		})
 	}
@@ -459,6 +495,46 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 				t.Fatal("activity Unknown search omitted the cash description", list.Matched, err)
 			}
 		}
+	}
+}
+
+func TestCashSearchDistinguishesUnknownAndInapplicableRealizedPnL(t *testing.T) {
+	s := coverageStore(t)
+	artifact := acquireRealized(t, s, movementReport("CashTransactions", cashRow))
+	acquireRealized(t, s, movementReport("CashTransactions", strings.Replace(cashRow,
+		`transactionID="cash1"`, `transactionID="cash2"`, 1)))
+
+	records, err := s.Records(t.Context(), artifact, ibkrflex.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i := slices.IndexFunc(records, func(record Record) bool { return record.Kind == "activity" })
+	if i < 0 {
+		t.Fatal("cash activity missing from normalized report")
+	}
+
+	subject := records[i].Observation.Fields()
+	processPartial(t, s, "unavailable-result", partialObservation(t, subject,
+		partialField(t, source.ActivityFieldInput{Name: source.FieldRealizedPnL, Unknown: true}),
+	))
+
+	query, err := application.NewListQuery(application.ListOptions{
+		Search:         "Unknown",
+		DisplayMatches: application.DisplayMatches{MissingValues: true},
+	}, application.ActivityScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.ActivityList(t.Context(), query)
+	if err != nil || list.Total != 2 || list.Matched != 1 || len(list.Items) != 1 {
+		t.Fatal(list, err)
+	}
+
+	result := list.Items[0].Resource.Activity.ReportedRealizedPnL
+	if result == nil || result.Amount != nil {
+		t.Fatal("search did not match the cash posting with an unknown amount", result)
 	}
 }
 
