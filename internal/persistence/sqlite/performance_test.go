@@ -420,53 +420,7 @@ func TestPerformanceRead(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(
-		t,
-		s,
-		"seed",
-		equityRow(
-			"U1",
-			"even",
-			"9007199254740993.0000000000001",
-		)+equityRow(
-			"U1",
-			"odd",
-			"9007199254740993.0000000000002",
-		),
-	)
-	// The two templates share identity metadata but retain exact, distinct prices.
-	// Direct SQL seeds the materialized read model only, outside all timings.
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	const copies = `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i+1<?), templates AS (SELECT id, row_number() OVER (ORDER BY id)-1 AS slot FROM executions)
- INSERT INTO executions(revision,kind,id,account_id,instrument_id,listing_id,accepted,status,review_reasons,selection_authority,rule)
- SELECT e.revision,e.kind,printf('performance-%08d',n.i),e.account_id,e.instrument_id,e.listing_id,e.accepted,e.status,e.review_reasons,e.selection_authority,e.rule FROM n JOIN templates t ON t.slot=n.i%2 JOIN executions e ON e.id=t.id`
-	if _, err = tx.ExecContext(ctx, copies, count-2); err != nil {
-		t.Fatal(err)
-	}
-
-	const resources = `WITH templates AS (SELECT p.*,row_number() OVER (ORDER BY p.id)-1 AS slot FROM published_resources p WHERE kind='activity'), copies AS (SELECT id,CAST(substr(id,13) AS INTEGER) AS i FROM executions WHERE id LIKE 'performance-%')
- INSERT INTO published_resources(kind,id,revision,snapshot,explanation)
- SELECT 'activity',copies.id,t.revision,CAST(json_set(CAST(t.snapshot AS TEXT),'$.id',copies.id) AS BLOB),t.explanation FROM copies JOIN templates t ON t.slot=copies.i%2`
-	if _, err = tx.ExecContext(ctx, resources); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = tx.ExecContext(
-		ctx,
-		`DELETE FROM publishing_dirty; UPDATE publishing SET version=version+1`,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
+	s := seedPerformanceRead(t, count)
 
 	measure := func(name string, f func()) {
 		t.Helper()
@@ -605,4 +559,59 @@ func TestPerformanceRead(t *testing.T) {
 
 		t.Logf("performance read=%s file=%s storage_bytes=%d", size, filepath.Base(file), storage)
 	}
+}
+
+func seedPerformanceRead(t *testing.T, count int) *Store {
+	t.Helper()
+
+	ctx := t.Context()
+	s := coverageStore(t)
+	coverageReport(
+		t,
+		s,
+		"seed",
+		equityRow(
+			"U1",
+			"even",
+			"9007199254740993.0000000000001",
+		)+equityRow(
+			"U1",
+			"odd",
+			"9007199254740993.0000000000002",
+		),
+	)
+	// The two templates share identity metadata but retain exact, distinct prices.
+	// Direct SQL seeds the materialized read model only, outside all timings.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	const copies = `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i+1<?), templates AS (SELECT id, row_number() OVER (ORDER BY id)-1 AS slot FROM executions)
+ INSERT INTO executions(revision,kind,id,account_id,instrument_id,listing_id,accepted,status,review_reasons,selection_authority,rule)
+ SELECT e.revision,e.kind,printf('performance-%08d',n.i),e.account_id,e.instrument_id,e.listing_id,e.accepted,e.status,e.review_reasons,e.selection_authority,e.rule FROM n JOIN templates t ON t.slot=n.i%2 JOIN executions e ON e.id=t.id`
+	if _, err = tx.ExecContext(ctx, copies, count-2); err != nil {
+		t.Fatal(err)
+	}
+
+	const resources = `WITH templates AS (SELECT p.*,row_number() OVER (ORDER BY p.id)-1 AS slot FROM published_resources p WHERE kind='activity'), copies AS (SELECT id,CAST(substr(id,13) AS INTEGER) AS i FROM executions WHERE id LIKE 'performance-%')
+ INSERT INTO published_resources(kind,id,revision,snapshot,explanation)
+ SELECT 'activity',copies.id,t.revision,CAST(json_set(CAST(t.snapshot AS TEXT),'$.id',copies.id) AS BLOB),t.explanation FROM copies JOIN templates t ON t.slot=copies.i%2`
+	if _, err = tx.ExecContext(ctx, resources); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = tx.ExecContext(
+		ctx,
+		`DELETE FROM publishing_dirty; UPDATE publishing SET version=version+1`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	return s
 }

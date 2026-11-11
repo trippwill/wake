@@ -6,7 +6,10 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -104,6 +107,35 @@ func (s *Store) Accounts(ctx context.Context) ([]application.Account, error) {
 	return accounts, nil
 }
 
+//go:embed admin_activity.sql
+var adminActivityTemplateSQL string
+
+//go:embed activity_search_fields.sql
+var activitySearchFieldsSQL string
+
+//go:embed activity_search_index.sql
+var activitySearchIndexTemplateSQL string
+
+var (
+	adminActivitySQL       = withActivitySearchFields(adminActivityTemplateSQL)
+	activitySearchIndexSQL = withActivitySearchFields(activitySearchIndexTemplateSQL)
+)
+
+func withActivitySearchFields(statement string) string {
+	_, fields, _ := strings.Cut(activitySearchFieldsSQL, "\n\n")
+	return strings.ReplaceAll(statement, "{{activity_search_fields}}", strings.TrimSpace(fields))
+}
+
+//go:embed admin_activity_date.sql
+var adminActivityDateSQL string
+
+const errActivityIndexIncomplete Error = "incomplete Activity index keys"
+
+var (
+	adminActivityDateAscSQL  = strings.ReplaceAll(adminActivityDateSQL, "{{direction}}", "ASC")
+	adminActivityDateDescSQL = strings.ReplaceAll(adminActivityDateSQL, "{{direction}}", "DESC")
+)
+
 func (s *Store) ActivityList(
 	ctx context.Context,
 	query application.ListQuery,
@@ -113,92 +145,93 @@ func (s *Store) ActivityList(
 		return application.ActivityList{}, application.ErrInvalid
 	}
 
+	if options.Sort == "date" && options.Search == "" && options.AccountID == "" && options.State == "" {
+		statement := adminActivityDateDescSQL
+		if options.Direction == "asc" {
+			statement = adminActivityDateAscSQL
+		}
+
+		page, err := s.readActivityPage(ctx, query, statement, options.Kind, options.PageSize, query.Offset())
+		if !errors.Is(err, errActivityIndexIncomplete) {
+			return page, err
+		}
+	}
+
 	states, references, kinds := searchMatches(options)
 	presentation, _ := json.Marshal(options.ActivityText)
 
-	return readModel(ctx, s, func(q *sqlc.Queries) (application.ActivityList, error) {
-		out := application.ActivityList{}
+	return s.readActivityPage(
+		ctx, query, adminActivitySQL,
+		options.AccountID, options.Kind, options.State, options.Search, string(presentation),
+		options.DisplayMatches.MissingValues, options.DisplayMatches.InapplicableValues,
+		kinds, states, references, options.Sort, options.Direction, options.PageSize, query.Offset(),
+	)
+}
 
-		counts, err := q.AdminActivityCount(
-			ctx,
-			sqlc.AdminActivityCountParams{
-				AccountFilter:      options.AccountID,
-				KindFilter:         options.Kind,
-				MissingValues:      options.DisplayMatches.MissingValues,
-				InapplicableValues: options.DisplayMatches.InapplicableValues,
-				StateFilter:        options.State,
-				Search:             options.Search,
-				StateMatches:       states,
-				KindMatches:        kinds,
-				ActivityText:       string(presentation),
-				ReferenceMatches:   references,
-			},
+func (s *Store) readActivityPage(
+	ctx context.Context, query application.ListQuery, statement string, args ...any,
+) (application.ActivityList, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if statement == adminActivitySQL {
+		rows, err = s.activityQuery.QueryContext(ctx, args...)
+	} else {
+		rows, err = s.activityDB.QueryContext(ctx, statement, args...)
+	}
+
+	if err != nil {
+		return application.ActivityList{}, err
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var (
+		total   sql.NullInt64
+		matched int64
+	)
+
+	out := application.ActivityList{Items: []application.ActivityListItem{}}
+	for rows.Next() {
+		var (
+			item     application.ActivityListItem
+			snapshot []byte
+			stateRow sqlc.Execution
 		)
+
+		if err = rows.Scan(
+			&total, &matched, &snapshot, &stateRow.Status, &stateRow.ReviewReasons,
+			&stateRow.SelectionAuthority, &item.InstrumentName, &item.InstrumentTicker,
+			&item.Reference.Status, &item.Reference.Authority, &item.AccountName,
+		); err != nil {
+			return out, err
+		}
+
+		if !total.Valid {
+			return out, errActivityIndexIncomplete
+		}
+
+		if snapshot == nil {
+			continue
+		}
+
+		item.Resource, err = decodeAcceptedResource(snapshot, "activity")
 		if err != nil {
 			return out, err
 		}
 
-		out.PageInfo = pageInfo(query, counts.Total, counts.Matched)
-
-		rows, err := q.AdminActivityRows(
-			ctx,
-			sqlc.AdminActivityRowsParams{
-				AccountFilter:      options.AccountID,
-				KindFilter:         options.Kind,
-				MissingValues:      options.DisplayMatches.MissingValues,
-				InapplicableValues: options.DisplayMatches.InapplicableValues,
-				StateFilter:        options.State,
-				Search:             options.Search,
-				StateMatches:       states,
-				KindMatches:        kinds,
-				ActivityText:       string(presentation),
-				ReferenceMatches:   references,
-				SortField:          options.Sort,
-				Direction:          options.Direction,
-				PageSize:           int64(options.PageSize),
-				PageOffset:         query.Offset(),
-			},
-		)
+		item.State, err = activityState(stateRow)
 		if err != nil {
 			return out, err
 		}
 
-		out.Items = make([]application.ActivityListItem, 0, len(rows))
-		for _, row := range rows {
-			resource, e := decodeAcceptedResource(row.Snapshot, "activity")
-			if e != nil {
-				return out, e
-			}
+		out.Items = append(out.Items, item)
+	}
 
-			state, e := activityState(
-				sqlc.Execution{
-					Status:             row.Status,
-					ReviewReasons:      row.ReviewReasons,
-					SelectionAuthority: row.SelectionAuthority,
-				},
-			)
-			if e != nil {
-				return out, e
-			}
+	out.PageInfo = pageInfo(query, total.Int64, matched)
 
-			out.Items = append(
-				out.Items,
-				application.ActivityListItem{
-					Resource:         resource,
-					State:            state,
-					InstrumentName:   row.InstrumentName,
-					InstrumentTicker: row.InstrumentTicker,
-					AccountName:      row.AccountName,
-					Reference: application.ReferenceMatch{
-						Status:    application.ReferenceStatus(row.ReferenceStatus),
-						Authority: application.SelectionAuthority(row.ReferenceAuthority),
-					},
-				},
-			)
-		}
-
-		return out, nil
-	})
+	return out, rows.Err()
 }
 
 func (s *Store) InstrumentList(

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
 	)
 
 	query, err := application.NewListQuery(
-		application.ListOptions{Sort: "price", Direction: "asc", PageSize: 2},
+		application.ListOptions{Search: "USD", Kind: "trade", Sort: "price", Direction: "asc", PageSize: 2},
 		application.ActivityScope,
 	)
 	if err != nil {
@@ -100,6 +101,13 @@ func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
 func TestDecimalCollationIsExactAndTransitiveIncludingInvalidText(t *testing.T) {
 	values := []string{
 		"-1000",
+		"-.0001e-9",
+		"-0.0000",
+		"+000.00",
+		"2e+0",
+		"1e128",
+		strings.Repeat("9", 256),
+		strings.Repeat("9", 257),
 		"-0.0000000000001",
 		"0",
 		"0.0000000000001",
@@ -128,6 +136,10 @@ func TestDecimalCollationIsExactAndTransitiveIncludingInvalidText(t *testing.T) 
 	}
 
 	if compareDecimalText("2", "2.00") != 0 ||
+		compareDecimalText("2", "+0002.00e0") != 0 ||
+		compareDecimalText("-.0001e-9", "-0.0000000000001") != 0 ||
+		compareDecimalText("-0.0000", "0") != 0 ||
+		compareDecimalText(strings.Repeat("9", 256), strings.Repeat("9", 257)) >= 0 ||
 		compareDecimalText("9007199254740993.0000000000001", "9007199254740993.0000000000002") >= 0 {
 		t.Fatal("numeric precision or equality lost")
 	}
@@ -164,6 +176,127 @@ func TestStatusAndPrerequisitesDoNotReadFinancialSnapshots(t *testing.T) {
 	}
 }
 
+func TestActivitySearchReadsCommittedSnapshotDuringWrite(t *testing.T) {
+	ctx := t.Context()
+	s := coverageStore(t)
+	coverageReport(t, s, "read-while-writing", equityRow("U1", "read-fill", "10.0000"))
+
+	query, err := application.NewListQuery(
+		application.ListOptions{Search: "10.0000", Kind: "trade", Sort: "price"}, application.ActivityScope,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := s.ActivityList(ctx, query)
+	if err != nil || before.Matched != 1 {
+		t.Fatal(before, err)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err = tx.ExecContext(ctx, `
+UPDATE published_resources
+SET snapshot=CAST(json_set(CAST(snapshot AS TEXT),'$.activity.price.amount','11.0000') AS BLOB)
+WHERE kind='activity'`); err != nil {
+		t.Fatal(err)
+	}
+
+	read, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	during, err := s.ActivityList(read, query)
+	if err != nil || !reflect.DeepEqual(before, during) {
+		t.Fatal("Activity search did not see the committed snapshot", during, err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := s.ActivityList(ctx, query)
+	if err != nil || after.Total != 1 || after.Matched != 0 || len(after.Items) != 0 {
+		t.Fatal("Activity search did not see the committed price update", after, err)
+	}
+}
+
+func TestActivityDateIndexesPreserveRetainedPages(t *testing.T) {
+	ctx := t.Context()
+	s := coverageStore(t)
+	coverageReport(t, s, "date-pages",
+		equityRow("U1", "equal-a", "10.00")+equityRow("U1", "equal-b", "10.000")+
+			strings.ReplaceAll(equityRow("U1", "next-day", "11.0"), "2026-10-20", "2026-10-21"))
+	acquireRealized(t, s, movementReport("CashTransactions", cashRow))
+
+	// Capture the ordinary query for both directions, date ties, filtered
+	// counts, empty families and pages past the end.
+	type expectedPage struct {
+		query application.ListQuery
+		page  application.ActivityList
+	}
+
+	var expected []expectedPage
+	for _, direction := range []string{"asc", "desc"} {
+		for _, kind := range []string{"", "trade", "cash", "conversion"} {
+			for page := 1; page <= 5; page++ {
+				query, err := application.NewListQuery(application.ListOptions{
+					Kind: kind, Sort: "date", Direction: direction, Page: page, PageSize: 1,
+				}, application.ActivityScope)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				want, err := s.readActivityPage(
+					ctx, query, adminActivitySQL, "", kind, "", "", "{}",
+					false, false, "[]", "[]", "[]", "date", direction, 1, query.Offset(),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				expected = append(expected, expectedPage{query, want})
+			}
+		}
+	}
+
+	profile := testProfile(s.owners[0].Name())
+	if _, err := s.db.ExecContext(
+		ctx,
+		"DROP INDEX activity_publication_date; DROP INDEX activity_publication_family_date",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = reopened.Close() })
+
+	for _, want := range expected {
+		got, err := reopened.ActivityList(ctx, want.query)
+		if err != nil || !reflect.DeepEqual(got, want.page) {
+			t.Fatalf(
+				"options %+v: indexed page %+v, ordinary page %+v, error %v",
+				want.query.Options(),
+				got,
+				want.page,
+				err,
+			)
+		}
+	}
+}
+
 func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 	s := coverageStore(t)
 	ctx := t.Context()
@@ -192,6 +325,14 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 	second, err := s.ActivityList(ctx, query)
 	if err != nil || len(second.Items) != 3 {
 		t.Fatal(second, err)
+	}
+
+	options.Page = 3
+	query, _ = application.NewListQuery(options, application.ActivityScope)
+
+	beyond, err := s.ActivityList(ctx, query)
+	if err != nil || len(beyond.Items) != 0 || beyond.Total != 53 || beyond.Matched != 53 {
+		t.Fatal("page past the last match lost counts", beyond, err)
 	}
 
 	prior := ""

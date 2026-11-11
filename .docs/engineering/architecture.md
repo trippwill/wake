@@ -213,9 +213,13 @@ review, accepted activity/instrument lists and reported positions have separate 
 Lists filter and order in SQLite, default to 50 rows per page and retain stable
 identity tie-breakers. Exact decimal ordering uses the registered numeric collation;
 unknown values sort last independently of direction and currency/unit groups remain
-explicit. Each paged read model is materialized in one consistent read transaction,
-released before rendering or client I/O. Presentation owns label wording and may
-supply structured label matches and shared activity text fragments. Search composes
+explicit. Activity uses derived indexes on published dates and searchable fields,
+with family keys for Kind selection. Opening a supported warehouse provisions
+these indexes after its integrity checks. Activity and Positions use SQLite's
+binary JSON for field extraction where needed. Activity loads the original
+snapshots for the page. Each paged read model uses one consistent database
+snapshot, released before rendering or client I/O. Presentation owns label wording
+and may supply structured label matches and shared activity text fragments. Search composes
 complete labels from exact values and this presentation wording before pagination;
 SQL does not infer state from those words.
 Reference ordering includes selection authority before the stable identity tie.
@@ -360,7 +364,9 @@ decisions, checkpoints, coverage, processing receipts, pacing and execution stat
 Reference cache entries remain disposable; their supporting evidence is retained.
 
 One attached SQLite writer uses DELETE rollback journals and EXTRA synchronization
-for cross-store atomicity. Warehouse references use ordinary foreign keys;
+for cross-store atomicity. Activity has a dedicated read-only warehouse
+connection, so it can read committed snapshots during ingestion while SQLite
+coordinates access at commit. Warehouse references use ordinary foreign keys;
 relationships to access configuration are checked in the shared transaction.
 Each file has an explicit development format and independent identity. The access
 store has no reverse binding to a warehouse. Ownership, format and association
