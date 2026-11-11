@@ -46,11 +46,17 @@ func (p Profile) paths() [2]string {
 //go:embed schema.sql
 var schemaSQL string
 
+//go:embed activity_date_indexes.sql
+var activityDateIndexesSQL string
+
 //go:embed connections_schema.sql
 var connectionsSQL string
 
 //go:embed connection.sql
 var connectionSQL string
+
+//go:embed activity_read_connection.sql
+var activityReadConnectionSQL string
 
 //go:embed profile.sql
 var profileSQL string
@@ -71,6 +77,8 @@ func profileStatement(name, schema string) string {
 
 type Store struct {
 	db                     *sql.DB
+	activityDB             *sql.DB
+	activityQuery          *sql.Stmt
 	queries                *sqlc.Queries
 	owners                 [2]*os.File
 	logger                 *slog.Logger
@@ -300,6 +308,19 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 		return nil, err
 	}
 
+	s.activityDB = sql.OpenDB(&connector{
+		paths: [2]string{paths[0]}, owners: [2]*os.File{s.owners[0]}, activityRead: true,
+	})
+	s.activityDB.SetMaxOpenConns(1)
+	s.activityDB.SetMaxIdleConns(1)
+
+	var err error
+
+	s.activityQuery, err = s.activityDB.PrepareContext(ctx, adminActivitySQL)
+	if err != nil {
+		return nil, err
+	}
+
 	logger.InfoContext(
 		ctx,
 		"storage profile opened",
@@ -333,8 +354,16 @@ func storageCode(err error) string {
 
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
+		if s.activityQuery != nil {
+			s.closeError = s.activityQuery.Close()
+		}
+
+		if s.activityDB != nil {
+			s.closeError = errors.Join(s.closeError, s.activityDB.Close())
+		}
+
 		if s.db != nil {
-			s.closeError = s.db.Close()
+			s.closeError = errors.Join(s.closeError, s.db.Close())
 		}
 
 		for i := len(s.owners) - 1; i >= 0; i-- {
@@ -483,6 +512,14 @@ func (s *Store) initialize(
 		}
 	}
 
+	if _, err = tx.ExecContext(ctx, activityDateIndexesSQL); err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, activitySearchIndexSQL); err != nil {
+		return err
+	}
+
 	if err = s.commit(ctx, tx); err != nil {
 		return err
 	}
@@ -548,9 +585,10 @@ func (s *Store) initialize(
 // Every physical writer connection attaches the same owned files and establishes
 // rollback-journal safety before it can participate in a cross-store transaction.
 type connector struct {
-	paths  [2]string
-	owners [2]*os.File
-	probe  bool
+	paths        [2]string
+	owners       [2]*os.File
+	probe        bool
+	activityRead bool
 }
 
 func (c *connector) Driver() driver.Driver { return sqliteDriver }
@@ -564,8 +602,11 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 
 	query := "mode=rw&_txlock=immediate"
-	if c.probe {
+	switch {
+	case c.probe:
 		query = "mode=ro&immutable=1"
+	case c.activityRead:
+		query = "mode=ro"
 	}
 
 	connection, err := c.Driver().Open((&url.URL{Scheme: "file", Path: c.paths[0], RawQuery: query}).String())
@@ -582,6 +623,14 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	fail := func(err error) (driver.Conn, error) { _ = connection.Close(); return nil, err }
 
 	if c.probe {
+		return connection, nil
+	}
+
+	if c.activityRead {
+		if _, err = executor.ExecContext(ctx, activityReadConnectionSQL, nil); err != nil {
+			return fail(err)
+		}
+
 		return connection, nil
 	}
 

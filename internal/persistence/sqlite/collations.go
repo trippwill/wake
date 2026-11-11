@@ -4,9 +4,9 @@
 package persistence
 
 import (
+	"cmp"
 	"database/sql"
 	"database/sql/driver"
-	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +54,20 @@ func registerCollations() error {
 		if collationError != nil {
 			return
 		}
+
+		collationError = modernsqlite.RegisterDeterministicScalarFunction("wake_fold", 1,
+			func(_ *modernsqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+				value, ok := args[0].(string)
+				if !ok {
+					return nil, nil
+				}
+
+				return strings.ToLower(value), nil
+			})
+		if collationError != nil {
+			return
+		}
+
 		// Collations belong to the registered driver instance. A zero Driver has none.
 		// sql.Open is lazy: obtaining its driver opens no connection or filesystem path.
 		pool, err := sql.Open("sqlite", "")
@@ -76,6 +90,80 @@ func compareDecimalText(left, right string) int {
 		return 0
 	}
 
+	a, l, leftOK := decimalMagnitude(left)
+	b, r, rightOK := decimalMagnitude(right)
+	if !leftOK || !rightOK {
+		return compareUnnormalizedDecimals(left, right)
+	}
+
+	return compareMagnitudes(a, l, b, r)
+}
+
+type decimalOrder struct {
+	integerDigits int
+	negative      bool
+}
+
+// decimalMagnitude recognizes the plain form emitted by the financial parser.
+// Other forms are handled by the financial parser.
+func decimalMagnitude(text string) (string, decimalOrder, bool) {
+	if len(text) == 0 || len(text) > 256 {
+		return "", decimalOrder{}, false
+	}
+
+	magnitude := strings.TrimPrefix(text, "-")
+
+	negative := len(magnitude) != len(text)
+	point := len(magnitude)
+	nonzero := false
+	for i := range len(magnitude) {
+		digit := magnitude[i]
+		if digit == '.' && point == len(magnitude) && i > 0 && i+1 < len(magnitude) {
+			point = i
+
+			continue
+		}
+
+		if digit < '0' || digit > '9' {
+			return "", decimalOrder{}, false
+		}
+
+		nonzero = nonzero || digit != '0'
+	}
+
+	if magnitude == "" || (point > 1 && magnitude[0] == '0') || (negative && !nonzero) {
+		return "", decimalOrder{}, false
+	}
+
+	if point < len(magnitude) {
+		magnitude = strings.TrimSuffix(strings.TrimRight(magnitude, "0"), ".")
+	}
+
+	return magnitude, decimalOrder{integerDigits: point, negative: negative}, true
+}
+
+func compareMagnitudes(left string, l decimalOrder, right string, r decimalOrder) int {
+	if l.negative != r.negative {
+		if l.negative {
+			return -1
+		}
+
+		return 1
+	}
+
+	order := cmp.Compare(l.integerDigits, r.integerDigits)
+	if order == 0 {
+		order = strings.Compare(left, right)
+	}
+
+	if l.negative {
+		return -order
+	}
+
+	return order
+}
+
+func compareUnnormalizedDecimals(left, right string) int {
 	l, le := financial.NewQuantity(left)
 	r, re := financial.NewQuantity(right)
 	if le != nil && re != nil {
@@ -90,10 +178,10 @@ func compareDecimalText(left, right string) int {
 		return -1
 	}
 
-	a, _ := new(big.Rat).SetString(l.Value())
-	b, _ := new(big.Rat).SetString(r.Value())
+	a, ao, _ := decimalMagnitude(l.Value())
+	b, bo, _ := decimalMagnitude(r.Value())
 
-	return a.Cmp(b)
+	return compareMagnitudes(a, ao, b, bo)
 }
 
 // RFC3339 text can vary in fractional precision and offset. Compare instants

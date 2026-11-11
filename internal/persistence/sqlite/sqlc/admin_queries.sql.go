@@ -37,170 +37,6 @@ func (q *Queries) AdminAccessSources(ctx context.Context) ([]Connection, error) 
 	return items, nil
 }
 
-const adminActivityCount = `-- name: AdminActivityCount :one
-
-WITH display_activity AS (SELECT a.id, a.snapshot, a.kind, a.status, a.review_reasons, a.selection_authority, a.instrument_name, a.reference_status, a.reference_authority, a.event_date, a.quantity, a.quantity_unit, a.price, a.price_unit, a.realized, a.realized_currency, a.label_sort, a.search_text, CAST(coalesce((SELECT i.ticker FROM instruments i WHERE i.id=json_extract(a.snapshot,'$.activity.instrument_id')),'') AS TEXT) AS instrument_ticker, e.account_id, accounts.name AS account_name FROM admin_activity a JOIN executions e ON e.id=a.id JOIN accounts ON accounts.id=e.account_id)
-SELECT (SELECT count(*) FROM admin_activity) AS total,count(*) AS matched FROM display_activity WHERE (CAST(?1 AS TEXT)='' OR account_id=?1) AND (?2='' OR kind=?2)
- AND (?3='' OR ?3='review' AND review_reasons<>0 OR status=?3)
- AND (?4='' OR wake_contains(search_text,?4)=1 OR wake_contains(label_sort,?4)=1 OR wake_contains(coalesce(json_extract(snapshot,'$.activity.transfer.direction'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.method'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.price.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.price.currency'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.category'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.description'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.amount.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.amount.currency'),''),?4)=1
- OR kind='security-transfer' AND json_extract(?5,'$.transfer_prefix')<>'' AND wake_contains(json_extract(?5,'$.transfer_prefix') || coalesce(json_extract(snapshot,'$.activity.transfer.direction'),'') || json_extract(?5,'$.movement_separator') || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),json_extract(?5,'$.unknown')),?4)=1
- OR kind='cash' AND json_extract(?5,'$.movement_separator')<>'' AND wake_contains(replace(json_extract(snapshot,'$.activity.cash.category'),'-',' ') || json_extract(?5,'$.movement_separator') || coalesce(nullif(json_extract(snapshot,'$.activity.cash.description'),''),json_extract(?5,'$.unknown')),?4)=1
- OR ?6=1 AND (kind<>'cash' AND realized IS NULL OR kind='cash' AND coalesce(json_extract(snapshot,'$.activity.cash.description'),'')='' OR (kind NOT IN ('conversion','cash') AND instrument_name='') OR kind='trade' AND (quantity IS NULL OR price IS NULL) OR kind='conversion' AND (price IS NULL OR json_extract(snapshot,'$.activity.sent.amount') IS NULL OR json_extract(snapshot,'$.activity.received.amount') IS NULL OR coalesce(json_extract(snapshot,'$.activity.sent.currency'),'')='' OR coalesce(json_extract(snapshot,'$.activity.received.currency'),'')='' OR json_extract(snapshot,'$.activity.rate_base') IS NULL))
- OR ?7=1
- OR kind IN ('trade','lifecycle') AND json_extract(?5,'$.unknown')<>'' AND wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.side'),json_extract(json_extract(snapshot,'$.activity'),'$.lifecycle_kind')) || CASE WHEN kind='lifecycle' THEN json_extract(?5,'$.lifecycle_separator') ELSE ' ' END || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),json_extract(?5,'$.unknown')),?4)=1
- OR kind='conversion' AND json_extract(?5,'$.pair_separator')<>'' AND (wake_contains(json_extract(?5,'$.conversion_prefix') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?5,'$.unknown')) || json_extract(?5,'$.pair_separator') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?5,'$.unknown')),?4)=1 OR wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.sent.amount'),json_extract(?5,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?5,'$.unknown')) || ' ' || json_extract(?5,'$.sent') || json_extract(?5,'$.amount_separator') || coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.received.amount'),json_extract(?5,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?5,'$.unknown')) || ' ' || json_extract(?5,'$.received'),?4)=1)
- OR EXISTS(SELECT 1 FROM json_each(?8) match WHERE match.value=display_activity.kind)
- OR EXISTS(SELECT 1 FROM json_each(?9) match WHERE json_extract(match.value,'$.lifecycle')=status AND json_extract(match.value,'$.review')=review_reasons AND json_extract(match.value,'$.authority')=selection_authority)
- OR EXISTS(SELECT 1 FROM json_each(?10) match WHERE json_extract(match.value,'$.status')=reference_status AND json_extract(match.value,'$.authority')=reference_authority))
-`
-
-type AdminActivityCountParams struct {
-	AccountFilter      string
-	KindFilter         interface{}
-	StateFilter        interface{}
-	Search             interface{}
-	ActivityText       interface{}
-	MissingValues      interface{}
-	InapplicableValues interface{}
-	KindMatches        interface{}
-	StateMatches       interface{}
-	ReferenceMatches   interface{}
-}
-
-type AdminActivityCountRow struct {
-	Total   int64
-	Matched int64
-}
-
-// SPDX-FileCopyrightText: 2026 trippwill
-// SPDX-License-Identifier: MPL-2.0
-func (q *Queries) AdminActivityCount(ctx context.Context, arg AdminActivityCountParams) (AdminActivityCountRow, error) {
-	row := q.db.QueryRowContext(ctx, adminActivityCount,
-		arg.AccountFilter,
-		arg.KindFilter,
-		arg.StateFilter,
-		arg.Search,
-		arg.ActivityText,
-		arg.MissingValues,
-		arg.InapplicableValues,
-		arg.KindMatches,
-		arg.StateMatches,
-		arg.ReferenceMatches,
-	)
-	var i AdminActivityCountRow
-	err := row.Scan(&i.Total, &i.Matched)
-	return i, err
-}
-
-const adminActivityRows = `-- name: AdminActivityRows :many
-WITH display_activity AS (SELECT a.id, a.snapshot, a.kind, a.status, a.review_reasons, a.selection_authority, a.instrument_name, a.reference_status, a.reference_authority, a.event_date, a.quantity, a.quantity_unit, a.price, a.price_unit, a.realized, a.realized_currency, a.label_sort, a.search_text, CAST(coalesce((SELECT i.ticker FROM instruments i WHERE i.id=json_extract(a.snapshot,'$.activity.instrument_id')),'') AS TEXT) AS instrument_ticker, e.account_id, accounts.name AS account_name FROM admin_activity a JOIN executions e ON e.id=a.id JOIN accounts ON accounts.id=e.account_id), ordering AS (SELECT CAST(?13 AS TEXT) AS sort_field,CAST(?14 AS TEXT) AS direction,CAST(?5 AS TEXT) AS activity_text)
-SELECT snapshot,status,review_reasons,selection_authority,instrument_name,instrument_ticker,reference_status,reference_authority,account_name FROM display_activity CROSS JOIN ordering WHERE (CAST(?1 AS TEXT)='' OR account_id=?1) AND (?2='' OR kind=?2)
- AND (?3='' OR ?3='review' AND review_reasons<>0 OR status=?3)
- AND (?4='' OR wake_contains(search_text,?4)=1 OR wake_contains(label_sort,?4)=1 OR wake_contains(coalesce(json_extract(snapshot,'$.activity.transfer.direction'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.method'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.price.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.transfer.price.currency'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.category'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.description'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.amount.amount'),'') || ' ' || coalesce(json_extract(snapshot,'$.activity.cash.amount.currency'),''),?4)=1
- OR kind='security-transfer' AND json_extract(?5,'$.transfer_prefix')<>'' AND wake_contains(json_extract(?5,'$.transfer_prefix') || coalesce(json_extract(snapshot,'$.activity.transfer.direction'),'') || json_extract(?5,'$.movement_separator') || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),json_extract(?5,'$.unknown')),?4)=1
- OR kind='cash' AND json_extract(?5,'$.movement_separator')<>'' AND wake_contains(replace(json_extract(snapshot,'$.activity.cash.category'),'-',' ') || json_extract(?5,'$.movement_separator') || coalesce(nullif(json_extract(snapshot,'$.activity.cash.description'),''),json_extract(?5,'$.unknown')),?4)=1
- OR ?6=1 AND (kind<>'cash' AND realized IS NULL OR kind='cash' AND coalesce(json_extract(snapshot,'$.activity.cash.description'),'')='' OR (kind NOT IN ('conversion','cash') AND instrument_name='') OR kind='trade' AND (quantity IS NULL OR price IS NULL) OR kind='conversion' AND (price IS NULL OR json_extract(snapshot,'$.activity.sent.amount') IS NULL OR json_extract(snapshot,'$.activity.received.amount') IS NULL OR coalesce(json_extract(snapshot,'$.activity.sent.currency'),'')='' OR coalesce(json_extract(snapshot,'$.activity.received.currency'),'')='' OR json_extract(snapshot,'$.activity.rate_base') IS NULL))
- OR ?7=1
- OR kind IN ('trade','lifecycle') AND json_extract(?5,'$.unknown')<>'' AND wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.side'),json_extract(json_extract(snapshot,'$.activity'),'$.lifecycle_kind')) || CASE WHEN kind='lifecycle' THEN json_extract(?5,'$.lifecycle_separator') ELSE ' ' END || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),json_extract(?5,'$.unknown')),?4)=1
- OR kind='conversion' AND json_extract(?5,'$.pair_separator')<>'' AND (wake_contains(json_extract(?5,'$.conversion_prefix') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?5,'$.unknown')) || json_extract(?5,'$.pair_separator') || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?5,'$.unknown')),?4)=1 OR wake_contains(coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.sent.amount'),json_extract(?5,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.sent.currency'),''),json_extract(?5,'$.unknown')) || ' ' || json_extract(?5,'$.sent') || json_extract(?5,'$.amount_separator') || coalesce(json_extract(json_extract(snapshot,'$.activity'),'$.received.amount'),json_extract(?5,'$.unknown')) || ' ' || coalesce(nullif(json_extract(json_extract(snapshot,'$.activity'),'$.received.currency'),''),json_extract(?5,'$.unknown')) || ' ' || json_extract(?5,'$.received'),?4)=1)
- OR EXISTS(SELECT 1 FROM json_each(?8) match WHERE match.value=display_activity.kind)
- OR EXISTS(SELECT 1 FROM json_each(?9) match WHERE json_extract(match.value,'$.lifecycle')=status AND json_extract(match.value,'$.review')=review_reasons AND json_extract(match.value,'$.authority')=selection_authority)
- OR EXISTS(SELECT 1 FROM json_each(?10) match WHERE json_extract(match.value,'$.status')=reference_status AND json_extract(match.value,'$.authority')=reference_authority))
- ORDER BY
- CASE ordering.sort_field WHEN 'quantity' THEN quantity IS NULL WHEN 'price' THEN coalesce(price,json_extract(snapshot,'$.activity.transfer.price.amount')) IS NULL WHEN 'amount' THEN json_extract(snapshot,'$.activity.cash.amount.amount') IS NULL WHEN 'realized' THEN realized IS NULL ELSE 0 END ASC,
- CASE ordering.sort_field WHEN 'quantity' THEN quantity_unit WHEN 'price' THEN coalesce(nullif(price_unit,''),json_extract(snapshot,'$.activity.transfer.price.currency'),'') WHEN 'amount' THEN json_extract(snapshot,'$.activity.cash.amount.currency') WHEN 'realized' THEN realized_currency ELSE '' END ASC,
- CASE WHEN ordering.sort_field='quantity' AND ordering.direction='asc' THEN quantity END COLLATE wake_decimal ASC,
- CASE WHEN ordering.sort_field='quantity' AND ordering.direction='desc' THEN quantity END COLLATE wake_decimal DESC,
- CASE WHEN ordering.sort_field='price' AND ordering.direction='asc' THEN coalesce(price,json_extract(snapshot,'$.activity.transfer.price.amount')) END COLLATE wake_decimal ASC,
- CASE WHEN ordering.sort_field='price' AND ordering.direction='desc' THEN coalesce(price,json_extract(snapshot,'$.activity.transfer.price.amount')) END COLLATE wake_decimal DESC,
- CASE WHEN ordering.sort_field='amount' AND ordering.direction='asc' THEN json_extract(snapshot,'$.activity.cash.amount.amount') END COLLATE wake_decimal ASC,
- CASE WHEN ordering.sort_field='amount' AND ordering.direction='desc' THEN json_extract(snapshot,'$.activity.cash.amount.amount') END COLLATE wake_decimal DESC,
- CASE WHEN ordering.sort_field='realized' AND ordering.direction='asc' THEN realized END COLLATE wake_decimal ASC,
- CASE WHEN ordering.sort_field='realized' AND ordering.direction='desc' THEN realized END COLLATE wake_decimal DESC,
- CASE WHEN ordering.direction='asc' THEN CASE ordering.sort_field WHEN 'date' THEN event_date WHEN 'label' THEN lower(CASE WHEN kind='cash' THEN replace(json_extract(snapshot,'$.activity.cash.category'),'-',' ') || coalesce(nullif(json_extract(ordering.activity_text,'$.movement_separator'),''),char(32,183,32)) || coalesce(nullif(json_extract(snapshot,'$.activity.cash.description'),''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') WHEN kind='security-transfer' THEN coalesce(nullif(json_extract(ordering.activity_text,'$.transfer_prefix'),''),'Transfer ') || json_extract(snapshot,'$.activity.transfer.direction') || coalesce(nullif(json_extract(ordering.activity_text,'$.movement_separator'),''),char(32,183,32)) || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') WHEN kind IN ('trade','lifecycle') THEN coalesce(json_extract(snapshot,'$.activity.side'),json_extract(snapshot,'$.activity.lifecycle_kind')) || CASE WHEN kind='lifecycle' THEN coalesce(nullif(json_extract(ordering.activity_text,'$.lifecycle_separator'),''),char(32,183,32)) ELSE ' ' END || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') ELSE label_sort END) WHEN 'state' THEN status WHEN 'reference' THEN reference_status END END ASC,
- CASE WHEN ordering.direction='desc' THEN CASE ordering.sort_field WHEN 'date' THEN event_date WHEN 'label' THEN lower(CASE WHEN kind='cash' THEN replace(json_extract(snapshot,'$.activity.cash.category'),'-',' ') || coalesce(nullif(json_extract(ordering.activity_text,'$.movement_separator'),''),char(32,183,32)) || coalesce(nullif(json_extract(snapshot,'$.activity.cash.description'),''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') WHEN kind='security-transfer' THEN coalesce(nullif(json_extract(ordering.activity_text,'$.transfer_prefix'),''),'Transfer ') || json_extract(snapshot,'$.activity.transfer.direction') || coalesce(nullif(json_extract(ordering.activity_text,'$.movement_separator'),''),char(32,183,32)) || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') WHEN kind IN ('trade','lifecycle') THEN coalesce(json_extract(snapshot,'$.activity.side'),json_extract(snapshot,'$.activity.lifecycle_kind')) || CASE WHEN kind='lifecycle' THEN coalesce(nullif(json_extract(ordering.activity_text,'$.lifecycle_separator'),''),char(32,183,32)) ELSE ' ' END || coalesce(nullif(instrument_ticker,''),nullif(instrument_name,''),nullif(json_extract(ordering.activity_text,'$.unknown'),''),'Unknown') ELSE label_sort END) WHEN 'state' THEN status WHEN 'reference' THEN reference_status END END DESC,
- CASE WHEN ordering.sort_field='reference' AND ordering.direction='asc' THEN reference_authority END ASC,
- CASE WHEN ordering.sort_field='reference' AND ordering.direction='desc' THEN reference_authority END DESC,
- id ASC LIMIT ?12 OFFSET ?11
-`
-
-type AdminActivityRowsParams struct {
-	AccountFilter      string
-	KindFilter         interface{}
-	StateFilter        interface{}
-	Search             interface{}
-	ActivityText       interface{}
-	MissingValues      interface{}
-	InapplicableValues interface{}
-	KindMatches        interface{}
-	StateMatches       interface{}
-	ReferenceMatches   interface{}
-	PageOffset         int64
-	PageSize           int64
-	SortField          string
-	Direction          string
-}
-
-type AdminActivityRowsRow struct {
-	Snapshot           []byte
-	Status             string
-	ReviewReasons      int64
-	SelectionAuthority string
-	InstrumentName     string
-	InstrumentTicker   string
-	ReferenceStatus    string
-	ReferenceAuthority string
-	AccountName        string
-}
-
-func (q *Queries) AdminActivityRows(ctx context.Context, arg AdminActivityRowsParams) ([]AdminActivityRowsRow, error) {
-	rows, err := q.db.QueryContext(ctx, adminActivityRows,
-		arg.AccountFilter,
-		arg.KindFilter,
-		arg.StateFilter,
-		arg.Search,
-		arg.ActivityText,
-		arg.MissingValues,
-		arg.InapplicableValues,
-		arg.KindMatches,
-		arg.StateMatches,
-		arg.ReferenceMatches,
-		arg.PageOffset,
-		arg.PageSize,
-		arg.SortField,
-		arg.Direction,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AdminActivityRowsRow
-	for rows.Next() {
-		var i AdminActivityRowsRow
-		if err := rows.Scan(
-			&i.Snapshot,
-			&i.Status,
-			&i.ReviewReasons,
-			&i.SelectionAuthority,
-			&i.InstrumentName,
-			&i.InstrumentTicker,
-			&i.ReferenceStatus,
-			&i.ReferenceAuthority,
-			&i.AccountName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const adminCandidate = `-- name: AdminCandidate :one
 SELECT artifact_id,authority,kind,scope,value,name,currency FROM eligible_candidates WHERE connection_id=? AND artifact_id=? AND authority=? AND kind=? AND scope=? AND value=? ORDER BY sequence DESC LIMIT 1
 `
@@ -329,6 +165,7 @@ func (q *Queries) AdminCounts(ctx context.Context) (AdminCountsRow, error) {
 }
 
 const adminInstrumentCount = `-- name: AdminInstrumentCount :one
+
 SELECT (SELECT count(*) FROM admin_instruments) AS total,count(*) AS matched FROM admin_instruments WHERE (?1='' OR kind=?1)
  AND (?2='' OR ?2='review' AND reference_status IN ('ambiguous','conflict') OR ?2='gaps' AND reference_status NOT IN ('resolved','ambiguous','conflict') OR reference_status=?2)
  AND (?3='' OR wake_contains(search_text,?3)=1 OR ?4=1 AND (name='' OR ticker='')
@@ -348,6 +185,8 @@ type AdminInstrumentCountRow struct {
 	Matched int64
 }
 
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
 func (q *Queries) AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error) {
 	row := q.db.QueryRowContext(ctx, adminInstrumentCount,
 		arg.KindFilter,

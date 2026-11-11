@@ -746,6 +746,9 @@
             headerWordWrap: true,
             headerSort: field !== "terms",
             variableHeight: true,
+            // Header handles avoid inserting resize handles in each row
+            // between Tabulator's height reads.
+            resizable: kind === "activity" ? "header" : true,
             formatter: gridCell,
           }));
           if (artifact)
@@ -914,6 +917,9 @@
           height: "100%",
           dataLoader: false,
           renderVertical: "basic",
+          // CSS sizes Activity rows. The estimate skips Tabulator's
+          // measurement of every cell, including those below the viewport.
+          rowHeight: kind === "activity" ? 48 : null,
           columns: createColumns(),
           pagination: true,
           paginationMode: "remote",

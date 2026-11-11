@@ -1,8 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 trippwill
 -- SPDX-License-Identifier: MPL-2.0
 
-WITH current AS (
- SELECT revision, data FROM positions_current WHERE account_id=?1
+WITH current AS MATERIALIZED (
+ SELECT revision, jsonb(CAST(data AS TEXT)) AS data FROM positions_current WHERE account_id=?1
 ), reported AS (
  SELECT p.key AS ordinal, p.value AS position,
   json_extract(p.value,'$.instrument_id') AS id,
@@ -14,7 +14,7 @@ WITH current AS (
   json_extract(p.value,'$.unit_cost_basis.amount') AS cost,
   json_extract(p.value,'$.unit_cost_basis.currency') AS currency,
   json_extract(p.value,'$.unit_cost_basis.quote') AS quote
- FROM current c JOIN json_each(c.data,'$.positions') p
+ FROM current c JOIN jsonb_each(c.data,'$.positions') p
  JOIN instruments i ON i.id=json_extract(p.value,'$.instrument_id')
  WHERE json_extract(c.data,'$.status')='available'
 ), matching AS (
@@ -44,6 +44,6 @@ WITH current AS (
 )
 SELECT c.revision,json_extract(c.data,'$.status'),json_extract(c.data,'$.as_of'),
  json_extract(c.data,'$.reason'),counts.total,counts.matched,
- page.ordinal,page.name,page.ticker,page.kind,page.position
+ page.ordinal,page.name,page.ticker,page.kind,json(page.position)
 FROM current c CROSS JOIN counts LEFT JOIN page ON true
 ORDER BY page.position_order;

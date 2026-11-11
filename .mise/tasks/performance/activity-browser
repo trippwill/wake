@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Measure render latency on a disposable Activity grid"
+set -euo pipefail
+case "${1:-sort}:${2:-}" in
+  sort:|sort:date|kind:|kind:trade|kind:cash|kind:security-transfer|kind:lifecycle|kind:conversion|kind:all|ingest:date|ingest:price) ;;
+  *) printf 'usage: mise run performance:activity-browser [sort [date]|kind [selection]|ingest date|ingest price]\n' >&2; exit 2 ;;
+esac
+WAKE_ACTIVITY_PERFORMANCE="${1:-sort}" WAKE_ACTIVITY_PERFORMANCE_SELECTION="${2:-}" \
+  go test -tags=browser ./internal/persistence/sqlite -run '^TestBrowserActivityPerformance$' -count=1 -timeout=6m -v

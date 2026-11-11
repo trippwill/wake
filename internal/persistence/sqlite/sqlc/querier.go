@@ -26,14 +26,12 @@ type Querier interface {
 	// shared reference once, rather than revisiting its entire claim set per claim.
 	ActivityToMatch(ctx context.Context, artifactID string) ([]ActivityToMatchRow, error)
 	AdminAccessSources(ctx context.Context) ([]Connection, error)
-	// SPDX-FileCopyrightText: 2026 trippwill
-	// SPDX-License-Identifier: MPL-2.0
-	AdminActivityCount(ctx context.Context, arg AdminActivityCountParams) (AdminActivityCountRow, error)
-	AdminActivityRows(ctx context.Context, arg AdminActivityRowsParams) ([]AdminActivityRowsRow, error)
 	AdminCandidate(ctx context.Context, arg AdminCandidateParams) (AdminCandidateRow, error)
 	AdminCandidateCount(ctx context.Context, connectionID string) (int64, error)
 	AdminCandidates(ctx context.Context, arg AdminCandidatesParams) ([]AdminCandidatesRow, error)
 	AdminCounts(ctx context.Context) (AdminCountsRow, error)
+	// SPDX-FileCopyrightText: 2026 trippwill
+	// SPDX-License-Identifier: MPL-2.0
 	AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error)
 	AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRowsParams) ([]AdminInstrumentRowsRow, error)
 	AdminObservationCount(ctx context.Context, arg AdminObservationCountParams) (AdminObservationCountRow, error)

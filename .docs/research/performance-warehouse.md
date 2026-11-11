@@ -100,3 +100,146 @@ not run. The 1,000-to-2,000 initial processing measurements increased by about
 2.7 times; extrapolation is uncertain, but repeated full-size ingestion was not
 practical in the measurement window. The fast-seeded reads are not a substitute
 for those missing end-to-end results.
+
+## Activity click-to-render latency
+
+Run `mise run performance:activity-browser` with Chromium or Brave installed.
+Set `WAKE_BROWSER` to select the executable. The task starts the authenticated
+admin handler on loopback with a disposable store. It seeds 20,000 trades from
+two projected resources, then varies dates, quantities and prices. Every trade
+matches the broad currency search. Roughly 1% contain the selective exact price.
+Each path gets a warm-up and 30 timed requests for a 50-row first page. Sort
+samples alternate direction. Searches use the price sort. Timing starts at the
+browser click and ends two animation frames after the new rows are installed.
+The task prints individual samples, the median and nearest-rank p95.
+
+On 2026-11-10, Brave 157.1.99.55 on the Core Ultra 5 228V machine measured
+the following p95s. The same harness ran on baseline `dd0ee52` and on the
+query-local JSONB and comparator implementation.
+
+| Activity path | Baseline p95 | Updated p95 |
+| --- | ---: | ---: |
+| Date sort | 351.0 ms | 372.1 ms |
+| Quantity sort | 563.5 ms | 424.9 ms |
+| Price sort | 728.6 ms | 424.8 ms |
+| Broad currency search | 2357.2 ms | 558.4 ms |
+| Selective exact-price search | 3579.6 ms | 636.7 ms |
+
+The 150 ms p95 investigation target distinguishes paths that need additional
+work. Query-local JSONB and direct decimal comparison still leave the sort
+queries scanning candidates to build the first page. Prioritize an indexed date
+order for the default Activity view and Kind-filtered views, then exact quantity
+and price orders for the tested numeric columns. Their keys need to preserve unit groups, nulls last
+in both directions and stable ID ties. Measure other sort fields on fixtures
+with enough matching values to make the result meaningful.
+
+Search needs separate work. A selective exact-price substring still examines
+the full candidate set, so test an index that can narrow substring candidates
+and recheck the existing matches. For broad matches, reduce the work of
+building searchable fields and exact counts before judging the value of a sort
+index. The browser fixture measures a warm, idle warehouse on loopback. Cold
+starts, concurrent synchronization and remote browser latency require separate
+measurements.
+
+### Activity Kind filtering
+
+Run `mise run performance:activity-browser kind` to measure the Kind selector
+with the default date order on a separate 20,000-row fixture. It copies one
+published projection per family and varies the dates. The fixture contains
+12,000 trades, 5,000 cash entries, 2,000 security transfers, 900 lifecycle
+events and 100 conversions. Each timed selection starts from All kinds.
+Clearing the filter starts from Trade. The test triggers the select element's
+change event and uses the same render timing as the sort benchmark. It checks
+the URL and displayed result count after each selection. Append a selection
+such as `kind all` to run one case by itself.
+
+The full run completed 30 samples for each named Kind before its overall
+timeout during the clearing case. A separate run collected 30 clearing samples
+on the same fixture. The task now allows six minutes for the full run.
+
+| Selection | Matches | p95 |
+| --- | ---: | ---: |
+| Trade | 12,000 | 697.1 ms |
+| Cash | 5,000 | 599.0 ms |
+| Security transfer | 2,000 | 556.6 ms |
+| Lifecycle | 900 | 513.6 ms |
+| Conversion | 100 | 494.7 ms |
+| All kinds | 20,000 | 1025.2 ms |
+
+A schema-only plan probe in SQLite 3.51.2 showed that the optional Kind
+predicate kept the publication scan with a standalone `executions(kind, id)`
+index. A dedicated Kind equality predicate used that index for the candidates.
+Both plans still sorted the matching rows and scanned the unfiltered total.
+Test a Kind-plus-date index with a dedicated filtered query alongside the
+global date index. Measure the counts and page together against the 150 ms
+target, including both a common kind and a rare kind.
+
+### Indexed date order and Activity rendering
+
+The date indexes cut a sampled Kind request to about 11 ms on loopback,
+including both counts. Chromium's performance metrics still showed roughly
+350 ms of style recalculation on the 50-row grid. Tabulator inserted resize
+handles into cells between row-height reads. Moving those handles to the
+headers reduced layout passes from 56 to 7 in a short trace. Sizing Activity
+rows in CSS let Chromium defer work on rows outside the viewport while keeping
+the loaded page available for scrolling, focus and selection.
+
+Run `mise run performance:activity-browser sort date` and
+`mise run performance:activity-browser kind` to reproduce the full interactions.
+The first run alternates date directions on the 20,000-trade fixture. The second
+uses the 20,000-activity mixed fixture and includes the matching and total counts.
+
+| Interaction | Previous p95 | Indexed and rendering p95 |
+| --- | ---: | ---: |
+| Date sort | 372.1 ms | 75.9 ms |
+| Trade | 697.1 ms | 48.0 ms |
+| Cash | 599.0 ms | 48.2 ms |
+| Security transfer | 556.6 ms | 49.3 ms |
+| Lifecycle | 513.6 ms | 47.6 ms |
+| Conversion | 494.7 ms | 49.3 ms |
+| Clear to All kinds | 1025.2 ms | 50.0 ms |
+
+The final runs used 30 samples per interaction in Brave on loopback. The
+results cover date ordering with a Kind selection or no selection, on the
+default 50-row page.
+
+### Activity Kind and search during ingestion
+
+Run `mise run performance:activity-browser ingest date` and
+`mise run performance:activity-browser ingest price`. Each run starts with the
+20,000-row mixed fixture and repeatedly processes synthetic IBKR Flex
+confirmation reports with 200 new trades each. The new trades use a separate
+instrument and dates outside the two active searches. The broad search
+`2026-` matches every seeded activity. The selective search `2026-12-31`
+matches about 1%. The browser retains the submitted search and descending Date
+or Price / rate order while cycling through Kind selections and clearing to
+All kinds. Each case measures 30 warmed selections to a rendered 50-row first
+page. The benchmark verifies the filter and sort state, the matched count and
+the total count in whole committed batches.
+
+Sharing the writer connection delayed reads behind processing. A dedicated
+reader removed that wait during ordinary ingestion work. Broad queries still
+spent time extracting and folding the same published fields. A derived index
+stores those fields and the exact price text. The read still applies live labels
+and sorts prices with the decimal collation. The CPU profile also showed
+SQLite recompiling the prepared statement when Kind changed. Binding Kind
+through a one-row relation retained the index seek and let SQLite reuse the
+compiled statement.
+
+Brave 157.1.99.56 on loopback measured the following p95 values on 2026-11-11.
+Every case passed the 150 ms target. Each run committed 1,600 additional trades,
+and 719 of 720 timed grid requests began during ingestion.
+
+| Selection | Date, broad | Date, selective | Price / rate, broad | Price / rate, selective |
+| --- | ---: | ---: | ---: | ---: |
+| Trade | 89.7 ms | 86.0 ms | 105.3 ms | 86.6 ms |
+| Cash | 75.6 ms | 54.4 ms | 73.7 ms | 62.2 ms |
+| Security transfer | 50.8 ms | 51.8 ms | 63.4 ms | 66.4 ms |
+| Lifecycle | 48.9 ms | 49.2 ms | 51.5 ms | 50.4 ms |
+| Conversion | 49.0 ms | 49.1 ms | 60.9 ms | 53.9 ms |
+| Clear to All kinds | 115.3 ms | 100.7 ms | 118.2 ms | 106.5 ms |
+
+The results cover a warm local warehouse and this report size. Searches still
+scan candidates to calculate exact counts, and the reader shares SQLite's
+rollback-journal lock at commit. Larger warehouses, longer write transactions
+and first-open index build time need separate measurements.
