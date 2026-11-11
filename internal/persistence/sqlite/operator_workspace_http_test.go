@@ -174,6 +174,25 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 
 	cookie = login.Result().Cookies()[0]
 
+	// Internal revisions can advance independently of the published resource.
+	for _, id := range []string{view.Executions[0].ID(), view.Lifecycles[0].ID(), view.Conversions[0].ID()} {
+		if err = s.queries.AdvanceActivityRevision(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+
+		detail := request(http.MethodGet, "/activity/"+id, nil, false)
+		if detail.Code != http.StatusOK ||
+			!strings.Contains(detail.Body.String(), "Unavailable financial fields") {
+			t.Fatal("activity lost its published field explanations", id, detail.Code)
+		}
+	}
+
+	execution := request(http.MethodGet, "/executions/"+view.Executions[0].ID(), nil, false)
+	if execution.Code != http.StatusOK ||
+		!strings.Contains(execution.Body.String(), "Unavailable financial fields") {
+		t.Fatal("execution lost its published field explanations", execution.Code)
+	}
+
 	// Grid page HTML owns structure; authenticated JSON owns the financial rows.
 	shell := request(http.MethodGet, "/activity", nil, false)
 	if shell.Code != http.StatusOK ||

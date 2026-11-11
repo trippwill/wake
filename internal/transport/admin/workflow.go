@@ -512,7 +512,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+instrumentTitle(detail.Context.InstrumentTicker, detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail, workflow.ActivityFieldDetails(r.Context(), detail.Execution.ID(), detail.Execution.Revision())))).
+		templ.Handler(SectionShell(stringTitle(string(detail.Execution.Terms().Fields().Side))+" "+instrumentTitle(detail.Context.InstrumentTicker, detail.Context.InstrumentName), csrf, "Activity", ExecutionPage(detail, detail.Context.FieldDetails))).
 			ServeHTTP(w, r)
 	})
 
@@ -546,14 +546,14 @@ func registerWorkflowRoutes(
 		}
 
 		if d, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d, workflow.ActivityFieldDetails(r.Context(), d.Execution.ID(), d.Execution.Revision())))).
+			templ.Handler(SectionShell(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", ExecutionPage(d, d.Context.FieldDetails))).
 				ServeHTTP(w, r)
 
 			return
 		}
 
 		if d, err := workflow.ConversionDetail(r.Context(), r.PathValue("id")); err == nil {
-			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d, workflow.ActivityFieldDetails(r.Context(), d.Conversion.ID(), d.Conversion.Revision())))).
+			templ.Handler(SectionShell("Currency conversion", csrf, "Activity", ConversionPage(d, d.Context.FieldDetails))).
 				ServeHTTP(w, r)
 
 			return
@@ -573,7 +573,7 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d, workflow.ActivityFieldDetails(r.Context(), d.Lifecycle.ID(), d.Lifecycle.Revision())))).
+		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d, d.Context.FieldDetails))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {

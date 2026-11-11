@@ -443,7 +443,15 @@ func acceptListing(
 func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.ExecutionDetail, error) {
 	out := application.ExecutionDetail{}
 
-	r, err := s.queries.Execution(ctx, id)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	r, err := q.Execution(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -453,17 +461,17 @@ func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.Exe
 		return out, err
 	}
 
-	out.Corrections, err = s.sourceInstructions(ctx, id)
+	out.Corrections, err = sourceInstructions(ctx, q, id)
 	if err != nil {
 		return out, err
 	}
 
-	out.Context, err = s.activityContext(ctx, r)
+	out.Context, err = activityContext(ctx, tx, q, r)
 	if err != nil {
 		return out, err
 	}
 
-	out.Relationships, err = relationships(ctx, s.queries, id)
+	out.Relationships, err = relationships(ctx, q, id)
 
 	return out, err
 }
@@ -637,7 +645,15 @@ func lifecycleValue(r sqlc.Execution) (application.Lifecycle, error) {
 func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.LifecycleDetail, error) {
 	out := application.LifecycleDetail{}
 
-	r, err := s.queries.Execution(ctx, id)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	r, err := q.Execution(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -651,17 +667,17 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 		return out, err
 	}
 
-	out.Corrections, err = s.sourceInstructions(ctx, id)
+	out.Corrections, err = sourceInstructions(ctx, q, id)
 	if err != nil {
 		return out, err
 	}
 
-	out.Context, err = s.activityContext(ctx, r)
+	out.Context, err = activityContext(ctx, tx, q, r)
 	if err != nil {
 		return out, err
 	}
 
-	out.Relationships, err = relationships(ctx, s.queries, id)
+	out.Relationships, err = relationships(ctx, q, id)
 
 	return out, err
 }
@@ -683,7 +699,15 @@ func conversionValue(r sqlc.Execution) (application.Conversion, error) {
 func (s *Store) ConversionDetail(ctx context.Context, id string) (application.ConversionDetail, error) {
 	out := application.ConversionDetail{}
 
-	r, err := s.queries.Execution(ctx, id)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	r, err := q.Execution(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -697,12 +721,12 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 		return out, err
 	}
 
-	out.Corrections, err = s.sourceInstructions(ctx, id)
+	out.Corrections, err = sourceInstructions(ctx, q, id)
 	if err != nil {
 		return out, err
 	}
 
-	out.Context, err = s.activityContext(ctx, r)
+	out.Context, err = activityContext(ctx, tx, q, r)
 	if err != nil {
 		return out, err
 	}
@@ -710,26 +734,28 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 	return out, nil
 }
 
-func (s *Store) activityContext(
+func activityContext(
 	ctx context.Context,
+	tx *sql.Tx,
+	q *sqlc.Queries,
 	row sqlc.Execution,
 ) (application.ActivityContext, error) {
 	out := application.ActivityContext{}
 
-	account, err := s.queries.AccountByID(ctx, row.AccountID)
+	account, err := q.AccountByID(ctx, row.AccountID)
 	if err != nil {
 		return out, err
 	}
 
 	out.AccountName = account.Name
 
-	out.Realized, err = publishedRealized(ctx, s.queries, row.ID)
+	out.Realized, err = publishedRealized(ctx, q, row.ID)
 	if err != nil {
 		return out, err
 	}
 
 	if row.InstrumentID.Valid {
-		instrument, err := s.queries.Instrument(ctx, row.InstrumentID.String)
+		instrument, err := q.Instrument(ctx, row.InstrumentID.String)
 		if err != nil {
 			return out, err
 		}
@@ -737,6 +763,15 @@ func (s *Store) activityContext(
 		out.InstrumentName = instrument.Name
 		out.InstrumentTicker = instrument.Ticker
 	}
+
+	// Internal revisions can advance without a publication. Read the explanation
+	// from the same snapshot as the accepted terms.
+	_, explanation, err := readPublished(ctx, tx, "activity", row.ID)
+	if err != nil && !errors.Is(err, application.ErrNotFound) {
+		return out, err
+	}
+
+	out.FieldDetails = explanation.Fields
 
 	return out, nil
 }

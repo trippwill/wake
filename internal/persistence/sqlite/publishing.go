@@ -833,19 +833,28 @@ func (s *Store) published(
 
 	defer func() { _ = tx.Rollback() }()
 
-	var (
-		revision          int64
-		data, explanation []byte
-	)
-
 	target, e := canonicalID(ctx, s.queries.WithTx(tx), kind, id)
 	if e != nil {
 		return out, why, e
 	}
 
-	id = target
+	return readPublished(ctx, tx, kind, target)
+}
 
-	err = tx.QueryRowContext(ctx, publishingStatement("Current"), kind, id).Scan(&revision, &data, &explanation)
+func readPublished(
+	ctx context.Context,
+	tx *sql.Tx,
+	kind, id string,
+) (application.CanonicalResource, application.Explanation, error) {
+	var (
+		out               application.CanonicalResource
+		why               application.Explanation
+		revision          int64
+		data, explanation []byte
+	)
+
+	err := tx.QueryRowContext(ctx, publishingStatement("Current"), kind, id).
+		Scan(&revision, &data, &explanation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, why, application.ErrNotFound
 	}

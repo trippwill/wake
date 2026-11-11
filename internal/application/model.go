@@ -203,6 +203,7 @@ type (
 	ActivityContext struct {
 		AccountName, InstrumentName, InstrumentTicker string
 		Realized                                      *PublishedRealizedPnL
+		FieldDetails                                  []PublishedFieldDetail
 	}
 	Observation struct {
 		Artifact, Version, Location, Rule, Retrieved, ActivityID string
