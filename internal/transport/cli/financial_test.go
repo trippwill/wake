@@ -329,6 +329,9 @@ func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
 	}{
 		{"missing", http.StatusNotFound, `{"code":"not_found","message":"private diagnostic text"}`, "not_found"},
 		{"stale", http.StatusConflict, `{"code":"stale_revision","message":"private diagnostic text"}`, "stale_revision"},
+		{"invalid request", http.StatusBadRequest, `{"code":"invalid_request","message":"Invalid parameters"}`, "invalid_request"},
+		{"method", http.StatusMethodNotAllowed, `{"code":"method_not_allowed","message":"Only GET is supported"}`, "method_not_allowed"},
+		{"internal", http.StatusInternalServerError, `{"code":"internal_error","message":"Financial read failed"}`, "internal_error"},
 		{"mismatched", http.StatusNotFound, `{"code":"stale_revision","message":"private diagnostic text"}`, "operation_failed"},
 		{"unknown", http.StatusNotFound, `{"code":"other","message":"private diagnostic text"}`, "operation_failed"},
 		{"incomplete", http.StatusConflict, `{"code":"stale_revision"`, "operation_failed"},
@@ -367,6 +370,7 @@ func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
 		{"external", prefix + "retired", []string{"http://outside.invalid" + prefix + "acct"}, 0, false},
 		{"absolute same host", prefix + "retired", []string{"http://wake" + prefix + "acct"}, 0, false},
 		{"cross kind", prefix + "retired", []string{"/v1/instruments/acct"}, 0, false},
+		{"unsupported kind", prefix + "retired", []string{"/v1/custom/acct"}, 0, false},
 		{"cross endpoint", prefix + "retired", []string{prefix + "acct/positions"}, 0, false},
 		{"malformed", prefix + "retired", []string{prefix + "%zz"}, 0, false},
 		{"query", prefix + "retired", []string{prefix + "acct?"}, 0, false},
