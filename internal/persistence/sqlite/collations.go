@@ -4,14 +4,13 @@
 package persistence
 
 import (
-	"cmp"
 	"database/sql"
 	"database/sql/driver"
 	"strings"
 	"sync"
 	"time"
 
-	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/decimal"
 	modernsqlite "modernc.org/sqlite"
 )
 
@@ -89,99 +88,17 @@ func compareDecimalText(left, right string) int {
 	if left == right {
 		return 0
 	}
-
-	a, l, leftOK := decimalMagnitude(left)
-	b, r, rightOK := decimalMagnitude(right)
-	if !leftOK || !rightOK {
-		return compareUnnormalizedDecimals(left, right)
-	}
-
-	return compareMagnitudes(a, l, b, r)
-}
-
-type decimalOrder struct {
-	integerDigits int
-	negative      bool
-}
-
-// decimalMagnitude recognizes the plain form emitted by the financial parser.
-// Other forms are handled by the financial parser.
-func decimalMagnitude(text string) (string, decimalOrder, bool) {
-	if len(text) == 0 || len(text) > 256 {
-		return "", decimalOrder{}, false
-	}
-
-	magnitude := strings.TrimPrefix(text, "-")
-
-	negative := len(magnitude) != len(text)
-	point := len(magnitude)
-	nonzero := false
-	for i := range len(magnitude) {
-		digit := magnitude[i]
-		if digit == '.' && point == len(magnitude) && i > 0 && i+1 < len(magnitude) {
-			point = i
-
-			continue
-		}
-
-		if digit < '0' || digit > '9' {
-			return "", decimalOrder{}, false
-		}
-
-		nonzero = nonzero || digit != '0'
-	}
-
-	if magnitude == "" || (point > 1 && magnitude[0] == '0') || (negative && !nonzero) {
-		return "", decimalOrder{}, false
-	}
-
-	if point < len(magnitude) {
-		magnitude = strings.TrimSuffix(strings.TrimRight(magnitude, "0"), ".")
-	}
-
-	return magnitude, decimalOrder{integerDigits: point, negative: negative}, true
-}
-
-func compareMagnitudes(left string, l decimalOrder, right string, r decimalOrder) int {
-	if l.negative != r.negative {
-		if l.negative {
-			return -1
-		}
-
+	order, leftOK, rightOK := decimal.Compare(left, right)
+	switch {
+	case leftOK && rightOK:
+		return order
+	case leftOK:
+		return -1
+	case rightOK:
 		return 1
-	}
-
-	order := cmp.Compare(l.integerDigits, r.integerDigits)
-	if order == 0 {
-		order = strings.Compare(left, right)
-	}
-
-	if l.negative {
-		return -order
-	}
-
-	return order
-}
-
-func compareUnnormalizedDecimals(left, right string) int {
-	l, le := financial.ParseQuantity(left)
-	r, re := financial.ParseQuantity(right)
-	if le != nil && re != nil {
+	default:
 		return strings.Compare(left, right)
 	}
-
-	if le != nil {
-		return 1
-	}
-
-	if re != nil {
-		return -1
-	}
-
-	a, ao, _ := decimalMagnitude(l.Value())
-	b, bo, _ := decimalMagnitude(r.Value())
-
-	return compareMagnitudes(a, ao, b, bo)
 }
 
 // RFC3339 text can vary in fractional precision and offset. Compare instants

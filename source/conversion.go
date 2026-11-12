@@ -25,7 +25,7 @@ func NewCurrencyAmount(c financial.Currency, amount string) (CurrencyAmount, err
 	var err error
 	if amount != "" {
 		q, err = financial.ParseQuantity(amount)
-		if err != nil || q.Value()[0] == '-' {
+		if err != nil || q.Negative() {
 			return CurrencyAmount{}, ErrInvalidTrade
 		}
 	}

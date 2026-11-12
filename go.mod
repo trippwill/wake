@@ -12,7 +12,6 @@ require (
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/oapi-codegen/runtime v1.9.0
 	github.com/urfave/cli/v3 v3.14.0
-	go.trippwill.dev/num v0.3.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"go.trippwill.dev/num"
 	"go.trippwill.dev/wake/financial"
 )
 
@@ -119,7 +118,7 @@ func TestFinancialValuesPreserveExactMeaning(t *testing.T) {
 	}
 }
 
-func TestDerivedNumConversion(t *testing.T) {
+func TestFinancialValuesPreserveBoundaryDecimals(t *testing.T) {
 	usd := parseCurrency(t, "USD")
 	for _, exact := range []string{
 		"0", "1.2345678905", "-0.1234567896", "0.0000000001",
@@ -142,72 +141,10 @@ func TestDerivedNumConversion(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for _, convert := range []func() (num.Num, error){money.Num, quantity.Num, price.Num} {
-				value, e := convert()
-				if e != nil || !value.Ok() || value.String() != exact {
-					t.Fatalf("conversion %s: %s, %v", exact, value, e)
-				}
-			}
-
 			if money.Amount() != exact || quantity.Value() != exact || price.Amount() != exact {
-				t.Fatal("conversion changed source")
+				t.Fatal("constructor changed decimal text")
 			}
 		})
-	}
-}
-
-func TestDerivedNumCalculationsPreservePrecision(t *testing.T) {
-	small, err := financial.ParseQuantity("0.0000000001")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	large, err := financial.ParsePrice("10000000000", parseCurrency(t, "USD"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	q, err := small.Num()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p, err := large.Num()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	product := q.Mul(p)
-	if !product.Ok() || !product.Equal(num.FromInt64(1)) {
-		t.Fatalf("product = %s", product)
-	}
-
-	for _, test := range []struct{ exact, rounded string }{
-		{"1.00000000050000000001", "1.000000001"},
-		{"-1.00000000050000000001", "-1.000000001"},
-		{"1.2345678905", "1.234567890"},
-		{"1.2345678915", "1.234567892"},
-	} {
-		source, e := financial.ParseQuantity(test.exact)
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		value, e := source.Num()
-		if e != nil {
-			t.Fatal(e)
-		}
-
-		rounded := value.Quantize(9)
-		if !rounded.Ok() || rounded.String() != test.rounded || value.String() != test.exact ||
-			source.Value() != test.exact {
-			t.Fatalf("quantization of %s: %s", test.exact, rounded)
-		}
-	}
-
-	quotient := num.FromInt64(1).Div(num.FromInt64(3))
-	if !quotient.Ok() || quotient.String() != "0."+strings.Repeat("3", 34) {
-		t.Fatalf("division = %s", quotient)
 	}
 }
 
@@ -241,11 +178,6 @@ func TestFinancialConstructorsRejectInvalidInputs(t *testing.T) {
 		err,
 		financial.ErrInvalidCurrency,
 	) {
-		t.Fatal(err)
-	}
-
-	var quantity financial.Quantity
-	if _, err := quantity.Num(); !errors.Is(err, financial.ErrInvalidNumber) {
 		t.Fatal(err)
 	}
 

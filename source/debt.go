@@ -31,7 +31,7 @@ func NewDebtTerms(f DebtInput) (DebtTerms, error) {
 		return DebtTerms{}, ErrInvalidInstrument
 	}
 
-	if f.CouponRate.Value() != "" && f.CouponRate.Value()[0] == '-' || f.PaymentsPerYear < 0 ||
+	if f.CouponRate.Negative() || f.PaymentsPerYear < 0 ||
 		f.PaymentsPerYear > 366 {
 		return DebtTerms{}, ErrInvalidInstrument
 	}

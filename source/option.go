@@ -68,7 +68,7 @@ func NewOptionTerms(input OptionInput) (OptionTerms, error) {
 		return OptionTerms{}, ErrInvalidInstrument
 	}
 
-	if input.Strike.Amount() != "" && input.Strike.Amount()[0] == '-' {
+	if input.Strike.Negative() {
 		return OptionTerms{}, ErrInvalidInstrument
 	}
 
