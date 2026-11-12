@@ -53,13 +53,15 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 
 				if tree == "financial" || tree == "source" || tree == "provider" ||
 					(tree == "testdata/external-provider" || tree == "providers") {
-					if strings.Contains(value, "/internal/") || value == "database/sql" ||
+					// The financial contract shares pure decimal operations with storage.
+					sharedDecimal := tree == "financial" && value == "go.trippwill.dev/wake/internal/decimal"
+					if (strings.Contains(value, "/internal/") && !sharedDecimal) || value == "database/sql" ||
 						strings.Contains(value, "sqlite") ||
 						strings.Contains(value, "templ") {
 						t.Errorf("%s leaks private, SQL or UI dependency %s", rel, value)
 					}
 
-					if strings.HasPrefix(value, "go.trippwill.dev/wake/") &&
+					if !sharedDecimal && strings.HasPrefix(value, "go.trippwill.dev/wake/") &&
 						value != "go.trippwill.dev/wake/financial" &&
 						value != "go.trippwill.dev/wake/source" &&
 						value != "go.trippwill.dev/wake/provider" {

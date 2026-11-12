@@ -6,10 +6,9 @@ package financial
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
-	"go.trippwill.dev/num"
+	"go.trippwill.dev/wake/internal/decimal"
 )
 
 const (
@@ -19,8 +18,6 @@ const (
 	// ErrInvalidNumber is returned when a financial value contains an invalid
 	// or error-state number.
 	ErrInvalidNumber Error = "invalid number"
-	// ErrNumUnavailable means the exact source value has no valid Num conversion.
-	ErrNumUnavailable Error = "number unavailable for calculation"
 	// ErrInvalidDate is returned when a civil date is malformed or does not
 	// exist in the Gregorian calendar.
 	ErrInvalidDate Error = "invalid date"
@@ -102,9 +99,9 @@ type Money struct {
 }
 
 func ParseMoney(amount string, currency Currency) (Money, error) {
-	text, err := parseExactNumber(amount)
+	text, err := decimal.Normalize(amount)
 	if err != nil {
-		return Money{}, err
+		return Money{}, ErrInvalidNumber
 	}
 
 	if err = validateCurrency(currency); err != nil {
@@ -117,30 +114,30 @@ func ParseMoney(amount string, currency Currency) (Money, error) {
 func (value Money) Amount() string     { return value.amount }
 func (value Money) Currency() Currency { return value.currency }
 
-// Num converts exactly for calculation or display, preserving decimal precision.
-func (value Money) Num() (num.Num, error) { return derivedNumber(value.amount) }
-
 // Quantity is an exact decimal count or measure. Record constructors enforce sign constraints.
 type Quantity struct{ value string }
 
 func ParseQuantity(value string) (Quantity, error) {
-	text, err := parseExactNumber(value)
+	text, err := decimal.Normalize(value)
 	if err != nil {
-		return Quantity{}, err
+		return Quantity{}, ErrInvalidNumber
 	}
 
 	return Quantity{value: text}, nil
 }
-func (value Quantity) Value() string         { return value.value }
-func (value Quantity) Num() (num.Num, error) { return derivedNumber(value.value) }
+
+// Negative reports whether the quantity is below zero.
+func (value Quantity) Negative() bool { return decimal.Negative(value.value) }
+
+func (value Quantity) Value() string { return value.value }
 
 // Positive checks the exact value without a rounded conversion.
 func (value Quantity) Positive() bool {
-	return value.value != "" && numericKey(value.value) != "0" && value.value[0] != '-'
+	return decimal.Positive(value.value)
 }
 
 // Abs preserves exact magnitude without arithmetic conversion.
-func (value Quantity) Abs() Quantity { return Quantity{value: strings.TrimPrefix(value.value, "-")} }
+func (value Quantity) Abs() Quantity { return Quantity{value: decimal.Abs(value.value)} }
 
 // Price is an exact decimal amount in a stated currency. Its quotation basis
 // belongs to the reported context and may be unavailable.
@@ -150,9 +147,9 @@ type Price struct {
 }
 
 func ParsePrice(amount string, currency Currency) (Price, error) {
-	text, err := parseExactNumber(amount)
+	text, err := decimal.Normalize(amount)
 	if err != nil {
-		return Price{}, err
+		return Price{}, ErrInvalidNumber
 	}
 
 	if err = validateCurrency(currency); err != nil {
@@ -162,124 +159,23 @@ func ParsePrice(amount string, currency Currency) (Price, error) {
 	return Price{amount: text, currency: currency}, nil
 }
 
-func (value Price) Amount() string        { return value.amount }
-func (value Price) Currency() Currency    { return value.currency }
-func (value Price) Num() (num.Num, error) { return derivedNumber(value.amount) }
+// Negative reports whether the price is below zero.
+func (value Price) Negative() bool { return decimal.Negative(value.amount) }
 
-// parseExactNumber expands finite base-ten notation while retaining fractional scale
-// without arithmetic or a bounded Num conversion. Input and expanded output
-// are bounded to 256 bytes and exponents to +/-128 to prevent amplification.
-func parseExactNumber(text string) (string, error) {
-	if text == "" || len(text) > 256 {
-		return "", ErrInvalidNumber
-	}
-
-	negative := text[0] == '-'
-	if text[0] == '-' || text[0] == '+' {
-		text = text[1:]
-	}
-
-	exponent := 0
-	if i := strings.IndexAny(text, "eE"); i >= 0 {
-		var err error
-
-		exponent, err = strconv.Atoi(text[i+1:])
-		if err != nil || exponent < -128 || exponent > 128 {
-			return "", ErrInvalidNumber
-		}
-
-		text = text[:i]
-	}
-
-	point := strings.IndexByte(text, '.')
-	if point < 0 {
-		point = len(text)
-	}
-
-	digits := strings.Replace(text, ".", "", 1)
-	if digits == "" {
-		return "", ErrInvalidNumber
-	}
-
-	for _, c := range digits {
-		if c < '0' || c > '9' {
-			return "", ErrInvalidNumber
-		}
-	}
-
-	point += exponent
-	if point < 0 {
-		digits = strings.Repeat("0", -point) + digits
-		point = 0
-	}
-
-	if point > len(digits) {
-		digits += strings.Repeat("0", point-len(digits))
-	}
-
-	integer := strings.TrimLeft(digits[:point], "0")
-	fraction := digits[point:]
-
-	if integer == "" {
-		integer = "0"
-	}
-
-	result := integer
-	if fraction != "" {
-		result += "." + fraction
-	}
-
-	if negative && numericKey(result) != "0" {
-		result = "-" + result
-	}
-
-	if len(result) > 256 {
-		return "", ErrInvalidNumber
-	}
-
-	return result, nil
-}
+func (value Price) Amount() string     { return value.amount }
+func (value Price) Currency() Currency { return value.currency }
 
 // Equal compares numeric meaning and currency without discarding retained precision.
 func (value Money) Equal(other Money) bool {
-	return value.currency == other.currency && numericKey(value.amount) == numericKey(other.amount)
+	return value.currency == other.currency && decimal.Equal(value.amount, other.amount)
 }
 
 func (value Price) Equal(other Price) bool {
-	return value.currency == other.currency && numericKey(value.amount) == numericKey(other.amount)
+	return value.currency == other.currency && decimal.Equal(value.amount, other.amount)
 }
 
 func (value Quantity) Equal(other Quantity) bool {
-	return numericKey(value.value) == numericKey(other.value)
-}
-
-func numericKey(text string) string {
-	if strings.Contains(text, ".") {
-		return strings.TrimSuffix(strings.TrimRight(text, "0"), ".")
-	}
-
-	return text
-}
-
-func derivedNumber(text string) (num.Num, error) {
-	if err := validateNumber(text); err != nil {
-		return num.Num{}, err
-	}
-
-	value := num.FromString(text)
-	if !value.Ok() {
-		return num.Num{}, ErrNumUnavailable
-	}
-
-	return value, nil
-}
-
-func validateNumber(value string) error {
-	if value == "" {
-		return ErrInvalidNumber
-	}
-
-	return nil
+	return decimal.Equal(value.value, other.value)
 }
 
 // Date is a validated Gregorian civil date without a time or timezone.

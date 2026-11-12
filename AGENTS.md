@@ -32,7 +32,7 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - Keep connection/account, observation/event, and evidence/canonical state
   distinct. Preserve source currency, dates, time precision, and exact values.
 - Keep validated exact decimal text authoritative inside Money, Quantity, and
-  Price. Convert explicitly to `go.trippwill.dev/num` without losing precision.
+  Price. Preserve precision when converting for calculations.
   Round only at explicit calculation or display boundaries; no authoritative
   `float64` amounts.
 - SQLite is private storage with Wake as sole ordinary writer. Follow the
