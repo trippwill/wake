@@ -123,6 +123,7 @@ func Compare(left, right string) (order int, leftOK, rightOK bool) {
 	if !leftOK || !rightOK {
 		return 0, leftOK, rightOK
 	}
+
 	return compareMagnitudes(a, l, b, r), true, true
 }
 
@@ -131,10 +132,12 @@ func orderParts(text string) (string, decimalOrder, bool) {
 	if ok {
 		return magnitude, order, true
 	}
+
 	normalized, err := Normalize(text)
 	if err != nil {
 		return "", decimalOrder{}, false
 	}
+
 	return decimalMagnitude(normalized)
 }
 

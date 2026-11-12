@@ -88,6 +88,7 @@ func compareDecimalText(left, right string) int {
 	if left == right {
 		return 0
 	}
+
 	order, leftOK, rightOK := decimal.Compare(left, right)
 	switch {
 	case leftOK && rightOK:
