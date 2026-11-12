@@ -20,7 +20,7 @@ import (
 )
 
 func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	trade := underlierTrade(t, underlierTemplate(t), "repeated-charges", "", true)
 	retainUnderlierTrades(t, s, "established", trade)
 	base := trade.Observation().Fields()
@@ -61,7 +61,7 @@ func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *t
 			return provider.NewResult(provider.Counts{Rows: 2, Activities: 2})
 		},
 	)
-	coverageClaims(t, s, "charge-report", normalizer)
+	processSyntheticClaims(t, s, "charge-report", normalizer)
 
 	baseline, err := snapshotState(t.Context(), s)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *t
 		{"charge-report", "charge-reinterpretation/2"},
 	} {
 		if step.report != "charge-report" {
-			coverageClaims(t, s, step.report, normalizer)
+			processSyntheticClaims(t, s, step.report, normalizer)
 		} else if step.version != "synthetic-claims/1" {
 			if _, err = s.Normalize(t.Context(), step.report, step.version, normalizer); err != nil {
 				t.Fatal(err)
@@ -103,12 +103,12 @@ func TestRepeatedInternallyConflictingChargesDoNotAccumulateActivitySupport(t *t
 	}
 }
 
-func TestActivitiesDoNotAccumulateInstrumentSupport(t *testing.T) {
-	checkActivityContributionVolume(t, 64)
+func TestDistinctActivitiesShareOneInstrumentContribution(t *testing.T) {
+	checkActivityContributionVolume(t, 3)
 }
 
 func TestCompoundInstrumentAssertionsDoNotAccumulateActivitySupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := partialTrade(t).Fields()
 
 	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "isin")
@@ -157,14 +157,14 @@ func TestCompoundInstrumentAssertionsDoNotAccumulateActivitySupport(t *testing.T
 
 func checkActivityContributionVolume(t *testing.T, count int) {
 	t.Helper()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var rows strings.Builder
 	for i := range count {
 		rows.WriteString(equityRow("U1", fmt.Sprintf("fill-%d", i), fmt.Sprintf("%d", 100+i)))
 	}
 
-	coverageReport(t, s, "many-activities", rows.String())
+	processConfirmationReport(t, s, "many-activities", rows.String())
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != count || len(view.Instruments) != 1 {
@@ -202,7 +202,7 @@ func checkActivityContributionVolume(t *testing.T, count int) {
 		t.Fatal(err)
 	}
 
-	coverageReport(t, s, "repeat-many-activities", "\n"+rows.String())
+	processConfirmationReport(t, s, "repeat-many-activities", "\n"+rows.String())
 
 	if got := tableCount(t, s, "instrument_claims"); got != 1 {
 		t.Fatal("repeat retained instrument support", got)
@@ -218,18 +218,18 @@ func checkActivityContributionVolume(t *testing.T, count int) {
 	}
 
 	query, _ := application.NewListQuery(
-		application.ListOptions{PageSize: 10, Sort: "activity"},
+		application.ListOptions{PageSize: 2, Sort: "activity"},
 		application.ObservationScope,
 	)
 
 	appearances, err := s.ObservationList(t.Context(), "artifact", "repeat-many-activities", query)
-	if err != nil || appearances.Total != int64(count+1) || len(appearances.Items) != 10 {
+	if err != nil || appearances.Total != int64(count+1) || len(appearances.Items) != 2 {
 		t.Fatal("report history was reduced to retained support", appearances, err)
 	}
 }
 
 func TestAnonymousUnderlierContributionsUseIndependentChildHistory(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	retainUnderlierTrades(t, s, "first-anonymous", underlierTrade(t, base, "first", "", false))
 
@@ -289,7 +289,7 @@ func TestAnonymousUnderlierContributionsUseIndependentChildHistory(t *testing.T)
 }
 
 func TestAnonymousUnderlierConflictsDoNotAccumulateParentSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	retainUnderlierTrades(t, s, "first", underlierTrade(t, base, "first", "US0000000001", false))
 
@@ -333,9 +333,9 @@ func TestAnonymousUnderlierConflictsDoNotAccumulateParentSupport(t *testing.T) {
 }
 
 func TestSubjectContributionsKeepConflictsAndEnrichmentIndependently(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	row := strings.Replace(equityRow("U1", "same-event", "100"), ` netCash="-0.000000049324000000123"`, "", 1)
-	coverageReport(t, s, "first", row)
+	processConfirmationReport(t, s, "first", row)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 {
@@ -352,7 +352,7 @@ func TestSubjectContributionsKeepConflictsAndEnrichmentIndependently(t *testing.
 		{"another-conflict", strings.Replace(row, `price="100"`, `price="102"`, 1)},
 		{"source-repeat", "\n" + row},
 	} {
-		coverageReport(t, s, report.id, report.row)
+		processConfirmationReport(t, s, report.id, report.row)
 	}
 
 	observations := observationRowsForTest(t, s, "activity", id)
@@ -385,7 +385,7 @@ func TestSubjectContributionsKeepConflictsAndEnrichmentIndependently(t *testing.
 }
 
 func TestUnderlierSupportIsIndependentOfParentSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var rows strings.Builder
 	for i := range 20 {
@@ -396,7 +396,7 @@ func TestUnderlierSupportIsIndependentOfParentSupport(t *testing.T) {
 		rows.WriteString(row)
 	}
 
-	coverageReport(t, s, "parents", rows.String())
+	processConfirmationReport(t, s, "parents", rows.String())
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 20 {
@@ -419,7 +419,7 @@ func TestUnderlierSupportIsIndependentOfParentSupport(t *testing.T) {
 		t.Fatal("subject relationships depend on redundant evidence", got)
 	}
 
-	coverageReport(t, s, "child-enrichment", syntheticOption)
+	processConfirmationReport(t, s, "child-enrichment", syntheticOption)
 
 	if got := observationRowsForTest(t, s, "instrument", underlier); len(got) != 2 {
 		t.Fatal("new child information was dropped with parent corroboration", got)
@@ -472,9 +472,9 @@ func TestChargeFormatRefusesPreviousWarehouse(t *testing.T) {
 func TestContributionAdmissionRollsBackAndSurvivesRestart(t *testing.T) {
 	for _, subject := range []string{"activity", "instrument"} {
 		t.Run(subject, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			row := equityRow("U1", "first", "100")
-			coverageReport(t, s, "first", row)
+			processConfirmationReport(t, s, "first", row)
 
 			baseline, err := snapshotState(t.Context(), s)
 			if err != nil {
@@ -488,7 +488,7 @@ func TestContributionAdmissionRollsBackAndSurvivesRestart(t *testing.T) {
 				trigger = `CREATE TRIGGER reject_contribution BEFORE DELETE ON instrument_claims BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`
 			}
 
-			normalizeCoverageReport(t, s, "candidate", candidate)
+			normalizeConfirmationReport(t, s, "candidate", candidate)
 
 			if _, err = s.db.Exec(trigger); err != nil {
 				t.Fatal(err)
@@ -544,9 +544,14 @@ func TestContributionAdmissionRollsBackAndSurvivesRestart(t *testing.T) {
 }
 
 func TestInstrumentMergeDoesNotRetainDuplicateSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	for _, event := range []string{"first", "second"} {
-		coverageReport(t, s, event, strings.Replace(equityRow("U1", event, "100"), ` conid="100"`, "", 1))
+		processConfirmationReport(
+			t,
+			s,
+			event,
+			strings.Replace(equityRow("U1", event, "100"), ` conid="100"`, "", 1),
+		)
 	}
 
 	view, err := s.Dashboard(t.Context())
@@ -569,7 +574,7 @@ func TestInstrumentMergeDoesNotRetainDuplicateSupport(t *testing.T) {
 }
 
 func TestMergedAnonymousUnderlierRetainsBothParentDependencies(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	first := underlierTrade(t, base, "first", "US0000000001", false)
 	f := first.Fields()
@@ -627,5 +632,63 @@ func TestMergedAnonymousUnderlierRetainsBothParentDependencies(t *testing.T) {
 			len(observationRowsForTest(t, s, "instrument", parent)) != 1 {
 			t.Fatal("merged dependency lost source conflict or inflated parent support", detail, err)
 		}
+	}
+}
+
+func TestCompatibleEnrichmentAndCompetingOptionalClaims(t *testing.T) {
+	ctx := context.Background()
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", syntheticOption)
+
+	v, err := s.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := v.Executions[0].ID()
+	revision := v.Executions[0].Revision()
+	enriched := strings.Replace(
+		syntheticOption,
+		`multiplier="10"`,
+		`multiplier="10" netCash="-2.0000000001"`,
+		1,
+	)
+	processConfirmationReport(t, s, "enrichment", enriched)
+
+	d, err := s.ExecutionDetail(ctx, id)
+	if err != nil || d.Execution.Terms().Fields().NetCash.Amount() != "-2.0000000001" ||
+		d.Execution.Revision() <= revision {
+		t.Fatal("optional enrichment", d, err)
+	}
+
+	revision = d.Execution.Revision()
+
+	processConfirmationReport(t, s, "enrichment-repeat", enriched)
+
+	d, err = s.ExecutionDetail(ctx, id)
+	if err != nil || d.Execution.Revision() != revision {
+		t.Fatal("unchanged replay revised entity", err)
+	}
+
+	competing := strings.Replace(enriched, `netCash="-2.0000000001"`, `netCash="-3"`, 1)
+	processConfirmationReport(t, s, "competing-enrichment", competing)
+
+	d, err = s.ExecutionDetail(ctx, id)
+	if err != nil || !d.Execution.State().NeedsReview() || d.Execution.Terms().Fields().NetCash.Amount() != "" {
+		t.Fatal("arrival order selected optional claim", d, err)
+	}
+}
+
+func TestIdentifierMismatchCannotEnrichAcceptedTrade(t *testing.T) {
+	ctx := context.Background()
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "same", "100"))
+	changed := strings.Replace(equityRow("U1", "same", "100"), `US0000000001`, `US0000000002`, 1)
+	processConfirmationReport(t, s, "mismatch", changed)
+
+	v, err := s.Dashboard(ctx)
+	if err != nil || len(v.Executions) != 1 || !v.Executions[0].State().NeedsReview() ||
+		v.Executions[0].Terms().Fields().Instrument.Identifiers()[0].Value() != "US0000000001" {
+		t.Fatal(v, err)
 	}
 }

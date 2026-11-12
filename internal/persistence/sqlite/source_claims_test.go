@@ -101,7 +101,7 @@ func tableCount(t *testing.T, s *Store, table string) int {
 func TestAcquisitionReceiptsReuseBodiesAndNormalization(t *testing.T) {
 	for _, equivalence := range []bool{false, true} {
 		t.Run(map[bool]string{false: "exact", true: "window"}[equivalence], func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			body := singleClaimBody(equityRow("U1", "fill", "100"))
 			first := acquireClaimReport(t, s, body, equivalence)
 
@@ -139,7 +139,7 @@ func TestAcquisitionReceiptsReuseBodiesAndNormalization(t *testing.T) {
 }
 
 func TestSourceClaimsCompareBeforeOperatorCorrectionAndKeepMultiplicity(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	row := strings.Replace(equityRow("U1", "fill", "100"), `quantity="0.000000000123"`, `quantity="10"`, 1)
 	// Use the source fixture's exact quantity spelling deliberately.
 	first := acquireClaimReport(t, s, singleClaimBody(row), false)
@@ -204,7 +204,7 @@ func singleClaimBody(rows string) string {
 }
 
 func TestDiscardedWindowBytesDoNotBecomeExactMatches(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	body := singleClaimBody(equityRow("U1", "fill", "100"))
 
 	first := acquireClaimReport(t, s, body, true)
@@ -233,7 +233,7 @@ func TestDiscardedWindowBytesDoNotBecomeExactMatches(t *testing.T) {
 }
 
 func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	body := singleClaimBody(equityRow("U1", "fill", "100"))
 
@@ -295,8 +295,8 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 }
 
 func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "meaning", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "meaning", equityRow("U1", "fill", "100"))
 
 	raw, err := s.queries.Records(
 		t.Context(),
@@ -381,7 +381,7 @@ func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing
 }
 
 func TestReceiptCoverageSurvivesEquivalentBodyReuse(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	firstDate, _ := financial.ParseDate("2026-10-19")
 

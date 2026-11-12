@@ -262,14 +262,19 @@ var activityKindSizes = []struct {
 func seedActivityKinds(t *testing.T, total int) *Store {
 	t.Helper()
 
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.Replace(
 		syntheticOption,
 		`transactionType="ExchTrade"`,
 		`transactionType="BookTrade" code="A"`,
 		1,
 	)
-	coverageReport(t, s, "mixed-kinds", equityRow("U1", "kind-trade", "123.45")+lifecycle+syntheticFX)
+	processConfirmationReport(
+		t,
+		s,
+		"mixed-kinds",
+		equityRow("U1", "kind-trade", "123.45")+lifecycle+syntheticFX,
+	)
 	acquireRealized(t, s, movementReport("Transfers", transferRow))
 	acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 

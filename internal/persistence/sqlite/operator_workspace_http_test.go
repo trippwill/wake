@@ -25,7 +25,7 @@ import (
 )
 
 func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.ReplaceAll(
 		strings.ReplaceAll(
 			strings.ReplaceAll(syntheticOption, "option-fill", "outcome-fill"),
@@ -35,22 +35,22 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		`transactionType="ExchTrade"`,
 		`transactionType="BookTrade" code="A"`,
 	)
-	coverageReport(t, s, "operator-history", syntheticOption+syntheticDebt+syntheticFX+lifecycle)
-	coverageReport(
+	processConfirmationReport(t, s, "operator-history", syntheticOption+syntheticDebt+syntheticFX+lifecycle)
+	processConfirmationReport(
 		t,
 		s,
 		"operator-conflict",
 		strings.ReplaceAll(syntheticOption, `quantity="2"`, `quantity="3"`),
 	)
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"operator-conversion-conflict",
 		strings.Replace(syntheticFX, `netCash="123.25"`, `netCash="124.25"`, 1),
 	)
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"operator-instrument-conflict",
@@ -77,7 +77,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"operator-instruction",
@@ -509,8 +509,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	separatorName := "Zebra · A → B"
 	separatorRow := strings.NewReplacer("Synthetic equity", separatorName, `symbol="SYN"`, `symbol="`+separatorName+`"`, `conid="100"`, `conid="333"`).
 		Replace(equityRow("U1", "separator", "10"))
-	coverageReport(t, s, "separator-trade", separatorRow)
-	coverageReport(
+	processConfirmationReport(t, s, "separator-trade", separatorRow)
+	processConfirmationReport(
 		t,
 		s,
 		"separator-trade-dispute",
@@ -527,8 +527,8 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		"outcome-trade",
 		"separator-outcome-trade",
 	)
-	coverageReport(t, s, "separator-lifecycle", separatorLifecycle)
-	coverageReport(
+	processConfirmationReport(t, s, "separator-lifecycle", separatorLifecycle)
+	processConfirmationReport(
 		t,
 		s,
 		"separator-lifecycle-dispute",

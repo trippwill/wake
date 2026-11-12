@@ -68,7 +68,7 @@ func positionSetNormalizer(input source.PositionSetInput) provider.Normalizer {
 }
 
 func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	instrument, _ := source.NewInstrument(
 		source.InstrumentInput{Kind: source.Equity, Name: "Anonymous security"},
@@ -82,11 +82,11 @@ func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.
 		f.Positions = append(f.Positions, p)
 	}
 
-	coverageClaims(t, s, "two-occurrences", positionSetNormalizer(f))
+	processSyntheticClaims(t, s, "two-occurrences", positionSetNormalizer(f))
 	later := f
 	later.Date, _ = financial.ParseDate("2026-11-04")
 	later.Positions = later.Positions[:1]
-	coverageClaims(t, s, "one-occurrence", positionSetNormalizer(later))
+	processSyntheticClaims(t, s, "one-occurrence", positionSetNormalizer(later))
 
 	if v := readPositions(t, s); v.Status != "unavailable" {
 		t.Fatal("contested occurrence unexpectedly available", v)
@@ -111,8 +111,8 @@ func TestPositionsReplacementRetiresOnlyInactiveDuplicateOccurrences(t *testing.
 }
 
 func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "holding", "1"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "1"))
 
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
@@ -129,7 +129,7 @@ func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) 
 		Positions: []source.Position{p},
 	}
 	for _, id := range []string{"first-appearance", "reused-appearance"} {
-		coverageClaims(t, s, id, positionSetNormalizer(f))
+		processSyntheticClaims(t, s, id, positionSetNormalizer(f))
 	}
 
 	roots, err := s.queries.ArtifactRootIDs(t.Context(), "first-appearance")
@@ -160,8 +160,8 @@ func TestPositionsReplacementRecalculatesRootsThroughReusedClaims(t *testing.T) 
 func TestPositionsMalformedOlderSummaryCannotBlockNewerReportedSet(t *testing.T) {
 	for _, malformedFirst := range []bool{true, false} {
 		t.Run(fmt.Sprint(malformedFirst), func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 
 			malformed := reportedPositionsXML(
 				"2026-11-06",
@@ -196,8 +196,8 @@ func TestPositionsMalformedOlderSummaryCannotBlockNewerReportedSet(t *testing.T)
 }
 
 func TestPositionsDateInterpretationRepairsRetainedMalformedSummary(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 	acquireRealized(
 		t,
 		s,
@@ -294,8 +294,8 @@ func TestPositionsDateInterpretationRepairsRetainedMalformedSummary(t *testing.T
 }
 
 func TestPositionsReinterpretationReplacesInstrumentContributions(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(
 		t,
 		s,
 		"baseline",
@@ -365,8 +365,8 @@ func TestPositionsReinterpretationReplacesInstrumentContributions(t *testing.T) 
 }
 
 func TestPositionsEmptyReinterpretationRetiresConflictingInstrumentClaims(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "holding", "1"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "1"))
 
 	row := strings.ReplaceAll(
 		holdingXML("2026-11-04", "10", "1"),
@@ -441,8 +441,8 @@ func TestPositionsEmptyReinterpretationRetiresConflictingInstrumentClaims(t *tes
 }
 
 func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 
 	snapshot, _ := s.Snapshot(t.Context(), application.SnapshotCondition{})
 	initial := readPositions(t, s)
@@ -701,7 +701,7 @@ func TestPositionsConflictsRollbackIdentityChangesAndRestart(t *testing.T) {
 }
 
 func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref, _ := source.NewReference("broker", "security", "", "independent")
 	i, _ := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
@@ -718,7 +718,7 @@ func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
 		Positions: []source.Position{p},
 	}
 	admit := func(id string, input source.PositionSetInput) {
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			id,
@@ -757,8 +757,8 @@ func TestPositionsHonorAuthorityAndTimestampPrecision(t *testing.T) {
 func TestPositionsWithholdDisputedInstrumentBindings(t *testing.T) {
 	for _, change := range []string{"reported conflict", "reference conflict", "incompatible family"} {
 		t.Run(change, func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 			acquireRealized(
 				t,
 				s,
@@ -779,7 +779,7 @@ func TestPositionsWithholdDisputedInstrumentBindings(t *testing.T) {
 			if change == "reported conflict" {
 				row := strings.ReplaceAll(syntheticOption, `conid="200"`, `conid="100"`)
 				row = strings.ReplaceAll(row, `underlyingConid="100"`, `underlyingConid="101"`)
-				coverageReport(t, s, "incompatible-activity", row)
+				processConfirmationReport(t, s, "incompatible-activity", row)
 			} else {
 				tx, err := s.db.BeginTx(t.Context(), nil)
 				if err != nil {
@@ -811,7 +811,7 @@ func TestPositionsWithholdDisputedInstrumentBindings(t *testing.T) {
 }
 
 func TestPositionRevisionCycleCannotHideNewerTargetAndCanBeReplaced(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref := func(id string) source.Reference {
 		r, _ := source.NewReference("broker", "snapshot", "U1", id)
@@ -833,7 +833,7 @@ func TestPositionRevisionCycleCannotHideNewerTargetAndCanBeReplaced(t *testing.T
 			input.Supersedes = append(input.Supersedes, ref(id))
 		}
 
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			id,
@@ -874,7 +874,7 @@ func TestPositionRevisionCycleCannotHideNewerTargetAndCanBeReplaced(t *testing.T
 }
 
 func TestPositionRevisionAuthorityCanCorrectEffectiveDateAndRejectCycles(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	refs := map[string]source.Reference{}
@@ -898,7 +898,7 @@ func TestPositionRevisionAuthorityCanCorrectEffectiveDateAndRejectCycles(t *test
 			f.Supersedes = append(f.Supersedes, refs[ref])
 		}
 
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			id,
@@ -941,8 +941,8 @@ func TestPositionRevisionAuthorityCanCorrectEffectiveDateAndRejectCycles(t *test
 }
 
 func TestPositionsInterpretationUpgradeUsesRetainedEvidenceWithoutRefetch(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "existing-position-instrument", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "existing-position-instrument", equityRow("U1", "fill", "100"))
 
 	executions, err := s.queries.Executions(t.Context())
 	if err != nil {
@@ -1021,8 +1021,8 @@ func TestPositionsInterpretationUpgradeUsesRetainedEvidenceWithoutRefetch(t *tes
 }
 
 func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "holding", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 	acquireRealized(
 		t,
 		s,
@@ -1064,7 +1064,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 		other, _ := source.NewPosition(instrument, otherQuantity, otherCost)
 		f.Positions = append(f.Positions, other)
 
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			id,
@@ -1129,7 +1129,7 @@ func TestPositionsPairingExhaustionPublishesUnavailableWithoutFallback(t *testin
 }
 
 func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	instrument, _ := source.NewInstrument(
 		source.InstrumentInput{Kind: source.Equity, Name: "Anonymous security"},
@@ -1143,7 +1143,7 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 		f.Positions = append(f.Positions, p)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"anonymous-positions",
@@ -1209,7 +1209,7 @@ func TestPositionsWithholdAnonymousInstrumentBindingCollisions(t *testing.T) {
 }
 
 func TestPositionsBindEachSharedParentOnceWithIndependentSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	if _, err := s.db.Exec(`CREATE TABLE underlier_binding_attempts(total INTEGER NOT NULL);
 INSERT INTO underlier_binding_attempts VALUES(0);
 CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_claims WHEN NEW.role='underlier' BEGIN UPDATE underlier_binding_attempts SET total=total+1; END;`); err != nil {
@@ -1235,7 +1235,7 @@ CREATE TRIGGER count_underlier_binding_attempts BEFORE INSERT ON instrument_clai
 		f.Positions = append(f.Positions, p)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"shared-position-parent",

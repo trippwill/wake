@@ -20,11 +20,11 @@ import (
 )
 
 func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	lifecycle := strings.NewReplacer(`execID="option-fill"`, `execID="exercise-fill"`, `tradeID="option-trade"`, `tradeID="exercise-trade"`, `transactionType="ExchTrade"`, `transactionType="BookTrade" code="Ex"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "shared-calculation", syntheticOption+syntheticDebt+syntheticFX+lifecycle)
+	processConfirmationReport(t, s, "shared-calculation", syntheticOption+syntheticDebt+syntheticFX+lifecycle)
 
 	rows, err := s.queries.Executions(ctx)
 	if err != nil || len(rows) != 4 {
@@ -121,9 +121,9 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 }
 
 func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(t, s, "atomic-calculation", syntheticDebt)
+	processConfirmationReport(t, s, "atomic-calculation", syntheticDebt)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -179,13 +179,13 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 }
 
 func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	row := equityRow("U1", "same", "100")
-	coverageReport(t, s, "original-claim", row)
+	processConfirmationReport(t, s, "original-claim", row)
 
 	for i := range 12 {
-		coverageReport(t, s, fmt.Sprint("appearance-", i), strings.Repeat("\n", i+1)+row)
+		processConfirmationReport(t, s, fmt.Sprint("appearance-", i), strings.Repeat("\n", i+1)+row)
 	}
 
 	view, err := s.Dashboard(ctx)
@@ -235,7 +235,7 @@ func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testin
 		t.Fatal("selected appearance provenance lost", current, err)
 	}
 
-	coverageReport(t, s, "new-disputed-claim", strings.Replace(row, `price="100"`, `price="101"`, 1))
+	processConfirmationReport(t, s, "new-disputed-claim", strings.Replace(row, `price="100"`, `price="101"`, 1))
 
 	inputs, err = s.queries.CalculationInputs(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil || len(inputs) != 2 {
@@ -250,10 +250,15 @@ func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testin
 }
 
 func TestSelectingBoundInstrumentPreservesEnrichedListing(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	reported := equityRow("U1", "enriched-listing", "100")
-	coverageReport(t, s, "without-venue", strings.Replace(reported, ` listingExchange="NASDAQ"`, "", 1))
+	processConfirmationReport(
+		t,
+		s,
+		"without-venue",
+		strings.Replace(reported, ` listingExchange="NASDAQ"`, "", 1),
+	)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 1 || view.Executions[0].Listing() != "" {
@@ -262,7 +267,7 @@ func TestSelectingBoundInstrumentPreservesEnrichedListing(t *testing.T) {
 
 	id := view.Executions[0].ID()
 
-	coverageReport(t, s, "with-venue", reported)
+	processConfirmationReport(t, s, "with-venue", reported)
 
 	detail, err := s.ExecutionDetail(ctx, id)
 	if err != nil || detail.Execution.Listing() == "" {
@@ -295,7 +300,7 @@ func TestSelectingBoundInstrumentPreservesEnrichedListing(t *testing.T) {
 func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		t.Run(fmt.Sprint("reverse-", reverse), func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			ctx := t.Context()
 			unknown := strings.Replace(syntheticOption, ` multiplier="10"`, "", 1)
 			optionRow := func(event, multiplier string) string {
@@ -307,7 +312,7 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 
 				return row
 			}
-			coverageReport(
+			processConfirmationReport(
 				t,
 				s,
 				"unknown-root",
@@ -330,7 +335,12 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 				a, b = b, a
 			}
 
-			coverageReport(t, s, "competing-enrichment", optionRow("candidate-a", a)+optionRow("candidate-b", b))
+			processConfirmationReport(
+				t,
+				s,
+				"competing-enrichment",
+				optionRow("candidate-a", a)+optionRow("candidate-b", b),
+			)
 
 			detail, err := s.InstrumentDetail(ctx, root)
 			if err != nil || detail.Instrument.Reported().Option().Fields().Multiplier.Value() != "" ||
@@ -350,10 +360,10 @@ func TestSharedRootCompetingEnrichmentKeepsOnePreWriteBaseline(t *testing.T) {
 }
 
 func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	baseline := strings.Replace(equityRow("U1", "fill", "10"), ` netCash="-0.000000049324000000123"`, "", 1)
-	coverageReport(t, s, "source-baseline", baseline)
+	processConfirmationReport(t, s, "source-baseline", baseline)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 1 {
@@ -362,7 +372,7 @@ func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing
 
 	id := view.Executions[0].ID()
 	retainDecision(t, s, "activity", id, "price", "12", "USD", "set")
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"new-compatible-source",
@@ -396,10 +406,10 @@ func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing
 }
 
 func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	baseline := strings.Replace(equityRow("U1", "fill", "10"), ` netCash="-0.000000049324000000123"`, "", 1)
-	coverageReport(t, s, "unknown-net", baseline)
+	processConfirmationReport(t, s, "unknown-net", baseline)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 1 {
@@ -408,7 +418,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 
 	id := view.Executions[0].ID()
 	net := func(value string) string { return strings.Replace(baseline, "/>", ` netCash="`+value+`"/>`, 1) }
-	coverageReport(t, s, "known-net", net("-100"))
+	processConfirmationReport(t, s, "known-net", net("-100"))
 	retainDecision(t, s, "activity", id, "price", "12", "USD", "set")
 
 	fields := view.Executions[0].Terms().Fields()
@@ -424,7 +434,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"conflicting-net",
@@ -480,7 +490,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"later-conflicting-net",

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 #MISE description="Run isolated synthetic Chromium browser workflows"
-#MISE wait_for=["test:race", "test:coverage"]
+#MISE wait_for=["test:race", "test:race:focused", "test:coverage"]
 set -euo pipefail
 export WAKE_SCREENSHOT_DIR="$PWD/.cache/browser/screenshots"
 mkdir -p .cache/test-results

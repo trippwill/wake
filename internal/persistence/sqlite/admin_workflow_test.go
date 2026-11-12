@@ -44,7 +44,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 				w.Header().Set("Retry-After", "120")
 			}
 
-			_, _ = fmt.Fprint(w, workflowReport(equityRow("U1", "http-fill", "401.000000001")))
+			_, _ = fmt.Fprint(w, confirmationReport(equityRow("U1", "http-fill", "401.000000001")))
 		}
 	}))
 	defer upstream.Close()

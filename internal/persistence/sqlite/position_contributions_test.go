@@ -12,8 +12,8 @@ import (
 )
 
 func TestPositionBindingSurvivesRedundantInstrumentSupport(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "activity-first", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "activity-first", equityRow("U1", "fill", "100"))
 	acquireRealized(
 		t,
 		s,
@@ -80,7 +80,7 @@ func TestPositionBindingSurvivesRedundantInstrumentSupport(t *testing.T) {
 }
 
 func TestPositionReinterpretationRetainsFirstInstrumentAssertion(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	account, _ := source.NewReference("ibkr", "account", "", "U1")
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	instrument, _ := source.NewInstrument(
@@ -96,7 +96,7 @@ func TestPositionReinterpretationRetainsFirstInstrumentAssertion(t *testing.T) {
 		Complete:  true,
 		Positions: []source.Position{position},
 	}
-	coverageClaims(t, s, "report", positionSetNormalizer(f))
+	processSyntheticClaims(t, s, "report", positionSetNormalizer(f))
 
 	first := readPositions(t, s)
 	if first.Status != "available" {
@@ -191,11 +191,16 @@ func TestPositionAndActivityInstrumentSupportIsIndependent(t *testing.T) {
 			}
 
 			t.Run(name, func(t *testing.T) {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 				trade := underlierTrade(t, base, "fill", "", qualified)
 
 				position := func() {
-					coverageClaims(t, s, "holding", positionSetNormalizer(positionInput(t, trade.Fields().Instrument)))
+					processSyntheticClaims(
+						t,
+						s,
+						"holding",
+						positionSetNormalizer(positionInput(t, trade.Fields().Instrument)),
+					)
 				}
 				activity := func() { retainUnderlierTrades(t, s, "trade", trade) }
 				if first == "activity" {
@@ -226,10 +231,10 @@ func TestPositionAndActivityInstrumentSupportIsIndependent(t *testing.T) {
 }
 
 func TestPositionChildAssertionsRemainCurrentWithoutHistoricalSupportLinks(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	input := positionInput(t, underlierTrade(t, base, "first", "", false).Fields().Instrument)
-	coverageClaims(t, s, "holding", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "holding", positionSetNormalizer(input))
 
 	first := readPositions(t, s)
 	if first.Status != "available" || len(first.Positions) != 1 {
@@ -268,7 +273,7 @@ func TestPositionChildAssertionsRemainCurrentWithoutHistoricalSupportLinks(t *te
 
 	conflict := positionInput(t, underlierTrade(t, base, "conflict", "US0000000002", false).Fields().Instrument)
 	conflict.Date, _ = financial.ParseDate("2026-11-03")
-	coverageClaims(t, s, "disagreement", positionSetNormalizer(conflict))
+	processSyntheticClaims(t, s, "disagreement", positionSetNormalizer(conflict))
 	reinterpretPosition(t, s, "disagreement", "repeated-disagreement", conflict)
 
 	if len(observationRowsForTest(t, s, "instrument", parent)) != 1 ||
@@ -304,7 +309,7 @@ func TestPositionChildAssertionsRemainCurrentWithoutHistoricalSupportLinks(t *te
 		t.Fatal("qualification replaced the source child or lost independent history", detail, err)
 	}
 
-	coverageClaims(t, s, "anonymous-still-current", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "anonymous-still-current", positionSetNormalizer(input))
 
 	detail, err = s.InstrumentDetail(t.Context(), parent)
 	if err != nil || detail.Underlier != child ||
@@ -324,7 +329,7 @@ func TestPositionChildAssertionsRemainCurrentWithoutHistoricalSupportLinks(t *te
 }
 
 func TestPositionReappearingAssertionUsesCurrentOccurrences(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "synthetic")
 	rich, _ := source.NewInstrument(
@@ -332,7 +337,7 @@ func TestPositionReappearingAssertionUsesCurrentOccurrences(t *testing.T) {
 	)
 	partial, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Reference: ref})
 	input := positionInput(t, rich)
-	coverageClaims(t, s, "holding", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "holding", positionSetNormalizer(input))
 
 	first := readPositions(t, s)
 	if first.Status != "available" || len(first.Positions) != 1 {
@@ -348,7 +353,7 @@ func TestPositionReappearingAssertionUsesCurrentOccurrences(t *testing.T) {
 		t.Fatal("retired enrichment remained current", detail, err)
 	}
 
-	coverageClaims(t, s, "reappearing", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "reappearing", positionSetNormalizer(input))
 
 	detail, err = s.InstrumentDetail(t.Context(), id)
 	if err != nil || len(detail.Instrument.Reported().Identifiers()) != 1 ||
@@ -363,11 +368,11 @@ func TestPositionReappearingAssertionUsesCurrentOccurrences(t *testing.T) {
 }
 
 func TestPositionContributionRollbackKeepsPriorInterpretation(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	instrument, _ := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Reference: ref})
 	input := positionInput(t, instrument)
-	coverageClaims(t, s, "holding", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "holding", positionSetNormalizer(input))
 
 	before := readPositions(t, s)
 	if _, err := s.Normalize(
@@ -420,12 +425,12 @@ func TestPositionContributionRollbackKeepsPriorInterpretation(t *testing.T) {
 }
 
 func TestPositionInitialAnonymousChildConflictIsIndependent(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	first := positionInput(t, underlierTrade(t, base, "first", "US0000000001", false).Fields().Instrument)
 	second := positionInput(t, underlierTrade(t, base, "second", "US0000000002", false).Fields().Instrument)
 	first.Positions = append(first.Positions, second.Positions...)
-	coverageClaims(t, s, "initial-child-disagreement", positionSetNormalizer(first))
+	processSyntheticClaims(t, s, "initial-child-disagreement", positionSetNormalizer(first))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -462,8 +467,8 @@ func TestPositionInitialAnonymousChildConflictIsIndependent(t *testing.T) {
 }
 
 func TestPositionFamilyConflictDoesNotProjectAnEquityUnderlier(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "equity", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "equity", equityRow("U1", "fill", "100"))
 
 	ref, _ := source.NewReference("ibkr", "contract-id", "", "100")
 	childRef, _ := source.NewReference("ibkr", "contract-id", "", "999")
@@ -472,7 +477,7 @@ func TestPositionFamilyConflictDoesNotProjectAnEquityUnderlier(t *testing.T) {
 	option, _ := source.NewInstrument(
 		source.InstrumentInput{Kind: source.Option, Reference: ref, Option: terms},
 	)
-	coverageClaims(t, s, "disputed-option", positionSetNormalizer(positionInput(t, option)))
+	processSyntheticClaims(t, s, "disputed-option", positionSetNormalizer(positionInput(t, option)))
 
 	root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(ref))
 	if err != nil {
@@ -493,14 +498,14 @@ func TestPositionFamilyConflictDoesNotProjectAnEquityUnderlier(t *testing.T) {
 }
 
 func TestPositionIdentityMergeKeepsBindingsWithoutSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	isin, _ := source.NewIdentifier(source.ISIN, "US0000000001", "synthetic")
 	instrument, _ := source.NewInstrument(
 		source.InstrumentInput{Kind: source.Equity, Ticker: "SYN", Identifiers: []source.Identifier{isin}},
 	)
 	input := positionInput(t, instrument)
 	input.Positions = append(input.Positions, input.Positions...)
-	coverageClaims(t, s, "separate-source-identities", positionSetNormalizer(input))
+	processSyntheticClaims(t, s, "separate-source-identities", positionSetNormalizer(input))
 
 	if readPositions(t, s).Status != "unavailable" {
 		t.Fatal("anonymous identities were combined without evidence")

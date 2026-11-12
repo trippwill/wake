@@ -11,11 +11,11 @@ import (
 )
 
 func TestRepeatedObservationsRetainFirstSupportWithoutPublishedChanges(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.NewReplacer(`execID="option-fill"`, `execID="exercise-fill"`, `tradeID="option-trade"`, `tradeID="exercise-trade"`, `transactionType="ExchTrade"`, `transactionType="BookTrade" code="Ex"`).
 		Replace(syntheticOption)
 	rows := []string{equityRow("U1", "equity", "100"), syntheticOption, syntheticDebt, syntheticFX, lifecycle}
-	coverageReport(t, s, "base", strings.Join(rows, ""))
+	processConfirmationReport(t, s, "base", strings.Join(rows, ""))
 
 	before, err := snapshotResources(t.Context(), s, "activity")
 	if err != nil || len(before.Items) != 5 {
@@ -30,7 +30,7 @@ func TestRepeatedObservationsRetainFirstSupportWithoutPublishedChanges(t *testin
 	for i := range 32 {
 		// Vary row locations without changing any financial observations.
 		rows = append(rows[1:], rows[0])
-		coverageReport(t, s, fmt.Sprintf("repeat-%d", i), strings.Join(rows, ""))
+		processConfirmationReport(t, s, fmt.Sprintf("repeat-%d", i), strings.Join(rows, ""))
 	}
 
 	after, err := snapshotResources(t.Context(), s, "activity")

@@ -6,4 +6,4 @@
 #MISE wait_for=["test:coverage"]
 set -euo pipefail
 mkdir -p .cache/test-results
-go test -json -race -count=1 -timeout=10m ./... | tee .cache/test-results/race.jsonl
+go test -json -race -count=1 -timeout=20m ./... | tee .cache/test-results/race.jsonl

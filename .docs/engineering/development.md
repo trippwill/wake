@@ -64,26 +64,40 @@ credentials for ordinary automated verification.
 
 ## Select meaningful verification
 
-Test behavior at the boundary that owns it. Use focused checks for changed code
-and affected callers. Persistence changes need rollback/replay and relevant restart
-proofs; shared state/lifetime changes need race coverage; browser behavior needs
-functional browser checks. Concurrency tests coordinate observable events rather
-than sleeps. Keep tests focused on supported behavior and meaningful failure boundaries.
+Choose tests at the boundary that owns the behavior. Exercise exact values and
+financial meaning in ordinary tests, rollback and replay in a disposable store,
+and shared lifetimes under the race detector. Coordinate concurrent tests with
+observable events. Keep browser checks for interactions such as focus, history
+and refresh. Exercise route responses and static navigation through HTTP tests.
 
-Expand checks when a failure or new concern warrants it. Full suites are available
-but are not mandatory for every local change. CI workflows and task definitions
-own exact execution. Report checks actually run and material gaps; prior results
-are not current evidence.
+`mise run ci` runs the routine checks locally. Code CI on PRs, main and tags
+uses `mise run test:race:focused` for shared state and lifetime proofs. Run
+`mise run test:race` or dispatch the Actions `full` profile for the broad sweep.
+Use `mise run test:coverage` for ordinary behavior coverage, including the
+external provider and host modules. Generated sources have separate freshness
+checks and are excluded from behavior coverage reporting.
 
-Generated templ, sqlc and OpenAPI output is excluded from behavior coverage.
-Check generated-source freshness and exercise the handwritten boundaries that
-produce and consume it. Coverage thresholds still apply to handwritten code.
+Stage finished changes and run `mise run source:check` before code delivery.
+Use `mise run docs:check` for Markdown and links. Report checks actually run
+and material gaps.
 
-Keep source stable while generators or checks read it. SQL, public contract and templ source
-changes require their generated-output checks. Stage completed code/generated/docs
-changes and run `mise run source:check` before code delivery. Documentation-only
-changes check links, ownership, preservation of intent and diffs; do not run
-unrelated generators or application suites.
+### Browser and frontend verification
+
+Use `mise run test:browser` for isolated synthetic Chromium workflows and
+`mise run test:browser:repeat` to investigate intermittent failures. Keep the
+browser sandbox enabled and use a disposable profile. Wait for the specific
+document or interaction state, and use explicit CSS or XPath selectors.
+[DESIGN.md](../../DESIGN.md) owns the visual standard. Inspect screenshots
+alongside functional checks. After editing browser assets, use
+`mise run assets:gen` and `mise run assets:check` for the embedded copies.
+
+### Socket consumer acceptance
+
+Run `mise run test:socket` to exercise the independent
+[example consumer](../../testdata/socket-consumer/main.go) against a separate
+daemon process on a disposable Unix socket. [Current coverage](../product/coverage.md)
+describes the supported behavior, and the [OpenAPI contract](../../api/openapi/v1.yaml)
+defines the wire format.
 
 ## Changes affecting retained data
 
@@ -107,56 +121,8 @@ changes. Cover failure and repeat execution so an interrupted update cannot expo
 partial results or duplicate financial activity. Record why no historical update
 is needed when a change leaves retained results valid.
 
-The FIGI authority and debt reported-values development formats are explicit,
-approved warehouse-disposal exceptions to that retained-history procedure. They
-change source interpretation (including IBKR's observed FIGI allocation convention),
-identity grouping, public instrument shape and the
-retained debt claim/correction shape; old warehouses fail closed. Deploy
-by preserving any needed old evidence/decisions, explicitly recreating the warehouse
-and reacquiring history with the reusable encrypted access seed. There is no
-compatibility conversion, automatic updater or rebuild command. The general
-retained-history requirement above continues to apply to later changes.
-
-The observation-contribution development format retains supporting links only when
-an observation adds information to that activity or instrument. It also separates
-instrument-underlier update dependencies and occurrence-qualified position bindings from
-those evidence links. Historical contribution comparison and current interpretation eligibility
-have separate reads, so replacement can retire an assertion without deleting history or
-requiring a new support link for an unchanged assertion. This is an
-explicit warehouse-recreation exception: earlier warehouse formats fail closed
-without modification. Before deployment, preserve any required old evidence and
-operator decisions, stop Wake, and preview then explicitly confirm
-`wake reset warehouse` with the same configuration. Reacquire history using the retained
-connection settings and encrypted credentials. There is no automatic compaction,
-reference conversion, migration or deletion. The encrypted access format is
-unchanged. Supported-format replay and restart preserve source records, useful
-supporting observations, active decisions and exact values.
-Report inspection retains the complete processed appearance history independently
-of supporting-link counts; a repeated appearance can show no additional
-contribution while still identifying its related activity. Disposable-store verification covers
-position/activity processing order, occurrence retirement, unchanged and partial
-reinterpretations, reappearing assertions, child enrichment/conflicts, rollback and restart.
-Contribution checks also cover identifier order, compatible compound recombinations and
-reporting-date boundaries; underlier family checks cover both processing orders and clearing
-inadmissible automatic choices while preserving the source assertions.
-Position binding and publication must work when the containing report adds no instrument
-evidence; underlier assertions remain part of instrument reconciliation.
-
-The structured-charge development format replaces flat total/component labels with
-categorized charge paths and nested accepted breakdowns. Monetary source assertions
-remain independently selectable and contribution checks retain conflicting source
-values without accumulating repeated support. This is an approved warehouse-recreation
-exception: preserve any required old evidence and decisions, stop Wake, preview then
-explicitly confirm `wake reset warehouse` with the same configuration, and reacquire
-history using retained connection settings and credentials. Previous formats, including
-the observation-contribution format, fail closed without modification. There is no
-migration, automatic reset or conversion; the encrypted access format is unchanged.
-
-The financial variants development format changes stored accepted publications and financial
-assertion keys. It requires explicit warehouse recreation. Preserve any required old evidence and
-operator decisions, stop Wake, and preview then confirm `wake reset warehouse` with the same
-configuration. Earlier formats fail closed without modification. The encrypted access store
-remains reusable. Reconfirm accounts and reacquire history with the retained connection settings.
+See [current coverage](../product/coverage.md) for pre-release warehouse
+compatibility and evidence-preservation guidance.
 
 ## Coding conventions
 
@@ -188,40 +154,6 @@ repository, including persisted failures used by scheduling. Use typed states,
 reasons and machine codes; presentation owns labels. Protocol tokens and actual
 text search remain ordinary text operations.
 
-## Browser and frontend verification
-
-Build functional structure and data in the existing shell. Browser checks cover
-page/form/table structure, exact displayed data, navigation, commands, validation,
-progress/error/conflict states and user-visible outcomes. Keep semantic labels,
-working controls and keyboard access in each slice. Keep browser tests for behavior
-that needs a browser, such as persisted theme preferences, focus and authenticated
-workflows; check route responses and static navigation in HTTP/rendering tests.
-
-Use `chromedp.CSS` for one CSS match, `chromedp.CSSAll` for all matches, and
-`chromedp.Search` for intentional XPath queries. The default search also matches
-attribute text. An opaque CSRF token containing `h1` can match a heading search
-and make a visibility wait block on hidden metadata. Keep random security values
-intact and make selection unambiguous. Browser waits must observe the intended
-page or UI state.
-
-PR and main CI run the same complete browser suite. A smaller smoke profile does
-not establish that interactive workflows pass.
-
-[DESIGN.md](../../DESIGN.md) is the visual standard. Choose focused affected workflows, with broader
-review at coherent boundaries. Screenshots supplement functional checks and require inspection.
-
-Use isolated synthetic instances and the supported Chromium workflow; keep the
-browser sandbox enabled. Tests must not use a personal browser profile or source
-credentials. Consult task definitions for browser discovery, environment switches
-and artifacts. Source assets and their vendor inventory own exact library versions.
-
-After editing browser assets, run `mise run assets:gen` to refresh the checked-in
-gzip copies embedded in the executable. `mise run assets:check` verifies that the
-generated files exactly match the sources, including additions and deletions.
-Both tasks use the pinned Go toolchain; an ordinary Go build uses the checked-in
-copies. The source files remain readable and retain upstream licenses. Source
-generation and CI include these tasks.
-
 ## Documentation maintenance
 
 Use the [Wake docs skill](../../.agents/skills/wake-docs/SKILL.md) for substantive
@@ -249,115 +181,8 @@ contacts external sites and is an explicit, network-dependent check outside the 
 Markdown tool versions are declared on the file tasks that use them and resolved
 in the project lockfile. They are installed and activated for those tasks.
 
-CI runs these documentation checks for every change, since removing or renaming
-code can break a documentation link. Markdown-only changes skip the application
-suites. Mixed changes, non-Markdown changes, tag builds and manual runs retain
-the application suites. Failed change classification defaults to full validation;
-the final `ci` gate requires documentation success and every expected suite result.
-
-## Socket consumer acceptance
-
-[Current coverage](../product/coverage.md) owns acceptance;
-the [OpenAPI contract](../../api/openapi/v1.yaml) owns exact wire semantics. The
-standalone [Go consumer](../../testdata/socket-consumer/main.go) has its own module
-and no Wake imports. It reads only the socket and validates a complete accepted
-snapshot against its embedded copy of the published OpenAPI contract. Generation
-and checks keep that copy identical to the owning specification. The consumer
-rejects incomplete responses, duplicate keys or resources, invalid links and
-conflicting content for a retained resource revision. Exact decimals remain text.
-
-The consumer commits its complete mirror and opaque version together in its own
-private SQLite database. A failed download, validation or transaction preserves
-the previous mirror and version. An unchanged ETag avoids download and persistence. Its private mirror
-has an explicit application identity and format. Existing files are admitted through
-an immutable read-only check before any write or journal setup. Unrecognized files
-fail closed with instructions to preserve them and choose a new state path; the
-example never initializes an unrelated existing database as its mirror.
-Invalid saved state fails closed and remains available for inspection. Structured
-results go to stdout; immediate/periodic progress and failures go to stderr. A
-warehouse change is explicitly reported after a validated new baseline commits.
-
-Follow mode subscribes to SSE publication notifications and conditionally synchronizes
-when the announced warehouse/version differs from its last fully synchronized
-publication. Completion includes optional lookup checks, fixture assertions and
-structured success output; an interrupted verification resumes even when the mirror
-has already committed that version. It keeps one snapshot synchronization active at
-a time; queued events or reconnect catch changes
-that arrive during a download. While following, stream and snapshot transport
-interruptions reconnect with exponential backoff capped at 30 seconds; `--interval`
-sets the initial reconnect delay. Only successful synchronization resets the delay.
-Missing complete frames for 45 seconds close an
-idle stream. Snapshot validation and mirror persistence failures terminate follow
-visibly while preserving the prior mirror. SSE carries refresh hints with no
-replay cursor; it does not acknowledge successful mirroring or expose admin work.
-
-Run the automated synthetic proof:
-
-```sh
-mise install
-mise run test:socket
-```
-
-This task runs consumer behavior/race checks, builds the independent binary and
-runs it against a separate daemon process over the actual private Unix socket.
-Controlled providers and disposable stores exercise exact values, conditional
-reads, disconnect/restart, source correction conflict raise/clear, successive
-operator corrections, repeat-safe mirroring, access recovery, warehouse replacement
-and SSE follow/reconnect across these changes, progress and interruption. It is part
-of `mise run ci`. Persistence and handler tests cover snapshot consistency, transactional
-rollback, unchanged claims,
-late relationships, revision-bound explanations and structured read-only errors.
-Stream tests cover subscription/read races, commit-only signals, burst coalescing,
-disconnect cleanup, finite metadata reads, heartbeat lifetime and joined shutdown.
-Consumer checks cover interrupted responses, malformed/incomplete protocol, failed
-persistence and fixture assertions.
-
-The independent consumer also reads reported positions without downloading an activity
-snapshot or opening a Wake store. It resolves instrument IDs through resource lookups,
-validates availability and exact values, and checks conditional reads. Use a Wake account ID:
-
-```sh
-mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --positions-account ACCOUNT_ID
-mise run socket-consumer:follow -- --socket /absolute/private/runtime/wake.sock --positions-account ACCOUNT_ID
-```
-
-This mode prints complete validated position views. Its in-memory baseline is replaced
-only after response and lookup validation; it does not create a persistent positions mirror.
-The separate-process socket proof exercises positions reads and initial/reconnect events
-against a disposable real daemon alongside the activity consumer checks.
-
-For a manual review, start a disposable configured Wake instance with synthetic
-history, then use its actual socket path and an existing directory for client state:
-
-```sh
-mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.db
-mise run socket-consumer:follow -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.db
-```
-
-Stop the consumer, use **Correct accepted data** in the admin console to change an
-existing price twice, then restart it with the same state path. Its mirror contains
-the newest accepted revision. Repeat synchronization to verify the version remains
-unchanged, then restart an otherwise idle daemon and repeat. Reset only a disposable
-warehouse to verify a clearly reported new baseline. To exercise source corrections,
-conflict raise/clear and late relationships, run the controlled processing scenarios
-in `mise run test`; do not modify Wake SQLite stores in a manual consumer review.
-
-Fixture assertions are an array of `{kind, path, equals, matches}` entries. Dot paths
-select fields in canonical snapshots; exact decimal expectations are JSON strings,
-and `null` differs from zero. Add `--assert /absolute/path/assertions.json` to a sync
-or follow command. Assertion runs also verify individual resource lookups and
-separate explanation revisions. The supplied
-[Confirmation assertions](../../testdata/socket-consumer/fixtures/confirmations.json)
-match the synthetic account used by `test:socket`. Stop the daemon to check visible
-transport failure; select a state path below a missing/unwritable directory to check
-persistence failure; change an expected value to check assertion failure. Preserve
-an existing state file when testing failures. The consumer never contacts upstream
-providers and does not extend the production operator CLI.
-
-The provider proof uses disposable Go workspace files to compile an unrelated
-module and run it through the actual private host and SQLite store. Run
-`mise run test:provider` for that proof, including race detection. CI and behavior
-coverage include the same proof; the production module imports no fixture.
+CI checks documentation on every change and skips application suites for Markdown-only
+diffs. Tag builds and manual runs include the application suites.
 
 ## Financial calculation changes
 

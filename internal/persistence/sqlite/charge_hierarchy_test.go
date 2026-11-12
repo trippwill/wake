@@ -16,7 +16,7 @@ import (
 )
 
 func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	usd, _ := financial.ParseCurrency("USD")
 	money, _ := financial.ParseMoney("-0.00100", usd)
 	trade := func(category source.ChargeCategory, field string) source.Trade {
@@ -89,7 +89,7 @@ func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T)
 		t.Run(
 			map[bool]string{true: "complete same batch", false: "competing enrichments"}[sameBatch],
 			func(t *testing.T) {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 				if sameBatch {
 					processPartial(t, s, "competing", a.Observation(), b.Observation())
 				} else {
@@ -148,9 +148,9 @@ func TestChargeAncestorDisagreementKeepsActivitiesAndSourceChoices(t *testing.T)
 }
 
 func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := equityRow("U1", "charge-fill", "100")
-	coverageReport(t, s, "charge-base", base)
+	processConfirmationReport(t, s, "charge-base", base)
 	before, _ := snapshotState(t.Context(), s)
 	row := strings.Replace(
 		base,
@@ -158,7 +158,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 		` thirdPartyRegulatoryCommission="-0.00200" regFINRATradingActivityFee="-0.00100" regSection31TransactionFee="0.0000"/>`,
 		1,
 	)
-	normalizeCoverageReport(t, s, "charge-details", row)
+	normalizeConfirmationReport(t, s, "charge-details", row)
 
 	if _, err := s.db.Exec(
 		`CREATE TRIGGER reject_charge BEFORE UPDATE ON published_resources WHEN NEW.kind='activity' BEGIN SELECT RAISE(ABORT,'synthetic charge failure'); END`,
@@ -212,7 +212,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 		{"charge-reordered", strings.Replace(row, `regFINRATradingActivityFee="-0.00100" regSection31TransactionFee="0.0000"`, `regSection31TransactionFee="0.0000" regFINRATradingActivityFee="-0.00100"`, 1)},
 		{"charge-subset", base},
 	} {
-		coverageReport(t, s, record.id, record.row)
+		processConfirmationReport(t, s, record.id, record.row)
 
 		if tableCount(t, s, "execution_observations") != support {
 			t.Fatal("known charges added supporting links")
@@ -268,7 +268,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 func TestStandaloneChargeTotalFollowsCashCorrectionWithoutCombiningTax(t *testing.T) {
 	for _, feeFirst := range []bool{true, false} {
 		t.Run(map[bool]string{true: "fee-first", false: "tax-first"}[feeFirst], func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			fee := strings.Replace(cashRow, `type="Dividends"`, `type="Other Fees"`, 1)
 			tax := `<SalesTax accountId="U1" transactionID="tax1" taxableTransactionID="cash1" salesTax="-0.2300" currency="USD" date="2026-10-20"/>`
 

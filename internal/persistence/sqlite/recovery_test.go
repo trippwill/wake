@@ -10,9 +10,9 @@ import (
 
 func TestProcessingRetryPreservesSourceCorrections(t *testing.T) {
 	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(t, s, "original", equityRow("U1", "original", "100"))
-	coverageReport(t, s, "replacement", correctionRow("replacement", "Co", "Toriginal"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", equityRow("U1", "original", "100"))
+	processConfirmationReport(t, s, "replacement", correctionRow("replacement", "Co", "Toriginal"))
 
 	var err error
 	if err = s.RetryProcessing(ctx, "original"); err != nil {

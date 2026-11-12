@@ -10,14 +10,14 @@ import (
 )
 
 func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	changes, unsubscribe := s.SubscribePublications()
 	defer unsubscribe()
 
 	other, removeOther := s.SubscribePublications()
 	row := equityRow("U1", "notifications", "100")
-	coverageReport(t, s, "initial", row)
+	processConfirmationReport(t, s, "initial", row)
 
 	if len(changes) != 1 || len(other) != 1 {
 		t.Fatal("committed publication did not reach both subscribers")
@@ -27,7 +27,7 @@ func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
 	<-other
 	removeOther()
 	removeOther()
-	coverageReport(t, s, "known-claims", row)
+	processConfirmationReport(t, s, "known-claims", row)
 
 	if len(changes) != 0 {
 		t.Fatal("known claims emitted a notification")

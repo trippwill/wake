@@ -19,8 +19,8 @@ import (
 func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 	for _, kind := range []string{"activity", "instrument"} {
 		t.Run(kind, func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "released-authority", equityRow("U1", "fill", "100"))
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "released-authority", equityRow("U1", "fill", "100"))
 
 			view, err := s.Dashboard(t.Context())
 			if err != nil {
@@ -104,8 +104,8 @@ func (db *endpointCountingDB) QueryContext(
 }
 
 func TestPublishingEndpointLookupsIgnoreUnrelatedCorrections(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "relevant-trade", equityRow("U1", "target", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "relevant-trade", equityRow("U1", "target", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -120,7 +120,7 @@ func TestPublishingEndpointLookupsIgnoreUnrelatedCorrections(t *testing.T) {
 	}
 
 	rows.WriteString(correctionRow("related", "Ca", "Ttarget"))
-	coverageReport(t, s, "correction-history", rows.String())
+	processConfirmationReport(t, s, "correction-history", rows.String())
 	counter := &endpointCountingDB{DBTX: s.db}
 
 	resource, why, err := canonicalSnapshot(t.Context(), sqlc.New(counter), "activity", id, nil)
@@ -136,7 +136,7 @@ func TestPublishingEndpointLookupsIgnoreUnrelatedCorrections(t *testing.T) {
 }
 
 func TestPublishingReverseLookupsUseEndpointIndexes(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var trigger string
 	if err := s.db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='trigger' AND name='publish_link'`).
@@ -227,8 +227,8 @@ func TestPublishingReverseLookupsUseEndpointIndexes(t *testing.T) {
 func TestNormalizationPublishingFailureReleasesConnectionAndRecordsFailure(t *testing.T) {
 	for _, failure := range []string{"query", "advance"} {
 		t.Run(failure, func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "publishing-failure", equityRow("U1", "trade", "100"))
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "publishing-failure", equityRow("U1", "trade", "100"))
 
 			original, err := s.Records(t.Context(), "publishing-failure", ibkrflex.Version)
 			if err != nil {

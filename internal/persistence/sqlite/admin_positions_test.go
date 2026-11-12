@@ -22,7 +22,7 @@ func positionsQuery(t *testing.T, options application.ListOptions) application.L
 }
 
 func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	first := holdingXML("2026-11-01", "9007199254740993.0000000000002", "0.0000")
 	second := strings.ReplaceAll(
 		holdingXML("2026-11-01", "9007199254740993.0000000000001", "12.0000000000001"),
@@ -129,7 +129,7 @@ func TestPositionsListExactOrderingPagingAndCurrentNames(t *testing.T) {
 }
 
 func TestPositionsListAvailabilityAndReplacement(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	q := positionsQuery(t, application.ListOptions{})
 	read := func() application.PositionsList {
 		t.Helper()
@@ -142,7 +142,7 @@ func TestPositionsListAvailabilityAndReplacement(t *testing.T) {
 		return got
 	}
 
-	coverageReport(t, s, "initial", equityRow("U1", "baseline", "100"))
+	processConfirmationReport(t, s, "initial", equityRow("U1", "baseline", "100"))
 
 	missing := read()
 	if missing.Status != "unavailable" || len(missing.Items) != 0 || *missing.Reason != "not_reported" {

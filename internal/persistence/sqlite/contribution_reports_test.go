@@ -15,7 +15,7 @@ import (
 )
 
 func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "first", full)
 
@@ -87,7 +87,7 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 }
 
 func TestDiscardedReportContextUsesDistinctEventAndAliasAmbiguityRules(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	first := partialTrade(t).Fields()
 	alias, _ := source.NewReference("fixture", "trade", "U1", "shared")
 	first.EventAliases = []source.Reference{alias}
@@ -165,7 +165,7 @@ func TestDiscardedReportContextUsesDistinctEventAndAliasAmbiguityRules(t *testin
 }
 
 func TestReportPendingObservationsRemainVisible(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	partial := partialObservation(t, full.Fields(), full.Fields().Fields[:1]...)
 	processPartial(t, s, "pending", partial)
@@ -187,7 +187,7 @@ func TestReportPendingObservationsRemainVisible(t *testing.T) {
 }
 
 func TestReportRepeatedLinkedIdentityReviewRemainsVisible(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	f := partialTrade(t).Fields()
 	alias, _ := source.NewReference("fixture", "trade", "U1", "shared-review")
 	f.EventAliases = []source.Reference{alias}
@@ -227,7 +227,7 @@ func TestReportRepeatedLinkedIdentityReviewRemainsVisible(t *testing.T) {
 }
 
 func TestReportContextQueriesUseSourceAndActivityKeys(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	plan, err := s.db.QueryContext(
 		t.Context(),

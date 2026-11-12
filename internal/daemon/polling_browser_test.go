@@ -8,8 +8,6 @@ package daemon
 import (
 	"context"
 	"net/http/httptest"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -33,20 +31,6 @@ func (browserPollingProvider) Acquire(
 }
 
 func TestBrowserPollingIntervals(t *testing.T) {
-	browser := os.Getenv("WAKE_BROWSER")
-	if browser == "" {
-		for _, name := range []string{"brave-browser", "chromium", "google-chrome"} {
-			if candidate, err := exec.LookPath(name); err == nil {
-				browser = candidate
-				break
-			}
-		}
-	}
-
-	if browser == "" {
-		t.Fatal("Chromium required; set WAKE_BROWSER")
-	}
-
 	cfg := shellConfig(t)
 
 	store, err := persistence.Open(t.Context(), persistence.Profile{
@@ -110,14 +94,7 @@ func TestBrowserPollingIntervals(t *testing.T) {
 	server.Start()
 	defer func() { close(stopping); server.Close() }()
 
-	allocator, stop := chromedp.NewExecAllocator(t.Context(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath(browser))...)
-	defer stop()
-
-	ctx, cancel := chromedp.NewContext(allocator)
-	defer cancel()
-
-	ctx, deadline := context.WithTimeout(ctx, 45*time.Second)
+	ctx, deadline := context.WithTimeout(testbrowser.Start(t), 20*time.Second)
 	defer deadline()
 
 	const (

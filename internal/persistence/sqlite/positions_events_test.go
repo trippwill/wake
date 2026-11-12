@@ -17,8 +17,8 @@ import (
 )
 
 func TestPositionsStreamUsesIndependentVersionsAndReconnects(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "position", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "baseline", equityRow("U1", "position", "100"))
 	acquireRealized(
 		t,
 		s,

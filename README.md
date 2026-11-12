@@ -260,7 +260,7 @@ Start a Codex chat and invoke `$wake-read` with the Wake data you want to inspec
 The private Unix socket publishes accepted accounts, instruments, listings and
 activity with stable identities, exact values and complete versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
-[standalone consumer scenarios](.docs/engineering/development.md#socket-consumer-acceptance).
+[independent consumer check](.docs/engineering/development.md#socket-consumer-acceptance).
 For a running instance, use its socket path and an existing client-state directory:
 
 ```sh

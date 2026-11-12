@@ -15,14 +15,14 @@ import (
 
 func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	baseline, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"first",
@@ -55,13 +55,13 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 		t.Fatalf("exact price missing: %+v", page.Items)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"repeat",
 		equityRow("U1", "original", "100.0000")+syntheticOption+syntheticDebt+syntheticFX,
 	)
-	coverageReport(t, s, "scale-only", equityRow("U1", "original", "100.00"))
+	processConfirmationReport(t, s, "scale-only", equityRow("U1", "original", "100.00"))
 
 	if got := snapshotChanges(t, s, initial.Snapshot); len(got.Items) != 0 {
 		t.Fatal("unchanged overlap published", got.Items)
@@ -79,8 +79,8 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 
 	retainDecision(t, s, "activity", id, "price", "101.000000000001", "USD", "set")
 	retainDecision(t, s, "activity", id, "price", "100.0000", "USD", "release")
-	coverageReport(t, s, "conflict", equityRow("U1", "original", "102"))
-	coverageReport(
+	processConfirmationReport(t, s, "conflict", equityRow("U1", "original", "102"))
+	processConfirmationReport(
 		t,
 		s,
 		"cancel",
@@ -101,7 +101,7 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 		t.Fatal("latest disconnected state lost corrections/conflict", latest)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"cancel-overlap",
@@ -160,8 +160,8 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 
 func TestPublishingReferenceRevisions(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "first", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", syntheticOption)
 
 	page, err := snapshotResources(ctx, s, "instruments")
 	if err != nil {
@@ -191,8 +191,8 @@ func TestPublishingReferenceRevisions(t *testing.T) {
 
 func TestPublishingFinalTransactionStateAndAccountListingRevisions(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "first", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", syntheticOption)
 
 	baseline, err := snapshotState(ctx, s)
 	if err != nil {

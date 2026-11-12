@@ -15,7 +15,7 @@ import (
 )
 
 func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var rows strings.Builder
 	for i := range 55 {
@@ -23,7 +23,7 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 	}
 
 	rows.WriteString(equityRow("U1", "report-fill-00", "100"))
-	coverageReport(t, s, "report", rows.String())
+	processConfirmationReport(t, s, "report", rows.String())
 
 	reg, _ := ibkrflex.Registration(ibkrflex.Options{})
 	if _, err := s.Normalize(t.Context(), "report", "second-version", reg.Normalizer()); err != nil {
@@ -129,7 +129,7 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 }
 
 func TestReportObservationPagesIncludeUnlinkedAndEmptyReports(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	id := acquireRealized(
 		t,
 		s,
@@ -153,13 +153,13 @@ func TestReportObservationPagesIncludeUnlinkedAndEmptyReports(t *testing.T) {
 }
 
 func TestWarehouseSizeReadsOwnedFileWithoutPublication(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	initial, err := s.WarehouseSize()
 	if err != nil || initial <= 0 {
 		t.Fatal(initial, err)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"size",

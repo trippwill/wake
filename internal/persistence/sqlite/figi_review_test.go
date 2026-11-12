@@ -19,11 +19,11 @@ import (
 func TestConvergedBindingRetainsLaterSourceIdentifierChanges(t *testing.T) {
 	for _, disputed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "enrichment", true: "disagreement"}[disputed], func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
 			second := strings.NewReplacer(`conid="100"`, `conid="200"`, "US0000000001", "US0000000002").
 				Replace(equityRow("U1", "b", "200"))
-			coverageReport(t, s, "second", second)
+			processConfirmationReport(t, s, "second", second)
 
 			view, err := s.Dashboard(t.Context())
 			if err != nil {
@@ -44,7 +44,7 @@ func TestConvergedBindingRetainsLaterSourceIdentifierChanges(t *testing.T) {
 				changed = strings.Replace(second, "US0000000002", "US0000000001", 1)
 			}
 
-			coverageReport(t, s, "new-claim", changed)
+			processConfirmationReport(t, s, "new-claim", changed)
 
 			detail, err := s.InstrumentDetail(t.Context(), a)
 			if err != nil || detail.Instrument.Status().NeedsReview() != disputed {
@@ -128,9 +128,9 @@ func TestConvergencePreservesConcreteFamily(t *testing.T) {
 func TestConvergedDetailAndSnapshotIncludeAllBindings(t *testing.T) {
 	for _, check := range []string{"detail", "snapshot"} {
 		t.Run(check, func(t *testing.T) {
-			s := coverageStore(t)
-			coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-			coverageReport(
+			s := newStoreWithSyntheticAccount(t)
+			processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+			processConfirmationReport(
 				t,
 				s,
 				"second",
@@ -176,8 +176,8 @@ func TestConvergedDetailAndSnapshotIncludeAllBindings(t *testing.T) {
 }
 
 func TestSingletonListingRejectsConflictingReportedFIGI(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -205,8 +205,8 @@ func TestSingletonListingRejectsConflictingReportedFIGI(t *testing.T) {
 }
 
 func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -253,13 +253,13 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"contradiction",
 		strings.Replace(equityRow("U1", "a", "100"), "US0000000001", "US0000000002", 1),
 	)
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"second",
@@ -276,7 +276,7 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"compatible-enrichment",

@@ -11,7 +11,7 @@ import (
 )
 
 func TestActivityReferenceGraphPreservesSharedAliasClosureAndOrder(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	subject := partialTrade(t).Observation().Fields()
 	family := partialField(t, source.ActivityFieldInput{Name: source.FieldFamily, Text: "trade"})
 	shared, _ := source.NewReference("fixture", "group", "U1", "shared")
@@ -77,7 +77,7 @@ func TestActivityReferenceGraphPreservesSharedAliasClosureAndOrder(t *testing.T)
 }
 
 func TestActivityReferenceGraphSeedsLinkedAppearances(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "first", full)
 	processPartial(t, s, "appearance", full)
@@ -91,7 +91,7 @@ func TestActivityReferenceGraphSeedsLinkedAppearances(t *testing.T) {
 func BenchmarkActivityReferenceGraph(b *testing.B) {
 	for _, count := range []int{64, 256, 1024} {
 		b.Run(strconv.Itoa(count), func(b *testing.B) {
-			s := coverageStore(b)
+			s := newStoreWithSyntheticAccount(b)
 			subject := partialTrade(b).Observation().Fields()
 
 			shared, _ := source.NewReference("fixture", "group", "U1", "shared")

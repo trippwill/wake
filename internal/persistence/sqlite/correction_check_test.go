@@ -14,8 +14,8 @@ import (
 )
 
 func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "check", syntheticOption+syntheticDebt+syntheticFX)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "check", syntheticOption+syntheticDebt+syntheticFX)
 
 	ctx := context.Background()
 

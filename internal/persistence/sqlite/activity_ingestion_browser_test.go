@@ -225,7 +225,7 @@ func ingestActivityReports(
 			"",
 			` orderID="O1"`,
 			"",
-		).Replace(workflowReport(rows.String()))
+		).Replace(confirmationReport(rows.String()))
 		now := time.Now()
 
 		artifact, err := provider.NewArtifact(ibkrflex.ConfirmationFormat, "application/xml", now, []byte(body))

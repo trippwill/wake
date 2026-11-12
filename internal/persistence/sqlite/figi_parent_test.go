@@ -122,8 +122,8 @@ func TestFIGIParentLookupUsesDurableBudgetEvidenceAndCache(t *testing.T) {
 }
 
 func TestMissingIdentifierWaitsForNewEvidence(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "initial", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "initial", syntheticOption)
 
 	now := time.Now().UTC()
 
@@ -148,7 +148,7 @@ func TestMissingIdentifierWaitsForNewEvidence(t *testing.T) {
 		`underlyingSymbol="SYN" underlyingSecurityID="US5949181045"`,
 		1,
 	)
-	coverageReport(t, s, "enriched", enriched)
+	processConfirmationReport(t, s, "enriched", enriched)
 
 	pending, err := s.PendingReference(t.Context(), now)
 	if err != nil || len(pending) != 2 {

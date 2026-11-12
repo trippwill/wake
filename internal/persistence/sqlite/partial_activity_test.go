@@ -20,7 +20,7 @@ import (
 const partialVersion = "synthetic-partial/1"
 
 func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "baseline", full)
 
@@ -91,7 +91,7 @@ func TestPartialUnknownReportingAmountsPreserveTheirDates(t *testing.T) {
 }
 
 func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "baseline", full)
@@ -128,7 +128,7 @@ func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.
 }
 
 func TestFieldExplanationFollowsActiveScalarClears(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	f := partialTrade(t).Fields()
 	f.At, _ = financial.ParseTimestamp("2026-10-20T12:00:00Z")
 	f.SettlementDate, _ = financial.ParseDate("2026-10-21")
@@ -158,7 +158,7 @@ func TestFieldExplanationFollowsActiveScalarClears(t *testing.T) {
 }
 
 func TestFieldExplanationForIncompleteConversionRate(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	trade := partialTrade(t).Fields()
 	usd := trade.Price.Currency()
 	eur, _ := financial.ParseCurrency("EUR")
@@ -204,7 +204,7 @@ func TestFieldExplanationForIncompleteConversionRate(t *testing.T) {
 func TestFieldExplanationDistinguishesInstrumentTermConflictsClearsAndOmissions(t *testing.T) {
 	for _, family := range []source.InstrumentKind{source.Option, source.Debt} {
 		t.Run(string(family), func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			f := partialTrade(t).Fields()
 			instrument := f.Instrument.Fields()
 			instrument.Kind = family
@@ -417,9 +417,9 @@ func partialTrade(t testing.TB) source.Trade {
 }
 
 func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	// The fixture seeds an account directly; publish it before observing activity changes.
-	coverageReport(t, s, "account-baseline", "")
+	processConfirmationReport(t, s, "account-baseline", "")
 
 	changes, unsubscribe := s.SubscribePublications()
 	defer unsubscribe()
@@ -560,8 +560,8 @@ func TestPartialActivityCollectiveCompletionAndIndependentSelections(t *testing.
 }
 
 func TestPartialActivityCompletionRollsBackAndReplays(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "account-baseline", "")
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "account-baseline", "")
 
 	changes, unsubscribe := s.SubscribePublications()
 	defer unsubscribe()
@@ -617,7 +617,7 @@ func TestPartialActivityCompletionRollsBackAndReplays(t *testing.T) {
 }
 
 func TestPartialActivityRequiresIdentityAndRejectsWrongUnits(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "complete", full)
 	subject := full.Fields()
@@ -668,7 +668,7 @@ func TestPartialActivityRequiresIdentityAndRejectsWrongUnits(t *testing.T) {
 }
 
 func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "execution", full)
 	subject := full.Fields()
@@ -732,15 +732,15 @@ func TestPartialFeesAndSettlementUseTheSameReconciliation(t *testing.T) {
 }
 
 func TestPartialAmbiguousAliasPreservesEstablishedAssociation(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "fill", "100"))
 
 	body := strings.ReplaceAll(realizedReport("fill", "0.0000", "-1"), `ibExecID="fill"`, ``)
 	acquireRealized(t, s, body)
 	rows, _ := s.queries.Executions(t.Context())
 	id := rows[0].ID
 	other := strings.ReplaceAll(equityRow("U1", "other", "100"), `tradeID="Tother"`, `tradeID="Tfill"`)
-	coverageReport(t, s, "second", other)
+	processConfirmationReport(t, s, "second", other)
 
 	value := realizedActivity(t, s, id)
 	if value.Activity.ReportedRealizedPnL == nil || value.Activity.ReportedRealizedPnL.Amount == nil ||
@@ -752,7 +752,7 @@ func TestPartialAmbiguousAliasPreservesEstablishedAssociation(t *testing.T) {
 }
 
 func TestPartialInterpretationVersionReusesEvidenceAndPreservesDecisions(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "retained", full)
 	rows, _ := s.queries.Executions(t.Context())
@@ -823,7 +823,7 @@ func TestPartialInterpretationVersionReusesEvidenceAndPreservesDecisions(t *test
 }
 
 func TestPartialSharedAliasCannotAssembleDifferentDistinctFills(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	full := partialTrade(t).Observation()
 	a := full.Fields()
 	alias, _ := source.NewReference("fixture", "group", "U1", "shared")
