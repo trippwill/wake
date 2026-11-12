@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/source"
 )
 
 func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
@@ -156,6 +158,35 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 	checkGated(store)
 
+	if err = store.CheckCorrection(ctx, decision); !errors.Is(err, application.ErrHistoryUpdating) {
+		t.Fatal("correction validation during history update", err)
+	}
+
+	if err = store.SaveDecision(
+		ctx,
+		decision,
+		"admin/synthetic-session",
+		now,
+	); !errors.Is(
+		err,
+		application.ErrHistoryUpdating,
+	) {
+		t.Fatal("correction write during history update", err)
+	}
+
+	if _, err = store.Confirm(
+		ctx,
+		host.Connection{},
+		"",
+		source.Reference{},
+		application.AccountDetails{},
+	); !errors.Is(
+		err,
+		application.ErrHistoryUpdating,
+	) {
+		t.Fatal("account confirmation during history update", err)
+	}
+
 	run := func(s *Store, at time.Time) {
 		t.Helper()
 
@@ -189,6 +220,29 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	if count, retry := state(store); count != historyBatchSize || retry != "" {
 		t.Fatal("cancellation advanced checkpoint or set failure", count, retry)
+	}
+
+	// A storage failure that prevents saving both the checkpoint and its retry
+	// must reach the scheduler and leave the current batch eligible to retry.
+	if _, err = store.db.ExecContext(
+		ctx,
+		`CREATE TRIGGER reject_history_checkpoint BEFORE UPDATE ON history_update
+  BEGIN SELECT RAISE(ABORT,'injected checkpoint failure'); END`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	workflow := application.New(store, nil, nil, nil, nil)
+	if err = workflow.RunOnce(ctx, now); err == nil {
+		t.Fatal("workflow swallowed failure to record the retry")
+	}
+
+	if count, retry := state(store); count != historyBatchSize || retry != "" {
+		t.Fatal("failed checkpoint advanced progress or recorded a retry", count, retry)
+	}
+
+	if _, err = store.db.ExecContext(ctx, `DROP TRIGGER reject_history_checkpoint`); err != nil {
+		t.Fatal(err)
 	}
 
 	if _, err = store.db.ExecContext(
