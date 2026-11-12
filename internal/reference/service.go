@@ -22,7 +22,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-const Rule = "openfigi-authority/3"
+const Rule = "openfigi-authority/1"
 
 type Job struct {
 	IDType  string `json:"idType"`

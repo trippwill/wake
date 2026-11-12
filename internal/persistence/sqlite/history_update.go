@@ -22,7 +22,7 @@ const (
 func (s *Store) HistoryUpdating() bool { return s.historyUpdating.Load() }
 
 func (s *Store) prepareHistoryUpdate(ctx context.Context, q *sqlc.Queries, fresh bool) error {
-	_, suffix, _ := strings.Cut(string(application.RetainedClaimsRule), "/")
+	_, suffix, _ := strings.Cut(string(s.historyRule), "/")
 
 	version, err := strconv.ParseInt(suffix, 10, 64)
 	if err != nil || version < 1 {
@@ -125,7 +125,7 @@ func (s *Store) historyBatch(ctx context.Context, now time.Time) (bool, error) {
 				return false, e
 			}
 
-			if e = projectActivity(ctx, q, row, sourceState); e != nil {
+			if e = projectActivity(ctx, q, row, sourceState, s.historyRule); e != nil {
 				return false, e
 			}
 
@@ -143,7 +143,7 @@ func (s *Store) historyBatch(ctx context.Context, now time.Time) (bool, error) {
 		}
 
 		for _, id := range ids {
-			if e = projectInstrument(ctx, q, id); e != nil {
+			if e = projectInstrument(ctx, q, id, s.historyRule); e != nil {
 				return false, e
 			}
 

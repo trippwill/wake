@@ -124,8 +124,23 @@ changes. Cover failure and repeat execution so an interrupted update cannot expo
 partial results or duplicate financial activity. Record why no historical update
 is needed when a change leaves retained results valid.
 
-See [current coverage](../product/coverage.md) for pre-release warehouse
-compatibility and evidence-preservation guidance.
+The first release starts the Wake-owned rule, interpretation, continuation,
+checkpoint, comparison, and store format identifiers at version 1. Advance the
+identifier whose meaning changed.
+
+- Core rule and provider interpretation changes that affect existing financial
+  results require a retained-history update or provider replay, respectively.
+- Bump a continuation or checkpoint version when persisted progress changes
+  meaning or can no longer be read as written. Specify how the affected work
+  resumes or restarts, preserving pacing and retained evidence.
+- Bump an equivalence policy when report comparison changes. Keep the policy and
+  digest recorded for each existing receipt and verify deduplication at the
+  policy boundary.
+- Advance the affected store format when a supported store requires a storage
+  upgrade. Warehouse and encrypted-access formats advance independently.
+
+See [current coverage](../product/coverage.md) for storage compatibility and
+evidence-preservation guidance.
 
 ## Coding conventions
 

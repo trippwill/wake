@@ -21,6 +21,8 @@ import (
 )
 
 func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
+	const futureRule application.FinancialRule = "retained-claims-and-decisions/2"
+
 	ctx := t.Context()
 	now := time.Now().UTC()
 	store := newStoreWithSyntheticAccount(t)
@@ -69,12 +71,6 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = tx.ExecContext(ctx, `UPDATE executions SET calculation_rule='retained-claims-and-decisions/1';
- UPDATE instruments SET calculation_rule='retained-claims-and-decisions/1';
- UPDATE history_update SET applied=applied-1;`); err != nil {
-		t.Fatal(err)
-	}
-
 	if err = store.commit(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +78,11 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	before, err := store.Resource(ctx, "activity", timestamped)
 	if err != nil || before.Activity.Trade.Price.Amount != "2.34" {
 		t.Fatal(before, err)
+	}
+
+	originalExplanation, err := store.Explanation(ctx, "activity", timestamped, before.Revision)
+	if err != nil || originalExplanation.CalculationRule != string(application.RetainedClaimsRule) {
+		t.Fatal(originalExplanation, err)
 	}
 
 	baseline, err := store.Snapshot(ctx, application.AnySnapshotVersion())
@@ -112,7 +113,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		s, e := Open(ctx, profile, nil)
+		s, e := openWithHistoryRule(ctx, profile, nil, futureRule)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -263,7 +264,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 
 	var rebuilt int
-	if err = store.db.QueryRowContext(ctx, `SELECT count(*) FROM executions WHERE calculation_rule=?`, application.RetainedClaimsRule).
+	if err = store.db.QueryRowContext(ctx, `SELECT count(*) FROM executions WHERE calculation_rule=?`, futureRule).
 		Scan(&rebuilt); err != nil ||
 		rebuilt != historyBatchSize {
 		t.Fatal("publication failure leaked derived writes", rebuilt, err)
@@ -283,6 +284,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	overview, err := store.Overview(ctx)
 	if err != nil || overview.Status.HistoryUpdate.Completed != historyBatchSize ||
+		overview.Status.HistoryUpdate.Rule != string(futureRule) ||
 		!overview.Status.HistoryUpdate.RetryAt.Equal(now.Add(time.Minute)) {
 		t.Fatal("overview lost durable progress and retry", overview.Status.HistoryUpdate, err)
 	}
@@ -322,7 +324,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 
 	explanation, err := store.Explanation(ctx, "activity", timestamped, after.Revision)
-	if err != nil || explanation.CalculationRule != string(application.RetainedClaimsRule) {
+	if err != nil || explanation.CalculationRule != string(futureRule) {
 		t.Fatal(explanation, err)
 	}
 
@@ -334,6 +336,11 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	root, err := store.Resource(ctx, "instruments", instrument)
 	if err != nil || root.Instrument.Name == nil || *root.Instrument.Name != "Reviewed option name" {
 		t.Fatal(root, err)
+	}
+
+	instrumentExplanation, err := store.Explanation(ctx, "instruments", instrument, root.Revision)
+	if err != nil || instrumentExplanation.CalculationRule != string(futureRule) {
+		t.Fatal(instrumentExplanation, err)
 	}
 
 	if preserved(store) != immutable {

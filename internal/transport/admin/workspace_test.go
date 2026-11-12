@@ -343,7 +343,7 @@ func (historyWorkspaceStore) HistoryUpdating() bool { return true }
 func (historyWorkspaceStore) Overview(context.Context) (application.OverviewView, error) {
 	return application.OverviewView{Status: application.SystemStatus{
 		HistoryUpdate: application.HistoryUpdateStatus{
-			Rule: "retained-claims-and-decisions/2", Phase: "activity", Completed: 50,
+			Rule: string(application.RetainedClaimsRule), Phase: "activity", Completed: 50,
 			RetryAt: time.Date(2026, 11, 12, 12, 1, 0, 0, time.UTC),
 		},
 	}}, nil

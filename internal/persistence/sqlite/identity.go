@@ -278,7 +278,7 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 		return err
 	}
 
-	if err = projectInstrument(ctx, q, target); err != nil {
+	if err = projectInstrument(ctx, q, target, application.RetainedClaimsRule); err != nil {
 		return err
 	}
 

@@ -441,7 +441,7 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	if err = projectInstrument(ctx, q, id); err != nil {
+	if err = projectInstrument(ctx, q, id, application.RetainedClaimsRule); err != nil {
 		return err
 	}
 

@@ -237,3 +237,63 @@ func TestUnsupportedWALStorePreflightPreservesAllFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestV1StoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
+	for _, fixture := range []struct {
+		name, update, legacy string
+	}{
+		{name: "warehouse", update: "UPDATE main.store_metadata SET version=?", legacy: "wake-financial-variants-2"},
+		{name: "access", update: "UPDATE access.store_metadata SET version=?", legacy: "wake-simplification-4"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := t.Context()
+			profile, store := profileFixture(t)
+			for schema, expected := range map[string]string{"main": "wake-warehouse/1", "access": "wake-access/1"} {
+				var metadata storeMetadata
+				if err := store.db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
+					Scan(&metadata.kind, &metadata.version, &metadata.id); err != nil ||
+					metadata.version != expected {
+					t.Fatal(schema, metadata.version, err)
+				}
+			}
+
+			if _, err := store.db.ExecContext(
+				ctx,
+				fixture.update,
+				fixture.legacy,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			baseline := [2][]byte{}
+			for i, path := range profile.paths() {
+				var err error
+
+				baseline[i], err = os.ReadFile(filepath.Clean(path))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			reopened, err := Open(ctx, profile, nil)
+			if reopened != nil {
+				_ = reopened.Close()
+			}
+
+			if !errors.Is(err, ErrUnsupportedSchema) {
+				t.Fatal("opening a development format", err)
+			}
+
+			for i, path := range profile.paths() {
+				data, err := os.ReadFile(filepath.Clean(path))
+				if err != nil || !bytes.Equal(data, baseline[i]) {
+					t.Fatal("store changed during preflight", path, err)
+				}
+			}
+		})
+	}
+}

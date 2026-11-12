@@ -95,7 +95,7 @@ func (v ActivityTerms) Instrument() source.Instrument {
 // FinancialRule is an explicit implemented rule choice, not an update runner.
 type FinancialRule string
 
-const RetainedClaimsRule FinancialRule = "retained-claims-and-decisions/2"
+const RetainedClaimsRule FinancialRule = "retained-claims-and-decisions/1"
 
 type (
 	ActivityClaim struct {
