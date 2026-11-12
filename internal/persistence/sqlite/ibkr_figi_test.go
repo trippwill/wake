@@ -17,8 +17,8 @@ import (
 )
 
 func TestIBKRCompositeFIGIReachesTypedLookupAndRetainsListingScope(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(
 		t,
 		s,
 		"source",

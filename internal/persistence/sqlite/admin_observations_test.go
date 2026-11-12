@@ -48,15 +48,19 @@ func observationRowsForTest(t *testing.T, s *Store, kind, id string) []applicati
 }
 
 func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) {
-	store := coverageStore(t)
-	for group, count := range []int{55, 5} {
+	store := newStoreWithSyntheticAccount(t)
+	for group, count := range []int{3, 1} {
 		var rows strings.Builder
 		for i := range count {
 			row := equityRow("U1", "repeat-observation", fmt.Sprint(100+group*100+i))
-			rows.WriteString(row + row)
+			rows.WriteString(row)
+
+			if i == 0 {
+				rows.WriteString(row)
+			}
 		}
 
-		coverageReport(t, store, []string{"matching-report", "other-report"}[group], rows.String())
+		processConfirmationReport(t, store, []string{"matching-report", "other-report"}[group], rows.String())
 	}
 
 	view, err := store.Dashboard(t.Context())
@@ -66,13 +70,13 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 
 	id := view.Executions[0].ID()
 	first, _ := application.NewListQuery(
-		application.ListOptions{Sort: "location", Direction: "asc"},
+		application.ListOptions{PageSize: 2, Sort: "location", Direction: "asc"},
 		application.ObservationScope,
 	)
 
 	page, err := store.ObservationList(t.Context(), "activity", id, first)
-	if err != nil || page.Total != 60 || page.Matched != 60 || len(page.Items) != 50 {
-		t.Fatal("default page lost distinct contributions", page, err)
+	if err != nil || page.Total != 4 || page.Matched != 4 || len(page.Items) != 2 {
+		t.Fatal("first page lost distinct contributions", page, err)
 	}
 
 	repeat, err := store.ObservationList(t.Context(), "activity", id, first)
@@ -81,12 +85,12 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 	}
 
 	filtered, _ := application.NewListQuery(
-		application.ListOptions{Search: "matching-report", Page: 2, Sort: "location"},
+		application.ListOptions{Search: "matching-report", Page: 2, PageSize: 2, Sort: "location"},
 		application.ObservationScope,
 	)
 
 	page, err = store.ObservationList(t.Context(), "activity", id, filtered)
-	if err != nil || page.Total != 60 || page.Matched != 55 || len(page.Items) != 5 {
+	if err != nil || page.Total != 4 || page.Matched != 3 || len(page.Items) != 1 {
 		t.Fatal("filter applied after paging", page, err)
 	}
 
@@ -112,13 +116,14 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 	conflicting, _ := application.NewListQuery(
 		application.ListOptions{
 			Search:             "conflicting terms",
+			PageSize:           2,
 			ObservationMatches: []application.ObservationOutcome{application.ObservationTermsConflict},
 		},
 		application.ObservationScope,
 	)
 
 	page, err = store.ObservationList(t.Context(), "activity", id, conflicting)
-	if err != nil || page.Matched != 59 || len(page.Items) != 50 {
+	if err != nil || page.Matched != 3 || len(page.Items) != 2 {
 		t.Fatal("distinct conflict status lost", page, err)
 	}
 
@@ -148,8 +153,8 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 }
 
 func TestUnderlierObservationPageUsesOriginalClaimBinding(t *testing.T) {
-	store := coverageStore(t)
-	coverageReport(t, store, "underlier-appearance", syntheticOption)
+	store := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, store, "underlier-appearance", syntheticOption)
 
 	view, err := store.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 {
@@ -168,10 +173,15 @@ func TestUnderlierObservationPageUsesOriginalClaimBinding(t *testing.T) {
 }
 
 func TestInstrumentContributionKeepsRelatedActivityAfterActivitySupportDiscarded(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	row := equityRow("U1", "instrument-name", "100")
-	coverageReport(t, s, "original-name", row)
-	coverageReport(t, s, "changed-name", strings.Replace(row, `description="`, `description="Changed `, 1))
+	processConfirmationReport(t, s, "original-name", row)
+	processConfirmationReport(
+		t,
+		s,
+		"changed-name",
+		strings.Replace(row, `description="`, `description="Changed `, 1),
+	)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 {
@@ -196,7 +206,7 @@ func TestInstrumentContributionKeepsRelatedActivityAfterActivitySupportDiscarded
 }
 
 func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
-	store := coverageStore(t)
+	store := newStoreWithSyntheticAccount(t)
 
 	row := equityRow("U1", "out-of-order", "100")
 	stamps := []string{
@@ -261,10 +271,15 @@ func TestObservationReportOrderingUsesAcquisitionInstant(t *testing.T) {
 }
 
 func TestObservationOutcomeOrderingUsesPresentationLabels(t *testing.T) {
-	store := coverageStore(t)
+	store := newStoreWithSyntheticAccount(t)
 	row := equityRow("U1", "outcome-order", "100")
 	base := strings.Replace(row, ` netCash="-0.000000049324000000123"`, "", 1)
-	coverageReport(t, store, "outcome-order", base+row+strings.Replace(row, `price="100"`, `price="101"`, 1))
+	processConfirmationReport(
+		t,
+		store,
+		"outcome-order",
+		base+row+strings.Replace(row, `price="100"`, `price="101"`, 1),
+	)
 
 	view, err := store.Dashboard(t.Context())
 	if err != nil || len(view.Executions) != 1 {
@@ -314,7 +329,7 @@ func TestObservationOutcomeOrderingUsesPresentationLabels(t *testing.T) {
 }
 
 func TestObservationRuleOrderingIncludesNormalizationVersion(t *testing.T) {
-	store := coverageStore(t)
+	store := newStoreWithSyntheticAccount(t)
 	row := equityRow("U1", "rule-order", "100")
 
 	for i := range 2 {

@@ -20,10 +20,10 @@ import (
 )
 
 func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	row := equityRow("U1", "snapshot-fill", "9007199254740993.0000000000001")
-	coverageReport(t, s, "snapshot", row)
+	processConfirmationReport(t, s, "snapshot", row)
 
 	first, err := s.Snapshot(ctx, application.SnapshotCondition{})
 	if err != nil || first.Unchanged || first.Snapshot.WarehouseID == "" || first.Snapshot.Version == "" ||
@@ -45,7 +45,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 		t.Fatal("snapshot omitted activity")
 	}
 
-	coverageReport(t, s, "same-source-again", row)
+	processConfirmationReport(t, s, "same-source-again", row)
 
 	unchanged, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
 	if err != nil || !unchanged.Unchanged || unchanged.Snapshot.Version != first.Snapshot.Version ||
@@ -71,8 +71,8 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 		t.Fatal("snapshot retained a database transaction")
 	}
 
-	replacement := coverageStore(t)
-	coverageReport(t, replacement, "new-warehouse", row)
+	replacement := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, replacement, "new-warehouse", row)
 
 	baseline, err := replacement.Snapshot(ctx, application.MatchingSnapshotVersions(changed.Snapshot.Version))
 	if err != nil || baseline.Unchanged || baseline.Snapshot.WarehouseID == changed.Snapshot.WarehouseID ||
@@ -92,8 +92,8 @@ func TestEmptyWarehouseSnapshotIsComplete(t *testing.T) {
 }
 
 func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "blocked-client", equityRow("U1", "fill", "10.0000"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "blocked-client", equityRow("U1", "fill", "10.0000"))
 
 	first, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
 	if err != nil {
@@ -231,8 +231,8 @@ func (w *pausedSnapshotWriter) Write(data []byte) (int, error) {
 }
 
 func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "concurrent-snapshot", equityRow("U1", "fill", "10"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "concurrent-snapshot", equityRow("U1", "fill", "10"))
 
 	update := func(n int) error {
 		tx, err := s.db.BeginTx(t.Context(), nil)
@@ -296,7 +296,7 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 }
 
 func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
-	store := coverageStore(t)
+	store := newStoreWithSyntheticAccount(t)
 	handler := socket.NewHandler(store, nil, nil)
 	for _, test := range []struct {
 		condition string

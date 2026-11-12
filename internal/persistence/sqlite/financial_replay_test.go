@@ -18,73 +18,10 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-// Synthetic reports use a disposable account, never operator data or credentials.
-func coverageStore(t testing.TB) *Store {
-	t.Helper()
-	s, _ := testStore(t)
-
-	_, err := s.db.Exec(`INSERT INTO connections(id,provider) VALUES('synthetic','ibkr-flex');
-INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('discovery','synthetic','confirmations','discover','ibkr-confirmation-v1','application/xml','2026-10-20T00:00:00Z','synthetic',X'00');
-INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id) VALUES('account','Synthetic account','','synthetic','ibkr-flex','ibkr','account','','U1','discovery');`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return s
-}
-
-func coverageReport(t *testing.T, s *Store, id, rows string) {
-	t.Helper()
-	normalizeCoverageReport(t, s, id, rows)
-
-	if err := s.Process(t.Context(), id, ibkrflex.Version); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func normalizeCoverageReport(t *testing.T, s *Store, id, rows string) {
-	t.Helper()
-
-	ctx := context.Background()
-	body := []byte(workflowReport(rows))
-	artifact, _ := provider.NewArtifact(ibkrflex.ConfirmationFormat, "application/xml", time.Now(), body)
-
-	r, err := ibkrflex.Registration(ibkrflex.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = s.queries.PutArtifact(
-		ctx,
-		sqlc.PutArtifactParams{
-			ID:           id,
-			ConnectionID: "synthetic",
-			Stream:       "confirmations",
-			Operation:    "acquire",
-			Format:       ibkrflex.ConfirmationFormat,
-			MediaType:    "application/xml",
-			Retrieved:    time.Now().UTC().Format(time.RFC3339Nano),
-			Hash:         artifact.Hash(),
-			Content:      body,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	recordTestReceipt(t, s, id)
-
-	if _, err = s.Normalize(ctx, id, ibkrflex.Version, r.Normalizer()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-const syntheticOption = `<TradeConfirm accountId="U1" assetCategory="OPT" symbol="SYN 261120C00100000" description="Synthetic option" conid="200" underlyingConid="100" underlyingSymbol="SYN" listingExchange="CBOE" tradeID="option-trade" execID="option-fill" orderID="order-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" buySell="BUY" quantity="2" price="1.234567890123456789" currency="USD" tradeDate="2026-10-20" strike="100.00000000001" expiry="2026-11-20" putCall="C" multiplier="10"/>`
-
 func TestOptionIdentityHistoricalTermsAndReplay(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "first", syntheticOption+equityRow("U1", "underlier-fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", syntheticOption+equityRow("U1", "underlier-fill", "100"))
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 2 || len(view.Instruments) != 2 {
@@ -105,7 +42,7 @@ func TestOptionIdentityHistoricalTermsAndReplay(t *testing.T) {
 		t.Fatal("underlier and contract collapsed", detail, err)
 	}
 
-	coverageReport(t, s, "overlap", syntheticOption)
+	processConfirmationReport(t, s, "overlap", syntheticOption)
 
 	view, err = s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 2 || view.Executions[1].ID() != original.ID() {
@@ -119,35 +56,10 @@ func TestOptionIdentityHistoricalTermsAndReplay(t *testing.T) {
 	}
 }
 
-// coverageClaims admits explicitly labelled provider-neutral claims against retained
-// synthetic evidence, for facts the Confirmation format does not supply.
-func coverageClaims(t *testing.T, s *Store, id string, n provider.Normalizer) {
-	t.Helper()
-	coverageReport(t, s, id, "")
-
-	if _, err := s.Normalize(context.Background(), id, "synthetic-claims/1", n); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.Process(context.Background(), id, "synthetic-claims/1"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-type claimNormalizer func(context.Context, provider.Artifact, provider.Claims) (provider.Result, error)
-
-func (n claimNormalizer) Normalize(
-	ctx context.Context,
-	a provider.Artifact,
-	c provider.Claims,
-) (provider.Result, error) {
-	return n(ctx, a, c)
-}
-
 func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "option", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "option", syntheticOption)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -184,7 +96,7 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 			return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 		},
 	)
-	coverageClaims(t, s, "exercise", n)
+	processSyntheticClaims(t, s, "exercise", n)
 
 	view, err = s.Dashboard(ctx)
 	if err != nil || len(view.Lifecycles) != 1 || len(view.Executions) != 1 {
@@ -215,8 +127,8 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 		`transactionType="BookTrade"`,
 	)
 	booking = strings.Replace(booking, `code="O"`, `code="Ex"`, 1)
-	coverageReport(t, s, "bookings", booking)
-	coverageClaims(t, s, "repeat-exercise", n)
+	processConfirmationReport(t, s, "bookings", booking)
+	processSyntheticClaims(t, s, "repeat-exercise", n)
 
 	publishedAfter, err := s.Resource(ctx, "activity", id)
 	if err != nil || publishedAfter.Revision <= publishedBefore.Revision ||
@@ -253,12 +165,10 @@ func TestLifecycleRelationshipsResolveWithoutInventingBookings(t *testing.T) {
 	}
 }
 
-const syntheticDebt = `<TradeConfirm accountId="U1" assetCategory="BOND" subCategory="Govt" symbol="SYN TREASURY" description="Synthetic Treasury missing terms" conid="debt-1" issuerCountryCode="US" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="debt-fill" buySell="BUY" quantity="10000" price="99.123456789" currency="USD" tradeDate="2026-10-20" accruedInt="-12.3456789" amount="9912.35" proceeds="-9912.35" netCash="-9925.6956789"/>`
-
 func TestDebtNominalMissingTermsAndReferenceSubject(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "debt", syntheticDebt)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "debt", syntheticDebt)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 1 || len(view.Instruments) != 1 {
@@ -285,12 +195,10 @@ func TestDebtNominalMissingTermsAndReferenceSubject(t *testing.T) {
 	}
 }
 
-const syntheticFX = `<TradeConfirm accountId="U1" assetCategory="CASH" symbol="EUR.USD" description="EUR.USD" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="fx-fill" tradeID="fx-trade" buySell="SELL" quantity="-100.123456789" price="1.234567890123" currency="USD" tradeDate="2026-10-20" proceeds="123.45" netCash="123.25" commission="-0.2" commissionCurrency="GBP"/>`
-
 func TestConversionUnknownCounterpartAndIndependentMoney(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "fx", syntheticFX)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "fx", syntheticFX)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Conversions) != 1 || len(view.Instruments) != 0 || len(view.Executions) != 0 {
@@ -310,55 +218,11 @@ func TestConversionUnknownCounterpartAndIndependentMoney(t *testing.T) {
 		t.Fatal("conversion roles changed", f)
 	}
 
-	coverageReport(t, s, "fx-repeat", syntheticFX)
+	processConfirmationReport(t, s, "fx-repeat", syntheticFX)
 
 	view, err = s.Dashboard(ctx)
 	if err != nil || len(view.Conversions) != 1 || view.Conversions[0].ID() != c.ID() {
 		t.Fatal("conversion replay", err)
-	}
-}
-
-func TestCompatibleEnrichmentAndCompetingOptionalClaims(t *testing.T) {
-	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", syntheticOption)
-
-	v, err := s.Dashboard(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	id := v.Executions[0].ID()
-	revision := v.Executions[0].Revision()
-	enriched := strings.Replace(
-		syntheticOption,
-		`multiplier="10"`,
-		`multiplier="10" netCash="-2.0000000001"`,
-		1,
-	)
-	coverageReport(t, s, "enrichment", enriched)
-
-	d, err := s.ExecutionDetail(ctx, id)
-	if err != nil || d.Execution.Terms().Fields().NetCash.Amount() != "-2.0000000001" ||
-		d.Execution.Revision() <= revision {
-		t.Fatal("optional enrichment", d, err)
-	}
-
-	revision = d.Execution.Revision()
-
-	coverageReport(t, s, "enrichment-repeat", enriched)
-
-	d, err = s.ExecutionDetail(ctx, id)
-	if err != nil || d.Execution.Revision() != revision {
-		t.Fatal("unchanged replay revised entity", err)
-	}
-
-	competing := strings.Replace(enriched, `netCash="-2.0000000001"`, `netCash="-3"`, 1)
-	coverageReport(t, s, "competing-enrichment", competing)
-
-	d, err = s.ExecutionDetail(ctx, id)
-	if err != nil || !d.Execution.State().NeedsReview() || d.Execution.Terms().Fields().NetCash.Amount() != "" {
-		t.Fatal("arrival order selected optional claim", d, err)
 	}
 }
 
@@ -371,9 +235,9 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 	for _, marker := range []string{"Ca", "Co"} {
 		t.Run(marker, func(t *testing.T) {
 			ctx := context.Background()
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			instruction := correctionRow("replacement", marker, "Toriginal")
-			coverageReport(t, s, "early", instruction)
+			processConfirmationReport(t, s, "early", instruction)
 
 			v, err := s.Dashboard(ctx)
 			if err != nil || len(v.Corrections) != 1 || !v.Corrections[0].Status.NeedsReview() {
@@ -391,7 +255,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 				t.Fatal("cancellation became trade")
 			}
 
-			coverageReport(t, s, "original", equityRow("U1", "original", "100"))
+			processConfirmationReport(t, s, "original", equityRow("U1", "original", "100"))
 
 			v, err = s.Dashboard(ctx)
 			if err != nil || v.Corrections[0].Status != "applied" {
@@ -418,7 +282,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			coverageReport(t, s, "repeat", instruction)
+			processConfirmationReport(t, s, "repeat", instruction)
 
 			if len(snapshotChanges(t, s, baseline).Items) != 0 {
 				t.Fatal("repeated replacement/cancellation published")
@@ -430,7 +294,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 			}
 
 			if marker == "Co" {
-				coverageReport(t, s, "competitor", correctionRow("competitor", "Co", "Toriginal"))
+				processConfirmationReport(t, s, "competitor", correctionRow("competitor", "Co", "Toriginal"))
 
 				v, err = s.Dashboard(ctx)
 				if err != nil {
@@ -447,23 +311,9 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 	}
 }
 
-func TestIdentifierMismatchCannotEnrichAcceptedTrade(t *testing.T) {
-	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "baseline", equityRow("U1", "same", "100"))
-	changed := strings.Replace(equityRow("U1", "same", "100"), `US0000000001`, `US0000000002`, 1)
-	coverageReport(t, s, "mismatch", changed)
-
-	v, err := s.Dashboard(ctx)
-	if err != nil || len(v.Executions) != 1 || !v.Executions[0].State().NeedsReview() ||
-		v.Executions[0].Terms().Fields().Instrument.Identifiers()[0].Value() != "US0000000001" {
-		t.Fatal(v, err)
-	}
-}
-
 func TestSyntheticConfirmationSequenceAcceptsActivityByKind(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	for index, name := range []string{"initial.xml", "initial.xml", "overlap.xml", "overlap.xml"} {
 		//nolint:gosec // Fixed synthetic fixture names from the literal sequence above.
 		body, err := os.ReadFile("../../../testdata/ibkrflex/confirmations/" + name)
@@ -541,8 +391,8 @@ func TestSyntheticConfirmationSequenceAcceptsActivityByKind(t *testing.T) {
 
 func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "original-option", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original-option", syntheticOption)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -591,7 +441,7 @@ func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 			return provider.NewResult(provider.Counts{Rows: 1, Activities: 1})
 		},
 	)
-	coverageClaims(t, s, "reported-adjustment", n)
+	processSyntheticClaims(t, s, "reported-adjustment", n)
 
 	v, err = s.Dashboard(ctx)
 	if err != nil || len(v.Executions) != 2 || v.Executions[0].Instrument() != original.Instrument() {
@@ -612,8 +462,8 @@ func TestReportedAdjustmentKeepsHistoricalOptionTerms(t *testing.T) {
 
 func TestOptionUnderlierCanLaterBeReportedAsETF(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "option", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "option", syntheticOption)
 
 	before, err := s.Dashboard(ctx)
 	if err != nil {
@@ -629,7 +479,7 @@ func TestOptionUnderlierCanLaterBeReportedAsETF(t *testing.T) {
 
 	underlier := d.Underlier
 	etf := strings.Replace(equityRow("U1", "etf-fill", "100"), `subCategory="COMMON"`, `subCategory="ETF"`, 1)
-	coverageReport(t, s, "etf", etf)
+	processConfirmationReport(t, s, "etf", etf)
 
 	root, err := s.InstrumentDetail(ctx, underlier)
 	if err != nil || root.Instrument.Kind() != "fund" || root.Instrument.Status() == "conflict" {
@@ -640,15 +490,4 @@ func TestOptionUnderlierCanLaterBeReportedAsETF(t *testing.T) {
 	if err != nil || d.Underlier != underlier {
 		t.Fatal("underlier identity changed", d, err)
 	}
-}
-
-func observedTrade(t testing.TB, o source.ActivityObservation) source.Trade {
-	t.Helper()
-
-	v, err := o.Trade()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return v
 }

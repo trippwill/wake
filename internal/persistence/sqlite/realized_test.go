@@ -85,8 +85,8 @@ func realizedActivity(t *testing.T, s *Store, id string) application.CanonicalRe
 }
 
 func TestRealizedReportsEnrichActivityWithoutChangingTradesOrRepeatingPublication(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
 
 	rows, err := s.queries.Executions(t.Context())
 	if err != nil || len(rows) != 1 {
@@ -137,8 +137,8 @@ func TestRealizedReportsEnrichActivityWithoutChangingTradesOrRepeatingPublicatio
 }
 
 func TestRealizedRestatementsUseSharedDecisionPreflightSaveAndRelease(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
 	rows, _ := s.queries.Executions(t.Context())
 	id := rows[0].ID
 
@@ -213,7 +213,7 @@ func TestRealizedRestatementsUseSharedDecisionPreflightSaveAndRelease(t *testing
 }
 
 func TestRealizedResultsWaitForQualifiedActivityAndKeepAmbiguousLinksVisible(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	acquireRealized(t, s, realizedReport("fill", "0.0000", "-100.0000"))
 
 	if tableCount(t, s, "executions") != 0 {
@@ -227,7 +227,7 @@ func TestRealizedResultsWaitForQualifiedActivityAndKeepAmbiguousLinksVisible(t *
 		t.Fatal("unmatched result not reviewable", review, err)
 	}
 
-	coverageReport(t, s, "late-confirmation", equityRow("U1", "fill", "100"))
+	processConfirmationReport(t, s, "late-confirmation", equityRow("U1", "fill", "100"))
 	rows, _ := s.queries.Executions(t.Context())
 	id := rows[0].ID
 
@@ -238,7 +238,7 @@ func TestRealizedResultsWaitForQualifiedActivityAndKeepAmbiguousLinksVisible(t *
 	}
 
 	other := strings.Replace(equityRow("U1", "other", "100"), `tradeID="Tother"`, `tradeID="Tfill"`, 1)
-	coverageReport(t, s, "ambiguous-alias", other)
+	processConfirmationReport(t, s, "ambiguous-alias", other)
 
 	value = realizedActivity(t, s, id)
 	if value.Activity.ReportedRealizedPnL.Conflict || tableCount(t, s, "executions") != 2 {
@@ -247,8 +247,8 @@ func TestRealizedResultsWaitForQualifiedActivityAndKeepAmbiguousLinksVisible(t *
 }
 
 func TestRealizedAuthorityAndUnknownAmountAreIndependentOfAcquisition(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
 	rows, _ := s.queries.Executions(t.Context())
 	id := rows[0].ID
 
@@ -293,7 +293,7 @@ INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scop
 		t.Fatal(err)
 	}
 
-	coverageReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
+	processConfirmationReport(t, s, "confirmation", equityRow("U1", "fill", "100"))
 	rows, _ := s.queries.Executions(t.Context())
 	id := rows[0].ID
 
@@ -372,8 +372,8 @@ INSERT INTO accounts(id,name,currency,connection_id,provider,authority,kind,scop
 }
 
 func TestRealizedListSortsExactValuesByCurrencyWithUnknownLast(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(
 		t,
 		s,
 		"confirmations",

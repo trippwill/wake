@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 
-#MISE description="Repeat real daemon and admin workflows three times to detect navigation races"
+#MISE description="Repeat stateful and responsive browser workflows three times"
 set -euo pipefail
 export WAKE_SCREENSHOT_DIR="$PWD/.cache/browser/screenshots"
 mkdir -p .cache/test-results
-go test -json -tags=browser -run '^TestBrowser(AccountWorkflow|PolishedWorkflowsAndGrids)$' -count=3 -timeout=10m ./internal/transport/admin ./internal/daemon \
+go test -json -tags=browser -run '^TestBrowser(AccountWorkflow|PollingIntervals|GridNavigationAndPreferences|GridRefreshAndInteraction|CorrectionAndEvidenceNavigation|ResponsiveGridAndNavigation)$' -count=3 -timeout=10m ./internal/transport/admin ./internal/daemon \
   | tee .cache/test-results/browser-repeat.jsonl

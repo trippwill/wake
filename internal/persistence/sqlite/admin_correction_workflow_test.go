@@ -19,8 +19,8 @@ import (
 
 func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	ctx := t.Context()
-	store := coverageStore(t)
-	coverageReport(t, store, "synthetic-option", syntheticOption)
+	store := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, store, "synthetic-option", syntheticOption)
 
 	view, err := store.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 1 {

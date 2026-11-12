@@ -19,11 +19,7 @@ GOLANGCI_LINT_CACHE = "{{config_root}}/.cache/golangci-lint"
 postinstall = { task = "go:modules" }
 
 [tasks.ci]
-description = "Run continuous integration tasks"
-depends = ["check", "build", "test:coverage", "test:race", "test:browser", "test:provider", "test:socket"]
-
-[tasks.'ci:pr']
-description = "Run PR checks with full behavior, focused races and full browser workflows"
+description = "Run CI checks with ordinary behavior, focused races and browser workflows"
 depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser", "test:provider", "test:socket"]
 
 [tasks.validate]

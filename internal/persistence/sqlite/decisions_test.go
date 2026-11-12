@@ -53,8 +53,8 @@ func retainDecision(
 
 func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "original", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", syntheticOption)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T
 		t.Fatal("stale form accepted", err)
 	}
 
-	coverageReport(t, s, "source-repeat", syntheticOption)
+	processConfirmationReport(t, s, "source-repeat", syntheticOption)
 
 	detail, err := s.ExecutionDetail(ctx, id)
 	if err != nil || detail.Execution.Terms().Fields().Price.Amount() != "2.12345678900000001" {
@@ -120,10 +120,10 @@ func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T
 
 func TestObservationSelectionAndInstrumentNamingSurviveReplayAndReference(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "original", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", syntheticOption)
 	competing := strings.Replace(syntheticOption, `price="1.234567890123456789"`, `price="9.25"`, 1)
-	coverageReport(t, s, "competing", competing)
+	processConfirmationReport(t, s, "competing", competing)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestObservationSelectionAndInstrumentNamingSurviveReplayAndReference(t *tes
 		t.Fatal(err)
 	}
 
-	coverageReport(t, s, "repeat", syntheticOption)
+	processConfirmationReport(t, s, "repeat", syntheticOption)
 
 	d, err := s.ExecutionDetail(ctx, id)
 	i, e := s.InstrumentDetail(ctx, instrument)
@@ -180,15 +180,15 @@ func TestObservationSelectionAndInstrumentNamingSurviveReplayAndReference(t *tes
 
 func TestLinkDecisionPreservesIdentitiesAndRejectsWrongListing(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "original", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", syntheticOption)
 	other := strings.ReplaceAll(
 		strings.ReplaceAll(syntheticOption, "option-fill", "other-fill"),
 		`conid="200"`,
 		`conid="201"`,
 	)
 	other = strings.ReplaceAll(other, "option-trade", "other-trade")
-	coverageReport(t, s, "other", other)
+	processConfirmationReport(t, s, "other", other)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestLinkDecisionPreservesIdentitiesAndRejectsWrongListing(t *testing.T) {
 
 	retainDecision(t, s, "activity", original.ID(), "instrument", target.Instrument(), "", "set")
 	retainDecision(t, s, "activity", original.ID(), "listing", target.Listing(), "", "set")
-	coverageReport(t, s, "repeat", syntheticOption)
+	processConfirmationReport(t, s, "repeat", syntheticOption)
 
 	d, err := s.ExecutionDetail(ctx, original.ID())
 	if err != nil || d.Execution.ID() != original.ID() || d.Execution.Instrument() != target.Instrument() ||
@@ -247,8 +247,8 @@ func TestLinkDecisionPreservesIdentitiesAndRejectsWrongListing(t *testing.T) {
 
 func TestReferenceCandidateSelectionStaysWithinItsMappingJob(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "source", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "source", equityRow("U1", "fill", "100"))
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -326,11 +326,11 @@ func TestReferenceCandidateSelectionStaysWithinItsMappingJob(t *testing.T) {
 
 func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 	ctx := context.Background()
-	s := coverageStore(t)
-	coverageReport(t, s, "option", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "option", syntheticOption)
 
 	other := strings.Replace(equityRow("U1", "other-equity", "100"), `conid="100"`, `conid="101"`, 1)
-	coverageReport(t, s, "other-underlier", other)
+	processConfirmationReport(t, s, "other-underlier", other)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil {
@@ -352,7 +352,7 @@ func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 	}
 
 	retainDecision(t, s, "instrument", option, "underlier", underlier, "", "set")
-	coverageReport(t, s, "repeat", syntheticOption)
+	processConfirmationReport(t, s, "repeat", syntheticOption)
 
 	d, err := s.InstrumentDetail(ctx, option)
 	if err != nil || d.Underlier != underlier {
@@ -401,8 +401,8 @@ func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 }
 
 func TestCorrectionComparisonRetainsExactTypedValues(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "comparison", syntheticOption+syntheticDebt+syntheticFX)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "comparison", syntheticOption+syntheticDebt+syntheticFX)
 
 	view, err := s.Dashboard(context.Background())
 	if err != nil {

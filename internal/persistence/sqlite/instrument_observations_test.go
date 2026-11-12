@@ -19,7 +19,7 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 	for _, kind := range []string{"trade", "lifecycle"} {
 		for _, order := range []string{"10-first", "100-first", "same-artifact"} {
 			t.Run(kind+"/"+order, func(t *testing.T) {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 
 				row := syntheticOption
 				if kind == "lifecycle" {
@@ -39,7 +39,7 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 					first, second = second, first
 				}
 
-				coverageReport(t, s, "base", base)
+				processConfirmationReport(t, s, "base", base)
 
 				page, err := snapshotResources(t.Context(), s, "activity")
 				if err != nil || len(page.Items) != 1 {
@@ -55,7 +55,7 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 				}
 
 				if order != "same-artifact" {
-					coverageReport(t, s, "first", first)
+					processConfirmationReport(t, s, "first", first)
 				} else {
 					second = first + second
 					want = ""
@@ -66,7 +66,7 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				coverageReport(t, s, "second", second)
+				processConfirmationReport(t, s, "second", second)
 
 				detail, err := s.InstrumentDetail(t.Context(), instrument)
 				if err != nil || detail.Instrument.Status().NeedsReview() ||
@@ -112,7 +112,7 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				coverageReport(t, s, "repeat", second)
+				processConfirmationReport(t, s, "repeat", second)
 
 				if changes := snapshotChanges(t, s, baseline); len(changes.Items) != 0 {
 					t.Fatal("replay published duplicate transition", changes.Items)
@@ -145,8 +145,8 @@ func TestRetainedOptionObservationsExposeActivityConflict(t *testing.T) {
 }
 
 func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "base", syntheticDebt)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "base", syntheticDebt)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -179,7 +179,7 @@ func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			coupon,
@@ -215,8 +215,8 @@ func TestRetainedDebtObservationsExposeActivityConflict(t *testing.T) {
 }
 
 func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "base", strings.ReplaceAll(syntheticOption, ` multiplier="10"`, ""))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "base", strings.ReplaceAll(syntheticOption, ` multiplier="10"`, ""))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -250,7 +250,7 @@ func TestMissingInstrumentReferencesStillExposeRetainedConflict(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		coverageClaims(
+		processSyntheticClaims(
 			t,
 			s,
 			multiplier,

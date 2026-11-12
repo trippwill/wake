@@ -25,6 +25,14 @@ import (
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
+func TestPerformanceContributionVolume(t *testing.T) {
+	if os.Getenv("WAKE_PERFORMANCE_SIZE") != "contributions" {
+		t.Skip("mise run performance:warehouse contributions")
+	}
+
+	checkActivityContributionVolume(t, 2000)
+}
+
 // TestPerformanceWarehouse is opt-in because it creates a sizeable disposable warehouse.
 func TestPerformanceWarehouse(t *testing.T) {
 	size := os.Getenv("WAKE_PERFORMANCE_SIZE")
@@ -45,14 +53,14 @@ func TestPerformanceWarehouse(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var rows strings.Builder
 	for i := range count {
 		rows.WriteString(equityRow("U1", strconv.Itoa(i), fmt.Sprintf("9007199254740993.000000000000%d", i%2+1)))
 	}
 
-	body := workflowReport(rows.String())
+	body := confirmationReport(rows.String())
 
 	reg, err := ibkrflex.Registration(ibkrflex.Options{})
 	if err != nil {
@@ -569,8 +577,8 @@ func seedPerformanceRead(t *testing.T, count int) *Store {
 	t.Helper()
 
 	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(
 		t,
 		s,
 		"seed",

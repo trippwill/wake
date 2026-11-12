@@ -204,6 +204,7 @@ func Debt(kind source.DebtType) (source.Trade, error) {
 		return source.Trade{}, err
 	}
 	f := t.Fields()
+	f.Location = "debt:" + string(kind)
 	code := "USD"
 	if kind == source.ConventionalGilt {
 		code = "GBP"

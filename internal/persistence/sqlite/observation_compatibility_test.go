@@ -34,7 +34,7 @@ func observationReport(t *testing.T, s *Store, id, rows string) {
 	t.Helper()
 
 	ctx := context.Background()
-	body := []byte(workflowReport(rows))
+	body := []byte(confirmationReport(rows))
 	artifact, _ := provider.NewArtifact(ibkrflex.ConfirmationFormat, "application/xml", time.Now(), body)
 
 	r, err := ibkrflex.Registration(ibkrflex.Options{})

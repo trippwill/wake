@@ -17,9 +17,9 @@ import (
 )
 
 func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+	processConfirmationReport(
 		t,
 		s,
 		"second",

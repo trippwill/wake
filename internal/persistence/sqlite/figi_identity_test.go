@@ -41,7 +41,7 @@ func applyEquityIdentity(t *testing.T, s *Store, id string) {
 func TestFIGICombinesBindingsAndPreservesOldLinks(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
 		t.Run(map[bool]string{false: "forward", true: "reverse"}[reverse], func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 
 			a, b := equityRow(
 				"U1",
@@ -57,8 +57,8 @@ func TestFIGICombinesBindingsAndPreservesOldLinks(t *testing.T) {
 				a, b = b, a
 			}
 
-			coverageReport(t, s, "first", a)
-			coverageReport(t, s, "second", b)
+			processConfirmationReport(t, s, "first", a)
+			processConfirmationReport(t, s, "second", b)
 
 			view, err := s.Dashboard(t.Context())
 			if err != nil || len(view.Instruments) != 2 {
@@ -104,7 +104,7 @@ func TestFIGICombinesBindingsAndPreservesOldLinks(t *testing.T) {
 				t.Fatal(form, err)
 			}
 
-			coverageReport(t, s, "third", strings.Replace(a, `execID="a"`, `execID="third"`, 1))
+			processConfirmationReport(t, s, "third", strings.Replace(a, `execID="a"`, `execID="third"`, 1))
 
 			view, err = s.Dashboard(t.Context())
 			if err != nil || len(view.Instruments) != 1 {
@@ -115,9 +115,9 @@ func TestFIGICombinesBindingsAndPreservesOldLinks(t *testing.T) {
 }
 
 func TestFIGIConflictingChoicesWaitForReview(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+	processConfirmationReport(
 		t,
 		s,
 		"second",
@@ -155,8 +155,8 @@ func TestFIGIConflictingChoicesWaitForReview(t *testing.T) {
 }
 
 func TestReferenceFailureDoesNotUndoVerifiedIdentity(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -194,9 +194,9 @@ func TestReferenceFailureDoesNotUndoVerifiedIdentity(t *testing.T) {
 }
 
 func TestFIGICombinationRollsBackAndRetainsIndependentReleases(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+	processConfirmationReport(
 		t,
 		s,
 		"second",
@@ -293,9 +293,9 @@ func TestFIGICombinationRollsBackAndRetainsIndependentReleases(t *testing.T) {
 }
 
 func TestFIGICombinationPreservesDifferentVenueIdentities(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+	processConfirmationReport(
 		t,
 		s,
 		"second",
@@ -333,7 +333,7 @@ func TestFIGICombinationPreservesDifferentVenueIdentities(t *testing.T) {
 		}
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"third",
@@ -371,9 +371,9 @@ func TestFIGICombinationPreservesDifferentVenueIdentities(t *testing.T) {
 }
 
 func TestFIGIContradictionCannotBeOutvotedByAnotherRoot(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first", equityRow("U1", "a", "100"))
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first", equityRow("U1", "a", "100"))
+	processConfirmationReport(
 		t,
 		s,
 		"second",
@@ -423,11 +423,11 @@ func TestFIGIOptionAndUnderlierBindingsRemainCombinedAfterRecalculation(t *testi
 		t.Run(
 			map[bool]string{true: "underliers-first", false: "options-first"}[underliersFirst],
 			func(t *testing.T) {
-				s := coverageStore(t)
-				coverageReport(t, s, "first-option", syntheticOption)
+				s := newStoreWithSyntheticAccount(t)
+				processConfirmationReport(t, s, "first-option", syntheticOption)
 				other := strings.NewReplacer(`conid="200"`, `conid="300"`, `underlyingConid="100"`, `underlyingConid="101"`, `execID="option-fill"`, `execID="other-fill"`, `tradeID="option-trade"`, `tradeID="other-trade"`, `multiplier="10"`, `multiplier="100"`).
 					Replace(syntheticOption)
-				coverageReport(t, s, "second-option", other)
+				processConfirmationReport(t, s, "second-option", other)
 
 				view, err := s.Dashboard(t.Context())
 				if err != nil || len(view.Instruments) != 4 {
@@ -510,8 +510,8 @@ func TestFIGIOptionAndUnderlierBindingsRemainCombinedAfterRecalculation(t *testi
 }
 
 func TestSourceIdentityDisagreementSurvivesReferenceRefresh(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "original", equityRow("U1", "a", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", equityRow("U1", "a", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -520,7 +520,7 @@ func TestSourceIdentityDisagreementSurvivesReferenceRefresh(t *testing.T) {
 
 	id := view.Instruments[0].ID()
 	applyEquityIdentity(t, s, id)
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"disputed",

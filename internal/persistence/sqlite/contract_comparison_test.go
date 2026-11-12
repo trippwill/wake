@@ -15,8 +15,8 @@ import (
 )
 
 func TestCompleteAndPartialComparisonUseTheSameFinancialVocabulary(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "comparison-vocabulary", syntheticOption+syntheticDebt+syntheticFX)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "comparison-vocabulary", syntheticOption+syntheticDebt+syntheticFX)
 
 	rows, err := s.queries.Executions(t.Context())
 	if err != nil {
@@ -59,8 +59,8 @@ func TestCompleteAndPartialComparisonUseTheSameFinancialVocabulary(t *testing.T)
 }
 
 func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "comparison-contracts", syntheticOption+syntheticDebt)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "comparison-contracts", syntheticOption+syntheticDebt)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {

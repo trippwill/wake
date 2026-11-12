@@ -14,7 +14,7 @@ import (
 )
 
 func TestSchedulingUsesFailureCodeInsteadOfWording(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := context.Background()
 	key := host.WorkKey{Connection: "synthetic", Stream: "confirmations", Operation: "acquire"}
 	if err := s.Schedule(ctx, key, true); err != nil {
@@ -41,8 +41,8 @@ func TestSchedulingUsesFailureCodeInsteadOfWording(t *testing.T) {
 }
 
 func TestProjectionKeepsLifecycleReviewAndDecisionIndependent(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "original", equityRow("U1", "original", "10"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", equityRow("U1", "original", "10"))
 
 	v, err := s.Dashboard(context.Background())
 	if err != nil || len(v.Executions) != 1 {
@@ -51,8 +51,8 @@ func TestProjectionKeepsLifecycleReviewAndDecisionIndependent(t *testing.T) {
 
 	id := v.Executions[0].ID()
 	retainDecision(t, s, "activity", id, "quantity", "12", "", "set")
-	coverageReport(t, s, "conflict", equityRow("U1", "original", "11"))
-	coverageReport(
+	processConfirmationReport(t, s, "conflict", equityRow("U1", "original", "11"))
+	processConfirmationReport(
 		t,
 		s,
 		"cancel",

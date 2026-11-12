@@ -57,10 +57,10 @@ func renderIdentityComparison(
 }
 
 func TestComparisonPreservesQualifiedOrdersForEveryActivityKind(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.NewReplacer("option-fill", "outcome-fill", "option-trade", "outcome-trade", `transactionType="ExchTrade"`, `transactionType="BookTrade" code="A"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "identity-history", syntheticOption+syntheticFX+lifecycle)
+	processConfirmationReport(t, s, "identity-history", syntheticOption+syntheticFX+lifecycle)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -130,10 +130,10 @@ func TestComparisonPreservesQualifiedOrdersForEveryActivityKind(t *testing.T) {
 }
 
 func TestComparisonPreservesReportedUnderlierIdentity(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.NewReplacer("option-fill", "outcome-fill", "option-trade", "outcome-trade", `transactionType="ExchTrade"`, `transactionType="BookTrade" code="A"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "underlier-history", syntheticOption+lifecycle)
+	processConfirmationReport(t, s, "underlier-history", syntheticOption+lifecycle)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -229,8 +229,8 @@ func TestComparisonPreservesReportedUnderlierIdentity(t *testing.T) {
 }
 
 func TestReferenceComparisonUsesSelectedShareClassIdentity(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "identity-equity", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "identity-equity", equityRow("U1", "fill", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -293,8 +293,8 @@ func TestReferenceComparisonUsesSelectedShareClassIdentity(t *testing.T) {
 }
 
 func TestUnknownDebtCurrencyComparisonRendersUnknown(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "unknown-currency", syntheticDebt)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "unknown-currency", syntheticDebt)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -347,8 +347,8 @@ func TestUnknownDebtCurrencyComparisonRendersUnknown(t *testing.T) {
 }
 
 func TestTradeIdentityDisagreementAlwaysHasComparisonContext(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "identity-contract", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "identity-contract", equityRow("U1", "fill", "100"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {

@@ -4,11 +4,13 @@
 #MISE description="Measure a disposable synthetic warehouse (quick, representative, or large)"
 set -euo pipefail
 size=${1:-quick}
-case "$size" in quick|representative|large|read-representative|read-large) ;; *) echo 'Usage: mise run performance:warehouse [quick|representative|large|read-representative|read-large]' >&2; exit 2 ;; esac
+case "$size" in quick|representative|large|read-representative|read-large|contributions) ;; *) echo 'Usage: mise run performance:warehouse [quick|representative|large|read-representative|read-large|contributions]' >&2; exit 2 ;; esac
 workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT
 go test -c -o "$workspace/performance.test" ./internal/persistence/sqlite
-(cd testdata/socket-consumer && GOWORK=off go build -o "$workspace/consumer" .)
+if [[ "$size" != contributions ]]; then
+  (cd testdata/socket-consumer && GOWORK=off go build -o "$workspace/consumer" .)
+fi
 printf 'size=%s\n' "$size"
 go version
 uname -a
@@ -18,5 +20,6 @@ sed -n '/^MemTotal:/p;/^SwapTotal:/p' /proc/meminfo
 df -Pk "$workspace" | tail -1
 test_name=TestPerformanceWarehouse
 read_size=
+if [[ "$size" == contributions ]]; then test_name=TestPerformanceContributionVolume; fi
 if [[ "$size" == read-* ]]; then read_size=${size#read-}; test_name=TestPerformanceRead; fi
 WAKE_PERFORMANCE_SIZE="$size" WAKE_PERFORMANCE_READ="$read_size" WAKE_PERFORMANCE_CONSUMER="$workspace/consumer" /usr/bin/time -v "$workspace/performance.test" -test.run "^${test_name}$" -test.v -test.timeout=0 "${@:2}"

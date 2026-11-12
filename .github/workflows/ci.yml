@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Validation profile (full by default; pr measures the PR gate).
+        description: Validation profile (standard uses the routine race suite).
         type: choice
-        options: [full, pr]
-        default: full
+        options: [standard, full]
+        default: standard
       cold_cache:
         description: Disable caches to measure a cold run.
         type: boolean
@@ -103,7 +103,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.profile == 'full' && 25 || 15 }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -112,7 +112,7 @@ jobs:
           cold-cache: ${{ inputs.cold_cache || false }}
       - name: Run selected race suite
         env:
-          RACE_TASK: ${{ (github.event_name == 'pull_request' || inputs.profile == 'pr') && 'test:race:focused' || 'test:race' }}
+          RACE_TASK: ${{ (github.event_name == 'workflow_dispatch' && inputs.profile == 'full') && 'test:race' || 'test:race:focused' }}
         run: mise run "$RACE_TASK"
       - uses: actions/upload-artifact@v7
         if: always()

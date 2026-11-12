@@ -24,7 +24,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 		{"bill", "BILL", "US", "USD", "7000", "98.765432123456789", "6913.58", "-6913.58", "-3.50", "-6917.08", "0.000"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			ctx := t.Context()
 			row := fmt.Sprintf(
 				`<TradeConfirm accountId="U1" assetCategory="%s" issuerCountryCode="%s" conid="synthetic-debt" description="Synthetic debt" execID="debt-fill" transactionType="ExchTrade" levelOfDetail="EXECUTION" buySell="BUY" tradeDate="2026-10-20" quantity="%s" price="%s" currency="%s" amount="%s" proceeds="%s" commission="%s" commissionCurrency="%s" tax="0.00" netCash="%s" netCashWithBillable="%s" accruedInt="%s"/>`,
@@ -41,7 +41,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				tc.net,
 				tc.accrued,
 			)
-			coverageReport(t, s, "reported", row)
+			processConfirmationReport(t, s, "reported", row)
 
 			view, err := s.Dashboard(ctx)
 			if err != nil || len(view.Executions) != 1 {
@@ -134,7 +134,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 			}
 
 			retainDecision(t, s, "activity", execution.ID(), "net_cash", "-1234.5678900001", tc.currency, "set")
-			coverageReport(t, s, "repeat", row)
+			processConfirmationReport(t, s, "repeat", row)
 
 			corrected, err := s.ExecutionDetail(ctx, execution.ID())
 			if err != nil || corrected.Execution.Terms().Fields().NetCash.Amount() != "-1234.5678900001" ||
@@ -149,7 +149,12 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				t.Fatal("release changed reported net", restored, err)
 			}
 
-			coverageReport(t, s, "disputed", strings.Replace(row, `netCash="`+tc.net+`"`, `netCash="-1.00"`, 1))
+			processConfirmationReport(
+				t,
+				s,
+				"disputed",
+				strings.Replace(row, `netCash="`+tc.net+`"`, `netCash="-1.00"`, 1),
+			)
 
 			disputed, err := s.Resource(ctx, "activity", execution.ID())
 			if err != nil || !disputed.Activity.Conflict || disputed.Activity.Trade.NetCash.Amount != tc.net {
@@ -160,8 +165,8 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 }
 
 func TestDebtMissingMonetaryRolesStayUnknown(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(
 		t,
 		s,
 		"unknown-money",

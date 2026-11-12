@@ -13,11 +13,11 @@ import (
 
 func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 	ctx := t.Context()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	original := equityRow("U1", "original", "100")
 	other := strings.NewReplacer(`conid="100"`, `conid="101"`,
 		`isin="US0000000001"`, `isin="US0000000002"`).Replace(equityRow("U1", "other", "100"))
-	coverageReport(t, s, "initial", original+original+other)
+	processConfirmationReport(t, s, "initial", original+original+other)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 			recalculateFixture(t, s)
 		}
 
-		coverageReport(t, s, phase, original)
+		processConfirmationReport(t, s, phase, original)
 
 		after, e := s.Resource(ctx, "instruments", target.Instrument())
 		if e != nil || !reflect.DeepEqual(before, after) {
@@ -81,7 +81,12 @@ func TestInstrumentRelinkReplayPreservesSourceAndTarget(t *testing.T) {
 	}
 
 	// A real source contradiction still belongs to the original root.
-	coverageReport(t, s, "contradiction", strings.ReplaceAll(original, "US0000000001", "US0000000003"))
+	processConfirmationReport(
+		t,
+		s,
+		"contradiction",
+		strings.ReplaceAll(original, "US0000000001", "US0000000003"),
+	)
 
 	sourceRoot, err := s.InstrumentDetail(ctx, activity.Instrument())
 	if err != nil || sourceRoot.Instrument.Status() != "conflict" {

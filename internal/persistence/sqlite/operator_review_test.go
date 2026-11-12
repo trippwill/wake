@@ -17,11 +17,11 @@ import (
 )
 
 func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "original", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "original", syntheticOption)
 	other := strings.NewReplacer("option-fill", "other-fill", "option-trade", "other-trade", `conid="200"`, `conid="201"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "other", other)
+	processConfirmationReport(t, s, "other", other)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -73,7 +73,7 @@ func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
 func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 	for _, test := range []struct{ name, row string }{{"trade", syntheticOption}, {"conversion", syntheticFX}} {
 		t.Run(test.name, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 
 			row := strings.ReplaceAll(test.row, `commissionCurrency="GBP"`, `commissionCurrency="USD"`)
 			if !strings.Contains(row, "commissionCurrency=") {
@@ -86,8 +86,8 @@ func TestCandidateComparisonIncludesReadOnlyChargeRoles(t *testing.T) {
 				`brokerExecutionCommission="-0.25000000001"`,
 				`brokerExecutionCommission="-0.75000000001"`,
 			)
-			coverageReport(t, s, "charge-first", first)
-			coverageReport(t, s, "charge-second", second)
+			processConfirmationReport(t, s, "charge-first", first)
+			processConfirmationReport(t, s, "charge-second", second)
 
 			view, err := s.Dashboard(t.Context())
 			if err != nil {
@@ -162,12 +162,12 @@ func TestCandidateComparisonIncludesAncestorChargeCategories(t *testing.T) {
 }
 
 func TestDuplicateInstrumentLinkLabelsRetainStableIdentity(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	otherOption := strings.NewReplacer("option-fill", "other-fill", "option-trade", "other-trade", `conid="200"`, `conid="201"`).
 		Replace(syntheticOption)
 	otherEquity := strings.NewReplacer(`conid="100"`, `conid="101"`, "US0000000001", "US0000000002").
 		Replace(equityRow("U1", "other-underlier", "100"))
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"duplicate-labels",

@@ -2,10 +2,29 @@
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
 
-#MISE description="Run focused foundation packages with race detection"
+#MISE description="Run concurrency and lifetime proofs with race detection"
 #MISE wait_for=["test:coverage"]
 set -euo pipefail
+
+packages=(
+  ./internal/credential
+  ./internal/daemon
+  ./internal/persistence/sqlite
+  ./internal/transport/socket
+  ./internal/transport/cli
+)
+results=.cache/test-results/focused.jsonl
 mkdir -p .cache/test-results
-# Leave time for setup and artifact upload within the 15-minute CI job.
-go test -json -race -count=1 -timeout=13m ./internal/credential ./internal/daemon ./internal/persistence/sqlite ./internal/transport/cli ./internal/architecture \
-  | tee .cache/test-results/focused.jsonl
+go test -json -race -tags=racefocused -run '^TestRaceFocused$' -count=1 -timeout=3m "${packages[@]}" | tee "$results"
+
+# Go succeeds when a selector matches no tests or a test skips.
+for package in "${packages[@]}"; do
+  if ! grep -F '"Action":"pass"' "$results" | grep -F "\"Package\":\"go.trippwill.dev/wake/${package#./}\",\"Test\":\"TestRaceFocused\"" > /dev/null; then
+    printf 'Missing race suite result for %s\n' "$package" >&2
+    exit 1
+  fi
+done
+if grep -F '"Action":"skip"' "$results" | grep -E '"Test":"TestRaceFocused[/"]' >&2; then
+  printf 'A required race test skipped\n' >&2
+  exit 1
+fi

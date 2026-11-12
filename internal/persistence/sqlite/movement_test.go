@@ -57,7 +57,7 @@ func TestMovementPartialObservationsCollectivelyEstablishRequiredTerms(t *testin
 		required source.ActivityFieldName
 	}{{"security-transfer", transfer.Observation(), source.FieldQuantity}, {"cash", cash.Observation(), source.FieldCashAmount}} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 
 			subject := tc.value.Fields()
 			base := []source.ActivityField{}
@@ -141,7 +141,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 	for _, automatic := range []bool{false, true} {
 		for _, scope := range []string{"evidence/instrument", "observation"} {
 			t.Run(map[bool]string{false: "unresolved/", true: "automatic/"}[automatic]+scope, func(t *testing.T) {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 				acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 				rows, _ := s.queries.Executions(t.Context())
 				id := rows[0].ID
@@ -293,7 +293,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 }
 
 func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	artifact := acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 
 	records, err := s.Records(t.Context(), artifact, ibkrflex.Version)
@@ -409,7 +409,7 @@ func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) 
 }
 
 func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	acquireRealized(
 		t,
 		s,
@@ -499,7 +499,7 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 }
 
 func TestCashSearchDistinguishesUnknownAndInapplicableRealizedPnL(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	artifact := acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 	acquireRealized(t, s, movementReport("CashTransactions", strings.Replace(cashRow,
 		`transactionID="cash1"`, `transactionID="cash2"`, 1)))
@@ -539,10 +539,10 @@ func TestCashSearchDistinguishesUnknownAndInapplicableRealizedPnL(t *testing.T) 
 }
 
 func TestMovementListUsesDisplayedLabelsAndPlaceholders(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	sell := strings.NewReplacer(`buySell="BUY"`, `buySell="SELL"`, `conid="100"`, `conid="300"`).
 		Replace(equityRow("U1", "sell", "10"))
-	coverageReport(t, s, "sell", sell)
+	processConfirmationReport(t, s, "sell", sell)
 
 	for _, name := range []string{"alpha", "Zulu"} {
 		cash := strings.NewReplacer(`transactionID="cash1"`, `transactionID="cash-`+name+`"`, `type="Dividends"`, `type="Other Fees"`, "Synthetic dividend", name).
@@ -633,7 +633,7 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 			t.Run(
 				tc.family+map[bool]string{false: "/trade-first", true: "/cash-first"}[cashFirst],
 				func(t *testing.T) {
-					s := coverageStore(t)
+					s := newStoreWithSyntheticAccount(t)
 					cash := strings.Replace(
 						cashRow,
 						"<CashTransaction ",
@@ -644,7 +644,7 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 						acquireRealized(t, s, movementReport("CashTransactions", cash))
 					}
 
-					coverageReport(t, s, "typed-instrument", tc.trade)
+					processConfirmationReport(t, s, "typed-instrument", tc.trade)
 
 					if !cashFirst {
 						acquireRealized(t, s, movementReport("CashTransactions", cash))
@@ -725,7 +725,7 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 		{"ambiguous", `assetCategory="STK" subCategory="COMMON" conid="100" symbol="TEST" `, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 			rows, _ := s.queries.Executions(t.Context())
 			id := rows[0].ID
@@ -786,7 +786,7 @@ func TestCashInstrumentEnrichmentPreservesPostingAndDecisions(t *testing.T) {
 }
 
 func TestCashPostingsStayDistinctAndResolveTaxRelationships(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	tax := `<SalesTax accountId="U1" transactionID="tax1" taxableTransactionID="cash1" salesTax="-0.2300" currency="USD" date="2026-10-20"/>`
 	acquireRealized(t, s, movementReport("SalesTaxes", tax))
 
@@ -869,8 +869,8 @@ func TestCashPostingsStayDistinctAndResolveTaxRelationships(t *testing.T) {
 }
 
 func TestMovementInterpretationUpgradeRetriesAtomicallyFromRetainedReports(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "existing", equityRow("U1", "fill", "100"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "existing", equityRow("U1", "fill", "100"))
 	rows, _ := s.queries.Executions(t.Context())
 	existing := rows[0].ID
 	retainDecision(t, s, "activity", existing, "price", "99.0000", "USD", "set")
@@ -966,7 +966,7 @@ func TestMovementInterpretationUpgradeRetriesAtomicallyFromRetainedReports(t *te
 }
 
 func TestSecurityTransfersReconcileCorrectAndPublish(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lot := strings.ReplaceAll(
 		strings.ReplaceAll(transferRow, "<Transfer ", "<TransferLot "),
 		`levelOfDetail="TRANSFER"`,

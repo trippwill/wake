@@ -9,8 +9,8 @@ import (
 )
 
 func TestDistinctExecutionsRetainTheirOwnOptionTerms(t *testing.T) {
-	s := coverageStore(t)
-	coverageReport(t, s, "first-option", syntheticOption)
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "first-option", syntheticOption)
 
 	v, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -20,7 +20,7 @@ func TestDistinctExecutionsRetainTheirOwnOptionTerms(t *testing.T) {
 	instrument := v.Executions[0].Instrument()
 	changed := strings.NewReplacer(`execID="option-fill"`, `execID="other-fill"`, `tradeID="option-trade"`, `tradeID="other-trade"`, `strike="100.00000000001"`, `strike="110"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "second-option", changed)
+	processConfirmationReport(t, s, "second-option", changed)
 
 	detail, err := s.InstrumentDetail(t.Context(), instrument)
 	if err != nil || detail.Instrument.Status().NeedsReview() ||
@@ -47,11 +47,11 @@ func TestDistinctExecutionsRetainTheirOwnOptionTerms(t *testing.T) {
 }
 
 func TestSourceUnderlierEnrichmentSurvivesOverrideRelease(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	unknown := strings.NewReplacer(` underlyingConid="100"`, "", ` underlyingSymbol="SYN"`, "").
 		Replace(syntheticOption)
 	override := strings.Replace(equityRow("U1", "override", "100"), `conid="100"`, `conid="999"`, 1)
-	coverageReport(t, s, "without-source-underlier", unknown+override)
+	processConfirmationReport(t, s, "without-source-underlier", unknown+override)
 
 	v, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -72,7 +72,7 @@ func TestSourceUnderlierEnrichmentSurvivesOverrideRelease(t *testing.T) {
 	}
 
 	retainDecision(t, s, "instrument", optionID, "underlier", overrideID, "", "set")
-	coverageReport(t, s, "reported-source-underlier", syntheticOption)
+	processConfirmationReport(t, s, "reported-source-underlier", syntheticOption)
 
 	detail, err := s.InstrumentDetail(t.Context(), optionID)
 	if err != nil || detail.Underlier != overrideID {

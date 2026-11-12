@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -24,69 +23,10 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/reference"
-	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
-const testRow = `<TradeConfirm accountId="%s" assetCategory="STK" subCategory="COMMON" symbol="SYN" description="Synthetic equity" conid="100" isin="US0000000001" listingExchange="NASDAQ" tradeID="T%s" execID="%s" orderID="O1" transactionType="ExchTrade" levelOfDetail="EXECUTION" buySell="BUY" quantity="0.000000000123" price="%s" currency="USD" dateTime="2026-10-20;09:30:00.120 EDT" tradeDate="2026-10-20" settleDate="2026-10-21" amount="0.000000049323000000123" proceeds="-0.000000049323000000123" netCash="-0.000000049324000000123" commission="-0.000000000001" commissionCurrency="USD" code="O"/>`
-
-func equityRow(account, event, price string) string {
-	return fmt.Sprintf(testRow, account, event, event, price)
-}
-
-func workflowReport(rows string) string {
-	return `<FlexQueryResponse type="TCF"><FlexStatements><FlexStatement accountId="U1" fromDate="2026-10-20" toDate="2026-10-21"><TradeConfirms>` + rows + `</TradeConfirms></FlexStatement><FlexStatement accountId="U2" fromDate="2026-10-20" toDate="2026-10-21" acctAlias="Other" baseCurrency="GBP"><TradeConfirms>` + equityRow(
-		"U2",
-		"excluded",
-		"1",
-	) + `</TradeConfirms></FlexStatement></FlexStatements></FlexQueryResponse>`
-}
-
-func testStore(t testing.TB) (*Store, string) {
-	t.Helper()
-
-	dir := t.TempDir()
-	//nolint:gosec // A private test directory needs owner traversal permission.
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	path := filepath.Join(dir, "wake.db")
-
-	s, err := Open(
-		context.Background(),
-		testProfile(path),
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = s.Close() })
-
-	return s, path
-}
-
-func testEnvelope(t *testing.T) *credential.Envelope {
-	t.Helper()
-
-	key, err := credential.NewMasterKey(bytes.Repeat([]byte{7}, 32))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer key.Clear()
-
-	e, err := credential.NewEnvelope(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(e.Clear)
-
-	return e
-}
-
-func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
+func TestAccountRecoveryPreservesAcceptedActivityAcrossRetryAndRestart(t *testing.T) {
 	ctx := context.Background()
 
 	var diagnostics bytes.Buffer
@@ -131,7 +71,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	s, path := testStore(t)
 	envelope := testEnvelope(t)
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	report := workflowReport(
+	report := confirmationReport(
 		equityRow("U1", "fill-1", "401.000000001") + equityRow("U1", "fill-2", "401.000000001"),
 	)
 
@@ -372,7 +312,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	instrumentID := view.Instruments[0].ID()
 	// A late observation adds a new fill; a changed term preserves the accepted fill.
 	mu.Lock()
-	report = workflowReport(
+	report = confirmationReport(
 		equityRow(
 			"U1",
 			"fill-1",
@@ -428,7 +368,7 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 
 	// Projection writes and completion roll back together under a storage fault.
 	mu.Lock()
-	report = workflowReport(
+	report = confirmationReport(
 		strings.Replace(
 			equityRow("U1", "storage-retry", "401.000000001"),
 			`tradeID="Tstorage-retry"`,
@@ -558,47 +498,4 @@ func TestCompleteAccountWorkflowAndFinancialReplay(t *testing.T) {
 	if err != nil || view.Account.ID() != account.ID() || len(view.Executions) != 4 {
 		t.Fatal("restart lost projection/authority", err)
 	}
-}
-
-func testProfile(warehouse string) Profile {
-	return Profile{
-		WarehousePath:   warehouse,
-		ConnectionsPath: filepath.Join(filepath.Dir(warehouse), "connections.db"),
-	}
-}
-
-func TestIdleWorkflowDoesNotLog(t *testing.T) {
-	ctx := context.Background()
-	s, _ := testStore(t)
-
-	var output bytes.Buffer
-
-	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	h, err := host.New(ctx, s, nil, logger, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer h.Close()
-
-	refs, err := reference.New(s, nil, nil, "", nil, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	workflow := application.New(s, h, refs, nil, logger)
-	for range 100 {
-		if err := workflow.RunOnce(ctx, time.Now()); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if output.Len() != 0 {
-		t.Fatal("idle polling produced logs", output.String())
-	}
-}
-
-func confirmationSettings(query string) provider.Settings {
-	settings, _ := provider.NewSettings(map[string]string{"query_id": query})
-	return settings
 }

@@ -15,10 +15,10 @@ import (
 )
 
 func TestNestedUnderlierClaimsEnrichSharedRootWithoutReplacingOperatorChoice(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	missingTicker := strings.Replace(syntheticOption, ` underlyingSymbol="SYN"`, "", 1)
-	coverageReport(t, s, "parent-a", missingTicker)
+	processConfirmationReport(t, s, "parent-a", missingTicker)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestNestedUnderlierClaimsEnrichSharedRootWithoutReplacingOperatorChoice(t *
 
 	second := strings.NewReplacer(`conid="200"`, `conid="201"`, `execID="option-fill"`, `execID="second-fill"`, `tradeID="option-trade"`, `tradeID="second-trade"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "parent-b", second)
+	processConfirmationReport(t, s, "parent-b", second)
 
 	child, err := s.InstrumentDetail(ctx, underlier)
 	if err != nil || child.Instrument.Reported().Ticker() != "SYN" || child.Instrument.Ticker() != "OPERATOR" {
@@ -67,20 +67,20 @@ func TestNestedUnderlierClaimsEnrichSharedRootWithoutReplacingOperatorChoice(t *
 func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) {
 	for name, existing := range map[string]bool{"new-reference": false, "existing-reference": true} {
 		t.Run(name, func(t *testing.T) {
-			seed := coverageStore(t)
+			seed := newStoreWithSyntheticAccount(t)
 			ctx := t.Context()
 			override := strings.Replace(equityRow("U1", "override", "100"), `conid="100"`, `conid="999"`, 1)
-			coverageReport(t, seed, "templates", syntheticOption+override)
+			processConfirmationReport(t, seed, "templates", syntheticOption+override)
 
 			template, err := seed.Dashboard(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			qualifiedID := ""
 			if existing {
-				coverageReport(t, s, "existing-qualified", equityRow("U1", "existing-fill", "100"))
+				processConfirmationReport(t, s, "existing-qualified", equityRow("U1", "existing-fill", "100"))
 
 				existingView, e := s.Dashboard(ctx)
 				if e != nil {
@@ -144,7 +144,10 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 					},
 				)
 			}
-			admit := func(id string, anonymous bool) { t.Helper(); coverageClaims(t, s, id, normalizer(id, anonymous)) }
+			admit := func(id string, anonymous bool) {
+				t.Helper()
+				processSyntheticClaims(t, s, id, normalizer(id, anonymous))
+			}
 			admit("anonymous-underlier", true)
 
 			view, err := s.Dashboard(ctx)
@@ -171,7 +174,7 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 			retainDecision(t, s, "instrument", parent, "underlier", operator, "", "set")
 
 			if !existing {
-				coverageReport(t, s, "failed-qualification", "")
+				processConfirmationReport(t, s, "failed-qualification", "")
 
 				if _, err = s.Normalize(
 					ctx,
@@ -299,7 +302,7 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 				t.Fatal("release lost original enriched underlier", detail, err)
 			}
 
-			coverageReport(t, s, "direct-underlier", equityRow("U1", "direct-underlier", "100"))
+			processConfirmationReport(t, s, "direct-underlier", equityRow("U1", "direct-underlier", "100"))
 
 			view, err = s.Dashboard(ctx)
 			if err != nil {
@@ -322,7 +325,7 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 
 			competing := strings.NewReplacer(`underlyingConid="100"`, `underlyingConid="777"`, `execID="option-fill"`, `execID="disputed-fill"`, `tradeID="option-trade"`, `tradeID="disputed-trade"`).
 				Replace(syntheticOption)
-			coverageReport(t, s, "disputed-reference", competing)
+			processConfirmationReport(t, s, "disputed-reference", competing)
 
 			detail, err = s.InstrumentDetail(ctx, parent)
 			if err != nil || !detail.Instrument.Status().NeedsReview() || detail.Underlier != expected {
@@ -338,11 +341,11 @@ func TestTickerOnlyUnderlierGainsReferenceBeneathOperatorOverride(t *testing.T) 
 }
 
 func TestFirstBatchParentTermConflictKeepsUndisputedUnderlier(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	competing := strings.NewReplacer(`execID="option-fill"`, `execID="second-fill"`, `tradeID="option-trade"`, `tradeID="second-trade"`, `multiplier="10"`, `multiplier="100"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "first-dispute", syntheticOption+competing)
+	processConfirmationReport(t, s, "first-dispute", syntheticOption+competing)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil || len(view.Executions) != 2 {
@@ -374,9 +377,9 @@ func (db *rootPlanDB) QueryContext(ctx context.Context, query string, args ...an
 }
 
 func TestRootClaimQueriesUseKeyedLookup(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(t, s, "indexed-root", syntheticOption)
+	processConfirmationReport(t, s, "indexed-root", syntheticOption)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -471,7 +474,7 @@ func TestSelfReferentialUnderlierRetainsConflictWithoutBlockingReports(t *testin
 			}
 
 			t.Run(name, func(t *testing.T) {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 				fields := base.Fields()
 				parent := fields.Instrument.Fields()
 				terms := parent.Option.Fields()
@@ -505,7 +508,12 @@ func TestSelfReferentialUnderlierRetainsConflictWithoutBlockingReports(t *testin
 				if kind == "activity" {
 					retainUnderlierTrades(t, s, "self-underlier", trade)
 				} else {
-					coverageClaims(t, s, "self-underlier", positionSetNormalizer(positionInput(t, fields.Instrument)))
+					processSyntheticClaims(
+						t,
+						s,
+						"self-underlier",
+						positionSetNormalizer(positionInput(t, fields.Instrument)),
+					)
 				}
 
 				root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(child.Reference))
@@ -539,8 +547,8 @@ func TestSelfReferentialUnderlierRetainsConflictWithoutBlockingReports(t *testin
 
 func underlierTemplate(t *testing.T) source.Trade {
 	t.Helper()
-	seed := coverageStore(t)
-	coverageReport(t, seed, "underlier-template", syntheticOption)
+	seed := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, seed, "underlier-template", syntheticOption)
 
 	view, err := seed.Dashboard(t.Context())
 	if err != nil {
@@ -556,7 +564,7 @@ func TestInadmissibleUnderlierFamilyRetainsConflictWithoutBlockingReports(t *tes
 		for _, order := range []string{"target-first", "parent-first"} {
 			for _, kind := range []string{"activity", "position"} {
 				t.Run(string(family)+"/"+order+"/"+kind, func(t *testing.T) {
-					s := coverageStore(t)
+					s := newStoreWithSyntheticAccount(t)
 					input := base.Fields()
 					parent := input.Instrument.Fields()
 					option := parent.Option.Fields()
@@ -593,7 +601,7 @@ func TestInadmissibleUnderlierFamilyRetainsConflictWithoutBlockingReports(t *tes
 						if kind == "activity" {
 							retainUnderlierTrades(t, s, "inadmissible-parent", parentTrade)
 						} else {
-							coverageClaims(
+							processSyntheticClaims(
 								t,
 								s,
 								"inadmissible-parent",
@@ -691,7 +699,7 @@ func underlierTrade(t *testing.T, base source.Trade, event, isin string, qualifi
 
 func retainUnderlierTrades(t *testing.T, s *Store, id string, trades ...source.Trade) {
 	t.Helper()
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		id,
@@ -716,7 +724,7 @@ func retainUnderlierTrades(t *testing.T, s *Store, id string, trades ...source.T
 func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
 	for _, variant := range []string{"retained", "target-first", "parent-first"} {
 		t.Run(variant, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			base := underlierTemplate(t)
 
 			target := equityRow("U1", "known-root", "100")
@@ -725,7 +733,7 @@ func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
 				initial = strings.Replace(target, ` isin="US0000000001"`, "", 1)
 			}
 
-			coverageReport(t, s, "qualified-with-isin", initial)
+			processConfirmationReport(t, s, "qualified-with-isin", initial)
 			retainUnderlierTrades(
 				t,
 				s,
@@ -748,8 +756,8 @@ func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
 
 			batch := []source.Trade{underlierTrade(t, base, "qualified", "", true)}
 			if variant != "retained" {
-				seed := coverageStore(t)
-				coverageReport(t, seed, "target-template", target)
+				seed := newStoreWithSyntheticAccount(t)
+				processConfirmationReport(t, seed, "target-template", target)
 
 				targetView, e := seed.Dashboard(t.Context())
 				if e != nil {
@@ -775,9 +783,9 @@ func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
 func TestMixedUnderlierBatchEnrichesSelectedQualifiedRoot(t *testing.T) {
 	for name, variant := range map[string]string{"qualified-first": "", "anonymous-first": "reverse", "historical-identifier": "historical"} {
 		t.Run(name, func(t *testing.T) {
-			s := coverageStore(t)
+			s := newStoreWithSyntheticAccount(t)
 			base := underlierTemplate(t)
-			coverageReport(
+			processConfirmationReport(
 				t,
 				s,
 				"existing-without-isin",
@@ -831,14 +839,14 @@ func TestMixedUnderlierBatchEnrichesSelectedQualifiedRoot(t *testing.T) {
 }
 
 func TestDisputedNewUnderliersDoNotInventAnEmptyRoot(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	unknown := strings.NewReplacer(` underlyingConid="100"`, "", ` underlyingSymbol="SYN"`, "").
 		Replace(syntheticOption)
-	coverageReport(t, s, "unknown-underlier", unknown)
+	processConfirmationReport(t, s, "unknown-underlier", unknown)
 
 	competing := strings.NewReplacer(`underlyingConid="100"`, `underlyingConid="777"`, `execID="option-fill"`, `execID="other-fill"`, `tradeID="option-trade"`, `tradeID="other-trade"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "competing-underliers", syntheticOption+competing)
+	processConfirmationReport(t, s, "competing-underliers", syntheticOption+competing)
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -861,10 +869,10 @@ func TestProspectiveUnderlierClaimsAcrossParentsAgreeOnReview(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		for _, reverse := range []bool{false, true} {
 			for range 2 {
-				s := coverageStore(t)
+				s := newStoreWithSyntheticAccount(t)
 				base := underlierTemplate(t)
 				if existing {
-					coverageReport(
+					processConfirmationReport(
 						t,
 						s,
 						"existing-without-isin",
@@ -959,7 +967,7 @@ func (db *rootHistoryReadDB) QueryContext(ctx context.Context, query string, arg
 }
 
 func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	var rows strings.Builder
 	for n := 0; n < 8; n++ {
@@ -973,7 +981,7 @@ func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
 		rows.WriteString(equityRow("U1", fmt.Sprintf("history-%d", n), "100"))
 	}
 
-	coverageReport(t, s, "shared-history", rows.String())
+	processConfirmationReport(t, s, "shared-history", rows.String())
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -1030,10 +1038,10 @@ func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
 
 func TestAnonymousIdentifierDisputeReachesItsQualifiedGroup(t *testing.T) {
 	for _, existing := range []bool{false, true} {
-		s := coverageStore(t)
+		s := newStoreWithSyntheticAccount(t)
 		base := underlierTemplate(t)
 		if existing {
-			coverageReport(
+			processConfirmationReport(
 				t,
 				s,
 				"empty-target",
@@ -1077,7 +1085,7 @@ func TestAnonymousIdentifierDisputeReachesItsQualifiedGroup(t *testing.T) {
 }
 
 func TestLaterUnderlierConflictReprojectsRetainedParents(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	base := underlierTemplate(t)
 	retainUnderlierTrades(t, s, "parent-p", underlierTrade(t, base, "p-qualified", "US0000000002", true))
 

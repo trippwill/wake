@@ -16,11 +16,11 @@ import (
 
 func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 	ctx := t.Context()
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	first := equityRow("U1", "first-root", "100")
 	second := strings.NewReplacer(`conid="100"`, `conid="200"`, `US0000000001`, `US0000000002`).
 		Replace(equityRow("U1", "second-root", "100"))
-	coverageReport(t, s, "two-roots", first+second)
+	processConfirmationReport(t, s, "two-roots", first+second)
 
 	v, err := s.Dashboard(ctx)
 	if err != nil || len(v.Executions) != 2 {

@@ -22,9 +22,9 @@ import (
 )
 
 func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"precise-list",
@@ -146,9 +146,9 @@ func TestDecimalCollationIsExactAndTransitiveIncludingInvalidText(t *testing.T) 
 }
 
 func TestStatusAndPrerequisitesDoNotReadFinancialSnapshots(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(t, s, "independent-status", equityRow("U1", "fill", "10"))
+	processConfirmationReport(t, s, "independent-status", equityRow("U1", "fill", "10"))
 
 	if _, err := s.db.ExecContext(
 		ctx,
@@ -178,8 +178,8 @@ func TestStatusAndPrerequisitesDoNotReadFinancialSnapshots(t *testing.T) {
 
 func TestActivitySearchReadsCommittedSnapshotDuringWrite(t *testing.T) {
 	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(t, s, "read-while-writing", equityRow("U1", "read-fill", "10.0000"))
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "read-while-writing", equityRow("U1", "read-fill", "10.0000"))
 
 	query, err := application.NewListQuery(
 		application.ListOptions{Search: "10.0000", Kind: "trade", Sort: "price"}, application.ActivityScope,
@@ -227,41 +227,52 @@ WHERE kind='activity'`); err != nil {
 
 func TestActivityDateIndexesPreserveRetainedPages(t *testing.T) {
 	ctx := t.Context()
-	s := coverageStore(t)
-	coverageReport(t, s, "date-pages",
+	s := newStoreWithSyntheticAccount(t)
+	processConfirmationReport(t, s, "date-pages",
 		equityRow("U1", "equal-a", "10.00")+equityRow("U1", "equal-b", "10.000")+
 			strings.ReplaceAll(equityRow("U1", "next-day", "11.0"), "2026-10-20", "2026-10-21"))
 	acquireRealized(t, s, movementReport("CashTransactions", cashRow))
 
-	// Capture the ordinary query for both directions, date ties, filtered
-	// counts, empty families and pages past the end.
+	// Compare the ordinary and indexed paths at ties, family boundaries and
+	// offsets that yield no rows.
+	cases := []struct {
+		name, direction, family string
+		page                    int
+	}{
+		{"ascending first", "asc", "", 1},
+		{"ascending tie", "asc", "", 2},
+		{"descending first", "desc", "", 1},
+		{"descending tie", "desc", "", 3},
+		{"trade page", "asc", "trade", 2},
+		{"cash page", "desc", "cash", 1},
+		{"empty family", "asc", "conversion", 1},
+		{"past last page", "desc", "", 5},
+	}
+
 	type expectedPage struct {
+		name  string
 		query application.ListQuery
 		page  application.ActivityList
 	}
 
 	var expected []expectedPage
-	for _, direction := range []string{"asc", "desc"} {
-		for _, kind := range []string{"", "trade", "cash", "conversion"} {
-			for page := 1; page <= 5; page++ {
-				query, err := application.NewListQuery(application.ListOptions{
-					Kind: kind, Sort: "date", Direction: direction, Page: page, PageSize: 1,
-				}, application.ActivityScope)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				want, err := s.readActivityPage(
-					ctx, query, adminActivitySQL, "", kind, "", "", "{}",
-					false, false, "[]", "[]", "[]", "date", direction, 1, query.Offset(),
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				expected = append(expected, expectedPage{query, want})
-			}
+	for _, tc := range cases {
+		query, err := application.NewListQuery(application.ListOptions{
+			Kind: tc.family, Sort: "date", Direction: tc.direction, Page: tc.page, PageSize: 1,
+		}, application.ActivityScope)
+		if err != nil {
+			t.Fatal(err)
 		}
+
+		want, err := s.readActivityPage(
+			ctx, query, adminActivitySQL, "", tc.family, "", "", "{}",
+			false, false, "[]", "[]", "[]", "date", tc.direction, 1, query.Offset(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expected = append(expected, expectedPage{tc.name, query, want})
 	}
 
 	profile := testProfile(s.owners[0].Name())
@@ -287,8 +298,8 @@ func TestActivityDateIndexesPreserveRetainedPages(t *testing.T) {
 		got, err := reopened.ActivityList(ctx, want.query)
 		if err != nil || !reflect.DeepEqual(got, want.page) {
 			t.Fatalf(
-				"options %+v: indexed page %+v, ordinary page %+v, error %v",
-				want.query.Options(),
+				"%s: indexed page %+v, ordinary page %+v, error %v",
+				want.name,
 				got,
 				want.page,
 				err,
@@ -298,7 +309,7 @@ func TestActivityDateIndexesPreserveRetainedPages(t *testing.T) {
 }
 
 func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 
 	var report strings.Builder
@@ -306,7 +317,7 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 		report.WriteString(equityRow("U1", fmt.Sprintf("equal-%02d", n), "10"))
 	}
 
-	coverageReport(t, s, "bounded-list", report.String())
+	processConfirmationReport(t, s, "bounded-list", report.String())
 
 	query, _ := application.NewListQuery(
 		application.ListOptions{Sort: "price", Direction: "desc"},
@@ -367,7 +378,7 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 		t.Fatal(e)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"unknown-price",
@@ -396,9 +407,9 @@ func TestActivityListDefaultBoundStableTiesAndUnknowns(t *testing.T) {
 }
 
 func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(t, s, "initial-option", syntheticOption)
+	processConfirmationReport(t, s, "initial-option", syntheticOption)
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -408,7 +419,7 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 	fields := view.Executions[0].Terms().Fields()
 	disputed := strings.NewReplacer(`strike="100.00000000001"`, `strike="110"`, `underlyingConid="100"`, `underlyingConid="777"`).
 		Replace(syntheticOption)
-	coverageReport(t, s, "disputed-option", disputed)
+	processConfirmationReport(t, s, "disputed-option", disputed)
 
 	target, _ := source.NewReference("synthetic", "event", "account", "not-yet-reported")
 
@@ -424,7 +435,7 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"pending-instruction",
@@ -449,7 +460,7 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"unknown-identity",
@@ -489,7 +500,7 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 		t.Fatal("review categories collapsed", kinds)
 	}
 
-	coverageReport(t, s, "repeat-dispute", disputed)
+	processConfirmationReport(t, s, "repeat-dispute", disputed)
 
 	repeated, err := s.ReviewList(ctx, query)
 	if err != nil || repeated.Total != 4 {
@@ -523,7 +534,7 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 }
 
 func TestSourceCandidatesPageAndExactQualifiedLookup(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	recordTestReceipt(t, s, "discovery")
 
@@ -581,9 +592,9 @@ func TestSourceCandidatesPageAndExactQualifiedLookup(t *testing.T) {
 }
 
 func TestServerSearchPreservesUnicodeCaseMatching(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
-	coverageReport(t, s, "unicode", equityRow("U1", "unicode-fill", "10"))
+	processConfirmationReport(t, s, "unicode", equityRow("U1", "unicode-fill", "10"))
 
 	view, err := s.Dashboard(ctx)
 	if err != nil {
@@ -614,7 +625,7 @@ func TestServerSearchPreservesUnicodeCaseMatching(t *testing.T) {
 }
 
 func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	buy := strings.ReplaceAll(equityRow("U1", "buy-zebra", "10"), "Synthetic equity", "Zebra")
 	sell := strings.ReplaceAll(
@@ -626,7 +637,7 @@ func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
 		`buySell="BUY"`,
 		`buySell="SELL"`,
 	)
-	coverageReport(t, s, "labels", buy+sell+syntheticFX)
+	processConfirmationReport(t, s, "labels", buy+sell+syntheticFX)
 
 	query, _ := application.NewListQuery(
 		application.ListOptions{Sort: "label", Direction: "asc", PageSize: 1},
@@ -676,7 +687,7 @@ func TestFocusedReadsPreserveActivityMeaning(t *testing.T) {
 		}
 	}
 
-	coverageReport(
+	processConfirmationReport(
 		t,
 		s,
 		"disputed-conversion",
@@ -815,14 +826,14 @@ func TestRecoveryAuthorityDoesNotEnumerateMutableUIPages(t *testing.T) {
 }
 
 func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	row := strings.Replace(
 		equityRow("U1", "ticker-only", "10"),
 		`description="Synthetic equity"`,
 		`description=""`,
 		1,
 	)
-	coverageReport(t, s, "ticker-only", row)
+	processConfirmationReport(t, s, "ticker-only", row)
 
 	query, _ := application.NewListQuery(
 		application.ListOptions{Sort: "label", Direction: "asc"},
@@ -834,7 +845,7 @@ func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
 		t.Fatal("known ticker lost from activity label", page, err)
 	}
 
-	coverageReport(t, s, "ticker-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
+	processConfirmationReport(t, s, "ticker-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
 
 	query, _ = application.NewListQuery(application.ListOptions{}, application.ReviewScope)
 
@@ -845,12 +856,12 @@ func TestActivityReadLabelsFallBackToKnownTicker(t *testing.T) {
 }
 
 func TestAdminTickerIdentityPreservesDescriptionSearchAndOrdering(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	first := strings.NewReplacer(`symbol="SYN"`, `symbol="AAA"`, "Synthetic equity", "Zebra").
 		Replace(equityRow("U1", "ticker-a", "10"))
 	second := strings.NewReplacer(`symbol="SYN"`, `symbol="ZZZ"`, "Synthetic equity", "Alpha", `conid="100"`, `conid="101"`).
 		Replace(equityRow("U1", "ticker-z", "10"))
-	coverageReport(t, s, "ticker-order", first+second)
+	processConfirmationReport(t, s, "ticker-order", first+second)
 
 	for _, direction := range []string{"asc", "desc"} {
 		query, _ := application.NewListQuery(
@@ -876,7 +887,7 @@ func TestAdminTickerIdentityPreservesDescriptionSearchAndOrdering(t *testing.T) 
 		t.Fatal("instruments do not default to ticker ordering", instruments, err)
 	}
 
-	coverageReport(t, s, "ticker-dispute", strings.Replace(first, `price="10"`, `price="11"`, 1))
+	processConfirmationReport(t, s, "ticker-dispute", strings.Replace(first, `price="10"`, `price="11"`, 1))
 
 	for _, search := range []string{"buy aaa", "Zebra"} {
 		query, _ = application.NewListQuery(
@@ -911,7 +922,7 @@ func TestAdminTickerIdentityPreservesDescriptionSearchAndOrdering(t *testing.T) 
 }
 
 func TestInstrumentTickerOrderingUsesDisplayedFallbacks(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 
 	want := []struct{ name, ticker string }{
 		{"Zebra", "aaa"},
@@ -930,7 +941,7 @@ func TestInstrumentTickerOrderingUsesDisplayedFallbacks(t *testing.T) {
 		).Replace(equityRow("U1", fmt.Sprintf("ticker-fallback-%d", i), "10")))
 	}
 
-	coverageReport(t, s, "ticker-fallback-order", rows.String())
+	processConfirmationReport(t, s, "ticker-fallback-order", rows.String())
 
 	for _, direction := range []string{"asc", "desc"} {
 		for page := 1; page <= 3; page++ {
@@ -978,10 +989,10 @@ func TestInstrumentTickerOrderingUsesDisplayedFallbacks(t *testing.T) {
 }
 
 func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	first := equityRow("U1", "reference-a", "10")
 	second := strings.Replace(equityRow("U1", "reference-b", "10"), `conid="100"`, `conid="101"`, 1)
-	coverageReport(t, s, "reference-order", first+second)
+	processConfirmationReport(t, s, "reference-order", first+second)
 
 	query, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
 
@@ -1034,9 +1045,9 @@ func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
 }
 
 func TestFullActivityLabelSearchUsesCanonicalComponents(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	row := strings.Replace(equityRow("U1", "phrase", "10"), "Synthetic equity", "Zebra", 1)
-	coverageReport(t, s, "phrase", row)
+	processConfirmationReport(t, s, "phrase", row)
 
 	query, _ := application.NewListQuery(
 		application.ListOptions{Search: "buy zebra"},
@@ -1048,7 +1059,7 @@ func TestFullActivityLabelSearchUsesCanonicalComponents(t *testing.T) {
 		t.Fatal("full displayed activity label is not searchable", page.Matched, err)
 	}
 
-	coverageReport(t, s, "phrase-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
+	processConfirmationReport(t, s, "phrase-dispute", strings.Replace(row, `price="10"`, `price="11"`, 1))
 
 	query, _ = application.NewListQuery(application.ListOptions{Search: "buy zebra"}, application.ReviewScope)
 
@@ -1059,7 +1070,7 @@ func TestFullActivityLabelSearchUsesCanonicalComponents(t *testing.T) {
 }
 
 func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	lifecycle := strings.Replace(
 		strings.Replace(
 			syntheticOption,
@@ -1071,7 +1082,7 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 		"missing-outcome",
 		1,
 	)
-	coverageReport(t, s, "missing-values", syntheticFX+lifecycle)
+	processConfirmationReport(t, s, "missing-values", syntheticFX+lifecycle)
 
 	for _, test := range []struct {
 		matches application.DisplayMatches
@@ -1103,7 +1114,7 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageReport(t, s, "known-trade", equityRow("U1", "known-trade", "10"))
+	processConfirmationReport(t, s, "known-trade", equityRow("U1", "known-trade", "10"))
 
 	view, err := s.Dashboard(t.Context())
 	if err != nil {
@@ -1121,7 +1132,7 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	coverageClaims(
+	processSyntheticClaims(
 		t,
 		s,
 		"unnamed-fill",
@@ -1151,7 +1162,7 @@ func TestMissingValueMatchesCountAndRowsBeforePagination(t *testing.T) {
 }
 
 func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
-	s := coverageStore(t)
+	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	connection := host.Connection{ID: "second-source", Provider: "ibkr-flex", Name: "Another source"}
 	if err := s.Configure(ctx, connection, nil); err != nil {
