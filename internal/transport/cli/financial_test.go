@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -317,6 +318,101 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 
 	financialCLI(t, exitFailure, "request", "get", "--socket", socketPath, "/v1/accounts/redirect")
 	financialCLI(t, exitFailure, "doctor", "--socket", filepath.Join(shortSocketDir(t), "wake.sock"))
+}
+
+func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		code   string
+	}{
+		{"missing", http.StatusNotFound, `{"code":"not_found","message":"private diagnostic text"}`, "not_found"},
+		{"stale", http.StatusConflict, `{"code":"stale_revision","message":"private diagnostic text"}`, "stale_revision"},
+		{"invalid request", http.StatusBadRequest, `{"code":"invalid_request","message":"Invalid parameters"}`, "invalid_request"},
+		{"method", http.StatusMethodNotAllowed, `{"code":"method_not_allowed","message":"Only GET is supported"}`, "method_not_allowed"},
+		{"internal", http.StatusInternalServerError, `{"code":"internal_error","message":"Financial read failed"}`, "internal_error"},
+		{"mismatched", http.StatusNotFound, `{"code":"stale_revision","message":"private diagnostic text"}`, "operation_failed"},
+		{"unknown", http.StatusNotFound, `{"code":"other","message":"private diagnostic text"}`, "operation_failed"},
+		{"incomplete", http.StatusConflict, `{"code":"stale_revision"`, "operation_failed"},
+		{"oversized", http.StatusNotFound, `{"code":"not_found","message":"` + strings.Repeat("a", maxFinancialError) + `"}`, "operation_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = fmt.Fprint(w, tc.body)
+			})
+			out := financialCLI(t, exitFailure, "request", "get", "--socket", socketPath,
+				"/v1/accounts/acct/explanation?revision=3")
+			if !bytes.Contains(out, []byte(`"code":"`+tc.code+`"`)) ||
+				bytes.Contains(out, []byte("private diagnostic text")) {
+				t.Fatal(string(out))
+			}
+		})
+	}
+}
+
+func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
+	const prefix = "/v1/accounts/"
+
+	five := []string{prefix + "a", prefix + "b", prefix + "c", prefix + "d", prefix + "acct"}
+	for _, tc := range []struct {
+		name      string
+		start     string
+		locations []string
+		followed  int32
+		success   bool
+	}{
+		{"five hops", prefix + "retired", five, 5, true},
+		{"six hops", prefix + "retired", append(slices.Clone(five), prefix+"new"), 5, false},
+		{"encoded identity", prefix + "retired", []string{prefix + "%61cct"}, 1, true},
+		{"loop", prefix + "retired", []string{prefix + "a", prefix + "%72etired"}, 1, false},
+		{"external", prefix + "retired", []string{"http://outside.invalid" + prefix + "acct"}, 0, false},
+		{"absolute same host", prefix + "retired", []string{"http://wake" + prefix + "acct"}, 0, false},
+		{"cross kind", prefix + "retired", []string{"/v1/instruments/acct"}, 0, false},
+		{"unsupported kind", prefix + "retired", []string{"/v1/custom/acct"}, 0, false},
+		{"cross endpoint", prefix + "retired", []string{prefix + "acct/positions"}, 0, false},
+		{"malformed", prefix + "retired", []string{prefix + "%zz"}, 0, false},
+		{"query", prefix + "retired", []string{prefix + "acct?"}, 0, false},
+		{"explanation", prefix + "retired/explanation?revision=3", []string{prefix + "acct/explanation?revision=3"}, 0, false},
+		{"positions", prefix + "retired/positions", []string{prefix + "acct/positions"}, 0, false},
+		{"snapshot", snapshotRoute, []string{prefix + "acct"}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+
+			socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, r *http.Request) {
+				i := int(requests.Add(1) - 1)
+				if i > 0 && (i > len(tc.locations) || r.URL.EscapedPath() != tc.locations[i-1]) {
+					t.Errorf("unexpected redirect request %s", r.URL)
+				}
+
+				if i < len(tc.locations) {
+					w.Header().Set("Location", tc.locations[i])
+					w.WriteHeader(http.StatusPermanentRedirect)
+
+					return
+				}
+
+				_, _ = fmt.Fprint(
+					w,
+					`{"id":"acct","kind":"accounts","revision":3,"account":{"name":"Account","currency":null}}`,
+				)
+			})
+			if tc.success {
+				out := financialCLI(t, exitOK, "accounts", "get", "--socket", socketPath, "retired")
+				if !bytes.Contains(out, []byte(`"id":"acct"`)) {
+					t.Fatal(string(out))
+				}
+			} else {
+				financialCLI(t, exitFailure, "request", "get", "--socket", socketPath, tc.start)
+			}
+
+			if got := requests.Load(); got != tc.followed+1 {
+				t.Fatalf("made %d requests, want %d", got, tc.followed+1)
+			}
+		})
+	}
 }
 
 func TestFinancialCLIHelp(t *testing.T) {

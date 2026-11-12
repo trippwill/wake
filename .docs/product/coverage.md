@@ -208,9 +208,25 @@ establish this boundary.
 
 ## Compatibility
 
-The executable targets Linux. Storage uses explicit pre-release development formats with no
-automatic compatibility migration. Unsupported stores fail closed with recreate guidance and
-preserve the original files. Back up stores and sidecars before explicitly moving or resetting them.
+The executable targets Linux. Starting with v0.1.0, patch releases within a given
+`0.x` minor preserve the published HTTP/JSON contract, public Go APIs, CLI machine
+output and exit behavior, and supported configuration keys and defaults. A change
+that existing strict consumers reject is breaking even when it only adds a field or
+enum value. New minor releases may introduce documented breaking changes. A breaking
+HTTP change requires a new URL contract version. Concurrent support for older URL
+versions depends on the release.
+
+The executable release, OpenAPI specification revision and HTTP URL contract version
+have separate meanings. Publication versions are opaque equality tokens scoped to
+their published view. Provider interpretation versions identify how Wake reads
+retained source evidence. Private store formats govern whether the executable can
+open its databases.
+
+Patch releases preserve usability of supported stores. An incompatible minor release
+documents its supported upgrade or explicit recreation procedure. Pre-release
+development formats have no automatic compatibility migration. Unsupported stores
+fail closed with recreate guidance and preserve the original files. Back up stores
+and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The
 encrypted access store has an independent path. Replacing that store preserves the warehouse and
 pauses upstream work until access is repaired and explicitly resumed; recreating the warehouse
