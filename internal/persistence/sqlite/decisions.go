@@ -540,7 +540,7 @@ func resolveAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.Res
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID)
+	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
 }
 
 func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnderlierParams) error {
@@ -572,7 +572,7 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID)
+	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
 }
 
 func instrumentLabel(name, ticker string) string {
@@ -725,7 +725,7 @@ func enrichAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.Enri
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID)
+	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
 }
 
 // A supporting composite job is eligible only through a retained response to

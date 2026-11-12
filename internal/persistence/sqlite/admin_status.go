@@ -324,7 +324,7 @@ func (s *Store) SourceDetail(
 	})
 }
 
-func systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatus, error) {
+func (s *Store) systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatus, error) {
 	out := application.SystemStatus{}
 
 	var err error
@@ -341,7 +341,7 @@ func systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatu
 
 	if update.Target != 0 {
 		out.HistoryUpdate = application.HistoryUpdateStatus{
-			Rule: string(application.RetainedClaimsRule), Phase: update.Phase, Completed: update.Completed,
+			Rule: string(s.historyRule), Phase: update.Phase, Completed: update.Completed,
 		}
 		if update.RetryAt != "" {
 			out.HistoryUpdate.RetryAt, err = time.Parse(time.RFC3339Nano, update.RetryAt)
@@ -373,7 +373,7 @@ func (s *Store) SystemStatus(ctx context.Context) (application.SystemStatus, err
 	return readModel(
 		ctx,
 		s,
-		func(q *sqlc.Queries) (application.SystemStatus, error) { return systemStatus(ctx, q) },
+		func(q *sqlc.Queries) (application.SystemStatus, error) { return s.systemStatus(ctx, q) },
 	)
 }
 

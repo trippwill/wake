@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -35,8 +36,8 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-financial-variants-2"
-	accessSchemaVersion        = "wake-simplification-4"
+	schemaVersion              = "wake-warehouse/1"
+	accessSchemaVersion        = "wake-access/1"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
@@ -82,6 +83,7 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
+	historyRule            application.FinancialRule
 	historyUpdating        atomic.Bool
 	registrations          []provider.Registration
 	db                     *sql.DB
@@ -118,7 +120,14 @@ var (
 	storeVersions = [2]string{schemaVersion, accessSchemaVersion}
 )
 
-func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *Store, resultErr error) {
+func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
+	return openWithHistoryRule(ctx, profile, logger, application.RetainedClaimsRule)
+}
+
+// openWithHistoryRule lets the restart tests exercise a future rule against the release baseline.
+func openWithHistoryRule(
+	ctx context.Context, profile Profile, logger *slog.Logger, historyRule application.FinancialRule,
+) (result *Store, resultErr error) {
 	started := time.Now()
 
 	if err := registerCollations(); err != nil {
@@ -177,7 +186,7 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (result *St
 		}
 	}
 
-	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations)}
+	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: historyRule}
 	defer func() {
 		if result == nil {
 			_ = s.Close()

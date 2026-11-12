@@ -38,8 +38,8 @@ CREATE TABLE claim_processing(sequence INTEGER PRIMARY KEY,activity_support INTE
 CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT NULL, next TEXT NOT NULL, PRIMARY KEY(provider,policy,scope)) STRICT;
 
 CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
-CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL UNIQUE REFERENCES connections(id), provider TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/2', UNIQUE(provider,authority,kind,scope,value)) STRICT;
-CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3', calculation_rule TEXT NOT NULL DEFAULT '', underlier_id TEXT REFERENCES instruments(id)) STRICT;
+CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL UNIQUE REFERENCES connections(id), provider TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/1', UNIQUE(provider,authority,kind,scope,value)) STRICT;
+CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1', calculation_rule TEXT NOT NULL DEFAULT '', underlier_id TEXT REFERENCES instruments(id)) STRICT;
 CREATE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
 CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '') STRICT;
 CREATE INDEX listing_terms ON listings(instrument_id,venue,ticker,currency);
@@ -108,7 +108,7 @@ CREATE TABLE attempts(id TEXT PRIMARY KEY NOT NULL, artifact_id TEXT NOT NULL RE
 CREATE INDEX attempts_artifact ON attempts(artifact_id,version,outcome);
 CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;
 
-CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('subject','underlier')),outcome TEXT NOT NULL DEFAULT 'accepted',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3',PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
+CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('subject','underlier')),outcome TEXT NOT NULL DEFAULT 'accepted',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1',PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
 CREATE INDEX instrument_claim_occurrence ON instrument_claims(claim_id,ordinal);
 CREATE TABLE instrument_underliers(parent_id TEXT NOT NULL REFERENCES instruments(id),underlier_id TEXT NOT NULL REFERENCES instruments(id),PRIMARY KEY(parent_id,underlier_id),CHECK(parent_id<>underlier_id)) STRICT;
 CREATE INDEX underlier_parents ON instrument_underliers(underlier_id,parent_id);
@@ -137,7 +137,7 @@ CREATE VIEW report_observations AS
    WHEN execution_id IS NULL THEN 'native-review'
    ELSE 'no-additional-contribution' END AS outcome,execution_id
  FROM (
-   SELECT r.artifact_id,r.version,r.location,coalesce(o.rule,'qualified-activity-observations/5') AS rule,
+   SELECT r.artifact_id,r.version,r.location,coalesce(o.rule,'qualified-activity-observations/1') AS rule,
    o.outcome AS retained_outcome,
    r.artifact_id=p.artifact_id AND r.version=p.version AND r.location=p.location AS representative,
    CASE WHEN o.artifact_id IS NOT NULL THEN o.execution_id ELSE

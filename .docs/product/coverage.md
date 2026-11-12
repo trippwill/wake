@@ -216,9 +216,11 @@ open its databases.
 
 Patch releases preserve usability of supported stores. An incompatible minor release
 documents its supported upgrade or explicit recreation procedure. Pre-release
-development formats have no automatic compatibility migration. Unsupported stores
-fail closed with recreate guidance and preserve the original files. Back up stores
-and sidecars before explicitly moving or resetting them.
+development formats have no automatic compatibility migration. The v0.1.0
+warehouse and encrypted access store have independent version-1 formats. Older
+development formats fail closed with recreation guidance and preserve the original
+files. Set up access again when recreating an unsupported encrypted access store.
+Back up stores and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The
 encrypted access store has an independent path. Replacing that store preserves the warehouse and
 pauses upstream work until access is repaired and explicitly resumed. Explicit warehouse

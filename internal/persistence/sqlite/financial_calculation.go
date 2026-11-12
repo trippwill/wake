@@ -197,6 +197,7 @@ func projectActivity(
 	q *sqlc.Queries,
 	row sqlc.Execution,
 	state application.ActivityState,
+	rule application.FinancialRule,
 ) error {
 	in, err := loadActivityCalculation(ctx, q, row, state, nil)
 	if err != nil {
@@ -207,6 +208,8 @@ func projectActivity(
 	if err != nil {
 		return err
 	}
+
+	result.Explanation.Rule = rule
 
 	return persistActivityCalculation(ctx, q, row, result)
 }
@@ -515,7 +518,12 @@ func loadInstrumentCalculation(
 	return in, nil
 }
 
-func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
+func projectInstrument(
+	ctx context.Context,
+	q *sqlc.Queries,
+	id string,
+	rule application.FinancialRule,
+) error {
 	in, err := loadInstrumentCalculation(ctx, q, id, nil)
 	if err != nil {
 		return err
@@ -525,6 +533,8 @@ func projectInstrument(ctx context.Context, q *sqlc.Queries, id string) error {
 	if err != nil {
 		return err
 	}
+
+	result.Explanation.Rule = rule
 
 	return persistInstrumentCalculation(ctx, q, id, result)
 }
@@ -747,7 +757,7 @@ func projectArtifact(ctx context.Context, q *sqlc.Queries, artifact, accountID s
 			return err
 		}
 
-		if err = projectActivity(ctx, q, affected[id], states[id]); err != nil {
+		if err = projectActivity(ctx, q, affected[id], states[id], application.RetainedClaimsRule); err != nil {
 			return err
 		}
 	}

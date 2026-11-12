@@ -104,7 +104,7 @@ func (s *Store) Overview(ctx context.Context) (application.OverviewView, error) 
 
 		var err error
 
-		out.Status, err = systemStatus(ctx, q)
+		out.Status, err = s.systemStatus(ctx, q)
 		if err != nil {
 			return out, err
 		}

@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MPL-2.0
 package persistence
 
-import "testing"
+import (
+	"testing"
+
+	"go.trippwill.dev/wake/internal/application"
+)
 
 // This test-only reconstruction proves retained-history calculation invariants.
 // It is deliberately not an operator API, scheduler or update framework.
@@ -39,7 +43,7 @@ func recalculateFixture(t *testing.T, s *Store) {
 	}
 
 	for _, id := range ids {
-		if err = projectInstrument(ctx, q, id); err != nil {
+		if err = projectInstrument(ctx, q, id, application.RetainedClaimsRule); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,7 +54,7 @@ func recalculateFixture(t *testing.T, s *Store) {
 	}
 
 	for _, row := range activities {
-		if err = projectActivity(ctx, q, row, states[row.ID]); err != nil {
+		if err = projectActivity(ctx, q, row, states[row.ID], application.RetainedClaimsRule); err != nil {
 			t.Fatal(err)
 		}
 	}
