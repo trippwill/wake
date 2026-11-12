@@ -331,6 +331,7 @@ func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
 		{"stale", http.StatusConflict, `{"code":"stale_revision","message":"private diagnostic text"}`, "stale_revision"},
 		{"invalid request", http.StatusBadRequest, `{"code":"invalid_request","message":"Invalid parameters"}`, "invalid_request"},
 		{"method", http.StatusMethodNotAllowed, `{"code":"method_not_allowed","message":"Only GET is supported"}`, "method_not_allowed"},
+		{"history update", http.StatusServiceUnavailable, `{"code":"history_updating","message":"Wake is updating retained financial history"}`, "history_updating"},
 		{"internal", http.StatusInternalServerError, `{"code":"internal_error","message":"Financial read failed"}`, "internal_error"},
 		{"mismatched", http.StatusNotFound, `{"code":"stale_revision","message":"private diagnostic text"}`, "operation_failed"},
 		{"unknown", http.StatusNotFound, `{"code":"other","message":"private diagnostic text"}`, "operation_failed"},

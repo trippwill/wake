@@ -382,6 +382,21 @@ func (q *Queries) AdvanceActivityRevision(ctx context.Context, id string) error 
 	return err
 }
 
+const advanceHistoryUpdate = `-- name: AdvanceHistoryUpdate :exec
+UPDATE history_update SET phase=?,cursor=?,completed=completed+?3,retry_at='' WHERE singleton=1
+`
+
+type AdvanceHistoryUpdateParams struct {
+	Phase     string
+	Cursor    string
+	Processed int64
+}
+
+func (q *Queries) AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error {
+	_, err := q.db.ExecContext(ctx, advanceHistoryUpdate, arg.Phase, arg.Cursor, arg.Processed)
+	return err
+}
+
 const advanceInstrumentRevision = `-- name: AdvanceInstrumentRevision :exec
 UPDATE instruments SET revision=revision+1 WHERE id=?
 `
@@ -895,7 +910,7 @@ func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]s
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.underlier_id FROM instruments
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
 JOIN (
  SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
  UNION
@@ -934,6 +949,7 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 			&i.EvidenceID,
 			&i.ReferenceNext,
 			&i.Rule,
+			&i.CalculationRule,
 			&i.UnderlierID,
 		); err != nil {
 			return nil, err
@@ -1396,7 +1412,7 @@ func (q *Queries) EventLinks(ctx context.Context, arg EventLinksParams) ([]strin
 }
 
 const execution = `-- name: Execution :one
-SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule FROM executions WHERE id=?
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule, calculation_rule FROM executions WHERE id=?
 `
 
 func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
@@ -1414,6 +1430,7 @@ func (q *Queries) Execution(ctx context.Context, id string) (Execution, error) {
 		&i.ReviewReasons,
 		&i.SelectionAuthority,
 		&i.Rule,
+		&i.CalculationRule,
 	)
 	return i, err
 }
@@ -1446,7 +1463,7 @@ func (q *Queries) ExecutionLinks(ctx context.Context, executionID string) ([]str
 }
 
 const executions = `-- name: Executions :many
-SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule FROM executions ORDER BY rowid DESC
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule, calculation_rule FROM executions ORDER BY rowid DESC
 `
 
 func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
@@ -1470,6 +1487,7 @@ func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
 			&i.ReviewReasons,
 			&i.SelectionAuthority,
 			&i.Rule,
+			&i.CalculationRule,
 		); err != nil {
 			return nil, err
 		}
@@ -1482,6 +1500,15 @@ func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const failHistoryUpdate = `-- name: FailHistoryUpdate :exec
+UPDATE history_update SET retry_at=? WHERE singleton=1
+`
+
+func (q *Queries) FailHistoryUpdate(ctx context.Context, retryAt string) error {
+	_, err := q.db.ExecContext(ctx, failHistoryUpdate, retryAt)
+	return err
 }
 
 const failWork = `-- name: FailWork :exec
@@ -1522,6 +1549,15 @@ func (q *Queries) FinishAttempt(ctx context.Context, arg FinishAttemptParams) er
 	return err
 }
 
+const finishHistoryUpdate = `-- name: FinishHistoryUpdate :exec
+UPDATE history_update SET applied=target,target=0,phase='',cursor='',retry_at='' WHERE singleton=1
+`
+
+func (q *Queries) FinishHistoryUpdate(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, finishHistoryUpdate)
+	return err
+}
+
 const flattenAliases = `-- name: FlattenAliases :exec
 UPDATE resource_aliases SET target_id=?1 WHERE kind=?2 AND target_id=?3
 `
@@ -1535,6 +1571,94 @@ type FlattenAliasesParams struct {
 func (q *Queries) FlattenAliases(ctx context.Context, arg FlattenAliasesParams) error {
 	_, err := q.db.ExecContext(ctx, flattenAliases, arg.Target, arg.Kind, arg.Previous)
 	return err
+}
+
+const historyActivities = `-- name: HistoryActivities :many
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule, calculation_rule FROM executions WHERE id>?1 ORDER BY id LIMIT 50
+`
+
+func (q *Queries) HistoryActivities(ctx context.Context, cursor string) ([]Execution, error) {
+	rows, err := q.db.QueryContext(ctx, historyActivities, cursor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Execution
+	for rows.Next() {
+		var i Execution
+		if err := rows.Scan(
+			&i.Revision,
+			&i.Kind,
+			&i.ID,
+			&i.AccountID,
+			&i.InstrumentID,
+			&i.ListingID,
+			&i.Accepted,
+			&i.Status,
+			&i.ReviewReasons,
+			&i.SelectionAuthority,
+			&i.Rule,
+			&i.CalculationRule,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const historyInstruments = `-- name: HistoryInstruments :many
+SELECT i.id FROM instruments i WHERE i.id>?1
+ AND NOT EXISTS(SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
+ ORDER BY i.id LIMIT 50
+`
+
+func (q *Queries) HistoryInstruments(ctx context.Context, cursor string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, historyInstruments, cursor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const historyUpdate = `-- name: HistoryUpdate :one
+SELECT singleton, applied, target, phase, cursor, completed, retry_at FROM history_update WHERE singleton=1
+`
+
+func (q *Queries) HistoryUpdate(ctx context.Context) (HistoryUpdate, error) {
+	row := q.db.QueryRowContext(ctx, historyUpdate)
+	var i HistoryUpdate
+	err := row.Scan(
+		&i.Singleton,
+		&i.Applied,
+		&i.Target,
+		&i.Phase,
+		&i.Cursor,
+		&i.Completed,
+		&i.RetryAt,
+	)
+	return i, err
 }
 
 const identityDependents = `-- name: IdentityDependents :many
@@ -1589,7 +1713,7 @@ func (q *Queries) IdentityMetadata(ctx context.Context, arg IdentityMetadataPara
 }
 
 const identityRoots = `-- name: IdentityRoots :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
 `
 
 func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument, error) {
@@ -1617,6 +1741,7 @@ func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument,
 			&i.EvidenceID,
 			&i.ReferenceNext,
 			&i.Rule,
+			&i.CalculationRule,
 			&i.UnderlierID,
 		); err != nil {
 			return nil, err
@@ -1632,8 +1757,17 @@ func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument,
 	return items, nil
 }
 
+const initializeHistoryUpdate = `-- name: InitializeHistoryUpdate :exec
+INSERT INTO history_update(singleton,applied) VALUES(1,?)
+`
+
+func (q *Queries) InitializeHistoryUpdate(ctx context.Context, applied int64) error {
+	_, err := q.db.ExecContext(ctx, initializeHistoryUpdate, applied)
+	return err
+}
+
 const instrument = `-- name: Instrument :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE id=?
 `
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
@@ -1655,13 +1789,14 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 		&i.EvidenceID,
 		&i.ReferenceNext,
 		&i.Rule,
+		&i.CalculationRule,
 		&i.UnderlierID,
 	)
 	return i, err
 }
 
 const instrumentBindings = `-- name: InstrumentBindings :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.calculation_rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
 `
 
 func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrument, error) {
@@ -1689,6 +1824,7 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 			&i.EvidenceID,
 			&i.ReferenceNext,
 			&i.Rule,
+			&i.CalculationRule,
 			&i.UnderlierID,
 		); err != nil {
 			return nil, err
@@ -1705,7 +1841,7 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 }
 
 const instrumentBySource = `-- name: InstrumentBySource :one
-SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.reference_next, target.rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
+SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.reference_next, target.rule, target.calculation_rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
 `
 
 func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error) {
@@ -1727,6 +1863,7 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.EvidenceID,
 		&i.ReferenceNext,
 		&i.Rule,
+		&i.CalculationRule,
 		&i.UnderlierID,
 	)
 	return i, err
@@ -1836,7 +1973,7 @@ func (q *Queries) InstrumentSelection(ctx context.Context, instrumentID string) 
 }
 
 const instruments = `-- name: Instruments :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
 `
 
 func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
@@ -1864,6 +2001,7 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 			&i.EvidenceID,
 			&i.ReferenceNext,
 			&i.Rule,
+			&i.CalculationRule,
 			&i.UnderlierID,
 		); err != nil {
 			return nil, err
@@ -2323,7 +2461,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsPara
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -2351,6 +2489,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 			&i.EvidenceID,
 			&i.ReferenceNext,
 			&i.Rule,
+			&i.CalculationRule,
 			&i.UnderlierID,
 		); err != nil {
 			return nil, err
@@ -2587,7 +2726,7 @@ func (q *Queries) Profile(ctx context.Context) (Profile, error) {
 }
 
 const projectActivity = `-- name: ProjectActivity :exec
-UPDATE executions SET accepted=?1,status=?2,review_reasons=?3,selection_authority=?4,instrument_id=?5,listing_id=?6,revision=revision+1 WHERE id=?7 AND (accepted<>?1 OR status<>?2 OR review_reasons<>?3 OR selection_authority<>?4 OR instrument_id IS NOT ?5 OR listing_id IS NOT ?6)
+UPDATE executions SET accepted=?1,status=?2,review_reasons=?3,selection_authority=?4,instrument_id=?5,listing_id=?6,calculation_rule=?7,revision=revision+1 WHERE id=?8 AND (accepted<>?1 OR status<>?2 OR review_reasons<>?3 OR selection_authority<>?4 OR instrument_id IS NOT ?5 OR listing_id IS NOT ?6 OR calculation_rule<>?7)
 `
 
 type ProjectActivityParams struct {
@@ -2597,6 +2736,7 @@ type ProjectActivityParams struct {
 	SelectionAuthority string
 	InstrumentID       sql.NullString
 	ListingID          sql.NullString
+	CalculationRule    string
 	ID                 string
 }
 
@@ -2608,13 +2748,14 @@ func (q *Queries) ProjectActivity(ctx context.Context, arg ProjectActivityParams
 		arg.SelectionAuthority,
 		arg.InstrumentID,
 		arg.ListingID,
+		arg.CalculationRule,
 		arg.ID,
 	)
 	return err
 }
 
 const projectInstrument = `-- name: ProjectInstrument :exec
-UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,selection_authority=?6,underlier_id=?7,revision=revision+1 WHERE id=?8 AND (name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 OR selection_authority<>?6 OR underlier_id IS NOT ?7)
+UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,selection_authority=?6,underlier_id=?7,calculation_rule=?8,revision=revision+1 WHERE id=?9 AND (name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 OR selection_authority<>?6 OR underlier_id IS NOT ?7 OR calculation_rule<>?8)
 `
 
 type ProjectInstrumentParams struct {
@@ -2625,6 +2766,7 @@ type ProjectInstrumentParams struct {
 	Status             string
 	SelectionAuthority string
 	UnderlierID        sql.NullString
+	CalculationRule    string
 	ID                 string
 }
 
@@ -2637,6 +2779,7 @@ func (q *Queries) ProjectInstrument(ctx context.Context, arg ProjectInstrumentPa
 		arg.Status,
 		arg.SelectionAuthority,
 		arg.UnderlierID,
+		arg.CalculationRule,
 		arg.ID,
 	)
 	return err
@@ -3032,17 +3175,18 @@ func (q *Queries) PutInstrumentReferenceAttempt(ctx context.Context, arg PutInst
 }
 
 const putInstrumentRoot = `-- name: PutInstrumentRoot :exec
-INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status) VALUES(?,?,?,?,?,?,?,'provisional')
+INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status,calculation_rule) VALUES(?,?,?,?,?,?,?,'provisional',?)
 `
 
 type PutInstrumentRootParams struct {
-	ID        string
-	SourceKey string
-	Name      string
-	Ticker    string
-	Kind      string
-	Reported  []byte
-	Rule      string
+	ID              string
+	SourceKey       string
+	Name            string
+	Ticker          string
+	Kind            string
+	Reported        []byte
+	Rule            string
+	CalculationRule string
 }
 
 func (q *Queries) PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootParams) error {
@@ -3054,6 +3198,7 @@ func (q *Queries) PutInstrumentRoot(ctx context.Context, arg PutInstrumentRootPa
 		arg.Kind,
 		arg.Reported,
 		arg.Rule,
+		arg.CalculationRule,
 	)
 	return err
 }
@@ -4401,6 +4546,15 @@ type StartAttemptParams struct {
 
 func (q *Queries) StartAttempt(ctx context.Context, arg StartAttemptParams) error {
 	_, err := q.db.ExecContext(ctx, startAttempt, arg.ID, arg.ArtifactID, arg.Version)
+	return err
+}
+
+const startHistoryUpdate = `-- name: StartHistoryUpdate :exec
+UPDATE history_update SET target=?,phase='activity',cursor='',completed=0,retry_at='' WHERE singleton=1
+`
+
+func (q *Queries) StartHistoryUpdate(ctx context.Context, target int64) error {
+	_, err := q.db.ExecContext(ctx, startHistoryUpdate, target)
 	return err
 }
 

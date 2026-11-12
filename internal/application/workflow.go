@@ -18,6 +18,8 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+const ErrHistoryUpdating Error = "Wake is updating retained financial history"
+
 type (
 	StorageStatus struct {
 		Paused, ReferenceReview, WarehouseReset bool
@@ -58,6 +60,8 @@ type (
 		Processing                            []ProcessingStatus
 	}
 	Store interface {
+		HistoryUpdating() bool
+		RunHistoryUpdate(context.Context, time.Time) (bool, error)
 		ResumeStorage(context.Context, int64, string, time.Time) error
 		Schedule(context.Context, host.WorkKey, bool) error
 		Confirm(
@@ -597,7 +601,22 @@ func (w *Workflow) Run(ctx context.Context, reportFailure func()) {
 	}
 }
 
+func (w *Workflow) HistoryUpdating() bool {
+	return w.store != nil && w.store.HistoryUpdating()
+}
+
 func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
+	if w.HistoryUpdating() {
+		changed, err := w.store.RunHistoryUpdate(ctx, now)
+		if err != nil {
+			return err
+		}
+
+		if changed {
+			w.notifyReaders()
+		}
+	}
+
 	work, err := w.store.PendingWork(ctx, now)
 	if err != nil {
 		return err
@@ -621,6 +640,10 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		if err == nil {
 			w.notifyReaders()
 		}
+	}
+
+	if w.HistoryUpdating() {
+		return nil
 	}
 
 	providers := map[string]string{}

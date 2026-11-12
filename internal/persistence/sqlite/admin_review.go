@@ -109,6 +109,10 @@ func (s *Store) Overview(ctx context.Context) (application.OverviewView, error) 
 			return out, err
 		}
 
+		if out.Status.HistoryUpdate.Phase != "" {
+			return out, nil
+		}
+
 		counts, err := q.AdminCounts(ctx)
 		if err != nil {
 			return out, err

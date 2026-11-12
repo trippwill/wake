@@ -104,8 +104,11 @@ defines the wire format.
 For changes to normalization, identity/link selection, reconciliation or financial
 rules, state whether previously processed history remains valid. If existing
 results can change, identify the affected inputs and include an explicit update
-procedure with the change. Recalculate from retained claims when sufficient;
-reinterpret retained original reports when their normalized meaning changes.
+procedure with the change. For activity or instrument selection changes covered by the retained-claims
+calculation, increment `RetainedClaimsRule` to schedule the update. Rules affecting
+different inputs must define their update scope in the same change. Recalculate
+from retained claims when sufficient. Increment the provider interpretation
+version when the normalized meaning of an original report changes.
 An unchanged fresh report must not suppress work required by changed rules or
 interpretation. Do not present affected results as current until that work succeeds.
 

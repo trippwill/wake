@@ -67,7 +67,12 @@ func gridJSON(w http.ResponseWriter, data any, err error) {
 
 	if err != nil {
 		status := http.StatusServiceUnavailable
+
 		message := "Data is temporarily unavailable. Retry this table."
+		if errors.Is(err, application.ErrHistoryUpdating) {
+			message = "Wake is updating retained financial history. Retry when the update shown on Overview is complete."
+		}
+
 		if errors.Is(err, application.ErrInvalid) {
 			status = http.StatusBadRequest
 			message = "Invalid table query."

@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.trippwill.dev/wake/internal/logging"
@@ -34,7 +35,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-financial-variants-1"
+	schemaVersion              = "wake-financial-variants-2"
 	accessSchemaVersion        = "wake-simplification-4"
 )
 
@@ -81,6 +82,7 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
+	historyUpdating        atomic.Bool
 	registrations          []provider.Registration
 	db                     *sql.DB
 	activityDB             *sql.DB
@@ -345,6 +347,8 @@ func storageCode(err error) string {
 	switch {
 	case errors.Is(err, ErrUnsafeStore):
 		return "unsafe_or_owned"
+	case errors.Is(err, ErrHistoryVersion):
+		return "unsupported_history_version"
 	case errors.Is(err, ErrUnsupportedSchema):
 		return "unsupported_format"
 	case errors.Is(err, ErrAssociation):
@@ -442,6 +446,10 @@ func (s *Store) initialize(
 		); err != nil {
 			return err
 		}
+	}
+
+	if err = s.prepareHistoryUpdate(ctx, s.queries.WithTx(tx), !present[0]); err != nil {
+		return err
 	}
 
 	switch {

@@ -356,6 +356,7 @@ func acceptInstrument(
 				Ticker:    i.Ticker(),
 				Kind:      string(i.Kind()),
 				Reported:  reported, Rule: application.InstrumentRule,
+				CalculationRule: string(application.RetainedClaimsRule),
 			},
 		)
 	}

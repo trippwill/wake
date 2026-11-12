@@ -71,14 +71,6 @@ Debt activity retains nominal face quantity and exact reported price without a
 quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
 charges remain separate; no combined settlement total is inferred.
 
-This pre-release warehouse format supports one account per connection and requires
-explicit warehouse recreation on upgrade.
-Older warehouses fail closed and remain untouched; encrypted access seeds retain
-their independent format. Reacquire and confirm source history in the new warehouse.
-Recreating a warehouse discards warehouse-only decisions and evidence; preserve
-any needed old warehouse before explicitly resetting. No automatic migration or
-historical updater is supplied by this change.
-
 Source-established relationships are useful when present. A missing relationship
 does not authorize an inferred stock delivery, cash payment or strategy. Family
 and market examples are representative, not rejection lists
@@ -229,8 +221,10 @@ fail closed with recreate guidance and preserve the original files. Back up stor
 and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The
 encrypted access store has an independent path. Replacing that store preserves the warehouse and
-pauses upstream work until access is repaired and explicitly resumed; recreating the warehouse
-preserves reusable encrypted access but establishes new financial identities. See
+pauses upstream work until access is repaired and explicitly resumed. Explicit warehouse
+recreation preserves reusable encrypted access but starts a new history with new financial
+identities. Preserve the old warehouse for any needed evidence and decisions, then confirm
+source accounts and reacquire history in the new warehouse. See
 [architecture](../engineering/architecture.md) for trust and recovery boundaries and
 [development](../engineering/development.md) for verification and reset procedures. No version tag
 is implied by this coverage.
@@ -262,8 +256,11 @@ financial calculations. Synthetic proofs cover exact decimal and timestamp
 precision, source disagreement, read-only checks, decision release and transaction
 rollback. The retained-history contribution requirement remains in the
 [development guide](../engineering/development.md). Provider interpretation versions
-automatically queue retained reports; changed core calculation rules still require
-an explicit historical update procedure.
+automatically queue retained reports. When the warehouse format is supported, a new
+retained-claims calculation rule automatically updates activity and instrument selections
+in place. Wake keeps the retained evidence, financial identities and operator decisions.
+Overview shows progress and retry status. Affected financial views become
+available together after the update.
 
 Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each
 replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group

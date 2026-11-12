@@ -116,7 +116,8 @@ func (c *client) positionsMode(ctx context.Context, account string, follow bool,
 	}
 	var err error
 	current, err = c.readPositions(ctx, account, current)
-	if err != nil {
+	var updating historyUpdateError
+	if err != nil && !errors.As(err, &updating) {
 		return err
 	}
 	announced := false

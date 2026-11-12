@@ -182,6 +182,8 @@ func financialResponseError(res *http.Response) error {
 		expected = socket.MethodNotAllowed
 	case http.StatusConflict:
 		expected = socket.StaleRevision
+	case http.StatusServiceUnavailable:
+		expected = socket.HistoryUpdating
 	case http.StatusInternalServerError:
 		expected = socket.InternalError
 	default:

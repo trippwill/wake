@@ -409,3 +409,5 @@ func TestProviderFormsHaveDistinctInputAndLabelIdentities(t *testing.T) {
 		}
 	}
 }
+
+func (confirmationRetryStore) HistoryUpdating() bool { return false }

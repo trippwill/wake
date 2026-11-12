@@ -324,3 +324,5 @@ func TestProxySessionAdmissionAndRenewal(t *testing.T) {
 func (*proxySessionStore) SystemStatus(context.Context) (application.SystemStatus, error) {
 	return application.SystemStatus{}, nil
 }
+
+func (*proxySessionStore) HistoryUpdating() bool { return false }

@@ -152,7 +152,7 @@ JOIN (
 ) claims ON claims.id=instruments.id
 WHERE instruments.id<>sqlc.arg(current_id) AND instruments.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY instruments.id;
 -- name: PutInstrumentRoot :exec
-INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status) VALUES(?,?,?,?,?,?,?,'provisional');
+INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status,calculation_rule) VALUES(?,?,?,?,?,?,?,'provisional',?);
 -- name: Instruments :many
 SELECT * FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid;
 -- name: Instrument :one
@@ -237,7 +237,7 @@ SELECT * FROM activity_bases WHERE activity_id=?;
 -- name: ActivityInputs :many
 SELECT record_values.* FROM execution_observations o JOIN record_values USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=record_values.claim_id AND p.ordinal=record_values.ordinal WHERE o.execution_id=? AND record_values.kind='activity' ORDER BY p.rowid;
 -- name: ProjectActivity :exec
-UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id));
+UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review_reasons=sqlc.arg(review_reasons),selection_authority=sqlc.arg(selection_authority),instrument_id=sqlc.narg(instrument_id),listing_id=sqlc.narg(listing_id),calculation_rule=sqlc.arg(calculation_rule),revision=revision+1 WHERE id=sqlc.arg(id) AND (accepted<>sqlc.arg(accepted) OR status<>sqlc.arg(status) OR review_reasons<>sqlc.arg(review_reasons) OR selection_authority<>sqlc.arg(selection_authority) OR instrument_id IS NOT sqlc.narg(instrument_id) OR listing_id IS NOT sqlc.narg(listing_id) OR calculation_rule<>sqlc.arg(calculation_rule));
 -- name: PutSourceCorrection :exec
 INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: SourceCorrections :many
@@ -264,7 +264,7 @@ SELECT * FROM instrument_selections WHERE instrument_id=?;
 -- name: SaveInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT(instrument_id) DO UPDATE SET name=excluded.name,ticker=excluded.ticker,figi=excluded.figi,evidence=excluded.evidence,status=excluded.status,underlier_id=excluded.underlier_id;
 -- name: ProjectInstrument :exec
-UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(figi),evidence_id=sqlc.arg(evidence),reference_status=sqlc.arg(status),selection_authority=sqlc.arg(selection_authority),underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND (name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(figi) OR reference_status<>sqlc.arg(status) OR selection_authority<>sqlc.arg(selection_authority) OR underlier_id IS NOT sqlc.narg(underlier_id));
+UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(figi),evidence_id=sqlc.arg(evidence),reference_status=sqlc.arg(status),selection_authority=sqlc.arg(selection_authority),underlier_id=sqlc.narg(underlier_id),calculation_rule=sqlc.arg(calculation_rule),revision=revision+1 WHERE id=sqlc.arg(id) AND (name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(figi) OR reference_status<>sqlc.arg(status) OR selection_authority<>sqlc.arg(selection_authority) OR underlier_id IS NOT sqlc.narg(underlier_id) OR calculation_rule<>sqlc.arg(calculation_rule));
 -- name: Listing :one
 SELECT * FROM listings WHERE id=?;
 -- name: RetainedReferenceCandidates :many
@@ -507,3 +507,22 @@ DELETE FROM instrument_underliers WHERE parent_id=sqlc.arg(id) OR underlier_id=s
 
 -- name: DiscardActivitySupport :exec
 UPDATE claim_processing SET activity_support=0 WHERE claim_id=? AND ordinal=?;
+
+-- name: InitializeHistoryUpdate :exec
+INSERT INTO history_update(singleton,applied) VALUES(1,?);
+-- name: HistoryUpdate :one
+SELECT * FROM history_update WHERE singleton=1;
+-- name: StartHistoryUpdate :exec
+UPDATE history_update SET target=?,phase='activity',cursor='',completed=0,retry_at='' WHERE singleton=1;
+-- name: AdvanceHistoryUpdate :exec
+UPDATE history_update SET phase=?,cursor=?,completed=completed+sqlc.arg(processed),retry_at='' WHERE singleton=1;
+-- name: FailHistoryUpdate :exec
+UPDATE history_update SET retry_at=? WHERE singleton=1;
+-- name: FinishHistoryUpdate :exec
+UPDATE history_update SET applied=target,target=0,phase='',cursor='',retry_at='' WHERE singleton=1;
+-- name: HistoryActivities :many
+SELECT * FROM executions WHERE id>sqlc.arg(cursor) ORDER BY id LIMIT 50;
+-- name: HistoryInstruments :many
+SELECT i.id FROM instruments i WHERE i.id>sqlc.arg(cursor)
+ AND NOT EXISTS(SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
+ ORDER BY i.id LIMIT 50;
