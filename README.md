@@ -233,11 +233,13 @@ Compare `warehouse_id` and `version` across pages when consistency matters.
 Run `wake activity query --help` for the state, family, and limit options.
 
 Exact account and positions reads and raw GETs return the
-[API JSON object](api/openapi/v1.yaml). Position views distinguish an available
-empty array from an unavailable view with `positions: null` and a reason.
+[API JSON object](api/openapi/v1.yaml). Resource lookups follow up to five identity
+redirects within the same resource kind on the configured socket. To explain a
+resource, use the ID and revision from its current lookup. Position views distinguish
+an available empty array from an unavailable view with `positions: null` and a reason.
 Successful commands write JSON to stdout. With `--json`, errors go to stderr
-as an object such as
-`{"event":"error","code":"operation_failed","message":"Wake API returned HTTP 404","exit_status":1}`.
+and preserve recognized API codes, as in
+`{"event":"error","code":"not_found","message":"Wake API returned HTTP 404","exit_status":1}`.
 
 #### Install the Codex skill
 

@@ -30,6 +30,8 @@ import (
 const (
 	snapshotRoute        = "/v1/snapshot"
 	maxFinancialResponse = 128 << 20
+	maxFinancialError    = 8 << 10
+	maxIdentityRedirects = 5
 )
 
 func financialCommands(common func() []cli.Flag) []*cli.Command {
@@ -121,9 +123,85 @@ func financialSocketPath(c *cli.Command) (string, error) {
 	return filepath.Join(dir, "wake.sock"), nil
 }
 
+type financialResponse struct {
+	body json.RawMessage
+	path string
+}
+
+func resourceKind(u *url.URL) string {
+	if !strings.HasPrefix(u.Path, "/v1/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return ""
+	}
+
+	kind, id, ok := strings.Cut(strings.TrimPrefix(u.Path, "/v1/"), "/")
+	if !ok || !validFinancialID(id) {
+		return ""
+	}
+
+	switch kind {
+	case "accounts", "instruments", "listings", "activity":
+		return kind
+	default:
+		return ""
+	}
+}
+
+func financialRedirect(req *http.Request, via []*http.Request) error {
+	// Compare the original Location with the resolved path to require a root-relative destination.
+	locations := req.Response.Header.Values("Location")
+	if req.Response.StatusCode != http.StatusPermanentRedirect ||
+		len(locations) != 1 || len(via) > maxIdentityRedirects ||
+		locations[0] != req.URL.EscapedPath() ||
+		req.URL.Scheme != "http" || req.URL.Host != "wake" || req.URL.User != nil {
+		return http.ErrUseLastResponse
+	}
+
+	kind := resourceKind(via[0].URL)
+	if kind == "" || resourceKind(req.URL) != kind {
+		return http.ErrUseLastResponse
+	}
+
+	for _, prior := range via {
+		if prior.URL.Path == req.URL.Path {
+			return http.ErrUseLastResponse
+		}
+	}
+
+	return nil
+}
+
+func financialResponseError(res *http.Response) error {
+	message := failure("Wake API returned HTTP %d", res.StatusCode)
+	expected := socket.ErrorCode("")
+	switch res.StatusCode {
+	case http.StatusBadRequest:
+		expected = socket.InvalidRequest
+	case http.StatusNotFound:
+		expected = socket.NotFound
+	case http.StatusMethodNotAllowed:
+		expected = socket.MethodNotAllowed
+	case http.StatusConflict:
+		expected = socket.StaleRevision
+	case http.StatusInternalServerError:
+		expected = socket.InternalError
+	default:
+		return message
+	}
+
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxFinancialError+1))
+
+	var value socket.Error
+	if err != nil || len(body) > maxFinancialError || json.Unmarshal(body, &value) != nil ||
+		value.Code != expected || value.Message == "" {
+		return message
+	}
+
+	return commandError{status: exitFailure, message: message.Error(), code: string(value.Code)}
+}
+
 // financialGET is pinned to the configured Unix socket and accepts finite JSON
 // objects only. A failed read leaves stdout untouched.
-func financialGET(ctx context.Context, socketPath, target string, probe bool) (json.RawMessage, error) {
+func financialGET(ctx context.Context, socketPath, target string, probe bool) (financialResponse, error) {
 	dialer := net.Dialer{Timeout: 5 * time.Second}
 
 	transport := &http.Transport{
@@ -134,16 +212,14 @@ func financialGET(ctx context.Context, socketPath, target string, probe bool) (j
 	defer transport.CloseIdleConnections()
 
 	client := http.Client{
-		Transport: transport,
-		Timeout:   20 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		Transport:     transport,
+		Timeout:       20 * time.Second,
+		CheckRedirect: financialRedirect,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake"+target, nil)
 	if err != nil {
-		return nil, usageError("invalid Wake API path")
+		return financialResponse{}, usageError("invalid Wake API path")
 	}
 
 	req.Header.Set("Accept", "application/json")
@@ -154,41 +230,41 @@ func financialGET(ctx context.Context, socketPath, target string, probe bool) (j
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, failure(
+		return financialResponse{}, failure(
 			"cannot read the Wake socket; check that Wake is running and the socket is accessible",
 		)
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	if probe && res.StatusCode == http.StatusNotModified {
-		return nil, nil
+		return financialResponse{}, nil
 	}
 
 	if probe || res.StatusCode != http.StatusOK {
-		return nil, failure("Wake API returned HTTP %d", res.StatusCode)
+		return financialResponse{}, financialResponseError(res)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxFinancialResponse+1))
 	if err != nil {
-		return nil, failure("could not read the complete Wake API response")
+		return financialResponse{}, failure("could not read the complete Wake API response")
 	}
 
 	if len(body) > maxFinancialResponse {
-		return nil, failure("Wake API response exceeds 128 MiB")
+		return financialResponse{}, failure("Wake API response exceeds 128 MiB")
 	}
 
 	body = bytes.TrimSpace(body)
 	if len(body) == 0 || body[0] != '{' || !json.Valid(body) {
-		return nil, failure("Wake API response is not a complete JSON object")
+		return financialResponse{}, failure("Wake API response is not a complete JSON object")
 	}
 
-	return body, nil
+	return financialResponse{body: body, path: res.Request.URL.Path}, nil
 }
 
-func financialRead(ctx context.Context, c *cli.Command, route string) (json.RawMessage, error) {
+func financialRead(ctx context.Context, c *cli.Command, route string) (financialResponse, error) {
 	socketPath, err := financialSocketPath(c)
 	if err != nil {
-		return nil, err
+		return financialResponse{}, err
 	}
 
 	return financialGET(ctx, socketPath, route, false)
@@ -221,12 +297,12 @@ func readFinancialCollection(
 ) (financialCollection, []financialResource, error) {
 	var collection financialCollection
 
-	body, err := financialRead(ctx, c, snapshotRoute)
+	response, err := financialRead(ctx, c, snapshotRoute)
 	if err != nil {
 		return collection, nil, err
 	}
 
-	if json.Unmarshal(body, &collection) != nil || collection.WarehouseID == "" ||
+	if json.Unmarshal(response.body, &collection) != nil || collection.WarehouseID == "" ||
 		collection.Version == "" || collection.Resources == nil {
 		return collection, nil, failure("invalid Wake financial snapshot")
 	}
@@ -281,40 +357,42 @@ func readAccountEndpoint(
 	ctx context.Context,
 	c *cli.Command,
 	suffix string,
-) (string, json.RawMessage, error) {
+) (string, financialResponse, error) {
 	id := c.Args().First()
 	if c.NArg() != 1 || !validFinancialID(id) {
-		return "", nil, usageError("provide one valid Wake account ID")
+		return "", financialResponse{}, usageError("provide one valid Wake account ID")
 	}
 
-	body, err := financialRead(ctx, c, "/v1/accounts/"+url.PathEscape(id)+suffix)
+	response, err := financialRead(ctx, c, "/v1/accounts/"+url.PathEscape(id)+suffix)
 
-	return id, body, err
+	return id, response, err
 }
 
 func getAccount(ctx context.Context, c *cli.Command) error {
-	id, body, err := readAccountEndpoint(ctx, c, "")
+	_, response, err := readAccountEndpoint(ctx, c, "")
 	if err != nil {
 		return err
 	}
 
+	id := strings.TrimPrefix(response.path, "/v1/accounts/")
+
 	var account financialResource
-	if json.Unmarshal(body, &account) != nil || account.ID != id ||
+	if json.Unmarshal(response.body, &account) != nil || account.ID != id ||
 		account.Kind != "accounts" || account.Revision < 1 || account.Account == nil {
 		return failure("invalid account response from Wake")
 	}
 
-	return json.NewEncoder(c.Writer).Encode(body)
+	return json.NewEncoder(c.Writer).Encode(response.body)
 }
 
 func getPositions(ctx context.Context, c *cli.Command) error {
-	id, body, err := readAccountEndpoint(ctx, c, "/positions")
+	id, response, err := readAccountEndpoint(ctx, c, "/positions")
 	if err != nil {
 		return err
 	}
 
 	var view socket.PositionsView
-	if json.Unmarshal(body, &view) != nil || view.AccountId != id ||
+	if json.Unmarshal(response.body, &view) != nil || view.AccountId != id ||
 		view.WarehouseId == "" || view.Version == "" || !view.Status.Valid() {
 		return failure("invalid positions response from Wake")
 	}
@@ -330,7 +408,7 @@ func getPositions(ctx context.Context, c *cli.Command) error {
 		}
 	}
 
-	return json.NewEncoder(c.Writer).Encode(body)
+	return json.NewEncoder(c.Writer).Encode(response.body)
 }
 
 func financialDoctor(ctx context.Context, c *cli.Command) error {
@@ -367,10 +445,10 @@ func rawFinancialGet(ctx context.Context, c *cli.Command) error {
 		return usageError("provide a finite root-relative Wake v1 API path")
 	}
 
-	body, err := financialRead(ctx, c, target)
+	response, err := financialRead(ctx, c, target)
 	if err != nil {
 		return err
 	}
 
-	return json.NewEncoder(c.Writer).Encode(body)
+	return json.NewEncoder(c.Writer).Encode(response.body)
 }

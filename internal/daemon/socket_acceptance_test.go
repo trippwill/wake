@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1105,25 +1106,68 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	directClient := *socketClient
 	directClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
-	response, e := directClient.Get("http://wake/v1/instruments/" + retired)
-	if e != nil {
-		t.Fatal(e)
+	for _, alias := range []struct{ kind, id, survivor string }{
+		{"instruments", retired, survivor},
+		{"listings", retiredListing, ""},
+	} {
+		oldPath := "/v1/" + alias.kind + "/" + alias.id
+
+		response, e := directClient.Get("http://wake" + oldPath)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		_ = response.Body.Close()
+		location := response.Header.Get("Location")
+		current, ok := after.Resources[strings.TrimPrefix(location, "/v1/")]
+		if response.StatusCode != http.StatusPermanentRedirect ||
+			!strings.HasPrefix(location, "/v1/"+alias.kind+"/") || !ok ||
+			current.Kind != alias.kind || alias.survivor != "" && current.ID != alias.survivor {
+			t.Fatal(
+				"retired resource did not redirect to a current mirror resource",
+				oldPath,
+				response.StatusCode,
+				location,
+			)
+		}
+
+		response, e = socketClient.Get("http://wake" + oldPath)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		var actual application.CanonicalResource
+
+		e = json.NewDecoder(response.Body).Decode(&actual)
+		_ = response.Body.Close()
+		if e != nil || response.StatusCode != http.StatusOK ||
+			response.Request.URL.Path != location || !reflect.DeepEqual(actual, current) {
+			t.Fatal("redirected lookup differed from the independent mirror", oldPath, response.StatusCode, e)
+		}
 	}
 
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusPermanentRedirect ||
-		response.Header.Get("Location") != "/v1/instruments/"+survivor {
-		t.Fatal("old link did not redirect", response.StatusCode, response.Header)
-	}
+	for _, tc := range []struct {
+		path   string
+		status int
+		code   string
+	}{
+		{"/v1/instruments/" + retired + "/explanation?revision=1", http.StatusConflict, "stale_revision"},
+		{"/v1/listings/" + retiredListing + "/explanation?revision=1", http.StatusConflict, "stale_revision"},
+		{"/v1/instruments/nonexistent", http.StatusNotFound, "not_found"},
+	} {
+		response, e := directClient.Get("http://wake" + tc.path)
+		if e != nil {
+			t.Fatal(e)
+		}
 
-	response, e = socketClient.Get("http://wake/v1/instruments/" + retired + "/explanation?revision=1")
-	if e != nil {
-		t.Fatal(e)
-	}
+		var body struct{ Code, Message string }
 
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusConflict {
-		t.Fatal("old explanation transferred to survivor", response.StatusCode)
+		e = json.NewDecoder(response.Body).Decode(&body)
+		_ = response.Body.Close()
+		if e != nil || response.StatusCode != tc.status || body.Code != tc.code ||
+			body.Message == "" || response.Header.Get("Location") != "" {
+			t.Fatal("unexpected resource failure", tc.path, response.StatusCode, body.Code, e)
+		}
 	}
 
 	if after.Resources["activity/"+id].Activity.Trade.Price.Amount != "402.0000" ||

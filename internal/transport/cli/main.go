@@ -28,19 +28,24 @@ const (
 type commandError struct {
 	status  int
 	message string
+	code    string
 }
 
 func (e commandError) Error() string { return e.message }
 func (e commandError) ErrorCode() string {
+	if e.code != "" {
+		return e.code
+	}
+
 	if e.status == exitUsage {
 		return "invalid_request"
 	}
 
 	return "operation_failed"
 }
-func usageError(message string) error { return commandError{exitUsage, message} }
+func usageError(message string) error { return commandError{status: exitUsage, message: message} }
 func failure(format string, args ...any) error {
-	return commandError{exitFailure, fmt.Sprintf(format, args...)}
+	return commandError{status: exitFailure, message: fmt.Sprintf(format, args...)}
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -126,7 +131,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 
 	root.OnUsageError = func(_ context.Context, _ *cli.Command, err error, _ bool) error {
-		return commandError{exitUsage, err.Error()}
+		return usageError(err.Error())
 	}
 	root.Commands = []*cli.Command{
 		{
@@ -230,7 +235,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 func configureHelp(c *cli.Command) {
 	c.CustomHelpTemplate = strings.ReplaceAll(cli.CommandHelpTemplate, "USAGE:\n   ", "Usage: ")
 	c.OnUsageError = func(_ context.Context, _ *cli.Command, err error, _ bool) error {
-		return commandError{exitUsage, err.Error()}
+		return usageError(err.Error())
 	}
 	for _, child := range c.Commands {
 		configureHelp(child)
