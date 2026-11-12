@@ -252,6 +252,7 @@ type Execution struct {
 	ReviewReasons      int64
 	SelectionAuthority string
 	Rule               string
+	CalculationRule    string
 }
 
 type ExecutionObservation struct {
@@ -261,6 +262,16 @@ type ExecutionObservation struct {
 	ExecutionID sql.NullString
 	Outcome     string
 	Rule        string
+}
+
+type HistoryUpdate struct {
+	Singleton int64
+	Applied   int64
+	Target    int64
+	Phase     string
+	Cursor    string
+	Completed int64
+	RetryAt   string
 }
 
 type Instrument struct {
@@ -279,6 +290,7 @@ type Instrument struct {
 	EvidenceID          string
 	ReferenceNext       string
 	Rule                string
+	CalculationRule     string
 	UnderlierID         sql.NullString
 }
 

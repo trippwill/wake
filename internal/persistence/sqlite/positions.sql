@@ -2,7 +2,7 @@
 -- SPDX-License-Identifier: MPL-2.0
 
 -- name: Dirty
-SELECT account_id FROM positions_dirty ORDER BY account_id;
+SELECT account_id FROM positions_dirty ORDER BY account_id LIMIT ?;
 -- name: Current
 SELECT revision,data FROM positions_current WHERE account_id=?;
 -- name: Revision
@@ -10,7 +10,7 @@ SELECT revision FROM positions_current WHERE account_id=?;
 -- name: Save
 INSERT INTO positions_current(account_id,revision,data) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET revision=excluded.revision,data=excluded.data;
 -- name: ClearDirty
-DELETE FROM positions_dirty;
+DELETE FROM positions_dirty WHERE account_id=?;
 -- name: InterpretationChanged
 INSERT OR IGNORE INTO positions_dirty SELECT DISTINCT p.account_id FROM position_sets p JOIN records r ON r.claim_id=p.claim_id WHERE r.artifact_id=?;
 -- name: Reinterpreting

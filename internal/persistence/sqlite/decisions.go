@@ -33,6 +33,10 @@ func activeDecisions(rows []sqlc.DecisionsRow) map[string]sqlc.OperatorDecision 
 }
 
 func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor string, at time.Time) error {
+	if s.HistoryUpdating() {
+		return application.ErrHistoryUpdating
+	}
+
 	f := d.Fields()
 	if _, err := application.NewDecision(f); err != nil {
 		return err

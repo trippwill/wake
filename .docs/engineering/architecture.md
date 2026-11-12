@@ -291,7 +291,13 @@ authority while preserving a value. A publication version advances once when a
 transaction changes accepted resources or their explanations. Unchanged source
 claims, acquisition receipts alone and rollbacks do not advance it. A publishing
 failure rolls back accepted writes before recording the failed attempt separately.
-The socket adapter owns its narrow financial-read interface. Wire and admin
+A retained-claims rule update resumes from a durable checkpoint. Each batch
+commits recalculation, publication and progress together. Affected reads and
+subscriptions are temporarily unavailable until the last batch completes.
+Acquisition and evidence inspection can continue while projection changes and
+operator corrections wait. Consumers retain their last complete mirror and
+retry maintenance responses with backoff. The socket adapter owns its narrow
+financial-read interface. Wire and admin
 adapters consume application read values without exposing database transactions.
 
 `GET /v1/snapshot` returns warehouse identity, an opaque publication version and

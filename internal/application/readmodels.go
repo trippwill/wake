@@ -9,6 +9,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"go.trippwill.dev/wake/source"
 )
@@ -248,10 +249,16 @@ type (
 		PageInfo
 		Connection ConnectionView
 	}
+	HistoryUpdateStatus struct {
+		Rule, Phase string
+		Completed   int64
+		RetryAt     time.Time
+	}
 	SystemStatus struct {
 		Prerequisites
 		Connections     []ConnectionView
 		MoreConnections bool
+		HistoryUpdate   HistoryUpdateStatus
 	}
 	ActivityListItem struct {
 		Resource                         CanonicalResource

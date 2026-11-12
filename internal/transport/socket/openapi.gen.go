@@ -272,6 +272,7 @@ func (e EquityTermsFamily) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
+	HistoryUpdating  ErrorCode = "history_updating"
 	InternalError    ErrorCode = "internal_error"
 	InvalidRequest   ErrorCode = "invalid_request"
 	MethodNotAllowed ErrorCode = "method_not_allowed"
@@ -282,6 +283,8 @@ const (
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
+	case HistoryUpdating:
+		return true
 	case InternalError:
 		return true
 	case InvalidRequest:
@@ -1071,12 +1074,14 @@ type ErrorCode string
 
 // Explanation Compact accepted selection, active operator choices and source correction/conflict state for this exact resource revision. No raw reports, private evidence traversal, credentials or configuration.
 type Explanation struct {
-	Conflict    bool          `json:"conflict"`
-	Corrections []Correction  `json:"corrections"`
-	Decisions   []Decision    `json:"decisions"`
-	Fields      []FieldDetail `json:"fields"`
-	Id          string        `json:"id"`
-	Identity    *struct {
+	// CalculationRule Rule version applied to the retained financial inputs.
+	CalculationRule *string       `json:"calculation_rule,omitempty"`
+	Conflict        bool          `json:"conflict"`
+	Corrections     []Correction  `json:"corrections"`
+	Decisions       []Decision    `json:"decisions"`
+	Fields          []FieldDetail `json:"fields"`
+	Id              string        `json:"id"`
+	Identity        *struct {
 		Allocation *string `json:"allocation"`
 		Figi       *string `json:"figi"`
 		Reason     *string `json:"reason"`
@@ -1535,6 +1540,9 @@ type Id = string
 
 // Revision defines model for revision.
 type Revision = int64
+
+// HistoryUpdateUnavailable defines model for HistoryUpdateUnavailable.
+type HistoryUpdateUnavailable = Error
 
 // ExplainAccountsParams defines parameters for ExplainAccounts.
 type ExplainAccountsParams struct {

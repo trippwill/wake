@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
@@ -331,6 +332,23 @@ func systemStatus(ctx context.Context, q *sqlc.Queries) (application.SystemStatu
 	out.Prerequisites, err = prerequisites(ctx, q)
 	if err != nil {
 		return out, err
+	}
+
+	update, err := q.HistoryUpdate(ctx)
+	if err != nil {
+		return out, err
+	}
+
+	if update.Target != 0 {
+		out.HistoryUpdate = application.HistoryUpdateStatus{
+			Rule: string(application.RetainedClaimsRule), Phase: update.Phase, Completed: update.Completed,
+		}
+		if update.RetryAt != "" {
+			out.HistoryUpdate.RetryAt, err = time.Parse(time.RFC3339Nano, update.RetryAt)
+			if err != nil {
+				return out, ErrCorrupt
+			}
+		}
 	}
 
 	rows, err := q.AdminSourceRows(ctx, sqlc.AdminSourceRowsParams{Search: "", PageSize: 50})

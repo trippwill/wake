@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/source"
@@ -330,5 +331,72 @@ func TestObservationQueriesKeepTypedOutcomeLabels(t *testing.T) {
 
 	if len(query.Options().ObservationLabels) != 10 {
 		t.Fatal("incomplete outcome vocabulary", query.Options().ObservationLabels)
+	}
+}
+
+func (workspaceStore) HistoryUpdating() bool { return false }
+
+type historyWorkspaceStore struct{ workspaceStore }
+
+func (historyWorkspaceStore) HistoryUpdating() bool { return true }
+
+func (historyWorkspaceStore) Overview(context.Context) (application.OverviewView, error) {
+	return application.OverviewView{Status: application.SystemStatus{
+		HistoryUpdate: application.HistoryUpdateStatus{
+			Rule: "retained-claims-and-decisions/2", Phase: "activity", Completed: 50,
+			RetryAt: time.Date(2026, 11, 12, 12, 1, 0, 0, time.UTC),
+		},
+	}}, nil
+}
+
+func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetUnlock(dir, []byte("synthetic-history-unlock")); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer auth.Close()
+
+	session := httptest.NewRecorder()
+	auth.issue(session)
+
+	handler, err := NewHandler(
+		auth,
+		Dependencies{Workflow: application.New(historyWorkspaceStore{}, nil, nil, nil, nil)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/", "/activity", "/activity/example", "/instruments/example", "/review",
+		"/positions", "/grids/activity", "/grids/positions", "/grids/observations", "/activity/example/correct", "/connections",
+	} {
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil)
+		request.AddCookie(session.Result().Cookies()[0])
+
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+
+		switch path {
+		case "/":
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "50 items processed") ||
+				!strings.Contains(response.Body.String(), "2026-11-12T12:01:00Z") {
+				t.Fatal("overview did not show progress and retry", response.Code)
+			}
+		case "/connections":
+			if response.Code != http.StatusOK {
+				t.Fatal("source inspection withheld", response.Code)
+			}
+		default:
+			if response.Code != http.StatusServiceUnavailable ||
+				!strings.Contains(strings.ToLower(response.Body.String()), "updating retained") {
+				t.Fatal(path, response.Code)
+			}
+		}
 	}
 }

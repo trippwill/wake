@@ -262,8 +262,10 @@ financial calculations. Synthetic proofs cover exact decimal and timestamp
 precision, source disagreement, read-only checks, decision release and transaction
 rollback. The retained-history contribution requirement remains in the
 [development guide](../engineering/development.md). Provider interpretation versions
-automatically queue retained reports; changed core calculation rules still require
-an explicit historical update procedure.
+automatically queue retained reports. A new retained-claims calculation rule
+automatically updates activity and instrument selections from retained inputs.
+Overview shows progress and retry status. Affected financial views become
+available together after the update.
 
 Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each
 replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group

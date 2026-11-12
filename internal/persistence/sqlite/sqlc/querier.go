@@ -42,6 +42,7 @@ type Querier interface {
 	AdminSourceCount(ctx context.Context, search interface{}) (int64, error)
 	AdminSourceRows(ctx context.Context, arg AdminSourceRowsParams) ([]Connection, error)
 	AdvanceActivityRevision(ctx context.Context, id string) error
+	AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
 	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
@@ -91,12 +92,18 @@ type Querier interface {
 	Execution(ctx context.Context, id string) (Execution, error)
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
 	Executions(ctx context.Context) ([]Execution, error)
+	FailHistoryUpdate(ctx context.Context, retryAt string) error
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
+	FinishHistoryUpdate(ctx context.Context) error
 	FlattenAliases(ctx context.Context, arg FlattenAliasesParams) error
+	HistoryActivities(ctx context.Context, cursor string) ([]Execution, error)
+	HistoryInstruments(ctx context.Context, cursor string) ([]string, error)
+	HistoryUpdate(ctx context.Context) (HistoryUpdate, error)
 	IdentityDependents(ctx context.Context, id string) ([]string, error)
 	IdentityMetadata(ctx context.Context, arg IdentityMetadataParams) error
 	IdentityRoots(ctx context.Context, figi string) ([]Instrument, error)
+	InitializeHistoryUpdate(ctx context.Context, applied int64) error
 	Instrument(ctx context.Context, id string) (Instrument, error)
 	InstrumentBindings(ctx context.Context, id string) ([]Instrument, error)
 	InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error)
@@ -213,6 +220,7 @@ type Querier interface {
 	SetUnderlier(ctx context.Context, arg SetUnderlierParams) error
 	SourceCorrections(ctx context.Context) ([]SourceCorrection, error)
 	StartAttempt(ctx context.Context, arg StartAttemptParams) error
+	StartHistoryUpdate(ctx context.Context, target int64) error
 	Succeeded(ctx context.Context, arg SucceededParams) ([]byte, error)
 	SupersedeDecisions(ctx context.Context, arg SupersedeDecisionsParams) error
 	UpdateConnection(ctx context.Context, arg UpdateConnectionParams) error

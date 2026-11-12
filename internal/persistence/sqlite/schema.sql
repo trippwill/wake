@@ -3,6 +3,16 @@
 
 CREATE TABLE store_metadata(singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, version TEXT NOT NULL, id TEXT NOT NULL) STRICT;
 CREATE TABLE profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1), access_id TEXT NOT NULL, paused INTEGER NOT NULL CHECK(paused IN (0,1)), reference_review INTEGER NOT NULL CHECK(reference_review IN (0,1)), warehouse_reset INTEGER NOT NULL DEFAULT 0 CHECK(warehouse_reset IN (0,1)), recovery_revision INTEGER NOT NULL DEFAULT 0, resumed_by TEXT NOT NULL DEFAULT '', resumed_at TEXT NOT NULL DEFAULT '') STRICT;
+CREATE TABLE history_update(
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+ applied INTEGER NOT NULL CHECK(applied>0),
+ target INTEGER NOT NULL DEFAULT 0 CHECK(target=0 OR target>applied),
+ phase TEXT NOT NULL DEFAULT '' CHECK(phase IN ('','activity','instruments','positions')),
+ cursor TEXT NOT NULL DEFAULT '',
+ completed INTEGER NOT NULL DEFAULT 0 CHECK(completed>=0),
+ retry_at TEXT NOT NULL DEFAULT '',
+ CHECK((target=0)=(phase=''))
+) STRICT;
 CREATE TABLE normalization_receipts(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, counts BLOB NOT NULL, PRIMARY KEY(artifact_id,version)) STRICT;
 CREATE TABLE processing_receipts(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, PRIMARY KEY(artifact_id,version)) STRICT;
 CREATE TABLE connections(id TEXT PRIMARY KEY NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL DEFAULT '') STRICT;
@@ -29,14 +39,14 @@ CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT
 
 CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
 CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL UNIQUE REFERENCES connections(id), provider TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/2', UNIQUE(provider,authority,kind,scope,value)) STRICT;
-CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3', underlier_id TEXT REFERENCES instruments(id)) STRICT;
+CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/3', calculation_rule TEXT NOT NULL DEFAULT '', underlier_id TEXT REFERENCES instruments(id)) STRICT;
 CREATE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
 CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '') STRICT;
 CREATE INDEX listing_terms ON listings(instrument_id,venue,ticker,currency);
 CREATE TABLE resource_aliases(kind TEXT NOT NULL CHECK(kind IN ('instruments','listings')),id TEXT NOT NULL,target_id TEXT NOT NULL,CHECK(id<>target_id),PRIMARY KEY(kind,id)) STRICT;
 CREATE INDEX alias_target ON resource_aliases(kind,target_id);
 
-CREATE TABLE executions(revision INTEGER NOT NULL DEFAULT 1,kind TEXT NOT NULL DEFAULT 'trade', id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), instrument_id TEXT REFERENCES instruments(id), listing_id TEXT REFERENCES listings(id), accepted BLOB NOT NULL, status TEXT NOT NULL, review_reasons INTEGER NOT NULL DEFAULT 0 CHECK(review_reasons BETWEEN 0 AND 3), selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), rule TEXT NOT NULL) STRICT;
+CREATE TABLE executions(revision INTEGER NOT NULL DEFAULT 1,kind TEXT NOT NULL DEFAULT 'trade', id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), instrument_id TEXT REFERENCES instruments(id), listing_id TEXT REFERENCES listings(id), accepted BLOB NOT NULL, status TEXT NOT NULL, review_reasons INTEGER NOT NULL DEFAULT 0 CHECK(review_reasons BETWEEN 0 AND 3), selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), rule TEXT NOT NULL, calculation_rule TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE event_links(distinct_event INTEGER NOT NULL DEFAULT 0 CHECK(distinct_event IN (0,1)),account_id TEXT NOT NULL REFERENCES accounts(id), reference TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), PRIMARY KEY(account_id,reference,execution_id)) STRICT;
 CREATE TABLE execution_observations(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, execution_id TEXT REFERENCES executions(id), outcome TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(artifact_id,version,location)) STRICT;
 CREATE TABLE reference_budget(singleton INTEGER PRIMARY KEY CHECK(singleton=1), window_start TEXT NOT NULL, used INTEGER NOT NULL, cooldown TEXT NOT NULL) STRICT;

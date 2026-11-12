@@ -115,11 +115,17 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 	}
 }
 
-func TestPublicationFollowRetriesInterruptedSnapshot(t *testing.T) {
-	for _, failure := range []string{"request", "response"} {
+func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
+	for _, failure := range []string{"request", "response", "history update"} {
 		t.Run(failure, func(t *testing.T) {
 			db := mirrorDB(t)
-			var current state
+			current, err := validateSnapshot(fixture("previous", 1, "0.1000"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = save(t.Context(), db, current); err != nil {
+				t.Fatal(err)
+			}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			var connections, snapshots atomic.Int64
@@ -131,7 +137,12 @@ func TestPublicationFollowRetriesInterruptedSnapshot(t *testing.T) {
 					return
 				}
 				if snapshots.Add(1) == 1 {
-					if failure == "request" {
+					if failure == "history update" {
+						w.Header().Set("Content-Type", "application/json")
+						w.Header().Set("Retry-After", "5")
+						w.WriteHeader(http.StatusServiceUnavailable)
+						_, _ = io.WriteString(w, `{"code":"history_updating","message":"Wake is updating retained financial history."}`)
+					} else if failure == "request" {
 						connection, _, err := w.(http.Hijacker).Hijack()
 						if err != nil {
 							t.Error(err)
@@ -146,14 +157,18 @@ func TestPublicationFollowRetriesInterruptedSnapshot(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
+				stored, err := readState(db)
+				if err != nil || stored.Version != "previous" {
+					t.Error("temporary failure changed mirror", stored.Version, err)
+				}
 				w.Header().Set("ETag", `"ready"`)
-				_ = json.NewEncoder(w).Encode(fixture("ready", 1, "1.0000"))
+				_ = json.NewEncoder(w).Encode(fixture("ready", 2, "1.0000"))
 			}))
 			defer server.Close()
 			transport := &http.Transport{DisableKeepAlives: true}
 			defer transport.CloseIdleConnections()
 			c := client{http: &http.Client{Transport: transport}, base: server.URL, stderr: io.Discard}
-			err := c.follow(ctx, time.Millisecond, func(publication) error {
+			err = c.follow(ctx, time.Millisecond, func(publication) error {
 				_, err := c.sync(ctx, &current, db)
 				if err == nil {
 					cancel()

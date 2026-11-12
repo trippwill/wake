@@ -121,6 +121,10 @@ func (s *Store) Confirm(
 	ref source.Reference,
 	details application.AccountDetails,
 ) (application.Account, error) {
+	if s.HistoryUpdating() {
+		return application.Account{}, application.ErrHistoryUpdating
+	}
+
 	id := connection.ID
 
 	settings, err := encodeConnectionSettings(connection)

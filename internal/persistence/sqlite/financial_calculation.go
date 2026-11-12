@@ -249,6 +249,7 @@ func persistActivityCalculation(
 	return q.ProjectActivity(
 		ctx,
 		sqlc.ProjectActivityParams{
+			CalculationRule:    string(result.Explanation.Rule),
 			ID:                 row.ID,
 			Accepted:           data,
 			Status:             string(result.State.Lifecycle()),
@@ -586,6 +587,7 @@ func persistInstrumentCalculation(
 	return q.ProjectInstrument(
 		ctx,
 		sqlc.ProjectInstrumentParams{
+			CalculationRule:    string(result.Explanation.Rule),
 			ID:                 id,
 			Name:               selected.Name,
 			Ticker:             selected.Ticker,

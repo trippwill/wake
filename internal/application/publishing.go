@@ -499,16 +499,17 @@ type PublishedFieldDetail struct {
 }
 
 type Explanation struct {
-	Fields      []PublishedFieldDetail        `json:"fields"`
-	RealizedPnL *PublishedRealizedExplanation `json:"reported_realized_pnl,omitempty"`
-	Identity    *PublishedIdentity            `json:"identity"`
-	ID          string                        `json:"id"`
-	Kind        string                        `json:"kind"`
-	Revision    int64                         `json:"revision"`
-	Selection   string                        `json:"selection"`
-	Conflict    bool                          `json:"conflict"`
-	Corrections []PublishedCorrection         `json:"corrections"`
-	Decisions   []PublishedDecision           `json:"decisions"`
+	CalculationRule string                        `json:"calculation_rule,omitempty"`
+	Fields          []PublishedFieldDetail        `json:"fields"`
+	RealizedPnL     *PublishedRealizedExplanation `json:"reported_realized_pnl,omitempty"`
+	Identity        *PublishedIdentity            `json:"identity"`
+	ID              string                        `json:"id"`
+	Kind            string                        `json:"kind"`
+	Revision        int64                         `json:"revision"`
+	Selection       string                        `json:"selection"`
+	Conflict        bool                          `json:"conflict"`
+	Corrections     []PublishedCorrection         `json:"corrections"`
+	Decisions       []PublishedDecision           `json:"decisions"`
 }
 type PublishedCorrection struct {
 	Kind           string   `json:"kind"`

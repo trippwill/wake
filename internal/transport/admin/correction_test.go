@@ -336,3 +336,7 @@ func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 		t.Fatal("rejected request reached correction checker", store.calls)
 	}
 }
+
+func (staleCorrectionStore) HistoryUpdating() bool { return false }
+
+func (correctionCheckStore) HistoryUpdating() bool { return false }

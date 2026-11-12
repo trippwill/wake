@@ -172,16 +172,20 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
-	positionsChanged, err := refreshPositions(ctx, tx, q)
-	if err != nil {
-		return err
+	updating := s.HistoryUpdating()
+	positionsChanged := false
+	if !updating {
+		_, positionsChanged, err = refreshPositions(ctx, tx, q, -1)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
 		return err
 	}
 
-	if changed || positionsChanged {
+	if !updating && (changed || positionsChanged) {
 		s.notifyPublication()
 	}
 
@@ -438,6 +442,7 @@ func canonicalSnapshot(
 		}
 
 		why.Selection = i.Rule + "; " + i.ReferenceStatus
+		why.CalculationRule = i.CalculationRule
 		why.Conflict = application.ReferenceStatus(i.ReferenceStatus).NeedsReview()
 		why.Identity = &application.PublishedIdentity{
 			FIGI:       known(i.ReferenceFigi),
@@ -475,6 +480,7 @@ func canonicalSnapshot(
 		}
 
 		why.Selection = row.Rule
+		why.CalculationRule = row.CalculationRule
 		why.Conflict = a.Conflict
 
 		selection, err := loadActivitySelection(ctx, q, id)
@@ -489,7 +495,7 @@ func canonicalSnapshot(
 		)
 		if a.ReportedRealizedPnL != nil {
 			why.RealizedPnL = &application.PublishedRealizedExplanation{
-				Rule:      string(application.RetainedClaimsRule),
+				Rule:      row.CalculationRule,
 				Selection: a.ReportedRealizedPnL.Selection,
 				Conflict:  a.ReportedRealizedPnL.Conflict,
 			}

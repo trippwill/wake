@@ -53,6 +53,7 @@ type (
 	overviewView struct {
 		sourceView
 		Reviews                        []reviewItem
+		HistoryUpdate                  application.HistoryUpdateStatus
 		ReviewPage                     application.PageInfo
 		ActivityCount, InstrumentCount int64
 	}
@@ -81,6 +82,7 @@ func overview(v application.OverviewView) overviewView {
 	return overviewView{
 		sourceView:      statusView(v.Status),
 		Reviews:         reviewItems(v.Review),
+		HistoryUpdate:   v.Status.HistoryUpdate,
 		ReviewPage:      v.Review.PageInfo,
 		ActivityCount:   v.ActivityCount,
 		InstrumentCount: v.InstrumentCount,

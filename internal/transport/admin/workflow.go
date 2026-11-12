@@ -82,8 +82,25 @@ func registerWorkflowRoutes(
 			handler(w, r, csrf)
 		})
 	}
-	registerGridRoutes(gate, workflow)
-	gate("GET /positions", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	financial := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
+		gate(pattern, func(w http.ResponseWriter, r *http.Request, csrf string) {
+			if workflow.HistoryUpdating() {
+				if strings.HasPrefix(pattern, "GET /grids/") {
+					gridJSON(w, nil, application.ErrHistoryUpdating)
+					return
+				}
+
+				servePageError(w, r, csrf, http.StatusServiceUnavailable, "Updating retained history",
+					"Retry when the history update shown on Overview is complete.")
+
+				return
+			}
+
+			handler(w, r, csrf)
+		})
+	}
+	registerGridRoutes(financial, workflow)
+	financial("GET /positions", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if _, err := listQuery(r.Context(), application.PositionsScope); err != nil {
 			http.Error(w, "invalid list query", http.StatusBadRequest)
 			return
@@ -392,7 +409,7 @@ func registerWorkflowRoutes(
 			"This item is unavailable. Return to its workspace to inspect current records.",
 		)
 	})
-	gate("POST /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	financial("POST /connections/{id}/confirm", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		details, err := application.NewAccountDetails(r.PostForm.Get("name"), r.PostForm.Get("currency"))
 		if err != nil {
 			failure(w, r, csrf, err)
@@ -438,7 +455,7 @@ func registerWorkflowRoutes(
 	})
 
 	for _, path := range []string{"/activity", "/instruments", "/review"} {
-		gate("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+		financial("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			var (
 				view activityView
 				err  error
@@ -497,7 +514,7 @@ func registerWorkflowRoutes(
 		})
 	}
 
-	gate("GET /executions/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	financial("GET /executions/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.ExecutionDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
 			servePageError(
@@ -516,7 +533,7 @@ func registerWorkflowRoutes(
 			ServeHTTP(w, r)
 	})
 
-	gate("GET /activity/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	financial("GET /activity/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if d, err := workflow.Resource(
 			r.Context(),
 			"activity",
@@ -576,7 +593,7 @@ func registerWorkflowRoutes(
 		templ.Handler(SectionShell(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), csrf, "Activity", LifecyclePage(d, d.Context.FieldDetails))).
 			ServeHTTP(w, r)
 	})
-	gate("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
+	financial("GET /instruments/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		detail, err := workflow.InstrumentDetail(r.Context(), r.PathValue("id"))
 		if err != nil {
 			servePageError(
@@ -686,7 +703,7 @@ func registerWorkflowRoutes(
 			path = "/instruments/{id}/correct"
 		}
 
-		gate("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+		financial("GET "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			form, err := workflow.CorrectionForm(r.Context(), kind, r.PathValue("id"))
 			if err != nil {
 				servePageError(
@@ -709,7 +726,7 @@ func registerWorkflowRoutes(
 			templ.Handler(SectionShell("Correct accepted data", csrf, "Activity", CorrectionPage(csrf, form))).
 				ServeHTTP(w, r)
 		})
-		gate("POST "+path+"/check", func(w http.ResponseWriter, r *http.Request, _ string) {
+		financial("POST "+path+"/check", func(w http.ResponseWriter, r *http.Request, _ string) {
 			w.Header().Set("Content-Type", "application/json")
 
 			decision, err := postedCorrection(r, kind)
@@ -754,7 +771,7 @@ func registerWorkflowRoutes(
 				Message string `json:"message"`
 			}{valid, stale, message})
 		})
-		gate("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
+		financial("POST "+path, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			decision, err := postedCorrection(r, kind)
 			invalidDetails := err != nil
 			// Attribution comes from the authenticated session, never posted form data.

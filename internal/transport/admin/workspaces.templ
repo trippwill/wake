@@ -44,7 +44,16 @@ templ DashboardOverview(csrf string, view overviewView, refresh string) {
 			}
 		</section>
 	}
-	if view.Account.ID()!="" {
+	if view.HistoryUpdate.Phase!="" {
+		<section class="wake-card wake-priority">
+			<h2>Updating retained history</h2>
+			<p>Wake is applying { view.HistoryUpdate.Rule }. Financial views will return when the update is complete.</p>
+			<p>Current phase { view.HistoryUpdate.Phase }. { strconv.FormatInt(view.HistoryUpdate.Completed, 10) } items processed.</p>
+			if !view.HistoryUpdate.RetryAt.IsZero() {
+				<p>The last batch failed. Wake will retry at { view.HistoryUpdate.RetryAt.UTC().Format(time.RFC3339) }.</p>
+			}
+		</section>
+	} else if view.Account.ID()!="" {
 		<section class="wake-card">
 			<div class="wake-card-heading">
 				<div>

@@ -183,10 +183,10 @@ func calculatePositions(
 	return out, nil
 }
 
-func refreshPositions(ctx context.Context, tx *sql.Tx, q *sqlc.Queries) (bool, error) {
-	rows, err := tx.QueryContext(ctx, positionsStatement("Dirty"))
+func refreshPositions(ctx context.Context, tx *sql.Tx, q *sqlc.Queries, limit int) (int, bool, error) {
+	rows, err := tx.QueryContext(ctx, positionsStatement("Dirty"), limit)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 
 	accounts := []string{}
@@ -194,7 +194,7 @@ func refreshPositions(ctx context.Context, tx *sql.Tx, q *sqlc.Queries) (bool, e
 		var id string
 		if err = rows.Scan(&id); err != nil {
 			_ = rows.Close()
-			return false, err
+			return 0, false, err
 		}
 
 		accounts = append(accounts, id)
@@ -204,19 +204,19 @@ func refreshPositions(ctx context.Context, tx *sql.Tx, q *sqlc.Queries) (bool, e
 	_ = rows.Close()
 
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 
 	changed := false
 	for _, id := range accounts {
 		view, e := calculatePositions(ctx, tx, q, id)
 		if e != nil {
-			return false, e
+			return 0, false, e
 		}
 
 		data, e := json.Marshal(view)
 		if e != nil {
-			return false, e
+			return 0, false, e
 		}
 
 		var (
@@ -226,23 +226,23 @@ func refreshPositions(ctx context.Context, tx *sql.Tx, q *sqlc.Queries) (bool, e
 
 		e = tx.QueryRowContext(ctx, positionsStatement("Current"), id).Scan(&revision, &previous)
 		if e != nil && !errors.Is(e, sql.ErrNoRows) {
-			return false, e
+			return 0, false, e
 		}
 
-		if bytes.Equal(data, previous) {
-			continue
+		if !bytes.Equal(data, previous) {
+			if _, e = tx.ExecContext(ctx, positionsStatement("Save"), id, revision+1, data); e != nil {
+				return 0, false, e
+			}
+
+			changed = true
 		}
 
-		if _, e = tx.ExecContext(ctx, positionsStatement("Save"), id, revision+1, data); e != nil {
-			return false, e
+		if _, e = tx.ExecContext(ctx, positionsStatement("ClearDirty"), id); e != nil {
+			return 0, false, e
 		}
-
-		changed = true
 	}
 
-	_, err = tx.ExecContext(ctx, positionsStatement("ClearDirty"))
-
-	return changed, err
+	return len(accounts), changed, nil
 }
 
 func positionsVersion(warehouse, account string, revision int64) string {

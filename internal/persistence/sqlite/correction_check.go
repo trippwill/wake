@@ -86,10 +86,15 @@ func prepareCorrection(
 // CheckCorrection uses the same pure calculation as saving, in one consistent
 // read. It does not write decisions, projections, revisions or operational work.
 func (s *Store) CheckCorrection(ctx context.Context, decision application.Decision) error {
+	if s.HistoryUpdating() {
+		return application.ErrHistoryUpdating
+	}
+
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = prepareCorrection(ctx, s.queries.WithTx(tx), decision.Fields())

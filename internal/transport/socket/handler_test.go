@@ -265,3 +265,5 @@ func (s reads) Positions(
 func (s reads) PositionsPublications(context.Context) ([]application.PositionsPublication, error) {
 	return nil, s.err
 }
+
+func (reads) HistoryUpdating() bool { return false }

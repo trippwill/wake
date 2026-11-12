@@ -15,7 +15,9 @@ info:
     return stale_revision. Instrument resources describe identity; financial terms belong to activity.
     Reported account positions have a separate versioned read and positions events, and are excluded
     from the financial snapshot. An unavailable value in a selected variant is explicit null, distinct from decimal zero. Unknown or duplicate parameters and
-    mutation methods are rejected. Raw evidence, credentials and operational interfaces are excluded.
+    mutation methods are rejected. During a retained-history update, affected reads and event connections return 503 history_updating.
+    Preserve the last complete mirror and retry with backoff. Account-only reads remain available.
+    Raw evidence, credentials and operational interfaces are excluded.
 paths:
   /v1/events:
     get:
@@ -55,6 +57,8 @@ paths:
           $ref: '#/components/responses/Error'
         '405':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/accounts/{id}/positions:
@@ -101,6 +105,8 @@ paths:
           $ref: '#/components/responses/Error'
         '405':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/accounts/{id}:
@@ -175,6 +181,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/instruments/{id}/explanation:
@@ -198,6 +206,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/listings/{id}:
@@ -227,6 +237,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/listings/{id}/explanation:
@@ -250,6 +262,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/activity/{id}:
@@ -272,6 +286,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/activity/{id}/explanation:
@@ -295,6 +311,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/snapshot:
@@ -332,6 +350,8 @@ paths:
           $ref: '#/components/responses/Error'
         '405':
           $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/HistoryUpdateUnavailable'
         '500':
           $ref: '#/components/responses/Error'
 components:
@@ -1399,6 +1419,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        calculation_rule:
+          type: string
+          description: Rule version applied to the retained financial inputs.
         fields:
           type: array
           items:
@@ -1484,6 +1507,7 @@ components:
           - stale_revision
           - method_not_allowed
           - internal_error
+          - history_updating
         message:
           type: string
       required:
@@ -1595,6 +1619,17 @@ components:
         format: int64
         minimum: 1
   responses:
+    HistoryUpdateUnavailable:
+      description: Retained financial history is being updated.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Error:
       description: 'Structured error: 400 invalid request, 404 absent resource, 405 unsupported method,
         409 stale explanation revision, 500 safe internal failure.'

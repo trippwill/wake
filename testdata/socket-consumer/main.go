@@ -50,6 +50,8 @@ type state struct {
 	Version     string                     `json:"version"`
 	Resources   map[string]json.RawMessage `json:"resources"`
 }
+type historyUpdateError struct{ error }
+
 type protocolError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -173,6 +175,9 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 		var failure protocolError
 		if decode(data, &failure) != nil || failure.Code == "" {
 			return nil, "", false, errors.New("protocol: malformed error")
+		}
+		if response.StatusCode == http.StatusServiceUnavailable && failure.Code == "history_updating" {
+			return nil, "", false, historyUpdateError{failure}
 		}
 		return nil, "", false, failure
 	}
@@ -469,16 +474,17 @@ func (c *client) verifyLookups(ctx context.Context, s state) error {
 			return errors.New("protocol: revision content differs")
 		}
 		var why struct {
-			RealizedPnL json.RawMessage   `json:"reported_realized_pnl"`
-			Identity    json.RawMessage   `json:"identity"`
-			ID          string            `json:"id"`
-			Kind        string            `json:"kind"`
-			Revision    int64             `json:"revision"`
-			Selection   string            `json:"selection"`
-			Conflict    bool              `json:"conflict"`
-			Corrections []json.RawMessage `json:"corrections"`
-			Decisions   []json.RawMessage `json:"decisions"`
-			Fields      []json.RawMessage `json:"fields"`
+			CalculationRule string            `json:"calculation_rule"`
+			RealizedPnL     json.RawMessage   `json:"reported_realized_pnl"`
+			Identity        json.RawMessage   `json:"identity"`
+			ID              string            `json:"id"`
+			Kind            string            `json:"kind"`
+			Revision        int64             `json:"revision"`
+			Selection       string            `json:"selection"`
+			Conflict        bool              `json:"conflict"`
+			Corrections     []json.RawMessage `json:"corrections"`
+			Decisions       []json.RawMessage `json:"decisions"`
+			Fields          []json.RawMessage `json:"fields"`
 		}
 		if err = c.get(ctx, path+"/explanation?revision="+fmt.Sprint(expected.Revision), &why); err != nil {
 			var failure protocolError
@@ -641,7 +647,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		completed = publication{current.WarehouseID, current.Version}
 		return nil
 	}
-	if err = synchronize(); err != nil || !*follow {
+	var updating historyUpdateError
+	if err = synchronize(); !*follow || err != nil && !errors.As(err, &updating) {
 		return err
 	}
 	return c.follow(ctx, *interval, func(p publication) error {

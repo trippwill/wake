@@ -21,6 +21,7 @@ import (
 // FinancialReader is the socket adapter's accepted-state read dependency.
 // Every result is materialized before transport I/O begins.
 type FinancialReader interface {
+	HistoryUpdating() bool
 	Snapshot(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
 	Resource(context.Context, string, string) (application.CanonicalResource, error)
 	Explanation(context.Context, string, string, int64) (application.Explanation, error)
@@ -94,6 +95,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
+	}
+
+	if (endpoint != "accounts" || positions) && h.reads.HistoryUpdating() {
+		w.Header().Set("Retry-After", "5")
+		h.failure(w, HistoryUpdating, http.StatusServiceUnavailable)
+
+		return
 	}
 
 	if endpoint == "events" {
@@ -214,6 +222,7 @@ func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
 		NotFound:         "Financial resource not found.",
 		MethodNotAllowed: "Only GET is supported.",
 		InternalError:    "Financial read failed.",
+		HistoryUpdating:  "Wake is updating retained financial history. Retry shortly.",
 	}
 
 	w.WriteHeader(status)
