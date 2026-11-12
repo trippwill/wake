@@ -349,6 +349,23 @@ func (historyWorkspaceStore) Overview(context.Context) (application.OverviewView
 	}}, nil
 }
 
+func (historyWorkspaceStore) ObservationList(
+	_ context.Context,
+	kind, id string,
+	_ application.ListQuery,
+) (application.ObservationList, error) {
+	if kind != "artifact" || id != "example" {
+		return application.ObservationList{}, application.ErrInvalid
+	}
+
+	return application.ObservationList{
+		PageInfo: application.PageInfo{Page: 1, PageSize: 50, Total: 1, Matched: 1},
+		Items: []application.Observation{
+			{Artifact: id, Location: "synthetic report row", Outcome: application.ObservationAccepted},
+		},
+	}, nil
+}
+
 func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
 	dir := t.TempDir()
 	if err := SetUnlock(dir, []byte("synthetic-history-unlock")); err != nil {
@@ -374,7 +391,10 @@ func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/activity", "/activity/example", "/instruments/example", "/review",
-		"/positions", "/grids/activity", "/grids/positions", "/grids/observations", "/activity/example/correct", "/connections",
+		"/positions", "/grids/activity", "/grids/positions", "/activity/example/correct", "/connections",
+		"/grids/observations?subject=artifact&id=example",
+		"/grids/observations?subject=activity&id=example",
+		"/grids/observations?subject=instrument&id=example",
 	} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil)
 		request.AddCookie(session.Result().Cookies()[0])
@@ -391,6 +411,10 @@ func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
 		case "/connections":
 			if response.Code != http.StatusOK {
 				t.Fatal("source inspection withheld", response.Code)
+			}
+		case "/grids/observations?subject=artifact&id=example":
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "synthetic report row") {
+				t.Fatal("retained observations withheld", response.Code, response.Body.String())
 			}
 		default:
 			if response.Code != http.StatusServiceUnavailable ||

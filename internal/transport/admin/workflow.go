@@ -84,7 +84,9 @@ func registerWorkflowRoutes(
 	}
 	financial := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
 		gate(pattern, func(w http.ResponseWriter, r *http.Request, csrf string) {
-			if workflow.HistoryUpdating() {
+			artifactObservations := pattern == "GET /grids/observations" &&
+				r.URL.Query().Get("subject") == "artifact"
+			if workflow.HistoryUpdating() && !artifactObservations {
 				if strings.HasPrefix(pattern, "GET /grids/") {
 					gridJSON(w, nil, application.ErrHistoryUpdating)
 					return
