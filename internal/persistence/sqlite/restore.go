@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -72,6 +73,10 @@ func Restore(
 	}
 
 	protected = append(slices.Clone(protected), archive)
+	if parent, err := filepath.EvalSymlinks(filepath.Dir(archive)); err == nil {
+		archive = filepath.Join(parent, filepath.Base(archive))
+		protected = append(protected, archive)
+	}
 
 	parents, err := restoreParents(paths, protected)
 	if err != nil {
@@ -531,7 +536,17 @@ func pauseRestoredWarehouse(ctx context.Context, path string) error {
 
 	defer func() { _ = tx.Rollback() }()
 
+	// A restored checkpoint may have appeared in a previous review form.
+	var nonce [8]byte
+	rand.Read(nonce[:])
+
+	revision := int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
+
 	if _, err = tx.ExecContext(ctx, profileStatement("RestoreWarehouse", ""), rand.Text()); err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(ctx, profileStatement("RestoreReview", ""), revision); err != nil {
 		return err
 	}
 

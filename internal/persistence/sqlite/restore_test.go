@@ -13,6 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"go.trippwill.dev/wake/internal/application"
 )
 
 func TestRestoreRechecksPlanAndDisplacesOriginalPair(t *testing.T) {
@@ -593,5 +596,93 @@ func TestRestoreRejectsDamagedSnapshotMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestRestoreInvalidatesReviewFromTheSameBackup(t *testing.T) {
+	ctx := t.Context()
+	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+
+	archive, err := Backup(ctx, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var prior int64
+	for range 2 {
+		plan, err := Restore(ctx, target, archive, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err = Restore(ctx, target, archive, plan.ID, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		s, err := Open(ctx, target, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		view, err := s.SourceAccess(ctx)
+		if err != nil || !view.Storage.Paused || view.Storage.Revision == prior {
+			_ = s.Close()
+
+			t.Fatal(view.Storage, err)
+		}
+
+		if err = s.ResumeStorage(
+			ctx,
+			prior,
+			"previous-review",
+			time.Now(),
+		); !errors.Is(
+			err,
+			application.ErrStale,
+		) {
+			_ = s.Close()
+
+			t.Fatal("stale approval resumed the restored profile", err)
+		}
+
+		prior = view.Storage.Revision
+
+		if err = s.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRestoreRefusesToDisplaceArchiveThroughParentAlias(t *testing.T) {
+	ctx := t.Context()
+	p := seedUpgradeStores(t)
+
+	archive, err := Backup(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err = os.Symlink(filepath.Dir(archive), alias); err != nil {
+		t.Fatal(err)
+	}
+
+	aliased := filepath.Join(alias, filepath.Base(archive))
+	target := Profile{WarehousePath: p.WarehousePath, ConnectionsPath: archive}
+	if _, err = Restore(ctx, target, aliased, "", nil); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal(err)
+	}
+
+	target = seedUpgradeStores(t)
+
+	plan, err := Restore(ctx, target, aliased, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testRestoreIntent(t, target, plan)
+
+	if _, err = Restore(ctx, target, archive, plan.ID, nil); err != nil {
+		t.Fatal("retry could not identify archive through its real path", err)
 	}
 }
