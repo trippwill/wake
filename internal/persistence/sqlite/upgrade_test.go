@@ -402,6 +402,10 @@ func TestUpgradeSQLFailureRollsBackBothStores(t *testing.T) {
 	if _, err := Open(t.Context(), p, nil); !errors.Is(err, ErrUpgradeRecovery) {
 		t.Fatal("wrong build opened interrupted upgrade", err)
 	}
+
+	if _, err := Backup(t.Context(), p, nil); !errors.Is(err, ErrUpgradeRecovery) {
+		t.Fatal("routine backup accepted an interrupted upgrade", err)
+	}
 }
 
 func TestMigrationCrashHelper(t *testing.T) {
