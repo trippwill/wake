@@ -5,6 +5,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	urfave "github.com/urfave/cli/v3"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/transport/admin"
@@ -297,6 +299,80 @@ func TestSetupThroughTerminal(t *testing.T) {
 				if len(entries) != 0 {
 					t.Fatal("failed prompt persisted setup material")
 				}
+			}
+		})
+	}
+}
+
+func TestSetupSettingsRejectsInvalidOrInterruptedInput(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		inputs      []string
+		interrupted bool
+		diagnostic  string
+	}{
+		{name: "warehouse", interrupted: true, diagnostic: "context canceled"},
+		{name: "runtime", inputs: []string{"", ""}, interrupted: true, diagnostic: "context canceled"},
+		{name: "port", inputs: []string{"", "", ""}, interrupted: true, diagnostic: "context canceled"},
+		{name: "refresh", inputs: []string{"", "", "", ""}, interrupted: true, diagnostic: "context canceled"},
+		{name: "invalid port", inputs: []string{"", "", "", "65536"}, diagnostic: "admin port must be"},
+		{name: "invalid refresh", inputs: []string{"", "", "", "", "maybe"}, diagnostic: "currency refresh must be"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			master, slave := openUnlockTerminal(t)
+			original := os.Stdin
+			os.Stdin = slave
+
+			ctx, cancel := context.WithCancel(t.Context())
+			output := &unlockPrompts{prompt: make(chan struct{}, 8)}
+			cmd := &urfave.Command{ErrWriter: output}
+			guide := config.SetupGuidance{AdminPort: 8787}
+
+			finished := make(chan struct{})
+			done := make(chan error, 1)
+			go func() {
+				defer close(finished)
+
+				_, err := promptSetupSettings(ctx, cmd, guide)
+				done <- err
+			}()
+
+			defer func() {
+				cancel()
+				<-finished
+
+				os.Stdin = original
+			}()
+
+			for _, value := range test.inputs {
+				select {
+				case <-output.prompt:
+				case <-time.After(time.Second):
+					t.Fatal("settings prompt missing")
+				}
+
+				if _, err := master.Write([]byte(value + "\n")); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if test.interrupted {
+				select {
+				case <-output.prompt:
+				case <-time.After(time.Second):
+					t.Fatal("settings prompt missing before interruption")
+				}
+
+				cancel()
+			}
+
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), test.diagnostic) {
+					t.Fatalf("promptSetupSettings() = %v, want %s", err, test.diagnostic)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("settings prompt did not return")
 			}
 		})
 	}
