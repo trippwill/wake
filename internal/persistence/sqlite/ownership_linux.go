@@ -35,7 +35,7 @@ func LockPaths(paths [2]string, create bool, protected ...string) (func(), error
 	}
 	for _, path := range ordered {
 		anchor := path + storeLockSuffix
-		for _, suffix := range []string{storeLockSuffix, restoreSuffix, UpgradeIntentSuffix, latestUpgradeSuffix} {
+		for _, suffix := range []string{"", storeLockSuffix, restoreSuffix, UpgradeIntentSuffix, latestUpgradeSuffix} {
 			if slices.Contains(protected, path+suffix) {
 				release()
 				return nil, ErrUnsafeStore

@@ -324,3 +324,73 @@ func TestRestoreCLIRefusesInvalidArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreProtectsConfiguredKeyAliases(t *testing.T) {
+	cfg, configPath, _ := setupDaemonFixture(t)
+	stop, _ := startShellDaemon(t, cfg)
+	stop()
+
+	var out, stderr bytes.Buffer
+	if status := Run([]string{"--json", "backup", "--config", configPath}, &out, &stderr); status != exitOK {
+		t.Fatal(status, stderr.String())
+	}
+
+	var backup struct {
+		Path string `json:"backup_path"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &backup); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Dir(cfg.Storage.WarehousePath)
+
+	key := filepath.Join(dir, "vault.key")
+	original := bytes.Repeat([]byte{0x42}, 32)
+	if err := os.WriteFile(key, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(cfg.Paths.ConfigDir, "vault-link.key")
+	if err := os.Symlink(key, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	args := []string{
+		"--json",
+		"restore",
+		"--config",
+		configPath,
+		"--archive",
+		backup.Path,
+		"--warehouse-path",
+		key,
+	}
+
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(args, &out, &stderr); status != exitOK {
+		t.Fatal(status, stderr.String())
+	}
+
+	var plan daemon.RestorePlan
+	if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, configured := range []string{dir + "/./vault.key", alias} {
+		out.Reset()
+		stderr.Reset()
+
+		attempt := append(append([]string(nil), args...), "--master-key-path", configured, "--confirm", plan.ID)
+		if status := Run(attempt, &out, &stderr); status != exitFailure ||
+			!strings.Contains(stderr.String(), "unsafe or already owned store path") {
+			t.Fatal(status, out.String(), stderr.String())
+		}
+		//nolint:gosec // Verify the contents of the disposable test key.
+		got, err := os.ReadFile(key)
+		if err != nil || !bytes.Equal(got, original) {
+			t.Fatal("restore changed the key", err)
+		}
+	}
+}

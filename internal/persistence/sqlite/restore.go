@@ -97,6 +97,12 @@ func Restore(
 			return RestorePlan{}, ErrRestoreChanged
 		}
 
+		for _, file := range pending.Originals {
+			if slices.Contains(protected, file.Path) {
+				return RestorePlan{}, ErrUnsafeStore
+			}
+		}
+
 		pending.Plan.Pending = true
 		if confirm == "" {
 			return pending.Plan, nil

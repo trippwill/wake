@@ -31,13 +31,27 @@ func RestoreStorage(
 }
 
 func protectedStoragePaths(cfg config.Config, configPath string) []string {
-	protected := []string{configPath, cfg.Credentials.MasterKeyPath}
+	candidates := []string{configPath, cfg.Credentials.MasterKeyPath}
 	for _, name := range []string{"config.toml", "master.key", "admin-unlock", "admin-session.key", "admin-proxy.key"} {
-		protected = append(protected, filepath.Join(cfg.Paths.ConfigDir, name))
+		candidates = append(candidates, filepath.Join(cfg.Paths.ConfigDir, name))
 	}
 
 	for _, name := range []string{"wake.sock", "wake.sock.lock"} {
-		protected = append(protected, filepath.Join(cfg.Paths.RuntimeDir, name))
+		candidates = append(candidates, filepath.Join(cfg.Paths.RuntimeDir, name))
+	}
+
+	var protected []string
+	for _, path := range candidates {
+		if path == "" {
+			continue
+		}
+
+		protected = append(protected, filepath.Clean(path))
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			protected = append(protected, resolved)
+		} else if parent, e := filepath.EvalSymlinks(filepath.Dir(path)); e == nil {
+			protected = append(protected, filepath.Join(parent, filepath.Base(path)))
+		}
 	}
 
 	return protected
