@@ -95,7 +95,6 @@ type Config struct {
 	Credentials  Credentials
 	Admin        Admin
 	PollDefaults map[string]time.Duration
-	Restored     bool
 }
 
 type fileConfig struct {

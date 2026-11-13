@@ -53,7 +53,7 @@ func TestBackupCLIArchivesStoppedPair(t *testing.T) {
 		BackupPath string `json:"backup_path"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil ||
-		result.BackupPath != cfg.Storage.WarehousePath+".backup.tar" {
+		!strings.HasPrefix(result.BackupPath, cfg.Storage.WarehousePath+".backup-") {
 		t.Fatal(out.String(), err)
 	}
 
@@ -65,7 +65,10 @@ func TestBackupCLIArchivesStoppedPair(t *testing.T) {
 	stderr.Reset()
 
 	if status := Run(args[1:], &out, &stderr); status != exitOK ||
-		!strings.Contains(out.String(), "Backup written to "+result.BackupPath) {
+		!strings.Contains(
+			out.String(),
+			"Backup written to "+cfg.Storage.WarehousePath+".backup-",
+		) || strings.Contains(out.String(), result.BackupPath) {
 		t.Fatal(status, out.String(), stderr.String())
 	}
 }
@@ -251,4 +254,59 @@ func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRestoreCLIPreviewConfirmAndRestart(t *testing.T) {
+	cfg, configPath, _ := setupDaemonFixture(t)
+	stop, _ := startShellDaemon(t, cfg)
+	stop()
+
+	var out, stderr bytes.Buffer
+	if status := Run([]string{"--json", "backup", "--config", configPath}, &out, &stderr); status != exitOK {
+		t.Fatal(status, stderr.String())
+	}
+
+	var backup struct {
+		Path string `json:"backup_path"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &backup); err != nil {
+		t.Fatal(err)
+	}
+
+	original := filepath.Join(filepath.Dir(cfg.Storage.WarehousePath), "restored.db")
+	access := filepath.Join(filepath.Dir(cfg.Storage.ConnectionsPath), "restored-access.db")
+	args := []string{
+		"--json", "restore", "--config", configPath, "--archive", backup.Path,
+		"--warehouse-path", original, "--connections-path", access,
+	}
+
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(args, &out, &stderr); status != exitOK {
+		t.Fatal(status, stderr.String())
+	}
+
+	var plan daemon.RestorePlan
+	if err := json.Unmarshal(out.Bytes(), &plan); err != nil || plan.ID == "" || len(plan.Displaced) != 0 {
+		t.Fatal(plan, err)
+	}
+
+	for _, path := range []string{original, access, original + ".wake-lock", access + ".wake-lock"} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatal("preview changed destination", path, err)
+		}
+	}
+
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(append(args[1:], "--confirm", plan.ID), &out, &stderr); status != exitOK ||
+		!strings.Contains(out.String(), "Restore complete") {
+		t.Fatal(status, out.String(), stderr.String())
+	}
+
+	cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath = original, access
+	stop, _ = startShellDaemon(t, cfg)
+	stop()
 }

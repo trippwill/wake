@@ -354,7 +354,7 @@ func TestResetRefusesRunningDaemon(t *testing.T) {
 		&stdout,
 		&stderr,
 	); code != exitFailure ||
-		!strings.Contains(stderr.String(), "owns the Wake database") {
+		!strings.Contains(stderr.String(), "already owned") {
 		t.Fatal("running daemon reset", code, stderr.String())
 	}
 }

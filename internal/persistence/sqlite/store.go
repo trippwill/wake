@@ -46,7 +46,7 @@ type Profile struct {
 	WarehousePath, ConnectionsPath string
 	Registrations                  []provider.Registration
 	UnattendedUpgrade              bool
-	Restored                       bool
+	ProtectedPaths                 []string
 }
 
 func (p Profile) paths() [2]string {
@@ -86,6 +86,7 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
+	releasePaths           func()
 	historyRule            application.FinancialRule
 	historyUpdating        atomic.Bool
 	registrations          []provider.Registration
@@ -174,22 +175,8 @@ func openStore(
 	}
 
 	paths := profile.paths()
-	for i, path := range paths {
-		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return nil, ErrUnsafeStore
-		}
-
-		for _, other := range paths[:i] {
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, backupSuffix} {
-				if path == other+suffix || other == path+suffix {
-					return nil, ErrUnsafeStore
-				}
-			}
-
-			if strings.HasPrefix(path, other+"-mj") || strings.HasPrefix(other, path+"-mj") {
-				return nil, ErrUnsafeStore
-			}
-		}
+	if err := checkStorePaths(paths); err != nil {
+		return nil, err
 	}
 
 	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: baseline.rule}
@@ -198,6 +185,17 @@ func openStore(
 			_ = s.Close()
 		}
 	}()
+
+	release, err := LockPaths(paths, !upgrade.preview, profile.ProtectedPaths...)
+	if err != nil {
+		return nil, err
+	}
+
+	s.releasePaths = release
+
+	if err = CheckRestorePending(paths); err != nil {
+		return nil, err
+	}
 
 	intentPath := paths[0] + UpgradeIntentSuffix
 
@@ -331,7 +329,7 @@ func openStore(
 		return nil, ErrUpgradeRecovery
 	}
 
-	if (upgrade.backup || profile.Restored) && intent.Plan.ID != "" {
+	if upgrade.backup && intent.Plan.ID != "" {
 		return nil, ErrUpgradeRecovery
 	}
 
@@ -371,7 +369,7 @@ func openStore(
 		}
 	}
 
-	if upgrade.backup || profile.Restored {
+	if upgrade.backup {
 		if !present[0] || !present[1] || metadata[1].id != previous {
 			return nil, ErrUpgradePair
 		}
@@ -381,16 +379,8 @@ func openStore(
 		}
 	}
 
-	if profile.Restored {
-		for _, path := range paths {
-			if err = checkUpgradeJournals(path); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	if upgrade.backup {
-		plan.BackupPath = paths[0] + backupSuffix
+		plan.BackupPath = uniqueBackupPath(paths[0], backupSuffix)
 		if _, e := createUpgradeBackup(ctx, plan, s.owners); e != nil {
 			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, e)
 		}
@@ -398,6 +388,9 @@ func openStore(
 
 	if upgrade.result != nil {
 		*upgrade.result = plan
+		if plan.RecoveryPending {
+			upgrade.result.BackupPath = intent.archivePath()
+		}
 	}
 
 	if upgrade.preview || upgrade.backup {
@@ -423,22 +416,53 @@ func openStore(
 
 		stage = "upgrade_backup"
 
-		backupDigest, backupErr := createUpgradeBackup(ctx, plan, s.owners)
-		if backupErr != nil {
-			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, backupErr)
+		predecessor, e := readLatestUpgrade(paths[0])
+		if e != nil {
+			return nil, e
 		}
 
-		intent = upgradeIntent{Plan: plan, Files: files, BackupDigest: backupDigest}
+		if predecessor.Warehouse != plan.Stores[0].ID {
+			predecessor = upgradeArchive{}
+		}
+
+		archivePlan := plan
+		archivePlan.BackupPath = uniqueBackupPath(paths[0], upgradeBackupSuffix)
+
+		backupDigest, backupErr := createUpgradeBackup(ctx, archivePlan, s.owners)
+		if backupErr != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, archivePlan.BackupPath, backupErr)
+		}
+
+		intent = upgradeIntent{
+			Plan:         plan,
+			Files:        files,
+			BackupDigest: backupDigest,
+			ArchivePath:  archivePlan.BackupPath,
+			Predecessor:  predecessor,
+		}
 		if err = writeUpgradeIntent(intentPath, intent); err != nil {
 			return nil, err
+		}
+
+		logger.InfoContext(
+			ctx,
+			"verified pre-upgrade backup",
+			"event",
+			"daemon_upgrade_backup",
+			"path",
+			archivePlan.BackupPath,
+		)
+
+		if upgrade.result != nil {
+			upgrade.result.BackupPath = archivePlan.BackupPath
 		}
 	}
 
 	if plan.RecoveryPending {
 		stage = "upgrade_backup"
 
-		if err = verifyUpgradeBackup(ctx, plan.BackupPath, intent.BackupDigest); err != nil {
-			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, err)
+		if err = verifyUpgradeBackup(ctx, intent.archivePath(), intent.BackupDigest); err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, intent.archivePath(), err)
 		}
 	}
 
@@ -491,7 +515,6 @@ func openStore(
 			accessChanged,
 			baseline,
 			chains,
-			profile.Restored,
 		); err != nil {
 			return nil, err
 		}
@@ -535,6 +558,30 @@ func openStore(
 	)
 
 	return s, nil
+}
+
+func checkStorePaths(paths [2]string) error {
+	for i, path := range paths {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return ErrUnsafeStore
+		}
+
+		for _, other := range paths[:i] {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, backupSuffix, storeLockSuffix, restoreSuffix, latestUpgradeSuffix} {
+				if path == other+suffix || other == path+suffix {
+					return ErrUnsafeStore
+				}
+			}
+
+			for _, suffix := range []string{"-mj", ".backup-", ".upgrade-backup-"} {
+				if strings.HasPrefix(path, other+suffix) || strings.HasPrefix(other, path+suffix) {
+					return ErrUnsafeStore
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func storageCode(err error) string {
@@ -584,6 +631,10 @@ func (s *Store) Close() error {
 			}
 		}
 
+		if s.releasePaths != nil {
+			s.releasePaths()
+		}
+
 		if s.logger != nil && s.db != nil {
 			s.logger.Info(
 				"storage closed",
@@ -605,7 +656,6 @@ func (s *Store) initialize(
 	accessChanged bool,
 	baseline upgradeBaseline,
 	chains [2][]migration,
-	restored bool,
 ) error {
 	started := time.Now()
 
@@ -694,10 +744,7 @@ func (s *Store) initialize(
 		); err != nil {
 			return err
 		}
-	case restored:
-		if _, err = tx.ExecContext(ctx, profileStatement("PauseRestoredProfile", "")); err != nil {
-			return err
-		}
+
 	}
 
 	if _, err = tx.ExecContext(ctx, profileStatement("RetainConnections", "")); err != nil {

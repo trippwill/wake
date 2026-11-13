@@ -29,7 +29,6 @@ func performServe(ctx context.Context, c *cli.Command) error {
 	}
 
 	logger := newLogger(c.ErrWriter, cfg.Log.Level)
-	cfg.Restored = c.Bool("restored")
 
 	activity.Phase("starting daemon")
 

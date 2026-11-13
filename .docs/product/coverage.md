@@ -247,9 +247,10 @@ setting is turned off. Overview shows rebuild progress.
 
 Before either upgrade path writes to storage, Wake verifies a paired archive of
 compact standalone SQLite snapshots beside the warehouse. A failed backup stops
-the upgrade. Each new upgrade replaces the previous archive after verifying the
-new pair. An interrupted upgrade reuses its verified archive and protects the
-original access store from credentials reset. Routine backups and recovery use
+the upgrade. Each new upgrade publishes a uniquely named archive and removes
+its recorded predecessor after the upgrade transaction commits. An interrupted
+upgrade reuses its verified archive and protects the original access store
+from credentials reset. Routine backups and recovery use
 the same snapshot format. See [backup and recovery](../engineering/recovery.md)
 for the restore procedure and source access review.
 

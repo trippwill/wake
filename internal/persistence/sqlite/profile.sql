@@ -13,8 +13,9 @@ SELECT access_id FROM profile WHERE singleton=1;
 INSERT INTO profile(singleton,access_id,paused,reference_review) VALUES(1,?,0,0);
 -- name: RecoverProfile
 UPDATE profile SET access_id=?,paused=1,reference_review=max(reference_review,?),recovery_revision=recovery_revision+1 WHERE singleton=1;
--- name: PauseRestoredProfile
-UPDATE profile SET paused=1,recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=0;
+-- name: RestoreWarehouse
+UPDATE store_metadata SET id=? WHERE singleton=1;
+UPDATE profile SET paused=1,recovery_revision=recovery_revision+1,resumed_by='',resumed_at='' WHERE singleton=1;
 -- name: AttachAccess
 ATTACH DATABASE ? AS access;
 -- name: Journal

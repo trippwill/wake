@@ -2,94 +2,74 @@
 
 ## Create a backup
 
-Stop Wake and wait for shutdown to finish. Run the same build that last opened
-the stores, with the same configuration and storage path overrides.
+Stop Wake and wait for shutdown. Use the same configuration and storage paths
+as the daemon.
 
 ```sh
 wake backup --config /absolute/private/config.toml
 ```
 
-Copy the resulting `.backup.tar` to protected backup storage. Each run replaces
-the previous archive at that path after verifying the new pair. Save the
-configuration and record the Wake release or build used. Keep the matching
-master key separately protected. The archive contains financial history and
-encrypted credentials. It contains two standalone SQLite snapshots and
-requires no SQLite sidecars.
+Wake reports the archive path beside the warehouse. Its filename includes the
+UTC time and a random suffix. The archive contains both standalone SQLite
+snapshots and a manifest. Routine backups accumulate. Copy them to protected
+backup storage and keep the launch configuration, build version, and matching
+master key separately protected.
 
-Wake also creates `.upgrade-backup.tar` beside the warehouse before an upgrade
-modifies either store. The same restore steps apply to that archive. If an upgrade
-is interrupted and both original stores are available, restart the matching
-upgrade build at the original paths. Leave its intent, archive and any SQLite
-journals in place. Wake verifies and reuses that archive before continuing.
+Wake uses the same archive format for pre-upgrade backups. An interrupted
+upgrade verifies and reuses its recorded archive. Restart the matching build
+with the original files in place to finish that upgrade. After the upgrade
+transaction commits, Wake records the new latest archive and removes only the
+previous archive it recorded. Routine backups and copied archives are kept.
 
-## Restore into a stopped profile
+## Restore a stopped profile
 
-Use the build that wrote the backed-up formats and financial rule. Start with
-empty destination paths. For an existing installation, stop Wake and set the
-displaced databases and any rollback journal, WAL, shared-memory file,
-super-journal and upgrade intent aside together. Keep the archive intact.
-
-Extract the two named entries from the trusted archive in a private staging
-directory. Use the same archive for both files.
+Use a restore-capable build that supports the archive's formats and history rule.
+Prepare the configured database parent directories with private permissions
+and Wake's process ownership. Stop Wake, then preview the restore.
 
 ```sh
-set -e
-umask 077
-stage=$(mktemp -d)
-tar -xf /absolute/private/wake.backup.tar -C "$stage" \
-  wake-upgrade/warehouse.db wake-upgrade/access.db
-install -d -m 0700 /absolute/private/data /absolute/private/access
-for path in /absolute/private/data/wake.db /absolute/private/access/connections.db; do
-  test ! -e "$path"
-  test ! -L "$path"
-done
-install -m 0600 "$stage/wake-upgrade/warehouse.db" /absolute/private/data/wake.db
-install -m 0600 "$stage/wake-upgrade/access.db" /absolute/private/access/connections.db
+wake restore --config /absolute/private/config.toml --archive /absolute/private/backup.tar
 ```
 
-Prepare the destination directories with mode `0700` and ownership matching
-the Wake process. Point the recovered configuration at the two files and at a
-private runtime directory. Restore or reprovision browser unlock material
-separately. Start Wake once with the recovery flag.
+Review both destination paths and the files Wake will preserve. Repeat the
+command with the plan ID printed by Wake.
 
 ```sh
-wake serve --config /absolute/private/restored.toml --restored
+wake restore --config /absolute/private/config.toml --archive /absolute/private/backup.tar --confirm PLAN_ID
+wake serve --config /absolute/private/config.toml
 ```
 
-Wake checks the store identities and formats and persists an upstream pause
-before it starts serving. Subsequent starts can use the regular command. Open
-admin to inspect evidence, decisions, and source readiness. Start the financial
-consumer with a fresh local mirror and let it install a full snapshot before
-following changes. A restored warehouse can revisit publication counters from
-the discarded timeline.
+An existing profile's databases, journals, and upgrade intent are preserved in
+private recovery directories printed by the restore command. If restore
+stops, rerun the same command with the recorded plan ID. Keep the archive and
+the recovery directories in place until it completes. Use the restore-capable
+build throughout the operation, since older builds cannot detect an interrupted
+restore. If an older format requires an older build, use a restore-capable build
+for that format. For older builds without the command, use their documented
+stopped-profile recovery procedure in an isolated profile.
 
-For inspection without the matching key, use a recovery configuration with
-the master-key setting unset. Leave the encrypted access snapshot in place.
-A configured missing or malformed key stops startup. A well-formed wrong key
-fails decryption during source access review. Restore the correct key, or
-repair source access through admin, then use **Resume upstream work** after
-review. When only the warehouse is available, start it in an isolated profile
-with a missing access path to enter Wake's existing access reconstruction flow.
-Keep the warehouse and recoverable backups while repairing access.
+The restored profile starts with upstream work paused. Open admin to inspect
+retained history and review source access before selecting **Resume upstream
+work**. For inspection without the matching key, unset the configured key path
+while leaving the encrypted access database intact. A configured missing or
+malformed key still stops startup. When only the warehouse is available, Wake's
+existing access reconstruction flow can open it in an isolated profile with a
+missing access path.
 
-If either snapshot is damaged or an older build refuses a newer format, keep
-the failed files for diagnosis and restore a complete earlier pair with its
-compatible build and key. Use the exact build that targeted a pending history
-rebuild when restoring a snapshot that already contains its approval checkpoint.
+The restored warehouse receives a new identity. Consumers replace their
+snapshots and positions on reconnect and should invalidate cached explanations
+from the previous warehouse. Financial resource IDs and retained evidence and
+decisions carry over.
 
 ## Podman restore
 
-Use the same steps with a stopped Wake pod and empty bind-mounted storage
-directories. Install both snapshots on the host as the UID used by Wake, with
-the permissions above. Supply the matching configuration and separately
-protected key through the deployment's private mounts. Apply the deployment's
-SELinux volume labels to the restored paths. Keep the runtime directory empty.
-Start Wake with `serve --restored` for the first launch, using the same image
-and mounts as the deployment. Remove that flag for ordinary restarts after the
-recovery pause is recorded.
+Stop the [Wake pod](podman.md#operate-and-back-up). Run the matching image with
+the deployment's Wake UID, private volumes and SELinux labels, passing
+`backup` or `restore` in place of `serve`. Use paths as seen inside the
+container. If the archive is outside the configured data mount, bind its
+directory read-only at a private container path. Run preview and confirmation
+with the same mounts and arguments.
 
-Use the deployment's private SSH forwards to inspect admin and read a full
-financial snapshot from the restored pod. Compare it with the snapshot saved
-before backup. Confirm the upstream pause survives a restart before reviewing
-and resuming source access. See [Podman deployment #5](https://github.com/trippwill/wake/issues/5)
-for the reference deployment.
+Restart the deployment normally. Use the private SSH forwards to inspect
+admin and read a full financial snapshot. Check the recovered baseline and
+review upstream access before resuming.

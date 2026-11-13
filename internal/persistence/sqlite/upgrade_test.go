@@ -140,7 +140,7 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 
 			before := storeBytes(t, p)
 			plan := previewFixture(t, p, b)
-			if plan.ID == "" || plan.BackupPath != p.WarehousePath+upgradeBackupSuffix || len(plan.Steps) != 2 ||
+			if plan.ID == "" || !validUpgradeArchive(p.WarehousePath, plan.BackupPath) || len(plan.Steps) != 2 ||
 				plan.Rebuild != "required" ||
 				!reflect.DeepEqual(plan.ReleaseNotes, []RuleReleaseNote{{2, upgradeFixtureNote}}) {
 				t.Fatal(plan)
@@ -213,7 +213,8 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			assertBackupPair(t, plan.BackupPath, before)
+			archive := latestArchivePath(t, p)
+			assertBackupPair(t, archive, before)
 
 			restored := testProfile(filepath.Join(t.TempDir(), "restored.db"))
 			//nolint:gosec // A private test directory needs owner traversal permission.
@@ -221,8 +222,14 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			restored.Restored = true
-			extractBackupPair(t, plan.BackupPath, restored)
+			restore, err := Restore(t.Context(), restored, archive, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err = Restore(t.Context(), restored, archive, restore.ID, nil); err != nil {
+				t.Fatal(err)
+			}
 
 			copy, err := Open(t.Context(), restored, nil)
 			if err != nil {
@@ -234,7 +241,14 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 				t.Fatal(recovery, err)
 			}
 
-			assertMigratedFixture(t, copy, releaseBaseline(), plan)
+			restoredPlan := plan
+			if err = copy.db.QueryRow(profileStatement("Metadata", "main")).
+				Scan(new(string), new(string), &restoredPlan.Stores[0].ID); err != nil ||
+				restoredPlan.Stores[0].ID == plan.Stores[0].ID {
+				t.Fatal("warehouse identity did not rotate", err)
+			}
+
+			assertMigratedFixture(t, copy, releaseBaseline(), restoredPlan)
 
 			if err = copy.Close(); err != nil {
 				t.Fatal(err)
@@ -438,14 +452,17 @@ func TestMigrationCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	backupDigest, err := createUpgradeBackup(ctx, plan, owners)
+	archivePlan := plan
+	archivePlan.BackupPath = uniqueBackupPath(p.WarehousePath, upgradeBackupSuffix)
+
+	backupDigest, err := createUpgradeBackup(ctx, archivePlan, owners)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if err = writeUpgradeIntent(
 		p.WarehousePath+UpgradeIntentSuffix,
-		upgradeIntent{Plan: plan, Files: files, BackupDigest: backupDigest},
+		upgradeIntent{Plan: plan, Files: files, BackupDigest: backupDigest, ArchivePath: archivePlan.BackupPath},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -525,16 +542,16 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 				t.Fatal("preview recovered or changed an interrupted migration")
 			}
 
-			assertBackupPair(t, plan.BackupPath, original)
+			assertBackupPair(t, pending.BackupPath, original)
 
-			info, err := os.Stat(plan.BackupPath)
+			info, err := os.Stat(pending.BackupPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			// A failed verification must stop before SQLite can recover the journals.
-			saved := plan.BackupPath + ".saved"
-			if err = os.Rename(plan.BackupPath, saved); err != nil {
+			saved := pending.BackupPath + ".saved"
+			if err = os.Rename(pending.BackupPath, saved); err != nil {
 				t.Fatal(err)
 			}
 
@@ -560,7 +577,7 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 			// Change a byte in the first database without changing either tar header.
 			data[512] ^= 1
 			//nolint:gosec // The backup is inside this test's disposable profile.
-			if err = os.WriteFile(filepath.Clean(plan.BackupPath), data, 0o600); err != nil {
+			if err = os.WriteFile(filepath.Clean(pending.BackupPath), data, 0o600); err != nil {
 				t.Fatal(err)
 			}
 
@@ -579,7 +596,7 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 				t.Fatal("corrupt backup modified interrupted stores")
 			}
 
-			if err = os.Rename(saved, plan.BackupPath); err != nil {
+			if err = os.Rename(saved, pending.BackupPath); err != nil {
 				t.Fatal(err)
 			}
 
@@ -598,12 +615,12 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 				t.Fatal("verified migration left an intent", err)
 			}
 
-			after, err := os.Stat(plan.BackupPath)
+			after, err := os.Stat(pending.BackupPath)
 			if err != nil || !os.SameFile(info, after) {
 				t.Fatal("retry replaced the original backup", err)
 			}
 
-			assertBackupPair(t, plan.BackupPath, original)
+			assertBackupPair(t, pending.BackupPath, original)
 
 			assertMigratedFixture(t, s, baseline, plan)
 		})
@@ -691,8 +708,8 @@ func extractBackupPair(t *testing.T, path string, p Profile) {
 		}
 	}
 
-	if _, err = archive.Next(); err != io.EOF {
-		t.Fatal("unexpected additional backup entry", err)
+	if entry, e := archive.Next(); e != nil || entry.Name != manifestEntry {
+		t.Fatal("expected backup manifest", entry, e)
 	}
 }
 
@@ -779,14 +796,14 @@ func TestUpgradeBackupFailureLeavesStoresUntouched(t *testing.T) {
 	p := seedUpgradeStores(t)
 	baseline := fixtureUpgrade(true, true, false)
 
-	plan := previewFixture(t, p, baseline)
+	path := p.WarehousePath + "-journal"
 	original := storeBytes(t, p)
-	if err := os.WriteFile(plan.BackupPath, []byte("unrelated file"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("unrelated file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	s, err := openStore(t.Context(), p, nil, baseline, upgradeOptions{})
-	if s != nil || !errors.Is(err, ErrUpgradeBackup) {
+	if s != nil || !errors.Is(err, ErrUpgradeRecovery) {
 		t.Fatal(s, err)
 	}
 
@@ -795,7 +812,7 @@ func TestUpgradeBackupFailureLeavesStoresUntouched(t *testing.T) {
 	}
 
 	if data, err := os.ReadFile(
-		filepath.Clean(plan.BackupPath),
+		filepath.Clean(path),
 	); err != nil ||
 		string(data) != "unrelated file" {
 		t.Fatal("upgrade changed an unrelated file", err)
@@ -821,7 +838,14 @@ func TestUpgradeReplacesLatestBackupWithNextVerifiedPair(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertBackupPair(t, plan.BackupPath, first)
+	old := latestArchivePath(t, p)
+	assertBackupPair(t, old, first)
+
+	untracked := uniqueBackupPath(p.WarehousePath, upgradeBackupSuffix)
+	//nolint:gosec // Synthetic untracked copy.
+	if err = os.WriteFile(untracked, []byte("operator copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	second := storeBytes(t, p)
 	baseline.rule = "retained-claims-and-decisions/2"
@@ -841,7 +865,16 @@ func TestUpgradeReplacesLatestBackupWithNextVerifiedPair(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertBackupPair(t, next.BackupPath, second)
+	current := latestArchivePath(t, p)
+	if _, err = os.Stat(old); !os.IsNotExist(err) || current == old {
+		t.Fatal("preceding archive was not retired", err)
+	}
+
+	if _, err = os.Stat(untracked); err != nil {
+		t.Fatal("upgrade pruned an untracked file", err)
+	}
+
+	assertBackupPair(t, current, second)
 }
 
 func TestUpgradeRefusesIncompleteOrMismatchedPairs(t *testing.T) {
@@ -892,32 +925,58 @@ func TestUpgradeRefusesIncompleteOrMismatchedPairs(t *testing.T) {
 
 func TestUpgradeBackupRefusesLinkedDestination(t *testing.T) {
 	p := seedUpgradeStores(t)
-	baseline := fixtureUpgrade(true, true, false)
 
-	plan := previewFixture(t, p, baseline)
+	plan := previewFixture(t, p, fixtureUpgrade(true, true, false))
+	plan.BackupPath = uniqueBackupPath(p.WarehousePath, upgradeBackupSuffix)
 	before := storeBytes(t, p)
 	if err := os.Symlink(p.ConnectionsPath, plan.BackupPath); err != nil {
 		t.Fatal(err)
 	}
 
-	if s, err := openStore(
-		t.Context(),
-		p,
-		nil,
-		baseline,
-		upgradeOptions{},
-	); s != nil ||
-		!errors.Is(err, ErrUpgradeBackup) {
-		t.Fatal(s, err)
+	var owners [2]*os.File
+	for i, path := range p.paths() {
+		owner, err := lockStoreFile(path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		owners[i] = owner
+		defer func() { _ = owner.Close() }()
+	}
+
+	if _, err := createUpgradeBackup(t.Context(), plan, owners); !os.IsExist(err) {
+		t.Fatal(err)
 	}
 
 	if after := storeBytes(t, p); !reflect.DeepEqual(before, after) {
-		t.Fatal("unsafe backup destination changed the stores")
+		t.Fatal("sources changed on collision")
 	}
 
 	if link, err := os.Readlink(plan.BackupPath); err != nil || link != p.ConnectionsPath {
 		t.Fatal(link, err)
 	}
+}
+
+func latestArchivePath(t *testing.T, p Profile) string {
+	t.Helper()
+
+	record, err := readLatestUpgrade(p.WarehousePath)
+	if err != nil || record.Path == "" {
+		t.Fatal(record, err)
+	}
+
+	return record.Path
+}
+
+func pendingArchivePath(t *testing.T, p Profile) string {
+	t.Helper()
+
+	intent, err := readUpgradeIntent(p.WarehousePath + UpgradeIntentSuffix)
+	if err != nil || intent.ArchivePath == "" {
+		t.Fatal(intent, err)
+	}
+
+	return intent.ArchivePath
 }
 
 func TestUpgradeRecoveryRefusesChangedIntentOrStore(t *testing.T) {
@@ -985,7 +1044,7 @@ func TestUpgradeRecoveryRefusesChangedIntentOrStore(t *testing.T) {
 		t.Fatal("recovery refusal changed the stores")
 	}
 
-	assertBackupPair(t, plan.BackupPath, before)
+	assertBackupPair(t, pendingArchivePath(t, p), before)
 }
 
 func TestUpgradeRejectsMigrationsThatFailTargetVerification(t *testing.T) {
@@ -1010,56 +1069,7 @@ func TestUpgradeRejectsMigrationsThatFailTargetVerification(t *testing.T) {
 				t.Fatal("failed target verification did not roll back both stores")
 			}
 
-			assertBackupPair(t, plan.BackupPath, before)
-		})
-	}
-}
-
-func TestRestoredStartupRefusesMixedMissingOrDamagedPair(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		want error
-	}{
-		{"mixed", ErrUpgradePair},
-		{"missing", ErrUpgradePair},
-		{"damaged", ErrUnsupportedSchema},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			p := seedUpgradeStores(t)
-			switch test.name {
-			case "mixed":
-				other := seedUpgradeStores(t)
-				if err := os.WriteFile(p.ConnectionsPath, storeBytes(t, other)[1], 0o600); err != nil {
-					t.Fatal(err)
-				}
-			case "missing":
-				if err := os.Remove(p.ConnectionsPath); err != nil {
-					t.Fatal(err)
-				}
-			case "damaged":
-				if err := os.WriteFile(p.ConnectionsPath, []byte("truncated snapshot"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			//nolint:gosec // Read only this test's disposable warehouse.
-			before, err := os.ReadFile(p.WarehousePath)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			p.Restored = true
-
-			s, err := Open(t.Context(), p, nil)
-			if s != nil || !errors.Is(err, test.want) {
-				t.Fatal(s, err)
-			}
-
-			//nolint:gosec // Read only this test's disposable warehouse.
-			after, err := os.ReadFile(p.WarehousePath)
-			if err != nil || !bytes.Equal(before, after) {
-				t.Fatal("refused restore changed warehouse", err)
-			}
+			assertBackupPair(t, pendingArchivePath(t, p), before)
 		})
 	}
 }
@@ -1087,11 +1097,6 @@ func TestBackupRefusesRecoveryFilesAndKeepsPreviousArchive(t *testing.T) {
 
 	if _, err = Backup(ctx, p, nil); !errors.Is(err, ErrUpgradeRecovery) {
 		t.Fatal("backup accepted an unresolved rollback journal", err)
-	}
-
-	p.Restored = true
-	if s, e := Open(ctx, p, nil); s != nil || !errors.Is(e, ErrUpgradeRecovery) {
-		t.Fatal("restore accepted an unresolved rollback journal", s, e)
 	}
 
 	if after, e := os.Stat(archive); e != nil || !os.SameFile(info, after) {
@@ -1191,4 +1196,45 @@ func TestBackupRefusesProviderMismatchAndKeepsPreviousArchive(t *testing.T) {
 	}
 
 	assertBackupPair(t, archive, original)
+}
+
+func TestUpgradeKeepsPredecessorWhenItsArchiveChanges(t *testing.T) {
+	p := seedUpgradeStores(t)
+	ctx := t.Context()
+	b := fixtureUpgrade(true, true, false)
+
+	s, err := openStore(ctx, p, nil, b, upgradeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	old := latestArchivePath(t, p)
+	//nolint:gosec // Simulate an operator replacement in a private test profile.
+	if err = os.WriteFile(old, []byte("operator replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b.rule = "retained-claims-and-decisions/2"
+	b.notes = map[int64]string{2: upgradeFixtureNote}
+	p.UnattendedUpgrade = true
+
+	var logs bytes.Buffer
+
+	s, err = openStore(ctx, p, slog.New(slog.NewJSONHandler(&logs, nil)), b, upgradeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = os.Stat(old); err != nil || latestArchivePath(t, p) == old ||
+		!strings.Contains(logs.String(), "daemon_upgrade_backup_cleanup") {
+		t.Fatal("cleanup did not preserve the changed predecessor", err, logs.String())
+	}
 }

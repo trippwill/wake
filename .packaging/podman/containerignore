@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+*
+!go.mod
+!go.sum
+!api/
+!cmd/
+!financial/
+!internal/
+!provider/
+!providers/
+!source/

@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,6 +72,22 @@ func ResetStorage(
 	}
 
 	phase("checking storage paths and ownership")
+
+	paths := [2]string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath}
+
+	release, err := persistence.LockPaths(paths, confirm, protectedStoragePaths(cfg, configPath)...)
+	if err != nil {
+		if errors.Is(err, persistence.ErrUnsafeStore) {
+			return ResetResult{}, errors.Join(ErrUnsafeReset, err)
+		}
+
+		return ResetResult{}, err
+	}
+	defer release()
+
+	if err = persistence.CheckRestorePending(paths); err != nil {
+		return ResetResult{}, err
+	}
 
 	all := []ResetDatabase{
 		{Name: ResetWarehouse, Path: cfg.Storage.WarehousePath},

@@ -11,6 +11,7 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 - [Architecture](engineering/architecture.md) — responsibilities and rationale.
 - [Development](engineering/development.md) — contribution and verification.
 - [Backup and recovery](engineering/recovery.md) — stopped backups, paired restore and upstream review.
+- [Podman deployment](engineering/podman.md) — Linux server setup and private SSH access.
 - [Visual design](../DESIGN.md) — portable visual standard.
 - [Repository instructions](../AGENTS.md) — work and delivery constraints.
 

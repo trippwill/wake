@@ -242,13 +242,31 @@ func (s LocalSetup) Guidance() (SetupGuidance, error) {
 	}, nil
 }
 
-// WithLaunchSettings validates a proposed update before any provisioning writes.
-func (s LocalSetup) WithLaunchSettings(proposed SetupGuidance) (LocalSetup, error) {
-	if err := checkStorage(proposed.Storage); err != nil {
-		return s, err
+// PreparedGuidance checks the launch paths in an existing configuration without editing them.
+func (s LocalSetup) PreparedGuidance() (SetupGuidance, error) {
+	if !s.existed {
+		return SetupGuidance{}, fmt.Errorf("%w: --use-config requires an existing configuration file", ErrInvalid)
 	}
 
-	if err := requireAbsolute("runtime directory", proposed.RuntimeDir); err != nil {
+	guide, err := s.Guidance()
+	if err != nil {
+		return SetupGuidance{}, err
+	}
+
+	return guide, checkSetupPaths(guide)
+}
+
+func checkSetupPaths(guide SetupGuidance) error {
+	if err := checkStorage(guide.Storage); err != nil {
+		return err
+	}
+
+	return requireAbsolute("runtime directory", guide.RuntimeDir)
+}
+
+// WithLaunchSettings validates a proposed update before any provisioning writes.
+func (s LocalSetup) WithLaunchSettings(proposed SetupGuidance) (LocalSetup, error) {
+	if err := checkSetupPaths(proposed); err != nil {
 		return s, err
 	}
 

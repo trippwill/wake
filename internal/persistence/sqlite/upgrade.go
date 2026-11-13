@@ -249,7 +249,7 @@ func (b upgradeBaseline) plan(
 	}
 
 	if plan.needed() {
-		plan.BackupPath = paths[0] + upgradeBackupSuffix
+		plan.BackupPath = paths[0] + ".upgrade-backup-<UTC>-<random>.tar"
 
 		encoded, err := json.Marshal(plan)
 		if err != nil {
@@ -305,6 +305,16 @@ type upgradeIntent struct {
 	Plan         UpgradePlan    `json:"plan"`
 	Files        [2]upgradeFile `json:"files"`
 	BackupDigest string         `json:"backup_sha256"`
+	ArchivePath  string         `json:"archive_path,omitempty"`
+	Predecessor  upgradeArchive `json:"predecessor,omitempty"`
+}
+
+func (i upgradeIntent) archivePath() string {
+	if i.ArchivePath != "" {
+		return i.ArchivePath
+	}
+
+	return i.Plan.BackupPath
 }
 
 func readUpgradeIntent(path string) (upgradeIntent, error) {
@@ -336,13 +346,36 @@ func readUpgradeIntent(path string) (upgradeIntent, error) {
 }
 
 func writeUpgradeIntent(path string, intent upgradeIntent) error {
+	return writePrivateRecord(path, intent)
+}
+
+func readPrivateRecord(path string, record any) error {
+	f, err := openBackup(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(f, 1<<20|1))
+	if err != nil {
+		return err
+	}
+
+	if len(data) > 1<<20 || json.Unmarshal(data, record) != nil {
+		return ErrCorrupt
+	}
+
+	return nil
+}
+
+func writePrivateRecord(path string, record any) error {
 	file, err := os.CreateTemp(filepath.Dir(path), ".wake-upgrade-")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(file.Name()) }()
 
-	err = json.NewEncoder(file).Encode(intent)
+	err = json.NewEncoder(file).Encode(record)
 	if err == nil {
 		err = file.Sync()
 	}
@@ -391,7 +424,7 @@ func (b upgradeBaseline) checkIntent(paths [2]string, files [2]upgradeFile, inte
 	state := historyVersion{applied: intent.Plan.AppliedRule}
 
 	plan, _, err := b.plan(paths, metadata, [2]bool{true, true}, state)
-	if err != nil || plan.ID == "" || plan.ID != intent.Plan.ID {
+	if err != nil || !intent.matchesPlan(paths[0], plan) {
 		return ErrUpgradeRecovery
 	}
 
@@ -403,6 +436,25 @@ func (b upgradeBaseline) checkIntent(paths [2]string, files [2]upgradeFile, inte
 	}
 
 	return nil
+}
+
+func (i upgradeIntent) matchesPlan(warehouse string, plan UpgradePlan) bool {
+	if plan.ID == "" {
+		return false
+	}
+
+	if i.ArchivePath != "" {
+		return validUpgradeArchive(warehouse, i.ArchivePath) && plan.ID == i.Plan.ID &&
+			(i.Predecessor == (upgradeArchive{}) ||
+				i.Predecessor.Warehouse == plan.Stores[0].ID &&
+					validUpgradeArchive(warehouse, i.Predecessor.Path) && validBackupDigest(i.Predecessor.Digest))
+	}
+
+	plan.ID = ""
+	plan.BackupPath = warehouse + upgradeBackupSuffix
+	data, err := json.Marshal(plan)
+
+	return err == nil && digest(data) == i.Plan.ID
 }
 
 func readUpgradeState(
@@ -457,7 +509,7 @@ func (b upgradeBaseline) recoveredMigrations(
 		return noMigrations, nil
 	}
 
-	if plan.ID != intent.Plan.ID {
+	if !intent.matchesPlan(paths[0], plan) {
 		return noMigrations, ErrUpgradeRecovery
 	}
 
@@ -481,8 +533,14 @@ func (s *Store) recoverOrApplyUpgrade(
 		return err
 	}
 
-	if err = s.initialize(ctx, [2]bool{true, true}, metadata, false, baseline, chains, false); err != nil {
+	if err = s.initialize(ctx, [2]bool{true, true}, metadata, false, baseline, chains); err != nil {
 		return fmt.Errorf("%w: %w", ErrUpgradeRecovery, err)
+	}
+
+	if intent.ArchivePath != "" {
+		if err = s.retainUpgradeArchive(ctx, paths[0], intent); err != nil {
+			return err
+		}
 	}
 
 	if err = os.Remove(path); err != nil {

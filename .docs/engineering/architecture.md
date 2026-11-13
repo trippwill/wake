@@ -359,6 +359,30 @@ identity, evidence and decisions; derived views are reproducible. Unsupported
 pre-release stores fail closed with explicit recreation guidance. Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
+### Podman and SSH trust boundaries
+
+The Podman deployment keeps Wake and the admin relay in one pod.
+The relay exposes a private Unix socket on the host and forwards to Wake's
+loopback browser listener. OpenSSH carries the browser connection from client
+loopback and the financial connection from a separate client Unix socket. The
+operator verifies the SSH host key and authenticates to the host. Wake still
+checks the browser's Host, Origin, session and CSRF token. The financial listener
+still checks the Unix peer UID before serving the read-only API.
+
+Both server sockets live in an owner-only runtime directory. The relay mounts
+that directory and runs as the operator's mapped UID. Wake's stores, master key
+and admin secrets stay in Wake's private mounts. The pod publishes no ports.
+Trusted financial clients use the client-side socket while the operator controls
+the SSH connection. Closing that connection ends both forwards.
+
+Restored profiles start with provider access withheld until the operator reviews
+it. An intact profile can resume scheduled work at startup, so the restore
+procedure establishes this boundary before first start.
+
+The [Podman guide](podman.md) describes setup and operation. The
+[release security review](https://github.com/trippwill/wake/issues/52) checks
+the resulting deployment and release artifacts against these boundaries.
+
 ## Persistence and work boundaries
 
 Warehouse and encrypted access formats are checked independently. An unsupported
@@ -399,8 +423,9 @@ A warehouse remains inspectable without source credentials. Missing or replaced
 access starts upstream work paused until authenticated review, required repair
 and explicit resume. Retained pacing restrictions and acknowledged progress remain
 in the warehouse. An intact restart retains authority and scheduling. An explicit
-restore checks the original pairing and persists the same upstream pause before
-starting the workers.
+restore holds ownership of both paths across installation, preserves the displaced
+pair, and persists the upstream pause and a fresh publication identity before
+installing either store.
 
 A fresh warehouse can reuse retained settings and encrypted credentials. It starts
 paused until explicit resume and bounded discovery; account confirmation is still

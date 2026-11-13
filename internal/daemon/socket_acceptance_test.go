@@ -1216,55 +1216,54 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		restored := t.TempDir()
-		//nolint:gosec // Extract Wake's own two-entry archive into an empty private test directory.
-		extract := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", restored)
-		if output, e := extract.CombinedOutput(); e != nil {
-			t.Fatal(e, string(output))
-		}
+		restored := resetPrivateDir(t)
 
-		restored = filepath.Join(restored, "wake-upgrade")
-		//nolint:gosec // A private test directory needs owner traversal permission.
-		if e = os.Chmod(restored, 0o700); e != nil {
-			t.Fatal(e)
-		}
-
-		entries, e := os.ReadDir(restored)
-		if e != nil || len(entries) != 2 {
-			t.Fatal("restore needs more than the two snapshots", entries, e)
-		}
-
-		originalConfig, originalMirror := cfg, statePath
+		originalConfig := cfg
 		defer func() {
 			stop()
 
-			cfg, statePath = originalConfig, originalMirror
+			cfg = originalConfig
+
+			start()
+			consume(false)
+			stop()
 		}()
 
 		cfg.Storage.WarehousePath = filepath.Join(restored, "warehouse.db")
 		cfg.Storage.ConnectionsPath = filepath.Join(restored, "access.db")
-		cfg.Restored = true
-		statePath = filepath.Join(t.TempDir(), "restore-mirror.db")
+
+		plan, e := RestoreStorage(ctx, cfg, "", archive, "")
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		if _, e = RestoreStorage(ctx, cfg, "", archive, plan.ID); e != nil {
+			t.Fatal(e)
+		}
 
 		calls := sourceCalls.Load()
 
 		start()
-		consume(false)
 
-		if got := mirror(); !reflect.DeepEqual(got, after) || !bytes.Equal(readPositions(), beforePositions) {
-			t.Fatal("restored snapshot or positions differ from the original")
+		result := consume(false)
+		restoredMirror := mirror()
+		restoredPositions := readPositions()
+		if string(result["new_baseline"]) != "true" || restoredMirror.WarehouseID == after.WarehouseID ||
+			restoredMirror.Version == after.Version || !reflect.DeepEqual(restoredMirror.Resources, after.Resources) ||
+			!sameRestoredPositions(t, beforePositions, restoredPositions) {
+			t.Fatal("restore did not install an equivalent new baseline")
 		}
 
 		stop()
 
-		cfg.Restored = false
 		master := cfg.Credentials.MasterKeyPath
 		cfg.Credentials.MasterKeyPath = ""
 
 		start()
 		consume(false)
 
-		if got := mirror(); !reflect.DeepEqual(got, after) || !bytes.Equal(readPositions(), beforePositions) ||
+		if got := mirror(); !reflect.DeepEqual(got, restoredMirror) ||
+			!bytes.Equal(readPositions(), restoredPositions) ||
 			sourceCalls.Load() != calls {
 			t.Fatal("offline restart changed the restored publication or contacted upstream")
 		}
@@ -1472,4 +1471,28 @@ func exportRestoreFixture(t *testing.T, cfg config.Config, dir string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func sameRestoredPositions(t *testing.T, before, after []byte) bool {
+	t.Helper()
+
+	var left, right map[string]json.RawMessage
+	if err := json.Unmarshal(before, &left); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := json.Unmarshal(after, &right); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, key := range []string{"warehouse_id", "version"} {
+		if bytes.Equal(left[key], right[key]) {
+			return false
+		}
+
+		delete(left, key)
+		delete(right, key)
+	}
+
+	return reflect.DeepEqual(left, right)
 }

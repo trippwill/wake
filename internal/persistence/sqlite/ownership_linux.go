@@ -6,9 +6,73 @@ package persistence
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 )
+
+const (
+	storeLockSuffix         = ".wake-lock"
+	restoreSuffix           = ".restore-intent"
+	ErrRestorePending Error = "restore pending; rerun wake restore with the original profile and archive"
+)
+
+// LockPaths serializes mutations even while a database inode is absent or replaced.
+func LockPaths(paths [2]string, create bool, protected ...string) (func(), error) {
+	if err := checkStorePaths(paths); err != nil {
+		return nil, err
+	}
+
+	ordered := paths
+	slices.Sort(ordered[:])
+
+	var held []*os.File
+
+	release := func() {
+		for _, file := range slices.Backward(held) {
+			_ = file.Close()
+		}
+	}
+	for _, path := range ordered {
+		anchor := path + storeLockSuffix
+		for _, suffix := range []string{storeLockSuffix, restoreSuffix, UpgradeIntentSuffix, latestUpgradeSuffix} {
+			if slices.Contains(protected, path+suffix) {
+				release()
+				return nil, ErrUnsafeStore
+			}
+		}
+
+		if _, err := os.Lstat(filepath.Dir(path)); os.IsNotExist(err) {
+			continue
+		}
+
+		if !create {
+			if _, err := os.Lstat(anchor); os.IsNotExist(err) {
+				continue
+			}
+		}
+
+		file, err := lockStoreFile(anchor, create)
+		if err != nil {
+			release()
+			return nil, err
+		}
+
+		held = append(held, file)
+	}
+
+	return release, nil
+}
+
+func CheckRestorePending(paths [2]string) error {
+	for _, path := range paths {
+		if _, err := os.Lstat(path + restoreSuffix); !os.IsNotExist(err) {
+			return ErrRestorePending
+		}
+	}
+
+	return nil
+}
 
 func claimFile(path string) (*os.File, error) {
 	return lockStoreFile(path, true)
@@ -99,15 +163,19 @@ func storeSidecars(path string) ([]string, error) {
 		return nil, err
 	}
 
-	prefix := filepath.Base(path) + "-mj"
 	for _, entry := range entries {
-		suffix, ok := strings.CutPrefix(entry.Name(), prefix)
-		if ok && len(suffix) == 9 && suffix[6] == '9' && strings.Trim(suffix, "0123456789ABCDEFabcdef") == "" {
-			files = append(files, filepath.Join(filepath.Dir(path), entry.Name()))
+		candidate := filepath.Join(filepath.Dir(path), entry.Name())
+		if isStoreSuperJournal(path, candidate) {
+			files = append(files, candidate)
 		}
 	}
 
 	return files, nil
+}
+
+func isStoreSuperJournal(store, path string) bool {
+	suffix, ok := strings.CutPrefix(path, store+"-mj")
+	return ok && len(suffix) == 9 && suffix[6] == '9' && strings.Trim(suffix, "0123456789ABCDEFabcdef") == ""
 }
 
 func singleLink(info os.FileInfo) bool {

@@ -65,8 +65,15 @@ func TestUnsupportedStoreIsUntouched(t *testing.T) {
 	}
 
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 1 {
-		t.Fatal("preflight created sidecars", entries, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		if entry.Name() != "wake.db" && entry.Name() != "wake.db"+storeLockSuffix &&
+			entry.Name() != "connections.db"+storeLockSuffix {
+			t.Fatal("preflight created a database or journal", entry.Name())
+		}
 	}
 }
 

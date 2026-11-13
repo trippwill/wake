@@ -38,8 +38,10 @@ const (
 func performSetup(ctx context.Context, c *cli.Command) error {
 	if c.NArg() != 0 || (c.IsSet("config") && c.String("config") == "") {
 		printCommandHelp(c.ErrWriter, c)
-		return usageError("setup accepts only --config")
+		return usageError("setup accepts only --config and --use-config")
 	}
+
+	useConfig := c.Bool("use-config")
 
 	activity := newActivity(c.ErrWriter, c.Bool("json"), "setup", "checking local configuration")
 	defer activity.Stop()
@@ -60,7 +62,7 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 		writeString(c.ErrWriter, "Provider connections are configured in the browser.\n")
 	}
 
-	if source == "default" {
+	if source == "default" && !useConfig {
 		activity.Pause()
 
 		selected, err := promptLine(ctx, c, "Configuration save path ["+path+"]: ", false)
@@ -84,7 +86,12 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 		return failure("verify master key: %v", err)
 	}
 
-	guide, err := setup.Guidance()
+	readGuidance := setup.Guidance
+	if useConfig {
+		readGuidance = setup.PreparedGuidance
+	}
+
+	guide, err := readGuidance()
 	if err != nil {
 		return failure("configure local setup: %v", err)
 	}
@@ -99,93 +106,56 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 		return failure("read setup input: %v", errTerminalRequired)
 	}
 
-	activity.Pause()
+	proposed := guide
+	if !useConfig {
+		activity.Pause()
 
-	storage := guide.Storage
-	for _, item := range []struct {
-		flag  string
-		value *string
-	}{{"warehouse-path", &storage.WarehousePath}, {"connections-path", &storage.ConnectionsPath}} {
-		value, err := promptSetting(ctx, c, item.flag, *item.value)
+		proposed, err = promptSetupSettings(ctx, c, guide)
 		if err != nil {
-			return failure("read setup settings: %v", err)
+			return err
 		}
 
-		*item.value = value
-	}
+		setup, err = setup.WithLaunchSettings(proposed)
+		if err != nil {
+			return failure("configure local setup: %v", err)
+		}
 
-	runtime, err := promptSetting(ctx, c, "runtime-dir", guide.RuntimeDir)
-	if err != nil {
-		return failure("read setup settings: %v", err)
-	}
+		activity.Phase("checking for running Wake at proposed paths")
 
-	portText, err := promptSetting(ctx, c, "admin-port", strconv.Itoa(int(guide.AdminPort)))
-	if err != nil {
-		return failure("read setup settings: %v", err)
-	}
-
-	port, err := strconv.ParseUint(portText, 10, 16)
-	if err != nil {
-		return failure("admin port must be between 1 and 65535")
-	}
-
-	refreshText, err := promptSetting(
-		ctx,
-		c,
-		"admin-currency-refresh",
-		strconv.FormatBool(guide.CurrencyRefresh),
-	)
-	if err != nil {
-		return failure("read setup settings: %v", err)
-	}
-
-	refresh, err := strconv.ParseBool(refreshText)
-	if err != nil {
-		return failure("currency refresh must be true or false")
-	}
-
-	proposed := config.SetupGuidance{
-		Storage: storage, RuntimeDir: runtime, AdminPort: uint16(port), CurrencyRefresh: refresh,
-	}
-
-	setup, err = setup.WithLaunchSettings(proposed)
-	if err != nil {
-		return failure("configure local setup: %v", err)
-	}
-
-	activity.Phase("checking for running Wake at proposed paths")
-
-	if err := checkSetupStopped(guide, proposed); err != nil {
-		return err
+		if err := checkSetupStopped(guide, proposed); err != nil {
+			return err
+		}
 	}
 
 	activity.Pause()
+
+	action := "Save new configuration to " + setup.ConfigPath + " and provision local access"
+	if useConfig {
+		action = "Provision local access using " + setup.ConfigPath
+	} else if setup.ConfigExists() {
+		action = "Overwrite existing configuration at " + setup.ConfigPath + " and provision local access"
+	}
 
 	if c.Bool("json") {
 		_ = json.NewEncoder(c.ErrWriter).
-			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": storage.WarehousePath, "connections_path": storage.ConnectionsPath, "runtime_dir": runtime, "admin_port": port, "currency_refresh": refresh, "overwrite": setup.ConfigExists()})
+			Encode(map[string]any{"event": "setup_summary", "config_path": setup.ConfigPath, "warehouse_path": proposed.Storage.WarehousePath, "connections_path": proposed.Storage.ConnectionsPath, "runtime_dir": proposed.RuntimeDir, "admin_port": proposed.AdminPort, "currency_refresh": proposed.CurrencyRefresh, "overwrite": setup.ConfigExists() && (!useConfig || !setup.KeyConfigured)})
 	} else {
 		writef(
 			c.ErrWriter,
-			"Save configuration to %s\n  warehouse: %s\n  connections: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n  currency list refresh: %t\n",
+			"Configuration: %s\n  warehouse: %s\n  connections: %s\n  runtime: %s\n  browser: http://127.0.0.1:%d\n  currency list refresh: %t\n",
 			setup.ConfigPath,
-			storage.WarehousePath,
-			storage.ConnectionsPath,
-			runtime,
-			port,
-			refresh,
+			proposed.Storage.WarehousePath,
+			proposed.Storage.ConnectionsPath,
+			proposed.RuntimeDir,
+			proposed.AdminPort,
+			proposed.CurrencyRefresh,
 		)
-	}
-
-	action := "Save new configuration to "
-	if setup.ConfigExists() {
-		action = "Overwrite existing configuration at "
 	}
 
 	confirmation, err := promptLine(
 		ctx,
 		c,
-		action+setup.ConfigPath+" and provision local access? [y/N]: ",
+		action+"? [y/N]: ",
 		false,
 	)
 	if err != nil {
@@ -232,6 +202,59 @@ func performSetup(ctx context.Context, c *cli.Command) error {
 	)
 
 	return nil
+}
+
+func promptSetupSettings(
+	ctx context.Context,
+	c *cli.Command,
+	guide config.SetupGuidance,
+) (config.SetupGuidance, error) {
+	storage := guide.Storage
+	for _, item := range []struct {
+		flag  string
+		value *string
+	}{{"warehouse-path", &storage.WarehousePath}, {"connections-path", &storage.ConnectionsPath}} {
+		value, err := promptSetting(ctx, c, item.flag, *item.value)
+		if err != nil {
+			return config.SetupGuidance{}, failure("read setup settings: %v", err)
+		}
+
+		*item.value = value
+	}
+
+	runtime, err := promptSetting(ctx, c, "runtime-dir", guide.RuntimeDir)
+	if err != nil {
+		return config.SetupGuidance{}, failure("read setup settings: %v", err)
+	}
+
+	portText, err := promptSetting(ctx, c, "admin-port", strconv.Itoa(int(guide.AdminPort)))
+	if err != nil {
+		return config.SetupGuidance{}, failure("read setup settings: %v", err)
+	}
+
+	port, err := strconv.ParseUint(portText, 10, 16)
+	if err != nil {
+		return config.SetupGuidance{}, failure("admin port must be between 1 and 65535")
+	}
+
+	refreshText, err := promptSetting(
+		ctx,
+		c,
+		"admin-currency-refresh",
+		strconv.FormatBool(guide.CurrencyRefresh),
+	)
+	if err != nil {
+		return config.SetupGuidance{}, failure("read setup settings: %v", err)
+	}
+
+	refresh, err := strconv.ParseBool(refreshText)
+	if err != nil {
+		return config.SetupGuidance{}, failure("currency refresh must be true or false")
+	}
+
+	return config.SetupGuidance{
+		Storage: storage, RuntimeDir: runtime, AdminPort: uint16(port), CurrencyRefresh: refresh,
+	}, nil
 }
 
 func checkSetupStopped(guides ...config.SetupGuidance) error {

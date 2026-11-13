@@ -135,18 +135,28 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 	root.Commands = []*cli.Command{
 		{
-			Name:   "setup",
-			Usage:  "Guide local configuration, credentials and operator access",
-			Flags:  common(),
+			Name:  "setup",
+			Usage: "Guide local configuration, credentials and operator access",
+			Flags: append(common(), &cli.BoolFlag{
+				Name:  "use-config",
+				Usage: "Review an existing configuration and provision local access without editing launch settings",
+			}),
 			Action: performSetup,
 		},
 		{
-			Name:  "serve",
-			Usage: "Run the Wake daemon",
-			Flags: append(serveFlags, &cli.BoolFlag{
-				Name: "restored", Usage: "Start a restored database pair with upstream work paused for review",
-			}),
+			Name:   "serve",
+			Usage:  "Run the Wake daemon",
+			Flags:  serveFlags,
 			Action: performServe,
+		},
+		{
+			Name:  "restore",
+			Usage: "Preview or install a paired SQLite snapshot archive with Wake stopped",
+			Flags: append(append(common(), config.Flags()...),
+				&cli.StringFlag{Name: "archive", Usage: "Absolute path to the paired backup archive"},
+				&cli.StringFlag{Name: "confirm", Usage: "Install or resume this restore plan ID"},
+			),
+			Action: performRestore,
 		},
 		{
 			Name:   "backup",

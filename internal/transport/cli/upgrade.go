@@ -41,6 +41,69 @@ func performBackup(ctx context.Context, c *cli.Command) error {
 	return nil
 }
 
+func performRestore(ctx context.Context, c *cli.Command) error {
+	if err := requireNoArgs(c); err != nil {
+		return err
+	}
+
+	archive, confirm := c.String("archive"), c.String("confirm")
+	if archive == "" || c.IsSet("confirm") && confirm == "" {
+		return usageError("restore requires --archive; --confirm requires the plan ID from wake restore")
+	}
+
+	resolved, err := config.ResolveReadOnly(c)
+	if err != nil {
+		return failure("configure restore: %v", err)
+	}
+
+	plan, err := daemon.RestoreStorage(ctx, resolved.Config, resolved.ConfigPath, archive, confirm)
+	if err != nil {
+		return failure("restore: %v", err)
+	}
+
+	if commandJSON(c) {
+		return json.NewEncoder(c.Writer).Encode(plan)
+	}
+
+	writef(
+		c.Writer,
+		"Archive %s (SHA-256 %s)\nApplied rule %d, pending rule %d\n",
+		plan.Archive,
+		plan.ArchiveDigest,
+		plan.Rules[0],
+		plan.Rules[1],
+	)
+
+	for i, path := range plan.Stores {
+		writef(
+			c.Writer,
+			"Restore %s to %s. Displaced files go to %s.\n",
+			plan.Formats[i],
+			path,
+			plan.RecoveryDirs[i],
+		)
+	}
+
+	for _, path := range plan.Displaced {
+		writef(c.Writer, "Preserve %s\n", path)
+	}
+
+	if confirm == "" {
+		if plan.Pending {
+			writeString(c.Writer, "An approved restore is pending.\n")
+		}
+
+		writef(c.Writer, "Run wake restore again with the same options and --confirm %s\n", plan.ID)
+	} else {
+		writeString(
+			c.Writer,
+			"Restore complete. Start Wake normally and review access before resuming upstream work.\n",
+		)
+	}
+
+	return nil
+}
+
 func performUpgrade(ctx context.Context, c *cli.Command) error {
 	if err := requireNoArgs(c); err != nil {
 		return err
