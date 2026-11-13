@@ -24,6 +24,7 @@ const (
 	ErrResetTarget   OwnershipError = "reset requires a target: credentials or warehouse"
 	ErrUnsafeReset   OwnershipError = "reset refuses unsafe, linked or protected paths"
 	ErrResetChanged  OwnershipError = "storage paths changed during reset; inspect remaining files and preview again"
+	ErrResetUpgrade  OwnershipError = "credentials reset refused while a storage upgrade is pending; resume with the matching Wake build or restore the paired backup first"
 )
 
 func ParseResetTarget(value string) (ResetTarget, error) {
@@ -222,6 +223,17 @@ func ResetStorage(
 
 	if err := checkResetSnapshot(snapshots); err != nil {
 		return ResetResult{}, err
+	}
+
+	if target == ResetCredentials {
+		intent, err := snapshotResetFile(cfg.Storage.WarehousePath+persistence.UpgradeIntentSuffix, snapshots)
+		if err != nil {
+			return ResetResult{}, err
+		}
+
+		if intent != nil {
+			return ResetResult{}, ErrResetUpgrade
+		}
 	}
 
 	for _, db := range selected {

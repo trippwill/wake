@@ -257,6 +257,8 @@ recovery cannot proceed, stop Wake, set the interrupted databases and sidecars a
 then extract `wake-upgrade/warehouse.db` and `wake-upgrade/access.db` from the same
 archive. Restore both files together to the paths from the original configuration.
 Use the Wake version that wrote the backed-up stores and the matching master key.
+Wake refuses a credentials reset while an interrupted upgrade still needs the
+original access store.
 
 Admin activity, instrument, positions, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for

@@ -397,6 +397,48 @@ func TestResetRemovesOrphanSidecarsWithoutCreatingDatabase(t *testing.T) {
 	}
 }
 
+func TestResetPreservesAccessNeededByAnInterruptedUpgrade(t *testing.T) {
+	cfg, path, files := resetFixture(t)
+	intent := cfg.Storage.WarehousePath + ".upgrade-intent"
+	backup := cfg.Storage.WarehousePath + ".upgrade-backup.tar"
+	for name, data := range map[string][]byte{intent: []byte("pending"), backup: []byte("backup")} {
+		if err := os.WriteFile(name, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		files[name] = data
+	}
+
+	for _, args := range [][]string{
+		{"reset", "credentials", "--config", path},
+		{"reset", "credentials", "--config", path, "--confirm"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != exitFailure ||
+			!strings.Contains(stderr.String(), "restore the paired backup first") {
+			t.Fatal(code, stdout.String(), stderr.String())
+		}
+
+		assertResetFiles(t, files, nil)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(
+		[]string{"reset", "warehouse", "--config", path, "--confirm"},
+		&stdout,
+		&stderr,
+	); code != exitOK {
+		t.Fatal(code, stdout.String(), stderr.String())
+	}
+
+	removed := map[string]bool{intent: true}
+	for _, suffix := range resetSuffixes {
+		removed[cfg.Storage.WarehousePath+suffix] = true
+	}
+
+	assertResetFiles(t, files, removed)
+}
+
 func TestResetReportsPartialRemovalAndRefusesChangedFile(t *testing.T) {
 	cfg, path, files := resetFixture(t)
 	journal := cfg.Storage.WarehousePath + "-journal"
