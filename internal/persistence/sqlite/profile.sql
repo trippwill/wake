@@ -13,6 +13,8 @@ SELECT access_id FROM profile WHERE singleton=1;
 INSERT INTO profile(singleton,access_id,paused,reference_review) VALUES(1,?,0,0);
 -- name: RecoverProfile
 UPDATE profile SET access_id=?,paused=1,reference_review=max(reference_review,?),recovery_revision=recovery_revision+1 WHERE singleton=1;
+-- name: PauseRestoredProfile
+UPDATE profile SET paused=1,recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=0;
 -- name: AttachAccess
 ATTACH DATABASE ? AS access;
 -- name: Journal
@@ -37,5 +39,7 @@ INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM acce
 
 -- name: HistoryVersion
 SELECT applied,target FROM {{schema}}.history_update WHERE singleton=1;
+-- name: BackupSnapshot
+VACUUM main INTO ?;
 -- name: AdvanceFormat
 UPDATE {{schema}}.store_metadata SET version=? WHERE singleton=1 AND version=?;

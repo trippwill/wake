@@ -245,20 +245,13 @@ these upgrades at startup. Wake logs the plan and release notes before applying
 it. An approved rebuild starts and resumes automatically, including after the
 setting is turned off. Overview shows rebuild progress.
 
-Before either upgrade path writes to storage, Wake verifies a full backup of both
-databases in a private archive beside the warehouse. Its name is the warehouse
-filename with `.upgrade-backup.tar` appended. A failed backup stops the upgrade.
-Each new upgrade replaces the previous archive only after verifying the new pair.
-An interrupted upgrade reuses and verifies its original archive.
-
-Keep the configuration and matching master key separately protected. If a migration
-is interrupted, keep the original files and restart with the matching build. If
-recovery cannot proceed, stop Wake, set the interrupted databases and sidecars aside,
-then extract `wake-upgrade/warehouse.db` and `wake-upgrade/access.db` from the same
-archive. Restore both files together to the paths from the original configuration.
-Use the Wake version that wrote the backed-up stores and the matching master key.
-Wake refuses a credentials reset while an interrupted upgrade still needs the
-original access store.
+Before either upgrade path writes to storage, Wake verifies a paired archive of
+compact standalone SQLite snapshots beside the warehouse. A failed backup stops
+the upgrade. Each new upgrade replaces the previous archive after verifying the
+new pair. An interrupted upgrade reuses its verified archive and protects the
+original access store from credentials reset. Routine backups and recovery use
+the same snapshot format. See [backup and recovery](../engineering/recovery.md)
+for the restore procedure and source access review.
 
 Admin activity, instrument, positions, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for

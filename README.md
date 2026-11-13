@@ -171,8 +171,10 @@ validation, pacing and cache detail.
 
 For a supported storage upgrade, stop Wake and run `wake upgrade` with the new
 binary. Review the plan and any rule release notes, run the confirmation command
-it prints, then start Wake. See the [forward upgrade guide](.docs/product/coverage.md#forward-upgrades)
-for backups, unattended upgrades, and recovery.
+it prints, then start Wake. See [forward upgrades](.docs/product/coverage.md#forward-upgrades)
+for unattended upgrades. Run `wake backup` with Wake stopped to make a paired
+SQLite snapshot archive. See [backup and recovery](.docs/engineering/recovery.md)
+for restore and source access review.
 
 To clear credentials or financial history, stop Wake and preview the configured files:
 

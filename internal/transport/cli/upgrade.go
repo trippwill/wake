@@ -15,6 +15,32 @@ import (
 	"go.trippwill.dev/wake/internal/daemon"
 )
 
+func performBackup(ctx context.Context, c *cli.Command) error {
+	if err := requireNoArgs(c); err != nil {
+		return err
+	}
+
+	resolved, err := config.ResolveReadOnly(c)
+	if err != nil {
+		return failure("configure backup: %v", err)
+	}
+
+	path, err := daemon.BackupStorage(ctx, resolved.Config, newLogger(c.ErrWriter, resolved.Config.Log.Level))
+	if err != nil {
+		return failure("backup: %v", err)
+	}
+
+	if commandJSON(c) {
+		return json.NewEncoder(c.Writer).Encode(struct {
+			BackupPath string `json:"backup_path"`
+		}{path})
+	}
+
+	writef(c.Writer, "Backup written to %s\n", path)
+
+	return nil
+}
+
 func performUpgrade(ctx context.Context, c *cli.Command) error {
 	if err := requireNoArgs(c); err != nil {
 		return err

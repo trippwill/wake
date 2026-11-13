@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,7 +137,11 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	var reports atomic.Value
 	reports.Store(report)
 
+	var sourceCalls atomic.Int64
+
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceCalls.Add(1)
+
 		switch r.URL.Path {
 		case "/SendRequest":
 			if r.URL.Query().Get("q") == "456" {
@@ -1181,7 +1186,103 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 		t.Fatal("unchanged synchronization advanced version")
 	}
 
+	readPositions := func() []byte {
+		t.Helper()
+
+		response, e := socketClient.Get("http://wake/v1/accounts/" + accountID + "/positions")
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer func() { _ = response.Body.Close() }()
+
+		body, e := io.ReadAll(response.Body)
+		if e != nil || response.StatusCode != http.StatusOK {
+			t.Fatal("positions", response.StatusCode, e)
+		}
+
+		return body
+	}
+
+	beforePositions := readPositions()
+
 	stop()
+	func() {
+		work := host.WorkKey{Connection: connection, Stream: ibkrflex.Confirmations, Operation: "acquire"}
+		setBackupWork(t, cfg, work, true)
+		defer setBackupWork(t, cfg, work, false)
+
+		archive, e := BackupStorage(ctx, cfg, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		restored := t.TempDir()
+		//nolint:gosec // Extract Wake's own two-entry archive into an empty private test directory.
+		extract := exec.CommandContext(ctx, "tar", "-xf", archive, "-C", restored)
+		if output, e := extract.CombinedOutput(); e != nil {
+			t.Fatal(e, string(output))
+		}
+
+		restored = filepath.Join(restored, "wake-upgrade")
+		//nolint:gosec // A private test directory needs owner traversal permission.
+		if e = os.Chmod(restored, 0o700); e != nil {
+			t.Fatal(e)
+		}
+
+		entries, e := os.ReadDir(restored)
+		if e != nil || len(entries) != 2 {
+			t.Fatal("restore needs more than the two snapshots", entries, e)
+		}
+
+		originalConfig, originalMirror := cfg, statePath
+		defer func() {
+			stop()
+
+			cfg, statePath = originalConfig, originalMirror
+		}()
+
+		cfg.Storage.WarehousePath = filepath.Join(restored, "warehouse.db")
+		cfg.Storage.ConnectionsPath = filepath.Join(restored, "access.db")
+		cfg.Restored = true
+		statePath = filepath.Join(t.TempDir(), "restore-mirror.db")
+
+		calls := sourceCalls.Load()
+
+		start()
+		consume(false)
+
+		if got := mirror(); !reflect.DeepEqual(got, after) || !bytes.Equal(readPositions(), beforePositions) {
+			t.Fatal("restored snapshot or positions differ from the original")
+		}
+
+		stop()
+
+		cfg.Restored = false
+		master := cfg.Credentials.MasterKeyPath
+		cfg.Credentials.MasterKeyPath = ""
+
+		start()
+		consume(false)
+
+		if got := mirror(); !reflect.DeepEqual(got, after) || !bytes.Equal(readPositions(), beforePositions) ||
+			sourceCalls.Load() != calls {
+			t.Fatal("offline restart changed the restored publication or contacted upstream")
+		}
+
+		stop()
+
+		cfg.Credentials.MasterKeyPath = master
+		verifyRestoredAccess(t, cfg, envelope, registration, connection, now.Add(24*time.Hour))
+
+		if sourceCalls.Load() <= calls {
+			t.Fatal("no provider request after explicit resume")
+		}
+	}()
+
+	if output := os.Getenv("WAKE_BACKUP_TEST_EXPORT"); output != "" {
+		exportRestoreFixture(t, cfg, output)
+	}
+
 	// Recreating access keeps the warehouse identity and accepted publication intact.
 	if err = os.Remove(profile.ConnectionsPath); err != nil {
 		t.Fatal(err)
@@ -1270,5 +1371,105 @@ func TestSocketConsumerAcceptance(t *testing.T) {
 	if err = unavailable.Run(); err == nil || !strings.Contains(failureOut.String(), `"status":"failed"`) ||
 		!strings.Contains(failureProgress.String(), "Socket consumer failed") {
 		t.Fatal("standalone failure status", err, failureOut.String(), failureProgress.String())
+	}
+}
+
+func setBackupWork(t *testing.T, cfg config.Config, work host.WorkKey, enabled bool) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	s, err := persistence.Open(ctx, persistence.Profile{
+		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	if err = s.Schedule(ctx, work, enabled); err != nil {
+		t.Fatal(err)
+	}
+
+	if enabled {
+		if err = s.Retry(ctx, work); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func verifyRestoredAccess(
+	t *testing.T,
+	cfg config.Config,
+	envelope *credential.Envelope,
+	registration provider.Registration,
+	connection string,
+	now time.Time,
+) {
+	t.Helper()
+	ctx := t.Context()
+
+	s, err := persistence.Open(ctx, persistence.Profile{
+		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = s.Close() }()
+
+	view, err := s.SourceAccess(ctx)
+	if err != nil || !view.Storage.Paused {
+		t.Fatal("restored pause did not survive restart", view.Storage, err)
+	}
+
+	clock := func() time.Time { return now }
+
+	h, err := host.New(ctx, s, envelope, nil, clock, nil, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	if err = h.CheckAccess(ctx, connection); err != nil {
+		t.Fatal("restored credential could not be opened with its original key", err)
+	}
+
+	w := application.New(s, h, nil, clock, nil)
+	work := host.WorkKey{Connection: connection, Stream: ibkrflex.Confirmations, Operation: "acquire"}
+
+	if err = w.ResumeStorage(ctx, view.Storage.Revision, "restore-test"); err != nil {
+		t.Fatal("restored pair could not resume after review", err)
+	}
+
+	workReady, err := s.PendingWork(ctx, now)
+	if err != nil || !slices.Contains(workReady, work) {
+		t.Fatal("restored checkpoint is not eligible after resume", workReady, err)
+	}
+
+	if err = w.RunOnce(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func exportRestoreFixture(t *testing.T, cfg config.Config, dir string) {
+	t.Helper()
+
+	archive, err := BackupStorage(t.Context(), cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for target, source := range map[string]string{"pair.tar": archive, "master.key": cfg.Credentials.MasterKeyPath} {
+		//nolint:gosec // Export only this test's synthetic profile and disposable key.
+		data, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		//nolint:gosec // The test runner selects the destination and the entry names are fixed.
+		if err = os.WriteFile(filepath.Join(dir, target), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -192,6 +192,7 @@ func run(
 			Registrations:     registrations,
 			ConnectionsPath:   cfg.Storage.ConnectionsPath,
 			UnattendedUpgrade: cfg.Storage.UnattendedUpgrade,
+			Restored:          cfg.Restored,
 		},
 		logger,
 	)

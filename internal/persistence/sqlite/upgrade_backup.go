@@ -17,6 +17,7 @@ import (
 
 const (
 	upgradeBackupSuffix       = ".upgrade-backup.tar"
+	backupSuffix              = ".backup.tar"
 	ErrUpgradeBackup    Error = "pre-upgrade backup unavailable; check the backup path and free space or restore a verified pair"
 )
 
@@ -35,10 +36,7 @@ func (r backupReader) Read(data []byte) (int, error) {
 	return r.reader.Read(data)
 }
 
-func verifyBackupSource(ctx context.Context, path string, owner *os.File) error {
-	db := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{owner}, probe: true})
-	defer func() { _ = db.Close() }()
-
+func verifyBackupSource(ctx context.Context, db *sql.DB) error {
 	var result string
 	if err := db.QueryRowContext(ctx, profileStatement("Integrity", "main")).Scan(&result); err != nil {
 		return err
@@ -51,21 +49,40 @@ func verifyBackupSource(ctx context.Context, path string, owner *os.File) error 
 	return nil
 }
 
-// createUpgradeBackup copies both locked files before either writable SQLite
-// connection opens. The archive replaces the preceding backup atomically.
+// createUpgradeBackup is called with both originals locked until publication.
 func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.File) (string, error) {
+	if err := checkBackupDestination(plan.BackupPath); err != nil {
+		return "", err
+	}
+
+	dir, err := os.MkdirTemp(filepath.Dir(plan.BackupPath), ".wake-snapshots-")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	var snapshots [2]string
 	for i, store := range plan.Stores {
-		if err := checkUpgradeJournals(store.Path); err != nil {
+		if err = checkUpgradeJournals(store.Path); err != nil {
 			return "", err
 		}
 
-		if err := verifyBackupSource(ctx, store.Path, owners[i]); err != nil {
+		snapshots[i] = filepath.Join(dir, filepath.Base(backupEntries[i]))
+		if err = snapshotStore(ctx, store, owners[i], snapshots[i]); err != nil {
 			return "", err
 		}
 	}
 
-	if err := checkBackupDestination(plan.BackupPath); err != nil {
+	warehouse := sql.OpenDB(&connector{paths: [2]string{snapshots[0]}, probe: true})
+	defer func() { _ = warehouse.Close() }()
+
+	var accessID string
+	if err = warehouse.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
 		return "", err
+	}
+
+	if accessID != plan.Stores[1].ID {
+		return "", ErrAssociation
 	}
 
 	temp, err := os.CreateTemp(filepath.Dir(plan.BackupPath), ".wake-backup-")
@@ -79,20 +96,8 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 	hash := sha256.New()
 
 	archive := tar.NewWriter(io.MultiWriter(temp, hash))
-	for i, owner := range owners {
-		info, err := owner.Stat()
-		if err != nil {
-			return "", err
-		}
-
-		if err = archive.WriteHeader(
-			&tar.Header{Name: backupEntries[i], Mode: 0o600, Size: info.Size()},
-		); err != nil {
-			return "", err
-		}
-
-		reader := io.NewSectionReader(owner, 0, info.Size())
-		if _, err = io.Copy(archive, backupReader{ctx, reader}); err != nil {
+	for i, path := range snapshots {
+		if err = archiveSnapshot(ctx, archive, path, backupEntries[i]); err != nil {
 			return "", err
 		}
 	}
@@ -123,6 +128,55 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 	}
 
 	return expected, syncUpgradeDir(plan.BackupPath)
+}
+
+func snapshotStore(ctx context.Context, store UpgradeStore, owner *os.File, path string) error {
+	source := sql.OpenDB(&connector{paths: [2]string{store.Path}, owners: [2]*os.File{owner}, probe: true})
+	defer func() { _ = source.Close() }()
+
+	if err := verifyBackupSource(ctx, source); err != nil {
+		return err
+	}
+
+	if _, err := source.ExecContext(ctx, profileStatement("BackupSnapshot", ""), path); err != nil {
+		return err
+	}
+
+	snapshot := sql.OpenDB(&connector{paths: [2]string{path}, probe: true})
+	defer func() { _ = snapshot.Close() }()
+
+	var kind, version, id string
+	if err := snapshot.QueryRowContext(ctx, profileStatement("Metadata", "main")).
+		Scan(&kind, &version, &id); err != nil {
+		return err
+	}
+
+	if kind != store.Kind || version != store.Current || id != store.ID {
+		return ErrAssociation
+	}
+
+	return nil
+}
+
+func archiveSnapshot(ctx context.Context, archive *tar.Writer, path, name string) error {
+	file, err := os.Open(path) // #nosec G304 -- generated filename in Wake's private staging directory.
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	if err = archive.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: info.Size()}); err != nil {
+		return err
+	}
+
+	_, err = io.Copy(archive, backupReader{ctx, file})
+
+	return err
 }
 
 // checkBackupDestination protects existing files outside Wake's archive format.

@@ -214,6 +214,31 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 
 			assertBackupPair(t, plan.BackupPath, before)
 
+			restored := testProfile(filepath.Join(t.TempDir(), "restored.db"))
+			//nolint:gosec // A private test directory needs owner traversal permission.
+			if err = os.Chmod(filepath.Dir(restored.WarehousePath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			restored.Restored = true
+			extractBackupPair(t, plan.BackupPath, restored)
+
+			copy, err := Open(t.Context(), restored, nil)
+			if err != nil {
+				t.Fatal("restored pair could not start on the earlier format", err)
+			}
+
+			recovery, err := copy.queries.Profile(t.Context())
+			if err != nil || recovery.Paused != 1 || recovery.AccessID != plan.Stores[1].ID {
+				t.Fatal(recovery, err)
+			}
+
+			assertMigratedFixture(t, copy, releaseBaseline(), plan)
+
+			if err = copy.Close(); err != nil {
+				t.Fatal(err)
+			}
+
 			var loggedPlan UpgradePlan
 			for line := range strings.SplitSeq(logs.String(), "\n") {
 				var entry struct {
@@ -624,6 +649,19 @@ func TestUpgradePlansInterveningStepsAndNotes(t *testing.T) {
 func assertBackupPair(t *testing.T, path string, expected [2][]byte) {
 	t.Helper()
 
+	p := testProfile(filepath.Join(t.TempDir(), "snapshot.db"))
+	extractBackupPair(t, path, p)
+
+	for i, data := range storeBytes(t, p) {
+		if got, want := backupContents(t, data), backupContents(t, expected[i]); !reflect.DeepEqual(got, want) {
+			t.Fatal("snapshot contents or row order differ from original", backupEntries[i])
+		}
+	}
+}
+
+func extractBackupPair(t *testing.T, path string, p Profile) {
+	t.Helper()
+
 	file, err := openBackup(path)
 	if err != nil {
 		t.Fatal(err)
@@ -639,14 +677,97 @@ func assertBackupPair(t *testing.T, path string, expected [2][]byte) {
 		}
 
 		data, e := io.ReadAll(archive)
-		if e != nil || !bytes.Equal(data, expected[i]) {
-			t.Fatal("backup entry differs from original", name, e)
+		if e != nil {
+			t.Fatal(name, e)
+		}
+
+		if e = os.WriteFile(p.paths()[i], data, 0o600); e != nil {
+			t.Fatal(e)
 		}
 	}
 
 	if _, err = archive.Next(); err != io.EOF {
 		t.Fatal("unexpected additional backup entry", err)
 	}
+}
+
+func backupContents(t *testing.T, data []byte) map[string][][]any {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "snapshot.db")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+
+	db := sql.OpenDB(&connector{paths: [2]string{path}, probe: true})
+	defer func() { _ = db.Close() }()
+
+	tables, err := db.QueryContext(
+		ctx,
+		"SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tables.Close() }()
+
+	out := map[string][][]any{}
+	for tables.Next() {
+		var name string
+		if err = tables.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+
+		out[name] = backupRows(t, db, name)
+	}
+
+	if err = tables.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	return out
+}
+
+func backupRows(t *testing.T, db *sql.DB, name string) [][]any {
+	t.Helper()
+
+	//nolint:gosec // Quote a schema identifier from the disposable test database.
+	rows, err := db.QueryContext(
+		t.Context(),
+		`SELECT * FROM "`+strings.ReplaceAll(name, `"`, `""`)+`" ORDER BY rowid`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var values [][]any
+	for rows.Next() {
+		row := make([]any, len(columns))
+		dest := make([]any, len(columns))
+		for i := range row {
+			dest[i] = &row[i]
+		}
+
+		if err = rows.Scan(dest...); err != nil {
+			t.Fatal(err)
+		}
+
+		values = append(values, row)
+	}
+
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	return values
 }
 
 func TestUpgradeBackupFailureLeavesStoresUntouched(t *testing.T) {
@@ -885,6 +1006,55 @@ func TestUpgradeRejectsMigrationsThatFailTargetVerification(t *testing.T) {
 			}
 
 			assertBackupPair(t, plan.BackupPath, before)
+		})
+	}
+}
+
+func TestRestoredStartupRefusesMixedMissingOrDamagedPair(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want error
+	}{
+		{"mixed", ErrUpgradePair},
+		{"missing", ErrUpgradePair},
+		{"damaged", ErrUnsupportedSchema},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := seedUpgradeStores(t)
+			switch test.name {
+			case "mixed":
+				other := seedUpgradeStores(t)
+				if err := os.WriteFile(p.ConnectionsPath, storeBytes(t, other)[1], 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "missing":
+				if err := os.Remove(p.ConnectionsPath); err != nil {
+					t.Fatal(err)
+				}
+			case "damaged":
+				if err := os.WriteFile(p.ConnectionsPath, []byte("truncated snapshot"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			//nolint:gosec // Read only this test's disposable warehouse.
+			before, err := os.ReadFile(p.WarehousePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			p.Restored = true
+
+			s, err := Open(t.Context(), p, nil)
+			if s != nil || !errors.Is(err, test.want) {
+				t.Fatal(s, err)
+			}
+
+			//nolint:gosec // Read only this test's disposable warehouse.
+			after, err := os.ReadFile(p.WarehousePath)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("refused restore changed warehouse", err)
+			}
 		})
 	}
 }

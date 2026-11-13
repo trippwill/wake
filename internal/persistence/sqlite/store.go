@@ -46,6 +46,7 @@ type Profile struct {
 	WarehousePath, ConnectionsPath string
 	Registrations                  []provider.Registration
 	UnattendedUpgrade              bool
+	Restored                       bool
 }
 
 func (p Profile) paths() [2]string {
@@ -179,7 +180,7 @@ func openStore(
 		}
 
 		for _, other := range paths[:i] {
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix} {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, backupSuffix} {
 				if path == other+suffix || other == path+suffix {
 					return nil, ErrUnsafeStore
 				}
@@ -330,6 +331,10 @@ func openStore(
 		return nil, ErrUpgradeRecovery
 	}
 
+	if (upgrade.backup || profile.Restored) && intent.Plan.ID != "" {
+		return nil, ErrUpgradeRecovery
+	}
+
 	var (
 		plan   UpgradePlan
 		chains [2][]migration
@@ -366,11 +371,36 @@ func openStore(
 		}
 	}
 
+	if upgrade.backup || profile.Restored {
+		if !present[0] || !present[1] || metadata[1].id != previous {
+			return nil, ErrUpgradePair
+		}
+
+		if plan.needed() {
+			return nil, ErrUnsupportedSchema
+		}
+	}
+
+	if profile.Restored {
+		for _, path := range paths {
+			if err = checkUpgradeJournals(path); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if upgrade.backup {
+		plan.BackupPath = paths[0] + backupSuffix
+		if _, e := createUpgradeBackup(ctx, plan, s.owners); e != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, e)
+		}
+	}
+
 	if upgrade.result != nil {
 		*upgrade.result = plan
 	}
 
-	if upgrade.preview {
+	if upgrade.preview || upgrade.backup {
 		return nil, nil
 	}
 
@@ -454,7 +484,15 @@ func openStore(
 		}
 	} else {
 		accessChanged := present[0] && present[1] && metadata[1].id != previous
-		if err = s.initialize(ctx, present, metadata, accessChanged, baseline, chains); err != nil {
+		if err = s.initialize(
+			ctx,
+			present,
+			metadata,
+			accessChanged,
+			baseline,
+			chains,
+			profile.Restored,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -567,6 +605,7 @@ func (s *Store) initialize(
 	accessChanged bool,
 	baseline upgradeBaseline,
 	chains [2][]migration,
+	restored bool,
 ) error {
 	started := time.Now()
 
@@ -653,6 +692,10 @@ func (s *Store) initialize(
 			metadata[1].id,
 			review,
 		); err != nil {
+			return err
+		}
+	case restored:
+		if _, err = tx.ExecContext(ctx, profileStatement("PauseRestoredProfile", "")); err != nil {
 			return err
 		}
 	}

@@ -16,6 +16,52 @@ import (
 	"go.trippwill.dev/wake/internal/daemon"
 )
 
+func TestBackupCLIArchivesStoppedPair(t *testing.T) {
+	cfg, path, _ := setupDaemonFixture(t)
+	args := []string{"--json", "backup", "--config", path}
+
+	var out, stderr bytes.Buffer
+	if status := Run(args, &out, &stderr); status != exitFailure ||
+		!strings.Contains(stderr.String(), "matching warehouse and access store") {
+		t.Fatal(status, out.String(), stderr.String())
+	}
+
+	if _, err := os.Stat(cfg.Storage.WarehousePath); !os.IsNotExist(err) {
+		t.Fatal("backup created missing database", err)
+	}
+
+	stop, _ := startShellDaemon(t, cfg)
+	defer stop()
+
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(args, &out, &stderr); status != exitFailure ||
+		!strings.Contains(stderr.String(), "unsafe or already owned") {
+		t.Fatal(status, out.String(), stderr.String())
+	}
+
+	stop()
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(args, &out, &stderr); status != exitOK {
+		t.Fatal(status, out.String(), stderr.String())
+	}
+
+	var result struct {
+		BackupPath string `json:"backup_path"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil ||
+		result.BackupPath != cfg.Storage.WarehousePath+".backup.tar" {
+		t.Fatal(out.String(), err)
+	}
+
+	if file, err := os.Stat(result.BackupPath); err != nil || file.Mode().Perm() != 0o600 {
+		t.Fatal("backup archive missing or permissions changed", file, err)
+	}
+}
+
 func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	warehouse := filepath.Join(dir, "missing", "warehouse.db")

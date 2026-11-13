@@ -381,8 +381,8 @@ Each file has an explicit format and independent identity. The access store has
 no reverse binding to a warehouse. Wake checks ownership and supported migration
 paths before opening a writable connection. A plan that requires a history rebuild
 needs explicit approval or the operator's unattended upgrade setting. Wake
-checks both databases under their ownership locks and verifies a durable copy of
-the pair before writing either store. The private upgrade intent binds approval
+checks both databases under their ownership locks and verifies a durable archive
+of standalone SQLite snapshots before writing either store. The private upgrade intent binds approval
 to the original files and the backup checksum. An interrupted upgrade verifies
 and reuses that copy before SQLite recovers the attached transaction.
 
@@ -398,7 +398,9 @@ warehouse. Reset checks filesystem ownership without opening SQLite or reading k
 A warehouse remains inspectable without source credentials. Missing or replaced
 access starts upstream work paused until authenticated review, required repair
 and explicit resume. Retained pacing restrictions and acknowledged progress remain
-in the warehouse. An intact restart retains authority and scheduling.
+in the warehouse. An intact restart retains authority and scheduling. An explicit
+restore checks the original pairing and persists the same upstream pause before
+starting the workers.
 
 A fresh warehouse can reuse retained settings and encrypted credentials. It starts
 paused until explicit resume and bounded discovery; account confirmation is still

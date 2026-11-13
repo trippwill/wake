@@ -16,6 +16,13 @@ const ErrUpgradeConfirmation = persistence.ErrUpgradeConfirmation
 
 type UpgradePlan = persistence.UpgradePlan
 
+func BackupStorage(ctx context.Context, cfg config.Config, logger *slog.Logger) (string, error) {
+	return persistence.Backup(ctx, persistence.Profile{
+		WarehousePath:   cfg.Storage.WarehousePath,
+		ConnectionsPath: cfg.Storage.ConnectionsPath,
+	}, logger)
+}
+
 func UpgradeStorage(
 	ctx context.Context,
 	cfg config.Config,

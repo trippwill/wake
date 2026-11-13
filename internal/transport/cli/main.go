@@ -141,10 +141,18 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action: performSetup,
 		},
 		{
-			Name:   "serve",
-			Usage:  "Run the Wake daemon",
-			Flags:  serveFlags,
+			Name:  "serve",
+			Usage: "Run the Wake daemon",
+			Flags: append(serveFlags, &cli.BoolFlag{
+				Name: "restored", Usage: "Start a restored database pair with upstream work paused for review",
+			}),
 			Action: performServe,
+		},
+		{
+			Name:   "backup",
+			Usage:  "Create a paired SQLite snapshot archive with Wake stopped",
+			Flags:  append(common(), config.Flags()...),
+			Action: performBackup,
 		},
 		{
 			Name:  "upgrade",

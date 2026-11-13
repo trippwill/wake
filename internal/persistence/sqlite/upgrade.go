@@ -85,8 +85,18 @@ func (p UpgradePlan) needed() bool { return len(p.Steps) != 0 || p.Rebuild == "r
 
 type upgradeOptions struct {
 	preview bool
+	backup  bool
 	confirm string
 	result  *UpgradePlan
+}
+
+// Backup creates a verified archive of a stopped, supported pair.
+func Backup(ctx context.Context, profile Profile, logger *slog.Logger) (string, error) {
+	var plan UpgradePlan
+
+	_, err := openStore(ctx, profile, logger, releaseBaseline(), upgradeOptions{backup: true, result: &plan})
+
+	return plan.BackupPath, err
 }
 
 // Upgrade previews or applies an exact offline upgrade plan.
@@ -471,7 +481,7 @@ func (s *Store) recoverOrApplyUpgrade(
 		return err
 	}
 
-	if err = s.initialize(ctx, [2]bool{true, true}, metadata, false, baseline, chains); err != nil {
+	if err = s.initialize(ctx, [2]bool{true, true}, metadata, false, baseline, chains, false); err != nil {
 		return fmt.Errorf("%w: %w", ErrUpgradeRecovery, err)
 	}
 
