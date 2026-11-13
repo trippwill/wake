@@ -82,6 +82,12 @@ func ResetStorage(
 	files := []string{}
 
 	protected := map[string]bool{}
+	for _, db := range all {
+		if db.Name != target {
+			protected[db.Path] = true
+		}
+	}
+
 	for _, path := range []string{configPath, cfg.Credentials.MasterKeyPath} {
 		if path != "" {
 			protected[filepath.Clean(path)] = true

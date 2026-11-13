@@ -439,6 +439,26 @@ func TestResetPreservesAccessNeededByAnInterruptedUpgrade(t *testing.T) {
 	assertResetFiles(t, files, removed)
 }
 
+func TestWarehouseResetRefusesAnAccessStoreAtTheUpgradeIntentPath(t *testing.T) {
+	cfg, path, files := resetFixture(t)
+	access := cfg.Storage.WarehousePath + ".upgrade-intent"
+	files[access] = []byte("synthetic access store")
+	if err := os.WriteFile(access, files[access], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(
+		[]string{"reset", "warehouse", "--config", path, "--confirm", "--connections-path", access},
+		&stdout,
+		&stderr,
+	); code != exitFailure || !strings.Contains(stderr.String(), "reset refuses unsafe") {
+		t.Fatal(code, stdout.String(), stderr.String())
+	}
+
+	assertResetFiles(t, files, nil)
+}
+
 func TestResetReportsPartialRemovalAndRefusesChangedFile(t *testing.T) {
 	cfg, path, files := resetFixture(t)
 	journal := cfg.Storage.WarehousePath + "-journal"
