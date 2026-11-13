@@ -727,21 +727,8 @@ func (s *Store) initialize(
 			return ErrCorrupt
 		}
 
-		rows, e := tx.QueryContext(ctx, profileStatement("ForeignCheck", schema))
-		if e != nil {
-			return e
-		}
-
-		invalid := rows.Next()
-		e = rows.Err()
-		_ = rows.Close()
-
-		if e != nil {
-			return e
-		}
-
-		if invalid {
-			return ErrCorrupt
+		if err = checkForeignKeys(ctx, tx, schema); err != nil {
+			return err
 		}
 	}
 
@@ -813,6 +800,20 @@ func (s *Store) initialize(
 	}
 
 	return err
+}
+
+func checkForeignKeys(ctx context.Context, db sqlc.DBTX, schema string) error {
+	rows, err := db.QueryContext(ctx, profileStatement("ForeignCheck", schema))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	if rows.Next() {
+		return ErrCorrupt
+	}
+
+	return rows.Err()
 }
 
 // Every physical writer connection attaches the same owned files and establishes

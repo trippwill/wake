@@ -155,7 +155,7 @@ func snapshotStore(ctx context.Context, store UpgradeStore, owner *os.File, path
 		return ErrAssociation
 	}
 
-	return nil
+	return checkForeignKeys(ctx, snapshot, "main")
 }
 
 func archiveSnapshot(ctx context.Context, archive *tar.Writer, path, name string) error {

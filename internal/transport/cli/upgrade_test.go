@@ -60,6 +60,26 @@ func TestBackupCLIArchivesStoppedPair(t *testing.T) {
 	if file, err := os.Stat(result.BackupPath); err != nil || file.Mode().Perm() != 0o600 {
 		t.Fatal("backup archive missing or permissions changed", file, err)
 	}
+
+	out.Reset()
+	stderr.Reset()
+
+	if status := Run(args[1:], &out, &stderr); status != exitOK ||
+		!strings.Contains(out.String(), "Backup written to "+result.BackupPath) {
+		t.Fatal(status, out.String(), stderr.String())
+	}
+}
+
+func TestBackupCLIRejectsArgumentsAndMissingConfig(t *testing.T) {
+	for _, args := range [][]string{
+		{"backup", "unexpected"},
+		{"backup", "--config", filepath.Join(t.TempDir(), "missing.toml")},
+	} {
+		var out, stderr bytes.Buffer
+		if status := Run(args, &out, &stderr); status == exitOK || out.Len() != 0 || stderr.Len() == 0 {
+			t.Fatal(args, status, out.String(), stderr.String())
+		}
+	}
 }
 
 func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T) {

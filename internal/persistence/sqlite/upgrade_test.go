@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1055,6 +1056,94 @@ func TestRestoredStartupRefusesMixedMissingOrDamagedPair(t *testing.T) {
 			if err != nil || !bytes.Equal(before, after) {
 				t.Fatal("refused restore changed warehouse", err)
 			}
+		})
+	}
+}
+
+func TestBackupRefusesRecoveryFilesAndKeepsPreviousArchive(t *testing.T) {
+	p := seedUpgradeStores(t)
+	ctx := t.Context()
+
+	archive, err := Backup(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	original := storeBytes(t, p)
+
+	info, err := os.Stat(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	journal := p.WarehousePath + "-journal"
+	if err = os.WriteFile(journal, []byte("pending rollback"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Backup(ctx, p, nil); !errors.Is(err, ErrUpgradeRecovery) {
+		t.Fatal("backup accepted an unresolved rollback journal", err)
+	}
+
+	p.Restored = true
+	if s, e := Open(ctx, p, nil); s != nil || !errors.Is(e, ErrUpgradeRecovery) {
+		t.Fatal("restore accepted an unresolved rollback journal", s, e)
+	}
+
+	if after, e := os.Stat(archive); e != nil || !os.SameFile(info, after) {
+		t.Fatal("backup replaced the verified archive", e)
+	}
+
+	if !reflect.DeepEqual(storeBytes(t, p), original) {
+		t.Fatal("refused recovery modified the stores")
+	}
+}
+
+func TestBackupRefusesForeignKeyViolations(t *testing.T) {
+	for _, test := range []struct {
+		store int
+		query string
+	}{
+		{0, "INSERT INTO normalization_receipts VALUES('missing', 'fixture', X'00')"},
+		{1, "INSERT INTO credentials VALUES('missing', 'token', X'00')"},
+	} {
+		t.Run(storeKinds[test.store], func(t *testing.T) {
+			ctx := t.Context()
+			p := seedUpgradeStores(t)
+
+			archive, err := Backup(ctx, p, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			good := storeBytes(t, p)
+
+			info, err := os.Stat(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			uri := (&url.URL{Scheme: "file", Path: p.paths()[test.store], RawQuery: "mode=rw"}).String()
+
+			db, err := sql.Open("sqlite", uri)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = db.ExecContext(ctx, "PRAGMA foreign_keys=OFF; "+test.query)
+			if err = errors.Join(err, db.Close()); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err = Backup(ctx, p, nil); !errors.Is(err, ErrCorrupt) {
+				t.Fatal("backup accepted a foreign-key violation", err)
+			}
+
+			if after, e := os.Stat(archive); e != nil || !os.SameFile(info, after) {
+				t.Fatal("invalid backup replaced the last verified archive", e)
+			}
+
+			assertBackupPair(t, archive, good)
 		})
 	}
 }
