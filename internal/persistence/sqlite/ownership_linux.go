@@ -11,6 +11,10 @@ import (
 )
 
 func claimFile(path string) (*os.File, error) {
+	return lockStoreFile(path, true)
+}
+
+func lockStoreFile(path string, create bool) (*os.File, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return nil, ErrUnsafeStore
 	}
@@ -19,10 +23,15 @@ func claimFile(path string) (*os.File, error) {
 	if err != nil || !dir.IsDir() || !privateOwned(dir) {
 		return nil, ErrUnsafeStore
 	}
+
+	flags := os.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
+	if create {
+		flags = os.O_CREATE | os.O_RDWR | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
+	}
 	//nolint:gosec // Absolute path in a private owned directory; reject final-component symlinks and special files.
 	file, err := os.OpenFile(
 		path,
-		os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC,
+		flags,
 		0o600,
 	)
 	if err != nil {
@@ -96,6 +105,46 @@ func storeSidecars(path string) ([]string, error) {
 		if ok && len(suffix) == 9 && suffix[6] == '9' && strings.Trim(suffix, "0123456789ABCDEFabcdef") == "" {
 			files = append(files, filepath.Join(filepath.Dir(path), entry.Name()))
 		}
+	}
+
+	return files, nil
+}
+
+func singleLink(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Nlink == 1
+}
+
+func openUpgradeIntent(path string, expected os.FileInfo) (*os.File, error) {
+	//nolint:gosec // The private parent is checked before access and the inode is verified below.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, ErrUpgradeRecovery
+	}
+
+	actual, err := file.Stat()
+	if err != nil || !os.SameFile(actual, expected) || !privateOwned(actual) || !singleLink(actual) {
+		_ = file.Close()
+		return nil, ErrUpgradeRecovery
+	}
+
+	return file, nil
+}
+
+func upgradeFiles(owners [2]*os.File) ([2]upgradeFile, error) {
+	var files [2]upgradeFile
+	for i, owner := range owners {
+		if owner == nil {
+			return files, ErrUpgradeRecovery
+		}
+
+		info, err := owner.Stat()
+		if err != nil {
+			return files, ErrUpgradeRecovery
+		}
+
+		stat := info.Sys().(*syscall.Stat_t)
+		files[i] = upgradeFile{Device: stat.Dev, Inode: stat.Ino}
 	}
 
 	return files, nil

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -453,5 +454,58 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 	poll, err = s.Checkpoint(ctx, positionsKey)
 	if err != nil || !poll.Next.Equal(paced.Next) {
 		t.Fatalf("positions override moved poll ahead of pacing: %+v %v", poll, err)
+	}
+
+	h.Close()
+	srv.Close()
+
+	t.Run("attended migration preserves explanations offline", func(t *testing.T) {
+		verifyUpgradeExplanation(t, s, testProfile(path), list.Items[0].Resource.ID)
+	})
+}
+
+func verifyUpgradeExplanation(t *testing.T, s *Store, profile Profile, id string) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	before, err := explainCurrent(ctx, s, "activity", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	registration, err := snaptrade.Registration(snaptrade.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile.Registrations = []provider.Registration{registration}
+	baseline := fixtureUpgrade(true, false, false)
+	baseline.migrations[0][0].sql += `
+INSERT INTO publishing_dirty SELECT kind,id FROM published_resources WHERE kind='activity' ON CONFLICT DO NOTHING;`
+	plan := previewFixture(t, profile, baseline)
+
+	migrated, err := openStore(ctx, profile, nil, baseline, upgradeOptions{confirm: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = migrated.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := openStore(ctx, profile, nil, baseline, upgradeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+
+	after, err := explainCurrent(ctx, reopened, "activity", id)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("migration changed the activity explanation", before, after, err)
 	}
 }

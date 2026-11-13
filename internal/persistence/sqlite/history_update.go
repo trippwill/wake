@@ -6,8 +6,6 @@ package persistence
 import (
 	"context"
 	"errors"
-	"strconv"
-	"strings"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -22,11 +20,9 @@ const (
 func (s *Store) HistoryUpdating() bool { return s.historyUpdating.Load() }
 
 func (s *Store) prepareHistoryUpdate(ctx context.Context, q *sqlc.Queries, fresh bool) error {
-	_, suffix, _ := strings.Cut(string(s.historyRule), "/")
-
-	version, err := strconv.ParseInt(suffix, 10, 64)
-	if err != nil || version < 1 {
-		return ErrHistoryVersion
+	version, err := ruleVersion(s.historyRule)
+	if err != nil {
+		return err
 	}
 
 	if fresh {

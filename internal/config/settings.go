@@ -48,6 +48,11 @@ func Settings() []Setting {
 			Description: "Absolute path to the active connection and encrypted credential database",
 		},
 		{
+			Key: "storage.unattended_upgrade", Flag: "storage-unattended-upgrade",
+			Type: "bool", Default: "false",
+			Description: "Approve supported upgrades that rebuild retained history during startup",
+		},
+		{
 			Key:         "paths.runtime_dir",
 			Flag:        "runtime-dir",
 			Type:        "string",
@@ -258,7 +263,8 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	for _, setting := range Settings() {
 		explicit := command.IsSet(setting.Flag)
 		authority := "default"
-		if strings.HasPrefix(setting.Key, "paths.") || strings.HasPrefix(setting.Key, "storage.") {
+		if strings.HasPrefix(setting.Key, "paths.") ||
+			(setting.Flag == "warehouse-path" || setting.Flag == "connections-path") {
 			authority = "XDG/default"
 		}
 
@@ -324,8 +330,9 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 	file = fileConfig{
 		Polling: file.Polling,
 		Storage: Storage{
-			WarehousePath:   command.String("warehouse-path"),
-			ConnectionsPath: command.String("connections-path"),
+			WarehousePath:     command.String("warehouse-path"),
+			ConnectionsPath:   command.String("connections-path"),
+			UnattendedUpgrade: command.Bool("storage-unattended-upgrade"),
 		},
 		Paths:       filePaths{RuntimeDir: command.String("runtime-dir")},
 		Log:         fileLog{Level: command.String("log-level")},
@@ -358,7 +365,8 @@ func fileSettingValues(file fileConfig) map[string]any {
 
 	return map[string]any{
 		"warehouse-path": file.Storage.WarehousePath, "connections-path": file.Storage.ConnectionsPath,
-		"runtime-dir": file.Paths.RuntimeDir, "log-level": file.Log.Level,
+		"storage-unattended-upgrade": file.Storage.UnattendedUpgrade,
+		"runtime-dir":                file.Paths.RuntimeDir, "log-level": file.Log.Level,
 		"master-key-path": file.Credentials.MasterKeyPath, "admin-port": port,
 		"admin-auth-mode": file.Admin.AuthMode, "admin-public-origin": file.Admin.PublicOrigin,
 		"admin-currency-refresh": currencyRefresh,

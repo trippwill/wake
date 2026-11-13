@@ -142,6 +142,22 @@ identifier whose meaning changed.
 See [current coverage](../product/coverage.md) for storage compatibility and
 evidence-preservation guidance.
 
+## Forward store upgrades
+
+The warehouse and access store each have an ordered migration chain starting at
+their v1 release formats. When either format changes, embed the forward migration
+as external SQL and update the matching fresh schema. Migration files run inside
+Wake's attached SQLite transaction. Keep transaction control and format metadata
+updates in the runner. Test the upgrade from retained v1 data and compare the
+result with a fresh store at the target format. Keep migration SQL stable once
+released because its contents identify the approved plan.
+
+Ship a release note with every retained-claims rule increment. Key the note by
+the new rule version in the upgrade baseline. Explain the change, which retained
+results can change, and which financial views will be temporarily unavailable.
+Preview and unattended startup show the same notes in version order, including
+intervening rule changes. Missing notes prevent an upgrade before storage writes.
+
 ## Coding conventions
 
 Follow the formatter and lint configuration. Go files carry the repository's MPL

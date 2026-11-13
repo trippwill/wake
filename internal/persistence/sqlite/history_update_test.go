@@ -113,7 +113,12 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		s, e := openWithHistoryRule(ctx, profile, nil, futureRule)
+		baseline := releaseBaseline()
+		baseline.rule = futureRule
+		baseline.notes = map[int64]string{2: "Preserve the full reported precision in the rebuilt fixture."}
+		profile.UnattendedUpgrade = true
+
+		s, e := openStore(ctx, profile, nil, baseline, upgradeOptions{})
 		if e != nil {
 			t.Fatal(e)
 		}

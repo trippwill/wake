@@ -11,6 +11,7 @@ import (
 	"database/sql/driver"
 	_ "embed"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
@@ -32,7 +33,7 @@ type Error string
 func (e Error) Error() string { return string(e) }
 
 const (
-	ErrUnsupportedSchema Error = "unsupported development store; stop Wake and preview wake reset warehouse or wake reset credentials using the same configuration; add --confirm to reset explicitly"
+	ErrUnsupportedSchema Error = "unsupported store format; use a compatible Wake build or restore a matching backup; for an unsupported development store, stop Wake and preview wake reset warehouse or wake reset credentials"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
@@ -44,6 +45,7 @@ const (
 type Profile struct {
 	WarehousePath, ConnectionsPath string
 	Registrations                  []provider.Registration
+	UnattendedUpgrade              bool
 }
 
 func (p Profile) paths() [2]string {
@@ -121,12 +123,11 @@ var (
 )
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
-	return openWithHistoryRule(ctx, profile, logger, application.RetainedClaimsRule)
+	return openStore(ctx, profile, logger, releaseBaseline(), upgradeOptions{})
 }
 
-// openWithHistoryRule lets the restart tests exercise a future rule against the release baseline.
-func openWithHistoryRule(
-	ctx context.Context, profile Profile, logger *slog.Logger, historyRule application.FinancialRule,
+func openStore(
+	ctx context.Context, profile Profile, logger *slog.Logger, baseline upgradeBaseline, upgrade upgradeOptions,
 ) (result *Store, resultErr error) {
 	started := time.Now()
 
@@ -162,6 +163,10 @@ func openWithHistoryRule(
 		}
 
 		info, err := os.Lstat(dir)
+		if upgrade.preview && os.IsNotExist(err) {
+			continue
+		}
+
 		if err != nil || !info.IsDir() || !privateOwned(info) {
 			return nil, ErrUnsafeStore
 		}
@@ -174,7 +179,7 @@ func openWithHistoryRule(
 		}
 
 		for _, other := range paths[:i] {
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix} {
 				if path == other+suffix || other == path+suffix {
 					return nil, ErrUnsafeStore
 				}
@@ -186,14 +191,22 @@ func openWithHistoryRule(
 		}
 	}
 
-	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: historyRule}
+	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: baseline.rule}
 	defer func() {
 		if result == nil {
 			_ = s.Close()
 		}
 	}()
 
+	intentPath := paths[0] + UpgradeIntentSuffix
+
+	intent, err := readUpgradeIntent(intentPath)
+	if err != nil {
+		return nil, err
+	}
+
 	var (
+		history  historyVersion
 		metadata [2]storeMetadata
 		present  [2]bool
 		previous string
@@ -208,6 +221,10 @@ func openWithHistoryRule(
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			sidecars, e := storeSidecars(path)
+			if upgrade.preview && os.IsNotExist(e) {
+				continue
+			}
+
 			if e != nil {
 				return nil, e
 			}
@@ -225,7 +242,7 @@ func openWithHistoryRule(
 			return nil, ErrUnsafeStore
 		}
 
-		s.owners[i], err = claimFile(path)
+		s.owners[i], err = lockStoreFile(path, false)
 		if err != nil {
 			return nil, err
 		}
@@ -240,6 +257,10 @@ func openWithHistoryRule(
 			}
 		}
 
+		if intent.Plan.ID != "" {
+			continue
+		}
+
 		probe := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{s.owners[i]}, probe: true})
 
 		var count int
@@ -249,14 +270,18 @@ func openWithHistoryRule(
 			m := &metadata[i]
 			err = probe.QueryRowContext(ctx, profileStatement("Metadata", "main")).
 				Scan(&m.kind, &m.version, &m.id)
-			expected := strings.Count([2]string{schemaSQL, connectionsSQL}[i], "CREATE TABLE")
-			if err == nil &&
-				(m.kind != storeKinds[i] || m.version != storeVersions[i] || m.id == "" || count != expected) {
+			expected := strings.Count(baseline.schemas[i], "CREATE TABLE")
+			if err == nil && (m.kind != storeKinds[i] || m.id == "" ||
+				m.version == baseline.formats[i] && count != expected) {
 				err = ErrUnsupportedSchema
 			}
 
 			if err == nil && i == 0 {
 				err = probe.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&previous)
+				if err == nil {
+					err = probe.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
+						Scan(&history.applied, &history.target)
+				}
 			}
 		} else if err == nil {
 			if info.Size() != 0 {
@@ -292,9 +317,100 @@ func openWithHistoryRule(
 		)
 	}
 
-	stage, storeKind = "association", "profile"
+	stage, storeKind = "upgrade_plan", "profile"
 
-	accessChanged := present[0] && present[1] && metadata[1].id != previous
+	// Read again under the store locks to reject an intent that changed while
+	// ownership was being acquired.
+	lockedIntent, err := readUpgradeIntent(intentPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if lockedIntent.Plan.ID != intent.Plan.ID {
+		return nil, ErrUpgradeRecovery
+	}
+
+	var (
+		plan   UpgradePlan
+		chains [2][]migration
+	)
+	if intent.Plan.ID != "" {
+		files, e := upgradeFiles(s.owners)
+		if e != nil {
+			return nil, e
+		}
+
+		if e = baseline.checkIntent(paths, files, lockedIntent); e != nil {
+			return nil, e
+		}
+
+		intent = lockedIntent
+		plan = intent.Plan
+		plan.RecoveryPending = true
+	} else {
+		plan, chains, err = baseline.plan(paths, metadata, present, history)
+		if err != nil {
+			return nil, err
+		}
+
+		if plan.needed() && (!present[0] || !present[1] || metadata[1].id != previous) {
+			return nil, ErrUpgradePair
+		}
+
+		if plan.needed() {
+			for _, path := range paths {
+				if err = checkUpgradeJournals(path); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	if upgrade.result != nil {
+		*upgrade.result = plan
+	}
+
+	if upgrade.preview {
+		return nil, nil
+	}
+
+	if upgrade.confirm != "" && upgrade.confirm != plan.ID {
+		return nil, ErrUpgradePlanChanged
+	}
+
+	if intent.Plan.ID == "" && plan.Rebuild == "required" && upgrade.confirm == "" &&
+		!profile.UnattendedUpgrade {
+		return nil, ErrUpgradeConfirmation
+	}
+
+	if intent.Plan.ID == "" && plan.needed() {
+		files, e := upgradeFiles(s.owners)
+		if e != nil {
+			return nil, e
+		}
+		// Log the same plan and notes as the preview before any store writes.
+		logger.InfoContext(ctx, "applying storage upgrade", "event", "daemon_upgrade_plan", "plan", plan)
+
+		stage = "upgrade_backup"
+
+		backupDigest, backupErr := createUpgradeBackup(ctx, plan, s.owners)
+		if backupErr != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, backupErr)
+		}
+
+		intent = upgradeIntent{Plan: plan, Files: files, BackupDigest: backupDigest}
+		if err = writeUpgradeIntent(intentPath, intent); err != nil {
+			return nil, err
+		}
+	}
+
+	if plan.RecoveryPending {
+		stage = "upgrade_backup"
+
+		if err = verifyUpgradeBackup(ctx, plan.BackupPath, intent.BackupDigest); err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrUpgradeBackup, plan.BackupPath, err)
+		}
+	}
 
 	stage, storeKind = "ownership", "profile"
 	// Do not create missing files until every existing store has passed preflight.
@@ -321,8 +437,41 @@ func openWithHistoryRule(
 	stopProgress := s.progress(ctx, "storage_open_progress", "open")
 	defer stopProgress()
 
-	if err := s.initialize(ctx, present, metadata, accessChanged); err != nil {
-		return nil, err
+	if plan.RecoveryPending {
+		logger.InfoContext(
+			ctx,
+			"recovering approved storage upgrade",
+			"event",
+			"daemon_upgrade_recovery",
+			"plan_id",
+			plan.ID,
+		)
+	}
+
+	if intent.Plan.ID != "" {
+		if err = s.recoverOrApplyUpgrade(ctx, paths, baseline, intent, intentPath); err != nil {
+			return nil, err
+		}
+	} else {
+		accessChanged := present[0] && present[1] && metadata[1].id != previous
+		if err = s.initialize(ctx, present, metadata, accessChanged, baseline, chains); err != nil {
+			return nil, err
+		}
+	}
+
+	if s.HistoryUpdating() && (plan.Rebuild == "approved" || plan.RecoveryPending) {
+		logger.InfoContext(
+			ctx,
+			"continuing approved history rebuild",
+			"event",
+			"daemon_history_upgrade",
+			"target_rule",
+			baseline.rule,
+		)
+	}
+
+	if upgrade.confirm != "" {
+		return s, nil
 	}
 
 	s.activityDB = sql.OpenDB(&connector{
@@ -330,8 +479,6 @@ func openWithHistoryRule(
 	})
 	s.activityDB.SetMaxOpenConns(1)
 	s.activityDB.SetMaxIdleConns(1)
-
-	var err error
 
 	s.activityQuery, err = s.activityDB.PrepareContext(ctx, adminActivitySQL)
 	if err != nil {
@@ -356,6 +503,14 @@ func storageCode(err error) string {
 	switch {
 	case errors.Is(err, ErrUnsafeStore):
 		return "unsafe_or_owned"
+	case errors.Is(err, ErrUpgradeConfirmation):
+		return "upgrade_confirmation_required"
+	case errors.Is(err, ErrUpgradeRecovery):
+		return "upgrade_recovery_required"
+	case errors.Is(err, ErrUpgradeBackup):
+		return "upgrade_backup_failed"
+	case errors.Is(err, ErrUpgradeNotes):
+		return "upgrade_release_notes_missing"
 	case errors.Is(err, ErrHistoryVersion):
 		return "unsupported_history_version"
 	case errors.Is(err, ErrUnsupportedSchema):
@@ -410,6 +565,8 @@ func (s *Store) initialize(
 	present [2]bool,
 	metadata [2]storeMetadata,
 	accessChanged bool,
+	baseline upgradeBaseline,
+	chains [2][]migration,
 ) error {
 	started := time.Now()
 
@@ -439,11 +596,11 @@ func (s *Store) initialize(
 			continue
 		}
 
-		if _, err = tx.ExecContext(ctx, [2]string{schemaSQL, connectionsSQL}[i]); err != nil {
+		if _, err = tx.ExecContext(ctx, baseline.schemas[i]); err != nil {
 			return err
 		}
 
-		metadata[i] = storeMetadata{kind: storeKinds[i], version: storeVersions[i], id: rand.Text()}
+		metadata[i] = storeMetadata{kind: storeKinds[i], version: baseline.formats[i], id: rand.Text()}
 
 		m := metadata[i]
 		if _, err = tx.ExecContext(
@@ -453,6 +610,16 @@ func (s *Store) initialize(
 			m.version,
 			m.id,
 		); err != nil {
+			return err
+		}
+	}
+
+	if len(chains[0])+len(chains[1]) != 0 {
+		if err = applyMigrations(ctx, tx, chains); err != nil {
+			return err
+		}
+
+		if err = verifyFormats(ctx, tx, baseline, metadata); err != nil {
 			return err
 		}
 	}

@@ -34,3 +34,8 @@ PRAGMA {{schema}}.foreign_key_check;
 INSERT INTO profile(singleton,access_id,paused,reference_review,warehouse_reset,recovery_revision) VALUES(1,?,1,0,1,1);
 -- name: RetainConnections
 INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM access.configurations WHERE true ON CONFLICT(id) DO NOTHING;
+
+-- name: HistoryVersion
+SELECT applied,target FROM {{schema}}.history_update WHERE singleton=1;
+-- name: AdvanceFormat
+UPDATE {{schema}}.store_metadata SET version=? WHERE singleton=1 AND version=?;

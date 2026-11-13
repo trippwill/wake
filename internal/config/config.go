@@ -48,8 +48,9 @@ type Paths struct {
 
 // Storage contains independently resolved database file locations.
 type Storage struct {
-	WarehousePath   string `toml:"warehouse_path"`
-	ConnectionsPath string `toml:"connections_path"`
+	WarehousePath     string `toml:"warehouse_path"`
+	ConnectionsPath   string `toml:"connections_path"`
+	UnattendedUpgrade bool   `toml:"unattended_upgrade"`
 }
 
 // Log contains structured logging configuration.

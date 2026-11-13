@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"go.trippwill.dev/wake/internal/config"
+	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
 type ResetTarget string
@@ -23,6 +24,7 @@ const (
 	ErrResetTarget   OwnershipError = "reset requires a target: credentials or warehouse"
 	ErrUnsafeReset   OwnershipError = "reset refuses unsafe, linked or protected paths"
 	ErrResetChanged  OwnershipError = "storage paths changed during reset; inspect remaining files and preview again"
+	ErrResetUpgrade  OwnershipError = "credentials reset refused while a storage upgrade is pending; resume with the matching Wake build or restore the paired backup first"
 )
 
 func ParseResetTarget(value string) (ResetTarget, error) {
@@ -80,6 +82,12 @@ func ResetStorage(
 	files := []string{}
 
 	protected := map[string]bool{}
+	for _, db := range all {
+		if db.Name != target {
+			protected[db.Path] = true
+		}
+	}
+
 	for _, path := range []string{configPath, cfg.Credentials.MasterKeyPath} {
 		if path != "" {
 			protected[filepath.Clean(path)] = true
@@ -127,6 +135,10 @@ func ResetStorage(
 		sidecars, err := resetSidecars(db.Path)
 		if err != nil {
 			return ResetResult{}, err
+		}
+
+		if db.Name == ResetWarehouse {
+			sidecars = append(sidecars, db.Path+persistence.UpgradeIntentSuffix)
 		}
 
 		for _, file := range append(sidecars, db.Path) {
@@ -217,6 +229,17 @@ func ResetStorage(
 
 	if err := checkResetSnapshot(snapshots); err != nil {
 		return ResetResult{}, err
+	}
+
+	if target == ResetCredentials {
+		intent, err := snapshotResetFile(cfg.Storage.WarehousePath+persistence.UpgradeIntentSuffix, snapshots)
+		if err != nil {
+			return ResetResult{}, err
+		}
+
+		if intent != nil {
+			return ResetResult{}, ErrResetUpgrade
+		}
 	}
 
 	for _, db := range selected {
