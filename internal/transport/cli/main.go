@@ -147,6 +147,14 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action: performServe,
 		},
 		{
+			Name:  "upgrade",
+			Usage: "Preview a forward storage upgrade with Wake stopped",
+			Flags: append(append(common(), config.Flags()...), &cli.StringFlag{
+				Name: "confirm", Usage: "Apply the upgrade matching this plan ID",
+			}),
+			Action: performUpgrade,
+		},
+		{
 			Name:        "reset",
 			Usage:       "Preview resetting credentials or financial data; --confirm executes",
 			ArgsUsage:   "credentials|warehouse",

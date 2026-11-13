@@ -124,10 +124,15 @@ func (s LocalSetup) Save() error {
 		}
 
 		paths["runtime_dir"] = s.launch.RuntimeDir
-		values["storage"] = map[string]any{
-			"warehouse_path":   s.launch.Storage.WarehousePath,
-			"connections_path": s.launch.Storage.ConnectionsPath,
+
+		storage, ok := values["storage"].(map[string]any)
+		if !ok {
+			storage = map[string]any{}
+			values["storage"] = storage
 		}
+
+		storage["warehouse_path"] = s.launch.Storage.WarehousePath
+		storage["connections_path"] = s.launch.Storage.ConnectionsPath
 
 		admin, ok := values["admin"].(map[string]any)
 		if !ok {

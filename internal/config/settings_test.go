@@ -364,3 +364,26 @@ func TestSelectedFileRejectsNoncanonicalKeysBeforeOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestUnattendedUpgradeSettingPrecedence(t *testing.T) {
+	roots := configureEnvironment(t, true)
+	assertResolvedValue(t, Overrides{}, "storage.unattended_upgrade", "false", "default")
+
+	path := filepath.Join(roots.base, "upgrade.toml")
+	if err := os.WriteFile(path, []byte("[storage]\nunattended_upgrade = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("WAKE_CONFIG", path)
+	assertResolvedValue(t, Overrides{}, "storage.unattended_upgrade", "true", "toml:"+path)
+	t.Setenv("WAKE_STORAGE_UNATTENDED_UPGRADE", "false")
+	assertResolvedValue(
+		t,
+		Overrides{},
+		"storage.unattended_upgrade",
+		"false",
+		"environment:WAKE_STORAGE_UNATTENDED_UPGRADE",
+	)
+	assertResolvedValue(t, Overrides{Values: map[string]string{"storage-unattended-upgrade": "true"}},
+		"storage.unattended_upgrade", "true", "flag")
+}

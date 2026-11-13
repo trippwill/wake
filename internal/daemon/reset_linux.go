@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"go.trippwill.dev/wake/internal/config"
+	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
 type ResetTarget string
@@ -127,6 +128,10 @@ func ResetStorage(
 		sidecars, err := resetSidecars(db.Path)
 		if err != nil {
 			return ResetResult{}, err
+		}
+
+		if db.Name == ResetWarehouse {
+			sidecars = append(sidecars, db.Path+persistence.UpgradeIntentSuffix)
 		}
 
 		for _, file := range append(sidecars, db.Path) {

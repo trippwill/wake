@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -38,6 +39,10 @@ func performServe(ctx context.Context, c *cli.Command) error {
 			activity.Phase(phase)
 		}
 	}); err != nil {
+		if errors.Is(err, daemon.ErrUpgradeConfirmation) {
+			return commandError{status: exitFailure, code: "upgrade_confirmation_required", message: err.Error()}
+		}
+
 		return failure("daemon_failed: %v", err)
 	}
 

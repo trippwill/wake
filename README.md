@@ -169,6 +169,11 @@ failures and recovery actions. Startup always reports the admin binding and port
 or reports that admin is disabled. Use `--log-level debug` with `serve` for stage,
 validation, pacing and cache detail.
 
+For a supported storage upgrade, stop Wake and run `wake upgrade` with the new
+binary. Review the plan and any rule release notes, run the confirmation command
+it prints, then start Wake. See the [forward upgrade guide](.docs/product/coverage.md#forward-upgrades)
+for backups, unattended upgrades, and recovery.
+
 To clear credentials or financial history, stop Wake and preview the configured files:
 
 ```sh

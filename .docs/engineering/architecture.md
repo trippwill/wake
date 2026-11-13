@@ -377,11 +377,19 @@ for cross-store atomicity. Activity has a dedicated read-only warehouse
 connection, so it can read committed snapshots during ingestion while SQLite
 coordinates access at commit. Warehouse references use ordinary foreign keys;
 relationships to access configuration are checked in the shared transaction.
-Each file has an explicit development format and independent identity. The access
-store has no reverse binding to a warehouse. Ownership, format and association
-checks precede writable recovery. Unsupported formats fail closed; startup never
-converts or deletes them. Recreation is an explicit operator action, and master
-keys remain operator-provisioned through setup.
+Each file has an explicit format and independent identity. The access store has
+no reverse binding to a warehouse. Wake checks ownership and supported migration
+paths before opening a writable connection. A plan that requires a history rebuild
+needs explicit approval or the operator's unattended upgrade setting. Wake
+checks both databases under their ownership locks and verifies a durable copy of
+the pair before writing either store. The private upgrade intent binds approval
+to the original files and the backup checksum. An interrupted upgrade verifies
+and reuses that copy before SQLite recovers the attached transaction.
+
+Schema changes, format metadata, and the approved rebuild target commit together.
+The durable history checkpoint then governs rebuild progress across restarts.
+Unsupported formats fail closed and remain intact. Recreation is an explicit
+operator action, and master keys remain operator-provisioned through setup.
 
 Offline CLI reset previews warehouse or credential files and requires explicit
 confirmation before deletion. Warehouse reset disposes its operational state in

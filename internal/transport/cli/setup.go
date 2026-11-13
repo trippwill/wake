@@ -245,7 +245,8 @@ func checkSetupStopped(guides ...config.SetupGuidance) error {
 		configured := config.Config{Paths: config.Paths{RuntimeDir: guide.RuntimeDir}, Storage: guide.Storage}
 		launch := configured
 		for _, setting := range config.Settings() {
-			if setting.Flag != "runtime-dir" && !strings.HasPrefix(setting.Key, "storage.") {
+			if setting.Flag != "runtime-dir" && setting.Flag != "warehouse-path" &&
+				setting.Flag != "connections-path" {
 				continue
 			}
 

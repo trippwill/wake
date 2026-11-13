@@ -231,6 +231,33 @@ source accounts and reacquire history in the new warehouse. See
 [development](../engineering/development.md) for verification and reset procedures. No version tag
 is implied by this coverage.
 
+### Forward upgrades
+
+Stop Wake and use the new binary with the same profile to run `wake upgrade`.
+Review the format changes, backup destination, rebuild requirements, and rule release
+notes. Copy the printed confirmation command to apply that exact plan, then start
+Wake. The preview leaves the stores and backup destination untouched.
+
+Startup applies supported format changes that need no rebuild. When a rebuild
+requires approval, startup reports the preview command and exits. Set
+`storage.unattended_upgrade = true` in the storage configuration to authorize
+these upgrades at startup. Wake logs the plan and release notes before applying
+it. An approved rebuild starts and resumes automatically, including after the
+setting is turned off. Overview shows rebuild progress.
+
+Before either upgrade path writes to storage, Wake verifies a full backup of both
+databases in a private archive beside the warehouse. Its name is the warehouse
+filename with `.upgrade-backup.tar` appended. A failed backup stops the upgrade.
+Each new upgrade replaces the previous archive only after verifying the new pair.
+An interrupted upgrade reuses and verifies its original archive.
+
+Keep the configuration and matching master key separately protected. If a migration
+is interrupted, keep the original files and restart with the matching build. If
+recovery cannot proceed, stop Wake, set the interrupted databases and sidecars aside,
+then extract `wake-upgrade/warehouse.db` and `wake-upgrade/access.db` from the same
+archive. Restore both files together to the paths from the original configuration.
+Use the Wake version that wrote the backed-up stores and the matching master key.
+
 Admin activity, instrument, positions, review and retained-observation lists use server filtering
 and stable ordering, with 50 rows per page by default. JavaScript is required for
 administration. Tabulator renders activity, instrument, positions and observation tables from

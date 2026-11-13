@@ -162,23 +162,6 @@ func run(
 		return err
 	}
 
-	phase("opening private storage")
-
-	store, err := persistence.Open(
-		ctx,
-		persistence.Profile{
-			WarehousePath:   cfg.Storage.WarehousePath,
-			Registrations:   registrations,
-			ConnectionsPath: cfg.Storage.ConnectionsPath,
-		},
-		logger,
-	)
-	if err != nil {
-		return err
-	}
-
-	defer func() { result = errors.Join(result, store.Close()) }()
-
 	phase("checking credential protection")
 
 	protected := false
@@ -199,6 +182,27 @@ func run(
 
 		protected = true
 	}
+
+	phase("opening private storage")
+
+	store, err := persistence.Open(
+		ctx,
+		persistence.Profile{
+			WarehousePath:     cfg.Storage.WarehousePath,
+			Registrations:     registrations,
+			ConnectionsPath:   cfg.Storage.ConnectionsPath,
+			UnattendedUpgrade: cfg.Storage.UnattendedUpgrade,
+		},
+		logger,
+	)
+	if err != nil {
+		if errors.Is(err, persistence.ErrUpgradeConfirmation) {
+			return ErrUpgradeConfirmation
+		}
+
+		return err
+	}
+	defer func() { result = errors.Join(result, store.Close()) }()
 
 	providerHost, err := host.New(
 		ctx,
