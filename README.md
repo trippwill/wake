@@ -85,6 +85,11 @@ After reinstalling, run `systemctl --user daemon-reload` and
 starts with your user manager, normally at login. Run `loginctl enable-linger`
 if you want it to start at boot and keep running after logout.
 
+#### Run on a Linux server with Podman
+
+Use the [Podman setup guide](.docs/engineering/podman.md) to start Wake at boot
+and reach browser admin and the financial API through one saved SSH profile.
+
 ### Connect and inspect
 
 Open **Connections → Add source connection** and choose the provider. For IBKR Flex,
@@ -199,6 +204,10 @@ mise run bin -- config check
 ```
 
 Use command help for exact options.
+
+If you already have a prepared configuration, `wake setup --use-config` reviews
+its launch settings and prompts for the operator unlock. Use `--config` to
+select a file outside the default location.
 
 To change a forgotten browser unlock, stop Wake and rerun setup with the same
 configuration, then restart. Setup retains the credential key; keep that key safe.

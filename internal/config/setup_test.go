@@ -121,6 +121,54 @@ func TestLocalSetupPreservesConfiguration(t *testing.T) {
 	}
 }
 
+func TestPreparedSetupChecksEffectivePaths(t *testing.T) {
+	for _, test := range []struct {
+		name, contents, dataRoot, diagnostic string
+	}{
+		{name: "defaults"},
+		{name: "invalid XDG data directory", dataRoot: "relative", diagnostic: "XDG_DATA_HOME"},
+		{
+			name: "overlapping stores", contents: "[storage]\nwarehouse_path='/wake.db'\nconnections_path='/wake.db'\n",
+			diagnostic: "database paths overlap",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			roots := configureEnvironment(t, true)
+			dir := filepath.Join(roots.base, "private")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			path := filepath.Join(dir, "prepared.toml")
+			if err := os.WriteFile(path, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			setup, err := ReadLocalSetup(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if test.dataRoot != "" {
+				t.Setenv("XDG_DATA_HOME", test.dataRoot)
+			}
+
+			guide, err := setup.PreparedGuidance()
+			if test.diagnostic != "" {
+				if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), test.diagnostic) {
+					t.Fatalf("PreparedGuidance() = %v, want %s", err, test.diagnostic)
+				}
+
+				return
+			}
+
+			if err != nil || guide.Storage.WarehousePath != filepath.Join(roots.data, "wake", "wake.db") {
+				t.Fatalf("PreparedGuidance() = %#v, %v", guide, err)
+			}
+		})
+	}
+}
+
 func TestLocalSetupPreservesConfiguredKeyAndDetectsChanges(t *testing.T) {
 	roots := configureEnvironment(t, false)
 	path := filepath.Join(roots.base, "custom.toml")
