@@ -55,6 +55,10 @@ func TestSetupThroughTerminal(t *testing.T) {
 		{"overwrite accepted", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "overwrite", "", true},
 		{"disable refresh", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "overwrite", "false", false},
 		{"overwrite refused", "", "", exitFailure, "setup canceled", "refuse-overwrite", "", false},
+		{"prepared config", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "prepared", "", true},
+		{"prepared config with existing key", "synthetic-unlock", "synthetic-unlock", exitOK, "local setup complete", "reuse-prepared", "", true},
+		{"prepared config refused", "", "", exitFailure, "setup canceled", "refuse-prepared", "", false},
+		{"prepared config missing", "", "", exitFailure, "requires an existing configuration file", "missing-prepared", "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -68,11 +72,16 @@ func TestSetupThroughTerminal(t *testing.T) {
 			defer func() { os.Stdin = original }()
 
 			args := []string{"setup"}
+			prepared := strings.HasSuffix(test.selection, "prepared")
+			if prepared {
+				args = append(args, "--use-config")
+			}
+
 			configPath := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "wake", "config.toml")
 			if test.selection != "" {
 				configPath = filepath.Join(t.TempDir(), "private", "new.toml")
 				switch test.selection {
-				case "flag":
+				case "flag", "prepared", "reuse-prepared", "refuse-prepared", "missing-prepared":
 					args = append(args, "--config", configPath)
 				case "environment":
 					t.Setenv("WAKE_CONFIG", configPath)
@@ -80,7 +89,30 @@ func TestSetupThroughTerminal(t *testing.T) {
 			}
 
 			originalConfig := []byte("[log]\nlevel='debug'\n[admin]\ncurrency_refresh=true\n")
-			existing := test.selection == "overwrite" || test.selection == "refuse-overwrite"
+			existing := test.selection != "missing-prepared" &&
+				(prepared || strings.HasSuffix(test.selection, "overwrite"))
+			if prepared {
+				originalConfig = fmt.Appendf(
+					originalConfig,
+					"[paths]\nruntime_dir=%q\n",
+					filepath.Join(t.TempDir(), "run"),
+				)
+			}
+
+			if test.selection == "reuse-prepared" {
+				keyDir, err := config.ConfigDir()
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				keyPath := filepath.Join(keyDir, "master.key")
+				if err = credential.CreateMasterKey(keyPath); err != nil {
+					t.Fatal(err)
+				}
+
+				originalConfig = fmt.Appendf(originalConfig, "[credentials]\nmaster_key_path=%q\n", keyPath)
+			}
+
 			if existing {
 				// #nosec G703 -- Private parent of a synthetic config selected by this test.
 				if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
@@ -111,7 +143,7 @@ func TestSetupThroughTerminal(t *testing.T) {
 			}()
 
 			confirmation := "y"
-			if test.selection == "refuse-overwrite" {
+			if strings.HasPrefix(test.selection, "refuse-") {
 				confirmation = "n"
 			}
 
@@ -120,7 +152,12 @@ func TestSetupThroughTerminal(t *testing.T) {
 				inputs = append(inputs, test.first, test.second)
 			}
 
-			if test.selection != "flag" && test.selection != "environment" {
+			switch {
+			case test.selection == "missing-prepared":
+				inputs = nil
+			case prepared:
+				inputs = inputs[5:]
+			case test.selection != "flag" && test.selection != "environment":
 				destination := ""
 				if test.selection != "" {
 					destination = configPath
@@ -154,19 +191,26 @@ func TestSetupThroughTerminal(t *testing.T) {
 				t.Fatalf("code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
 			}
 
-			if existing && !strings.Contains(stderr.String(), "Overwrite existing configuration at "+configPath) {
+			if prepared && existing &&
+				!strings.Contains(stderr.String(), "Provision local access using "+configPath) {
+				t.Fatal("prepared setup did not confirm provisioning", stderr.String())
+			}
+
+			if !prepared && existing &&
+				!strings.Contains(stderr.String(), "Overwrite existing configuration at "+configPath) {
 				t.Fatal("overwrite not explicitly confirmed", stderr.String())
 			}
 
-			if !existing && !strings.Contains(stderr.String(), "Save new configuration to "+configPath) {
+			if !prepared && !existing &&
+				!strings.Contains(stderr.String(), "Save new configuration to "+configPath) {
 				t.Fatal("save not explicitly confirmed", stderr.String())
 			}
 
-			if test.selection == "refuse-overwrite" {
+			if strings.HasPrefix(test.selection, "refuse-") || test.selection == "reuse-prepared" {
 				// #nosec G304,G703 -- Synthetic existing config selected by this terminal case.
 				current, err := os.ReadFile(configPath)
 				if err != nil || !bytes.Equal(current, originalConfig) {
-					t.Fatal("refused overwrite changed config", err)
+					t.Fatal("setup changed the existing configuration", err)
 				}
 			}
 

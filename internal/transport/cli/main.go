@@ -135,9 +135,12 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 	root.Commands = []*cli.Command{
 		{
-			Name:   "setup",
-			Usage:  "Guide local configuration, credentials and operator access",
-			Flags:  common(),
+			Name:  "setup",
+			Usage: "Guide local configuration, credentials and operator access",
+			Flags: append(common(), &cli.BoolFlag{
+				Name:  "use-config",
+				Usage: "Review an existing configuration and provision local access without editing launch settings",
+			}),
 			Action: performSetup,
 		},
 		{

@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+[Unit]
+Description=Wake financial evidence warehouse
+
+[Container]
+ContainerName=wake
+Image=localhost/wake:local
+Pull=never
+Pod=wake.pod
+User=1000
+Group=1000
+DropCapability=all
+NoNewPrivileges=true
+Volume=/var/lib/wake-podman/config:/config:Z
+Volume=/var/lib/wake-podman/data:/data:Z
+Volume=/var/lib/wake-podman/credentials:/credentials:Z
+Volume=/run/wake-podman/sockets:/run/wake:Z
+Exec=serve --config /config/wake/config.toml
+StopTimeout=30
+
+[Service]
+ExecStop=/usr/bin/podman stop --ignore --time 30 wake
+TimeoutStopSec=45s
+Restart=on-failure
+RestartSec=5s
