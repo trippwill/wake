@@ -310,3 +310,17 @@ func TestRestoreCLIPreviewConfirmAndRestart(t *testing.T) {
 	stop, _ = startShellDaemon(t, cfg)
 	stop()
 }
+
+func TestRestoreCLIRefusesInvalidArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"restore", "unexpected"},
+		{"restore"},
+		{"restore", "--archive", "/tmp/unused.tar", "--confirm="},
+		{"restore", "--archive", "/tmp/unused.tar", "--config", filepath.Join(t.TempDir(), "missing.toml")},
+	} {
+		var out, stderr bytes.Buffer
+		if status := Run(args, &out, &stderr); status == exitOK || out.Len() != 0 || stderr.Len() == 0 {
+			t.Fatal(args, status, out.String(), stderr.String())
+		}
+	}
+}

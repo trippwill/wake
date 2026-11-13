@@ -15,6 +15,10 @@ snapshots and a manifest. Routine backups accumulate. Copy them to protected
 backup storage and keep the launch configuration, build version, and matching
 master key separately protected.
 
+Keep the browser admin access files separately protected as well. They are
+`admin-session.key` and either `admin-unlock` for local unlock or
+`admin-proxy.key` for proxy authentication.
+
 Wake uses the same archive format for pre-upgrade backups. An interrupted
 upgrade verifies and reuses its recorded archive. Restart the matching build
 with the original files in place to finish that upgrade. After the upgrade
@@ -47,6 +51,12 @@ build throughout the operation, since older builds cannot detect an interrupted
 restore. If an older format requires an older build, use a restore-capable build
 for that format. For older builds without the command, use their documented
 stopped-profile recovery procedure in an isolated profile.
+
+On a clean host, restore those admin access files to the Wake configuration
+directory with private permissions. If they are unavailable, run
+`wake setup --use-config --config /absolute/private/config.toml` with Wake
+stopped to provision admin access. For proxy authentication, configure the
+proxy with the newly provisioned guard.
 
 The restored profile starts with upstream work paused. Open admin to inspect
 retained history and review source access before selecting **Resume upstream

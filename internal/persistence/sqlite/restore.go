@@ -71,33 +71,11 @@ func Restore(
 		return RestorePlan{}, err
 	}
 
-	var parents [2]upgradeFile
-	for i, path := range paths {
-		dir := filepath.Dir(path)
+	protected = append(slices.Clone(protected), archive)
 
-		info, err := os.Lstat(dir)
-		if err != nil || !info.IsDir() || !privateOwned(info) {
-			return RestorePlan{}, ErrUnsafeStore
-		}
-
-		resolved, err := filepath.EvalSymlinks(dir)
-		if err != nil || resolved != dir {
-			return RestorePlan{}, ErrUnsafeStore
-		}
-
-		parents[i] = restoreIdentity(info)
-
-		for _, fixed := range append(append([]string(nil), protected...), archive) {
-			if fixed == "" {
-				continue
-			}
-
-			for _, suffix := range []string{"", storeLockSuffix, restoreSuffix, UpgradeIntentSuffix, latestUpgradeSuffix, "-journal", "-wal", "-shm"} {
-				if fixed == path+suffix {
-					return RestorePlan{}, ErrUnsafeStore
-				}
-			}
-		}
+	parents, err := restoreParents(paths, protected)
+	if err != nil {
+		return RestorePlan{}, err
 	}
 
 	release, err := LockPaths(paths, confirm != "")
@@ -160,7 +138,7 @@ func Restore(
 		locked[path] = true
 	}
 
-	originals, err := restoreInventory(ctx, paths, append(append([]string(nil), protected...), archive))
+	originals, err := restoreInventory(ctx, paths, protected)
 	if err != nil {
 		return RestorePlan{}, err
 	}
@@ -264,6 +242,28 @@ func Restore(
 	plan.Installed = err == nil
 
 	return plan, err
+}
+
+func restoreParents(paths [2]string, protected []string) ([2]upgradeFile, error) {
+	var parents [2]upgradeFile
+	for i, path := range paths {
+		for _, suffix := range []string{"", storeLockSuffix, restoreSuffix, UpgradeIntentSuffix, latestUpgradeSuffix, "-journal", "-wal", "-shm"} {
+			if slices.Contains(protected, path+suffix) {
+				return parents, ErrUnsafeStore
+			}
+		}
+
+		dir := filepath.Dir(path)
+		info, err := os.Lstat(dir)
+		resolved, resolveErr := filepath.EvalSymlinks(dir)
+		if err != nil || !info.IsDir() || !privateOwned(info) || resolveErr != nil || resolved != dir {
+			return parents, ErrUnsafeStore
+		}
+
+		parents[i] = restoreIdentity(info)
+	}
+
+	return parents, nil
 }
 
 func (i restoreIntent) planID() (string, error) {

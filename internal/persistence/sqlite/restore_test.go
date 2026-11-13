@@ -350,3 +350,248 @@ func writeLegacyPair(t *testing.T, path string, pair [2][]byte) {
 		t.Fatal(err)
 	}
 }
+
+func TestRestoreRefusesUnsafePathsAndPendingPlanChanges(t *testing.T) {
+	ctx := t.Context()
+	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+
+	archive, err := Backup(ctx, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Dir(target.WarehousePath)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err = os.Symlink(dir, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		profile   Profile
+		archive   string
+		protected []string
+	}{
+		{"relative archive", target, "backup.tar", nil},
+		{"shared destination", Profile{WarehousePath: target.WarehousePath, ConnectionsPath: target.WarehousePath}, archive, nil},
+		{"missing parent", Profile{WarehousePath: filepath.Join(dir, "missing", "wake.db"), ConnectionsPath: target.ConnectionsPath}, archive, nil},
+		{"symlinked parent", Profile{WarehousePath: filepath.Join(alias, "wake.db"), ConnectionsPath: target.ConnectionsPath}, archive, nil},
+		{"protected anchor", target, archive, []string{target.WarehousePath + storeLockSuffix}},
+		{"archive is a database", target, target.WarehousePath, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, e := Restore(ctx, test.profile, test.archive, "", test.protected); !errors.Is(e, ErrUnsafeStore) {
+				t.Fatal(e)
+			}
+		})
+	}
+
+	plan, err := Restore(ctx, target, archive, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intent := testRestoreIntent(t, target, plan)
+	if _, err = Restore(ctx, target, archive, "stale", nil); !errors.Is(err, ErrRestoreChanged) {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, target, archive+".other", "", nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal(err)
+	}
+
+	if err = os.WriteFile(intent.Plan.Archive, []byte("replaced archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, target, archive, plan.ID, nil); !errors.Is(err, ErrCorrupt) {
+		t.Fatal("accepted a replaced archive", err)
+	}
+
+	for _, old := range intent.Originals {
+		got, e := inspectRestoreFile(ctx, old.Path, old.Store)
+		if e != nil || got != old {
+			t.Fatal("pending restore changed original", got, e)
+		}
+	}
+}
+
+func TestRestoreRefusesNewSidecarAfterRecordingIntent(t *testing.T) {
+	ctx := t.Context()
+	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+
+	archive, err := Backup(ctx, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := Restore(ctx, target, archive, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testRestoreIntent(t, target, plan)
+
+	if err = os.WriteFile(target.WarehousePath+"-journal", []byte("new journal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, target, archive, plan.ID, nil); !errors.Is(err, ErrRestoreChanged) {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreRefusesInterferingOwnersAndInvalidRecords(t *testing.T) {
+	ctx := t.Context()
+	p := seedUpgradeStores(t)
+
+	archive, err := Backup(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := Restore(ctx, p, archive, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := lockStoreFile(p.WarehousePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, restoreErr := Restore(ctx, p, archive, plan.ID, nil)
+	if err = errors.Join(restoreErr, owner.Close()); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal(err)
+	}
+
+	record := p.WarehousePath + restoreSuffix
+	if err = os.WriteFile(record, []byte("malformed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, p, archive, "", nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal(err)
+	}
+
+	if err = os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+
+	guard := p.ConnectionsPath + restoreSuffix
+	if err = writePrivateRecord(guard, "another restore"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, p, archive, "", nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal(err)
+	}
+
+	if err = os.Remove(guard); err != nil {
+		t.Fatal(err)
+	}
+
+	intent := testRestoreIntent(t, p, plan)
+	if err = writePrivateRecord(guard, "unrelated restore"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, p, archive, plan.ID, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal(err)
+	}
+
+	if err = os.Remove(guard); err != nil {
+		t.Fatal(err)
+	}
+
+	intent.Plan.Displaced = nil
+	if err = writePrivateRecord(record, intent); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, p, archive, plan.ID, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreRejectsUnsupportedVersionAndProtectedOriginal(t *testing.T) {
+	ctx := t.Context()
+	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+
+	s, err := Open(ctx, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = s.db.ExecContext(ctx, "UPDATE main.history_update SET applied=99"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := filepath.Join(filepath.Dir(source.WarehousePath), "legacy.tar")
+	writeLegacyPair(t, archive, storeBytes(t, source))
+
+	if _, err = Restore(
+		ctx,
+		target,
+		archive,
+		"",
+		[]string{target.WarehousePath + "-journal"},
+	); !errors.Is(
+		err,
+		ErrUnsafeStore,
+	) {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, target, archive, "", nil); !errors.Is(err, ErrHistoryVersion) {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreRejectsDamagedSnapshotMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, sql string
+		metadata  bool
+		want      error
+	}{
+		{"new format", "UPDATE store_metadata SET version='wake-warehouse/99'", false, ErrUnsupportedSchema},
+		{"extra table", "CREATE TABLE extra(value TEXT)", false, ErrUnsupportedSchema},
+		{"orphaned receipt", "PRAGMA foreign_keys=OFF; INSERT INTO normalization_receipts VALUES('missing','fixture',X'00')", false, ErrCorrupt},
+		{"provider mismatch", "UPDATE main.connections SET provider='snaptrade' WHERE id='synthetic'", false, ErrAssociation},
+		{"missing rule checkpoint", "DELETE FROM history_update", false, sql.ErrNoRows},
+		{"manifest mismatch", "", true, ErrCorrupt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			p := seedUpgradeStores(t)
+
+			s, err := Open(ctx, p, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if tc.sql != "" {
+				if _, err = s.db.ExecContext(ctx, tc.sql); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err = s.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var manifest backupManifest
+			if tc.metadata {
+				manifest = backupManifest{Version: 1}
+			}
+
+			if _, err = validateRestorePair(ctx, p.paths(), manifest); !errors.Is(err, tc.want) {
+				t.Fatal(err)
+			}
+		})
+	}
+}
