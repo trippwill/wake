@@ -1147,3 +1147,44 @@ func TestBackupRefusesForeignKeyViolations(t *testing.T) {
 		})
 	}
 }
+
+func TestBackupRefusesProviderMismatchAndKeepsPreviousArchive(t *testing.T) {
+	p := seedUpgradeStores(t)
+	ctx := t.Context()
+	original := storeBytes(t, p)
+
+	archive, err := Backup(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.db.ExecContext(ctx, "UPDATE access.configurations SET provider='snaptrade' WHERE id='synthetic'")
+	if err = errors.Join(err, s.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	changed := storeBytes(t, p)
+	if _, err = Backup(ctx, p, nil); !errors.Is(err, ErrAssociation) {
+		t.Fatal("backup accepted mismatched providers", err)
+	}
+
+	if after, e := os.Stat(archive); e != nil || !os.SameFile(info, after) {
+		t.Fatal("backup replaced the verified archive", e)
+	}
+
+	if !reflect.DeepEqual(storeBytes(t, p), changed) {
+		t.Fatal("backup modified the original pair")
+	}
+
+	assertBackupPair(t, archive, original)
+}

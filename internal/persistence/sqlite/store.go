@@ -708,13 +708,8 @@ func (s *Store) initialize(
 		return err
 	}
 
-	var invalid int
-	if err = tx.QueryRowContext(ctx, profileStatement("AssociationCheck", "")).Scan(&invalid); err != nil {
+	if err = checkProviderAssociations(ctx, tx); err != nil {
 		return err
-	}
-
-	if invalid != 0 {
-		return ErrAssociation
 	}
 
 	for _, schema := range storeSchemas {
@@ -814,6 +809,19 @@ func checkForeignKeys(ctx context.Context, db sqlc.DBTX, schema string) error {
 	}
 
 	return rows.Err()
+}
+
+func checkProviderAssociations(ctx context.Context, db sqlc.DBTX) error {
+	var invalid int
+	if err := db.QueryRowContext(ctx, profileStatement("AssociationCheck", "")).Scan(&invalid); err != nil {
+		return err
+	}
+
+	if invalid != 0 {
+		return ErrAssociation
+	}
+
+	return nil
 }
 
 // Every physical writer connection attaches the same owned files and establishes

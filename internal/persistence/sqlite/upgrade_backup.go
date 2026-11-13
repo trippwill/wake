@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -76,6 +77,8 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 	warehouse := sql.OpenDB(&connector{paths: [2]string{snapshots[0]}, probe: true})
 	defer func() { _ = warehouse.Close() }()
 
+	warehouse.SetMaxOpenConns(1)
+
 	var accessID string
 	if err = warehouse.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
 		return "", err
@@ -83,6 +86,15 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 
 	if accessID != plan.Stores[1].ID {
 		return "", ErrAssociation
+	}
+
+	access := (&url.URL{Scheme: "file", Path: snapshots[1], RawQuery: "mode=ro&immutable=1"}).String()
+	if _, err = warehouse.ExecContext(ctx, profileStatement("AttachAccess", ""), access); err != nil {
+		return "", err
+	}
+
+	if err = checkProviderAssociations(ctx, warehouse); err != nil {
+		return "", err
 	}
 
 	temp, err := os.CreateTemp(filepath.Dir(plan.BackupPath), ".wake-backup-")

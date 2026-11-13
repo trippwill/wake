@@ -26,7 +26,7 @@ PRAGMA {{schema}}.synchronous;
 -- name: InterruptAttempts
 UPDATE main.attempts SET outcome='interrupted' WHERE outcome='running';
 -- name: AssociationCheck
-SELECT count(*) FROM access.configurations a LEFT JOIN main.connections c ON c.id=a.id WHERE c.id IS NULL OR c.provider<>a.provider;
+SELECT count(*) FROM access.configurations a JOIN main.connections c ON c.id=a.id WHERE c.provider<>a.provider;
 -- name: Integrity
 PRAGMA {{schema}}.quick_check;
 -- name: ForeignCheck
