@@ -31,7 +31,14 @@ func UpgradeStorage(
 		key.Clear()
 	}
 
+	registrations, err := (sourceOptions{}).registrations()
+	if err != nil {
+		return UpgradePlan{}, err
+	}
+
 	return persistence.Upgrade(ctx, persistence.Profile{
-		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+		WarehousePath:   cfg.Storage.WarehousePath,
+		ConnectionsPath: cfg.Storage.ConnectionsPath,
+		Registrations:   registrations,
 	}, logger, confirm)
 }

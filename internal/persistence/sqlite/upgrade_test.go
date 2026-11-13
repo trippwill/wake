@@ -717,3 +717,174 @@ func TestUpgradeReplacesLatestBackupWithNextVerifiedPair(t *testing.T) {
 
 	assertBackupPair(t, next.BackupPath, second)
 }
+
+func TestUpgradeRefusesIncompleteOrMismatchedPairs(t *testing.T) {
+	for _, fixture := range []struct {
+		name, change string
+	}{
+		{"missing access", ""},
+		{"unrelated access", "UPDATE access.store_metadata SET id='unrelated'"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			p := seedUpgradeStores(t)
+			ctx := t.Context()
+			if fixture.change == "" {
+				if err := os.Remove(p.ConnectionsPath); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				s, err := Open(ctx, p, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if _, err = s.db.ExecContext(ctx, fixture.change); err != nil {
+					t.Fatal(err)
+				}
+
+				if err = s.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			p.UnattendedUpgrade = true
+			if s, err := openStore(ctx, p, nil, fixtureUpgrade(true, true, true), upgradeOptions{}); s != nil ||
+				!errors.Is(err, ErrUpgradePair) {
+				t.Fatal(s, err)
+			}
+
+			if _, err := os.Stat(p.WarehousePath + UpgradeIntentSuffix); !os.IsNotExist(err) {
+				t.Fatal("incomplete pair wrote an intent", err)
+			}
+
+			if _, err := os.Stat(p.WarehousePath + upgradeBackupSuffix); !os.IsNotExist(err) {
+				t.Fatal("incomplete pair wrote a backup", err)
+			}
+		})
+	}
+}
+
+func TestUpgradeBackupRefusesLinkedDestination(t *testing.T) {
+	p := seedUpgradeStores(t)
+	baseline := fixtureUpgrade(true, true, false)
+
+	plan := previewFixture(t, p, baseline)
+	before := storeBytes(t, p)
+	if err := os.Symlink(p.ConnectionsPath, plan.BackupPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if s, err := openStore(
+		t.Context(),
+		p,
+		nil,
+		baseline,
+		upgradeOptions{},
+	); s != nil ||
+		!errors.Is(err, ErrUpgradeBackup) {
+		t.Fatal(s, err)
+	}
+
+	if after := storeBytes(t, p); !reflect.DeepEqual(before, after) {
+		t.Fatal("unsafe backup destination changed the stores")
+	}
+
+	if link, err := os.Readlink(plan.BackupPath); err != nil || link != p.ConnectionsPath {
+		t.Fatal(link, err)
+	}
+}
+
+func TestUpgradeRecoveryRefusesChangedIntentOrStore(t *testing.T) {
+	p := seedUpgradeStores(t)
+	b := fixtureUpgrade(true, true, false)
+	b.migrations[1][0].sql += "\nINSERT INTO access.missing_fixture VALUES ('fail');"
+	plan := previewFixture(t, p, b)
+	before := storeBytes(t, p)
+
+	ctx := t.Context()
+	if s, err := openStore(ctx, p, nil, b, upgradeOptions{confirm: plan.ID}); s != nil ||
+		!errors.Is(err, ErrUpgradeRecovery) {
+		t.Fatal(s, err)
+	}
+
+	path := p.WarehousePath + UpgradeIntentSuffix
+
+	original, err := readUpgradeIntent(path)
+	if err != nil || original.Plan.ID != plan.ID {
+		t.Fatal(original, err)
+	}
+
+	for _, tamper := range []func(*upgradeIntent){
+		func(intent *upgradeIntent) { intent.Plan.Stores[1].Path += ".wrong" },
+		func(intent *upgradeIntent) { intent.Plan.BackupPath += ".wrong" },
+	} {
+		changed := original
+		tamper(&changed)
+
+		if err = writeUpgradeIntent(path, changed); err != nil {
+			t.Fatal(err)
+		}
+
+		if s, e := openStore(ctx, p, nil, b, upgradeOptions{}); s != nil ||
+			!errors.Is(e, ErrUpgradeRecovery) {
+			t.Fatal(s, e)
+		}
+	}
+
+	if err = os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if s, e := openStore(ctx, p, nil, b, upgradeOptions{}); s != nil || !errors.Is(e, ErrUpgradeRecovery) {
+		t.Fatal(s, e)
+	}
+
+	if err = writeUpgradeIntent(path, original); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = os.Rename(p.ConnectionsPath, p.ConnectionsPath+".original"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = os.WriteFile(p.ConnectionsPath, before[1], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if s, e := openStore(ctx, p, nil, b, upgradeOptions{}); s != nil || !errors.Is(e, ErrUpgradeRecovery) {
+		t.Fatal("accepted a replaced store", s, e)
+	}
+
+	if got := storeBytes(t, p); !reflect.DeepEqual(got, before) {
+		t.Fatal("recovery refusal changed the stores")
+	}
+
+	assertBackupPair(t, plan.BackupPath, before)
+}
+
+func TestUpgradeRejectsMigrationsThatFailTargetVerification(t *testing.T) {
+	for _, fixture := range []struct{ name, sql string }{
+		{"unexpected table", "CREATE TABLE main.unexpected (value TEXT);"},
+		{"changed identity", "UPDATE main.store_metadata SET id='new'"},
+		{"lost pairing", "UPDATE main.profile SET access_id='unrelated'"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			p := seedUpgradeStores(t)
+			b := fixtureUpgrade(true, true, false)
+			b.migrations[0][0].sql += "\n" + fixture.sql
+			plan := previewFixture(t, p, b)
+			before := storeBytes(t, p)
+
+			if s, err := openStore(t.Context(), p, nil, b, upgradeOptions{confirm: plan.ID}); s != nil ||
+				!errors.Is(err, ErrUpgradeRecovery) {
+				t.Fatal(s, err)
+			}
+
+			if got := storeBytes(t, p); !reflect.DeepEqual(got, before) {
+				t.Fatal("failed target verification did not roll back both stores")
+			}
+
+			assertBackupPair(t, plan.BackupPath, before)
+		})
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -39,17 +40,26 @@ func performUpgrade(ctx context.Context, c *cli.Command) error {
 		return failure("upgrade: %v", err)
 	}
 
-	if commandJSON(c) {
-		return json.NewEncoder(c.Writer).Encode(struct {
+	return writeUpgradeResult(c.Writer, commandJSON(c), confirm != "", resolved, plan)
+}
+
+func writeUpgradeResult(
+	writer io.Writer,
+	asJSON, confirmed bool,
+	resolved config.Resolution,
+	plan daemon.UpgradePlan,
+) error {
+	if asJSON {
+		return json.NewEncoder(writer).Encode(struct {
 			Event     string `json:"event"`
 			Confirmed bool   `json:"confirmed"`
 			daemon.UpgradePlan
-		}{"upgrade_plan", confirm != "", plan})
+		}{"upgrade_plan", confirmed, plan})
 	}
 
-	if confirm != "" {
+	if confirmed {
 		writef(
-			c.Writer,
+			writer,
 			"Upgrade applied. Pre-upgrade backup %s. Start Wake normally to continue.\n",
 			plan.BackupPath,
 		)
@@ -63,38 +73,38 @@ func performUpgrade(ctx context.Context, c *cli.Command) error {
 			from = "missing"
 		}
 
-		writef(c.Writer, "%s %s (%s → %s)\n", store.Kind, store.Path, from, store.Target)
+		writef(writer, "%s %s (%s → %s)\n", store.Kind, store.Path, from, store.Target)
 	}
 
 	for _, step := range plan.Steps {
-		writef(c.Writer, "Migrate %s from %s to %s\n", step.Store, step.From, step.To)
+		writef(writer, "Migrate %s from %s to %s\n", step.Store, step.From, step.To)
 	}
 
 	if plan.BackupPath != "" {
-		writef(c.Writer, "Pre-upgrade backup %s\n", plan.BackupPath)
+		writef(writer, "Pre-upgrade backup %s\n", plan.BackupPath)
 	}
 
 	if plan.Rebuild != "" {
-		writef(c.Writer, "History rebuild %s for %s. Temporarily unavailable: %s.\n",
+		writef(writer, "History rebuild %s for %s. Temporarily unavailable: %s.\n",
 			plan.Rebuild, plan.TargetRule, strings.Join(plan.AffectedViews, ", "))
 
 		for _, note := range plan.ReleaseNotes {
-			writef(c.Writer, "\nRule version %d\n%s\n", note.Version, note.Text)
+			writef(writer, "\nRule version %d\n%s\n", note.Version, note.Text)
 		}
 	}
 
 	switch {
 	case plan.RecoveryPending:
 		writeString(
-			c.Writer,
+			writer,
 			"An approved upgrade was interrupted. Start the matching Wake build to recover it.\n",
 		)
 	case plan.ID != "":
-		writef(c.Writer, "\nConfirm with %s\n", upgradeConfirmationCommand(resolved, plan.ID))
+		writef(writer, "\nConfirm with %s\n", upgradeConfirmationCommand(resolved, plan.ID))
 	case plan.Rebuild == "approved":
-		writeString(c.Writer, "Start Wake to resume the approved rebuild.\n")
+		writeString(writer, "Start Wake to resume the approved rebuild.\n")
 	default:
-		writeString(c.Writer, "No upgrade needed.\n")
+		writeString(writer, "No upgrade needed.\n")
 	}
 
 	return nil
