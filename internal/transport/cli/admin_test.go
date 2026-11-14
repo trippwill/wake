@@ -17,7 +17,7 @@ import (
 
 func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
 		t.Fatal(err)
 	}
 

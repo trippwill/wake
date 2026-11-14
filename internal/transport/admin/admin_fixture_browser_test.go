@@ -356,7 +356,7 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 	origin := "http://" + listener.Addr().String()
 
 	dir := privateAuthDir(t)
-	if err = SetUnlock(dir, []byte(adminBrowserUnlock)); err != nil {
+	if err = SetPassword(dir, []byte(adminBrowserUnlock)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -753,8 +753,8 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 	f.check(
 		testbrowser.SetViewport(1440, 1000),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible(chromedp.CSS("#unlock")),
-		chromedp.SendKeys(chromedp.CSS("#unlock"), adminBrowserUnlock),
+		chromedp.WaitVisible(chromedp.CSS("#password")),
+		chromedp.SendKeys(chromedp.CSS("#password"), adminBrowserUnlock),
 		testbrowser.NewDocument(chromedp.Click(chromedp.CSS(`button[type="submit"]`))),
 		chromedp.WaitVisible(chromedp.CSS("#main-navigation")),
 	)

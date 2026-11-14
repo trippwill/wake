@@ -252,7 +252,7 @@ func run(
 	requests := &requestGroup{}
 	stopping := make(chan struct{})
 
-	listener, err := net.Listen("tcp", cfg.API.Listen)
+	listener, err := net.Listen("tcp4", cfg.API.Address())
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func run(
 		return e
 	}
 
-	adminListener, e := net.Listen("tcp", cfg.Admin.Address())
+	adminListener, e := net.Listen("tcp4", cfg.Admin.Address())
 	if e != nil {
 		bind, port, _ := net.SplitHostPort(cfg.Admin.Address())
 		logger.ErrorContext(

@@ -99,7 +99,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	}
 
 	dir := filepath.Dir(authFixturePath(t))
-	if err = admin.SetUnlock(dir, []byte("synthetic-workspace-review")); err != nil {
+	if err = admin.SetPassword(dir, []byte("synthetic-workspace-review")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,7 +167,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		}
 	}
 
-	login := request(http.MethodPost, "/login", url.Values{"unlock": {"synthetic-workspace-review"}}, false)
+	login := request(http.MethodPost, "/login", url.Values{"password": {"synthetic-workspace-review"}}, false)
 	if login.Code != http.StatusSeeOther {
 		t.Fatal(login.Code, login.Body.String())
 	}

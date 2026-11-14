@@ -50,7 +50,7 @@ func TestOpenRejectsNamedPipes(t *testing.T) {
 	for _, name := range []string{clientaccess.FileName} {
 		t.Run(name, func(t *testing.T) {
 			directory := privateAuthDir(t)
-			if err := SetUnlock(directory, []byte("correct horse battery staple")); err != nil {
+			if err := SetPassword(directory, []byte("correct horse battery staple")); err != nil {
 				t.Fatal(err)
 			}
 
@@ -79,9 +79,9 @@ func TestOpenRejectsNamedPipes(t *testing.T) {
 	}
 }
 
-func TestSetUnlockRejectsWeakValue(t *testing.T) {
-	if err := SetUnlock(privateAuthDir(t), []byte("too short")); !errors.Is(err, ErrWeakUnlock) {
-		t.Fatalf("SetUnlock() error = %v, want ErrWeakUnlock", err)
+func TestSetPasswordRejectsWeakValue(t *testing.T) {
+	if err := SetPassword(privateAuthDir(t), []byte("too short")); !errors.Is(err, ErrWeakPassword) {
+		t.Fatalf("SetPassword() error = %v, want ErrWeakPassword", err)
 	}
 }
 
@@ -89,13 +89,13 @@ func TestBrowserLoginAcceptsLongestEncodedUnlock(t *testing.T) {
 	const origin = "http://127.0.0.1:8787"
 
 	dir := privateAuthDir(t)
-	unlock := strings.Repeat("&", MaxUnlockBytes)
+	unlock := strings.Repeat("&", MaxPasswordBytes)
 
-	if err := SetUnlock(dir, []byte(unlock+"&")); !errors.Is(err, ErrLongUnlock) {
+	if err := SetPassword(dir, []byte(unlock+"&")); !errors.Is(err, ErrLongPassword) {
 		t.Fatal("accepted an oversized unlock", err)
 	}
 
-	if err := SetUnlock(dir, []byte(unlock)); err != nil {
+	if err := SetPassword(dir, []byte(unlock)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,7 +107,7 @@ func TestBrowserLoginAcceptsLongestEncodedUnlock(t *testing.T) {
 	mux := http.NewServeMux()
 	registerLoginRoutes(mux, auth)
 
-	form := url.Values{"unlock": {unlock}}.Encode()
+	form := url.Values{"password": {unlock}}.Encode()
 	req := httptest.NewRequest(http.MethodPost, origin+"/login", strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", origin)
@@ -126,7 +126,7 @@ func TestBrowserLoginAcceptsLongestEncodedUnlock(t *testing.T) {
 func TestRotateSessionsRejectsOldCookieAndRetainsUnlock(t *testing.T) {
 	dir := privateAuthDir(t)
 	unlock := []byte("synthetic rotation unlock")
-	if err := SetUnlock(dir, unlock); err != nil {
+	if err := SetPassword(dir, unlock); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func TestRotateSessionsRejectsOldCookieAndRetainsUnlock(t *testing.T) {
 
 func TestOpenRejectsInsecureSecretFiles(t *testing.T) {
 	configDir := privateAuthDir(t)
-	if err := SetUnlock(configDir, []byte("correct horse battery staple")); err != nil {
+	if err := SetPassword(configDir, []byte("correct horse battery staple")); err != nil {
 		t.Fatal(err)
 	}
 	//nolint:gosec // This test must create an insecure file to verify rejection.
@@ -217,14 +217,15 @@ func TestLiveUnlockUsesOneSnapshotAcrossRotation(t *testing.T) {
 	locked := httptest.NewRecorder()
 	handler.ServeHTTP(locked, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/login", nil))
 
-	if locked.Code != http.StatusServiceUnavailable {
+	if locked.Code != http.StatusOK ||
+		!strings.Contains(locked.Body.String(), "wake access set password") {
 		t.Fatal("unprovisioned browser was not locked", locked.Code)
 	}
 
 	oldUnlock := "synthetic original unlock"
 	newUnlock := "synthetic replacement unlock"
 
-	if err := SetUnlock(dir, []byte(oldUnlock)); err != nil {
+	if err := SetPassword(dir, []byte(oldUnlock)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -235,7 +236,7 @@ func TestLiveUnlockUsesOneSnapshotAcrossRotation(t *testing.T) {
 	auth.now = func() time.Time {
 		calls++
 		if calls == 2 {
-			if err := SetUnlock(dir, []byte(newUnlock)); err != nil {
+			if err := SetPassword(dir, []byte(newUnlock)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -279,7 +280,7 @@ func TestLiveUnlockPreservesConcurrentGrantChanges(t *testing.T) {
 	go func() {
 		<-start
 
-		errs <- SetUnlock(dir, []byte("synthetic concurrent unlock"))
+		errs <- SetPassword(dir, []byte("synthetic concurrent unlock"))
 	}()
 	go func() {
 		<-start

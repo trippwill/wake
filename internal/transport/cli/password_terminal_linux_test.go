@@ -18,12 +18,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type unlockPrompts struct {
+type passwordPrompts struct {
 	bytes.Buffer
 	prompt chan struct{}
 }
 
-func (output *unlockPrompts) Write(value []byte) (int, error) {
+func (output *passwordPrompts) Write(value []byte) (int, error) {
 	n, err := output.Buffer.Write(value)
 	if strings.HasSuffix(string(value), ": ") {
 		output.prompt <- struct{}{}
@@ -32,15 +32,15 @@ func (output *unlockPrompts) Write(value []byte) (int, error) {
 	return n, err
 }
 
-func (output *unlockPrompts) WriteString(value string) (int, error) {
+func (output *passwordPrompts) WriteString(value string) (int, error) {
 	return output.Write([]byte(value))
 }
 
-func TestSetUnlockThroughTerminal(t *testing.T) {
+func TestSetPasswordThroughTerminal(t *testing.T) {
 	dir := setupEnvironment(t)
 	writeTestConfig(t, filepath.Join(dir, "config.toml"), nil)
 
-	master, slave := openUnlockTerminal(t)
+	master, slave := openPasswordTerminal(t)
 
 	original := os.Stdin
 	os.Stdin = slave
@@ -49,9 +49,9 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 	set := func(first, second string, want int, diagnostic string) {
 		t.Helper()
 
-		output := &unlockPrompts{prompt: make(chan struct{}, 2)}
+		output := &passwordPrompts{prompt: make(chan struct{}, 2)}
 		done := make(chan int, 1)
-		go func() { done <- run([]string{"admin", "set-unlock"}, output, output) }()
+		go func() { done <- run([]string{"access", "set", "password"}, output, output) }()
 
 		inputs := []string{first}
 		if second != "" {
@@ -62,9 +62,9 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 			select {
 			case <-output.prompt:
 			case code := <-done:
-				t.Fatal("unlock command ended before prompting", code, output.String())
+				t.Fatal("password command ended before prompting", code, output.String())
 			case <-time.After(5 * time.Second):
-				t.Fatal("unlock command did not prompt")
+				t.Fatal("password command did not prompt")
 			}
 
 			if _, err := fmt.Fprintln(master, input); err != nil {
@@ -78,11 +78,11 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 				t.Fatal(code, output.String())
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatal("unlock command did not finish")
+			t.Fatal("password command did not finish")
 		}
 	}
 
-	set("synthetic first unlock", "synthetic first unlock", exitOK, "Operator unlock set")
+	set("synthetic first unlock", "synthetic first unlock", exitOK, "Password set")
 
 	cookie := testLogin(t, dir, "synthetic first unlock", http.StatusSeeOther)
 
@@ -90,7 +90,7 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 	set("synthetic first unlock", "synthetic second unlock", exitFailure, "do not match")
 	testLogin(t, dir, "synthetic first unlock", http.StatusSeeOther)
 
-	set("synthetic second unlock", "synthetic second unlock", exitOK, "Operator unlock set")
+	set("synthetic second unlock", "synthetic second unlock", exitOK, "Password set")
 	testLogin(t, dir, "synthetic second unlock", http.StatusSeeOther)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/", nil)
@@ -103,16 +103,16 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 		t.Fatal("accepted a session issued before setting the new unlock", response.Code)
 	}
 
-	for _, size := range []int{admin.MaxUnlockBytes + 1, admin.MaxUnlockBytes + 2} {
+	for _, size := range []int{admin.MaxPasswordBytes + 1, admin.MaxPasswordBytes + 2} {
 		set(strings.Repeat("&", size), "", exitFailure, "exceeds the input limit")
 	}
 
-	longest := strings.Repeat("&", admin.MaxUnlockBytes)
-	set(longest, longest, exitOK, "Operator unlock set")
+	longest := strings.Repeat("&", admin.MaxPasswordBytes)
+	set(longest, longest, exitOK, "Password set")
 	testLogin(t, dir, longest, http.StatusSeeOther)
 }
 
-func TestSetUnlockRejectsNonterminalInput(t *testing.T) {
+func TestSetPasswordRejectsNonterminalInput(t *testing.T) {
 	dir := setupEnvironment(t)
 	writeTestConfig(t, filepath.Join(dir, "config.toml"), nil)
 
@@ -128,13 +128,13 @@ func TestSetUnlockRejectsNonterminalInput(t *testing.T) {
 	defer func() { os.Stdin = original }()
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"admin", "set-unlock"}, &stdout, &stderr); code != exitFailure ||
-		!strings.Contains(stderr.String(), "not a terminal") {
+	if code := run([]string{"access", "set", "password"}, &stdout, &stderr); code != exitUsage ||
+		!strings.Contains(stderr.String(), "setting a password requires a terminal") {
 		t.Fatal(code, stderr.String())
 	}
 }
 
-func openUnlockTerminal(t *testing.T) (*os.File, *os.File) {
+func openPasswordTerminal(t *testing.T) (*os.File, *os.File) {
 	t.Helper()
 
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY, 0)

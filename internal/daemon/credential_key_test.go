@@ -34,7 +34,7 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("original synthetic unlock")); err != nil {
+			if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("original synthetic unlock")); err != nil {
 				t.Fatal(err)
 			}
 
@@ -238,7 +238,7 @@ func assertStreamSurvivesUnlock(t *testing.T, cfg config.Config, body io.ReadClo
 		}
 	}
 
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("replacement synthetic unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("replacement synthetic unlock")); err != nil {
 		t.Fatal(err)
 	}
 

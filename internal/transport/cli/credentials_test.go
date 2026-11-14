@@ -80,7 +80,7 @@ func TestGenerateKeyIsNoninteractiveAndPreservesOperator(t *testing.T) {
 		}
 	}
 
-	if err := admin.SetUnlock(dir, []byte("synthetic operator unlock")); err != nil {
+	if err := admin.SetPassword(dir, []byte("synthetic operator unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,13 +144,14 @@ func TestGenerateKeyUsesConfiguredPath(t *testing.T) {
 func TestGenerateKeyRejectsRunningInstance(t *testing.T) {
 	dir := setupEnvironment(t)
 	path := filepath.Join(dir, "config.toml")
-	adminAddress := testFreeAddress(t)
-	apiAddress := testFreeAddress(t)
-	data := "[admin]\nlisten=" + strconv.Quote(
-		adminAddress,
-	) + "\n[api]\nlisten=" + strconv.Quote(
-		apiAddress,
-	) + "\n"
+
+	adminPort := testFreePort(t)
+	apiPort := testFreePort(t)
+	for apiPort == adminPort {
+		apiPort = testFreePort(t)
+	}
+
+	data := "[admin]\nport=" + strconv.Itoa(adminPort) + "\n[api]\nport=" + strconv.Itoa(apiPort) + "\n"
 	writeTestConfig(t, path, []byte(data))
 
 	resolved, err := launchForTest("", true)
@@ -176,7 +177,7 @@ func TestGenerateKeyRejectsRunningInstance(t *testing.T) {
 	}
 }
 
-func testFreeAddress(t *testing.T) string {
+func testFreePort(t *testing.T) int {
 	t.Helper()
 
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -184,12 +185,12 @@ func testFreeAddress(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	address := listener.Addr().String()
+	port := listener.Addr().(*net.TCPAddr).Port
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	return address
+	return port
 }
 
 func testAdminHandler(t *testing.T, dir string) http.Handler {
@@ -212,7 +213,7 @@ func testLogin(t *testing.T, dir, unlock string, wantStatus int) *http.Cookie {
 	t.Helper()
 	handler := testAdminHandler(t, dir)
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/login",
-		strings.NewReader(url.Values{"unlock": {unlock}}.Encode()))
+		strings.NewReader(url.Values{"password": {unlock}}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", "http://127.0.0.1:8787")
 

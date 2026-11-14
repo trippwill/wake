@@ -25,7 +25,7 @@ func (e setupError) Error() string { return string(e) }
 
 const (
 	errTerminalRequired setupError = "standard input is not a terminal"
-	errUnlockMismatch   setupError = "operator unlocks do not match"
+	errPasswordMismatch setupError = "passwords do not match"
 )
 
 func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]byte, error) {
@@ -82,7 +82,7 @@ func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]by
 			continue
 		}
 
-		var buffer [admin.MaxUnlockBytes + 2]byte
+		var buffer [admin.MaxPasswordBytes + 2]byte
 
 		n, err = unix.Read(fd, buffer[:])
 		if errors.Is(err, unix.EINTR) {
@@ -101,8 +101,8 @@ func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]by
 		clear(buffer[:])
 
 		// A full canonical line may already have been truncated by the terminal.
-		if len(content) > admin.MaxUnlockBytes+1 {
-			return nil, admin.ErrLongUnlock
+		if len(content) > admin.MaxPasswordBytes+1 {
+			return nil, admin.ErrLongPassword
 		}
 
 		if bytes.IndexByte(content, '\n') >= 0 {
@@ -115,13 +115,13 @@ func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]by
 	}
 }
 
-func readOperatorUnlock(ctx context.Context, c *cli.Command) ([]byte, error) {
-	first, err := readTerminalInput(ctx, c, "Operator unlock: ")
+func readOperatorPassword(ctx context.Context, c *cli.Command) ([]byte, error) {
+	first, err := readTerminalInput(ctx, c, "Password: ")
 	if err != nil {
 		return nil, err
 	}
 
-	second, err := readTerminalInput(ctx, c, "Confirm operator unlock: ")
+	second, err := readTerminalInput(ctx, c, "Confirm password: ")
 	if err != nil {
 		clear(first)
 		clear(second)
@@ -133,14 +133,14 @@ func readOperatorUnlock(ctx context.Context, c *cli.Command) ([]byte, error) {
 		clear(first)
 		clear(second)
 
-		return nil, errUnlockMismatch
+		return nil, errPasswordMismatch
 	}
 
 	clear(second)
 
-	if len(first) < admin.MinimumUnlockBytes {
+	if len(first) < admin.MinimumPasswordBytes {
 		clear(first)
-		return nil, admin.ErrWeakUnlock
+		return nil, admin.ErrWeakPassword
 	}
 
 	return first, nil

@@ -52,7 +52,7 @@ func (s movementReadStore) CorrectionForm(
 
 func TestMovementHTTPDetailsGridAndCorrectionChoices(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-movement-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-movement-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

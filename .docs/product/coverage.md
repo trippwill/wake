@@ -11,17 +11,16 @@ the [domain vocabulary](domain.md) owns financial policy.
 
 ## Network access
 
-Wake runs as a single-user Linux daemon with separate TCP listeners for browser
-administration and the financial API. Local and LAN deployments without internet
-exposure are supported. Browser administration retains operator unlock, sessions
-and CSRF protection; each financial client uses a separately revocable bearer token.
-Tokens grant the instance's published financial reads, including events and positions,
-without administrative authority or per-account scopes. They have no automatic expiry.
+Wake runs as a single-user Linux daemon with separate IPv4 loopback listeners for
+browser administration and the financial API. Each listener has a configurable
+port. Operators provide any remote access and transport protection.
 
-The daemon binds to loopback by default. Operators choose transport protection.
-Plain HTTP exposes credentials and financial data to observers on the network path.
-Wake supports a separate public browser origin and does not infer authentication or
-transport security from proxy headers.
+Browser administration uses a password, signed sessions, and CSRF protection.
+The host operator can set or reset the password through the CLI. Each financial
+client uses a separately revocable
+bearer token. Tokens grant the instance's published financial reads, including
+events and positions, without administrative authority or per-account scopes.
+They have no automatic expiry.
 
 ## Account setup and authority
 
@@ -235,7 +234,7 @@ warehouse and encrypted access store have independent version-1 formats. Older
 development formats fail closed with recreation guidance and preserve the original
 files. The pre-release access format that included client grants is incompatible with this
 layout. Preserve its files, recreate the access store explicitly, and re-enter
-source credentials. Set the browser unlock and enroll clients in the new auth state.
+source credentials. Set a browser password and enroll clients in the new auth state.
 Retain the warehouse through that process.
 Back up stores and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The

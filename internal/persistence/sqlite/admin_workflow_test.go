@@ -78,7 +78,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	workflow := application.New(store, h, refs, func() time.Time { return now }, nil)
 
 	dir := filepath.Dir(authFixturePath(t))
-	if err = admin.SetUnlock(dir, []byte("synthetic-http-unlock")); err != nil {
+	if err = admin.SetPassword(dir, []byte("synthetic-http-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +132,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	login := request(
 		http.MethodPost,
 		"/login",
-		url.Values{"unlock": {"synthetic-http-unlock"}},
+		url.Values{"password": {"synthetic-http-unlock"}},
 		http.StatusSeeOther,
 	)
 	cookie = login.Result().Cookies()[0]

@@ -7,8 +7,8 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
-Each instance serves one user. Local and LAN use without internet exposure is the
-supported scope.
+Each instance serves one user. The browser and financial API listen on IPv4
+loopback. The operator provides any remote access and transport protection.
 
 Wake acquires IBKR Flex reports, cached SnapTrade Personal trade history, and
 reported Fidelity US positions through SnapTrade.
@@ -33,15 +33,15 @@ default path:
 install -d -m 0700 "${XDG_CONFIG_HOME:-$HOME/.config}/wake"
 touch "${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml"
 wake credentials generate-key
-wake admin set-unlock
+wake access set password
 wake serve
 ```
 
 `wake credentials generate-key` uses the existing TOML and creates a private
 key at `credentials.key_path`. For a custom key path, create its private parent
 directory first. When you already have a TOML and usable key, start with `wake serve`.
-Set the browser unlock before or after startup and sign in at `http://127.0.0.1:8787`.
-Stop the foreground daemon with Ctrl+C.
+Enter and confirm a password when prompted. Use it to sign in at the URL the
+command prints. Stop the foreground daemon with Ctrl+C.
 
 Wake selects `config.toml` through `--config`, `WAKE_CONFIG`, or
 `${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml` in that order. Use the same
@@ -64,12 +64,11 @@ key_path = "credentials.key"
 level = "info"
 
 [admin]
-listen = "127.0.0.1:8787"
-# public_origin is derived from the loopback listener.
+port = 8787
 currency_refresh = false
 
 [api]
-listen = "127.0.0.1:8788"
+port = 8788
 
 [polling.defaults]
 # Use the registered interval for each provider stream.
@@ -80,8 +79,12 @@ TOML's directory. Wake keeps private browser and client authority in `auth.json`
 that file. Keep a single TOML per instance directory. The default runtime directory is
 scoped to the resolved instance directory.
 
-For a prebuilt Linux binary on PATH, run the same three Wake commands without the
-build steps. For a prepared configuration, you can supply an existing private
+Both listeners bind to `127.0.0.1` and use distinct ports. To access Wake through
+an SSH tunnel, forward the admin port to the same local port on your browser's
+machine and use the printed loopback URL.
+
+For a prebuilt Linux binary on PATH, start by creating the instance directory.
+For a prepared configuration, you can supply an existing private
 regular file containing 32 raw random bytes at `credentials.key_path`. Setup
 verifies the file and its ability to decrypt saved source credentials, if present.
 See [operator access and restore](.docs/engineering/architecture.md#operator-access-and-restore)
@@ -198,13 +201,15 @@ wake config check
 
 Use command help for exact options.
 
-Run `wake admin set-unlock` against the selected instance to set or replace the browser
-unlock. It works while Wake is running and signs out existing browser sessions. An
-unprovisioned browser listener stays locked until you set the unlock.
+Use **System → Settings → Change password** to replace the current password.
+If you forget it, run `wake access set password` on the Wake host. The terminal
+prompt hides your input. Setting a password from the CLI signs out browser
+sessions and preserves API grants. Run `wake access revoke sessions` to sign out
+all browsers while keeping the password.
 
 ### Read financial data from the CLI
 
-Create a named token in **System → API clients** after unlocking the browser.
+Create a named token in **System → API clients** after signing in.
 Save it in a private token file on the client with mode `0600`.
 
 ```sh
@@ -219,11 +224,11 @@ wake --json request get '/v1/activity/ACTIVITY_ID'
 ```
 
 Set `ACCOUNT_ID` to an ID from `resources[].id` in the accounts list.
-For a different endpoint or credential, pass `--endpoint https://wake-api.home.arpa`
+For a different endpoint or credential, pass `--endpoint http://127.0.0.1:9788`
 or `--token-file /absolute/client.token` on the leaf command before any positional
 argument. Flags override `WAKE_ENDPOINT` and `WAKE_TOKEN_FILE`; the default endpoint
 is `http://127.0.0.1:8788`. Client reads use those settings independently of daemon
-configuration. Tokens grant financial reads and do not unlock browser administration.
+configuration. Tokens grant financial reads and do not grant browser administration.
 Revoke a lost or retired token in **System → API clients**.
 
 Account lists return `warehouse_id`, `version`, and `resources`. Activity

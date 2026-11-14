@@ -34,7 +34,7 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 				<script defer src="/assets/vendor/tabulator-6.7.1/tabulator.min.js"></script>
 				<script defer src="/assets/app.js"></script>
 			</head>
-			<body data-contextual-workspace?={ contextual } data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
+			<body data-signed-in?={ csrf != "" } data-contextual-workspace?={ contextual } data-live-state="connected" hx-ext="sse" { streamAttributes(csrf)... } hx-history="false">
 				<a class="wake-skip" href="#main-content">Skip to content</a>
 				<div class="wake-app">
 					<aside class="wake-sidebar" data-navigation>
@@ -75,13 +75,19 @@ templ SectionShell(title string, csrf string, section string, content templ.Comp
 									</li>
 								</ul>
 							</nav>
-							<div class="wake-contact">
-								<span class="wake-contact-indicator" aria-hidden="true"></span>
-								<details class="wake-contact-details">
-									<summary class="wake-contact-trigger"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></summary>
-									<p class="wake-contact-panel">This status tracks contact with the daemon. See the relevant workspace for financial freshness.</p>
-								</details>
-							</div>
+							<footer class="wake-sidebar-footer">
+								<div class="wake-contact">
+									<span class="wake-contact-indicator" aria-hidden="true"></span>
+									<details class="wake-contact-details">
+										<summary class="wake-contact-trigger"><span id="daemon-contact" role="status" aria-live="polite">Daemon connected</span></summary>
+										<p class="wake-contact-panel">This status tracks contact with the daemon. See the relevant workspace for financial freshness.</p>
+									</details>
+								</div>
+								<form method="post" action="/logout" hx-boost="false">
+									<input type="hidden" name="csrf" value={ csrf }/>
+									<button class="btn wake-sign-out" data-submit-label="Signing out…" type="submit">Sign out</button>
+								</form>
+							</footer>
 						}
 					</aside>
 					<div class="wake-workspace">

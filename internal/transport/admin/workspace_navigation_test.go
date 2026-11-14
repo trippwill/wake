@@ -17,7 +17,7 @@ import (
 
 func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-navigation")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-navigation")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +86,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 
 func TestSettingsRequiresSessionAndDoesNotQueryStatus(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-settings")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-settings")); err != nil {
 		t.Fatal(err)
 	}
 

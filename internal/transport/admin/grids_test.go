@@ -65,7 +65,7 @@ func (s gridReadStore) ObservationList(
 
 func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-grid-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-grid-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

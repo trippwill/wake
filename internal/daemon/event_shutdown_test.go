@@ -19,7 +19,7 @@ import (
 
 func TestEventStreamStopsBeforeShutdownGrace(t *testing.T) {
 	cfg := shellConfig(t)
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-stream-unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-stream-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,7 +53,7 @@ func TestEventStreamStopsBeforeShutdownGrace(t *testing.T) {
 		t.Context(),
 		http.MethodPost,
 		cfg.Admin.Origin()+"/login",
-		strings.NewReader(url.Values{"unlock": {"synthetic-stream-unlock"}}.Encode()),
+		strings.NewReader(url.Values{"password": {"synthetic-stream-unlock"}}.Encode()),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -231,10 +231,11 @@ Use bounded forms, restrained spacing and flat bordered cards to identify tasks,
 financial summaries, comparisons and configuration sections. A light steel canvas
 (`#EDF0F2`) carries light cards; a deep steel canvas (`#2B3036`) carries dark cards
 (`#363D44`). Group related fields within each card rather than treating individual
-fields or table rows as separate cards. Pin daemon contact to the bottom of the
-desktop sidebar, with full work status in page content. On narrow screens, keep
-contact visible below the collapsible navigation. Use a native disclosure for
-contact context and keep session recovery visible when sign-in expires. Stack
+fields or table rows as separate cards. Keep daemon contact and Sign out at the
+bottom of the desktop sidebar. At narrow widths, move them into a fixed bottom
+bar that stays visible when navigation collapses. Use a native disclosure that
+opens upward for contact context, and keep session recovery visible when sign-in
+expires. Stack
 simple regions, provide dismissible keyboard-accessible navigation and keep
 genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
 

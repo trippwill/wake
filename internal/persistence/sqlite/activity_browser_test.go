@@ -417,7 +417,7 @@ func activityPerformanceServer(t *testing.T, s *Store, observe func(*http.Reques
 	dir := filepath.Dir(authFixturePath(t))
 
 	const unlock = "synthetic-activity-benchmark"
-	if err := admin.SetUnlock(dir, []byte(unlock)); err != nil {
+	if err := admin.SetPassword(dir, []byte(unlock)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -445,7 +445,7 @@ func activityPerformanceServer(t *testing.T, s *Store, observe func(*http.Reques
 
 	client := server.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	form := url.Values{"unlock": {unlock}}
+	form := url.Values{"password": {unlock}}
 
 	req, err := http.NewRequestWithContext(
 		t.Context(),

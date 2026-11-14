@@ -15,8 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestUnlockInputCancellationRestoresTerminal(t *testing.T) {
-	master, slave := openUnlockTerminal(t)
+func TestPasswordInputCancellationRestoresTerminal(t *testing.T) {
+	master, slave := openPasswordTerminal(t)
 	defer func() { _ = master.Close() }()
 
 	original := os.Stdin

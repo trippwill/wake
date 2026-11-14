@@ -377,7 +377,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	}
 
 	tokenFile := seedAPIClient(t, cfg)
-	endpoint := "http://" + cfg.API.Listen
+	endpoint := "http://" + cfg.API.Address()
 	apiTransport := financialTransport(t, cfg)
 	apiClient := &http.Client{Transport: apiTransport, Timeout: time.Second}
 

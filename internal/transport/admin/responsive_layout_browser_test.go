@@ -130,15 +130,18 @@ func TestBrowserResponsiveGridAndNavigation(t *testing.T) {
 	check(
 		testbrowser.SetViewport(1280, 420),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/system/settings")),
-		chromedp.WaitVisible(chromedp.CSS(".wake-sidebar .wake-contact")),
+		chromedp.WaitVisible(chromedp.CSS(".wake-sidebar-footer .wake-contact")),
 	)
 	assert(`(()=>{
 		const nav=document.querySelector('#main-navigation');
 		const contact=document.querySelector('.wake-contact');
 		const before=contact.getBoundingClientRect();
+		const logout=document.querySelector('.wake-sidebar-footer button');
+		const main=document.querySelector('.wake-app').getBoundingClientRect();
+		const sidebar=document.querySelector('.wake-sidebar').getBoundingClientRect();
 		nav.scrollTop=nav.scrollHeight;
 		const after=contact.getBoundingClientRect();
-		return nav.scrollTop>0 && before.top===after.top && after.bottom<=innerHeight && innerHeight-after.bottom<40;
+		return sidebar.height===innerHeight && main.height>=innerHeight && nav.scrollTop>0 && before.top===after.top && after.bottom<=innerHeight && innerHeight-after.bottom<74 && logout.getBoundingClientRect().bottom<=innerHeight;
 	})()`, "status moved when scrolling short desktop navigation")
 	check(chromedp.Focus(chromedp.CSS(".wake-contact-trigger")))
 	assert(`!document.querySelector('.wake-contact-details').open`, "focus opened contact details")
@@ -146,8 +149,7 @@ func TestBrowserResponsiveGridAndNavigation(t *testing.T) {
 	assert(`(()=>{
 		const details=document.querySelector('.wake-contact-details');
 		const bounds=details.querySelector('.wake-contact-panel').getBoundingClientRect();
-		const sidebar=details.closest('.wake-sidebar').getBoundingClientRect();
-		return details.open && bounds.height>0 && bounds.top>=sidebar.top && bounds.right<=sidebar.right &&
+		return details.open && bounds.height>0 && bounds.top>=0 && bounds.left>=0 && bounds.right<=innerWidth &&
 			bounds.bottom<=details.querySelector('summary').getBoundingClientRect().top;
 	})()`, "desktop contact details clipped or below the trigger")
 	check(chromedp.KeyEvent(kb.Escape))
@@ -169,7 +171,7 @@ func TestBrowserResponsiveGridAndNavigation(t *testing.T) {
 		chromedp.WaitVisible(chromedp.CSS("h1")),
 	)
 	assert(
-		`document.querySelector('#main-navigation').hidden && document.querySelector('.wake-sidebar > .wake-contact').getBoundingClientRect().height>0`,
+		`document.querySelector('#main-navigation').hidden && document.querySelector('.wake-sidebar-footer > .wake-contact').getBoundingClientRect().height>0 && document.querySelector('.wake-sidebar-footer button').getBoundingClientRect().bottom<=innerHeight`,
 		"narrow navigation must collapse independently of status",
 	)
 	check(
@@ -216,8 +218,8 @@ func TestBrowserResponsiveGridAndNavigation(t *testing.T) {
 	assert(`(()=>{
 		const bounds=document.querySelector('.wake-contact-panel').getBoundingClientRect();
 		return bounds.height>0 && bounds.left>=0 && bounds.right<=innerWidth &&
-			bounds.top>=document.querySelector('.wake-contact-trigger').getBoundingClientRect().bottom;
-	})()`, "narrow contact details clipped or above the trigger")
+			bounds.bottom<=document.querySelector('.wake-contact-trigger').getBoundingClientRect().top;
+	})()`, "narrow contact details clipped or below the trigger")
 	// Text resizing stresses long exact values and native controls independently of display density.
 	for _, path := range []string{"/test/correction?field=price", "/test/correction?mode=evidence&candidate=candidate-one", "/test/grid", "/system/settings"} {
 		check(

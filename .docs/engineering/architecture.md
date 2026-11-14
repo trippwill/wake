@@ -336,16 +336,12 @@ Protect credentials at rest and keep secrets out of ordinary views, errors and
 logs. Local setup explicitly provisions protection; daemon startup does not create
 replacement key material. Source responses and imported files are untrusted input.
 Keep administrative authority separate from read access. Wake assumes a trusted
-OS user and private storage. Binding beyond loopback changes who can reach it.
+OS user and private storage.
 
-Each instance has one operator and separately enrolled financial clients. Wake serves
-HTTP over independent TCP listeners, loopback by default. Browser administration
-always requires the provisioned operator unlock and a signed session. Host and
-Origin checks bind it to one configured public origin; commands also require the
-session's CSRF token. The public origin is independent of the backend bind address,
-so a tunnel or HTTPS proxy can preserve the same browser flow. Cookie security
-follows that configured origin. Forwarded headers never authenticate a request or
-select the trusted origin.
+Each instance has one operator and separately enrolled financial clients. Wake
+serves HTTP on separate IPv4 loopback listeners with configurable ports. Browser
+Host and Origin checks use the loopback origin derived from the admin port.
+Authenticated changes require the session's CSRF token.
 
 Each financial client receives a random bearer token shown only at issuance. The
 private auth file retains its verifier and enrollment metadata. Every financial
@@ -360,11 +356,10 @@ the replacement may already be visible.
 Bounded stream write deadlines limit blocked-client teardown. Already transmitted
 bytes and a client's retained copies cannot be recalled.
 
-Local and LAN use without internet exposure is the supported trust model. Wake
-authenticates requests over HTTP. Plain HTTP exposes credentials and financial data
-to traffic observers and allows tampering. Operators select any external transport
-protection. The Wake account, host root, and a frontend terminating encrypted
-traffic are inside the trust boundary.
+The operator controls remote exposure and encryption. An SSH tunnel can forward
+the admin port while preserving the loopback URL seen by the browser. The Wake
+account, host root, and any operator-provided transport are inside the trust
+boundary.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
@@ -378,18 +373,20 @@ when the file is absent and no saved ciphertext depends on it. Startup keeps ser
 history when the key is unavailable. Upstream work pauses before a provider can use
 unreadable credentials and requires explicit resume after repair.
 
-Wake stores the browser unlock verifier, session signing key, and financial grants
-together in private auth state. Live unlock rotation and grant changes serialize the
-disk update under the instance directory's short-lived lock. Lock acquisition
-has a bounded wait and observes cancellation for requests. Readers use a complete
-snapshot, and a login verifies and signs against that same snapshot. Rotation
-invalidates browser cookies while existing API tokens and streams remain valid.
+Wake stores the password verifier, session signing key, and financial grants in
+private auth state. The host operator provisions or resets the password through
+a CLI prompt that hides input. The password is stored as an Argon2 verifier.
+
+Changing or resetting a password replaces its verifier and rotates the browser
+session key atomically while preserving financial grants. Sign-in verifies the
+password and signs the session against the same auth snapshot. Live changes
+serialize through the instance directory lock.
 
 Restoring a financial database does not change client authority. Restoring an old
 auth file can resurrect revoked grants. Before serving a restored auth file, run
 `wake admin reset-access` with Wake stopped. It revokes client grants and rotates
-the session key while retaining the operator unlock. Keep source access withheld
-until the operator has reviewed restored synchronization state.
+the session key while retaining the password. Keep source access withheld until
+the operator has reviewed restored synchronization state.
 
 The [release security review](https://github.com/trippwill/wake/issues/52) tracks
 verification of these boundaries for release.

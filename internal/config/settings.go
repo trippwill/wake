@@ -18,7 +18,10 @@ import (
 	"go.trippwill.dev/wake/provider"
 )
 
-var defaultAdmin = Admin{Listen: "127.0.0.1:8787"}
+const (
+	defaultAdminPort uint16 = 8787
+	defaultAPIPort   uint16 = 8788
+)
 
 // Setting describes an admitted non-secret process setting.
 type Setting struct {
@@ -67,26 +70,21 @@ func Settings() []Setting {
 			Description: "Path to the private 32-byte credential encryption key",
 		},
 		{
-			Key:         "admin.listen",
-			Type:        "string",
-			Default:     defaultAdmin.Listen,
-			Description: "Browser HTTP listener IP address and port",
+			Key:         "admin.port",
+			Type:        "integer",
+			Default:     strconv.Itoa(int(defaultAdminPort)),
+			Description: "Browser administration port on 127.0.0.1",
 		},
 		{
-			Key:         "api.listen",
-			Type:        "string",
-			Default:     "127.0.0.1:8788",
-			Description: "Token-authenticated financial HTTP listener IP address and port",
-		},
-		{
-			Key:         "admin.public_origin",
-			Type:        "string",
-			Description: "Browser-visible HTTP or HTTPS origin; defaults to the loopback listener",
+			Key:         "api.port",
+			Type:        "integer",
+			Default:     strconv.Itoa(int(defaultAPIPort)),
+			Description: "Financial API port on 127.0.0.1",
 		},
 		{
 			Key:         "admin.currency_refresh",
 			Type:        "bool",
-			Default:     strconv.FormatBool(defaultAdmin.CurrencyRefresh),
+			Default:     "false",
 			Description: "Refresh admin currency choices daily from SIX",
 		},
 	}
@@ -188,12 +186,12 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		file.Log.Level = "info"
 	}
 
-	if file.Admin.Listen == "" {
-		file.Admin.Listen = defaultAdmin.Listen
+	if file.Admin.Port == 0 {
+		file.Admin.Port = defaultAdminPort
 	}
 
-	if file.API.Listen == "" {
-		file.API.Listen = "127.0.0.1:8788"
+	if file.API.Port == 0 {
+		file.API.Port = defaultAPIPort
 	}
 
 	cfg, err := resolvedConfig(file, dir, runtimeRequired)
@@ -207,7 +205,6 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		return Resolution{}, err
 	}
 
-	file.Admin.PublicOrigin = cfg.Admin.PublicOrigin
 	if file.Polling.Defaults == nil {
 		file.Polling.Defaults = map[string]string{}
 	}
@@ -288,9 +285,8 @@ func fileSettingValues(file fileConfig) map[string]any {
 		"paths.runtime_dir":          file.Paths.RuntimeDir,
 		"log.level":                  file.Log.Level,
 		"credentials.key_path":       file.Credentials.KeyPath,
-		"admin.listen":               file.Admin.Listen,
-		"api.listen":                 file.API.Listen,
-		"admin.public_origin":        file.Admin.PublicOrigin,
+		"admin.port":                 file.Admin.Port,
+		"api.port":                   file.API.Port,
 		"admin.currency_refresh":     currencyRefresh,
 		"polling.defaults":           file.Polling.Defaults,
 	}
@@ -315,11 +311,9 @@ func checkFileSetting(setting Setting, value any) error {
 	case "log.level":
 		_, err := parseLogLevel(text)
 		return err
-	case "admin.listen", "api.listen":
-		return checkListen(text)
-	case "admin.public_origin":
-		if text != "" {
-			return validateAdminOrigin(text)
+	case "admin.port", "api.port":
+		if text == "0" {
+			return fmt.Errorf("%w: %s must be between 1 and 65535", ErrInvalid, setting.Key)
 		}
 	}
 
@@ -352,17 +346,8 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		return Config{}, err
 	}
 
-	if err := checkListen(file.Admin.Listen); err != nil {
-		return Config{}, err
-	}
-
-	admin, err := resolveAdmin(file.Admin)
-	if err != nil {
-		return Config{}, err
-	}
-
-	if err := checkListen(file.API.Listen); err != nil {
-		return Config{}, err
+	if file.Admin.Port == file.API.Port {
+		return Config{}, fmt.Errorf("%w: admin.port and api.port must differ", ErrInvalid)
 	}
 
 	defaults := make(map[string]time.Duration, len(file.Polling.Defaults))
@@ -381,7 +366,7 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		Storage:      file.Storage,
 		Log:          Log{Level: level},
 		Credentials:  Credentials{KeyPath: file.Credentials.KeyPath},
-		Admin:        admin,
+		Admin:        resolveAdmin(file.Admin),
 		API:          file.API,
 	}, nil
 }

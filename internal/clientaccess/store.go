@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 const (
 	FileName                   = "auth.json"
 	ErrInvalidSecretFile Error = "invalid private authentication state"
+	ErrBrowserChanged    Error = "browser authentication changed; sign in again"
 	maxAuthBytes               = 128 << 10
 	authLockTimeout            = time.Second
 	authLockRetry              = 10 * time.Millisecond
@@ -195,7 +197,35 @@ func (s FileStore) Browser() (string, [32]byte, error) {
 
 func (s FileStore) SetBrowser(verifier string) error {
 	return s.update(context.Background(), func(record *authRecord) error {
-		record.Unlock = verifier
+		record.replacePassword(verifier)
+
+		return nil
+	})
+}
+
+func (s FileStore) ChangeBrowserPassword(
+	ctx context.Context,
+	currentKey [32]byte,
+	verifier string,
+) ([32]byte, error) {
+	var key [32]byte
+
+	err := s.update(ctx, func(record *authRecord) error {
+		if subtle.ConstantTimeCompare(record.SessionKey, currentKey[:]) != 1 {
+			return ErrBrowserChanged
+		}
+
+		record.replacePassword(verifier)
+		copy(key[:], record.SessionKey)
+
+		return nil
+	})
+
+	return key, err
+}
+
+func (s FileStore) RevokeBrowserSessions(ctx context.Context) error {
+	return s.update(ctx, func(record *authRecord) error {
 		record.rotate()
 
 		return nil
@@ -210,6 +240,11 @@ func (s FileStore) Reset(ctx context.Context) error {
 
 		return nil
 	})
+}
+
+func (r *authRecord) replacePassword(verifier string) {
+	r.Unlock = verifier
+	r.rotate()
 }
 
 func (r *authRecord) rotate() {

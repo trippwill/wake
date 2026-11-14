@@ -41,7 +41,7 @@ func (staleCorrectionStore) CorrectionForm(
 
 func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-correction-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-correction-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,7 +117,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 func TestContactFragmentRequiresAuthentication(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-contact-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-contact-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,7 +213,7 @@ func (*correctionCheckStore) CorrectionForm(
 
 func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-live-check-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-live-check-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

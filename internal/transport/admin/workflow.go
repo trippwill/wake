@@ -829,10 +829,18 @@ func registerWorkflowRoutes(
 			case <-r.Context().Done():
 				return
 			case <-ch:
+				if _, ok := auth.session(r); !ok {
+					return
+				}
+
 				if _, err := fmt.Fprint(w, "event: refresh\ndata: {}\n\n"); err != nil {
 					return
 				}
 			case <-ticker.C:
+				if _, ok := auth.session(r); !ok {
+					return
+				}
+
 				if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
 					return
 				}

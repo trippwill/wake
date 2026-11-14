@@ -33,7 +33,7 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	workflow := application.New(store, nil, nil, nil, nil)
 
 	dir := filepath.Dir(authFixturePath(t))
-	if err = admin.SetUnlock(dir, []byte("synthetic-correction-unlock")); err != nil {
+	if err = admin.SetPassword(dir, []byte("synthetic-correction-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +83,7 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	login := request(
 		http.MethodPost,
 		"/login",
-		url.Values{"unlock": {"synthetic-correction-unlock"}},
+		url.Values{"password": {"synthetic-correction-unlock"}},
 		http.StatusSeeOther,
 	)
 	cookie = login.Result().Cookies()[0]

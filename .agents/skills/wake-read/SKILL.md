@@ -10,7 +10,7 @@ description: Read accounts, financial activity, and reported positions from a ru
    on each leaf command before positional arguments. The default endpoint is
    `http://127.0.0.1:8788`; a private token file is required. If no client is
    enrolled, the operator creates a token in **System → API clients** after
-   browser unlock and saves it privately. Do not ask them to paste the token into
+   signing in and saves it privately. Do not ask them to paste the token into
    the conversation or put it on the command line. Read-only access does not
    require the server's config, OS identity, database or browser session.
 2. List accounts and take the exact Wake ID from `resources[].id`. IDs are scoped

@@ -21,9 +21,9 @@ func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		t.Run(map[bool]string{true: "enabled", false: "unprovisioned"}[enabled], func(t *testing.T) {
 			cfg := shellConfig(t)
-			cfg.Admin.Listen = "127.0.0.1:0"
+			cfg.Admin.Port = 0
 			if enabled {
-				if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-startup-unlock")); err != nil {
+				if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-startup-unlock")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -79,7 +79,7 @@ func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 
 func TestAdminBindFailureIsClassifiedWithoutReadiness(t *testing.T) {
 	cfg := shellConfig(t)
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-startup-unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-startup-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

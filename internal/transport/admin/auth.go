@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"go.trippwill.dev/wake/internal/clientaccess"
 	"golang.org/x/crypto/argon2"
@@ -27,18 +29,17 @@ const (
 	argonTime     = 3
 	argonMemory   = 64 * 1024
 	argonThreads  = 4
-	// Form encoding can use three bytes per byte of the unlock.
-	maxLoginBodyBytes = int64(len("unlock=") + 3*MaxUnlockBytes)
-	maxUnlockAttempts = 2
-	unlockInterval    = time.Second
+	// Form encoding can use three bytes per password byte.
+	maxLoginBodyBytes    = int64(len("password=") + 3*MaxPasswordBytes)
+	maxPasswordBodyBytes = 64 << 10
+	maxPasswordAttempts  = 2
+	attemptInterval      = time.Second
 )
 
-// MinimumUnlockBytes is the minimum length accepted during local provisioning.
-const MinimumUnlockBytes = 12
-
-// MaxUnlockBytes leaves room for the newline and a truncation check in Linux
-// canonical terminal input, whose full line buffer is 4096 bytes.
-const MaxUnlockBytes = (4 << 10) - 2
+const (
+	MinimumPasswordBytes = 12
+	MaxPasswordBytes     = (4 << 10) - 2
+)
 
 type Error string
 
@@ -46,8 +47,9 @@ func (e Error) Error() string { return string(e) }
 
 const (
 	ErrInvalidAuthConfiguration Error = "invalid admin authentication configuration"
-	ErrWeakUnlock               Error = "operator unlock must contain at least 12 bytes"
-	ErrLongUnlock               Error = "operator unlock exceeds the input limit"
+	ErrWeakPassword             Error = "password must contain at least 12 bytes"
+	ErrLongPassword             Error = "password exceeds the input limit"
+	ErrInvalidPassword          Error = "password must be valid UTF-8 on one line"
 )
 
 type verifier struct {
@@ -56,51 +58,64 @@ type verifier struct {
 }
 
 type authenticator struct {
-	origin      *url.URL
-	state       clientaccess.FileStore
-	unlockSlots chan struct{}
-	unlockMu    sync.Mutex
-	nextUnlock  time.Time
-	now         func() time.Time
-	lifetime    time.Duration
+	origin        *url.URL
+	state         clientaccess.FileStore
+	passwordSlots chan struct{}
+	attemptMu     sync.Mutex
+	nextAttempt   time.Time
+	now           func() time.Time
+	lifetime      time.Duration
 }
 
-// SetUnlock replaces the local operator unlock and invalidates existing sessions.
-func SetUnlock(configDir string, unlock []byte) error {
-	if len(unlock) < MinimumUnlockBytes {
-		return ErrWeakUnlock
+// SetPassword sets the operator password and invalidates existing browser sessions.
+func SetPassword(configDir string, password []byte) error {
+	record, err := passwordVerifier(password)
+	if err != nil {
+		return err
 	}
 
-	if len(unlock) > MaxUnlockBytes {
-		return ErrLongUnlock
+	return clientaccess.NewFileStore(configDir).SetBrowser(record)
+}
+
+func passwordVerifier(password []byte) (string, error) {
+	if len(password) < MinimumPasswordBytes {
+		return "", ErrWeakPassword
+	}
+
+	if len(password) > MaxPasswordBytes {
+		return "", ErrLongPassword
+	}
+
+	if !utf8.Valid(password) || bytes.ContainsAny(password, "\x00\r\n") {
+		return "", ErrInvalidPassword
 	}
 
 	var salt [saltSize]byte
 	if _, err := rand.Read(salt[:]); err != nil {
-		return err
+		return "", err
 	}
 
-	hash := argon2.IDKey(unlock, salt[:], argonTime, argonMemory, argonThreads, keySize)
+	hash := argon2.IDKey(password, salt[:], argonTime, argonMemory, argonThreads, keySize)
 	defer clear(hash)
 
-	record := "v1." + base64.RawURLEncoding.
-		EncodeToString(salt[:]) + "." + base64.RawURLEncoding.
-		EncodeToString(hash)
-
-	return clientaccess.NewFileStore(configDir).SetBrowser(record)
+	return "v1." + base64.RawURLEncoding.EncodeToString(
+		salt[:],
+	) + "." + base64.RawURLEncoding.EncodeToString(
+		hash,
+	), nil
 }
 
 // Open validates the initial auth file and supports an unprovisioned browser listener.
 func Open(configDir, origin string) (*authenticator, bool, error) {
 	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" {
 		return nil, false, ErrInvalidAuthConfiguration
 	}
 
 	auth := &authenticator{
 		origin: parsed, state: clientaccess.NewFileStore(configDir),
-		unlockSlots: make(chan struct{}, maxUnlockAttempts),
-		now:         time.Now, lifetime: 8 * time.Hour,
+		passwordSlots: make(chan struct{}, maxPasswordAttempts),
+		now:           time.Now, lifetime: 8 * time.Hour,
 	}
 
 	record, key, err := auth.state.Browser()
@@ -110,7 +125,7 @@ func Open(configDir, origin string) (*authenticator, bool, error) {
 }
 
 func (a *authenticator) login(w http.ResponseWriter, value string) bool {
-	if !a.reserveUnlockAttempt() {
+	if !a.reserveAttempt() {
 		return false
 	}
 
@@ -121,10 +136,23 @@ func (a *authenticator) login(w http.ResponseWriter, value string) bool {
 		return false
 	}
 
-	select {
-	case a.unlockSlots <- struct{}{}:
-		defer func() { <-a.unlockSlots }()
-	default:
+	if !a.tryPasswordWork() {
+		return false
+	}
+	defer a.finishPasswordWork()
+
+	if !matchesPassword(record, value) {
+		return false
+	}
+
+	// Sign with the same snapshot that verified the password.
+	a.issue(w, key[:])
+
+	return true
+}
+
+func matchesPassword(record, value string) bool {
+	if len(value) > MaxPasswordBytes {
 		return false
 	}
 
@@ -136,26 +164,30 @@ func (a *authenticator) login(w http.ResponseWriter, value string) bool {
 	derived := argon2.IDKey([]byte(value), v.salt[:], argonTime, argonMemory, argonThreads, keySize)
 	defer clear(derived)
 
-	if subtle.ConstantTimeCompare(derived, v.hash[:]) != 1 {
-		return false
-	}
-
-	// Sign with the same snapshot that verified the unlock.
-	a.issue(w, key[:])
-
-	return true
+	return subtle.ConstantTimeCompare(derived, v.hash[:]) == 1
 }
 
-func (a *authenticator) reserveUnlockAttempt() bool {
-	a.unlockMu.Lock()
-	defer a.unlockMu.Unlock()
+func (a *authenticator) tryPasswordWork() bool {
+	select {
+	case a.passwordSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *authenticator) finishPasswordWork() { <-a.passwordSlots }
+
+func (a *authenticator) reserveAttempt() bool {
+	a.attemptMu.Lock()
+	defer a.attemptMu.Unlock()
 
 	now := a.now()
-	if now.Before(a.nextUnlock) {
+	if now.Before(a.nextAttempt) {
 		return false
 	}
 
-	a.nextUnlock = now.Add(unlockInterval)
+	a.nextAttempt = now.Add(attemptInterval)
 
 	return true
 }
@@ -171,16 +203,15 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(payload))
 	value := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	//nolint:gosec // Cookie security follows the configured browser origin, independently of backend TCP.
 	http.SetCookie(
 		w,
+		//nolint:gosec // The admin listener uses HTTP on IPv4 loopback.
 		&http.Cookie{
 			Name:     sessionCookie,
 			Value:    value,
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
-			Secure:   a.origin.Scheme == "https",
 			MaxAge:   int(a.lifetime.Seconds()),
 		})
 
@@ -188,6 +219,17 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 }
 
 func (a *authenticator) session(r *http.Request) (string, bool) {
+	record, key, err := a.state.Browser()
+	defer clear(key[:])
+
+	if err != nil || record == "" {
+		return "", false
+	}
+
+	return a.sessionWithKey(r, key[:])
+}
+
+func (a *authenticator) sessionWithKey(r *http.Request, key []byte) (string, bool) {
 	cookie, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return "", false
@@ -206,13 +248,7 @@ func (a *authenticator) session(r *http.Request) (string, bool) {
 	}
 	defer clear(supplied)
 
-	record, key, err := a.state.Browser()
-	if err != nil || record == "" {
-		return "", false
-	}
-	defer clear(key[:])
-
-	mac := hmac.New(sha256.New, key[:])
+	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(payload))
 	if !hmac.Equal(supplied, mac.Sum(nil)) {
 		return "", false

@@ -55,7 +55,7 @@ type workspaceStore struct {
 
 func TestWorkspaceRoutesAndFragments(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-workspace-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-workspace-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -367,7 +367,7 @@ func (historyWorkspaceStore) ObservationList(
 
 func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-history-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-history-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

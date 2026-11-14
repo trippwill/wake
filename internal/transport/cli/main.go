@@ -194,12 +194,6 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			},
 			Commands: []*cli.Command{
 				{
-					Name:   "set-unlock",
-					Usage:  "Set or replace the browser operator unlock",
-					Flags:  common(),
-					Action: performSetUnlock,
-				},
-				{
 					Name:   "reset-access",
 					Usage:  "Revoke all API clients and browser sessions with Wake stopped",
 					Flags:  common(),
@@ -207,6 +201,22 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				},
 			},
 		},
+		accessGroup("access", "Manage browser access",
+			accessGroup("set", "Set browser access credentials",
+				&cli.Command{
+					Name:   "password",
+					Usage:  "Set or replace the browser password",
+					Flags:  common(),
+					Action: performSetPassword,
+				},
+			),
+			accessGroup("revoke", "Revoke browser access",
+				&cli.Command{
+					Name: "sessions", Usage: "Sign out all browsers and retain the password",
+					Flags: common(), Action: performRevokeSessions,
+				},
+			),
+		),
 		{
 			Name:            "config",
 			Usage:           "Discover local launch configuration without changing it",
@@ -256,6 +266,21 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 
 	return root
+}
+
+func accessGroup(name, usage string, children ...*cli.Command) *cli.Command {
+	return &cli.Command{
+		Name: name, Usage: usage, Commands: children, HideHelpCommand: true,
+		Action: func(_ context.Context, c *cli.Command) error {
+			printCommandHelp(c.ErrWriter, c)
+
+			if c.NArg() != 0 {
+				return usageError("unknown command " + c.Args().First() + " in " + c.FullName())
+			}
+
+			return usageError("specify a command after " + c.FullName())
+		},
+	}
 }
 
 func configureHelp(c *cli.Command) {

@@ -227,7 +227,7 @@ func TestPositionsGridDistinguishesMissingAndInapplicableContractTerms(t *testin
 
 func TestPositionsAuthenticatedPageGridAndFailures(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-positions-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-positions-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

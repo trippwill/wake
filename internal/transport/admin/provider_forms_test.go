@@ -41,7 +41,7 @@ func TestAccountConfirmationRetryKeepsDiscoveredCurrency(t *testing.T) {
 	const origin = "http://127.0.0.1:8787"
 
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-confirmation-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-confirmation-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -187,7 +187,7 @@ func TestConnectionDescriptorNeedsNoFinancialHistory(t *testing.T) {
 func TestConnectionPostAcceptsValidSDKFieldSizes(t *testing.T) {
 	workflow, store, descriptor := formWorkflow(t)
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-provider-form-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-provider-form-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -308,7 +308,7 @@ func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
 			}
 
 			dir := privateAuthDir(t)
-			if err = SetUnlock(dir, []byte("synthetic-retry-unlock")); err != nil {
+			if err = SetPassword(dir, []byte("synthetic-retry-unlock")); err != nil {
 				t.Fatal(err)
 			}
 

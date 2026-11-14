@@ -194,16 +194,30 @@ body {
 .wake-theme-control .select {
   min-block-size: 2.75rem;
 }
-.wake-contact {
-  display: grid;
+.wake-sidebar-footer {
   flex: none;
-  grid-template-columns: 0.6rem minmax(0, 1fr);
-  align-items: start;
-  gap: 0.35rem 0.6rem;
-  min-inline-size: 0;
   margin-block-start: 0.75rem;
   border-block-start: 1px solid var(--color-base-300);
-  padding-block-start: 0.75rem;
+  padding-block-start: 0.25rem;
+}
+.wake-sidebar-footer .wake-sign-out {
+  min-block-size: 2.75rem;
+  padding-inline: 0.5rem;
+  border-color: transparent;
+  background: transparent;
+}
+.wake-sidebar-footer .wake-sign-out:hover {
+  background: var(--color-accent);
+}
+[data-live-state="expired"] .wake-sign-out {
+  display: none;
+}
+.wake-contact {
+  display: grid;
+  grid-template-columns: 0.6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0 0.6rem;
+  min-inline-size: 0;
   font-size: 0.875rem;
   text-align: start;
 }
@@ -223,12 +237,15 @@ body {
 }
 .wake-contact-trigger {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
-  min-block-size: 1.5rem;
+  min-block-size: 2.75rem;
   list-style: none;
   overflow-wrap: anywhere;
   cursor: pointer;
+}
+[data-live-state="expired"] .wake-contact-trigger {
+  min-block-size: auto;
 }
 .wake-contact-trigger::-webkit-details-marker {
   display: none;
@@ -240,7 +257,7 @@ body {
   block-size: 0.375rem;
   border-inline-end: 1px solid;
   border-block-end: 1px solid;
-  transform: rotate(-45deg);
+  transform: rotate(225deg);
 }
 .wake-contact-details[open] .wake-contact-trigger::after {
   transform: rotate(45deg);
@@ -251,7 +268,7 @@ body {
   inset-block-end: 100%;
   inset-inline-start: 0;
   inline-size: max-content;
-  max-inline-size: min(24rem, 100%);
+  max-inline-size: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--wake-control-border);
   border-radius: var(--radius-field);
@@ -262,7 +279,6 @@ body {
   text-align: start;
 }
 .wake-contact-indicator {
-  margin-block-start: 0.35rem;
   width: 0.6rem;
   height: 0.6rem;
   border-radius: 50%;
@@ -412,13 +428,31 @@ body {
   [data-navigation][data-expanded="false"] .wake-nav {
     display: none;
   }
-  .wake-contact {
-    margin-block-start: 0.5rem;
-    border-block-start: 0;
-    padding-block-start: 0;
+  [data-signed-in] {
+    --wake-sidebar-footer-height: 3rem;
+    padding-block-end: var(--wake-sidebar-footer-height);
+  }
+  html:has([data-signed-in]) {
+    scroll-padding-block-end: 3rem;
+  }
+  [data-signed-in] .wake-app {
+    min-height: calc(100dvh - var(--wake-sidebar-footer-height));
+  }
+  .wake-sidebar-footer {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    block-size: var(--wake-sidebar-footer-height);
+    margin: 0;
+    padding: 0 1rem;
+    background: var(--color-base-100);
   }
   .wake-contact-panel {
-    position: static;
+    max-inline-size: min(24rem, calc(100vw - 4rem));
   }
   .wake-main {
     padding: 1.5rem 1rem 3rem;

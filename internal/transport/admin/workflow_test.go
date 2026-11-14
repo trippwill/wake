@@ -15,7 +15,7 @@ import (
 
 func TestWorkflowCommandsRequireSessionOriginAndCSRF(t *testing.T) {
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-workflow-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-workflow-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

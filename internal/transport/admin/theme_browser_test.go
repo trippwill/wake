@@ -40,7 +40,7 @@ func TestBrowserThemePreference(t *testing.T) {
 	origin := "http://" + server.Listener.Addr().String()
 
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-theme-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-theme-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +141,7 @@ func TestBrowserThemePreference(t *testing.T) {
 			`location.pathname==='/system/settings' && document.querySelector('[data-theme-preference]')?.value==='dark'`,
 		),
 		testbrowser.NewDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible(chromedp.CSS("#unlock")),
+		chromedp.WaitVisible(chromedp.CSS("#password")),
 		chromedp.Poll[chromedp.Void](
 			`document.documentElement.dataset.theme==='wake-dark' && !document.querySelector('.wake-toolbar,[data-theme-preference],#daemon-contact')`,
 		),

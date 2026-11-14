@@ -15,7 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/config"
 )
 
-func freeTCPAddress(t *testing.T) string {
+func freeTCPPort(t *testing.T) uint16 {
 	t.Helper()
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -23,12 +23,13 @@ func freeTCPAddress(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	address := l.Addr().String()
+	//nolint:gosec // An allocated TCP port is within the uint16 range.
+	port := uint16(l.Addr().(*net.TCPAddr).Port)
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	return address
+	return port
 }
 
 func seedAPIClient(t *testing.T, cfg config.Config) string {
@@ -76,7 +77,7 @@ func financialTransport(t *testing.T, cfg config.Config) *apiTestTransport {
 	}
 
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "tcp", cfg.API.Listen)
+		return (&net.Dialer{}).DialContext(ctx, "tcp", cfg.API.Address())
 	}}
 	t.Cleanup(transport.CloseIdleConnections)
 

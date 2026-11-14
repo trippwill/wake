@@ -57,20 +57,23 @@ func TestRenderFrontend(t *testing.T) {
 	}
 	view := fixtureView{Connections: []application.ConnectionView{source}}
 	for name, component := range map[string]templ.Component{
-		"connections":    ConnectionsPage("synthetic-csrf", sourceView{}),
-		"activity":       ActivityPage(activityView{}),
-		"positions":      PositionsPage(),
-		"settings":       SettingsBody(),
-		"clients":        ClientsPage("synthetic-csrf", nil, "", ""),
-		"client-issued":  ClientsPage("synthetic-csrf", nil, "synthetic-issued-token", ""),
-		"source":         ConnectionPage("synthetic-csrf", fixtureSource(view), source),
-		"source-access":  ConnectionAccess("synthetic-csrf", source),
-		"source-reports": ConnectionReports("synthetic-csrf", source),
-		"source-new":     ConnectionSetup("synthetic-csrf", []provider.Registration{registration}),
-		"reference":      ReferencePage("synthetic-csrf", fixtureSource(view)),
-		"recovery":       RecoveryPage("synthetic-csrf", fixtureSource(view)),
-		"error":          ErrorPage("Temporarily unavailable", "Retry the current operation."),
-		"correction":     CorrectionPage("synthetic-csrf", application.CorrectionForm{Kind: "activity", ID: "synthetic", Label: "Synthetic activity", Revision: 1, Fields: []string{"price", "quantity"}, Candidates: []application.CorrectionCandidate{{Value: "synthetic-candidate", Label: "Synthetic retained observation"}}, Decisions: []application.DecisionRecord{{Scope: "price", Text: "1.25", Currency: "USD", Active: true}}}),
+		"connections":       ConnectionsPage("synthetic-csrf", sourceView{}),
+		"activity":          ActivityPage(activityView{}),
+		"positions":         PositionsPage(),
+		"settings":          SettingsBody(),
+		"sign-in-page":      LoginBody(""),
+		"password-required": PasswordRequiredBody(),
+		"change-password":   ChangePasswordBody("synthetic-csrf", ""),
+		"clients":           ClientsPage("synthetic-csrf", nil, "", ""),
+		"client-issued":     ClientsPage("synthetic-csrf", nil, "synthetic-issued-token", ""),
+		"source":            ConnectionPage("synthetic-csrf", fixtureSource(view), source),
+		"source-access":     ConnectionAccess("synthetic-csrf", source),
+		"source-reports":    ConnectionReports("synthetic-csrf", source),
+		"source-new":        ConnectionSetup("synthetic-csrf", []provider.Registration{registration}),
+		"reference":         ReferencePage("synthetic-csrf", fixtureSource(view)),
+		"recovery":          RecoveryPage("synthetic-csrf", fixtureSource(view)),
+		"error":             ErrorPage("Temporarily unavailable", "Retry the current operation."),
+		"correction":        CorrectionPage("synthetic-csrf", application.CorrectionForm{Kind: "activity", ID: "synthetic", Label: "Synthetic activity", Revision: 1, Fields: []string{"price", "quantity"}, Candidates: []application.CorrectionCandidate{{Value: "synthetic-candidate", Label: "Synthetic retained observation"}}, Decisions: []application.DecisionRecord{{Scope: "price", Text: "1.25", Currency: "USD", Active: true}}}),
 	} {
 		//nolint:gosec // Fixed page names in the caller-selected synthetic output directory.
 		output, e := os.Create(filepath.Join(dir, name+".html"))

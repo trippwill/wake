@@ -34,7 +34,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("Log.Level = %v, want %v", cfg.Log.Level, slog.LevelInfo)
 	}
 
-	if cfg.Admin.Listen != "127.0.0.1:8787" || cfg.Admin.Address() != "127.0.0.1:8787" ||
+	if cfg.Admin.Port != 8787 || cfg.Admin.Address() != "127.0.0.1:8787" ||
 		cfg.Admin.Origin() != "http://127.0.0.1:8787" {
 		t.Errorf("Admin = %#v, address = %q, origin = %q", cfg.Admin, cfg.Admin.Address(), cfg.Admin.Origin())
 	}
@@ -62,7 +62,7 @@ func TestLoadRelativeAndAbsolutePaths(t *testing.T) {
 		"runtime_dir = \"" + fileRuntime + "\"\n" +
 		"[log]\nlevel = \"debug\"\n" +
 		"[credentials]\nkey_path = \"" + filepath.Join(roots.base, "master.key") + "\"\n" +
-		"[admin]\nlisten = '127.0.0.1:8790'\npublic_origin = \"https://wake.example.test\"\n"
+		"[admin]\nport = 8790\n[api]\nport = 8791\n"
 	if err := os.WriteFile(configPath, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -86,8 +86,8 @@ func TestLoadRelativeAndAbsolutePaths(t *testing.T) {
 		t.Errorf("Credentials.KeyPath = %q", cfg.Credentials.KeyPath)
 	}
 
-	if cfg.Admin.Listen != "127.0.0.1:8790" || cfg.Admin.Address() != "127.0.0.1:8790" ||
-		cfg.Admin.Origin() != "https://wake.example.test" {
+	if cfg.Admin.Port != 8790 || cfg.Admin.Address() != "127.0.0.1:8790" ||
+		cfg.Admin.Origin() != "http://127.0.0.1:8790" {
 		t.Errorf("Admin = %#v, address = %q, origin = %q", cfg.Admin, cfg.Admin.Address(), cfg.Admin.Origin())
 	}
 }
@@ -105,60 +105,16 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "unsupported log level", contents: "[log]\nlevel = \"verbose\"\n"},
 		{name: "invalid resume backfills", contents: "[sync]\nresume_backfills = \"false\"\n"},
 		{name: "removed key setting", contents: "[credentials]\nmaster_key_path = \"master.key\"\n"},
-		{name: "zero admin port", contents: "[admin]\nlisten = '127.0.0.1:0'\n"},
-		{name: "invalid listener IP", contents: "[api]\nlisten = 'localhost:8788'\n"},
-		{name: "network admin without origin", contents: "[admin]\nlisten = '0.0.0.0:8787'\n"},
+		{name: "zero admin port", contents: "[admin]\nport = 0\n"},
+		{name: "negative API port", contents: "[api]\nport = -1\n"},
+		{name: "out of range port", contents: "[api]\nport = 65536\n"},
+		{name: "port as text", contents: "[api]\nport = '8788'\n"},
+		{name: "duplicate port", contents: "[api]\nport = 8787\n"},
+		{name: "removed admin listener setting", contents: "[admin]\nlisten = '0.0.0.0:8787'\n"},
+		{name: "removed API listener setting", contents: "[api]\nlisten = '127.0.0.1:8788'\n"},
 		{
-			name:     "invalid public origin",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test/path\"\n",
-		},
-		{
-			name:     "public origin with default port",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test:443\"\n",
-		},
-		{
-			name:     "public origin with noncanonical default port",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test:0443\"\n",
-		},
-		{
-			name:     "public origin with empty query",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test?\"\n",
-		},
-		{
-			name:     "public origin with uppercase host",
-			contents: "[admin]\npublic_origin = \"https://WAKE.example.test\"\n",
-		},
-		{
-			name:     "public origin with empty host",
-			contents: "[admin]\npublic_origin = \"http://:8787\"\n",
-		},
-		{
-			name:     "public origin with empty port",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test:\"\n",
-		},
-		{
-			name:     "public origin with empty fragment",
-			contents: "[admin]\npublic_origin = \"https://wake.example.test#\"\n",
-		},
-		{
-			name:     "public origin with noncanonical IPv6",
-			contents: "[admin]\npublic_origin = \"http://[0:0:0:0:0:0:0:1]:8787\"\n",
-		},
-		{
-			name:     "public origin with unbracketed IPv6",
-			contents: "[admin]\npublic_origin = \"http://::1\"\n",
-		},
-		{
-			name:     "public origin with shortened IPv4",
-			contents: "[admin]\npublic_origin = \"http://127.1:8787\"\n",
-		},
-		{
-			name:     "public origin with hexadecimal IPv4",
-			contents: "[admin]\npublic_origin = \"http://0x7f000001:8787\"\n",
-		},
-		{
-			name:     "public origin with bracketed IPv4",
-			contents: "[admin]\npublic_origin = \"http://[127.0.0.1]:8787\"\n",
+			name:     "removed public origin setting",
+			contents: "[admin]\npublic_origin = 'https://wake.example.test'\n",
 		},
 		{
 			name:     "relative explicit config",
@@ -188,19 +144,10 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestAdminLoopbackOriginUsesCanonicalAddress(t *testing.T) {
-	for _, test := range []struct{ listen, origin string }{
-		{"[0:0:0:0:0:0:0:1]:8787", "http://[::1]:8787"},
-		{"[0:0:0:0:0:0:0:1]:80", "http://[::1]"},
-		{"[::ffff:127.0.0.1]:8787", "http://127.0.0.1:8787"},
-		{"127.0.0.1:80", "http://127.0.0.1"},
-	} {
-		t.Run(test.listen, func(t *testing.T) {
-			admin, err := resolveAdmin(fileAdmin{Listen: test.listen})
-			if err != nil || admin.Origin() != test.origin {
-				t.Fatal(admin.Origin(), err)
-			}
-		})
+func TestAdminLoopbackOriginOmitsDefaultHTTPPort(t *testing.T) {
+	admin := Admin{Port: 80}
+	if admin.Origin() != "http://127.0.0.1" || admin.Address() != "127.0.0.1:80" {
+		t.Fatal(admin.Origin(), admin.Address())
 	}
 }
 

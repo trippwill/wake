@@ -359,7 +359,7 @@
     setTimeout(() => {
       for (const button of form.querySelectorAll('button[type="submit"]')) {
         button.dataset.pendingLabel = button.textContent;
-        button.textContent = "Saving…";
+        button.textContent = button.dataset.submitLabel || "Saving…";
         button.disabled = true;
       }
     }, 0);

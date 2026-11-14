@@ -23,8 +23,8 @@ to check all Go packages with the existing development build settings.
 
 For a foreground development instance, create a private instance directory with an
 empty `config.toml`. Run `mise run bin -- credentials generate-key`, then
-`mise run bin -- admin set-unlock`, and `mise run serve`. Select the same TOML for all
-three commands.
+`mise run bin -- access set password` and `mise run serve`. Select the
+same TOML for all three commands. Sign in with the password entered at the prompt.
 
 Use `mise run bin -- help` for application commands. The [README](../../README.md)
 provides a quick setup and usage helper. Keep automation in repository tasks

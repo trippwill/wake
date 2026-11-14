@@ -24,7 +24,7 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	cfg := shellConfig(t)
 	seedAPIClient(t, cfg)
 
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-shell-unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-shell-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,7 +94,7 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 		t.Fatal("shutdown not joined")
 	}
 
-	if conn, err := net.Dial("tcp", cfg.API.Listen); err == nil {
+	if conn, err := net.Dial("tcp", cfg.API.Address()); err == nil {
 		_ = conn.Close()
 
 		t.Fatal("API listener retained")
@@ -120,7 +120,7 @@ func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
 			cfg.Admin.CurrencyRefresh = tc.refresh
 
 			if tc.admin {
-				if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-currency-unlock")); err != nil {
+				if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-currency-unlock")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -226,8 +226,11 @@ func TestCurrencyCachePathAvoidsConfiguredFiles(t *testing.T) {
 func shellConfig(t *testing.T) config.Config {
 	t.Helper()
 
-	address := freeTCPAddress(t)
-	apiAddress := freeTCPAddress(t)
+	adminPort := freeTCPPort(t)
+	apiPort := freeTCPPort(t)
+	for apiPort == adminPort {
+		apiPort = freeTCPPort(t)
+	}
 
 	return config.Config{
 		Paths: config.Paths{ConfigDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)},
@@ -235,8 +238,7 @@ func shellConfig(t *testing.T) config.Config {
 			WarehousePath:   filepath.Join(resetPrivateDir(t), "history.sqlite"),
 			ConnectionsPath: filepath.Join(resetPrivateDir(t), "credentials.sqlite"),
 		},
-		//nolint:gosec // Port obtained from a bound TCP listener.
-		Admin: config.Admin{Listen: address, PublicOrigin: "http://" + address},
-		API:   config.API{Listen: apiAddress},
+		Admin: config.Admin{Port: adminPort},
+		API:   config.API{Port: apiPort},
 	}
 }

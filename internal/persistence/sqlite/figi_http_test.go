@@ -37,7 +37,7 @@ func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
 	applyEquityIdentity(t, s, second)
 
 	dir := filepath.Dir(authFixturePath(t))
-	if err = admin.SetUnlock(dir, []byte("synthetic-alias-review")); err != nil {
+	if err = admin.SetPassword(dir, []byte("synthetic-alias-review")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +67,7 @@ func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
 	login := httptest.NewRequest(
 		http.MethodPost,
 		origin+"/login",
-		strings.NewReader(url.Values{"unlock": {"synthetic-alias-review"}}.Encode()),
+		strings.NewReader(url.Values{"password": {"synthetic-alias-review"}}.Encode()),
 	)
 	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	login.Header.Set("Origin", origin)

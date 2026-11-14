@@ -64,7 +64,7 @@ func TestConfigRejectsFormerOverridesAndUnsafeFileAliases(t *testing.T) {
 	t.Setenv("WAKE_API_LISTEN", "127.0.0.1:9898")
 
 	resolved, err := resolveForTest(Overrides{})
-	if err != nil || resolved.Config.API.Listen != "127.0.0.1:8788" {
+	if err != nil || resolved.Config.API.Address() != "127.0.0.1:8788" {
 		t.Fatal(resolved, err)
 	}
 

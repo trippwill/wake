@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,16 +65,30 @@ type Credentials struct {
 
 // Admin contains browser listener and origin settings. Secrets remain in private files.
 type Admin struct {
-	Listen          string
-	PublicOrigin    string
+	Port            uint16
 	CurrencyRefresh bool
 }
 
-func (value Admin) Address() string { return value.Listen }
-func (value Admin) Origin() string  { return value.PublicOrigin }
+func loopbackAddress(port uint16) string {
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port)))
+}
+
+func (value Admin) Address() string { return loopbackAddress(value.Port) }
+
+func (value Admin) Origin() string {
+	if value.Port == 80 {
+		return "http://127.0.0.1"
+	}
+
+	return "http://" + value.Address()
+}
 
 // API contains the financial HTTP listener address.
-type API struct{ Listen string }
+type API struct {
+	Port uint16 `toml:"port"`
+}
+
+func (value API) Address() string { return loopbackAddress(value.Port) }
 
 // Config is the fully resolved and validated process configuration.
 type Config struct {
@@ -115,8 +128,7 @@ type fileCredentials struct {
 }
 
 type fileAdmin struct {
-	Listen          string `toml:"listen"`
-	PublicOrigin    string `toml:"public_origin"`
+	Port            uint16 `toml:"port"`
 	CurrencyRefresh *bool  `toml:"currency_refresh"`
 }
 
@@ -252,55 +264,6 @@ func parseLogLevel(value string) (slog.Level, error) {
 	}
 }
 
-func validateAdminOrigin(value string) error {
-	parsed, err := url.Parse(value)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
-		parsed.User != nil || parsed.Opaque != "" || parsed.Path != "" || parsed.RawQuery != "" ||
-		parsed.ForceQuery || parsed.Fragment != "" || parsed.Scheme != strings.ToLower(parsed.Scheme) ||
-		parsed.Host != strings.ToLower(parsed.Host) || parsed.Hostname() == "" ||
-		strings.HasSuffix(parsed.Host, ":") || parsed.String() != value {
-		return fmt.Errorf("%w: admin public_origin must be an http or https origin", ErrInvalid)
-	}
-
-	host := parsed.Hostname()
-	if ip := net.ParseIP(host); ip != nil {
-		host = ip.String()
-		if ip.To4() == nil {
-			host = "[" + host + "]"
-		}
-	} else {
-		// Browsers interpret numeric final labels as IPv4, including shortened
-		// and hexadecimal forms. Require the ordinary dotted IPv4 form above.
-		last := strings.TrimSuffix(host, ".")
-		last = last[strings.LastIndexByte(last, '.')+1:]
-		if strings.Trim(host, "abcdefghijklmnopqrstuvwxyz0123456789-._") != "" ||
-			strings.Trim(last, "0123456789") == "" ||
-			(strings.HasPrefix(last, "0x") && strings.Trim(last[2:], "0123456789abcdef") == "") {
-			return fmt.Errorf("%w: admin public_origin must use a DNS name or canonical IP address", ErrInvalid)
-		}
-	}
-
-	if port := parsed.Port(); port != "" {
-		host += ":" + port
-
-		portNumber, portErr := strconv.Atoi(port)
-		if portErr != nil || portNumber < 1 || portNumber > 65535 || strconv.Itoa(portNumber) != port {
-			return fmt.Errorf("%w: admin public_origin must use a canonical port", ErrInvalid)
-		}
-
-		if (parsed.Scheme == "http" && portNumber == 80) ||
-			(parsed.Scheme == "https" && portNumber == 443) {
-			return fmt.Errorf("%w: admin public_origin must omit the default port", ErrInvalid)
-		}
-	}
-
-	if parsed.Host != host {
-		return fmt.Errorf("%w: admin public_origin must use a canonical host", ErrInvalid)
-	}
-
-	return nil
-}
-
 func ensurePrivateDir(path string) error { return checkPrivateDir(path, true) }
 
 // CheckPrivateDir verifies an existing private directory without creating it.
@@ -353,55 +316,11 @@ func checkPrivateDir(path string, create bool) error {
 	return nil
 }
 
-func checkListen(address string) error {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil || net.ParseIP(host) == nil {
-		return fmt.Errorf("%w: listener must be an IP address and port", ErrInvalid)
-	}
-
-	number, err := strconv.Atoi(port)
-	if err != nil || number < 1 || number > 65535 || strconv.Itoa(number) != port {
-		return fmt.Errorf("%w: listener port must be between 1 and 65535", ErrInvalid)
-	}
-
-	return nil
-}
-
-func resolveAdmin(fromFile fileAdmin) (Admin, error) {
-	address := fromFile.Listen
-	if address == "" {
-		address = defaultAdmin.Listen
-	}
-
-	if err := checkListen(address); err != nil {
-		return Admin{}, err
-	}
-
-	origin := fromFile.PublicOrigin
-	if origin == "" {
-		host, port, _ := net.SplitHostPort(address)
-		if !net.ParseIP(host).IsLoopback() {
-			return Admin{}, fmt.Errorf("%w: non-loopback admin listener requires public_origin", ErrInvalid)
-		}
-
-		host = net.ParseIP(host).String()
-		origin = "http://" + net.JoinHostPort(host, port)
-		if port == "80" {
-			origin = "http://" + host
-			if strings.Contains(host, ":") {
-				origin = "http://[" + host + "]"
-			}
-		}
-	}
-
-	if err := validateAdminOrigin(origin); err != nil {
-		return Admin{}, err
-	}
-
-	refresh := defaultAdmin.CurrencyRefresh
+func resolveAdmin(fromFile fileAdmin) Admin {
+	admin := Admin{Port: fromFile.Port}
 	if fromFile.CurrencyRefresh != nil {
-		refresh = *fromFile.CurrencyRefresh
+		admin.CurrencyRefresh = *fromFile.CurrencyRefresh
 	}
 
-	return Admin{Listen: address, PublicOrigin: origin, CurrencyRefresh: refresh}, nil
+	return admin
 }

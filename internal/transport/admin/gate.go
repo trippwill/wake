@@ -37,6 +37,8 @@ func (auth *authenticator) gate(
 
 			limit := int64(16 << 10)
 			switch r.Pattern {
+			case "POST " + passwordPath:
+				limit = maxPasswordBodyBytes
 			case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets":
 				// The SDK admits 64 fields of up to 4096 bytes, plus field names,
 				// host metadata and at most three URL-encoded bytes per input byte.

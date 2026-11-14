@@ -18,7 +18,7 @@ import (
 )
 
 func TestBrowserClientEnrollmentAndRevocation(t *testing.T) {
-	front, api, _ := newFrontedServer(t, false)
+	front, api, _ := newBrowserAndAPIServers(t)
 	ctx := testbrowser.Start(t)
 
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
@@ -34,8 +34,8 @@ func TestBrowserClientEnrollmentAndRevocation(t *testing.T) {
 	check(
 		testbrowser.SetViewport(1280, 1000),
 		testbrowser.NewDocument(chromedp.Navigate(front.URL+"/system/clients")),
-		chromedp.WaitVisible(chromedp.CSS("#unlock")),
-		chromedp.SendKeys(chromedp.CSS("#unlock"), frontedUnlock),
+		chromedp.WaitVisible(chromedp.CSS("#password")),
+		chromedp.SendKeys(chromedp.CSS("#password"), frontedUnlock),
 		testbrowser.NewDocument(chromedp.Click(chromedp.CSS(`button[type="submit"]`))),
 		testbrowser.NewDocument(chromedp.Navigate(front.URL+"/system/clients")),
 		chromedp.WaitVisible(chromedp.CSS("#client-name")),

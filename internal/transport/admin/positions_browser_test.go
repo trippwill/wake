@@ -134,7 +134,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 	origin := "http://" + server.Listener.Addr().String()
 
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-browser-positions")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-browser-positions")); err != nil {
 		t.Fatal(err)
 	}
 

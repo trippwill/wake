@@ -20,7 +20,7 @@ func assetTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 
 	dir := privateAuthDir(t)
-	if err := SetUnlock(dir, []byte("synthetic-asset-unlock")); err != nil {
+	if err := SetPassword(dir, []byte("synthetic-asset-unlock")); err != nil {
 		t.Fatal(err)
 	}
 

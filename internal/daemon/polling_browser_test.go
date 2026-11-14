@@ -72,7 +72,7 @@ func TestBrowserPollingIntervals(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-polling-unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-polling-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,7 +107,7 @@ func TestBrowserPollingIntervals(t *testing.T) {
 	if err := chromedp.Do(
 		ctx,
 		navigate(chromedp.Navigate(origin+"/login")),
-		chromedp.SetValue(chromedp.CSS("#unlock"), "synthetic-polling-unlock"),
+		chromedp.SetValue(chromedp.CSS("#password"), "synthetic-polling-unlock"),
 		navigate(chromedp.Click(chromedp.CSS(`form[action="/login"] button[type="submit"]`))),
 		navigate(chromedp.Navigate(access)),
 		chromedp.WaitVisible(chromedp.CSS(input)),

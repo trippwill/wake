@@ -184,7 +184,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-browser-unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-browser-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,10 +345,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(
 		testbrowser.SetViewport(1440, 1000),
 		newDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible(chromedp.CSS("#unlock")),
-		chromedp.SendKeys(chromedp.CSS("#unlock"), "synthetic-browser-unlock"),
+		chromedp.WaitVisible(chromedp.CSS("#password")),
+		chromedp.SendKeys(chromedp.CSS("#password"), "synthetic-browser-unlock"),
 	)
-	navigate(chromedp.Click(chromedp.CSS(`button[type="submit"]`)))
+	navigate(chromedp.Click(chromedp.CSS(`form[action="/login"] button[type="submit"]`)))
 	check(chromedp.WaitVisible(chromedp.CSS("#main-navigation")))
 	navigate(chromedp.Click(chromedp.CSS(`a[href="/connections"]`)))
 	navigate(chromedp.Click(chromedp.CSS(`a[href="/connections/new"]`)))
@@ -1227,7 +1227,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Evaluate[chromedp.Void](`document.querySelector('a[href*="account=U-SYNTHETIC"]').click()`),
 		chromedp.WaitVisible(chromedp.CSS("#account-name")),
 		chromedp.SetValue(chromedp.CSS("#account-name"), "Fresh confirmed account"),
-		newDocument(chromedp.Click(chromedp.CSS(`button[type="submit"]`))),
+		newDocument(chromedp.Click(chromedp.CSS(`form[action$="/confirm"] button[type="submit"]`))),
 		chromedp.WaitVisible(chromedp.CSS("#activity-rows")),
 		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,

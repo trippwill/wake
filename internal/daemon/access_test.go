@@ -14,7 +14,7 @@ import (
 
 func TestResetAccessRequiresStoppedProfile(t *testing.T) {
 	cfg := shellConfig(t)
-	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
 		t.Fatal(err)
 	}
 

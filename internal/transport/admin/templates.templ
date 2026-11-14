@@ -12,13 +12,59 @@ templ Login(message string) {
 templ LoginBody(message string) {
 	<div class="wake-login wake-stack">
 		<h1>Sign in to Wake</h1>
-		<p>Inspect financial history and review its supporting evidence.</p>
-		<p class="wake-help">Use the unlock set with <code>wake admin set-unlock</code>.</p>
-		if message!="" {
+		if message != "" {
 			<div class="wake-notice wake-error" role="alert">{ message }</div>
 		}
-		<form method="post" action="/login" class="wake-stack"><label class="wake-field" for="unlock">Operator unlock<input class="input" id="unlock" name="unlock" type="password" autocomplete="current-password" required/></label><button class="btn btn-primary" type="submit">Sign in</button></form>
+		<form method="post" action="/login" class="wake-stack">
+			<label class="wake-field" for="password">Password<input class="input" id="password" name="password" type="password" autocomplete="current-password" required/></label>
+			<button class="btn btn-primary" type="submit">Sign in</button>
+		</form>
+		<details>
+			<summary>Forgot your password?</summary>
+			<p class="wake-help">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p>
+		</details>
 	</div>
+}
+
+templ PasswordRequired() {
+	@Shell("Set a password", "", PasswordRequiredBody())
+}
+
+templ PasswordRequiredBody() {
+	<div class="wake-login wake-stack">
+		<h1>Set your Wake password</h1>
+		<p>On the Wake host, run:</p>
+		<pre><code>wake access set password</code></pre>
+		<p>Enter and confirm your password in the terminal, then <a href="/login">sign in</a>.</p>
+	</div>
+}
+
+templ ChangePassword(csrf, message string) {
+	@SectionShell("Change password", csrf, "System", ChangePasswordBody(csrf, message))
+}
+
+templ ChangePasswordBody(csrf, message string) {
+	@PageHeader("Change password", "Changing your password signs out your other browser sessions.")
+	<section class="wake-card wake-stack">
+		if message != "" {
+			<div class="wake-notice wake-error" role="alert">{ message }</div>
+		}
+		<form method="post" action={ passwordPath } class="wake-stack">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<label class="wake-field" for="current">Current password<input class="input" id="current" name="current" type="password" autocomplete="current-password" required/></label>
+			@NewPasswordFields()
+			<div class="wake-actions">
+				<button class="btn btn-primary" type="submit">Change password</button>
+				<a href="/system/settings">Cancel</a>
+			</div>
+		</form>
+	</section>
+}
+
+templ NewPasswordFields() {
+	<label class="wake-field" for="password">New password<input class="input" id="password" name="password" type="password" autocomplete="new-password" aria-describedby="password-help" required/></label>
+	<p class="wake-help" id="password-help">Use at least 12 bytes.</p>
+	<label class="wake-field" for="confirm">Confirm new password<input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" required/></label>
 }
 
 templ Overview(csrf, path string, status Status, cfg config.Config) {
@@ -36,6 +82,10 @@ templ SettingsBody() {
 		<h2>Appearance</h2>
 		<p class="wake-help">System follows your device’s appearance.</p>
 		@ThemeControl()
+	</section>
+	<section class="wake-card">
+		<h2>Browser access</h2>
+		<a href={ passwordPath }>Change password</a>
 	</section>
 }
 
@@ -61,13 +111,13 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 				<dt>Runtime directory</dt>
 				<dd>{ cfg.Paths.RuntimeDir }</dd>
 				<dt>Admin authentication</dt>
-				<dd>Operator unlock</dd>
+				<dd>Operator password</dd>
 				<dt>Admin listener</dt>
-				<dd>{ cfg.Admin.Listen }</dd>
-				<dt>Browser origin</dt>
+				<dd>{ cfg.Admin.Address() }</dd>
+				<dt>Browser URL</dt>
 				<dd>{ cfg.Admin.Origin() }</dd>
 				<dt>Financial API listener</dt>
-				<dd>{ cfg.API.Listen }</dd>
+				<dd>{ cfg.API.Address() }</dd>
 				<dt>Currency list refresh</dt>
 				<dd>
 					if cfg.Admin.CurrencyRefresh {

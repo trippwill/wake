@@ -167,7 +167,7 @@ func describeCommand(c *cli.Command, path string) commandDescription {
 		Name:        path,
 		Description: c.Usage,
 		Arguments:   c.ArgsUsage,
-		Interactive: c.Name == "set-unlock",
+		Interactive: c.Name == "password" && path == "wake access set password",
 		Flags:       []flagDescription{},
 	}
 	for _, f := range c.Flags {
