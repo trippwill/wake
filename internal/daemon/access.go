@@ -11,6 +11,8 @@ import (
 )
 
 // ResetAccess revokes restored client and browser authority without opening SQLite.
-func ResetAccess(_ context.Context, cfg config.Config) error {
-	return WithStoppedProfile(cfg, clientaccess.NewFileStore(cfg.Paths.ConfigDir).Reset)
+func ResetAccess(ctx context.Context, cfg config.Config) error {
+	return WithStoppedProfile(cfg, func() error {
+		return clientaccess.NewFileStore(cfg.Paths.ConfigDir).Reset(ctx)
+	})
 }

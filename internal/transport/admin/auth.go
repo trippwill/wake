@@ -21,19 +21,23 @@ import (
 )
 
 const (
-	sessionCookie     = "wake_admin_session"
-	keySize           = 32
-	saltSize          = 16
-	argonTime         = 3
-	argonMemory       = 64 * 1024
-	argonThreads      = 4
-	maxLoginBodyBytes = 4 << 10
+	sessionCookie = "wake_admin_session"
+	keySize       = 32
+	saltSize      = 16
+	argonTime     = 3
+	argonMemory   = 64 * 1024
+	argonThreads  = 4
+	// Form encoding can use three bytes per byte of the unlock.
+	maxLoginBodyBytes = int64(len("unlock=") + 3*MaxUnlockBytes)
 	maxUnlockAttempts = 2
 	unlockInterval    = time.Second
 )
 
 // MinimumUnlockBytes is the minimum length accepted during local provisioning.
 const MinimumUnlockBytes = 12
+
+// MaxUnlockBytes bounds terminal input and the corresponding browser form.
+const MaxUnlockBytes = 4 << 10
 
 type Error string
 
@@ -42,6 +46,7 @@ func (e Error) Error() string { return string(e) }
 const (
 	ErrInvalidAuthConfiguration Error = "invalid admin authentication configuration"
 	ErrWeakUnlock               Error = "operator unlock must contain at least 12 bytes"
+	ErrLongUnlock               Error = "operator unlock exceeds the input limit"
 )
 
 type verifier struct {
@@ -63,6 +68,10 @@ type authenticator struct {
 func SetUnlock(configDir string, unlock []byte) error {
 	if len(unlock) < MinimumUnlockBytes {
 		return ErrWeakUnlock
+	}
+
+	if len(unlock) > MaxUnlockBytes {
+		return ErrLongUnlock
 	}
 
 	var salt [saltSize]byte

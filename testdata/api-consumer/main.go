@@ -50,7 +50,16 @@ type state struct {
 	Version     string                     `json:"version"`
 	Resources   map[string]json.RawMessage `json:"resources"`
 }
-type historyUpdateError struct{ error }
+type unavailableError struct{ error }
+
+type consumerError string
+
+func (e consumerError) Error() string { return string(e) }
+
+const (
+	errClientUnauthorized consumerError = "financial API rejected the client token (HTTP 401)"
+	errAPIUnavailable     consumerError = "financial API temporarily unavailable (HTTP 503)"
+)
 
 type protocolError struct {
 	Code    string `json:"code"`
@@ -157,6 +166,14 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 		return nil, "", false, transportError{fmt.Errorf("API transport: %w", err)}
 	}
 	defer func() { _ = response.Body.Close() }()
+	switch response.StatusCode {
+	case http.StatusUnauthorized:
+		return nil, "", false, errClientUnauthorized
+	case http.StatusServiceUnavailable:
+		if response.Header.Get("Content-Type") != "application/json" {
+			return nil, "", false, unavailableError{errAPIUnavailable}
+		}
+	}
 	if response.StatusCode == http.StatusNotModified {
 		if version == "" || response.Header.Get("ETag") != `"`+version+`"` {
 			return nil, "", false, errors.New("protocol: conditional response lacks matching baseline")
@@ -178,8 +195,8 @@ func (c *client) request(ctx context.Context, path, version string) ([]byte, str
 		if decode(data, &failure) != nil || failure.Code == "" {
 			return nil, "", false, errors.New("protocol: malformed error")
 		}
-		if response.StatusCode == http.StatusServiceUnavailable && failure.Code == "history_updating" {
-			return nil, "", false, historyUpdateError{failure}
+		if response.StatusCode == http.StatusServiceUnavailable {
+			return nil, "", false, unavailableError{failure}
 		}
 		return nil, "", false, failure
 	}
@@ -663,8 +680,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		completed = publication{current.WarehouseID, current.Version}
 		return nil
 	}
-	var updating historyUpdateError
-	if err = synchronize(); !*follow || err != nil && !errors.As(err, &updating) {
+	var unavailable unavailableError
+	if err = synchronize(); !*follow || err != nil && !errors.As(err, &unavailable) {
 		return err
 	}
 	return c.follow(ctx, *interval, func(p publication) error {

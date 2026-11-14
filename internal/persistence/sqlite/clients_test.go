@@ -140,7 +140,7 @@ func TestClientRevocationStreamsAndPersistence(t *testing.T) {
 
 	release()
 
-	if err := auth.Reset(); err != nil {
+	if err := auth.Reset(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 

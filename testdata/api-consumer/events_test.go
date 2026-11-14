@@ -116,7 +116,7 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 }
 
 func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
-	for _, failure := range []string{"request", "response", "history update"} {
+	for _, failure := range []string{"request", "response", "history update", "unavailable"} {
 		t.Run(failure, func(t *testing.T) {
 			db := mirrorDB(t)
 			current, err := validateSnapshot(fixture("previous", 1, "0.1000"))
@@ -137,7 +137,9 @@ func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
 					return
 				}
 				if snapshots.Add(1) == 1 {
-					if failure == "history update" {
+					if failure == "unavailable" {
+						http.Error(w, "financial access unavailable", http.StatusServiceUnavailable)
+					} else if failure == "history update" {
 						w.Header().Set("Content-Type", "application/json")
 						w.Header().Set("Retry-After", "5")
 						w.WriteHeader(http.StatusServiceUnavailable)
@@ -184,6 +186,27 @@ func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFollowStopsOnUnauthorizedStream(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		requests := 0
+		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
+			requests++
+			if requests == 1 {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: http.NoBody, Request: r}, nil
+			}
+			return &http.Response{StatusCode: http.StatusUnauthorized, Body: http.NoBody, Request: r}, nil
+		})}, base: "http://wake", stderr: io.Discard}
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		start := time.Now()
+		err := c.follow(ctx, time.Second, func(publication) error { t.Fatal("unexpected publication"); return nil })
+		if !errors.Is(err, errClientUnauthorized) || requests != 2 || time.Since(start) != time.Second {
+			t.Fatal("expected backoff for 503 and terminal 401", requests, time.Since(start), err)
+		}
+	})
 }
 
 func TestPublicationFollowStopsOnSynchronizationFailure(t *testing.T) {

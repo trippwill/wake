@@ -8,9 +8,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -83,6 +85,44 @@ func TestSetUnlockRejectsWeakValue(t *testing.T) {
 	}
 }
 
+func TestBrowserLoginAcceptsLongestEncodedUnlock(t *testing.T) {
+	const origin = "http://127.0.0.1:8787"
+
+	dir := privateAuthDir(t)
+	unlock := strings.Repeat("&", MaxUnlockBytes)
+
+	if err := SetUnlock(dir, []byte(unlock+"&")); !errors.Is(err, ErrLongUnlock) {
+		t.Fatal("accepted an oversized unlock", err)
+	}
+
+	if err := SetUnlock(dir, []byte(unlock)); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, _, err := Open(dir, origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	registerLoginRoutes(mux, auth)
+
+	form := url.Values{"unlock": {unlock}}.Encode()
+	req := httptest.NewRequest(http.MethodPost, origin+"/login", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", origin)
+
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	response := res.Result()
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther || len(response.Cookies()) != 1 {
+		t.Fatal("valid unlock rejected after form encoding", res.Code)
+	}
+}
+
 func TestRotateSessionsRejectsOldCookieAndRetainsUnlock(t *testing.T) {
 	dir := privateAuthDir(t)
 	unlock := []byte("synthetic rotation unlock")
@@ -105,7 +145,7 @@ func TestRotateSessionsRejectsOldCookieAndRetainsUnlock(t *testing.T) {
 		t.Fatal("new session rejected before rotation")
 	}
 
-	if err := clientaccess.NewFileStore(dir).Reset(); err != nil {
+	if err := clientaccess.NewFileStore(dir).Reset(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 

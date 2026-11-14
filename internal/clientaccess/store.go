@@ -23,6 +23,8 @@ const (
 	FileName                   = "auth.json"
 	ErrInvalidSecretFile Error = "invalid private authentication state"
 	maxAuthBytes               = 128 << 10
+	authLockTimeout            = time.Second
+	authLockRetry              = 10 * time.Millisecond
 )
 
 type FileStore struct{ dir string }
@@ -108,7 +110,32 @@ func (r authRecord) clear() {
 	}
 }
 
-func (s FileStore) update(change func(*authRecord) error) error {
+func lockAuthDirectory(ctx context.Context, dir *os.File) error {
+	ctx, cancel := context.WithTimeout(ctx, authLockTimeout)
+	defer cancel()
+
+	retry := time.NewTicker(authLockRetry)
+	defer retry.Stop()
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		err := syscall.Flock(int(dir.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-retry.C:
+		}
+	}
+}
+
+func (s FileStore) update(ctx context.Context, change func(*authRecord) error) error {
 	if err := config.CheckPrivateDir(s.dir); err != nil {
 		return err
 	}
@@ -120,15 +147,8 @@ func (s FileStore) update(change func(*authRecord) error) error {
 	defer func() { _ = dir.Close() }()
 
 	// Lock the directory inode, which survives atomic auth file replacement.
-	for {
-		err = syscall.Flock(int(dir.Fd()), syscall.LOCK_EX)
-		if !errors.Is(err, syscall.EINTR) {
-			break
-		}
-	}
-
-	if err != nil {
-		return err
+	if err := lockAuthDirectory(ctx, dir); err != nil {
+		return fmt.Errorf("lock private authentication state: %w", err)
 	}
 
 	record, err := s.read()
@@ -156,6 +176,10 @@ func (s FileStore) update(change func(*authRecord) error) error {
 		return ErrInvalidSecretFile
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	return writePrivateFile(filepath.Join(s.dir, FileName), data)
 }
 
@@ -170,7 +194,7 @@ func (s FileStore) Browser() (string, [32]byte, error) {
 }
 
 func (s FileStore) SetBrowser(verifier string) error {
-	return s.update(func(record *authRecord) error {
+	return s.update(context.Background(), func(record *authRecord) error {
 		record.Unlock = verifier
 		record.rotate()
 
@@ -178,8 +202,8 @@ func (s FileStore) SetBrowser(verifier string) error {
 	})
 }
 
-func (s FileStore) Reset() error {
-	return s.update(func(record *authRecord) error {
+func (s FileStore) Reset(ctx context.Context) error {
+	return s.update(ctx, func(record *authRecord) error {
 		record.clear()
 		record.Grants = nil
 		record.rotate()
@@ -213,8 +237,8 @@ func (s FileStore) Clients(context.Context) ([]Client, error) {
 	return clients, nil
 }
 
-func (s FileStore) CreateClient(_ context.Context, client Client, verifier []byte) error {
-	return s.update(func(record *authRecord) error {
+func (s FileStore) CreateClient(ctx context.Context, client Client, verifier []byte) error {
+	return s.update(ctx, func(record *authRecord) error {
 		if len(record.Grants) >= MaxClients {
 			return ErrBusy
 		}
@@ -243,8 +267,8 @@ func (s FileStore) ClientVerifier(_ context.Context, id string) ([]byte, error) 
 	return nil, ErrUnauthorized
 }
 
-func (s FileStore) RevokeClient(_ context.Context, id string) error {
-	return s.update(func(record *authRecord) error {
+func (s FileStore) RevokeClient(ctx context.Context, id string) error {
+	return s.update(ctx, func(record *authRecord) error {
 		for i, g := range record.Grants {
 			if g.ID == id {
 				clear(g.Verifier)

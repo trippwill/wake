@@ -193,13 +193,12 @@ func (m *Manager) Revoke(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.store.RevokeClient(ctx, id); err != nil {
-		return err
-	}
+	err := m.store.RevokeClient(ctx, id)
 
+	// The replacement may already be visible when persistence reports an error.
 	for r := range m.active[id] {
 		r.cancel()
 	}
 
-	return nil
+	return err
 }

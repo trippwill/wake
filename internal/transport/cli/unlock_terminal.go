@@ -83,7 +83,7 @@ func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]by
 			continue
 		}
 
-		var buffer [4096]byte
+		var buffer [admin.MaxUnlockBytes]byte
 
 		n, err = unix.Read(fd, buffer[:])
 		if errors.Is(err, unix.EINTR) {
@@ -101,7 +101,7 @@ func readTerminalInput(ctx context.Context, c *cli.Command, prompt string) ([]by
 		content = append(content, buffer[:n]...)
 		clear(buffer[:])
 
-		if len(content) > 4096 {
+		if len(content) > admin.MaxUnlockBytes {
 			return nil, fmt.Errorf("input too long")
 		}
 

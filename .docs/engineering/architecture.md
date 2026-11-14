@@ -355,6 +355,8 @@ administration. Grants cover the published financial API for the whole instance;
 there is no per-account authorization or multi-user role model. Admission is bounded
 per client and per instance. Revocation is serialized with admission, persists
 before success, and cancels active request contexts, including event streams.
+If a revocation write reports an error, Wake still cancels active requests because
+the replacement may already be visible.
 Bounded stream write deadlines limit blocked-client teardown. Already transmitted
 bytes and a client's retained copies cannot be recalled.
 
@@ -378,7 +380,8 @@ unreadable credentials and requires explicit resume after repair.
 
 Wake stores the browser unlock verifier, session signing key, and financial grants
 together in private auth state. Live unlock rotation and grant changes serialize the
-disk update under the instance directory's short-lived lock. Readers use a complete
+disk update under the instance directory's short-lived lock. Lock acquisition
+has a bounded wait and observes cancellation for requests. Readers use a complete
 snapshot, and a login verifies and signs against that same snapshot. Rotation
 invalidates browser cookies while existing API tokens and streams remain valid.
 

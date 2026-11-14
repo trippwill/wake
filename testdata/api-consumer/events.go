@@ -48,13 +48,16 @@ func (c *client) follow(ctx context.Context, delay time.Duration, synchronize fu
 			return syncError
 		})
 		c.positionUpdate = positionUpdate
+		if errors.Is(streamError, errClientUnauthorized) {
+			return streamError
+		}
 		var positionsError positionsUpdateError
 		if errors.As(streamError, &positionsError) {
 			syncError = positionsError.error
 		}
 		var interruption transportError
-		var updating historyUpdateError
-		if syncError != nil && !errors.As(syncError, &interruption) && !errors.As(syncError, &updating) {
+		var unavailable unavailableError
+		if syncError != nil && !errors.As(syncError, &interruption) && !errors.As(syncError, &unavailable) {
 			return syncError
 		}
 		if ctx.Err() != nil {
@@ -94,6 +97,9 @@ func (c *client) events(ctx context.Context, receive func(publication) error) er
 		return err
 	}
 	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode == http.StatusUnauthorized {
+		return errClientUnauthorized
+	}
 	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "text/event-stream" {
 		return errors.New("protocol: expected publication event stream")
 	}
