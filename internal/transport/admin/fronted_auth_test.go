@@ -95,7 +95,7 @@ func newFrontedServer(t *testing.T, secure bool) (*httptest.Server, *httptest.Se
 func TestFrontedUnlockAndClientAuthority(t *testing.T) {
 	for _, secure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "forwarded-http", true: "https-proxy"}[secure], func(t *testing.T) {
-			front, api, _ := newFrontedServer(t, secure)
+			front, api, clients := newFrontedServer(t, secure)
 			client := front.Client()
 			client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 			request := func(method, path, body, origin string, cookie *http.Cookie) (*http.Response, string) {
@@ -173,6 +173,12 @@ func TestFrontedUnlockAndClientAuthority(t *testing.T) {
 				t.Fatal("missing CSRF", res.Status)
 			}
 
+			res, body = request(http.MethodPost, "/system/clients",
+				url.Values{"name": {" invalid "}, "csrf": {match[1]}}.Encode(), front.URL, cookie)
+			if res.StatusCode != http.StatusBadRequest || !strings.Contains(body, "Use a client name") {
+				t.Fatal("invalid client name accepted", res.Status)
+			}
+
 			res, body = request(
 				http.MethodPost,
 				"/system/clients",
@@ -187,7 +193,9 @@ func TestFrontedUnlockAndClientAuthority(t *testing.T) {
 			}
 
 			token := tokenMatch[1]
-			if _, err := clientaccess.TokenID(token); err != nil {
+
+			id, err := clientaccess.TokenID(token)
+			if err != nil {
 				t.Fatal(err)
 			}
 
@@ -232,6 +240,40 @@ func TestFrontedUnlockAndClientAuthority(t *testing.T) {
 			_ = res.Body.Close()
 			if res.StatusCode != http.StatusSeeOther {
 				t.Fatal("token granted admin access", res.Status)
+			}
+
+			for range clientaccess.MaxClients - 1 {
+				_, secret, err := clients.Create(t.Context(), "Synthetic client")
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				secret.Clear()
+			}
+
+			res, body = request(http.MethodPost, "/system/clients",
+				url.Values{"name": {"One too many"}, "csrf": {match[1]}}.Encode(), front.URL, cookie)
+			if res.StatusCode != http.StatusConflict || !strings.Contains(body, "Revoke an unused client") {
+				t.Fatal("client limit was not reported", res.Status)
+			}
+
+			res, _ = request(http.MethodPost, "/system/clients/"+id+"/revoke",
+				url.Values{"csrf": {match[1]}}.Encode(), front.URL, cookie)
+			if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/system/clients" {
+				t.Fatal("revocation did not return to clients", res.Status)
+			}
+
+			r, _ = http.NewRequestWithContext(t.Context(), http.MethodGet, api.URL+"/v1/snapshot", nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+
+			apiResponse, err = api.Client().Do(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_ = apiResponse.Body.Close()
+			if apiResponse.StatusCode != http.StatusUnauthorized {
+				t.Fatal("revoked token retained access", apiResponse.Status)
 			}
 		})
 	}
