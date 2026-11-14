@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"go.trippwill.dev/wake/internal/transport/admin"
 	"golang.org/x/sys/unix"
 )
 
@@ -52,7 +53,12 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 		done := make(chan int, 1)
 		go func() { done <- run([]string{"admin", "set-unlock"}, output, output) }()
 
-		for _, input := range []string{first, second} {
+		inputs := []string{first}
+		if second != "" {
+			inputs = append(inputs, second)
+		}
+
+		for _, input := range inputs {
 			select {
 			case <-output.prompt:
 			case code := <-done:
@@ -96,6 +102,14 @@ func TestSetUnlockThroughTerminal(t *testing.T) {
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
 		t.Fatal("accepted a session issued before setting the new unlock", response.Code)
 	}
+
+	for _, size := range []int{admin.MaxUnlockBytes + 1, admin.MaxUnlockBytes + 2} {
+		set(strings.Repeat("&", size), "", exitFailure, "exceeds the input limit")
+	}
+
+	longest := strings.Repeat("&", admin.MaxUnlockBytes)
+	set(longest, longest, exitOK, "Operator unlock set")
+	testLogin(t, dir, longest, http.StatusSeeOther)
 }
 
 func TestSetUnlockRejectsNonterminalInput(t *testing.T) {

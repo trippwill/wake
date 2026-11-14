@@ -36,8 +36,9 @@ const (
 // MinimumUnlockBytes is the minimum length accepted during local provisioning.
 const MinimumUnlockBytes = 12
 
-// MaxUnlockBytes bounds terminal input and the corresponding browser form.
-const MaxUnlockBytes = 4 << 10
+// MaxUnlockBytes leaves room for the newline and a truncation check in Linux
+// canonical terminal input, whose full line buffer is 4096 bytes.
+const MaxUnlockBytes = (4 << 10) - 2
 
 type Error string
 
