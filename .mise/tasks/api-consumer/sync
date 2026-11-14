@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2026 trippwill
-# SPDX-License-Identifier: MPL-2.0
-#MISE description="Synchronize an independent API consumer (--endpoint, --token-file, --state, optional --assert)"
-set -euo pipefail
-cd testdata/api-consumer
-GOWORK=off go run . "$@"

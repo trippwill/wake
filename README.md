@@ -264,17 +264,6 @@ The token-authenticated financial API publishes accepted accounts, instruments, 
 activity with stable identities, exact values and complete versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
 [independent consumer check](.docs/engineering/development.md#api-consumer-acceptance).
-For a running instance, use its endpoint, a private token file and an existing client-state directory:
-
-```sh
-mise run api-consumer:sync -- --endpoint http://127.0.0.1:8788 --token-file /absolute/private/client.token --state /absolute/private/client/mirror.db
-```
-
-The consumer validates a complete accepted snapshot and atomically saves its mirror
-and version in a private SQLite database. Repeat the command to synchronize, or use
-`api-consumer:follow` to synchronize when SSE announces publication changes.
-Follow reconnects after stream interruptions; conditional reads skip unchanged snapshots.
-A different warehouse installs a clearly reported new baseline.
 
 An optional Activity Query ID on the same IBKR connection adds security transfers,
 non-trade cash postings, and reported realized P&L and allocated cost for individual
