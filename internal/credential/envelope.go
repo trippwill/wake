@@ -275,3 +275,12 @@ var (
 	_ json.Marshaler   = EncryptedSecret{}
 	_ json.Unmarshaler = (*EncryptedSecret)(nil)
 )
+
+// SourceSecretAAD binds a provider secret to its source connection and field.
+func SourceSecretAAD(connection, provider, key string) []byte {
+	data, _ := json.Marshal([]string{connection, provider, key})
+	return data
+}
+
+// ReferenceKeyAAD binds the reference service credential to its role.
+func ReferenceKeyAAD() []byte { return []byte("wake/openfigi/key/1") }

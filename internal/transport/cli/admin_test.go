@@ -5,55 +5,68 @@ package cli
 
 import (
 	"bytes"
-	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"go.trippwill.dev/wake/internal/clientaccess"
+	"go.trippwill.dev/wake/internal/transport/admin"
 )
 
-func TestAdminProvisioningFailuresAndProxyGuard(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	var stdout, stderr bytes.Buffer
-	if code := runAdmin([]string{"set-proxy-guard"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("proxy guard = %d, %s", code, stderr.String())
+func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
+	cfg, path, _ := setupDaemonFixture(t)
+	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
+		t.Fatal(err)
 	}
 
-	guardLine := stdout.String()
-	guard := strings.TrimSpace(
-		strings.TrimPrefix(guardLine, "wake: reverse-proxy guard (store it in the proxy only): "),
-	)
-	if guard == "" || !strings.HasPrefix(guardLine, "wake: reverse-proxy guard") {
-		t.Fatal("proxy guard missing from provisioning output")
-	}
+	store := clientaccess.NewFileStore(cfg.Paths.ConfigDir)
+	clients := clientaccess.New(store)
 
-	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "wake")
-
-	//nolint:gosec // Read only a generated synthetic guard inside the test directory.
-	stored, err := os.ReadFile(filepath.Join(configDir, "admin-proxy.key"))
+	_, token, err := clients.Create(t.Context(), "Synthetic reader")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer clear(stored)
+	defer token.Clear()
 
-	if guard != base64.RawURLEncoding.EncodeToString(stored) {
-		t.Fatal("displayed guard differs from persisted guard")
-	}
-	// A file at the configuration directory must fail closed for provisioning.
-	blocked := filepath.Join(t.TempDir(), "blocked")
-	if err = os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
+	value, err := token.Copy()
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer clear(value)
 
-	t.Setenv("XDG_CONFIG_HOME", blocked)
+	before, keyBefore, err := store.Browser()
+	if err != nil || before == "" {
+		t.Fatal("missing browser unlock before reset", err)
+	}
 
-	for _, command := range []string{"set-proxy-guard"} {
-		stdout.Reset()
-		stderr.Reset()
+	var stdout, stderr bytes.Buffer
+	if code := run(
+		[]string{"--json", "admin", "reset-access", "--config", path},
+		&stdout,
+		&stderr,
+	); code != exitOK {
+		t.Fatal(code, stderr.String())
+	}
 
-		if code := runAdmin([]string{command}, &stdout, &stderr); code != exitFailure || stdout.Len() != 0 {
-			t.Fatalf("blocked %s = %d, stdout = %q", command, code, stdout.String())
+	var result map[string]bool
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || !result["access_reset"] {
+		t.Fatal("missing access reset result", stdout.String(), err)
+	}
+
+	if _, _, err := clients.Admit(t.Context(), string(value)); !errors.Is(err, clientaccess.ErrUnauthorized) {
+		t.Fatal("reset left client access in place", err)
+	}
+
+	after, keyAfter, err := store.Browser()
+	if err != nil || before != after || keyBefore == keyAfter {
+		t.Fatal("reset did not preserve the unlock and rotate the session key", err)
+	}
+
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("reset created a database", filepath.Base(path), err)
 		}
 	}
 }

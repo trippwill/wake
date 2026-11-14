@@ -8,16 +8,17 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
 )
 
 type (
 	Status struct {
 		CredentialProtection bool
+		CredentialIssue      string
 		StartedAt            string
 		WarehouseBytes       *int64
 	}
@@ -25,6 +26,7 @@ type (
 		Status(context.Context) (Status, error)
 	}
 	Dependencies struct {
+		Clients       *clientaccess.Manager
 		Logger        *slog.Logger
 		Queries       Queries
 		Config        config.Config
@@ -43,6 +45,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 	mux.HandleFunc("GET /assets/", serveAsset)
 	registerLoginRoutes(mux, auth)
+	registerClientRoutes(mux, auth, deps.Clients)
 
 	if deps.Workflow != nil {
 		registerWorkflowRoutes(mux, auth, deps.Workflow, deps.Stopping)
@@ -78,11 +81,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 					return
 				}
 
-				if auth.mode == "local" {
-					http.Redirect(w, r, "/login", http.StatusSeeOther)
-				} else {
-					http.Error(w, "authentication required", http.StatusUnauthorized)
-				}
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
 
 				return
 			}
@@ -146,19 +145,6 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			return
 		}
 
-		if !auth.proxyAuthorized(r) {
-			rejection(r, "proxy_auth_required")
-			http.Error(w, "proxy authentication required", http.StatusUnauthorized)
-
-			return
-		}
-
-		if auth.mode == "proxy" && documentNavigation(r) && r.URL.Path != "/login" {
-			if _, ok := auth.session(r); !ok {
-				r = auth.establishSession(w, r)
-			}
-		}
-
 		w.Header().Set("Vary", "HX-Request")
 
 		*r = *pageRequest(r)
@@ -168,20 +154,6 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 		mux.ServeHTTP(w, r)
 	})), nil
-}
-
-func documentNavigation(r *http.Request) bool {
-	if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.Header.Get("HX-Request") == "true" {
-		return false
-	}
-
-	if strings.HasPrefix(r.URL.Path, "/assets/") {
-		return false
-	}
-
-	mode := r.Header.Get("Sec-Fetch-Mode")
-
-	return mode == "navigate" || (mode == "" && strings.Contains(r.Header.Get("Accept"), "text/html"))
 }
 
 func setSecurityHeaders(headers http.Header) {

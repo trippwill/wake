@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -24,25 +25,25 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 	cfg, path, _ := setupDaemonFixture(t)
 	cfg.Storage.WarehousePath = filepath.Join(filepath.Dir(cfg.Storage.WarehousePath), "history.sqlite")
 	cfg.Storage.ConnectionsPath = filepath.Join(filepath.Dir(cfg.Storage.ConnectionsPath), "credentials.sqlite")
-	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "external-invalid.key")
+	cfg.Credentials.KeyPath = filepath.Join(cfg.Paths.ConfigDir, "external-invalid.key")
 
 	original := fmt.Appendf(
 		nil,
-		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nmaster_key_path=%q\n",
+		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nkey_path=%q\n",
 		cfg.Storage.WarehousePath,
 		cfg.Storage.ConnectionsPath,
 		cfg.Paths.RuntimeDir,
-		cfg.Credentials.MasterKeyPath,
+		cfg.Credentials.KeyPath,
 	)
 	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	files := map[string][]byte{
-		path:                          original,
-		cfg.Credentials.MasterKeyPath: []byte("invalid key material must not be loaded"),
+		path:                    original,
+		cfg.Credentials.KeyPath: []byte("invalid key material must not be loaded"),
 	}
-	for _, name := range []string{"master.key", "admin-unlock", "admin-session.key", "admin-proxy.key", "unrelated.db"} {
+	for _, name := range []string{"credentials.key", "auth.json", "unrelated.db"} {
 		files[filepath.Join(cfg.Paths.ConfigDir, name)] = []byte("keep " + name)
 	}
 
@@ -113,7 +114,7 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 
 				assertResetFiles(t, files, nil)
 
-				if _, err := os.Stat(filepath.Join(cfg.Paths.RuntimeDir, "wake.sock.lock")); !os.IsNotExist(err) {
+				if _, err := os.Stat(filepath.Join(cfg.Paths.RuntimeDir, "wake.lock")); !os.IsNotExist(err) {
 					t.Fatal("dry run created ownership file", err)
 				}
 			}
@@ -246,15 +247,14 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 				}
 				// Readback follows this synthetic link only to verify no selected data was deleted.
 				files[sidecar] = files[cfg.Storage.WarehousePath]
-			case "configuration":
+			case "configuration", "master-key", "browser-key":
 				args[1] = "credentials"
-				args = append(args, "--connections-path", path)
-			case "master-key":
-				args[1] = "credentials"
-				args = append(args, "--connections-path", cfg.Credentials.MasterKeyPath)
-			case "browser-key":
-				args[1] = "credentials"
-				args = append(args, "--connections-path", filepath.Join(cfg.Paths.ConfigDir, "admin-session.key"))
+				target := map[string]string{
+					"configuration": path,
+					"master-key":    cfg.Credentials.KeyPath,
+					"browser-key":   filepath.Join(cfg.Paths.ConfigDir, "auth.json"),
+				}[kind]
+				changeResetConnections(t, path, files, cfg.Storage.ConnectionsPath, target)
 			}
 
 			var stdout, stderr bytes.Buffer
@@ -268,23 +268,23 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 }
 
 func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
-	_, path, files := resetFixture(t)
-	missing := filepath.Join(t.TempDir(), "missing")
-	args := []string{
-		"--json",
-		"reset",
-		"warehouse",
-		"--config",
-		path,
-		"--warehouse-path",
-		filepath.Join(missing, "warehouse", "history.sqlite"),
-		"--connections-path",
-		filepath.Join(missing, "access", "credentials.sqlite"),
-		"--master-key-path",
-		filepath.Join(missing, "key"),
-		"--runtime-dir",
-		"",
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	missing := filepath.Join(dir, "missing")
+
+	t.Setenv("XDG_RUNTIME_DIR", "")
+
+	files := map[string][]byte{
+		path: []byte(
+			"[storage]\nwarehouse_path='missing/history.sqlite'\nconnections_path='missing/credentials.sqlite'\n",
+		),
 	}
+	if err := os.WriteFile(path, files[path], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	args := []string{"--json", "reset", "warehouse", "--config", path}
+
 	for _, confirm := range []bool{false, true} {
 		current := append([]string{}, args...)
 		if confirm {
@@ -447,9 +447,11 @@ func TestWarehouseResetRefusesAnAccessStoreAtTheUpgradeIntentPath(t *testing.T) 
 		t.Fatal(err)
 	}
 
+	changeResetConnections(t, path, files, cfg.Storage.ConnectionsPath, access)
+
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"reset", "warehouse", "--config", path, "--confirm", "--connections-path", access},
+		[]string{"reset", "warehouse", "--config", path, "--confirm"},
 		&stdout,
 		&stderr,
 	); code != exitFailure || !strings.Contains(stderr.String(), "reset refuses unsafe") {
@@ -485,4 +487,13 @@ func TestResetReportsPartialRemovalAndRefusesChangedFile(t *testing.T) {
 	files[backup] = files[journal]
 	files[journal] = replacement
 	assertResetFiles(t, files, map[string]bool{result.Removed[0]: true})
+}
+
+func changeResetConnections(t *testing.T, path string, files map[string][]byte, from, to string) {
+	t.Helper()
+
+	files[path] = bytes.Replace(files[path], []byte(strconv.Quote(from)), []byte(strconv.Quote(to)), 1)
+	if err := os.WriteFile(path, files[path], 0o600); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
 func TestPositionsStreamUsesIndependentVersionsAndReconnects(t *testing.T) {
@@ -28,7 +28,7 @@ func TestPositionsStreamUsesIndependentVersionsAndReconnects(t *testing.T) {
 		),
 	)
 
-	server := httptest.NewServer(socket.NewHandler(s, make(chan struct{}), nil))
+	server := httptest.NewServer(financialapi.NewHandler(s, make(chan struct{}), nil))
 	defer server.Close()
 
 	client := &http.Client{Timeout: 5 * time.Second}

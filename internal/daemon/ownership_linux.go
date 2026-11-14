@@ -5,12 +5,10 @@ package daemon
 
 import (
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"syscall"
-	"time"
 
 	"go.trippwill.dev/wake/internal/config"
 )
@@ -20,32 +18,11 @@ type OwnershipError string
 func (e OwnershipError) Error() string { return string(e) }
 
 const (
-	ErrAlreadyOwned OwnershipError = "another process owns the Wake database or socket"
+	ErrAlreadyOwned OwnershipError = "another process owns the Wake database or runtime directory"
 	ErrOwnership    OwnershipError = "cannot claim private daemon paths"
 )
 
 type daemonOwnership struct{ files []*os.File }
-
-func acquireOwnership(database, runtime string) (*daemonOwnership, error) {
-	owner, err := acquireSocketOwnership(runtime)
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := claimOwnershipFile(
-		database,
-		os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK,
-		true,
-	)
-	if err != nil {
-		owner.close()
-		return nil, err
-	}
-
-	owner.files = append(owner.files, file)
-
-	return owner, nil
-}
 
 func claimOwnershipFile(path string, flags int, private bool) (*os.File, error) {
 	//nolint:gosec // Validated private process paths; final-component symlinks are rejected.
@@ -79,37 +56,20 @@ func claimOwnershipFile(path string, flags int, private bool) (*os.File, error) 
 	return file, nil
 }
 
-// CheckStopped probes existing kernel ownership and the Unix socket without
-// creating paths or opening SQLite. An unknown runtime path is allowed during
-// initial setup. This is a point-in-time check; it does not reserve the paths.
-func CheckStopped(cfg config.Config) error {
-	files := []string{}
-	dirs := []string{}
+// WithStoppedProfile holds process and existing store ownership while applying
+// an offline change. It shares the daemon's lock order and never opens SQLite.
+func WithStoppedProfile(cfg config.Config, change func() error) error {
+	if err := config.Prepare(cfg); err != nil {
+		return err
+	}
+
+	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
+	if err != nil {
+		return err
+	}
+	defer owner.close()
+
 	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
-		if path == "" {
-			continue
-		}
-
-		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return ErrOwnership
-		}
-
-		files = append(files, path)
-		dirs = append(dirs, filepath.Dir(path))
-	}
-
-	if cfg.Paths.RuntimeDir != "" {
-		files = append(files, filepath.Join(cfg.Paths.RuntimeDir, "wake.sock.lock"))
-		dirs = append(dirs, cfg.Paths.RuntimeDir)
-	}
-
-	for _, path := range dirs {
-		if err := config.CheckPrivateDir(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-
-	for _, path := range files {
 		file, err := claimOwnershipFile(
 			path,
 			os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK,
@@ -120,21 +80,13 @@ func CheckStopped(cfg config.Config) error {
 		}
 
 		if err != nil {
-			if errors.Is(err, ErrAlreadyOwned) {
-				return ErrAlreadyOwned
-			}
-
-			return ErrOwnership
+			return err
 		}
 
-		_ = file.Close()
+		owner.files = append(owner.files, file)
 	}
 
-	if cfg.Paths.RuntimeDir == "" {
-		return nil
-	}
-
-	return checkOfflineSocket(filepath.Join(cfg.Paths.RuntimeDir, "wake.sock"))
+	return change()
 }
 
 func (owner *daemonOwnership) close() {
@@ -145,64 +97,9 @@ func (owner *daemonOwnership) close() {
 	}
 }
 
-func prepareSocket(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-
-	if err != nil || info.Mode()&os.ModeSocket == 0 {
-		return ErrOwnership
-	}
-
-	connection, err := net.DialTimeout("unix", path, 250*time.Millisecond)
-	if err == nil {
-		_ = connection.Close()
-		return ErrAlreadyOwned
-	}
-
-	if !errors.Is(err, syscall.ECONNREFUSED) {
-		return ErrAlreadyOwned
-	}
-
-	current, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-
-	if err != nil || !os.SameFile(info, current) {
-		return ErrOwnership
-	}
-
-	return os.Remove(path)
-}
-
-func checkOfflineSocket(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-
-	if err != nil || info.Mode()&os.ModeSocket == 0 {
-		return ErrOwnership
-	}
-
-	connection, err := net.DialTimeout("unix", path, 250*time.Millisecond)
-	if err == nil {
-		_ = connection.Close()
-		return ErrAlreadyOwned
-	}
-
-	if !errors.Is(err, syscall.ECONNREFUSED) {
-		return ErrAlreadyOwned
-	}
-
-	return nil
-}
-
-func acquireSocketOwnership(runtime string) (*daemonOwnership, error) {
+func acquireProcessOwnership(runtime string) (*daemonOwnership, error) {
 	file, err := claimOwnershipFile(
-		filepath.Join(runtime, "wake.sock.lock"),
+		filepath.Join(runtime, "wake.lock"),
 		os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK,
 		true,
 	)

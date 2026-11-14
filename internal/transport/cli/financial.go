@@ -8,13 +8,11 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
-	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -23,8 +21,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/urfave/cli/v3"
-	"go.trippwill.dev/wake/internal/config"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/clientaccess"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
 const (
@@ -34,17 +32,26 @@ const (
 	maxIdentityRedirects = 5
 )
 
-func financialCommands(common func() []cli.Flag) []*cli.Command {
+func financialCommands() []*cli.Command {
 	read := func(name, usage, args string, action cli.ActionFunc) *cli.Command {
 		return &cli.Command{
 			Name:      name,
 			Usage:     usage,
 			ArgsUsage: args,
 			Action:    action,
-			Flags: append(
-				common(),
-				&cli.StringFlag{Name: "socket", Usage: "Absolute path to the private Wake socket"},
-			),
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:    "endpoint",
+					Value:   "http://127.0.0.1:8788",
+					Sources: cli.EnvVars("WAKE_ENDPOINT"),
+					Usage:   "Financial API HTTP or HTTPS origin",
+				},
+				&cli.StringFlag{
+					Name:    "token-file",
+					Sources: cli.EnvVars("WAKE_TOKEN_FILE"),
+					Usage:   "Absolute path to a private client token file",
+				},
+			},
 		}
 	}
 	group := func(name, usage string, children ...*cli.Command) *cli.Command {
@@ -74,7 +81,7 @@ func financialCommands(common func() []cli.Flag) []*cli.Command {
 		},
 		&cli.StringFlag{
 			Name:  "state",
-			Value: string(socket.Accepted),
+			Value: string(financialapi.Accepted),
 			Usage: "Activity state: accepted, cancelled, replaced or all",
 		},
 		&cli.IntFlag{Name: "limit", Value: 100, Usage: "Maximum results on this page (1–1000)"},
@@ -97,30 +104,21 @@ func financialCommands(common func() []cli.Flag) []*cli.Command {
 	}
 }
 
-func financialSocketPath(c *cli.Command) (string, error) {
-	if c.IsSet("socket") {
-		if c.IsSet("config") {
-			return "", usageError("use either --socket or --config")
-		}
+func financialEndpoint(c *cli.Command) (string, error) {
+	value := c.String("endpoint")
 
-		value := c.String("socket")
-		if !filepath.IsAbs(value) || strings.ContainsRune(value, 0) {
-			return "", usageError("--socket must be an absolute Unix socket path")
-		}
-
-		return value, nil
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.User != nil ||
+		parsed.Path != "" ||
+		parsed.RawQuery != "" ||
+		parsed.ForceQuery ||
+		parsed.Fragment != "" ||
+		parsed.Opaque != "" {
+		return "", usageError("--endpoint must be an HTTP or HTTPS origin without credentials, path or query")
 	}
 
-	dir, err := config.ResolveRuntimeDir(c.String("config"), c.IsSet("config"))
-	if errors.Is(err, config.ErrRuntimeDirRequired) {
-		return "", failure("Wake runtime directory is missing; configure it or pass --socket")
-	}
-
-	if err != nil {
-		return "", failure("cannot resolve the Wake profile; check configuration or pass --socket")
-	}
-
-	return filepath.Join(dir, "wake.sock"), nil
+	return value, nil
 }
 
 type financialResponse struct {
@@ -152,7 +150,7 @@ func financialRedirect(req *http.Request, via []*http.Request) error {
 	if req.Response.StatusCode != http.StatusPermanentRedirect ||
 		len(locations) != 1 || len(via) > maxIdentityRedirects ||
 		locations[0] != req.URL.EscapedPath() ||
-		req.URL.Scheme != "http" || req.URL.Host != "wake" || req.URL.User != nil {
+		req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host || req.URL.User != nil {
 		return http.ErrUseLastResponse
 	}
 
@@ -172,27 +170,27 @@ func financialRedirect(req *http.Request, via []*http.Request) error {
 
 func financialResponseError(res *http.Response) error {
 	message := failure("Wake API returned HTTP %d", res.StatusCode)
-	expected := socket.ErrorCode("")
+	expected := financialapi.ErrorCode("")
 	switch res.StatusCode {
 	case http.StatusBadRequest:
-		expected = socket.InvalidRequest
+		expected = financialapi.InvalidRequest
 	case http.StatusNotFound:
-		expected = socket.NotFound
+		expected = financialapi.NotFound
 	case http.StatusMethodNotAllowed:
-		expected = socket.MethodNotAllowed
+		expected = financialapi.MethodNotAllowed
 	case http.StatusConflict:
-		expected = socket.StaleRevision
+		expected = financialapi.StaleRevision
 	case http.StatusServiceUnavailable:
-		expected = socket.HistoryUpdating
+		expected = financialapi.HistoryUpdating
 	case http.StatusInternalServerError:
-		expected = socket.InternalError
+		expected = financialapi.InternalError
 	default:
 		return message
 	}
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxFinancialError+1))
 
-	var value socket.Error
+	var value financialapi.Error
 	if err != nil || len(body) > maxFinancialError || json.Unmarshal(body, &value) != nil ||
 		value.Code != expected || value.Message == "" {
 		return message
@@ -201,15 +199,29 @@ func financialResponseError(res *http.Response) error {
 	return commandError{status: exitFailure, message: message.Error(), code: string(value.Code)}
 }
 
-// financialGET is pinned to the configured Unix socket and accepts finite JSON
+// financialGET stays on the configured origin and accepts finite JSON
 // objects only. A failed read leaves stdout untouched.
-func financialGET(ctx context.Context, socketPath, target string, probe bool) (financialResponse, error) {
-	dialer := net.Dialer{Timeout: 5 * time.Second}
+func financialGET(
+	ctx context.Context,
+	endpoint, tokenFile, target string,
+	probe bool,
+) (financialResponse, error) {
+	token, err := clientaccess.ReadTokenFile(tokenFile)
+	if err != nil {
+		return financialResponse{}, failure("read client token: %v", err)
+	}
+	defer token.Clear()
+
+	value, err := token.Copy()
+	if err != nil {
+		return financialResponse{}, failure("client token unavailable")
+	}
+	defer clear(value)
 
 	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "unix", socketPath)
-		},
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
 	}
 	defer transport.CloseIdleConnections()
 
@@ -219,12 +231,13 @@ func financialGET(ctx context.Context, socketPath, target string, probe bool) (f
 		CheckRedirect: financialRedirect,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake"+target, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+target, nil)
 	if err != nil {
 		return financialResponse{}, usageError("invalid Wake API path")
 	}
 
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+string(value))
 
 	if probe {
 		req.Header.Set("If-None-Match", "*")
@@ -233,7 +246,7 @@ func financialGET(ctx context.Context, socketPath, target string, probe bool) (f
 	res, err := client.Do(req)
 	if err != nil {
 		return financialResponse{}, failure(
-			"cannot read the Wake socket; check that Wake is running and the socket is accessible",
+			"cannot read the Wake API; check the endpoint, transport and daemon",
 		)
 	}
 	defer func() { _ = res.Body.Close() }()
@@ -264,12 +277,12 @@ func financialGET(ctx context.Context, socketPath, target string, probe bool) (f
 }
 
 func financialRead(ctx context.Context, c *cli.Command, route string) (financialResponse, error) {
-	socketPath, err := financialSocketPath(c)
+	endpoint, err := financialEndpoint(c)
 	if err != nil {
 		return financialResponse{}, err
 	}
 
-	return financialGET(ctx, socketPath, route, false)
+	return financialGET(ctx, endpoint, c.String("token-file"), route, false)
 }
 
 type financialCollection struct {
@@ -279,18 +292,18 @@ type financialCollection struct {
 }
 
 type activityFields struct {
-	AccountID string                `json:"account_id"`
-	Date      string                `json:"date"`
-	Family    socket.ActivityFamily `json:"family"`
-	State     socket.ActivityState  `json:"state"`
+	AccountID string                      `json:"account_id"`
+	Date      string                      `json:"date"`
+	Family    financialapi.ActivityFamily `json:"family"`
+	State     financialapi.ActivityState  `json:"state"`
 }
 
 type financialResource struct {
-	ID       string          `json:"id"`
-	Kind     string          `json:"kind"`
-	Revision int64           `json:"revision"`
-	Account  *socket.Account `json:"account"`
-	Activity *activityFields `json:"activity"`
+	ID       string                `json:"id"`
+	Kind     string                `json:"kind"`
+	Revision int64                 `json:"revision"`
+	Account  *financialapi.Account `json:"account"`
+	Activity *activityFields       `json:"activity"`
 	raw      json.RawMessage
 }
 
@@ -393,18 +406,18 @@ func getPositions(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 
-	var view socket.PositionsView
+	var view financialapi.PositionsView
 	if json.Unmarshal(response.body, &view) != nil || view.AccountId != id ||
 		view.WarehouseId == "" || view.Version == "" || !view.Status.Valid() {
 		return failure("invalid positions response from Wake")
 	}
 
 	switch view.Status {
-	case socket.PositionsViewStatusAvailable:
+	case financialapi.PositionsViewStatusAvailable:
 		if view.AsOf == nil || view.Positions == nil || view.Reason != nil {
 			return failure("invalid available positions view from Wake")
 		}
-	case socket.PositionsViewStatusUnavailable:
+	case financialapi.PositionsViewStatusUnavailable:
 		if view.Positions != nil || view.Reason == nil || !view.Reason.Valid() {
 			return failure("invalid unavailable positions view from Wake")
 		}
@@ -418,12 +431,12 @@ func financialDoctor(ctx context.Context, c *cli.Command) error {
 		return usageError("doctor takes no arguments")
 	}
 
-	socketPath, err := financialSocketPath(c)
+	endpoint, err := financialEndpoint(c)
 	if err != nil {
 		return err
 	}
 
-	if _, err := financialGET(ctx, socketPath, snapshotRoute, true); err != nil {
+	if _, err := financialGET(ctx, endpoint, c.String("token-file"), snapshotRoute, true); err != nil {
 		return err
 	}
 
@@ -433,8 +446,8 @@ func financialDoctor(ctx context.Context, c *cli.Command) error {
 	}
 
 	return json.NewEncoder(c.Writer).Encode(map[string]any{
-		"build_version": version, "api_version": "v1", "socket_path": socketPath,
-		"auth": "same_uid", "reachable": true,
+		"build_version": version, "api_version": "v1", "endpoint": endpoint,
+		"auth": "client_token", "reachable": true,
 	})
 }
 

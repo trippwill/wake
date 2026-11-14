@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Wake accepted financial model
   version: 1.0.0
-  description: GET-only HTTP over the private mode-0600 Unix socket, restricted to the daemon UID. GET
+  description: GET-only HTTP over TCP, authenticated by an independently revocable client token. GET
     /v1/snapshot returns the complete accepted resource set, warehouse identity and an opaque publication
     version. GET /v1/events streams coalesced publication notifications; reconnect announces current state.
     Compare versions for equality only. ETag and If-None-Match support unchanged conditional
@@ -17,7 +17,13 @@ info:
     from the financial snapshot. An unavailable value in a selected variant is explicit null, distinct from decimal zero. Unknown or duplicate parameters and
     mutation methods are rejected. During a retained-history update, affected reads and event connections return 503 history_updating.
     Preserve the last complete mirror and retry with backoff. Account-only reads remain available.
-    Raw evidence, credentials and operational interfaces are excluded.
+    Raw evidence, credentials and operational interfaces are excluded. Tokens grant no administrative authority.
+    Revocation rejects new requests and cancels active streams; blocked stream writes time out within five seconds.
+    Each client may hold eight concurrent requests, with 64 across the instance. Excess requests return 503.
+    The deployment chooses transport protection. Direct HTTP provides no confidentiality; use SSH or HTTPS
+    when the network path needs encryption.
+security:
+  - clientToken: []
 paths:
   /v1/events:
     get:
@@ -44,6 +50,8 @@ paths:
         version; a response may already be newer than the hint.
         No query parameters or request body are accepted.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: |
             UTF-8 SSE frames: event: publication followed by data: containing a Publication
@@ -58,7 +66,7 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/accounts/{id}/positions:
@@ -83,6 +91,8 @@ paths:
         schema:
           type: string
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current available or unavailable position view
           headers:
@@ -106,7 +116,7 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/accounts/{id}:
@@ -115,6 +125,10 @@ paths:
       parameters:
       - $ref: '#/components/parameters/id'
       responses:
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -138,6 +152,10 @@ paths:
       - $ref: '#/components/parameters/id'
       - $ref: '#/components/parameters/revision'
       responses:
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -160,6 +178,8 @@ paths:
       parameters:
       - $ref: '#/components/parameters/id'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -182,7 +202,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/instruments/{id}/explanation:
@@ -192,6 +212,8 @@ paths:
       - $ref: '#/components/parameters/id'
       - $ref: '#/components/parameters/revision'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -207,7 +229,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/listings/{id}:
@@ -216,6 +238,8 @@ paths:
       parameters:
       - $ref: '#/components/parameters/id'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -238,7 +262,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/listings/{id}/explanation:
@@ -248,6 +272,8 @@ paths:
       - $ref: '#/components/parameters/id'
       - $ref: '#/components/parameters/revision'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -263,7 +289,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/activity/{id}:
@@ -272,6 +298,8 @@ paths:
       parameters:
       - $ref: '#/components/parameters/id'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -287,7 +315,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/activity/{id}/explanation:
@@ -297,6 +325,8 @@ paths:
       - $ref: '#/components/parameters/id'
       - $ref: '#/components/parameters/revision'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Successful finite read
           content:
@@ -312,7 +342,7 @@ paths:
         '409':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
   /v1/snapshot:
@@ -327,6 +357,8 @@ paths:
           type: string
         description: A previous ETag; weak validators and lists are supported.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Complete accepted state
           headers:
@@ -351,10 +383,15 @@ paths:
         '405':
           $ref: '#/components/responses/Error'
         '503':
-          $ref: '#/components/responses/HistoryUpdateUnavailable'
+          $ref: '#/components/responses/Unavailable'
         '500':
           $ref: '#/components/responses/Error'
 components:
+  securitySchemes:
+    clientToken:
+      type: http
+      scheme: bearer
+      description: Opaque per-client token. Send only in the Authorization header, including for event streams.
   schemas:
     Decimal:
       type: string
@@ -1619,14 +1656,28 @@ components:
         format: int64
         minimum: 1
   responses:
-    HistoryUpdateUnavailable:
-      description: Retained financial history is being updated.
+    Unauthorized:
+      description: Missing, malformed, invalid or revoked client token. No financial response is served.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        text/plain:
+          schema:
+            type: string
+    Unavailable:
+      description: Retained history is being updated (JSON history_updating), or client access is temporarily
+        unavailable because authentication storage failed or concurrent request limits were reached (plain text).
       headers:
         Retry-After:
           schema:
             type: integer
             minimum: 1
       content:
+        text/plain:
+          schema:
+            type: string
         application/json:
           schema:
             $ref: '#/components/schemas/Error'

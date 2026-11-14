@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -76,18 +77,17 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 
 	workflow := application.New(store, h, refs, func() time.Time { return now }, nil)
 
-	dir := t.TempDir()
+	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetUnlock(dir, []byte("synthetic-http-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
 	const origin = "http://127.0.0.1:8787"
 
-	auth, enabled, err := admin.Open(dir, "local", origin)
+	auth, enabled, err := admin.Open(dir, origin)
 	if err != nil || !enabled {
 		t.Fatal(enabled, err)
 	}
-	defer auth.Close()
 
 	handler, err := admin.NewHandler(auth, admin.Dependencies{Workflow: workflow})
 	if err != nil {

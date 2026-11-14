@@ -17,15 +17,15 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
-	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/logging"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
-	socketapi "go.trippwill.dev/wake/internal/transport/socket"
+	financialapi "go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/providers/snaptrade"
@@ -151,37 +151,18 @@ func run(
 
 	phase("claiming private process paths")
 
-	owner, err := acquireSocketOwnership(cfg.Paths.RuntimeDir)
+	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
 	if err != nil {
 		return err
 	}
 	defer owner.close()
 
-	socket := filepath.Join(cfg.Paths.RuntimeDir, "wake.sock")
-	if err = prepareSocket(socket); err != nil {
+	auth, _, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.Origin())
+	if err != nil {
 		return err
 	}
 
-	phase("checking credential protection")
-
-	protected := false
-
-	var envelope *credential.Envelope
-	if cfg.Credentials.MasterKeyPath != "" {
-		key, e := credential.LoadMasterKey(cfg.Credentials.MasterKeyPath)
-		if e != nil {
-			return e
-		}
-		defer key.Clear()
-
-		envelope, e = credential.NewEnvelope(key)
-		if e != nil {
-			return e
-		}
-		defer envelope.Clear()
-
-		protected = true
-	}
+	clients := clientaccess.New(clientaccess.NewFileStore(cfg.Paths.ConfigDir))
 
 	phase("opening private storage")
 
@@ -203,6 +184,23 @@ func run(
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
+
+	envelope, keyIssue, err := loadSyncCredentials(ctx, cfg, store)
+	if err != nil {
+		return err
+	}
+	defer envelope.Clear()
+
+	if keyIssue != "" {
+		logger.WarnContext(
+			ctx,
+			"source synchronization paused",
+			"event",
+			"credential_key_unavailable",
+			"reason",
+			keyIssue,
+		)
+	}
 
 	providerHost, err := host.New(
 		ctx,
@@ -254,93 +252,86 @@ func run(
 	requests := &requestGroup{}
 	stopping := make(chan struct{})
 
-	listener, err := net.Listen("unix", socket)
+	listener, err := net.Listen("tcp", cfg.API.Listen)
 	if err != nil {
 		return err
 	}
 
-	defer func() { _ = listener.Close(); _ = os.Remove(socket) }()
+	defer func() { _ = listener.Close() }()
 
-	if err = os.Chmod(socket, 0o600); err != nil {
-		return err
-	}
-
-	server := newHTTPServer(requests.handler(socketapi.NewHandler(store, stopping, logger)), logger)
+	server := newHTTPServer(
+		requests.handler(financialapi.Authenticated(clients, financialapi.NewHandler(store, stopping, logger))),
+		logger,
+	)
 	server.BaseContext = func(net.Listener) context.Context { return requestsContext }
 	servers := []*http.Server{server}
-	listeners := []net.Listener{
-		sameUIDListener{Listener: listener, logger: logging.Component(logger, "socket")},
-	}
-	logger.DebugContext(ctx, "private socket listening", "event", "socket_listening")
-
-	auth, enabled, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.AuthMode, cfg.Admin.Origin())
-	if err != nil {
-		return err
-	}
-
-	var (
-		adminBind string
-		adminPort string
+	listeners := []net.Listener{listener}
+	logger.InfoContext(
+		ctx,
+		"financial API listening",
+		"event",
+		"api_listening",
+		"api_bind",
+		listener.Addr().String(),
 	)
-	if enabled {
-		defer auth.Close()
 
-		var currencyCodes func() []string
-		if cfg.Admin.CurrencyRefresh {
-			catalog := currencycatalog.Open(currencyCachePath(cfg), logger)
-			currencyCodes = catalog.Codes
-			background.Go(func() { catalog.Run(workContext, options.CurrencyCatalog) })
-		}
-
-		handler, e := admin.NewHandler(
-			auth,
-			admin.Dependencies{
-				Queries: shell{
-					status: admin.Status{
-						CredentialProtection: protected,
-						StartedAt:            time.Now().UTC().Format(time.RFC3339),
-					},
-					warehouseSize: store.WarehouseSize,
-				},
-				Config:        cfg,
-				Workflow:      workflow,
-				Stopping:      stopping,
-				Logger:        logger,
-				CurrencyCodes: currencyCodes,
-			},
-		)
-		if e != nil {
-			return e
-		}
-
-		adminListener, e := net.Listen("tcp", cfg.Admin.Address())
-		if e != nil {
-			bind, port, _ := net.SplitHostPort(cfg.Admin.Address())
-			logger.ErrorContext(
-				ctx,
-				"admin listener failed",
-				"event",
-				"admin_bind_failed",
-				"code",
-				"listen_failed",
-				"admin_bind",
-				bind,
-				"admin_port",
-				port,
-			)
-
-			return e
-		}
-
-		adminBind, adminPort, _ = net.SplitHostPort(adminListener.Addr().String())
-
-		defer func() { _ = adminListener.Close() }()
-
-		adminServer := newHTTPServer(requests.handler(handler), logger)
-		adminServer.BaseContext = server.BaseContext
-		servers = append(servers, adminServer)
-		listeners = append(listeners, adminListener)
+	var currencyCodes func() []string
+	if cfg.Admin.CurrencyRefresh {
+		catalog := currencycatalog.Open(currencyCachePath(cfg), logger)
+		currencyCodes = catalog.Codes
+		background.Go(func() { catalog.Run(workContext, options.CurrencyCatalog) })
 	}
+
+	handler, e := admin.NewHandler(
+		auth,
+		admin.Dependencies{
+			Queries: shell{
+				status: admin.Status{
+					CredentialProtection: envelope != nil,
+					CredentialIssue:      keyIssue,
+					StartedAt:            time.Now().UTC().Format(time.RFC3339),
+				},
+				warehouseSize: store.WarehouseSize,
+			},
+			Config:        cfg,
+			Workflow:      workflow,
+			Clients:       clients,
+			Stopping:      stopping,
+			Logger:        logger,
+			CurrencyCodes: currencyCodes,
+		},
+	)
+	if e != nil {
+		return e
+	}
+
+	adminListener, e := net.Listen("tcp", cfg.Admin.Address())
+	if e != nil {
+		bind, port, _ := net.SplitHostPort(cfg.Admin.Address())
+		logger.ErrorContext(
+			ctx,
+			"admin listener failed",
+			"event",
+			"admin_bind_failed",
+			"code",
+			"listen_failed",
+			"admin_bind",
+			bind,
+			"admin_port",
+			port,
+		)
+
+		return e
+	}
+
+	adminBind, adminPort, _ := net.SplitHostPort(adminListener.Addr().String())
+
+	defer func() { _ = adminListener.Close() }()
+
+	adminServer := newHTTPServer(requests.handler(handler), logger)
+	adminServer.BaseContext = server.BaseContext
+	servers = append(servers, adminServer)
+	listeners = append(listeners, adminListener)
 
 	var serving sync.WaitGroup
 
@@ -364,7 +355,7 @@ func run(
 		"event",
 		"daemon_started",
 		"admin_enabled",
-		enabled,
+		true,
 		"admin_bind",
 		adminBind,
 		"admin_port",
@@ -397,7 +388,7 @@ func currencyCachePath(cfg config.Config) string {
 	cache := filepath.Join(cfg.Paths.RuntimeDir, currencycatalog.CacheName)
 	cached, err := os.Stat(cache)
 
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Paths.ConfigFile, cfg.Credentials.MasterKeyPath} {
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Paths.ConfigFile, cfg.Credentials.KeyPath} {
 		if path == cache {
 			return ""
 		}

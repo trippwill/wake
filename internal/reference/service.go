@@ -124,8 +124,6 @@ func New(
 	}, nil
 }
 
-var keyAAD = []byte("wake/openfigi/key/1")
-
 func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -148,7 +146,7 @@ func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 		return provider.ErrUnauthorized
 	}
 
-	encrypted, err := s.envelope.Encrypt(key, keyAAD)
+	encrypted, err := s.envelope.Encrypt(key, credential.ReferenceKeyAAD())
 	if err != nil {
 		return provider.ErrUnauthorized
 	}
@@ -250,7 +248,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			return accessFailure()
 		}
 
-		value, e := s.envelope.Decrypt(encrypted, keyAAD)
+		value, e := s.envelope.Decrypt(encrypted, credential.ReferenceKeyAAD())
 		if e != nil {
 			return accessFailure()
 		}
@@ -424,7 +422,7 @@ func (s *Service) CheckAccess(ctx context.Context) error {
 		return provider.ErrUnauthorized
 	}
 
-	key, err := s.envelope.Decrypt(encrypted, keyAAD)
+	key, err := s.envelope.Decrypt(encrypted, credential.ReferenceKeyAAD())
 	if err != nil {
 		return provider.ErrUnauthorized
 	}

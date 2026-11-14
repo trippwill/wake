@@ -12,7 +12,6 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.trippwill.dev/wake/internal/config"
-	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/daemon"
 )
 
@@ -27,16 +26,14 @@ func describeConfig(_ context.Context, c *cli.Command) error {
 
 	writeString(
 		c.Writer,
-		"Precedence: switches > environment > TOML > built-in/XDG defaults\nConfig file: --config > WAKE_CONFIG > user-scoped optional default\n",
+		"Config file: --config > WAKE_CONFIG > XDG default\n",
 	)
 
 	for _, s := range config.Settings() {
 		writef(
 			c.Writer,
-			"%s\n  --%s | %s | %s; default: %q\n  %s\n",
+			"%s\n  %s (default %q)\n  %s\n",
 			s.Key,
-			s.Flag,
-			s.Environment,
 			s.Type,
 			s.Default,
 			s.Description,
@@ -120,17 +117,6 @@ func checkConfig(_ context.Context, c *cli.Command) error {
 		return failure("configure: %v", err)
 	}
 
-	if out.Config.Credentials.MasterKeyPath != "" {
-		activity.Phase("verifying configured master key")
-
-		key, err := credential.LoadMasterKey(out.Config.Credentials.MasterKeyPath)
-		if err != nil {
-			return failure("verify master key: %v", err)
-		}
-
-		key.Clear()
-	}
-
 	activity.Stop()
 
 	if c.Bool("json") {
@@ -181,7 +167,7 @@ func describeCommand(c *cli.Command, path string) commandDescription {
 		Name:        path,
 		Description: c.Usage,
 		Arguments:   c.ArgsUsage,
-		Interactive: c.Name == "setup",
+		Interactive: c.Name == "set-unlock",
 		Flags:       []flagDescription{},
 	}
 	for _, f := range c.Flags {

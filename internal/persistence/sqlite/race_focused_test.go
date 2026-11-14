@@ -8,6 +8,8 @@ package persistence
 import "testing"
 
 func TestRaceFocused(t *testing.T) {
+	t.Run("ClientRevocationStreamsAndPersistence", TestClientRevocationStreamsAndPersistence)
+	t.Run("ClientConcurrentAdmissionAndRevocation", TestClientConcurrentAdmissionAndRevocation)
 	t.Run(
 		"SnapshotReadIsConsistentAcrossConcurrentAcceptedCommits",
 		TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits,

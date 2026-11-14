@@ -19,18 +19,18 @@ func (e Error) Error() string { return string(e) }
 const (
 	// ErrDestroyedSecret is returned for a zero or cleared secret.
 	ErrDestroyedSecret Error = "destroyed secret"
-	// ErrInvalidMasterKey is returned for a master key that is not AES-256 sized.
-	ErrInvalidMasterKey Error = "invalid master key"
-	// ErrInvalidMasterKeyPath is returned when a master-key file path is not absolute.
-	ErrInvalidMasterKeyPath Error = "invalid master key path"
-	// ErrInsecureMasterKeyFile is returned when a master-key file is not private
+	// ErrInvalidMasterKey is returned for a credential encryption key that is not AES-256 sized.
+	ErrInvalidMasterKey Error = "invalid credential encryption key"
+	// ErrInvalidMasterKeyPath is returned when a credential encryption key file path is not absolute.
+	ErrInvalidMasterKeyPath Error = "invalid credential encryption key path"
+	// ErrInsecureMasterKeyFile is returned when a credential encryption key file is not private
 	// regular-file key material owned by root or the effective user.
-	ErrInsecureMasterKeyFile Error = "insecure master key file"
-	// ErrMasterKeyExists is returned when setup would overwrite existing key
+	ErrInsecureMasterKeyFile Error = "insecure credential encryption key file"
+	// ErrMasterKeyExists is returned when generation would overwrite existing key
 	// material. Operators must rotate keys explicitly rather than accidentally.
-	ErrMasterKeyExists Error = "master key file already exists"
-	// ErrDestroyedMasterKey is returned for a zero or cleared master key.
-	ErrDestroyedMasterKey Error = "destroyed master key"
+	ErrMasterKeyExists Error = "credential encryption key file already exists"
+	// ErrDestroyedMasterKey is returned for a zero or cleared credential encryption key.
+	ErrDestroyedMasterKey Error = "destroyed credential encryption key"
 	// ErrDestroyedEnvelope is returned for a zero or cleared envelope.
 	ErrDestroyedEnvelope Error = "destroyed envelope"
 	// ErrInvalidAAD is returned when associated data is empty.
@@ -176,13 +176,13 @@ func (value MasterKey) MarshalJSON() ([]byte, error) { return nil, ErrSecretSeri
 // UnmarshalJSON rejects accidental JSON serialization.
 func (value *MasterKey) UnmarshalJSON(data []byte) error { return ErrSecretSerialization }
 
-// String redacts the envelope's copied master key.
+// String redacts the envelope's copied credential encryption key.
 func (value Envelope) String() string { return "[REDACTED]" }
 
-// GoString redacts the envelope's copied master key.
+// GoString redacts the envelope's copied credential encryption key.
 func (value Envelope) GoString() string { return "credential.Envelope([REDACTED])" }
 
-// Format redacts the envelope's copied master key for every fmt verb.
+// Format redacts the envelope's copied credential encryption key for every fmt verb.
 func (value Envelope) Format(state fmt.State, verb rune) {
 	_, _ = io.WriteString(state, value.String())
 }

@@ -20,7 +20,7 @@ postinstall = { task = "go:modules" }
 
 [tasks.ci]
 description = "Run CI checks with ordinary behavior, focused races and browser workflows"
-depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser", "test:provider", "test:socket"]
+depends = ["check", "build", "test:coverage", "test:race:focused", "test:browser", "test:provider", "test:api"]
 
 [tasks.validate]
 description = "Generate, fix, and validate sources for local development"
@@ -157,7 +157,7 @@ depends = ["test:provider"]
 
 [tasks.'provider:fmt']
 description = "Format external fixture and host proof modules"
-run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go testdata/socket-consumer/*.go"
+run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.go testdata/api-consumer/*.go"
 
 [tasks.'docs:check']
 description = "Check Markdown style and local links"

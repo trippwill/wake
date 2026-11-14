@@ -42,6 +42,10 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - Keep credentials encrypted at rest, secret-safe in memory and diagnostics,
   and fail closed on configured missing/invalid keys. Setup is CLI-led;
   daemon startup must not generate key material.
+- Route file access governed by a policy through shared, tested helpers. Reuse
+  the helper that enforces the policy for each caller, including manually run
+  tools. Read client token files through `clientaccess.ReadTokenFile`, which
+  checks ownership, permissions, file type, and size.
 - Use Go stdlib HTTP, `database/sql`, `modernc.org/sqlite`, sqlc, templ, and
   embedded browser assets. No Node/npm or web framework; introduce a browser
   build pipeline only for a demonstrated need. Published provider extension

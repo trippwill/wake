@@ -75,7 +75,8 @@ to consumers even when no new financial activity occurred.
   of their data and access authority. A workstation, home server, NAS, or private
   server should express the same product. Local-first permits remote clients;
   deployment choices should not change financial meaning or create dependence on
-  one hosting service.
+  one hosting service. Each Wake instance is single-user; multiple clients serve
+  that same user.
 - **Useful on its own, open to other applications.** Wake helps users inspect and
   understand their financial history directly. Other applications can build on its
   financial identities and views, choosing their own navigation, analysis, and
@@ -144,9 +145,9 @@ uncontrolled request bursts.
 
 Protect credentials and private financial evidence throughout their lifetime.
 Consumers should not need upstream secrets. Data reads and administrative authority
-are separate capabilities; reachability alone grants neither. Future remote clients
-should have individually revocable access rather than one shared credential whose
-rotation disrupts every consumer.
+are separate capabilities; reachability alone grants neither. Clients have
+individually revocable access so retiring one client does not
+disrupt every consumer.
 
 Financial history must remain portable independently of access credentials and
 transient runtime state. Moving or recovering it should preserve financial identity,

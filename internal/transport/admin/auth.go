@@ -4,44 +4,31 @@
 package admin
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"go.trippwill.dev/wake/internal/clientaccess"
 	"golang.org/x/crypto/argon2"
 )
 
-type issuedSessionKey struct{}
-
-func (a *authenticator) establishSession(w http.ResponseWriter, r *http.Request) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), issuedSessionKey{}, a.issue(w)))
-}
-
 const (
-	sessionCookie     = "wake_admin_session"
-	unlockFile        = "admin-unlock"
-	sessionKeyFile    = "admin-session.key"
-	proxyGuardFile    = "admin-proxy.key"
-	keySize           = 32
-	saltSize          = 16
-	argonTime         = 3
-	argonMemory       = 64 * 1024
-	argonThreads      = 4
-	maxLoginBodyBytes = 4 << 10
+	sessionCookie = "wake_admin_session"
+	keySize       = 32
+	saltSize      = 16
+	argonTime     = 3
+	argonMemory   = 64 * 1024
+	argonThreads  = 4
+	// Form encoding can use three bytes per byte of the unlock.
+	maxLoginBodyBytes = int64(len("unlock=") + 3*MaxUnlockBytes)
 	maxUnlockAttempts = 2
 	unlockInterval    = time.Second
 )
@@ -49,14 +36,18 @@ const (
 // MinimumUnlockBytes is the minimum length accepted during local provisioning.
 const MinimumUnlockBytes = 12
 
+// MaxUnlockBytes leaves room for the newline and a truncation check in Linux
+// canonical terminal input, whose full line buffer is 4096 bytes.
+const MaxUnlockBytes = (4 << 10) - 2
+
 type Error string
 
 func (e Error) Error() string { return string(e) }
 
 const (
 	ErrInvalidAuthConfiguration Error = "invalid admin authentication configuration"
-	ErrInvalidSecretFile        Error = "invalid admin secret file"
 	ErrWeakUnlock               Error = "operator unlock must contain at least 12 bytes"
+	ErrLongUnlock               Error = "operator unlock exceeds the input limit"
 )
 
 type verifier struct {
@@ -65,11 +56,8 @@ type verifier struct {
 }
 
 type authenticator struct {
-	mode        string
 	origin      *url.URL
-	verifier    verifier
-	sessionKey  []byte
-	proxyGuard  []byte
+	state       clientaccess.FileStore
 	unlockSlots chan struct{}
 	unlockMu    sync.Mutex
 	nextUnlock  time.Time
@@ -81,6 +69,10 @@ type authenticator struct {
 func SetUnlock(configDir string, unlock []byte) error {
 	if len(unlock) < MinimumUnlockBytes {
 		return ErrWeakUnlock
+	}
+
+	if len(unlock) > MaxUnlockBytes {
+		return ErrLongUnlock
 	}
 
 	var salt [saltSize]byte
@@ -95,127 +87,37 @@ func SetUnlock(configDir string, unlock []byte) error {
 		EncodeToString(salt[:]) + "." + base64.RawURLEncoding.
 		EncodeToString(hash)
 
-	key := randomKey()
-	if key == nil {
-		return ErrInvalidSecretFile
-	}
-	defer clear(key)
-
-	if err := writePrivateFile(filepath.Join(configDir, sessionKeyFile), key); err != nil {
-		return err
-	}
-
-	return writePrivateFile(filepath.Join(configDir, unlockFile), []byte(record))
+	return clientaccess.NewFileStore(configDir).SetBrowser(record)
 }
 
-// SetProxyGuard creates or rotates the reverse-proxy guard and session key.
-func SetProxyGuard(configDir string) (string, error) {
-	guard := randomKey()
-	key := randomKey()
-	if guard == nil || key == nil {
-		return "", ErrInvalidSecretFile
-	}
-	defer clear(guard)
-	defer clear(key)
-
-	if err := writePrivateFile(filepath.Join(configDir, sessionKeyFile), key); err != nil {
-		return "", err
-	}
-
-	if err := writePrivateFile(filepath.Join(configDir, proxyGuardFile), guard); err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(guard), nil
-}
-
-func randomKey() []byte {
-	value := make([]byte, keySize)
-	if _, err := rand.Read(value); err != nil {
-		return nil
-	}
-
-	return value
-}
-
-// Open loads the selected administrator gate. It reports enabled false when
-// that gate has not yet been provisioned.
-func Open(configDir, mode, origin string) (*authenticator, bool, error) {
-	parsedOrigin, err := url.Parse(origin)
-	if err != nil || parsedOrigin.Scheme == "" || parsedOrigin.Host == "" {
+// Open validates the initial auth file and supports an unprovisioned browser listener.
+func Open(configDir, origin string) (*authenticator, bool, error) {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, false, ErrInvalidAuthConfiguration
-	}
-
-	sessionKey, err := readPrivateFile(filepath.Join(configDir, sessionKeyFile), keySize)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
-	}
-
-	if err != nil {
-		return nil, false, err
 	}
 
 	auth := &authenticator{
-		mode:        mode,
-		origin:      parsedOrigin,
-		sessionKey:  sessionKey,
+		origin: parsed, state: clientaccess.NewFileStore(configDir),
 		unlockSlots: make(chan struct{}, maxUnlockAttempts),
-		now:         time.Now,
-		lifetime:    8 * time.Hour,
+		now:         time.Now, lifetime: 8 * time.Hour,
 	}
 
-	switch mode {
-	case "local":
-		value, readErr := readPrivateFile(filepath.Join(configDir, unlockFile), -1)
-		if errors.Is(readErr, os.ErrNotExist) {
-			auth.Close()
-			return nil, false, nil
-		}
+	record, key, err := auth.state.Browser()
+	clear(key[:])
 
-		if readErr != nil {
-			auth.Close()
-			return nil, false, readErr
-		}
-
-		auth.verifier, readErr = parseVerifier(value)
-		clear(value)
-
-		if readErr != nil {
-			auth.Close()
-			return nil, false, readErr
-		}
-	case "proxy":
-		auth.proxyGuard, err = readPrivateFile(filepath.Join(configDir, proxyGuardFile), keySize)
-		if errors.Is(err, os.ErrNotExist) {
-			auth.Close()
-			return nil, false, nil
-		}
-
-		if err != nil {
-			auth.Close()
-			return nil, false, err
-		}
-	default:
-		auth.Close()
-		return nil, false, ErrInvalidAuthConfiguration
-	}
-
-	return auth, true, nil
+	return auth, record != "", err
 }
 
-func (a *authenticator) Close() {
-	if a == nil {
-		return
-	}
-
-	clear(a.sessionKey)
-	clear(a.proxyGuard)
-	clear(a.verifier.salt[:])
-	clear(a.verifier.hash[:])
-}
-
-func (a *authenticator) verifyUnlock(value string) bool {
+func (a *authenticator) login(w http.ResponseWriter, value string) bool {
 	if !a.reserveUnlockAttempt() {
+		return false
+	}
+
+	record, key, err := a.state.Browser()
+	defer clear(key[:])
+
+	if err != nil || record == "" {
 		return false
 	}
 
@@ -226,10 +128,22 @@ func (a *authenticator) verifyUnlock(value string) bool {
 		return false
 	}
 
-	derived := argon2.IDKey([]byte(value), a.verifier.salt[:], argonTime, argonMemory, argonThreads, keySize)
+	v, err := parseVerifier([]byte(record))
+	if err != nil {
+		return false
+	}
+
+	derived := argon2.IDKey([]byte(value), v.salt[:], argonTime, argonMemory, argonThreads, keySize)
 	defer clear(derived)
 
-	return subtle.ConstantTimeCompare(derived, a.verifier.hash[:]) == 1
+	if subtle.ConstantTimeCompare(derived, v.hash[:]) != 1 {
+		return false
+	}
+
+	// Sign with the same snapshot that verified the unlock.
+	a.issue(w, key[:])
+
+	return true
 }
 
 func (a *authenticator) reserveUnlockAttempt() bool {
@@ -246,21 +160,7 @@ func (a *authenticator) reserveUnlockAttempt() bool {
 	return true
 }
 
-func (a *authenticator) proxyAuthorized(r *http.Request) bool {
-	if a.mode != "proxy" {
-		return true
-	}
-
-	supplied, err := base64.RawURLEncoding.DecodeString(r.Header.Get("X-Wake-Proxy-Authorization"))
-	if err != nil {
-		return false
-	}
-	defer clear(supplied)
-
-	return subtle.ConstantTimeCompare(supplied, a.proxyGuard) == 1
-}
-
-func (a *authenticator) issue(w http.ResponseWriter) string {
+func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 	csrf := make([]byte, keySize)
 	// crypto/rand.Read fills the buffer or terminates the process.
 	_, _ = rand.Read(csrf)
@@ -268,10 +168,10 @@ func (a *authenticator) issue(w http.ResponseWriter) string {
 
 	expires := a.now().Add(a.lifetime).Unix()
 	payload := fmt.Sprintf("%d.%s", expires, base64.RawURLEncoding.EncodeToString(csrf))
-	mac := hmac.New(sha256.New, a.sessionKey)
+	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(payload))
 	value := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	//nolint:gosec // Local mode is a loopback-only HTTP listener; proxy mode has an HTTPS public origin.
+	//nolint:gosec // Cookie security follows the configured browser origin, independently of backend TCP.
 	http.SetCookie(
 		w,
 		&http.Cookie{
@@ -288,10 +188,6 @@ func (a *authenticator) issue(w http.ResponseWriter) string {
 }
 
 func (a *authenticator) session(r *http.Request) (string, bool) {
-	if csrf, ok := r.Context().Value(issuedSessionKey{}).(string); ok {
-		return csrf, true
-	}
-
 	cookie, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return "", false
@@ -310,7 +206,13 @@ func (a *authenticator) session(r *http.Request) (string, bool) {
 	}
 	defer clear(supplied)
 
-	mac := hmac.New(sha256.New, a.sessionKey)
+	record, key, err := a.state.Browser()
+	if err != nil || record == "" {
+		return "", false
+	}
+	defer clear(key[:])
+
+	mac := hmac.New(sha256.New, key[:])
 	_, _ = mac.Write([]byte(payload))
 	if !hmac.Equal(supplied, mac.Sum(nil)) {
 		return "", false
@@ -340,17 +242,17 @@ func (a *authenticator) sameOrigin(r *http.Request) bool {
 func parseVerifier(value []byte) (verifier, error) {
 	parts := strings.Split(string(value), ".")
 	if len(parts) != 3 || parts[0] != "v1" {
-		return verifier{}, ErrInvalidSecretFile
+		return verifier{}, clientaccess.ErrInvalidSecretFile
 	}
 
 	salt, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || len(salt) != saltSize {
-		return verifier{}, ErrInvalidSecretFile
+		return verifier{}, clientaccess.ErrInvalidSecretFile
 	}
 
 	hash, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil || len(hash) != keySize {
-		return verifier{}, ErrInvalidSecretFile
+		return verifier{}, clientaccess.ErrInvalidSecretFile
 	}
 
 	var result verifier
@@ -360,84 +262,6 @@ func parseVerifier(value []byte) (verifier, error) {
 	clear(hash)
 
 	return result, nil
-}
-
-func readPrivateFile(path string, size int) ([]byte, error) {
-	if !filepath.IsAbs(path) {
-		return nil, ErrInvalidSecretFile
-	}
-
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	file := os.NewFile(uintptr(fd), path)
-	if file == nil {
-		_ = syscall.Close(fd)
-		return nil, ErrInvalidSecretFile
-	}
-	defer func() { _ = file.Close() }()
-
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 ||
-		info.Mode().Perm()&0o400 == 0 {
-		return nil, ErrInvalidSecretFile
-	}
-
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || (int(stat.Uid) != 0 && int(stat.Uid) != os.Geteuid()) {
-		return nil, ErrInvalidSecretFile
-	}
-
-	limit := int64(4097)
-	if size >= 0 {
-		limit = int64(size + 1)
-	}
-
-	value, err := io.ReadAll(io.LimitReader(file, limit))
-	if err != nil {
-		return nil, err
-	}
-
-	if (size >= 0 && len(value) != size) || (size < 0 && len(value) == int(limit)) {
-		clear(value)
-		return nil, ErrInvalidSecretFile
-	}
-
-	return value, nil
-}
-
-func writePrivateFile(path string, value []byte) error {
-	if !filepath.IsAbs(path) || len(value) == 0 {
-		return ErrInvalidSecretFile
-	}
-
-	file, err := os.CreateTemp(filepath.Dir(path), ".wake-admin-")
-	if err != nil {
-		return err
-	}
-
-	temporary := file.Name()
-	defer func() { _ = os.Remove(temporary) }()
-
-	if err = file.Chmod(0o600); err == nil {
-		_, err = file.Write(value)
-	}
-
-	if err == nil {
-		err = file.Sync()
-	}
-
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return os.Rename(temporary, path)
 }
 
 func clear(value []byte) {

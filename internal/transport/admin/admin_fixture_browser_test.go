@@ -355,17 +355,15 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 
 	origin := "http://" + listener.Addr().String()
 
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err = SetUnlock(dir, []byte(adminBrowserUnlock)); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", origin)
+	auth, _, err := Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	t.Cleanup(auth.Close)
 
 	f.warehouseBytes.Store(134637824)
 	f.origin = origin

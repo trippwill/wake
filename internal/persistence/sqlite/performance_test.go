@@ -20,7 +20,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -234,14 +234,17 @@ func TestPerformanceWarehouse(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	socketPath, mirrorPath := filepath.Join(dir, "wake.sock"), filepath.Join(dir, "mirror.db")
+	tokenFile, mirrorPath := filepath.Join(dir, "client.token"), filepath.Join(dir, "mirror.db")
+	if err := os.WriteFile(tokenFile, []byte("synthetic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	server := &http.Server{Handler: socket.NewHandler(s, nil, nil), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Handler: financialapi.NewHandler(s, nil, nil), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 
 	t.Cleanup(func() { _ = server.Close() })
@@ -250,7 +253,8 @@ func TestPerformanceWarehouse(t *testing.T) {
 		t.Helper()
 		// The task builds this disposable test consumer before invoking the fixture.
 		//nolint:gosec // The executable is an explicit local test input.
-		output, e := exec.CommandContext(ctx, consumer, "-socket", socketPath, "-state", mirrorPath).Output()
+		output, e := exec.CommandContext(ctx, consumer, "-endpoint", "http://"+listener.Addr().String(), "-token-file", tokenFile, "-state", mirrorPath).
+			Output()
 		if e != nil {
 			t.Fatal("consumer failed", e)
 		}
@@ -497,14 +501,17 @@ func TestPerformanceRead(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	socketPath, mirrorPath := filepath.Join(dir, "wake.sock"), filepath.Join(dir, "mirror.db")
+	tokenFile, mirrorPath := filepath.Join(dir, "client.token"), filepath.Join(dir, "mirror.db")
+	if err := os.WriteFile(tokenFile, []byte("synthetic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	server := &http.Server{Handler: socket.NewHandler(s, nil, nil), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Handler: financialapi.NewHandler(s, nil, nil), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 
 	t.Cleanup(func() { _ = server.Close() })
@@ -513,7 +520,8 @@ func TestPerformanceRead(t *testing.T) {
 		t.Helper()
 		// The task builds this disposable test consumer before invoking the fixture.
 		//nolint:gosec // The executable is an explicit local test input.
-		output, e := exec.CommandContext(ctx, consumer, "-socket", socketPath, "-state", mirrorPath).Output()
+		output, e := exec.CommandContext(ctx, consumer, "-endpoint", "http://"+listener.Addr().String(), "-token-file", tokenFile, "-state", mirrorPath).
+			Output()
 		if e != nil {
 			t.Fatal(e)
 		}

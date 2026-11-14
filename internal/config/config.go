@@ -61,31 +61,21 @@ type Log struct {
 // Credentials contains non-secret credential-protection configuration. The
 // referenced key is read and validated by the composition layer.
 type Credentials struct {
-	MasterKeyPath string
+	KeyPath string
 }
 
-// Admin contains loopback-only browser administration settings. Secrets remain
-// in files and are not loaded by this package.
+// Admin contains browser listener and origin settings. Secrets remain in private files.
 type Admin struct {
-	Port            uint16
-	AuthMode        string
+	Listen          string
 	PublicOrigin    string
 	CurrencyRefresh bool
 }
 
-// Address returns the fixed IPv4 localhost listener address.
-func (value Admin) Address() string {
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(int(value.Port)))
-}
+func (value Admin) Address() string { return value.Listen }
+func (value Admin) Origin() string  { return value.PublicOrigin }
 
-// Origin returns the browser-visible origin for the administration UI.
-func (value Admin) Origin() string {
-	if value.PublicOrigin != "" {
-		return value.PublicOrigin
-	}
-
-	return "http://" + value.Address()
-}
+// API contains the financial HTTP listener address.
+type API struct{ Listen string }
 
 // Config is the fully resolved and validated process configuration.
 type Config struct {
@@ -94,6 +84,7 @@ type Config struct {
 	Log          Log
 	Credentials  Credentials
 	Admin        Admin
+	API          API
 	PollDefaults map[string]time.Duration
 }
 
@@ -103,6 +94,7 @@ type fileConfig struct {
 	Log         fileLog         `toml:"log"`
 	Credentials fileCredentials `toml:"credentials"`
 	Admin       fileAdmin       `toml:"admin"`
+	API         API             `toml:"api"`
 	Polling     filePolling     `toml:"polling"`
 }
 
@@ -119,14 +111,13 @@ type fileLog struct {
 }
 
 type fileCredentials struct {
-	MasterKeyPath string `toml:"master_key_path"`
+	KeyPath string `toml:"key_path"`
 }
 
 type fileAdmin struct {
-	Port            *uint16 `toml:"port"`
-	AuthMode        string  `toml:"auth_mode"`
-	PublicOrigin    string  `toml:"public_origin"`
-	CurrencyRefresh *bool   `toml:"currency_refresh"`
+	Listen          string `toml:"listen"`
+	PublicOrigin    string `toml:"public_origin"`
+	CurrencyRefresh *bool  `toml:"currency_refresh"`
 }
 
 // Load resolves configuration and prepares the daemon's private directories.
@@ -162,25 +153,6 @@ func ResolveConfigDir() (string, error) {
 	}
 
 	return filepath.Join(root, "wake"), nil
-}
-
-// ConfigDir resolves and prepares the user-scoped private configuration directory.
-func ConfigDir() (string, error) {
-	dir, err := ResolveConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	if err := ensurePrivateDir(dir); err != nil {
-		return "", err
-	}
-
-	return dir, nil
-}
-
-func decodeFileConfig(contents []byte) (fileConfig, error) {
-	cfg, _, err := decodeFileConfigSnapshot(contents)
-	return cfg, err
 }
 
 func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error) {
@@ -231,7 +203,7 @@ func decodeFileConfigSnapshot(contents []byte) (fileConfig, toml.MetaData, error
 	values := fileSettingValues(cfg)
 	for _, setting := range Settings() {
 		if metadata.IsDefined(strings.Split(setting.Key, ".")...) {
-			if err := checkFileSetting(setting, values[setting.Flag]); err != nil {
+			if err := checkFileSetting(setting, values[setting.Key]); err != nil {
 				return cfg, metadata, err
 			}
 		}
@@ -280,18 +252,39 @@ func parseLogLevel(value string) (slog.Level, error) {
 	}
 }
 
-func validateAdminOrigin(value string, requireHTTPS bool) error {
+func validateAdminOrigin(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
 		parsed.User != nil || parsed.Opaque != "" || parsed.Path != "" || parsed.RawQuery != "" ||
 		parsed.ForceQuery || parsed.Fragment != "" || parsed.Scheme != strings.ToLower(parsed.Scheme) ||
-		parsed.Host != strings.ToLower(parsed.Host) {
+		parsed.Host != strings.ToLower(parsed.Host) || parsed.Hostname() == "" ||
+		strings.HasSuffix(parsed.Host, ":") || parsed.String() != value {
 		return fmt.Errorf("%w: admin public_origin must be an http or https origin", ErrInvalid)
 	}
 
+	host := parsed.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+		if ip.To4() == nil {
+			host = "[" + host + "]"
+		}
+	} else {
+		// Browsers interpret numeric final labels as IPv4, including shortened
+		// and hexadecimal forms. Require the ordinary dotted IPv4 form above.
+		last := strings.TrimSuffix(host, ".")
+		last = last[strings.LastIndexByte(last, '.')+1:]
+		if strings.Trim(host, "abcdefghijklmnopqrstuvwxyz0123456789-._") != "" ||
+			strings.Trim(last, "0123456789") == "" ||
+			(strings.HasPrefix(last, "0x") && strings.Trim(last[2:], "0123456789abcdef") == "") {
+			return fmt.Errorf("%w: admin public_origin must use a DNS name or canonical IP address", ErrInvalid)
+		}
+	}
+
 	if port := parsed.Port(); port != "" {
+		host += ":" + port
+
 		portNumber, portErr := strconv.Atoi(port)
-		if portErr != nil || strconv.Itoa(portNumber) != port {
+		if portErr != nil || portNumber < 1 || portNumber > 65535 || strconv.Itoa(portNumber) != port {
 			return fmt.Errorf("%w: admin public_origin must use a canonical port", ErrInvalid)
 		}
 
@@ -301,8 +294,8 @@ func validateAdminOrigin(value string, requireHTTPS bool) error {
 		}
 	}
 
-	if requireHTTPS && parsed.Scheme != "https" {
-		return fmt.Errorf("%w: proxy admin public_origin must use https", ErrInvalid)
+	if parsed.Host != host {
+		return fmt.Errorf("%w: admin public_origin must use a canonical host", ErrInvalid)
 	}
 
 	return nil
@@ -360,49 +353,55 @@ func checkPrivateDir(path string, create bool) error {
 	return nil
 }
 
+func checkListen(address string) error {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil {
+		return fmt.Errorf("%w: listener must be an IP address and port", ErrInvalid)
+	}
+
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 || strconv.Itoa(number) != port {
+		return fmt.Errorf("%w: listener port must be between 1 and 65535", ErrInvalid)
+	}
+
+	return nil
+}
+
 func resolveAdmin(fromFile fileAdmin) (Admin, error) {
-	adminPort := defaultAdmin.Port
-	if fromFile.Port != nil {
-		adminPort = *fromFile.Port
+	address := fromFile.Listen
+	if address == "" {
+		address = defaultAdmin.Listen
 	}
 
-	if adminPort == 0 {
-		return Admin{}, fmt.Errorf("%w: admin port must be between 1 and 65535", ErrInvalid)
+	if err := checkListen(address); err != nil {
+		return Admin{}, err
 	}
 
-	adminMode := defaultAdmin.AuthMode
-	if fromFile.AuthMode != "" {
-		adminMode = fromFile.AuthMode
-	}
+	origin := fromFile.PublicOrigin
+	if origin == "" {
+		host, port, _ := net.SplitHostPort(address)
+		if !net.ParseIP(host).IsLoopback() {
+			return Admin{}, fmt.Errorf("%w: non-loopback admin listener requires public_origin", ErrInvalid)
+		}
 
-	if adminMode != "local" && adminMode != "proxy" {
-		return Admin{}, fmt.Errorf("%w: unsupported admin auth mode %q", ErrInvalid, adminMode)
-	}
-
-	adminOrigin := fromFile.PublicOrigin
-	if adminOrigin != "" {
-		if err := validateAdminOrigin(adminOrigin, adminMode == "proxy"); err != nil {
-			return Admin{}, err
+		host = net.ParseIP(host).String()
+		origin = "http://" + net.JoinHostPort(host, port)
+		if port == "80" {
+			origin = "http://" + host
+			if strings.Contains(host, ":") {
+				origin = "http://[" + host + "]"
+			}
 		}
 	}
 
-	if adminMode == "proxy" && adminOrigin == "" {
-		return Admin{}, fmt.Errorf("%w: proxy admin mode requires public_origin", ErrInvalid)
+	if err := validateAdminOrigin(origin); err != nil {
+		return Admin{}, err
 	}
 
-	if adminMode == "local" && adminOrigin != "" {
-		return Admin{}, fmt.Errorf("%w: local admin mode does not allow public_origin", ErrInvalid)
-	}
-
-	currencyRefresh := defaultAdmin.CurrencyRefresh
+	refresh := defaultAdmin.CurrencyRefresh
 	if fromFile.CurrencyRefresh != nil {
-		currencyRefresh = *fromFile.CurrencyRefresh
+		refresh = *fromFile.CurrencyRefresh
 	}
 
-	return Admin{
-		Port:            adminPort,
-		AuthMode:        adminMode,
-		PublicOrigin:    adminOrigin,
-		CurrencyRefresh: currencyRefresh,
-	}, nil
+	return Admin{Listen: address, PublicOrigin: origin, CurrencyRefresh: refresh}, nil
 }

@@ -19,17 +19,15 @@ import (
 func assetTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-asset-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	t.Cleanup(auth.Close)
 
 	handler, err := NewHandler(auth, Dependencies{})
 	if err != nil {

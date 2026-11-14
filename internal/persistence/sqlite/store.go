@@ -85,19 +85,20 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
-	historyRule            application.FinancialRule
-	historyUpdating        atomic.Bool
-	registrations          []provider.Registration
-	db                     *sql.DB
-	activityDB             *sql.DB
-	activityQuery          *sql.Stmt
-	queries                *sqlc.Queries
-	owners                 [2]*os.File
-	logger                 *slog.Logger
-	closeOnce              sync.Once
-	closeError             error
-	publicationMu          sync.Mutex
-	publicationSubscribers map[chan struct{}]struct{}
+	historyRule              application.FinancialRule
+	historyUpdating          atomic.Bool
+	credentialKeyUnavailable atomic.Bool
+	registrations            []provider.Registration
+	db                       *sql.DB
+	activityDB               *sql.DB
+	activityQuery            *sql.Stmt
+	queries                  *sqlc.Queries
+	owners                   [2]*os.File
+	logger                   *slog.Logger
+	closeOnce                sync.Once
+	closeError               error
+	publicationMu            sync.Mutex
+	publicationSubscribers   map[chan struct{}]struct{}
 }
 
 type storeMetadata struct{ kind, version, id string }
@@ -778,6 +779,7 @@ type connector struct {
 	paths        [2]string
 	owners       [2]*os.File
 	probe        bool
+	accessProbe  bool
 	activityRead bool
 }
 
@@ -811,6 +813,17 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 
 	fail := func(err error) (driver.Conn, error) { _ = connection.Close(); return nil, err }
+
+	if c.accessProbe {
+		uri := (&url.URL{Scheme: "file", Path: c.paths[0], RawQuery: query}).String()
+		if _, err := executor.ExecContext(
+			ctx,
+			profileStatement("AttachAccess", ""),
+			[]driver.NamedValue{{Ordinal: 1, Value: uri}},
+		); err != nil {
+			return fail(err)
+		}
+	}
 
 	if c.probe {
 		return connection, nil

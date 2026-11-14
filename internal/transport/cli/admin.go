@@ -6,35 +6,71 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
 
 	"github.com/urfave/cli/v3"
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/daemon"
 	"go.trippwill.dev/wake/internal/transport/admin"
+	"golang.org/x/term"
 )
 
-func performProxyGuard(_ context.Context, c *cli.Command) error {
+func performSetUnlock(ctx context.Context, c *cli.Command) error {
 	if err := requireNoArgs(c); err != nil {
 		return err
 	}
 
-	activity := newActivity(c.ErrWriter, c.Bool("json"), "admin set-proxy-guard", "provisioning proxy guard")
-	defer activity.Stop()
-
-	dir, err := config.ConfigDir()
+	resolved, err := config.ResolveReadOnly(c)
 	if err != nil {
-		return failure("configure admin: %v", err)
+		return failure("configure operator access: %v", err)
 	}
 
-	guard, err := admin.SetProxyGuard(dir)
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return failure("read operator unlock: %v", errTerminalRequired)
+	}
+
+	if err := config.CheckPrivateDir(resolved.Config.Paths.ConfigDir); err != nil {
+		return failure("set operator unlock: %v", err)
+	}
+
+	unlock, err := readOperatorUnlock(ctx, c)
 	if err != nil {
-		return failure("set proxy guard: %v", err)
+		return failure("read operator unlock: %v", err)
+	}
+	defer clear(unlock)
+
+	if err := admin.SetUnlock(resolved.Config.Paths.ConfigDir, unlock); err != nil {
+		return failure("set operator unlock: %v", err)
 	}
 
-	if c.Bool("json") {
-		return json.NewEncoder(c.Writer).Encode(map[string]string{"proxy_guard": guard})
+	if commandJSON(c) {
+		return json.NewEncoder(c.Writer).Encode(map[string]bool{"unlock_set": true})
 	}
 
-	writef(c.Writer, "wake: reverse-proxy guard (store it in the proxy only): %s\n", guard)
+	writeString(c.Writer, "Operator unlock set. Sign in with the new unlock.\n")
+
+	return nil
+}
+
+func performResetAccess(ctx context.Context, c *cli.Command) error {
+	if err := requireNoArgs(c); err != nil {
+		return err
+	}
+
+	resolved, err := config.Resolve(c)
+	if err != nil {
+		return failure("configure access reset: %v", err)
+	}
+
+	if err := daemon.ResetAccess(ctx, resolved.Config); err != nil {
+		return failure("reset access: %v", err)
+	}
+
+	if commandJSON(c) {
+		return json.NewEncoder(c.Writer).Encode(map[string]bool{"access_reset": true})
+	}
+
+	writef(c.Writer, "Revoked all API clients and browser sessions. The operator unlock is unchanged.\n")
 
 	return nil
 }

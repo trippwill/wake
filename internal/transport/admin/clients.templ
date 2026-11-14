@@ -1,0 +1,51 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import "go.trippwill.dev/wake/internal/clientaccess"
+import "time"
+
+templ ClientsPage(csrf string, clients []clientaccess.Client, issued, message string) {
+	@PageHeader("API clients", "Give each application its own access to your financial data.")
+	@SystemNavigation("clients")
+	<div class="wake-stack">
+		if message != "" {
+			<div class="wake-notice wake-error" role="alert">{ message }</div>
+		}
+		if issued != "" {
+			<section class="wake-card wake-stack" aria-labelledby="token-heading">
+				<h2 id="token-heading">Save this token</h2>
+				<p>This is the only time Wake shows it. Store it privately in the client that will use it.</p>
+				<label class="wake-field" for="client-token">New API token<textarea class="textarea" id="client-token" readonly autocomplete="off" spellcheck="false">{ issued }</textarea></label>
+				<a class="btn" href="/system/clients">Done</a>
+			</section>
+		}
+		<section class="wake-card wake-stack" aria-labelledby="create-client-heading">
+			<h2 id="create-client-heading">Add a client</h2>
+			<p>Tokens allow financial reads, including positions and change notifications. They cannot administer Wake. A token works until you revoke it.</p>
+			<form method="post" action="/system/clients" class="wake-stack" hx-boost="false">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label class="wake-field" for="client-name">Client name<input class="input" id="client-name" name="name" required maxlength="100" autocomplete="off" placeholder="Laptop dashboard"/></label>
+				<button class="btn btn-primary" type="submit">Create token</button>
+			</form>
+		</section>
+		<section class="wake-card wake-stack" aria-labelledby="active-clients-heading">
+			<h2 id="active-clients-heading">Active clients</h2>
+			if len(clients) == 0 {
+				<p>No clients have access.</p>
+			}
+			for _, client := range clients {
+				<div class="wake-stack">
+					<h3>{ client.Name() }</h3>
+					<p class="wake-help">Created { client.Created().Format(time.DateTime) } UTC · { client.ID() }</p>
+					<form method="post" action={ templ.SafeURL("/system/clients/" + client.ID() + "/revoke") } hx-boost="false">
+						<input type="hidden" name="csrf" value={ csrf }/>
+						<button class="btn" type="submit" aria-label={ "Revoke access for " + client.Name() }>Revoke access</button>
+					</form>
+				</div>
+			}
+			<p class="wake-help">Revoking access stops new reads and closes active change streams. Data already received by a client remains with that client.</p>
+		</section>
+	</div>
+}

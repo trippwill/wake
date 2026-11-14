@@ -18,19 +18,18 @@ import (
 )
 
 func TestAdminFailuresAreClassifiedAndPrivate(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-workflow-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	login := httptest.NewRecorder()
-	auth.issue(login)
+	issueTestSession(t, auth, login)
 
 	cookie := login.Result().Cookies()[0]
 	for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug} {

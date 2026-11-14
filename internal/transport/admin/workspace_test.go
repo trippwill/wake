@@ -54,19 +54,18 @@ type workspaceStore struct {
 }
 
 func TestWorkspaceRoutesAndFragments(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-workspace-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	session := httptest.NewRecorder()
-	auth.issue(session)
+	issueTestSession(t, auth, session)
 
 	view := fixtureView{
 		Connections: []application.ConnectionView{
@@ -367,19 +366,18 @@ func (historyWorkspaceStore) ObservationList(
 }
 
 func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-history-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	session := httptest.NewRecorder()
-	auth.issue(session)
+	issueTestSession(t, auth, session)
 
 	handler, err := NewHandler(
 		auth,

@@ -40,20 +40,19 @@ func (staleCorrectionStore) CorrectionForm(
 }
 
 func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-correction-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	login := httptest.NewRecorder()
 
-	csrf := auth.issue(login)
+	csrf := issueTestSession(t, auth, login)
 
 	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil)
 
@@ -117,16 +116,15 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 }
 
 func TestContactFragmentRequiresAuthentication(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-contact-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	handler, err := NewHandler(auth, Dependencies{})
 	if err != nil {
@@ -214,20 +212,19 @@ func (*correctionCheckStore) CorrectionForm(
 }
 
 func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-live-check-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	login := httptest.NewRecorder()
 
-	csrf := auth.issue(login)
+	csrf := issueTestSession(t, auth, login)
 
 	store := &correctionCheckStore{}
 

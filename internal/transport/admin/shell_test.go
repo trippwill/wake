@@ -13,16 +13,15 @@ import (
 )
 
 func TestShellRoutesAndNavigation(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-shell-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	h, err := NewHandler(auth, Dependencies{Config: config.Config{Admin: config.Admin{CurrencyRefresh: true}}})
 	if err != nil {
@@ -30,7 +29,7 @@ func TestShellRoutesAndNavigation(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	auth.issue(w)
+	issueTestSession(t, auth, w)
 
 	cookie := w.Result().Cookies()[0]
 	for _, path := range []string{"/", "/system/configuration", "/system", "/trades", "/documents", "/connections", "/processing"} {

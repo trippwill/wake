@@ -16,16 +16,15 @@ import (
 )
 
 func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-navigation")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	h, err := NewHandler(auth, Dependencies{Workflow: application.New(workspaceStore{}, nil, nil, nil, nil)})
 	if err != nil {
@@ -33,7 +32,7 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 	}
 
 	session := httptest.NewRecorder()
-	auth.issue(session)
+	issueTestSession(t, auth, session)
 
 	for _, tc := range []struct{ path, title string }{
 		{"/activity", "Activity"},
@@ -86,18 +85,17 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 }
 
 func TestSettingsRequiresSessionAndDoesNotQueryStatus(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-settings")); err != nil {
 		t.Fatal(err)
 	}
 
 	const origin = "http://127.0.0.1:8787"
 
-	auth, _, err := Open(dir, "local", origin)
+	auth, _, err := Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	h, err := NewHandler(auth, Dependencies{Queries: unavailableSettingsStatus{}})
 	if err != nil {
@@ -121,7 +119,7 @@ func TestSettingsRequiresSessionAndDoesNotQueryStatus(t *testing.T) {
 
 		if tc.authenticated {
 			session := httptest.NewRecorder()
-			auth.issue(session)
+			issueTestSession(t, auth, session)
 			r.AddCookie(session.Result().Cookies()[0])
 		}
 

@@ -61,6 +61,8 @@ func TestRenderFrontend(t *testing.T) {
 		"activity":       ActivityPage(activityView{}),
 		"positions":      PositionsPage(),
 		"settings":       SettingsBody(),
+		"clients":        ClientsPage("synthetic-csrf", nil, "", ""),
+		"client-issued":  ClientsPage("synthetic-csrf", nil, "synthetic-issued-token", ""),
 		"source":         ConnectionPage("synthetic-csrf", fixtureSource(view), source),
 		"source-access":  ConnectionAccess("synthetic-csrf", source),
 		"source-reports": ConnectionReports("synthetic-csrf", source),

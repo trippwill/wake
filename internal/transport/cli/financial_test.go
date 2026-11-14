@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,14 +23,26 @@ import (
 func serveFinancialFixture(t *testing.T, dir string, handler http.HandlerFunc) string {
 	t.Helper()
 
-	socketPath := filepath.Join(dir, "wake.sock")
+	tokenPath := filepath.Join(dir, "client.token")
+	token := strings.Repeat("A", 22) + "." + strings.Repeat("A", 43)
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	listener, err := net.Listen("unix", socketPath)
+	t.Setenv("WAKE_TOKEN_FILE", tokenPath)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: time.Second}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			t.Error("missing client credential")
+		}
+
+		handler(w, r)
+	}), ReadHeaderTimeout: time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 
@@ -43,20 +56,7 @@ func serveFinancialFixture(t *testing.T, dir string, handler http.HandlerFunc) s
 		}
 	})
 
-	return socketPath
-}
-
-func shortSocketDir(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.MkdirTemp("", "wake-cli-")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-	return dir
+	return "http://" + listener.Addr().String()
 }
 
 func financialCLI(t *testing.T, want int, args ...string) []byte {
@@ -132,8 +132,8 @@ func TestFinancialCLIReads(t *testing.T) {
 		account,
 	}, ",") + `]}`
 
-	socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.Host != "wake" || r.Header.Get("Accept") != "application/json" {
+	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Header.Get("Accept") != "application/json" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 		}
 
@@ -158,7 +158,7 @@ func TestFinancialCLIReads(t *testing.T) {
 	})
 
 	call := func(args ...string) []byte {
-		return financialCLI(t, exitOK, append(args, "--socket", socketPath)...)
+		return financialCLI(t, exitOK, append(args, "--endpoint", endpoint)...)
 	}
 	financialResourceIDs(t, call("accounts", "list"), "acct", "other")
 
@@ -167,8 +167,8 @@ func TestFinancialCLIReads(t *testing.T) {
 		exitOK,
 		"accounts",
 		"get",
-		"--socket",
-		socketPath,
+		"--endpoint",
+		endpoint,
 		"acct",
 	); !bytes.Contains(
 		got,
@@ -211,7 +211,7 @@ func TestFinancialCLIReads(t *testing.T) {
 	financialResourceIDs(t, call("activity", "query", "--offset", "1000"))
 
 	doctor := call("doctor")
-	if !bytes.Contains(doctor, []byte(`"auth":"same_uid"`)) ||
+	if !bytes.Contains(doctor, []byte(`"auth":"client_token"`)) ||
 		!bytes.Contains(doctor, []byte(`"reachable":true`)) {
 		t.Fatal(string(doctor))
 	}
@@ -221,15 +221,15 @@ func TestFinancialCLIReads(t *testing.T) {
 		exitOK,
 		"request",
 		"get",
-		"--socket",
-		socketPath,
+		"--endpoint",
+		endpoint,
 		"/v1/accounts/acct/explanation?revision=3",
 	)
 	if string(bytes.TrimSpace(raw)) != `{"id":"acct","revision":3}` {
 		t.Fatal(string(raw))
 	}
 
-	stderr := financialCLI(t, exitFailure, "accounts", "get", "--socket", socketPath, "missing")
+	stderr := financialCLI(t, exitFailure, "accounts", "get", "--endpoint", endpoint, "missing")
 	if !bytes.Contains(stderr, []byte("404")) || bytes.Contains(stderr, []byte("private diagnostic text")) {
 		t.Fatal(string(stderr))
 	}
@@ -252,7 +252,7 @@ func TestFinancialCLIPositions(t *testing.T) {
 		)
 	}
 
-	socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, r *http.Request) {
+	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
 		view, ok := responses[r.URL.Path]
 		if !ok {
 			t.Errorf("unexpected positions request: %s", r.URL.Path)
@@ -266,7 +266,7 @@ func TestFinancialCLIPositions(t *testing.T) {
 	for id, fragment := range map[string]string{
 		"open": `"value":"-1.0000000000000000001"`, "empty": `"positions":[]`, "unavailable": `"positions":null`,
 	} {
-		body := financialCLI(t, exitOK, "positions", "get", "--socket", socketPath, id)
+		body := financialCLI(t, exitOK, "positions", "get", "--endpoint", endpoint, id)
 		if !bytes.Contains(body, []byte(fragment)) ||
 			id == "open" && !bytes.Contains(body, []byte("12:00:00.123400Z")) {
 			t.Fatalf("unexpected %s view: %s", id, body)
@@ -285,8 +285,8 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 		{"activity", "query", "--state", "unknown"},
 		{"accounts", "get", "a/b"},
 		{"positions", "get"},
-		{"doctor", "--socket", "relative.sock"},
-		{"doctor", "--config", "/profile.toml", "--socket", "/socket"},
+		{"doctor", "--endpoint", "relative.sock"},
+		{"doctor", "--config", "/profile.toml", "--endpoint", "/socket"},
 		{"request", "get", "https://example.invalid/v1/snapshot"},
 		{"request", "get", "/v1/events?extra=1"},
 		{"request", "get", "/v1/%65vents"},
@@ -296,7 +296,7 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 		financialCLI(t, exitUsage, args...)
 	}
 
-	socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, r *http.Request) {
+	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case snapshotRoute:
 			_, _ = fmt.Fprint(w, `{"warehouse_id":"warehouse","version":"version","resources":[]}`)
@@ -309,15 +309,15 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 			t.Errorf("unexpected request: %s", r.URL.Path)
 		}
 	})
-	financialResourceIDs(t, financialCLI(t, exitOK, "accounts", "list", "--socket", socketPath))
+	financialResourceIDs(t, financialCLI(t, exitOK, "accounts", "list", "--endpoint", endpoint))
 
-	errOut := financialCLI(t, exitFailure, "accounts", "get", "--socket", socketPath, "bad")
+	errOut := financialCLI(t, exitFailure, "accounts", "get", "--endpoint", endpoint, "bad")
 	if bytes.Contains(errOut, []byte("private diagnostic text")) {
 		t.Fatal(string(errOut))
 	}
 
-	financialCLI(t, exitFailure, "request", "get", "--socket", socketPath, "/v1/accounts/redirect")
-	financialCLI(t, exitFailure, "doctor", "--socket", filepath.Join(shortSocketDir(t), "wake.sock"))
+	financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint, "/v1/accounts/redirect")
+	financialCLI(t, exitFailure, "doctor", "--endpoint", "http://127.0.0.1:1")
 }
 
 func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
@@ -339,11 +339,11 @@ func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
 		{"oversized", http.StatusNotFound, `{"code":"not_found","message":"` + strings.Repeat("a", maxFinancialError) + `"}`, "operation_failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, _ *http.Request) {
+			endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				_, _ = fmt.Fprint(w, tc.body)
 			})
-			out := financialCLI(t, exitFailure, "request", "get", "--socket", socketPath,
+			out := financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint,
 				"/v1/accounts/acct/explanation?revision=3")
 			if !bytes.Contains(out, []byte(`"code":"`+tc.code+`"`)) ||
 				bytes.Contains(out, []byte("private diagnostic text")) {
@@ -382,7 +382,7 @@ func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var requests atomic.Int32
 
-			socketPath := serveFinancialFixture(t, shortSocketDir(t), func(w http.ResponseWriter, r *http.Request) {
+			endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
 				i := int(requests.Add(1) - 1)
 				if i > 0 && (i > len(tc.locations) || r.URL.EscapedPath() != tc.locations[i-1]) {
 					t.Errorf("unexpected redirect request %s", r.URL)
@@ -401,12 +401,12 @@ func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
 				)
 			})
 			if tc.success {
-				out := financialCLI(t, exitOK, "accounts", "get", "--socket", socketPath, "retired")
+				out := financialCLI(t, exitOK, "accounts", "get", "--endpoint", endpoint, "retired")
 				if !bytes.Contains(out, []byte(`"id":"acct"`)) {
 					t.Fatal(string(out))
 				}
 			} else {
-				financialCLI(t, exitFailure, "request", "get", "--socket", socketPath, tc.start)
+				financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint, tc.start)
 			}
 
 			if got := requests.Load(); got != tc.followed+1 {
@@ -420,77 +420,63 @@ func TestFinancialCLIHelp(t *testing.T) {
 	for _, command := range []string{"accounts list", "accounts get", "activity query", "positions get", "request get", "doctor"} {
 		body := financialCLI(t, exitOK, append([]string{"help"}, strings.Fields(command)...)...)
 		if !bytes.Contains(body, []byte(`"name":"wake `+command+`"`)) ||
-			!bytes.Contains(body, []byte(`"names":["socket"]`)) {
+			!bytes.Contains(body, []byte(`"names":["endpoint"]`)) {
 			t.Fatal(string(body))
 		}
 	}
 }
 
-func TestFinancialCLISocketResolution(t *testing.T) {
-	dir := shortSocketDir(t)
-	defaultRuntime := filepath.Join(dir, "wake")
-	if err := os.Mkdir(defaultRuntime, 0o700); err != nil {
-		t.Fatal(err)
-	}
+func TestFinancialCLIEndpointResolution(t *testing.T) {
+	probe := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotModified) }
+	first := serveFinancialFixture(t, t.TempDir(), probe)
+	second := serveFinancialFixture(t, t.TempDir(), probe)
+	t.Setenv("WAKE_ENDPOINT", first)
 
-	t.Setenv("XDG_RUNTIME_DIR", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	unset := func(key string) {
-		t.Helper()
-
-		t.Setenv(key, "")
-
-		if err := os.Unsetenv(key); err != nil {
-			t.Fatal(err)
-		}
-	}
-	unset("WAKE_CONFIG")
-	unset("WAKE_RUNTIME_DIR")
-
-	probe := func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != snapshotRoute || r.Header.Get("If-None-Match") != "*" {
-			t.Error("expected a conditional snapshot probe")
-		}
-
-		w.WriteHeader(http.StatusNotModified)
-	}
-	assertSocket := func(path string, args ...string) {
-		t.Helper()
-
-		body := financialCLI(t, exitOK, append([]string{"doctor"}, args...)...)
+	for _, test := range []struct {
+		args []string
+		want string
+	}{{nil, first}, {[]string{"--endpoint", second}, second}} {
+		body := financialCLI(t, exitOK, append([]string{"doctor"}, test.args...)...)
 
 		var result struct {
-			SocketPath string `json:"socket_path"`
+			Endpoint string `json:"endpoint"`
 		}
-		if err := json.Unmarshal(body, &result); err != nil || result.SocketPath != path {
-			t.Fatalf("want %s, got %s", path, body)
+		if err := json.Unmarshal(body, &result); err != nil || result.Endpoint != test.want {
+			t.Fatal(string(body), err)
 		}
 	}
+}
 
-	defaultSocket := serveFinancialFixture(t, defaultRuntime, probe)
-	assertSocket(defaultSocket)
+func TestFinancialCLIProtectsTransportCredentials(t *testing.T) {
+	var received atomic.Int32
 
-	profileDir := shortSocketDir(t)
-	profileSocket := serveFinancialFixture(t, profileDir, probe)
-	profilePath := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(
-		profilePath,
-		[]byte(fmt.Sprintf("[paths]\nruntime_dir = %q\n", profileDir)),
-		0o600,
-	); err != nil {
-		t.Fatal(err)
+	target := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) { received.Add(1); w.WriteHeader(http.StatusOK) },
+		),
+	)
+	defer target.Close()
+
+	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", target.URL+"/v1/accounts/target")
+		w.WriteHeader(http.StatusPermanentRedirect)
+	})
+	financialCLI(t, exitFailure, "accounts", "get", "--endpoint", endpoint, "redirect")
+
+	if received.Load() != 0 {
+		t.Fatal("cross-origin request leaked credential")
 	}
 
-	t.Setenv("WAKE_CONFIG", profilePath)
-	assertSocket(profileSocket)
-	t.Setenv("WAKE_CONFIG", "/missing-profile.toml")
-	assertSocket(profileSocket, "--config", profilePath)
+	tlsServer := httptest.NewTLSServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) { received.Add(1); w.WriteHeader(http.StatusOK) },
+		),
+	)
+	defer tlsServer.Close()
 
-	t.Setenv("WAKE_RUNTIME_DIR", defaultRuntime)
-	assertSocket(defaultSocket, "--config", profilePath)
-	assertSocket(profileSocket, "--socket", profileSocket)
-	financialCLI(t, exitFailure, "doctor") // WAKE_RUNTIME_DIR cannot mask the missing selected config.
-	t.Setenv("WAKE_RUNTIME_DIR", "relative")
-	financialCLI(t, exitFailure, "doctor", "--config", profilePath)
+	financialCLI(t, exitFailure, "doctor", "--endpoint", tlsServer.URL)
+
+	if received.Load() != 0 {
+		t.Fatal("untrusted TLS peer received credential")
+	}
 }

@@ -16,7 +16,6 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v3"
-	"go.trippwill.dev/wake/internal/config"
 )
 
 const (
@@ -106,7 +105,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		}
 	}
 
-	serveFlags := append(common(), config.Flags()...)
+	serveFlags := common()
 
 	root := &cli.Command{
 		Flags: []cli.Flag{
@@ -135,13 +134,22 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 	root.Commands = []*cli.Command{
 		{
-			Name:  "setup",
-			Usage: "Guide local configuration, credentials and operator access",
-			Flags: append(common(), &cli.BoolFlag{
-				Name:  "use-config",
-				Usage: "Review an existing configuration and provision local access without editing launch settings",
-			}),
-			Action: performSetup,
+			Name:            "credentials",
+			Usage:           "Manage the credential encryption key",
+			HideHelpCommand: true,
+			Action: func(_ context.Context, c *cli.Command) error {
+				printCommandHelp(stderr, c)
+				return usageError("specify credentials generate-key")
+			},
+			Commands: []*cli.Command{
+				{
+					Name:        "generate-key",
+					Usage:       "Generate a credential encryption key with Wake stopped",
+					Description: "Uses credentials.key_path from an existing TOML. Refuses an existing key file or saved credentials that require their original key.",
+					Flags:       common(),
+					Action:      performGenerateCredentialKey,
+				},
+			},
 		},
 		{
 			Name:   "serve",
@@ -152,7 +160,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		{
 			Name:  "upgrade",
 			Usage: "Preview a forward storage upgrade with Wake stopped",
-			Flags: append(append(common(), config.Flags()...), &cli.StringFlag{
+			Flags: append(common(), &cli.StringFlag{
 				Name: "confirm", Usage: "Apply the upgrade matching this plan ID",
 			}),
 			Action: performUpgrade,
@@ -163,7 +171,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			ArgsUsage:   "credentials|warehouse",
 			Description: "Stop Wake before reset. A warehouse reset includes its disposable operational state. Selected database files and SQLite sidecars are removed without opening SQLite or reading credentials. Configuration, key and browser access files are retained.",
 			Flags: append(
-				append(common(), config.Flags()...),
+				common(),
 				&cli.BoolFlag{
 					Name:  "confirm",
 					Usage: "Delete the selected files; without this flag only preview the reset",
@@ -173,7 +181,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		},
 		{
 			Name:            "admin",
-			Usage:           "Provision reverse-proxy access",
+			Usage:           "Manage operator and client access",
 			HideHelpCommand: true,
 			Action: func(_ context.Context, c *cli.Command) error {
 				printCommandHelp(stderr, c)
@@ -186,9 +194,16 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			},
 			Commands: []*cli.Command{
 				{
-					Name:   "set-proxy-guard",
-					Usage:  "Generate the guard a reverse proxy must inject",
-					Action: performProxyGuard,
+					Name:   "set-unlock",
+					Usage:  "Set or replace the browser operator unlock",
+					Flags:  common(),
+					Action: performSetUnlock,
+				},
+				{
+					Name:   "reset-access",
+					Usage:  "Revoke all API clients and browser sessions with Wake stopped",
+					Flags:  common(),
+					Action: performResetAccess,
 				},
 			},
 		},
@@ -210,20 +225,20 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				{
 					Name:   "show",
 					Usage:  "Show resolved local launch values and sources",
-					Flags:  append(common(), config.Flags()...),
+					Flags:  common(),
 					Action: showConfig,
 				},
 				{
 					Name:      "get",
 					Usage:     "Print one resolved setting value without commentary",
 					ArgsUsage: "SETTING",
-					Flags:     append(common(), config.Flags()...),
+					Flags:     common(),
 					Action:    getConfig,
 				},
 				{
 					Name:   "check",
-					Usage:  "Check launch settings and any configured master key",
-					Flags:  append(common(), config.Flags()...),
+					Usage:  "Check launch settings",
+					Flags:  common(),
 					Action: checkConfig,
 				},
 			},
@@ -235,7 +250,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action:    discoverCommands,
 		},
 	}
-	root.Commands = append(root.Commands, financialCommands(common)...)
+	root.Commands = append(root.Commands, financialCommands()...)
 	for _, c := range root.Commands {
 		configureHelp(c)
 	}

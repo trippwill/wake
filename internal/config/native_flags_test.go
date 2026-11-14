@@ -33,7 +33,7 @@ func runSettingsForTest(overrides Overrides, prepare bool) (Resolution, error) {
 
 	command := &cli.Command{
 		Name: "wake-test", Writer: io.Discard, ErrWriter: io.Discard,
-		Flags: append([]cli.Flag{&cli.StringFlag{Name: "config"}}, Flags()...),
+		Flags: []cli.Flag{&cli.StringFlag{Name: "config"}},
 		Action: func(_ context.Context, c *cli.Command) error {
 			var err error
 
@@ -46,6 +46,7 @@ func runSettingsForTest(overrides Overrides, prepare bool) (Resolution, error) {
 			return err
 		},
 	}
+
 	args := []string{"wake-test"}
 	if overrides.ConfigPathExplicit {
 		args = append(args, "--config="+overrides.ConfigPath)

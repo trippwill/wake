@@ -130,6 +130,7 @@ type Querier interface {
 	ObservationExists(ctx context.Context, arg ObservationExistsParams) (int64, error)
 	ObserveWork(ctx context.Context, arg ObserveWorkParams) error
 	Pacing(ctx context.Context, arg PacingParams) (string, error)
+	PauseForCredentialKey(ctx context.Context) error
 	PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error)
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
 	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
@@ -204,6 +205,8 @@ type Querier interface {
 	SaveInstrumentSelection(ctx context.Context, arg SaveInstrumentSelectionParams) error
 	SaveNormalizationReceipt(ctx context.Context, arg SaveNormalizationReceiptParams) error
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
+	SavedCredentials(ctx context.Context) ([]SavedCredentialsRow, error)
+	SavedReferenceCredential(ctx context.Context) ([]byte, error)
 	ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
 	SeedArtifactBases(ctx context.Context, artifactID string) error

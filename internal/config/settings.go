@@ -4,7 +4,7 @@
 package config
 
 import (
-	"errors"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -18,13 +18,11 @@ import (
 	"go.trippwill.dev/wake/provider"
 )
 
-var defaultAdmin = Admin{Port: 8787, AuthMode: "local"}
+var defaultAdmin = Admin{Listen: "127.0.0.1:8787"}
 
 // Setting describes an admitted non-secret process setting.
 type Setting struct {
 	Key         string `json:"toml_key"`
-	Flag        string `json:"flag"`
-	Environment string `json:"environment"`
 	Type        string `json:"type"`
 	Default     string `json:"default"`
 	Description string `json:"description"`
@@ -35,73 +33,62 @@ func Settings() []Setting {
 	settings := []Setting{
 		{
 			Key:         "storage.warehouse_path",
-			Flag:        "warehouse-path",
 			Type:        "string",
-			Default:     "${XDG_DATA_HOME:-$HOME/.local/share}/wake/wake.db",
-			Description: "Absolute path to the financial warehouse database",
+			Default:     "wake.db",
+			Description: "Path to the financial warehouse database",
 		},
 		{
 			Key:         "storage.connections_path",
-			Flag:        "connections-path",
 			Type:        "string",
-			Default:     "${XDG_CONFIG_HOME:-$HOME/.config}/wake/connections.db",
-			Description: "Absolute path to the active connection and encrypted credential database",
+			Default:     "connections.db",
+			Description: "Path to the source connection and encrypted credential database",
 		},
 		{
-			Key: "storage.unattended_upgrade", Flag: "storage-unattended-upgrade",
+			Key:  "storage.unattended_upgrade",
 			Type: "bool", Default: "false",
 			Description: "Approve supported upgrades that rebuild retained history during startup",
 		},
 		{
 			Key:         "paths.runtime_dir",
-			Flag:        "runtime-dir",
 			Type:        "string",
-			Default:     "$XDG_RUNTIME_DIR/wake (required when unset)",
-			Description: "Absolute path to transient runtime files",
+			Default:     "$XDG_RUNTIME_DIR/wake/<instance-directory hash>",
+			Description: "Path to transient runtime directory",
 		},
 		{
 			Key:         "log.level",
-			Flag:        "log-level",
 			Type:        "string",
 			Default:     "info",
 			Description: "Diagnostic log level: debug, info, warn, error",
 		},
 		{
-			Key:         "credentials.master_key_path",
-			Flag:        "master-key-path",
+			Key:         "credentials.key_path",
 			Type:        "string",
-			Description: "Absolute path to an existing private 32-byte master key",
+			Default:     "credentials.key",
+			Description: "Path to the private 32-byte credential encryption key",
 		},
 		{
-			Key:         "admin.port",
-			Flag:        "admin-port",
-			Type:        "uint16",
-			Default:     strconv.Itoa(int(defaultAdmin.Port)),
-			Description: "Localhost browser administration port",
+			Key:         "admin.listen",
+			Type:        "string",
+			Default:     defaultAdmin.Listen,
+			Description: "Browser HTTP listener IP address and port",
 		},
 		{
-			Key:         "admin.auth_mode",
-			Flag:        "admin-auth-mode",
+			Key:         "api.listen",
 			Type:        "string",
-			Default:     defaultAdmin.AuthMode,
-			Description: "Browser authentication mode: local or proxy",
+			Default:     "127.0.0.1:8788",
+			Description: "Token-authenticated financial HTTP listener IP address and port",
 		},
 		{
 			Key:         "admin.public_origin",
-			Flag:        "admin-public-origin",
 			Type:        "string",
-			Description: "HTTPS browser origin in proxy mode",
+			Description: "Browser-visible HTTP or HTTPS origin; defaults to the loopback listener",
 		},
 		{
 			Key:         "admin.currency_refresh",
-			Flag:        "admin-currency-refresh",
 			Type:        "bool",
 			Default:     strconv.FormatBool(defaultAdmin.CurrencyRefresh),
 			Description: "Refresh admin currency choices daily from SIX",
 		},
-	}
-	for i := range settings {
-		settings[i].Environment = "WAKE_" + strings.ToUpper(strings.ReplaceAll(settings[i].Flag, "-", "_"))
 	}
 
 	return settings
@@ -111,30 +98,6 @@ func Settings() []Setting {
 var PollingDefaults = Setting{
 	Key: "polling.defaults", Type: "table", Default: "registered stream defaults",
 	Description: "Recurring interval overrides keyed by provider-id:stream-id",
-}
-
-// Flags supplies fresh flags for parsing explicit inputs without reading files or environments.
-func Flags() []cli.Flag {
-	var flags []cli.Flag
-	for _, setting := range Settings() {
-		flags = append(flags, setting.flag(setting.Default, cli.ValueSourceChain{}))
-	}
-
-	return flags
-}
-
-func (s Setting) flag(value string, sources cli.ValueSourceChain) cli.Flag {
-	usage := s.Description + " (TOML: " + s.Key + "; env: " + s.Environment + ")"
-	switch s.Type {
-	case "uint16":
-		parsed, _ := strconv.ParseUint(value, 10, 16)
-		return &cli.Uint16Flag{Name: s.Flag, Usage: usage, Value: uint16(parsed), Sources: sources}
-	case "bool":
-		parsed, _ := strconv.ParseBool(value)
-		return &cli.BoolFlag{Name: s.Flag, Usage: usage, Value: parsed, Sources: sources}
-	default:
-		return &cli.StringFlag{Name: s.Flag, Usage: usage, Value: value, Sources: sources}
-	}
 }
 
 // Value describes an effective launch value and the authority that supplied it.
@@ -175,280 +138,197 @@ func SelectConfigPath(path string, explicit bool) (string, string, error) {
 	return path, source, nil
 }
 
-// Resolve resolves launch settings on the actual parsed command without writes.
-// Explicit flags win over environment, a strictly validated TOML snapshot and defaults.
+// Resolve reads the selected instance configuration without writes.
 func Resolve(command *cli.Command) (Resolution, error) {
 	return resolve(command, true)
 }
 
-// ResolveReadOnly resolves inspection paths without requiring a daemon runtime directory.
 func ResolveReadOnly(command *cli.Command) (Resolution, error) {
 	return resolve(command, false)
 }
 
-// ResolveRuntimeDir reads the socket client's runtime setting without preparing
-// directories or resolving unrelated launch overrides.
-func ResolveRuntimeDir(configPath string, explicit bool) (string, error) {
-	path, source, err := SelectConfigPath(configPath, explicit)
-	if err != nil {
-		return "", err
-	}
-
-	content, _, err := readSelectedConfig(path, source)
-	if err != nil {
-		return "", err
-	}
-
-	file, err := decodeFileConfig(content)
-	if err != nil {
-		return "", err
-	}
-
-	if dir, found := os.LookupEnv("WAKE_RUNTIME_DIR"); found {
-		return dir, requireAbsolute("WAKE_RUNTIME_DIR", dir)
-	}
-
-	if file.Paths.RuntimeDir != "" {
-		return file.Paths.RuntimeDir, nil
-	}
-
-	dir, err := defaultRuntimeDir()
-	if err == nil && dir == "" {
-		err = ErrRuntimeDirRequired
-	}
-
-	return dir, err
-}
-
 func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
-	var out Resolution
-
 	path, source, err := SelectConfigPath(command.String("config"), command.IsSet("config"))
 	if err != nil {
-		return out, err
+		return Resolution{}, err
 	}
 
-	out.ConfigPath, out.ConfigSource = path, source
-
-	content, fileLoaded, err := readSelectedConfig(path, source)
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
 	if err != nil {
-		return out, err
+		return Resolution{}, fmt.Errorf("%w: read config %s: %v", ErrInvalid, path, err)
+	}
+
+	path = filepath.Join(dir, filepath.Base(path))
+
+	content, err := readConfigSnapshot(path)
+	if err != nil {
+		return Resolution{}, fmt.Errorf("%w: read config %s: %v", ErrInvalid, path, err)
 	}
 
 	file, metadata, err := decodeFileConfigSnapshot(content)
 	if err != nil {
-		return out, err
+		return Resolution{}, err
 	}
 
-	defaults, dir, err := settingDefaults()
+	file.Storage.WarehousePath = instancePath(dir, file.Storage.WarehousePath, "wake.db")
+	file.Storage.ConnectionsPath = instancePath(dir, file.Storage.ConnectionsPath, "connections.db")
+	file.Credentials.KeyPath = instancePath(dir, file.Credentials.KeyPath, "credentials.key")
+	if file.Paths.RuntimeDir != "" {
+		file.Paths.RuntimeDir = instancePath(dir, file.Paths.RuntimeDir, "")
+	} else if root := os.Getenv("XDG_RUNTIME_DIR"); root != "" {
+		if err := requireAbsolute("XDG_RUNTIME_DIR", root); err != nil {
+			return Resolution{}, err
+		}
+
+		hash := sha256.Sum256([]byte(dir))
+		file.Paths.RuntimeDir = filepath.Join(root, "wake", fmt.Sprintf("%x", hash))
+	}
+
+	if file.Log.Level == "" {
+		file.Log.Level = "info"
+	}
+
+	if file.Admin.Listen == "" {
+		file.Admin.Listen = defaultAdmin.Listen
+	}
+
+	if file.API.Listen == "" {
+		file.API.Listen = "127.0.0.1:8788"
+	}
+
+	cfg, err := resolvedConfig(file, dir, runtimeRequired)
 	if err != nil {
-		return out, err
+		return Resolution{}, err
 	}
 
-	fileValues := fileSettingValues(file)
-	selected := map[any]any{}
-	fallback := map[any]any{}
-	for _, setting := range Settings() {
-		if metadata.IsDefined(strings.Split(setting.Key, ".")...) {
-			value := fileValues[setting.Flag]
+	cfg.Paths.ConfigFile = path
 
-			selected[setting.Flag] = value
-		}
-
-		fallback[setting.Flag] = defaults[setting.Flag]
+	if err := checkInstancePaths(cfg); err != nil {
+		return Resolution{}, err
 	}
 
-	tomlSource := cli.NewMapSource("validated TOML: "+path, selected)
-	defaultSource := cli.NewMapSource("defaults", fallback)
-	for _, setting := range Settings() {
-		explicit := command.IsSet(setting.Flag)
+	file.Admin.PublicOrigin = cfg.Admin.PublicOrigin
+	if file.Polling.Defaults == nil {
+		file.Polling.Defaults = map[string]string{}
+	}
+
+	values := fileSettingValues(file)
+	result := Resolution{Config: cfg, ConfigPath: path, ConfigSource: source}
+	for _, setting := range append(Settings(), PollingDefaults) {
 		authority := "default"
-		if strings.HasPrefix(setting.Key, "paths.") ||
-			(setting.Flag == "warehouse-path" || setting.Flag == "connections-path") {
-			authority = "XDG/default"
-		}
-
-		if _, found := selected[setting.Flag]; found {
+		if metadata.IsDefined(strings.Split(setting.Key, ".")...) {
 			authority = "toml:" + path
 		}
 
-		if value, found := os.LookupEnv(setting.Environment); found && !explicit {
-			// Reject empty values for typed settings, including cli's empty-as-false boolean.
-			if setting.Type != "string" && value == "" {
-				return out, fmt.Errorf("%w: %s requires %s", ErrInvalid, setting.Environment, setting.Type)
-			}
-
-			authority = "environment:" + setting.Environment
-		}
-
-		if explicit {
-			authority = "flag"
-		}
-
-		sources := cli.EnvVars(setting.Environment)
-		sources.Append(
-			cli.NewValueSourceChain(
-				cli.NewMapValueSource(setting.Flag, tomlSource),
-				cli.NewMapValueSource(setting.Flag, defaultSource),
-			),
-		)
-
-		var flag cli.Flag
-		for _, candidate := range command.Flags {
-			if candidate.Names()[0] == setting.Flag {
-				flag = candidate
-				break
-			}
-		}
-
-		switch value := flag.(type) {
-		case *cli.StringFlag:
-			value.Sources = sources
-		case *cli.Uint16Flag:
-			value.Sources = sources
-		case *cli.BoolFlag:
-			value.Sources = sources
-		default:
-			return out, fmt.Errorf("%w: missing native setting flag %s", ErrInvalid, setting.Flag)
-		}
-
-		if err := flag.PostParse(); err != nil {
-			return out, fmt.Errorf("%w: %v", ErrInvalid, err)
-		}
-
-		out.Values = append(out.Values, Value{setting.Key, command.Value(setting.Flag), authority})
+		result.Values = append(result.Values, Value{setting.Key, values[setting.Key], authority})
 	}
 
-	port := command.Uint16("admin-port")
-
-	if file.Polling.Defaults != nil {
-		out.Values = append(out.Values, Value{PollingDefaults.Key, file.Polling.Defaults, "toml:" + path})
-	} else {
-		out.Values = append(out.Values, Value{PollingDefaults.Key, map[string]string{}, "default"})
-	}
-
-	file = fileConfig{
-		Polling: file.Polling,
-		Storage: Storage{
-			WarehousePath:     command.String("warehouse-path"),
-			ConnectionsPath:   command.String("connections-path"),
-			UnattendedUpgrade: command.Bool("storage-unattended-upgrade"),
-		},
-		Paths:       filePaths{RuntimeDir: command.String("runtime-dir")},
-		Log:         fileLog{Level: command.String("log-level")},
-		Credentials: fileCredentials{MasterKeyPath: command.String("master-key-path")},
-		Admin: fileAdmin{
-			Port:            &port,
-			AuthMode:        command.String("admin-auth-mode"),
-			PublicOrigin:    command.String("admin-public-origin"),
-			CurrencyRefresh: new(command.Bool("admin-currency-refresh")),
-		},
-	}
-	out.Config, err = resolvedConfig(file, dir, runtimeRequired)
-	if err == nil && fileLoaded {
-		out.Config.Paths.ConfigFile = path
-	}
-
-	return out, err
+	return result, nil
 }
 
-func fileSettingValues(file fileConfig) map[string]any {
-	var port uint16
-	if file.Admin.Port != nil {
-		port = *file.Admin.Port
+func instancePath(dir, path, fallback string) string {
+	if path == "" {
+		path = fallback
 	}
 
-	var currencyRefresh bool
-	if file.Admin.CurrencyRefresh != nil {
-		currencyRefresh = *file.Admin.CurrencyRefresh
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
 	}
 
-	return map[string]any{
-		"warehouse-path": file.Storage.WarehousePath, "connections-path": file.Storage.ConnectionsPath,
-		"storage-unattended-upgrade": file.Storage.UnattendedUpgrade,
-		"runtime-dir":                file.Paths.RuntimeDir, "log-level": file.Log.Level,
-		"master-key-path": file.Credentials.MasterKeyPath, "admin-port": port,
-		"admin-auth-mode": file.Admin.AuthMode, "admin-public-origin": file.Admin.PublicOrigin,
-		"admin-currency-refresh": currencyRefresh,
-	}
+	return filepath.Join(dir, path)
 }
 
-// Validate selected file values before applying any higher-priority source.
-func checkFileSetting(setting Setting, value any) error {
-	text := fmt.Sprint(value)
-	switch setting.Flag {
-	case "warehouse-path", "connections-path":
-		return checkDatabasePath(text)
-	case "runtime-dir":
-		return requireAbsolute(setting.Key, text)
-	case "master-key-path":
-		if text != "" {
-			return requireAbsolute(setting.Key, text)
+func comparablePath(path string) string {
+	if parent, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		return filepath.Join(parent, filepath.Base(path))
+	}
+
+	return path
+}
+
+func checkInstancePaths(cfg Config) error {
+	protected := []string{
+		cfg.Paths.ConfigFile, filepath.Join(cfg.Paths.ConfigDir, "auth.json"), cfg.Credentials.KeyPath,
+	}
+	if cfg.Paths.RuntimeDir != "" {
+		protected = append(protected, filepath.Join(cfg.Paths.RuntimeDir, "wake.lock"))
+	}
+
+	for i, path := range protected {
+		path = comparablePath(path)
+		for _, prior := range protected[:i] {
+			if path == comparablePath(prior) {
+				return fmt.Errorf("%w: instance files overlap at %s", ErrInvalid, path)
+			}
 		}
-	case "log-level":
-		_, err := parseLogLevel(text)
-		return err
-	case "admin-port":
-		if port, ok := value.(uint16); !ok || port == 0 {
-			return fmt.Errorf("%w: admin port must be between 1 and 65535", ErrInvalid)
-		}
-	case "admin-auth-mode":
-		if text != "local" && text != "proxy" {
-			return fmt.Errorf("%w: unsupported admin auth mode %q", ErrInvalid, text)
-		}
-	case "admin-public-origin":
-		if text != "" {
-			return validateAdminOrigin(text, true)
+
+		for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
+			db = comparablePath(db)
+			for _, suffix := range []string{"", "-wal", "-shm", "-journal", ".upgrade-intent", ".upgrade-backup.tar"} {
+				if path == db+suffix || strings.HasPrefix(path, db+"-mj") {
+					return fmt.Errorf("%w: database overlaps instance files at %s", ErrInvalid, path)
+				}
+			}
 		}
 	}
 
 	return nil
 }
 
-func settingDefaults() (map[string]string, string, error) {
-	dir, err := ResolveConfigDir()
-	if err != nil {
-		return nil, "", err
+func fileSettingValues(file fileConfig) map[string]any {
+	var currencyRefresh bool
+	if file.Admin.CurrencyRefresh != nil {
+		currencyRefresh = *file.Admin.CurrencyRefresh
 	}
 
-	data, err := xdgRoot("XDG_DATA_HOME", filepath.Join(".local", "share"))
-	if err != nil {
-		return nil, "", err
+	return map[string]any{
+		"storage.warehouse_path":     file.Storage.WarehousePath,
+		"storage.connections_path":   file.Storage.ConnectionsPath,
+		"storage.unattended_upgrade": file.Storage.UnattendedUpgrade,
+		"paths.runtime_dir":          file.Paths.RuntimeDir,
+		"log.level":                  file.Log.Level,
+		"credentials.key_path":       file.Credentials.KeyPath,
+		"admin.listen":               file.Admin.Listen,
+		"api.listen":                 file.API.Listen,
+		"admin.public_origin":        file.Admin.PublicOrigin,
+		"admin.currency_refresh":     currencyRefresh,
+		"polling.defaults":           file.Polling.Defaults,
 	}
-
-	defaults := map[string]string{}
-	for _, setting := range Settings() {
-		defaults[setting.Flag] = setting.Default
-	}
-
-	defaults["warehouse-path"] = filepath.Join(data, "wake", "wake.db")
-
-	defaults["connections-path"] = filepath.Join(dir, "connections.db")
-
-	defaults["runtime-dir"], err = defaultRuntimeDir()
-	if err != nil {
-		return nil, "", err
-	}
-
-	return defaults, dir, nil
 }
 
-func defaultRuntimeDir() (string, error) {
-	runtime := os.Getenv("XDG_RUNTIME_DIR")
-	if runtime == "" {
-		return "", nil
+// Validate explicit TOML values before supplying defaults.
+func checkFileSetting(setting Setting, value any) error {
+	text := fmt.Sprint(value)
+	switch setting.Key {
+	case "storage.warehouse_path", "storage.connections_path":
+		if text == "" {
+			return fmt.Errorf("%w: %s requires a file path", ErrInvalid, setting.Key)
+		}
+	case "paths.runtime_dir":
+		if text == "" {
+			return fmt.Errorf("%w: %s requires a directory", ErrInvalid, setting.Key)
+		}
+	case "credentials.key_path":
+		if text == "" {
+			return fmt.Errorf("%w: %s requires a file path", ErrInvalid, setting.Key)
+		}
+	case "log.level":
+		_, err := parseLogLevel(text)
+		return err
+	case "admin.listen", "api.listen":
+		return checkListen(text)
+	case "admin.public_origin":
+		if text != "" {
+			return validateAdminOrigin(text)
+		}
 	}
 
-	if err := requireAbsolute("XDG_RUNTIME_DIR", runtime); err != nil {
-		return "", err
-	}
-
-	return filepath.Join(runtime, "wake"), nil
+	return nil
 }
 
 func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, error) {
-	if key := file.Credentials.MasterKeyPath; key != "" {
-		if err := requireAbsolute("master key path", key); err != nil {
+	if key := file.Credentials.KeyPath; key != "" {
+		if err := requireAbsolute("credential key path", key); err != nil {
 			return Config{}, err
 		}
 	}
@@ -472,13 +352,17 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		return Config{}, err
 	}
 
+	if err := checkListen(file.Admin.Listen); err != nil {
+		return Config{}, err
+	}
+
 	admin, err := resolveAdmin(file.Admin)
 	if err != nil {
 		return Config{}, err
 	}
 
-	if file.Admin.AuthMode == "" {
-		return Config{}, fmt.Errorf("%w: admin auth mode is empty", ErrInvalid)
+	if err := checkListen(file.API.Listen); err != nil {
+		return Config{}, err
 	}
 
 	defaults := make(map[string]time.Duration, len(file.Polling.Defaults))
@@ -496,28 +380,16 @@ func resolvedConfig(file fileConfig, dir string, runtimeRequired bool) (Config, 
 		Paths:        Paths{ConfigDir: dir, RuntimeDir: file.Paths.RuntimeDir},
 		Storage:      file.Storage,
 		Log:          Log{Level: level},
-		Credentials:  Credentials{MasterKeyPath: file.Credentials.MasterKeyPath},
+		Credentials:  Credentials{KeyPath: file.Credentials.KeyPath},
 		Admin:        admin,
+		API:          file.API,
 	}, nil
-}
-
-func readSelectedConfig(path, source string) ([]byte, bool, error) {
-	content, err := readConfigSnapshot(path)
-	if err == nil {
-		return content, true, nil
-	}
-
-	if source == "default" && errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
-	}
-
-	return nil, false, fmt.Errorf("%w: read config file: %v", ErrInvalid, err)
 }
 
 func readConfigSnapshot(path string) ([]byte, error) {
 	file, err := os.OpenFile(
 		path,
-		os.O_RDONLY|syscall.O_NONBLOCK,
+		os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW,
 		0,
 	) // #nosec G304,G703 -- validated absolute configuration path; nonblocking open rejects pipes/devices.
 	if err != nil {

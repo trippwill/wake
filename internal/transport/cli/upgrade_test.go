@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,16 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 	warehouse := filepath.Join(dir, "missing", "warehouse.db")
 	access := filepath.Join(dir, "missing", "access.db")
 
-	args := []string{"--json", "upgrade", "--warehouse-path", warehouse, "--connections-path", access}
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(
+		configPath,
+		fmt.Appendf(nil, "[storage]\nwarehouse_path=%q\nconnections_path=%q\n", warehouse, access),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	args := []string{"--json", "upgrade", "--config", configPath}
 
 	var stdout, stderr bytes.Buffer
 	if status := Run(args, &stdout, &stderr); status != 0 {
@@ -39,6 +49,10 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 	}
 
 	cfg, path, _ := setupDaemonFixture(t)
+
+	if err := credential.CreateMasterKey(cfg.Credentials.KeyPath); err != nil {
+		t.Fatal(err)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
@@ -67,7 +81,7 @@ func TestUpgradeConfirmationCommandQuotesExplicitProfile(t *testing.T) {
 	}
 
 	got := upgradeConfirmationCommand(resolved, "abc")
-	want := `wake upgrade --config '/tmp/Wake'"'"'s config.toml' --warehouse-path='/tmp/wake store.db' --confirm abc`
+	want := `wake upgrade --config '/tmp/Wake'"'"'s config.toml' --confirm abc`
 	if got != want {
 		t.Fatal(got)
 	}
@@ -153,8 +167,8 @@ func TestUpgradeCLIRejectsInvalidUsageAndMissingConfig(t *testing.T) {
 
 func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
-	keyPath := filepath.Join(cfg.Paths.ConfigDir, "master.key")
-	args := []string{"upgrade", "--config", path, "--master-key-path", keyPath}
+	keyPath := cfg.Credentials.KeyPath
+	args := []string{"upgrade", "--config", path}
 
 	var stdout, stderr bytes.Buffer
 	if status := Run(args, &stdout, &stderr); status != exitOK {
@@ -162,7 +176,7 @@ func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 	}
 
 	args = append(args, "--confirm", "stale")
-	for _, want := range []string{"inspect master key file", "plan changed"} {
+	for _, want := range []string{"inspect credential encryption key file", "plan changed"} {
 		stdout.Reset()
 		stderr.Reset()
 
@@ -179,7 +193,7 @@ func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 			t.Fatal("confirmation refusal created a warehouse", err)
 		}
 
-		if want == "inspect master key file" {
+		if want == "inspect credential encryption key file" {
 			if err := credential.CreateMasterKey(keyPath); err != nil {
 				t.Fatal(err)
 			}

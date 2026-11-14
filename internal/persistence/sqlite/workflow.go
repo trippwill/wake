@@ -316,6 +316,10 @@ func (s *Store) ProcessingFailure(ctx context.Context, id string, next time.Time
 }
 
 func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string, now time.Time) error {
+	if s.credentialKeyUnavailable.Load() {
+		return application.ErrAccessReview
+	}
+
 	if actor == "" {
 		return application.ErrInvalid
 	}
