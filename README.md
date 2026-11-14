@@ -41,55 +41,6 @@ credentials. The new warehouse establishes new financial IDs. The old warehouse
 holds its original evidence and corrections. Startup preserves unsupported data. Use current
 settings from `config describe`; retired acquisition settings are rejected.
 
-#### Run as a Linux user service
-
-On Linux with a systemd user session, install Wake as the account that runs it.
-From a source checkout, build the standalone binary with `mise install` and
-`mise run build:release`:
-
-```sh
-sh .packaging/install.sh .cache/release/wake
-```
-
-You can also copy the installer and a prebuilt Wake binary to the target machine
-and pass that binary's path to the installer. The installer puts `wake` in
-`~/.local/bin` and `wake.service` in the user's XDG data directory.
-
-For a fresh profile, run setup and then enable and start the service:
-
-```sh
-"$HOME/.local/bin/wake" setup --config "${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml"
-systemctl --user enable --now wake.service
-```
-
-Use the same XDG paths in your shell and systemd user manager. To move an existing
-profile to the service, stop the foreground daemon and reuse its configuration.
-Carry any command-line or shell-only path overrides into the TOML file. If the
-file is at a different path, run `systemctl --user edit wake.service` and add
-this drop-in with your absolute path before enabling the service:
-
-```ini
-[Service]
-Environment="WAKE_CONFIG=/absolute/private/path/config.toml"
-```
-
-Check the service and find the admin address in its startup log:
-
-```sh
-systemctl --user status wake.service
-journalctl --user -u wake.service -f
-```
-
-After reinstalling, run `systemctl --user daemon-reload` and
-`systemctl --user restart wake.service` to load the update. The enabled service
-starts with your user manager, normally at login. Run `loginctl enable-linger`
-if you want it to start at boot and keep running after logout.
-
-#### Run on a Linux server with Podman
-
-Use the [Podman setup guide](.docs/engineering/podman.md) to start Wake at boot
-and reach browser admin and the financial API through one saved SSH profile.
-
 ### Connect and inspect
 
 Open **Connections → Add source connection** and choose the provider. For IBKR Flex,
@@ -216,9 +167,8 @@ configuration, then restart. Setup retains the credential key; keep that key saf
 
 Run these commands as the same Unix user as the Wake daemon. From a source
 checkout, run `mise install` and `mise run build:release`, then put
-`.cache/release/wake` on your PATH. The [Linux user service installer](#run-as-a-linux-user-service)
-also installs the binary. Once `wake` is on PATH, the read commands work from any
-directory.
+`.cache/release/wake` on your PATH. Once `wake` is on PATH, the read commands work from
+any directory.
 
 ```sh
 wake --json doctor
