@@ -274,6 +274,11 @@ for query fields and reporting limits.
 
 ## Contribute
 
+Start in [GitHub Discussions](https://github.com/trippwill/wake/discussions) to ask
+questions, propose changes, or offer to help. See [Contributing to Wake](CONTRIBUTING.md)
+for contributor access and the issue and pull request workflow.
+For suspected vulnerabilities, follow the [security policy](SECURITY.md).
+
 The Go module is `go.trippwill.dev/wake`. Start with [AGENTS.md](AGENTS.md), the
 [documentation index](.docs/README.md) and [development guidance](.docs/engineering/development.md).
 The [product brief](.docs/product/brief.md) owns Wake's north star, [current coverage](.docs/product/coverage.md)

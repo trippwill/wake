@@ -93,19 +93,28 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - Normally use one chat, worktree, and branch per reviewable change, usually
   one PR. Reuse a suitable existing checkout. See the [development guide](.docs/engineering/development.md#workspaces-and-tools)
   for setup and isolated review instances.
-- Implement, update affected docs, validate, and stage freely. Present the
-  changed behavior, checks actually performed, material gaps, and how to try it.
-  Use one Conventional Commit per logical change, explaining why.
-- Sign every commit, and verify GitHub recognizes its signature before requesting
-  merge.
+- Implement, update affected docs, validate, and stage freely.
+- Use one signed Conventional Commit per logical change. Include a body that
+  explains why the change is needed. Verify signatures locally and confirm
+  GitHub recognizes them on the published PR commits before landing.
 - Deliver coherent changes with meaningful functional verification. See the
   [development guide](.docs/engineering/development.md#browser-and-frontend-verification)
   for browser and frontend checks.
-- Obtain one explicit approval covering both commit and push of the reviewed
-  changes to the stated destination. PRs are the default: publish the branch
-  and open/update the PR, then obtain separate merge approval after CI and review.
-  For a requested direct push to main, the combined commit-and-push approval
-  also accepts the change. Approval to continue work does not authorize publication.
-- PR merge approval is final acceptance. Acceptance includes any operator
-  testing or demonstration used in review; there is no separate Operator UAT,
-  or milestone sign-off. Record only checks actually performed.
+- Get approval to commit and push the initial reviewed changes to the stated
+  PR branch.
+- The GitHub repository owner lands Wake PRs manually using the ruleset
+  bypass for direct pushes.
+  Preserve the individual signed commits with a fast-forward-only update of
+  `main` to the exact reviewed PR head. Keep the PR as the public record of the
+  change, checks, and review. Leave GitHub auto-merge off for Wake PRs and
+  reserve the final base update for the repository owner.
+- If a rebase is needed, rebase locally and sign each replacement commit.
+  Get authorization before rewriting a published branch. Publish the rebased
+  commits as the PR head and verify CI, review, and signatures on that head
+  before presenting it for landing. If `main` advances and the update can no
+  longer fast-forward, stop and revalidate the new candidate.
+- After landing, verify the reviewed head is reachable from `main` and GitHub
+  reports the PR as merged. Report an open PR as incomplete.
+  [GitHub indirect merges](https://docs.github.com/en/pull-requests/reference/pull-request-merges#indirect-merges)
+- The repository owner's landing decision is final acceptance and includes any
+  operator testing or demonstration used in review.
