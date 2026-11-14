@@ -8,6 +8,6 @@ package cli
 import "testing"
 
 func TestRaceFocused(t *testing.T) {
-	t.Run("SetupInputCancellationRestoresTerminal", TestSetupInputCancellationRestoresTerminal)
-	t.Run("SetupRechecksDaemonAfterTerminalInput", TestSetupRechecksDaemonAfterTerminalInput)
+	t.Run("UnlockInputCancellationRestoresTerminal", TestUnlockInputCancellationRestoresTerminal)
+	t.Run("GenerateKeyRejectsRunningInstance", TestGenerateKeyRejectsRunningInstance)
 }

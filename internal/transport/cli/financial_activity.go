@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
 func validActivityDate(value string) bool {
@@ -37,7 +37,11 @@ func queryActivity(ctx context.Context, c *cli.Command) error {
 		return usageError("--from must be on or before --to")
 	}
 
-	family, state := socket.ActivityFamily(c.String("family")), socket.ActivityState(c.String("state"))
+	family, state := financialapi.ActivityFamily(
+		c.String("family"),
+	), financialapi.ActivityState(
+		c.String("state"),
+	)
 	if c.IsSet("family") && !family.Valid() {
 		return usageError("--family must be trade, lifecycle, conversion, security-transfer or cash")
 	}

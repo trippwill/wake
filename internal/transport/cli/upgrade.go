@@ -6,7 +6,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"strings"
 
@@ -115,19 +114,6 @@ func upgradeConfirmationCommand(resolved config.Resolution, id string) string {
 	if resolved.ConfigSource != "default" && resolved.ConfigPath != "" ||
 		resolved.Config.Paths.ConfigFile != "" {
 		args = append(args, "--config", shellQuote(resolved.ConfigPath))
-	}
-
-	for _, value := range resolved.Values {
-		if value.Source != "flag" {
-			continue
-		}
-
-		for _, setting := range config.Settings() {
-			if value.Key == setting.Key {
-				args = append(args, "--"+setting.Flag+"="+shellQuote(fmt.Sprint(value.Value)))
-				break
-			}
-		}
 	}
 
 	return strings.Join(append(args, "--confirm", id), " ")

@@ -526,3 +526,14 @@ SELECT * FROM executions WHERE id>sqlc.arg(cursor) ORDER BY id LIMIT 50;
 SELECT i.id FROM instruments i WHERE i.id>sqlc.arg(cursor)
  AND NOT EXISTS(SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
  ORDER BY i.id LIMIT 50;
+
+-- name: SavedCredentials :many
+SELECT c.connection_id, a.provider, c.key, c.encrypted
+FROM access.credentials c JOIN access.configurations a ON a.id=c.connection_id;
+
+-- name: SavedReferenceCredential :one
+SELECT encrypted FROM access.reference_settings WHERE singleton=1;
+
+-- name: PauseForCredentialKey :exec
+UPDATE profile SET paused=1,recovery_revision=recovery_revision+1
+WHERE singleton=1 AND paused=0;

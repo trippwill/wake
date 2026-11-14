@@ -17,7 +17,7 @@ import (
 
 const masterKeyFileReadLimit = dataKeySize + 1
 
-// CreateMasterKey creates and verifies a new private AES-256 master-key file.
+// CreateMasterKey creates and verifies a new private AES-256 credential encryption key file.
 // The parent must already be a private directory owned by root or the effective
 // user. Existing key material is never overwritten.
 func CreateMasterKey(path string) error {
@@ -39,7 +39,7 @@ func CreateMasterKey(path string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("create master key file: %w", err)
+		return fmt.Errorf("create credential encryption key file: %w", err)
 	}
 
 	created := true
@@ -65,12 +65,12 @@ func CreateMasterKey(path string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("write master key file: %w", err)
+		return fmt.Errorf("write credential encryption key file: %w", err)
 	}
 
 	key, err := LoadMasterKey(path)
 	if err != nil {
-		return fmt.Errorf("verify master key file: %w", err)
+		return fmt.Errorf("verify credential encryption key file: %w", err)
 	}
 
 	key.Clear()
@@ -80,7 +80,7 @@ func CreateMasterKey(path string) error {
 	return nil
 }
 
-// LoadMasterKey reads an AES-256 master key from a private Linux regular file.
+// LoadMasterKey reads an AES-256 credential encryption key from a private Linux regular file.
 // The file must be addressed by an absolute path, contain exactly 32 raw bytes,
 // have no group or other permissions, and be owned by root or the effective user.
 func LoadMasterKey(path string) (*MasterKey, error) {
@@ -90,7 +90,7 @@ func LoadMasterKey(path string) (*MasterKey, error) {
 
 	info, err := os.Lstat(path) // #nosec G304,G703 -- the caller supplies an absolute path.
 	if err != nil {
-		return nil, fmt.Errorf("inspect master key file: %w", err)
+		return nil, fmt.Errorf("inspect credential encryption key file: %w", err)
 	}
 
 	if err := validateMasterKeyFile(info); err != nil {
@@ -107,7 +107,7 @@ func LoadMasterKey(path string) (*MasterKey, error) {
 			return nil, fmt.Errorf("%w: symbolic links are not allowed", ErrInsecureMasterKeyFile)
 		}
 
-		return nil, fmt.Errorf("open master key file: %w", err)
+		return nil, fmt.Errorf("open credential encryption key file: %w", err)
 	}
 
 	file := os.NewFile(uintptr(fd), path)
@@ -119,7 +119,7 @@ func LoadMasterKey(path string) (*MasterKey, error) {
 
 	info, err = file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("inspect master key file: %w", err)
+		return nil, fmt.Errorf("inspect credential encryption key file: %w", err)
 	}
 
 	if err := validateMasterKeyFile(info); err != nil {
@@ -128,7 +128,7 @@ func LoadMasterKey(path string) (*MasterKey, error) {
 
 	material, err := io.ReadAll(io.LimitReader(file, masterKeyFileReadLimit))
 	if err != nil {
-		return nil, fmt.Errorf("read master key file: %w", err)
+		return nil, fmt.Errorf("read credential encryption key file: %w", err)
 	}
 	defer clear(material)
 
@@ -169,7 +169,7 @@ func validateMasterKeyFile(info os.FileInfo) error {
 func validateMasterKeyDirectory(path string) error {
 	info, err := os.Lstat(path) // #nosec G304,G703 -- parent of validated absolute key path.
 	if err != nil {
-		return fmt.Errorf("inspect master key directory: %w", err)
+		return fmt.Errorf("inspect credential encryption key directory: %w", err)
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {

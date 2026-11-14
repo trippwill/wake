@@ -14,16 +14,16 @@ import (
 )
 
 func TestWorkflowCommandsRequireSessionOriginAndCSRF(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-workflow-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
+
 	// No application dependencies: every request below must stop at the gate.
 	handler, err := NewHandler(auth, Dependencies{Workflow: new(application.Workflow)})
 	if err != nil {
@@ -32,7 +32,7 @@ func TestWorkflowCommandsRequireSessionOriginAndCSRF(t *testing.T) {
 
 	login := httptest.NewRecorder()
 
-	csrf := auth.issue(login)
+	csrf := issueTestSession(t, auth, login)
 
 	cookie := login.Result().Cookies()[0]
 	for _, path := range []string{"/refresh", "/connections", "/connections/id/settings", "/connections/id/secrets", "/connections/id/retry", "/connections/id/confirm", "/reference/key", "/activity/id/correct", "/instruments/id/correct", "/processing/id/retry"} {

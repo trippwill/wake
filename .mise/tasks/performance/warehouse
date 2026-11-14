@@ -9,7 +9,7 @@ workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT
 go test -c -o "$workspace/performance.test" ./internal/persistence/sqlite
 if [[ "$size" != contributions ]]; then
-  (cd testdata/socket-consumer && GOWORK=off go build -o "$workspace/consumer" .)
+  (cd testdata/api-consumer && GOWORK=off go build -o "$workspace/consumer" .)
 fi
 printf 'size=%s\n' "$size"
 go version

@@ -11,8 +11,18 @@ import (
 
 func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		if auth.mode != "local" {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+		record, key, err := auth.state.Browser()
+		clear(key[:])
+
+		if err != nil {
+			rejection(r, "invalid_auth_state")
+			http.Error(w, "browser authentication unavailable", http.StatusServiceUnavailable)
+
+			return
+		}
+
+		if record == "" {
+			http.Error(w, "Set the operator unlock with wake admin set-unlock.", http.StatusServiceUnavailable)
 			return
 		}
 
@@ -20,11 +30,6 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 	})
 
 	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
-		if auth.mode != "local" {
-			http.NotFound(w, r)
-			return
-		}
-
 		if !auth.sameOrigin(r) {
 			rejection(r, "invalid_origin")
 			http.Error(w, "invalid origin", http.StatusForbidden)
@@ -33,7 +38,7 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 		}
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
-		if err := r.ParseForm(); err != nil || !auth.verifyUnlock(r.PostForm.Get("unlock")) {
+		if err := r.ParseForm(); err != nil || !auth.login(w, r.PostForm.Get("unlock")) {
 			rejection(r, "login_rejected")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -41,8 +46,6 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 
 			return
 		}
-
-		auth.issue(w)
 
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})

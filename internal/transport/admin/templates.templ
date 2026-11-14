@@ -13,7 +13,7 @@ templ LoginBody(message string) {
 	<div class="wake-login wake-stack">
 		<h1>Sign in to Wake</h1>
 		<p>Inspect financial history and review its supporting evidence.</p>
-		<p class="wake-help">Use the operator unlock created by wake setup.</p>
+		<p class="wake-help">Use the unlock set with <code>wake admin set-unlock</code>.</p>
 		if message!="" {
 			<div class="wake-notice wake-error" role="alert">{ message }</div>
 		}
@@ -61,7 +61,13 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 				<dt>Runtime directory</dt>
 				<dd>{ cfg.Paths.RuntimeDir }</dd>
 				<dt>Admin authentication</dt>
-				<dd>{ cfg.Admin.AuthMode }</dd>
+				<dd>Operator unlock</dd>
+				<dt>Admin listener</dt>
+				<dd>{ cfg.Admin.Listen }</dd>
+				<dt>Browser origin</dt>
+				<dd>{ cfg.Admin.Origin() }</dd>
+				<dt>Financial API listener</dt>
+				<dd>{ cfg.API.Listen }</dd>
 				<dt>Currency list refresh</dt>
 				<dd>
 					if cfg.Admin.CurrencyRefresh {
@@ -85,7 +91,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 					if status.CredentialProtection {
 						Enabled
 					} else {
-						Unavailable · Run wake setup to provision a master key.
+						Unavailable. { status.CredentialIssue }
 					}
 				</dd>
 				<dt>Financial database size</dt>

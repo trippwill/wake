@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
 func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
@@ -122,7 +122,8 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		socket.NewHandler(s, nil, nil).ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
+		financialapi.NewHandler(s, nil, nil).
+			ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
 	}()
 
 	select {
@@ -297,7 +298,7 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 
 func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
 	store := newStoreWithSyntheticAccount(t)
-	handler := socket.NewHandler(store, nil, nil)
+	handler := financialapi.NewHandler(store, nil, nil)
 	for _, test := range []struct {
 		condition string
 		status    int

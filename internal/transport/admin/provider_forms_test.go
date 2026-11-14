@@ -40,16 +40,15 @@ func (s confirmationRetryStore) SourceCandidate(
 func TestAccountConfirmationRetryKeepsDiscoveredCurrency(t *testing.T) {
 	const origin = "http://127.0.0.1:8787"
 
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-confirmation-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", origin)
+	auth, _, err := Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	ref, err := source.NewReference("synthetic", "account", "", "retained-account")
 	if err != nil {
@@ -81,7 +80,7 @@ func TestAccountConfirmationRetryKeepsDiscoveredCurrency(t *testing.T) {
 	login := httptest.NewRecorder()
 
 	draft := url.Values{
-		"csrf":     {auth.issue(login)},
+		"csrf":     {issueTestSession(t, auth, login)},
 		"name":     {" Invalid draft name"},
 		"currency": {"CNH"},
 		"artifact": {
@@ -187,19 +186,18 @@ func TestConnectionDescriptorNeedsNoFinancialHistory(t *testing.T) {
 
 func TestConnectionPostAcceptsValidSDKFieldSizes(t *testing.T) {
 	workflow, store, descriptor := formWorkflow(t)
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-provider-form-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	login := httptest.NewRecorder()
-	csrf := auth.issue(login)
+	csrf := issueTestSession(t, auth, login)
 
 	handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
 	if err != nil {
@@ -309,19 +307,18 @@ func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
 				t.Fatal("credential key changed the action path", body)
 			}
 
-			dir := t.TempDir()
+			dir := privateAuthDir(t)
 			if err = SetUnlock(dir, []byte("synthetic-retry-unlock")); err != nil {
 				t.Fatal(err)
 			}
 
-			auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+			auth, _, err := Open(dir, "http://127.0.0.1:8787")
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer auth.Close()
 
 			login := httptest.NewRecorder()
-			csrf := auth.issue(login)
+			csrf := issueTestSession(t, auth, login)
 
 			handler, err := NewHandler(auth, Dependencies{Workflow: workflow})
 			if err != nil {

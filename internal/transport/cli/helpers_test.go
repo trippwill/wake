@@ -18,9 +18,6 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int { return Run(args, stdout, stderr) }
-func runAdmin(args []string, stdout, stderr io.Writer) int {
-	return run(append([]string{"admin"}, args...), stdout, stderr)
-}
 
 func startShellDaemon(t *testing.T, cfg config.Config) (func(), *http.Client) {
 	t.Helper()
@@ -86,13 +83,13 @@ func TestCommandDiscoveryReflectsFoundation(t *testing.T) {
 		names[command.Name] = true
 	}
 
-	for _, name := range []string{"wake setup", "wake serve", "wake admin", "wake config", "wake reset", "wake help"} {
+	for _, name := range []string{"wake credentials", "wake serve", "wake admin", "wake config", "wake reset", "wake help"} {
 		if !names[name] {
 			t.Fatal("retained command missing", name)
 		}
 	}
 
-	for _, name := range []string{"ingest", "trades", "connections", "warehouse"} {
+	for _, name := range []string{"setup", "ingest", "trades", "connections", "warehouse"} {
 		stdout.Reset()
 		stderr.Reset()
 

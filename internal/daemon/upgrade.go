@@ -22,8 +22,8 @@ func UpgradeStorage(
 	logger *slog.Logger,
 	confirm string,
 ) (UpgradePlan, error) {
-	if confirm != "" && cfg.Credentials.MasterKeyPath != "" {
-		key, err := credential.LoadMasterKey(cfg.Credentials.MasterKeyPath)
+	if confirm != "" && cfg.Credentials.KeyPath != "" {
+		key, err := credential.LoadMasterKey(cfg.Credentials.KeyPath)
 		if err != nil {
 			return UpgradePlan{}, err
 		}

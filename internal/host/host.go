@@ -7,7 +7,6 @@ package host
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"maps"
@@ -257,7 +256,10 @@ func (h *Host) Configure(
 			return "", provider.ErrUnauthorized
 		}
 
-		value, err := h.envelope.Encrypt(secret, secretAAD(connection, key))
+		value, err := h.envelope.Encrypt(
+			secret,
+			credential.SourceSecretAAD(connection.ID, connection.Provider, key),
+		)
 		if err != nil {
 			return "", provider.ErrUnauthorized
 		}
@@ -281,11 +283,6 @@ func (h *Host) Configure(
 	}
 
 	return connection.ID, nil
-}
-
-func secretAAD(c Connection, key string) []byte {
-	b, _ := json.Marshal([]string{c.ID, c.Provider, key})
-	return b
 }
 
 func (h *Host) UpdateSettings(ctx context.Context, id, name string, settings provider.Settings) error {
@@ -398,7 +395,7 @@ func (h *Host) ReplaceSecret(ctx context.Context, id, key string, secret *creden
 		return provider.ErrUnauthorized
 	}
 
-	encrypted, err := h.envelope.Encrypt(secret, secretAAD(c, key))
+	encrypted, err := h.envelope.Encrypt(secret, credential.SourceSecretAAD(c.ID, c.Provider, key))
 	if err != nil {
 		return provider.ErrUnauthorized
 	}
@@ -779,7 +776,10 @@ func (a *access) WithSecret(ctx context.Context, key string, fn func([]byte) err
 		return provider.ErrUnauthorized
 	}
 
-	secret, err := a.host.envelope.Decrypt(encrypted, secretAAD(a.connection, key))
+	secret, err := a.host.envelope.Decrypt(
+		encrypted,
+		credential.SourceSecretAAD(a.connection.ID, a.connection.Provider, key),
+	)
 	if err != nil {
 		return provider.ErrUnauthorized
 	}
@@ -972,7 +972,7 @@ func (h *Host) CheckAccess(ctx context.Context, id string) error {
 			return provider.ErrUnauthorized
 		}
 
-		secret, e := h.envelope.Decrypt(encrypted, secretAAD(c, field.Key()))
+		secret, e := h.envelope.Decrypt(encrypted, credential.SourceSecretAAD(c.ID, c.Provider, field.Key()))
 		if e != nil {
 			return provider.ErrUnauthorized
 		}

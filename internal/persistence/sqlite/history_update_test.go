@@ -16,7 +16,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
-	"go.trippwill.dev/wake/internal/transport/socket"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -140,7 +140,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		request.Header.Set("If-None-Match", `"`+baseline.Snapshot.Version+`"`)
 
 		response := httptest.NewRecorder()
-		socket.NewHandler(s, nil, nil).ServeHTTP(response, request)
+		financialapi.NewHandler(s, nil, nil).ServeHTTP(response, request)
 
 		return response
 	}
@@ -363,7 +363,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal("publication lost identity or resources", err)
 	}
 
-	stream := httptest.NewServer(socket.NewHandler(store, nil, nil))
+	stream := httptest.NewServer(financialapi.NewHandler(store, nil, nil))
 	defer stream.Close()
 
 	streamCtx, stopStream := context.WithTimeout(ctx, 5*time.Second)

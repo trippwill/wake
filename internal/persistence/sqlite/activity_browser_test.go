@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -413,19 +414,17 @@ func activityPerformanceServer(t *testing.T, s *Store, observe func(*http.Reques
 	t.Cleanup(server.Close)
 	origin := "http://" + server.Listener.Addr().String()
 
-	dir := t.TempDir()
+	dir := filepath.Dir(authFixturePath(t))
 
 	const unlock = "synthetic-activity-benchmark"
 	if err := admin.SetUnlock(dir, []byte(unlock)); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, enabled, err := admin.Open(dir, "local", origin)
+	auth, enabled, err := admin.Open(dir, origin)
 	if err != nil || !enabled {
 		t.Fatal(enabled, err)
 	}
-
-	t.Cleanup(auth.Close)
 
 	stopping := make(chan struct{})
 	t.Cleanup(func() { close(stopping) })

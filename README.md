@@ -7,6 +7,9 @@ MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Using Wake v0.1.0
 
+Each instance serves one user. Local and LAN use without internet exposure is the
+supported scope.
+
 Wake acquires IBKR Flex reports, cached SnapTrade Personal trade history, and
 reported Fidelity US positions through SnapTrade.
 Confirm one account per connection and inspect activity, instruments and available
@@ -15,31 +18,74 @@ financial values and conflicts.
 
 ### Set up and start
 
-From a Linux source checkout:
+To build Wake from a Linux checkout:
 
 ```sh
 mise install
-mise run bin -- setup
-mise run serve
+mise run build:release
+export PATH="$PWD/.cache/release:$PATH"
 ```
 
-Follow setup's prompts for local paths and a browser unlock. Keep the generated
-credential key. Open the local admin address selected during setup and sign in.
-Keep the terminal running; stop Wake with Ctrl+C.
-
-For a separate configuration, pass the same absolute path to both commands:
+With `wake` on `PATH`, create the configuration and key for a new instance at the
+default path:
 
 ```sh
-mise run bin -- setup --config /absolute/private/path/config.toml
-mise run bin -- serve --config /absolute/private/path/config.toml
+install -d -m 0700 "${XDG_CONFIG_HOME:-$HOME/.config}/wake"
+touch "${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml"
+wake credentials generate-key
+wake admin set-unlock
+wake serve
 ```
 
-If startup reports an unsupported development store, stop Wake and preserve a
-backup of its stores and sidecars. Explicitly move the profile aside or select
-a fresh warehouse path before restarting. Keep the encrypted access store to reuse
-credentials. The new warehouse establishes new financial IDs. The old warehouse
-holds its original evidence and corrections. Startup preserves unsupported data. Use current
-settings from `config describe`; retired acquisition settings are rejected.
+`wake credentials generate-key` uses the existing TOML and creates a private
+key at `credentials.key_path`. For a custom key path, create its private parent
+directory first. When you already have a TOML and usable key, start with `wake serve`.
+Set the browser unlock before or after startup and sign in at `http://127.0.0.1:8787`.
+Stop the foreground daemon with Ctrl+C.
+
+Wake selects `config.toml` through `--config`, `WAKE_CONFIG`, or
+`${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml` in that order. Use the same
+file for key generation, serving, and recovery. An empty file uses the following defaults:
+
+```toml
+[storage]
+warehouse_path = "wake.db"
+connections_path = "connections.db"
+unattended_upgrade = false
+
+[credentials]
+key_path = "credentials.key"
+
+[paths]
+# runtime_dir defaults to a directory under $XDG_RUNTIME_DIR/wake.
+# Set a private local directory here if XDG_RUNTIME_DIR is unavailable.
+
+[log]
+level = "info"
+
+[admin]
+listen = "127.0.0.1:8787"
+# public_origin is derived from the loopback listener.
+currency_refresh = false
+
+[api]
+listen = "127.0.0.1:8788"
+
+[polling.defaults]
+# Use the registered interval for each provider stream.
+```
+
+File and directory settings accept absolute paths or paths relative to the selected
+TOML's directory. Wake keeps private browser and client authority in `auth.json` beside
+that file. Keep a single TOML per instance directory. The default runtime directory is
+scoped to the resolved instance directory.
+
+For a prebuilt Linux binary on PATH, run the same three Wake commands without the
+build steps. For a prepared configuration, you can supply an existing private
+regular file containing 32 raw random bytes at `credentials.key_path`. Setup
+verifies the file and its ability to decrypt saved source credentials, if present.
+See [operator access and restore](.docs/engineering/architecture.md#operator-access-and-restore)
+for the scope of each file.
 
 ### Connect and inspect
 
@@ -102,16 +148,15 @@ data; encrypted access storage and temporary journals are separate.
 **System → Configuration** identifies the TOML file loaded at startup, when present,
 alongside the effective storage and runtime paths.
 
-The two `[storage]` file settings are `warehouse_path` for financial history and
-operational state, and `connections_path` for active access and encrypted credentials.
-Defaults use the XDG data and config locations respectively. Override files in
-TOML, with `--warehouse-path` or `--connections-path` on `serve`, or through the
-corresponding `WAKE_*_PATH` environment variables.
-
-If the access store is lost, Wake recreates it and pauses upstream work. Retained
-history stays inspectable. In **Connections → Recovery**, follow the ordered
-source-access and reference review steps, then select **Resume upstream work**.
-An ordinary restart with intact stores keeps the existing authorization.
+If `connections.db` is lost, Wake recreates it and pauses upstream work.
+A missing or mismatched credential encryption key also pauses synchronization.
+Retained history and existing API grants remain usable. Check **System → Status** for
+key recovery guidance and **Connections → Recovery** for source and reference review.
+After repair, select **Resume upstream work**. If the original key is unavailable,
+stop Wake, back up the files, run `wake reset credentials`, and review the preview.
+Confirm the reset and provision a usable key. To generate a replacement, move any
+unusable key file aside and run `wake credentials generate-key` with Wake stopped.
+Start Wake, enter your source credentials again, and resume synchronization.
 
 The admin console requires JavaScript. Activity, instrument, positions and observation tables
 load authenticated JSON, with filtering, exact ordering and pagination performed on
@@ -121,20 +166,18 @@ action, while retained observations update independently. Correction drafts surv
 validation errors, and changed data requires review before resubmission.
 
 The daemon writes structured operational logs to stderr, including completed work,
-failures and recovery actions. Startup always reports the admin binding and port,
-or reports that admin is disabled. Use `--log-level debug` with `serve` for stage,
-validation, pacing and cache detail.
+failures and recovery actions. Startup reports both listeners. Set `[log] level = "debug"`
+in the TOML for stage, validation, pacing, and cache detail.
 
-For a supported storage upgrade, stop Wake and run `wake upgrade` with the new
-binary. Review the plan and any rule release notes, run the confirmation command
-it prints, then start Wake. See the [forward upgrade guide](.docs/product/coverage.md#forward-upgrades)
-for backups, unattended upgrades, and recovery.
+To check storage compatibility with a new version, stop Wake and run `wake upgrade`
+using the new binary and the same profile. Review any plan before applying it.
+See [forward upgrades](.docs/product/coverage.md#forward-upgrades).
 
-To clear credentials or financial history, stop Wake and preview the configured files:
+To clear credentials or financial history, stop Wake and preview the reset:
 
 ```sh
-mise run bin -- reset warehouse
-mise run bin -- reset warehouse --confirm
+wake reset warehouse
+wake reset warehouse --confirm
 ```
 
 Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
@@ -142,35 +185,31 @@ and works with corrupt or unsupported databases. A warehouse reset also clears i
 operational state and retains credentials. Start Wake, select **Resume upstream
 work**, then confirm the rediscovered accounts. A credentials reset retains financial
 history; repair access in **Connections** and resume. Configuration, keys and browser
-access are retained. See the
-[development guide](.docs/engineering/development.md#workspaces-and-tools) for details.
+access are retained.
 
 ### Find help
 
 ```sh
-mise run bin -- help
-mise run bin -- help setup
-mise run bin -- config describe
-mise run bin -- config check
+wake help
+wake help credentials generate-key
+wake config describe
+wake config check
 ```
 
 Use command help for exact options.
 
-If you already have a prepared configuration, `wake setup --use-config` reviews
-its launch settings and prompts for the operator unlock. Use `--config` to
-select a file outside the default location.
-
-To change a forgotten browser unlock, stop Wake and rerun setup with the same
-configuration, then restart. Setup retains the credential key; keep that key safe.
+Run `wake admin set-unlock` against the selected instance to set or replace the browser
+unlock. It works while Wake is running and signs out existing browser sessions. An
+unprovisioned browser listener stays locked until you set the unlock.
 
 ### Read financial data from the CLI
 
-Run these commands as the same Unix user as the Wake daemon. From a source
-checkout, run `mise install` and `mise run build:release`, then put
-`.cache/release/wake` on your PATH. Once `wake` is on PATH, the read commands work from
-any directory.
+Create a named token in **System → API clients** after unlocking the browser.
+Save it in a private token file on the client with mode `0600`.
 
 ```sh
+export WAKE_ENDPOINT=http://127.0.0.1:8788
+export WAKE_TOKEN_FILE="$HOME/.config/wake/laptop.token"
 wake --json doctor
 wake --json accounts list
 wake --json accounts get "$ACCOUNT_ID"
@@ -180,12 +219,12 @@ wake --json request get '/v1/activity/ACTIVITY_ID'
 ```
 
 Set `ACCOUNT_ID` to an ID from `resources[].id` in the accounts list.
-The private socket requires no token or browser login. For a different instance,
-pass `--config /absolute/config.toml` or `--socket /absolute/wake.sock` on the
-leaf command, before any positional argument. Profile selection uses `--config`,
-`WAKE_CONFIG`, then the default Wake configuration file. The socket is
-`wake.sock` inside the runtime directory selected by `WAKE_RUNTIME_DIR`,
-`paths.runtime_dir`, or `$XDG_RUNTIME_DIR/wake`, in that order.
+For a different endpoint or credential, pass `--endpoint https://wake-api.home.arpa`
+or `--token-file /absolute/client.token` on the leaf command before any positional
+argument. Flags override `WAKE_ENDPOINT` and `WAKE_TOKEN_FILE`; the default endpoint
+is `http://127.0.0.1:8788`. Client reads use those settings independently of daemon
+configuration. Tokens grant financial reads and do not unlock browser administration.
+Revoke a lost or retired token in **System → API clients**.
 
 Account lists return `warehouse_id`, `version`, and `resources`. Activity
 queries read a complete snapshot for each page and filter it locally. Dates are
@@ -198,7 +237,7 @@ Run `wake activity query --help` for the state, family, and limit options.
 
 Exact account and positions reads and raw GETs return the
 [API JSON object](api/openapi/v1.yaml). Resource lookups follow up to five identity
-redirects within the same resource kind on the configured socket. To explain a
+redirects within the same resource kind at the configured origin. To explain a
 resource, use the ID and revision from its current lookup. Position views distinguish
 an available empty array from an unavailable view with `positions: null` and a reason.
 Successful commands write JSON to stdout. With `--json`, errors go to stderr
@@ -221,19 +260,19 @@ Start a Codex chat and invoke `$wake-read` with the Wake data you want to inspec
 
 ### Read from another application
 
-The private Unix socket publishes accepted accounts, instruments, listings and
+The token-authenticated financial API publishes accepted accounts, instruments, listings and
 activity with stable identities, exact values and complete versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
-[independent consumer check](.docs/engineering/development.md#socket-consumer-acceptance).
-For a running instance, use its socket path and an existing client-state directory:
+[independent consumer check](.docs/engineering/development.md#api-consumer-acceptance).
+For a running instance, use its endpoint, a private token file and an existing client-state directory:
 
 ```sh
-mise run socket-consumer:sync -- --socket /absolute/private/runtime/wake.sock --state /absolute/private/client/mirror.db
+mise run api-consumer:sync -- --endpoint http://127.0.0.1:8788 --token-file /absolute/private/client.token --state /absolute/private/client/mirror.db
 ```
 
 The consumer validates a complete accepted snapshot and atomically saves its mirror
 and version in a private SQLite database. Repeat the command to synchronize, or use
-`socket-consumer:follow` to synchronize when SSE announces publication changes.
+`api-consumer:follow` to synchronize when SSE announces publication changes.
 Follow reconnects after stream interruptions; conditional reads skip unchanged snapshots.
 A different warehouse installs a clearly reported new baseline.
 

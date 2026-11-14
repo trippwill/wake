@@ -2412,6 +2412,16 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 	return next, err
 }
 
+const pauseForCredentialKey = `-- name: PauseForCredentialKey :exec
+UPDATE profile SET paused=1,recovery_revision=recovery_revision+1
+WHERE singleton=1 AND paused=0
+`
+
+func (q *Queries) PauseForCredentialKey(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, pauseForCredentialKey)
+	return err
+}
+
 const pendingArtifacts = `-- name: PendingArtifacts :many
 SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
 `
@@ -4256,6 +4266,57 @@ type SaveProcessingReceiptParams struct {
 func (q *Queries) SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error {
 	_, err := q.db.ExecContext(ctx, saveProcessingReceipt, arg.ArtifactID, arg.Version)
 	return err
+}
+
+const savedCredentials = `-- name: SavedCredentials :many
+SELECT c.connection_id, a.provider, c.key, c.encrypted
+FROM access.credentials c JOIN access.configurations a ON a.id=c.connection_id
+`
+
+type SavedCredentialsRow struct {
+	ConnectionID string
+	Provider     string
+	Key          string
+	Encrypted    []byte
+}
+
+func (q *Queries) SavedCredentials(ctx context.Context) ([]SavedCredentialsRow, error) {
+	rows, err := q.db.QueryContext(ctx, savedCredentials)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SavedCredentialsRow
+	for rows.Next() {
+		var i SavedCredentialsRow
+		if err := rows.Scan(
+			&i.ConnectionID,
+			&i.Provider,
+			&i.Key,
+			&i.Encrypted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const savedReferenceCredential = `-- name: SavedReferenceCredential :one
+SELECT encrypted FROM access.reference_settings WHERE singleton=1
+`
+
+func (q *Queries) SavedReferenceCredential(ctx context.Context) ([]byte, error) {
+	row := q.db.QueryRowContext(ctx, savedReferenceCredential)
+	var encrypted []byte
+	err := row.Scan(&encrypted)
+	return encrypted, err
 }
 
 const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :exec

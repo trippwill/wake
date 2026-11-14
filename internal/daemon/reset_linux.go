@@ -88,20 +88,20 @@ func ResetStorage(
 		}
 	}
 
-	for _, path := range []string{configPath, cfg.Credentials.MasterKeyPath} {
+	for _, path := range []string{configPath, cfg.Credentials.KeyPath} {
 		if path != "" {
 			protected[filepath.Clean(path)] = true
 		}
 	}
 
 	if cfg.Paths.ConfigDir != "" {
-		for _, name := range []string{"config.toml", "master.key", "admin-unlock", "admin-session.key", "admin-proxy.key"} {
+		for _, name := range []string{"config.toml", "credentials.key", "auth.json"} {
 			protected[filepath.Join(cfg.Paths.ConfigDir, name)] = true
 		}
 	}
 
 	if cfg.Paths.RuntimeDir != "" {
-		for _, name := range []string{"wake.sock", "wake.sock.lock"} {
+		for _, name := range []string{"wake.lock"} {
 			protected[filepath.Join(cfg.Paths.RuntimeDir, name)] = true
 		}
 	}
@@ -169,7 +169,7 @@ func ResetStorage(
 			return ResetResult{}, err
 		}
 
-		guard := filepath.Join(cfg.Paths.RuntimeDir, "wake.sock.lock")
+		guard := filepath.Join(cfg.Paths.RuntimeDir, "wake.lock")
 		if _, err := snapshotResetFile(guard, snapshots); err != nil {
 			return ResetResult{}, err
 		}
@@ -190,10 +190,6 @@ func ResetStorage(
 			if e != nil || !os.SameFile(snapshots[guard], opened) {
 				return ResetResult{}, ErrResetChanged
 			}
-		}
-
-		if err := checkOfflineSocket(filepath.Join(cfg.Paths.RuntimeDir, "wake.sock")); err != nil {
-			return ResetResult{}, err
 		}
 	}
 

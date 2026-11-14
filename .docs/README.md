@@ -17,6 +17,6 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 - [SnapTrade Personal](providers/snaptrade.md) — account setup, cached trade history and Fidelity positions.
 - [Research](research/README.md) — optional external findings and experiments.
 
-- [Financial socket contract](../api/openapi/v1.yaml) — canonical reads and changes.
-- [Socket consumer acceptance](engineering/development.md#socket-consumer-acceptance) — independent
+- [Financial API contract](../api/openapi/v1.yaml) — canonical reads and changes.
+- [API consumer acceptance](engineering/development.md#api-consumer-acceptance) — independent
   consumer checks.

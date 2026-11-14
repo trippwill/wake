@@ -5,11 +5,14 @@ description: Read accounts, financial activity, and reported positions from a ru
 
 # Read Wake data
 
-1. Run `command -v wake`, then `wake --json doctor`. Use the same Unix user
-   as the daemon. The private financial socket needs no token or browser login.
-   If the daemon uses a different profile, pass `--config /absolute/config.toml`
-   or `--socket /absolute/wake.sock` on each leaf command, before any positional
-   argument.
+1. Run `command -v wake`, then `wake --json doctor`. Use the user's configured
+   `WAKE_ENDPOINT` and `WAKE_TOKEN_FILE`, or pass `--endpoint` and `--token-file`
+   on each leaf command before positional arguments. The default endpoint is
+   `http://127.0.0.1:8788`; a private token file is required. If no client is
+   enrolled, the operator creates a token in **System → API clients** after
+   browser unlock and saves it privately. Do not ask them to paste the token into
+   the conversation or put it on the command line. Read-only access does not
+   require the server's config, OS identity, database or browser session.
 2. List accounts and take the exact Wake ID from `resources[].id`. IDs are scoped
    to the warehouse.
 3. Query activity with a narrow date range and family when possible. Activity

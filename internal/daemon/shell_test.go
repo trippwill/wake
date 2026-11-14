@@ -5,7 +5,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -23,6 +22,8 @@ import (
 
 func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	cfg := shellConfig(t)
+	seedAPIClient(t, cfg)
+
 	if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-shell-unlock")); err != nil {
 		t.Fatal(err)
 	}
@@ -48,18 +49,7 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 		t.Fatal("startup stalled")
 	}
 
-	socket := filepath.Join(cfg.Paths.RuntimeDir, "wake.sock")
-
-	info, err := os.Stat(socket)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatal("socket permissions", info, err)
-	}
-
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	}}
-	defer transport.CloseIdleConnections()
-
+	transport := financialTransport(t, cfg)
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 	for _, path := range []string{"/v1/trades", "/control/ingest"} {
 		res, e := client.Get("http://wake" + path)
@@ -104,24 +94,14 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 		t.Fatal("shutdown not joined")
 	}
 
-	if _, err = os.Stat(socket); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("socket retained", err)
+	if conn, err := net.Dial("tcp", cfg.API.Listen); err == nil {
+		_ = conn.Close()
+
+		t.Fatal("API listener retained")
 	}
 
 	if err = Run(ctx, cfg, slog.Default()); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestShellConfiguredMissingKeyFails(t *testing.T) {
-	cfg := shellConfig(t)
-	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "missing.key")
-	if err := Run(context.Background(), cfg, slog.Default()); err == nil {
-		t.Fatal("accepted missing configured key")
-	}
-
-	if _, err := os.Stat(cfg.Credentials.MasterKeyPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("startup generated key")
 	}
 }
 
@@ -133,7 +113,7 @@ func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
 	}{
 		{"refresh enabled", true, true},
 		{"refresh disabled", true, false},
-		{"admin disabled", false, true},
+		{"unlock unprovisioned", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := shellConfig(t)
@@ -182,7 +162,7 @@ func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
 				t.Fatal("currency request blocked startup")
 			}
 
-			if tc.admin && tc.refresh {
+			if tc.refresh {
 				select {
 				case <-requested:
 				case <-time.After(5 * time.Second):
@@ -201,7 +181,7 @@ func TestCurrencyRefreshFollowsAdminAndDaemonLifetime(t *testing.T) {
 				t.Fatal("currency request blocked shutdown")
 			}
 
-			if tc.admin && tc.refresh {
+			if tc.refresh {
 				select {
 				case <-canceled:
 				case <-time.After(5 * time.Second):
@@ -228,13 +208,13 @@ func TestCurrencyCachePathAvoidsConfiguredFiles(t *testing.T) {
 	}
 
 	cfg.Paths.ConfigFile = ""
-	cfg.Credentials.MasterKeyPath = filepath.Join(dir, "master.key")
+	cfg.Credentials.KeyPath = filepath.Join(dir, "master.key")
 
-	if err := os.WriteFile(cfg.Credentials.MasterKeyPath, []byte("synthetic key"), 0o600); err != nil {
+	if err := os.WriteFile(cfg.Credentials.KeyPath, []byte("synthetic key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.Link(cfg.Credentials.MasterKeyPath, cache); err != nil {
+	if err := os.Link(cfg.Credentials.KeyPath, cache); err != nil {
 		t.Fatal(err)
 	}
 
@@ -246,13 +226,8 @@ func TestCurrencyCachePathAvoidsConfiguredFiles(t *testing.T) {
 func shellConfig(t *testing.T) config.Config {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TCP listener ports are guaranteed to fit uint16.
-	port := l.Addr().(*net.TCPAddr).Port
-	_ = l.Close()
+	address := freeTCPAddress(t)
+	apiAddress := freeTCPAddress(t)
 
 	return config.Config{
 		Paths: config.Paths{ConfigDir: resetPrivateDir(t), RuntimeDir: resetPrivateDir(t)},
@@ -261,6 +236,7 @@ func shellConfig(t *testing.T) config.Config {
 			ConnectionsPath: filepath.Join(resetPrivateDir(t), "credentials.sqlite"),
 		},
 		//nolint:gosec // Port obtained from a bound TCP listener.
-		Admin: config.Admin{Port: uint16(port), AuthMode: "local"},
+		Admin: config.Admin{Listen: address, PublicOrigin: "http://" + address},
+		API:   config.API{Listen: apiAddress},
 	}
 }

@@ -8,7 +8,7 @@ Code, tests and checked-in tool configuration are the implementation reference.
 
 Use an isolated checkout for a reviewable change. For a manual demonstration, run a disposable
 instance with synthetic evidence and its own configuration, data, state, runtime
-paths and admin port. Do not use private operator reports as repository fixtures.
+paths and listener ports. Do not use private operator reports as repository fixtures.
 
 Mise is the task runner. Run `mise install` in a new checkout. Use `mise tasks`
 and [.mise/config.toml](../../.mise/config.toml) to discover tasks, dependencies
@@ -20,6 +20,11 @@ The release task disables CGo, removes filesystem paths with `-trimpath`, and st
 symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary size.
 Use an ordinary build when debugger symbols are needed. `mise run build` continues
 to check all Go packages with the existing development build settings.
+
+For a foreground development instance, create a private instance directory with an
+empty `config.toml`. Run `mise run bin -- credentials generate-key`, then
+`mise run bin -- admin set-unlock`, and `mise run serve`. Select the same TOML for all
+three commands.
 
 Use `mise run bin -- help` for application commands. The [README](../../README.md)
 provides a quick setup and usage helper. Keep automation in repository tasks
@@ -43,7 +48,7 @@ store is acquired before any deletion; locked stores, unsafe links and protected
 files are refused.
 
 For a disposable instance, pass the same `--config /absolute/private/dev/config.toml`
-to reset and serve. The two `storage.*_path` settings and their overrides select
+to reset and serve. The two `storage.*_path` settings select
 the actual files. Missing files are harmless, and reset creates no directories or
 databases. `--json` reports selected and removed files on stdout; activity and errors
 go to stderr.
@@ -91,11 +96,11 @@ document or interaction state, and use explicit CSS or XPath selectors.
 alongside functional checks. After editing browser assets, use
 `mise run assets:gen` and `mise run assets:check` for the embedded copies.
 
-### Socket consumer acceptance
+### API consumer acceptance
 
-Run `mise run test:socket` to exercise the independent
-[example consumer](../../testdata/socket-consumer/main.go) against a separate
-daemon process on a disposable Unix socket. [Current coverage](../product/coverage.md)
+Run `mise run test:api` to exercise the independent
+[example consumer](../../testdata/api-consumer/main.go) against a separate
+daemon process over TCP with a dedicated client token. [Current coverage](../product/coverage.md)
 describes the supported behavior, and the [OpenAPI contract](../../api/openapi/v1.yaml)
 defines the wire format.
 

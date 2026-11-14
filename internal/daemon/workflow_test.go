@@ -23,12 +23,12 @@ import (
 
 func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 	cfg := shellConfig(t)
-	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "master.key")
-	if err := credential.CreateMasterKey(cfg.Credentials.MasterKeyPath); err != nil {
+	cfg.Credentials.KeyPath = filepath.Join(cfg.Paths.ConfigDir, "master.key")
+	if err := credential.CreateMasterKey(cfg.Credentials.KeyPath); err != nil {
 		t.Fatal(err)
 	}
 
-	key, err := credential.LoadMasterKey(cfg.Credentials.MasterKeyPath)
+	key, err := credential.LoadMasterKey(cfg.Credentials.KeyPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -97,18 +98,17 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		t.Fatal(view, err)
 	}
 
-	dir := t.TempDir()
+	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetUnlock(dir, []byte("synthetic-workspace-review")); err != nil {
 		t.Fatal(err)
 	}
 
 	const origin = "http://127.0.0.1:8787"
 
-	auth, _, err := admin.Open(dir, "local", origin)
+	auth, _, err := admin.Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	registration, err := ibkrflex.Registration(ibkrflex.Options{})
 	if err != nil {

@@ -8,7 +8,7 @@ choices. Code and tests define the implementation;
 
 Wake is one daemon with one ordinary writer of private SQLite storage. The CLI
 provisions local access, the admin console handles user workflows, and a read-only
-socket serves downstream applications. Deployment wrappers do not define the core.
+API serves downstream applications.
 Wake uses Go, standard-library HTTP, SQLite/sqlc, templ and embedded browser assets.
 The build configuration and dependency manifests own exact tools and versions.
 
@@ -18,8 +18,8 @@ them for clients requesting uncompressed content. Asset URLs and cache policy ar
 independent of that representation; readable sources and upstream licenses remain
 in the repository.
 
-Admin forms use the bundled currency list by default. Enable refresh during
-`wake setup` or set `admin.currency_refresh = true` to check the public [SIX ISO 4217 currency list](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html)
+Admin forms use the bundled currency list by default. Set
+`admin.currency_refresh = true` to check the public [SIX ISO 4217 currency list](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html)
 daily in the background when admin is enabled. System → Configuration shows the
 effective setting. The request carries no brokerage credentials or account data
 and is independent of financial synchronization. When refresh is enabled, forms
@@ -28,17 +28,12 @@ cache is missing. Existing and submitted currency codes remain selectable even
 after retirement. The list supplies form choices only. Source currency parsing and
 financial validation use their existing contracts.
 
-Launch configuration resolves once on the actual parsed CLI command. Strictly decode
-and validate the selected TOML file before applying higher-priority values; explicit
-flags cannot conceal an invalid file. TOML table and field names use the catalog's exact
-spelling and case. Native CLI environment and map sources apply
-`defaults < TOML < environment < explicit flags`, and discovery reports the authority
-of each selected value. Build typed configuration directly from these flags; do not
-reparse overrides through a second command or serialize intermediate TOML. Resolution
-performs no filesystem writes. Cross-setting requirements are checked on the effective
-configuration, allowing valid partial files to combine with environment or flags.
-Setup edits configured intent separately from launch
-overrides; directory preparation belongs to commands that need it.
+The selected TOML is the source of instance settings. The CLI selects it by explicit
+path, environment selector, or the user's default config directory. All instance
+commands resolve relative settings against the same canonical instance directory.
+A per-instance runtime directory under the user's local runtime root holds process
+ownership. The operator supplies the TOML, which may be empty to select the defaults.
+Inspection resolves paths without creating files.
 
 ## Responsibilities
 
@@ -50,7 +45,7 @@ overrides; directory preparation belongs to commands that need it.
 | Core reference service | OpenFIGI access, shared anonymous/keyed pacing, local cache and retained resolution evidence. |
 | Financial application | Wake identities, links, accepted projections, uncertainty and retained operator decisions. |
 | Persistence | Evidence, durable progress, atomic writes and derived accepted read views. |
-| Presentation | Adapt application commands and queries to CLI, admin and read-only socket clients. |
+| Presentation | Adapt application commands and queries to CLI, admin and read-only API clients. |
 
 Providers use deliberate published contracts that an external Go package can
 implement. They receive neither SQL nor private storage/UI dependencies. Providers
@@ -238,14 +233,14 @@ before offering resume. Resume uses the same complete metadata query; it does no
 enumerate authority through mutable, paginated UI lists. Review
 labels retain structured activity context, and filtered empty pages distinguish
 an unmatched result from an empty review queue.
-The socket exposes accepted financial views with
+The financial API exposes accepted financial views with
 stable identities and compact conflict status; consumer changes include corrections
 and relevant link/reference changes, not just new activity. Presentation adapters
 share application meaning without depending on one another's UI or wire types.
 
 [DESIGN.md](../../DESIGN.md) owns the visual standard. Exact CLI commands are in
-help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the socket
-interface; [development guidance](development.md#socket-consumer-acceptance) provides
+help. The [versioned financial contract](../../api/openapi/v1.yaml) owns the financial API
+interface; [development guidance](development.md#api-consumer-acceptance) provides
 runnable consumer checks.
 
 Reported positions use a separate complete account-set projection with its own durable
@@ -270,8 +265,8 @@ metadata do not define the consumer contract.
 
 ## Canonical publishing and continuity
 
-The private Unix socket serves bounded read-only HTTP/JSON reads and long-lived
-publication notifications from the daemon's OS user. It publishes accepted accounts,
+The token-authenticated TCP listener serves bounded read-only HTTP/JSON reads and
+long-lived publication notifications. It publishes accepted accounts,
 instruments, listings and activity, with warehouse-local Wake identities and resource
 revisions. Financial values retain exact decimal text, including trailing scale;
 absent values are
@@ -296,7 +291,7 @@ commits recalculation, publication and progress together. Affected reads and
 subscriptions are temporarily unavailable until the last batch completes.
 Acquisition and evidence inspection can continue while projection changes and
 operator corrections wait. Consumers retain their last complete mirror and
-retry maintenance responses with backoff. The socket adapter owns its narrow
+retry maintenance responses with backoff. The financial API adapter owns its narrow
 financial-read interface. Wire and admin
 adapters consume application read values without exposing database transactions.
 
@@ -340,33 +335,61 @@ Immutable evidence and operator decision history remain retained inside Wake.
 Protect credentials at rest and keep secrets out of ordinary views, errors and
 logs. Local setup explicitly provisions protection; daemon startup does not create
 replacement key material. Source responses and imported files are untrusted input.
-Keep administrative authority separate from read access. The local deployment
-assumes a trusted OS user and private storage; wider access requires an explicit
-trust decision rather than accidental network exposure.
+Keep administrative authority separate from read access. Wake assumes a trusted
+OS user and private storage. Binding beyond loopback changes who can reach it.
 
-In admin proxy mode, the reverse proxy owns upstream user authentication and
-supplies Wake's guard on every request. Wake checks the configured public host
-before establishing a signed browser session during document navigation. It serves
-that document with the new session; static assets do not establish sessions, and
-background requests cannot rotate its CSRF token underneath an existing form. The
-session does not replace the proxy guard; commands additionally require the public origin
-and the session's CSRF token. HTTPS at the public origin protects the secure cookie.
-The proxy must replace client-supplied guard headers, and its upstream connection
-must remain private. This browser gate is separate from financial socket access.
+Each instance has one operator and separately enrolled financial clients. Wake serves
+HTTP over independent TCP listeners, loopback by default. Browser administration
+always requires the provisioned operator unlock and a signed session. Host and
+Origin checks bind it to one configured public origin; commands also require the
+session's CSRF token. The public origin is independent of the backend bind address,
+so a tunnel or HTTPS proxy can preserve the same browser flow. Cookie security
+follows that configured origin. Forwarded headers never authenticate a request or
+select the trusted origin.
+
+Each financial client receives a random bearer token shown only at issuance. The
+private auth file retains its verifier and enrollment metadata. Every financial
+request, including conditional reads and events, checks the current grant. Browser
+sessions do not authorize the financial listener, and API tokens do not authorize
+administration. Grants cover the published financial API for the whole instance;
+there is no per-account authorization or multi-user role model. Admission is bounded
+per client and per instance. Revocation is serialized with admission, persists
+before success, and cancels active request contexts, including event streams.
+Bounded stream write deadlines limit blocked-client teardown. Already transmitted
+bytes and a client's retained copies cannot be recalled.
+
+Local and LAN use without internet exposure is the supported trust model. Wake
+authenticates requests over HTTP. Plain HTTP exposes credentials and financial data
+to traffic observers and allows tampering. Operators select any external transport
+protection. The Wake account, host root, and a frontend terminating encrypted
+traffic are inside the trust boundary.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
 pre-release stores fail closed with explicit recreation guidance. Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
-### Restore trust boundary
+### Operator access and restore
 
-Restored profiles start with provider access withheld until the operator reviews
-it. An intact profile can resume scheduled work at startup, so the restore
-procedure establishes this boundary before first start.
+`wake credentials generate-key` provisions a key offline at the configured path
+when the file is absent and no saved ciphertext depends on it. Startup keeps serving retained
+history when the key is unavailable. Upstream work pauses before a provider can use
+unreadable credentials and requires explicit resume after repair.
 
-The [release security review](https://github.com/trippwill/wake/issues/52) checks
-release artifacts against these boundaries.
+Wake stores the browser unlock verifier, session signing key, and financial grants
+together in private auth state. Live unlock rotation and grant changes serialize the
+disk update under the instance directory's short-lived lock. Readers use a complete
+snapshot, and a login verifies and signs against that same snapshot. Rotation
+invalidates browser cookies while existing API tokens and streams remain valid.
+
+Restoring a financial database does not change client authority. Restoring an old
+auth file can resurrect revoked grants. Before serving a restored auth file, run
+`wake admin reset-access` with Wake stopped. It revokes client grants and rotates
+the session key while retaining the operator unlock. Keep source access withheld
+until the operator has reviewed restored synchronization state.
+
+The [release security review](https://github.com/trippwill/wake/issues/52) tracks
+verification of these boundaries for release.
 
 ## Persistence and work boundaries
 
@@ -376,8 +399,8 @@ access seed remains reusable when only the warehouse format changes.
 
 One daemon owns two SQLite files: a warehouse containing financial evidence and
 operational state, and an independent access store containing current connection
-settings and encrypted credentials. Their paths default to XDG data and config
-locations. The warehouse owns evidence, source descriptors, financial identities,
+settings and encrypted credentials. Both default to the selected TOML directory.
+The warehouse owns evidence, source descriptors, financial identities,
 decisions, checkpoints, coverage, processing receipts, pacing and execution state.
 Reference cache entries remain disposable; their supporting evidence is retained.
 
@@ -398,7 +421,7 @@ and reuses that copy before SQLite recovers the attached transaction.
 Schema changes, format metadata, and the approved rebuild target commit together.
 The durable history checkpoint then governs rebuild progress across restarts.
 Unsupported formats fail closed and remain intact. Recreation is an explicit
-operator action, and master keys remain operator-provisioned through setup.
+operator action, and credential encryption keys are provisioned explicitly.
 
 Offline CLI reset previews warehouse or credential files and requires explicit
 confirmation before deletion. Warehouse reset disposes its operational state in

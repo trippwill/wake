@@ -39,16 +39,15 @@ func TestBrowserThemePreference(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-theme-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", origin)
+	auth, _, err := Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	server.Config.Handler, err = NewHandler(auth, Dependencies{})
 	if err != nil {
@@ -80,7 +79,7 @@ func TestBrowserThemePreference(t *testing.T) {
 	}
 
 	session := httptest.NewRecorder()
-	auth.issue(session)
+	issueTestSession(t, auth, session)
 	cookie := session.Result().Cookies()[0]
 	check := func(actions ...chromedp.Action[chromedp.Void]) {
 		t.Helper()

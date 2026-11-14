@@ -9,6 +9,20 @@ This document owns
 coverage and limitations; the [README](../../README.md) provides usage help and
 the [domain vocabulary](domain.md) owns financial policy.
 
+## Network access
+
+Wake runs as a single-user Linux daemon with separate TCP listeners for browser
+administration and the financial API. Local and LAN deployments without internet
+exposure are supported. Browser administration retains operator unlock, sessions
+and CSRF protection; each financial client uses a separately revocable bearer token.
+Tokens grant the instance's published financial reads, including events and positions,
+without administrative authority or per-account scopes. They have no automatic expiry.
+
+The daemon binds to loopback by default. Operators choose transport protection.
+Plain HTTP exposes credentials and financial data to observers on the network path.
+Wake supports a separate public browser origin and does not infer authentication or
+transport security from proxy headers.
+
 ## Account setup and authority
 
 The workflow is:
@@ -160,7 +174,7 @@ credentials are not repository fixtures.
 
 ## Canonical publishing
 
-The versioned read-only socket publishes complete accepted accounts, instruments,
+The versioned read-only API publishes complete accepted accounts, instruments,
 listings and activity snapshots, individual resources and revision-bound explanations.
 Activity bodies distinguish trades, option outcomes, currency conversions, security transfers and
 cash postings. Each body carries its applicable fields. Dated instrument terms distinguish option,
@@ -190,8 +204,8 @@ and after committed changes. Shared identity combinations update affected positi
 quantity, cost or date changes alone do not advance the financial snapshot.
 
 The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The independent
-[consumer acceptance procedure](../engineering/development.md#socket-consumer-acceptance)
-uses a separate process and actual private socket without Wake store access, internal
+[consumer acceptance procedure](../engineering/development.md#api-consumer-acceptance)
+uses a separate process and authenticated TCP requests without Wake store access, internal
 application calls or upstream credentials. Its own transactional mirror retains the
 last complete validated snapshot on failed transfers or writes. Checks cover exact
 values, conditional reads, SSE follow/reconnect, corrections/conflict raise/clear,
@@ -219,11 +233,16 @@ documents its supported upgrade or explicit recreation procedure. Pre-release
 development formats have no automatic compatibility migration. The v0.1.0
 warehouse and encrypted access store have independent version-1 formats. Older
 development formats fail closed with recreation guidance and preserve the original
-files. Set up access again when recreating an unsupported encrypted access store.
+files. The pre-release access format that included client grants is incompatible with this
+layout. Preserve its files, recreate the access store explicitly, and re-enter
+source credentials. Set the browser unlock and enroll clients in the new auth state.
+Retain the warehouse through that process.
 Back up stores and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The
 encrypted access store has an independent path. Replacing that store preserves the warehouse and
-pauses upstream work until access is repaired and explicitly resumed. Explicit warehouse
+pauses upstream work until access is repaired and explicitly resumed. The same
+recovery pause applies if saved credentials cannot be decrypted. Both cases preserve
+current browser/API authority and retained reads. Explicit warehouse
 recreation preserves reusable encrypted access but starts a new history with new financial
 identities. Preserve the old warehouse for any needed evidence and decisions, then confirm
 source accounts and reacquire history in the new warehouse. See
@@ -251,12 +270,12 @@ filename with `.upgrade-backup.tar` appended. A failed backup stops the upgrade.
 Each new upgrade replaces the previous archive only after verifying the new pair.
 An interrupted upgrade reuses and verifies its original archive.
 
-Keep the configuration and matching master key separately protected. If a migration
+Keep the configuration and matching credential encryption key separately protected. If a migration
 is interrupted, keep the original files and restart with the matching build. If
 recovery cannot proceed, stop Wake, set the interrupted databases and sidecars aside,
 then extract `wake-upgrade/warehouse.db` and `wake-upgrade/access.db` from the same
 archive. Restore both files together to the paths from the original configuration.
-Use the Wake version that wrote the backed-up stores and the matching master key.
+Use the Wake version that wrote the backed-up stores and the matching credential encryption key.
 Wake refuses a credentials reset while an interrupted upgrade still needs the
 original access store.
 

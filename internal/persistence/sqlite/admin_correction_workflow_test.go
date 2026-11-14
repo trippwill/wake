@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,18 +32,17 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	instrument := view.Executions[0].Instrument()
 	workflow := application.New(store, nil, nil, nil, nil)
 
-	dir := t.TempDir()
+	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetUnlock(dir, []byte("synthetic-correction-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
 	const origin = "http://127.0.0.1:8787"
 
-	auth, enabled, err := admin.Open(dir, "local", origin)
+	auth, enabled, err := admin.Open(dir, origin)
 	if err != nil || !enabled {
 		t.Fatal(enabled, err)
 	}
-	defer auth.Close()
 
 	handler, err := admin.NewHandler(auth, admin.Dependencies{Workflow: workflow})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 	request(http.MethodPost, path, values, http.StatusSeeOther)
 
 	form, err = store.CorrectionForm(ctx, "activity", id)
-	if err != nil || len(form.Decisions) != 1 || !strings.HasPrefix(form.Decisions[0].Actor, "admin/local/") ||
+	if err != nil || len(form.Decisions) != 1 || !strings.HasPrefix(form.Decisions[0].Actor, "admin/") ||
 		form.Decisions[0].Actor == "forged-actor" {
 		t.Fatal("submission/attribution boundary", form, err)
 	}

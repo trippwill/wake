@@ -13,6 +13,8 @@ import (
 func TestConfigCheckPollingDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(dir, "runtime"))
+
 	for _, test := range []struct {
 		name, table, setting string
 		valid                bool
@@ -31,7 +33,7 @@ func TestConfigCheckPollingDefaults(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 
-			code := run([]string{"config", "check", "--config", path, "--runtime-dir", dir}, &stdout, &stderr)
+			code := run([]string{"config", "check", "--config", path}, &stdout, &stderr)
 			if (code == exitOK) != test.valid {
 				t.Fatalf("config check exit %d, want valid=%t: %s", code, test.valid, stderr.String())
 			}

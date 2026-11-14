@@ -19,9 +19,9 @@ import (
 
 func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
-		t.Run(map[bool]string{true: "enabled", false: "disabled"}[enabled], func(t *testing.T) {
+		t.Run(map[bool]string{true: "enabled", false: "unprovisioned"}[enabled], func(t *testing.T) {
 			cfg := shellConfig(t)
-			cfg.Admin.Port = 0
+			cfg.Admin.Listen = "127.0.0.1:0"
 			if enabled {
 				if err := admin.SetUnlock(cfg.Paths.ConfigDir, []byte("synthetic-startup-unlock")); err != nil {
 					t.Fatal(err)
@@ -55,17 +55,12 @@ func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 				}
 			}
 
-			if startup == nil || startup["admin_enabled"] != enabled {
+			if startup == nil || startup["admin_enabled"] != true {
 				t.Fatal(startup)
 			}
 
-			if enabled &&
-				(startup["admin_bind"] != "127.0.0.1" || startup["admin_port"] == "0" || startup["admin_port"] == "") {
+			if startup["admin_bind"] != "127.0.0.1" || startup["admin_port"] == "0" || startup["admin_port"] == "" {
 				t.Fatal("did not report actual binding", startup)
-			}
-
-			if !enabled && (startup["admin_bind"] != "" || startup["admin_port"] != "") {
-				t.Fatal("disabled listener announced", startup)
 			}
 
 			closed, stopped := strings.Index(

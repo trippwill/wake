@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -177,9 +176,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := shellConfig(t)
+	seedAPIClient(t, cfg)
+
 	cfg.Admin.CurrencyRefresh = true
-	cfg.Credentials.MasterKeyPath = filepath.Join(cfg.Paths.ConfigDir, "master.key")
-	if err := credential.CreateMasterKey(cfg.Credentials.MasterKeyPath); err != nil {
+	cfg.Credentials.KeyPath = filepath.Join(cfg.Paths.ConfigDir, "master.key")
+	if err := credential.CreateMasterKey(cfg.Credentials.KeyPath); err != nil {
 		t.Fatal(err)
 	}
 
@@ -985,7 +986,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.WaitVisible(chromedp.Search(`//li[contains(.,"Browser field correction")]`)),
 		chromedp.WaitVisible(chromedp.CSS(`form[aria-label^="Release "]`)),
 		testbrowser.Evaluate(
-			`document.body.textContent.includes('Active decisions')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/local/')&&history.state.wakeNavigation.trail.length>0&&new URL(document.querySelector('[data-return]').href).pathname.startsWith('/executions/')&&!new URL(location.href).searchParams.has('origin')&&!new URL(location.href).searchParams.has('parent')`,
+			`document.body.textContent.includes('Active decisions')&&document.body.textContent.includes('Browser field correction')&&document.body.textContent.includes('admin/')&&history.state.wakeNavigation.trail.length>0&&new URL(document.querySelector('[data-return]').href).pathname.startsWith('/executions/')&&!new URL(location.href).searchParams.has('origin')&&!new URL(location.href).searchParams.has('parent')`,
 			&ok,
 		),
 	)
@@ -1457,14 +1458,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		),
 	)
 
-	socket := filepath.Join(cfg.Paths.RuntimeDir, "wake.sock")
-
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-	}}
-	defer transport.CloseIdleConnections()
+	transport := financialTransport(t, cfg)
 
 	client := &http.Client{Transport: transport, Timeout: time.Second}
+
+	// The original grant survives source access recovery.
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
 	if err != nil {
@@ -1479,7 +1477,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	var snapshot application.FinancialSnapshot
 	if err = json.NewDecoder(reply.Body).Decode(&snapshot); err != nil || reply.StatusCode != http.StatusOK {
-		t.Fatalf("socket snapshot status=%d err=%v", reply.StatusCode, err)
+		t.Fatalf("API snapshot status=%d err=%v", reply.StatusCode, err)
 	}
 
 	accounts := map[string]string{}
@@ -1500,7 +1498,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		len(trades[snapAccount]) != 1 ||
 		trades[snapAccount][0] != "21.12345678900001" ||
 		!slices.Contains(trades[flexAccount], "400.123456789") {
-		t.Fatalf("socket account isolation: accounts=%v prices=%v", accounts, trades)
+		t.Fatalf("API account isolation: accounts=%v prices=%v", accounts, trades)
 	}
 
 	positionPath := "http://wake/v1/accounts/" + snapAccount + "/positions"
@@ -1524,7 +1522,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		view.Positions[0].Quantity.Unit != "units" ||
 		view.Positions[0].InstrumentID == "" || view.Positions[0].UnitCostBasis == nil ||
 		view.Positions[0].UnitCostBasis.Amount != "14.2300" {
-		t.Fatalf("socket positions status=%d view=%+v err=%v", positions.StatusCode, view, err)
+		t.Fatalf("API positions status=%d view=%+v err=%v", positions.StatusCode, view, err)
 	}
 
 	conditional := request.Clone(ctx)
@@ -1538,6 +1536,6 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	defer func() { _ = unchanged.Body.Close() }()
 
 	if unchanged.StatusCode != http.StatusNotModified {
-		t.Fatalf("socket positions conditional status=%d", unchanged.StatusCode)
+		t.Fatalf("API positions conditional status=%d", unchanged.StatusCode)
 	}
 }

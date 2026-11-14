@@ -226,19 +226,18 @@ func TestPositionsGridDistinguishesMissingAndInapplicableContractTerms(t *testin
 }
 
 func TestPositionsAuthenticatedPageGridAndFailures(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateAuthDir(t)
 	if err := SetUnlock(dir, []byte("synthetic-positions-unlock")); err != nil {
 		t.Fatal(err)
 	}
 
-	auth, _, err := Open(dir, "local", "http://127.0.0.1:8787")
+	auth, _, err := Open(dir, "http://127.0.0.1:8787")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	session := httptest.NewRecorder()
-	auth.issue(session)
+	issueTestSession(t, auth, session)
 
 	data := positionsFixture(t)
 	for _, tc := range []struct {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,18 +36,17 @@ func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
 	applyEquityIdentity(t, s, first)
 	applyEquityIdentity(t, s, second)
 
-	dir := t.TempDir()
+	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetUnlock(dir, []byte("synthetic-alias-review")); err != nil {
 		t.Fatal(err)
 	}
 
 	const origin = "http://127.0.0.1:8787"
 
-	auth, _, err := admin.Open(dir, "local", origin)
+	auth, _, err := admin.Open(dir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	registration, err := ibkrflex.Registration(ibkrflex.Options{})
 	if err != nil {

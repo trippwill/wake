@@ -10,7 +10,7 @@ packages=(
   ./internal/credential
   ./internal/daemon
   ./internal/persistence/sqlite
-  ./internal/transport/socket
+  ./internal/transport/financialapi
   ./internal/transport/cli
 )
 results=.cache/test-results/focused.jsonl

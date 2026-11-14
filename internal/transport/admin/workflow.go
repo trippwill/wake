@@ -5,7 +5,6 @@ package admin
 
 import (
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -33,55 +32,9 @@ func registerWorkflowRoutes(
 	const invalidDetailsMessage = "Check the correction details, including the optional rationale. Text must be within the allowed length and contain no leading/trailing whitespace or control characters."
 
 	gate := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
-		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			csrf, ok := auth.session(r)
-			if !ok {
-				rejection(r, "session_required")
-
-				if r.Header.Get("HX-Request") == "true" {
-					http.Error(w, "authentication required", http.StatusUnauthorized)
-				} else {
-					http.Redirect(w, r, "/login", http.StatusSeeOther)
-				}
-
-				return
-			}
-
-			if r.Method == http.MethodPost {
-				if !auth.sameOrigin(r) {
-					rejection(r, "invalid_origin")
-					http.Error(w, "invalid origin", http.StatusForbidden)
-
-					return
-				}
-
-				limit := int64(16 << 10)
-				switch r.Pattern {
-				case "POST /connections", "POST /connections/{id}/settings", "POST /connections/{id}/secrets":
-					// The SDK admits 64 fields of up to 4096 bytes, plus field names,
-					// host metadata and at most three URL-encoded bytes per input byte.
-					limit = 1 << 20
-				}
-
-				r.Body = http.MaxBytesReader(w, r.Body, limit)
-				if r.ParseForm() != nil {
-					rejection(r, "invalid_form")
-					http.Error(w, "invalid form", http.StatusBadRequest)
-
-					return
-				}
-
-				if subtle.ConstantTimeCompare([]byte(csrf), []byte(r.PostForm.Get("csrf"))) != 1 {
-					rejection(r, "invalid_csrf")
-					http.Error(w, "invalid CSRF token", http.StatusForbidden)
-
-					return
-				}
-			}
-
-			handler(w, r, csrf)
-		})
+		auth.gate(mux, pattern, handler)
 	}
+
 	financial := func(pattern string, handler func(http.ResponseWriter, *http.Request, string)) {
 		gate(pattern, func(w http.ResponseWriter, r *http.Request, csrf string) {
 			artifactObservations := pattern == "GET /grids/observations" &&
@@ -141,7 +94,7 @@ func registerWorkflowRoutes(
 		case provider.ErrUnavailable:
 			message = "This source provider or capability is unavailable in this build."
 		case provider.ErrUnauthorized:
-			message = "Credential protection is unavailable or the credential is invalid. Configure a master key with wake setup and retry."
+			message = "Credential protection is unavailable or the credential is invalid. Check the credential encryption key in System Status and retry."
 		}
 
 		operation := formSubmission(r.Pattern)
@@ -690,7 +643,7 @@ func registerWorkflowRoutes(
 		}
 
 		digest := sha256.Sum256([]byte(csrf))
-		actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
+		actor := "admin/" + hex.EncodeToString(digest[:12])
 		if err = workflow.ResumeStorage(r.Context(), revision, actor); err != nil {
 			failure(w, r, csrf, err)
 			return
@@ -779,7 +732,7 @@ func registerWorkflowRoutes(
 			// Attribution comes from the authenticated session, never posted form data.
 			digest := sha256.Sum256([]byte(csrf))
 
-			actor := "admin/" + auth.mode + "/" + hex.EncodeToString(digest[:12])
+			actor := "admin/" + hex.EncodeToString(digest[:12])
 			if err == nil {
 				err = workflow.SaveDecision(r.Context(), decision, actor)
 			}

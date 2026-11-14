@@ -76,11 +76,10 @@ func TestBrowserPollingIntervals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	auth, _, err := admin.Open(cfg.Paths.ConfigDir, "local", origin)
+	auth, _, err := admin.Open(cfg.Paths.ConfigDir, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer auth.Close()
 
 	stopping := make(chan struct{})
 
