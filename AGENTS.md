@@ -24,8 +24,7 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 ## Constraints
 
 - Scope work to the user's request; do not expand into unrelated changes.
-- Wake is one daemon (`wake serve`); packaging wraps it. The core has no
-  systemd, launchd, or Docker dependency.
+- Wake runs as one standalone daemon (`wake serve`).
 - Preserve immutable evidence artifacts/records. Normalize source records,
   reconcile state, and retain traces and disagreements.
   Corrections append state; clients consume the reconciled model projection.
