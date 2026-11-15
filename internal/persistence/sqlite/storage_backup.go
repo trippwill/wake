@@ -149,8 +149,10 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 				return err
 			}
 
-			if err := db.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
-				return err
+			if len(paths) == 2 {
+				if err := db.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
+					return err
+				}
 			}
 		}
 	}

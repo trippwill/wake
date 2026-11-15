@@ -16,19 +16,21 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-func prerequisites(ctx context.Context, q *sqlc.Queries) (application.Prerequisites, error) {
+func (s *Store) prerequisites(ctx context.Context, q *sqlc.Queries) (application.Prerequisites, error) {
 	out := application.Prerequisites{}
 
-	profile, err := q.Profile(ctx)
-	if err != nil {
-		return out, err
-	}
+	if s.owners[1] != nil {
+		profile, err := q.Profile(ctx)
+		if err != nil {
+			return out, err
+		}
 
-	out.Storage = application.StorageStatus{
-		Paused:          profile.Paused != 0,
-		ReferenceReview: profile.ReferenceReview != 0,
-		WarehouseReset:  profile.WarehouseReset != 0,
-		Revision:        profile.RecoveryRevision,
+		out.Storage = application.StorageStatus{
+			Paused:          profile.Paused != 0,
+			ReferenceReview: profile.ReferenceReview != 0,
+			WarehouseReset:  profile.WarehouseReset != 0,
+			Revision:        profile.RecoveryRevision,
+		}
 	}
 
 	account, err := q.Account(ctx)
@@ -40,12 +42,14 @@ func prerequisites(ctx context.Context, q *sqlc.Queries) (application.Prerequisi
 		return out, err
 	}
 
-	setting, err := q.AdminReferenceStatus(ctx)
-	if err == nil {
-		out.ReferenceKey = setting.HasKey
-		out.ReferenceFailure = setting.Failure
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return out, err
+	if s.owners[1] != nil {
+		setting, err := q.AdminReferenceStatus(ctx)
+		if err == nil {
+			out.ReferenceKey = setting.HasKey
+			out.ReferenceFailure = setting.Failure
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return out, err
+		}
 	}
 
 	out.AccountCount, err = q.AccountCount(ctx)
@@ -62,11 +66,11 @@ func (s *Store) Prerequisites(ctx context.Context) (application.Prerequisites, e
 	return readModel(
 		ctx,
 		s,
-		func(q *sqlc.Queries) (application.Prerequisites, error) { return prerequisites(ctx, q) },
+		func(q *sqlc.Queries) (application.Prerequisites, error) { return s.prerequisites(ctx, q) },
 	)
 }
 
-func connectionAccess(
+func (s *Store) connectionAccess(
 	ctx context.Context,
 	q *sqlc.Queries,
 	connection sqlc.Connection,
@@ -87,6 +91,11 @@ func connectionAccess(
 		if view.Account.ID() != "" {
 			view.Name = "Source for " + view.Account.Details().Name()
 		}
+	}
+
+	if s.owners[1] == nil {
+		view.UpstreamUnavailable = true
+		return view, nil
 	}
 
 	readiness, err := q.AccessReadiness(ctx, connection.ID)
@@ -123,14 +132,16 @@ func (s *Store) connectionStatus(
 	q *sqlc.Queries,
 	connection sqlc.Connection,
 ) (application.ConnectionView, error) {
-	view, err := connectionAccess(ctx, q, connection)
+	view, err := s.connectionAccess(ctx, q, connection)
 	if err != nil {
 		return view, err
 	}
 
-	view.Work, err = connectionWork(ctx, q, connection.ID)
-	if err != nil {
-		return view, err
+	if s.owners[1] != nil {
+		view.Work, err = connectionWork(ctx, q, connection.ID)
+		if err != nil {
+			return view, err
+		}
 	}
 
 	processing, err := q.ProcessingStatuses(ctx, connection.ID)
@@ -205,7 +216,7 @@ func (s *Store) SourcePage(ctx context.Context, query application.ListQuery) (ap
 
 		var err error
 
-		out.Prerequisites, err = prerequisites(ctx, q)
+		out.Prerequisites, err = s.prerequisites(ctx, q)
 		if err != nil {
 			return out, err
 		}
@@ -257,7 +268,7 @@ func (s *Store) SourceDetail(
 
 		var err error
 
-		out.Prerequisites, err = prerequisites(ctx, q)
+		out.Prerequisites, err = s.prerequisites(ctx, q)
 		if err != nil {
 			return out, err
 		}
@@ -329,7 +340,7 @@ func (s *Store) systemStatus(ctx context.Context, q *sqlc.Queries) (application.
 
 	var err error
 
-	out.Prerequisites, err = prerequisites(ctx, q)
+	out.Prerequisites, err = s.prerequisites(ctx, q)
 	if err != nil {
 		return out, err
 	}
@@ -392,7 +403,7 @@ func (s *Store) SourceAccessPage(
 
 		var err error
 
-		out.Prerequisites, err = prerequisites(ctx, q)
+		out.Prerequisites, err = s.prerequisites(ctx, q)
 		if err != nil {
 			return out, err
 		}
@@ -417,7 +428,7 @@ func (s *Store) SourceAccessPage(
 		}
 
 		for _, row := range rows {
-			view, e := connectionAccess(ctx, q, row)
+			view, e := s.connectionAccess(ctx, q, row)
 			if e != nil {
 				return out, e
 			}
@@ -437,7 +448,7 @@ func (s *Store) SourceAccess(ctx context.Context) (application.AccessSnapshot, e
 
 		var err error
 
-		out.Prerequisites, err = prerequisites(ctx, q)
+		out.Prerequisites, err = s.prerequisites(ctx, q)
 		if err != nil {
 			return out, err
 		}
@@ -448,7 +459,7 @@ func (s *Store) SourceAccess(ctx context.Context) (application.AccessSnapshot, e
 		}
 
 		for _, row := range rows {
-			c, e := connectionAccess(ctx, q, row)
+			c, e := s.connectionAccess(ctx, q, row)
 			if e != nil {
 				return out, e
 			}

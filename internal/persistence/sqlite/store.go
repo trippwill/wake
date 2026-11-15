@@ -490,14 +490,7 @@ func openStore(
 		return s, nil
 	}
 
-	s.activityDB = sql.OpenDB(&connector{
-		paths: [2]string{paths[0]}, owners: [2]*os.File{s.owners[0]}, activityRead: true,
-	})
-	s.activityDB.SetMaxOpenConns(1)
-	s.activityDB.SetMaxIdleConns(1)
-
-	s.activityQuery, err = s.activityDB.PrepareContext(ctx, adminActivitySQL)
-	if err != nil {
+	if err = s.openActivityReader(ctx, paths[0]); err != nil {
 		return nil, err
 	}
 
@@ -513,6 +506,20 @@ func openStore(
 	)
 
 	return s, nil
+}
+
+func (s *Store) openActivityReader(ctx context.Context, path string) error {
+	s.activityDB = sql.OpenDB(&connector{
+		paths: [2]string{path}, owners: [2]*os.File{s.owners[0]}, activityRead: true,
+	})
+	s.activityDB.SetMaxOpenConns(1)
+	s.activityDB.SetMaxIdleConns(1)
+
+	var err error
+
+	s.activityQuery, err = s.activityDB.PrepareContext(ctx, adminActivitySQL)
+
+	return err
 }
 
 func storageCode(err error) string {
@@ -858,15 +865,18 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		return connection, nil
 	}
 
-	for i, name := range []string{"AttachAccess"} {
-		uri := (&url.URL{Scheme: "file", Path: c.paths[i+1], RawQuery: "mode=rw"}).String()
+	schemas := storeSchemas[:1]
+	if c.paths[1] != "" {
+		uri := (&url.URL{Scheme: "file", Path: c.paths[1], RawQuery: "mode=rw"}).String()
 		if _, err = executor.ExecContext(
 			ctx,
-			profileStatement(name, ""),
+			profileStatement("AttachAccess", ""),
 			[]driver.NamedValue{{Ordinal: 1, Value: uri}},
 		); err != nil {
 			return fail(err)
 		}
+
+		schemas = storeSchemas[:]
 	}
 
 	if _, err = executor.ExecContext(ctx, connectionSQL, nil); err != nil {
@@ -878,7 +888,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		return fail(ErrUnsafeStore)
 	}
 
-	for _, schema := range storeSchemas {
+	for _, schema := range schemas {
 		rows, e := querier.QueryContext(ctx, profileStatement("Journal", schema), nil)
 		if e != nil {
 			return fail(e)
