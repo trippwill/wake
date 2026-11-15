@@ -49,8 +49,10 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 
 	for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
 		for _, suffix := range resetSuffixes {
-			files[db+suffix] = []byte("invalid SQLite content: " + filepath.Base(db) + suffix)
+			files[db+suffix] = nil
 		}
+
+		files[db] = []byte("invalid SQLite content: " + filepath.Base(db))
 
 		files[db+"-mjnotes"] = []byte("unrelated file")
 	}
@@ -62,6 +64,29 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 	}
 
 	return cfg, path, files
+}
+
+func TestResetRefusesJournalOfMissingSynchronizationStore(t *testing.T) {
+	cfg, path, files := resetFixture(t)
+	journal := cfg.Storage.SyncPath + "-journal"
+	files[journal] = []byte("unresolved synchronization journal")
+	if err := os.WriteFile(journal, files[journal], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{"warehouse", "credentials"} {
+		var stdout, stderr bytes.Buffer
+		if code := run(
+			[]string{"storage", "reset", target, "--config", path, "--confirm"},
+			&stdout,
+			&stderr,
+		); code != exitFailure ||
+			!strings.Contains(stderr.String(), "original stores") {
+			t.Fatal(code, stdout.String(), stderr.String())
+		}
+
+		assertResetFiles(t, files, nil)
+	}
 }
 
 //nolint:gosec // Only synthetic files under this test's private directories.

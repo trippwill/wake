@@ -76,6 +76,9 @@ func ResetStorage(
 		{Name: ResetWarehouse, Path: cfg.Storage.WarehousePath},
 		{Name: ResetCredentials, Path: cfg.Storage.ConnectionsPath},
 	}
+	if cfg.Storage.SyncPath != "" {
+		all = append(all, ResetDatabase{Name: "synchronization", Path: cfg.Storage.SyncPath})
+	}
 
 	selected := []ResetDatabase{}
 	snapshots := resetSnapshot{}
@@ -110,6 +113,12 @@ func ResetStorage(
 	for _, db := range all {
 		if !filepath.IsAbs(db.Path) || filepath.Clean(db.Path) != db.Path {
 			return ResetResult{}, ErrUnsafeReset
+		}
+
+		if db.Path == cfg.Storage.SyncPath {
+			if _, err := os.Lstat(db.Path); os.IsNotExist(err) {
+				continue
+			}
 		}
 
 		if err := snapshotResetParent(filepath.Dir(db.Path), parents); err != nil {
@@ -239,6 +248,12 @@ func ResetStorage(
 
 		if intent != nil {
 			return ResetResult{}, ErrResetUpgrade
+		}
+	}
+
+	for _, db := range all {
+		if err := persistence.CheckResetJournals(db.Path); err != nil {
+			return ResetResult{}, err
 		}
 	}
 

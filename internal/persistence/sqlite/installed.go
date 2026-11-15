@@ -12,6 +12,32 @@ import (
 	"os"
 )
 
+// CheckResetJournals refuses deletion while any participant can still contain
+// recovery state. The offline caller holds all database and process locks.
+func CheckResetJournals(database string) error {
+	paths, err := storeSidecars(database)
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	for _, path := range paths {
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+
+		if err != nil || !info.Mode().IsRegular() || !singleLink(info) || info.Size() != 0 {
+			return ErrUpgradeRecovery
+		}
+	}
+
+	return nil
+}
+
 func checkInstalledStores(ctx context.Context, paths [storeCount]string, owners [storeCount]*os.File) error {
 	var hot bool
 	for _, path := range paths {
