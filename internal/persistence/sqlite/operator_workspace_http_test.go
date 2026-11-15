@@ -551,4 +551,34 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 			})
 		}
 	}
+
+	t.Run("evidence with financial-only storage", func(t *testing.T) {
+		h.Close()
+
+		profile := testProfile(s.owners[0].Name())
+		profile.Registrations = []provider.Registration{registration}
+
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		store, err := OpenFinancial(t.Context(), profile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = store.Close() }()
+
+		local := application.New(store, profile.Registrations, nil, nil, nil, nil)
+
+		handler, err = admin.NewHandler(auth, admin.Dependencies{Workflow: local})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		page := request(http.MethodGet, "/evidence/operator-history", nil, false)
+		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Acquisition context") ||
+			!strings.Contains(page.Body.String(), "TradeConfirm") {
+			t.Fatal("retained report unavailable with only the financial store", page.Code)
+		}
+	})
 }

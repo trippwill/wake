@@ -71,7 +71,7 @@ func (s *Store) EvidenceContext(ctx context.Context, id string) (application.Evi
 		ReportedTo:    row.ReportedTo,
 	}
 
-	connection, err := s.Connection(ctx, row.ConnectionID)
+	connection, err := s.queries.Descriptor(ctx, row.ConnectionID)
 	if err != nil {
 		return out, err
 	}
