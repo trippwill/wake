@@ -285,6 +285,7 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 		{"activity", "query", "--state", "unknown"},
 		{"accounts", "get", "a/b"},
 		{"positions", "get"},
+		{"api", "check", "unexpected"},
 		{"api", "check", "--endpoint", "relative.sock"},
 		{"api", "check", "--config", "/profile.toml", "--endpoint", "/socket"},
 		{"api", "get", "https://example.invalid/v1/snapshot"},
