@@ -23,6 +23,13 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 
 	defer func() { _ = live.Close() }()
 
+	// Keep the fixture large enough to exercise more than one backup step.
+	if _, err := live.db.Exec(
+		`INSERT INTO reference_evidence VALUES('large','now',X'',zeroblob(2097152),200,X'')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	before, err := snapshotState(ctx, live)
 	if err != nil || len(before.Resources) == 0 {
 		t.Fatal(before, err)

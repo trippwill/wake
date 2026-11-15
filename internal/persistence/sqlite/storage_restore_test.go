@@ -164,6 +164,38 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	otherProfile := target
+	otherProfile.ConnectionsPath += ".other"
+	if _, err := Restore(ctx, otherProfile, plan.BackupPath, true); !errors.Is(err, ErrRestorePending) {
+		t.Fatalf("retry with a different access destination: %v", err)
+	}
+
+	otherArchive := filepath.Join(filepath.Dir(plan.BackupPath), "other.backup")
+	if err := os.WriteFile(otherArchive, []byte("wrong archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, target, otherArchive, true); !errors.Is(err, ErrRestorePending) {
+		t.Fatalf("retry with a different archive: %v", err)
+	}
+
+	savedStage := intent.Stores[1].Stage + ".saved"
+	if err := os.Rename(intent.Stores[1].Stage, savedStage); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(intent.Stores[1].Stage, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, target, plan.BackupPath, true); !errors.Is(err, ErrRestorePending) {
+		t.Fatalf("retry with a replaced staging file: %v", err)
+	}
+
+	if err := os.Rename(savedStage, intent.Stores[1].Stage); err != nil {
+		t.Fatal(err)
+	}
+
 	if store, err := Open(ctx, target, nil); !errors.Is(err, ErrRestorePending) {
 		if store != nil {
 			_ = store.Close()

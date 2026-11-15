@@ -56,6 +56,18 @@ func TestStorageBackupAndRestoreCLI(t *testing.T) {
 		t.Fatal(stdout.String(), err)
 	}
 
+	stdout.Reset()
+	stderr.Reset()
+
+	if status := Run(
+		[]string{"storage", "backup", "--config", configPath, archive + ".other"},
+		&stdout,
+		&stderr,
+	); status != exitOK ||
+		!strings.Contains(stdout.String(), "Retain the credential key separately") {
+		t.Fatal(status, stdout.String(), stderr.String())
+	}
+
 	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
 		if err := os.Rename(path, path+".original"); err != nil {
 			t.Fatal(err)
@@ -65,7 +77,13 @@ func TestStorageBackupAndRestoreCLI(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 
-	restoreArgs := []string{"storage", "restore", "--config", configPath, "--with-credentials", archive}
+	// The automatic upgrade backup uses the same paired archive format.
+	upgradeArchive := cfg.Storage.WarehousePath + ".upgrade-backup.tar"
+	if err := os.Rename(archive, upgradeArchive); err != nil {
+		t.Fatal(err)
+	}
+
+	restoreArgs := []string{"storage", "restore", "--config", configPath, "--with-credentials", upgradeArchive}
 	if status := Run(restoreArgs, &stdout, &stderr); status != exitOK ||
 		!strings.Contains(stdout.String(), "original credential key") {
 		t.Fatal(status, stdout.String(), stderr.String())
@@ -109,6 +127,18 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 		t.Fatal(stdout.String(), err)
 	}
 
+	stdout.Reset()
+	stderr.Reset()
+
+	if status := Run(
+		[]string{"storage", "snapshot", "warehouse", "--config", configPath, archive + ".other"},
+		&stdout,
+		&stderr,
+	); status != exitOK ||
+		!strings.Contains(stdout.String(), "Saved a warehouse snapshot") {
+		t.Fatal(status, stdout.String(), stderr.String())
+	}
+
 	if err := os.Rename(cfg.Storage.WarehousePath, cfg.Storage.WarehousePath+".original"); err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +158,50 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 	if status := Run(restore, &stdout, &stderr); status == exitOK ||
 		!strings.Contains(stderr.String(), cfg.Storage.WarehousePath) {
 		t.Fatal(status, stdout.String(), stderr.String())
+	}
+}
+
+func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
+	cfg, configPath, _ := setupDaemonFixture(t)
+	if err := config.Prepare(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	existing := filepath.Join(cfg.Paths.ConfigDir, "existing.tar")
+	if err := os.WriteFile(existing, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name string
+		args []string
+		code int
+		want string
+	}{
+		{"configuration", []string{"backup", configPath}, exitFailure, "unsafe"},
+		{"key", []string{"snapshot", "warehouse", cfg.Credentials.KeyPath}, exitFailure, "unsafe"},
+		{"sidecar", []string{"snapshot", "warehouse", cfg.Storage.WarehousePath + "-wal"}, exitFailure, "unsafe"},
+		{"existing archive", []string{"snapshot", "warehouse", existing}, exitFailure, "output already exists"},
+		{"missing output directory", []string{"backup", filepath.Join(cfg.Paths.ConfigDir, "missing", "archive")}, exitFailure, "no such file"},
+		{"protected restore source", []string{"restore", configPath}, exitFailure, "unsafe"},
+		{"missing restore archive", []string{"restore", filepath.Join(cfg.Paths.ConfigDir, "absent.tar")}, exitFailure, "no such file"},
+		{"missing snapshot output", []string{"snapshot", "warehouse"}, exitUsage, "requires one archive file path"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			args := append([]string{"storage"}, test.args...)
+			args = append(args, "--config", configPath)
+			if result := Run(args, &stdout, &stderr); result != test.code ||
+				!strings.Contains(stderr.String(), test.want) || stdout.Len() != 0 {
+				t.Fatal(result, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	//nolint:gosec // Read the synthetic archive created by this test.
+	data, err := os.ReadFile(existing)
+	if err != nil || string(data) != "keep" {
+		t.Fatal("existing output changed", err)
 	}
 }
