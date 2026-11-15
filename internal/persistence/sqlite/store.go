@@ -97,6 +97,8 @@ type Store struct {
 	logger                   *slog.Logger
 	closeOnce                sync.Once
 	closeError               error
+	processingMu             sync.Mutex
+	processingRetries        map[string]time.Time
 	publicationMu            sync.Mutex
 	publicationSubscribers   map[chan struct{}]struct{}
 }

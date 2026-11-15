@@ -707,10 +707,16 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 CREATE TRIGGER reject_supply_sync_write BEFORE UPDATE ON sync_association
 BEGIN SELECT RAISE(ABORT,'local supply touched upstream association'); END`)
 
+	workCount := f.count(t, "work")
+
 	retainedID, err := f.host.Supply(t.Context(), id, "documents", artifact)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if f.count(t, "work") != workCount {
+		t.Fatal("local supply created scheduler work")
+	}
+
 	retained, err := f.store.Retained(t.Context(), retainedID)
 	if err != nil || !bytes.Equal(retained.Artifact.Content(), artifact.Content()) {
 		t.Fatal("supplied original bytes lost", err)

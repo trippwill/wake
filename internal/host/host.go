@@ -89,6 +89,8 @@ type (
 			provider.Progress,
 			PollCycle,
 		) (string, error)
+		SourceProvider(context.Context, string) (string, error)
+		RetainSupplied(context.Context, string, string, provider.Artifact) (string, error)
 		ArtifactProvider(context.Context, string) (string, error)
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
 		ReserveTogether(context.Context, string, time.Time, ...PacingBudget) (provider.Reservation, error)
@@ -1033,12 +1035,12 @@ func (h *Host) Supply(ctx context.Context, id, stream string, artifact provider.
 	}
 	defer finish()
 
-	connection, err := h.store.Connection(work, id)
+	providerID, err := h.store.SourceProvider(work, id)
 	if err != nil {
 		return "", ErrStorage
 	}
 
-	registration, ok := h.registrations[connection.Provider]
+	registration, ok := h.registrations[providerID]
 	if !ok || registration.Normalizer() == nil {
 		return "", provider.ErrUnavailable
 	}
@@ -1054,26 +1056,8 @@ func (h *Host) Supply(ctx context.Context, id, stream string, artifact provider.
 		return "", provider.ErrInvalid
 	}
 
-	key := WorkKey{Connection: id, Stream: stream, Operation: "supply"}
-
-	checkpoint, err := h.store.Checkpoint(work, key)
+	retained, err := h.store.RetainSupplied(work, id, stream, artifact)
 	if err != nil {
-		return "", ErrStorage
-	}
-
-	step, err := provider.NewStep(provider.State{}, artifact, h.now())
-	if err != nil {
-		return "", err
-	}
-
-	progress, _ := provider.NewProgress(provider.ProgressRetained, 1, 1)
-
-	retained, err := h.store.Accept(work, key, checkpoint.Revision, step, nil, progress, PollCycle{})
-	if err != nil {
-		if errors.Is(err, provider.ErrConflict) {
-			return "", err
-		}
-
 		return "", ErrStorage
 	}
 

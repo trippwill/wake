@@ -136,7 +136,7 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 					RequestedTo:    r.RequestedTo,
 					ReportedFrom:   r.ReportedFrom,
 					ReportedTo:     r.ReportedTo,
-					Failure:        r.ProcessingFailure,
+					Failure:        s.processingFailure(r.ID),
 					ActivityClaims: r.ActivityClaims,
 					ExcludedRows:   r.ExcludedRows,
 					NeedsReview:    r.NeedsReview,

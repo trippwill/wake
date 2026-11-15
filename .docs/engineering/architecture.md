@@ -102,6 +102,12 @@ require a fresh grant, and repairing configuration during a pause invalidates an
 earlier resume review. The initial empty installation establishes its association
 and grant during setup.
 
+Retained-data processing discovers unfinished work from acquisition evidence,
+confirmed source authority, and receipts for the installed interpretation.
+Local retry delays and failure messages live in runtime state. Restarting can
+retry pending reports without replaying completed interpretations or changing
+their committed receipts.
+
 ## Evidence before conclusions
 
 Preserve immutable evidence and qualified claims independently of accepted views.

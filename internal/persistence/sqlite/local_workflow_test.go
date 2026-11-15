@@ -27,13 +27,6 @@ func (s localOnlyStore) PendingWork(context.Context, time.Time) ([]host.WorkKey,
 
 func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
-	// Keep the fixture's discovery sentinel out of the pending interpretation set.
-	if _, err := s.db.Exec(
-		`UPDATE artifacts SET processing_next='9999-01-01T00:00:00Z' WHERE id='discovery'`,
-	); err != nil {
-		t.Fatal(err)
-	}
-
 	body := []byte(confirmationReport(syntheticOption))
 
 	artifact, err := provider.NewArtifact(ibkrflex.ConfirmationFormat, "application/xml", time.Now(), body)
@@ -56,6 +49,30 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := time.Now()
+	versions := map[string]string{registration.Descriptor().ID(): registration.Version()}
+
+	if err = s.ProcessingFailure(t.Context(), "local", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	if pending, e := s.PendingArtifacts(t.Context(), now, versions); e != nil || len(pending) != 0 {
+		t.Fatal("deferred artifact was eligible", pending, e)
+	}
+
+	if err = s.RetryProcessing(t.Context(), "local"); err != nil {
+		t.Fatal(err)
+	}
+
+	if pending, e := s.PendingArtifacts(
+		t.Context(),
+		now,
+		versions,
+	); e != nil || len(pending) != 1 ||
+		pending[0].ID != "local" {
+		t.Fatal("retry did not make retained artifact eligible", pending, e)
+	}
+
 	w := application.New(localOnlyStore{s, t}, []provider.Registration{registration}, nil, nil, nil, nil)
 	for range 2 {
 		if err = w.RunOnce(t.Context(), time.Now()); err != nil {
@@ -74,6 +91,20 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		normalized != 1 ||
 		processed != 1 {
 		t.Fatal(normalized, processed, err)
+	}
+
+	if pending, e := s.PendingArtifacts(t.Context(), now, versions); e != nil || len(pending) != 0 {
+		t.Fatal("completed receipt was queued again", pending, e)
+	}
+
+	versions[registration.Descriptor().ID()] = "new-interpretation"
+	if pending, e := s.PendingArtifacts(
+		t.Context(),
+		now,
+		versions,
+	); e != nil || len(pending) != 1 ||
+		pending[0].ID != "local" {
+		t.Fatal("changed interpretation did not rediscover retained evidence", pending, e)
 	}
 
 	if err = w.Retry(t.Context(), "synthetic"); !errors.Is(err, provider.ErrUnavailable) {

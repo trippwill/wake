@@ -36,12 +36,21 @@ func TestOverviewSyncTiming(t *testing.T) {
 	retain := func(key host.WorkKey, at time.Time) string {
 		t.Helper()
 
-		cp, err := s.Checkpoint(ctx, key)
+		artifact, err := provider.NewArtifact("synthetic-v1", "application/json", at, []byte("{}"))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		artifact, err := provider.NewArtifact("synthetic-v1", "application/json", at, []byte("{}"))
+		if key.Operation == "supply" {
+			id, e := s.RetainSupplied(ctx, key.Connection, key.Stream, artifact)
+			if e != nil {
+				t.Fatal(e)
+			}
+
+			return id
+		}
+
+		cp, err := s.Checkpoint(ctx, key)
 		if err != nil {
 			t.Fatal(err)
 		}

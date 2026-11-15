@@ -118,7 +118,7 @@ func connectionAccess(
 	return view, nil
 }
 
-func connectionStatus(
+func (s *Store) connectionStatus(
 	ctx context.Context,
 	q *sqlc.Queries,
 	connection sqlc.Connection,
@@ -153,7 +153,7 @@ func connectionStatus(
 				RequestedTo:      r.RequestedTo,
 				ReportedFrom:     r.ReportedFrom,
 				ReportedTo:       r.ReportedTo,
-				Failure:          r.ProcessingFailure,
+				Failure:          s.processingFailure(r.ID),
 				ActivityClaims:   r.ActivityClaims,
 				ExcludedRows:     r.ExcludedRows,
 				NeedsReview:      r.NeedsReview,
@@ -230,7 +230,7 @@ func (s *Store) SourcePage(ctx context.Context, query application.ListQuery) (ap
 		}
 
 		for _, row := range rows {
-			view, e := connectionStatus(ctx, q, row)
+			view, e := s.connectionStatus(ctx, q, row)
 			if e != nil {
 				return out, e
 			}
@@ -271,7 +271,7 @@ func (s *Store) SourceDetail(
 			return out, err
 		}
 
-		out.Connection, err = connectionStatus(ctx, q, row)
+		out.Connection, err = s.connectionStatus(ctx, q, row)
 		if err != nil {
 			return out, err
 		}
@@ -358,7 +358,7 @@ func (s *Store) systemStatus(ctx context.Context, q *sqlc.Queries) (application.
 
 	out.MoreConnections = out.ConnectionCount > int64(len(rows))
 	for _, row := range rows {
-		view, e := connectionStatus(ctx, q, row)
+		view, e := s.connectionStatus(ctx, q, row)
 		if e != nil {
 			return out, e
 		}

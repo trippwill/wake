@@ -135,13 +135,18 @@ SELECT artifact_id,authority,kind,scope,value,name,currency FROM (
  WHERE artifacts.connection_id=? AND receipt.operation='discover'
 ) WHERE ranking=1 ORDER BY appearance DESC,authority,kind,scope,value;
 -- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider WHERE (processing_next='' OR julianday(processing_next)<=julianday(sqlc.arg(now))) AND connections.provider IN (sqlc.slice('providers')) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20;
--- name: ArtifactProcessed :exec
-UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?;
--- name: ArtifactFailure :exec
-UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?;
+SELECT artifacts.id,connections.provider
+FROM artifacts
+JOIN connections ON connections.id=artifacts.connection_id
+JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider
+JOIN json_each(CAST(sqlc.arg(versions) AS TEXT)) version ON version.key=connections.provider
+WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+AND NOT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=version.value)
+AND NOT EXISTS(SELECT 1 FROM json_each(CAST(sqlc.arg(deferred) AS TEXT)) retry WHERE retry.value=artifacts.id)
+ORDER BY artifacts.rowid LIMIT 20;
 -- name: ProcessingStatuses :many
-SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,CAST(EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id
+ AND p.version=(SELECT n.version FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1)) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
  CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
  CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
  (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
@@ -283,8 +288,11 @@ UPDATE instruments SET reference_next=? WHERE id=?;
 -- name: EnsureInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING;
 
--- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id);
+-- name: CanRetryProcessing :one
+SELECT EXISTS(SELECT 1 FROM artifacts
+ WHERE artifacts.id=?
+ AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+ AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id));
 -- name: PutDescriptor :exec
 INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec
@@ -480,11 +488,6 @@ UPDATE activity_bases SET instrument_id=sqlc.arg(instrument_id) WHERE activity_i
 
 -- name: PutMovementActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES(?,?,?,?,?,'accepted',?);
-
--- name: QueueInterpretations :exec
-UPDATE artifacts SET processed=0
-WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
-AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value));
 
 -- name: PutPositionSet :exec
 INSERT INTO position_sets(claim_id,account_id,effective_date,source_reference,supersedes) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING;

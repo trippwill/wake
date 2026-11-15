@@ -8,7 +8,6 @@ package sqlc
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 const accessReadiness = `-- name: AccessReadiness :one
@@ -446,21 +445,6 @@ func (q *Queries) AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64
 	return result.RowsAffected()
 }
 
-const artifactFailure = `-- name: ArtifactFailure :exec
-UPDATE artifacts SET processing_failure=?,processing_next=? WHERE id=?
-`
-
-type ArtifactFailureParams struct {
-	ProcessingFailure string
-	ProcessingNext    string
-	ID                string
-}
-
-func (q *Queries) ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error {
-	_, err := q.db.ExecContext(ctx, artifactFailure, arg.ProcessingFailure, arg.ProcessingNext, arg.ID)
-	return err
-}
-
 const artifactInstrumentClaims = `-- name: ArtifactInstrumentClaims :many
 SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.execution_id IN (SELECT affected.execution_id FROM execution_observations affected WHERE affected.artifact_id=?) AND r.kind='activity' ORDER BY o.rowid
 `
@@ -502,15 +486,6 @@ func (q *Queries) ArtifactInstrumentClaims(ctx context.Context, artifactID strin
 		return nil, err
 	}
 	return items, nil
-}
-
-const artifactProcessed = `-- name: ArtifactProcessed :exec
-UPDATE artifacts SET processed=1,processing_failure='',processing_next='' WHERE id=?
-`
-
-func (q *Queries) ArtifactProcessed(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, artifactProcessed, id)
-	return err
 }
 
 const artifactProvider = `-- name: ArtifactProvider :one
@@ -694,6 +669,20 @@ func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullStr
 		return nil, err
 	}
 	return items, nil
+}
+
+const canRetryProcessing = `-- name: CanRetryProcessing :one
+SELECT EXISTS(SELECT 1 FROM artifacts
+ WHERE artifacts.id=?
+ AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+ AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id))
+`
+
+func (q *Queries) CanRetryProcessing(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, canRetryProcessing, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const candidateExists = `-- name: CandidateExists :one
@@ -2477,12 +2466,20 @@ func (q *Queries) PauseForCredentialKey(ctx context.Context) error {
 }
 
 const pendingArtifacts = `-- name: PendingArtifacts :many
-SELECT artifacts.id,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider WHERE (processing_next='' OR julianday(processing_next)<=julianday(?1)) AND connections.provider IN (/*SLICE:providers*/?) AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND artifacts.processed=0 ORDER BY artifacts.rowid LIMIT 20
+SELECT artifacts.id,connections.provider
+FROM artifacts
+JOIN connections ON connections.id=artifacts.connection_id
+JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider
+JOIN json_each(CAST(?1 AS TEXT)) version ON version.key=connections.provider
+WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+AND NOT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=version.value)
+AND NOT EXISTS(SELECT 1 FROM json_each(CAST(?2 AS TEXT)) retry WHERE retry.value=artifacts.id)
+ORDER BY artifacts.rowid LIMIT 20
 `
 
 type PendingArtifactsParams struct {
-	Now       interface{}
-	Providers []string
+	Versions string
+	Deferred string
 }
 
 type PendingArtifactsRow struct {
@@ -2491,18 +2488,7 @@ type PendingArtifactsRow struct {
 }
 
 func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error) {
-	query := pendingArtifacts
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.Now)
-	if len(arg.Providers) > 0 {
-		for _, v := range arg.Providers {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:providers*/?", strings.Repeat(",?", len(arg.Providers))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:providers*/?", "NULL", 1)
-	}
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, pendingArtifacts, arg.Versions, arg.Deferred)
 	if err != nil {
 		return nil, err
 	}
@@ -2705,7 +2691,8 @@ func (q *Queries) ProcessingComplete(ctx context.Context, arg ProcessingComplete
 }
 
 const processingStatuses = `-- name: ProcessingStatuses :many
-SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,artifacts.processed,artifacts.processing_failure,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,CAST(EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id
+ AND p.version=(SELECT n.version FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1)) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
  CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
  CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
  (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
@@ -2713,21 +2700,20 @@ FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifac
 `
 
 type ProcessingStatusesRow struct {
-	ID                string
-	Stream            string
-	ReceiptID         string
-	Retrieved         string
-	Hash              string
-	Policy            string
-	Processed         int64
-	ProcessingFailure string
-	RequestedFrom     string
-	RequestedTo       string
-	ReportedFrom      string
-	ReportedTo        string
-	ActivityClaims    int64
-	ExcludedRows      int64
-	NeedsReview       int64
+	ID             string
+	Stream         string
+	ReceiptID      string
+	Retrieved      string
+	Hash           string
+	Policy         string
+	Processed      int64
+	RequestedFrom  string
+	RequestedTo    string
+	ReportedFrom   string
+	ReportedTo     string
+	ActivityClaims int64
+	ExcludedRows   int64
+	NeedsReview    int64
 }
 
 func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error) {
@@ -2747,7 +2733,6 @@ func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) (
 			&i.Hash,
 			&i.Policy,
 			&i.Processed,
-			&i.ProcessingFailure,
 			&i.RequestedFrom,
 			&i.RequestedTo,
 			&i.ReportedFrom,
@@ -3607,17 +3592,6 @@ func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentPa
 	return err
 }
 
-const queueInterpretations = `-- name: QueueInterpretations :exec
-UPDATE artifacts SET processed=0
-WHERE processed=1 AND EXISTS(SELECT 1 FROM acquisition_receipts r WHERE r.artifact_id=artifacts.id AND r.operation='acquire')
-AND EXISTS(SELECT 1 FROM accounts a JOIN connections c ON c.id=a.connection_id JOIN json_each(CAST(? AS TEXT)) v ON v.key=c.provider WHERE a.connection_id=artifacts.connection_id AND a.provider=c.provider AND NOT EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id AND p.version=v.value))
-`
-
-func (q *Queries) QueueInterpretations(ctx context.Context, dollar_1 string) error {
-	_, err := q.db.ExecContext(ctx, queueInterpretations, dollar_1)
-	return err
-}
-
 const queuedPoll = `-- name: QueuedPoll :one
 SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
 WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
@@ -4165,18 +4139,6 @@ DELETE FROM listings WHERE id=?
 func (q *Queries) RetireListing(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, retireListing, id)
 	return err
-}
-
-const retryProcessing = `-- name: RetryProcessing :execrows
-UPDATE artifacts SET processed=0,processing_failure='',processing_next='' WHERE artifacts.id=? AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire') AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id)
-`
-
-func (q *Queries) RetryProcessing(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, retryProcessing, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const retryWork = `-- name: RetryWork :exec

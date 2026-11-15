@@ -285,19 +285,16 @@ func (s *Store) PendingArtifacts(
 		return nil, err
 	}
 
-	if err = s.queries.QueueInterpretations(ctx, string(versions)); err != nil {
+	deferred := s.deferredProcessing(now)
+
+	payload, err := json.Marshal(deferred)
+	if err != nil {
 		return nil, err
 	}
 
-	names := make([]string, 0, len(providers))
-	for name := range providers {
-		names = append(names, name)
-	}
-
-	rows, err := s.queries.PendingArtifacts(
-		ctx,
-		sqlc.PendingArtifactsParams{Now: now.UTC().Format(time.RFC3339Nano), Providers: names},
-	)
+	rows, err := s.queries.PendingArtifacts(ctx, sqlc.PendingArtifactsParams{
+		Versions: string(versions), Deferred: string(payload),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -311,14 +308,52 @@ func (s *Store) PendingArtifacts(
 }
 
 func (s *Store) ProcessingFailure(ctx context.Context, id string, next time.Time) error {
-	return s.queries.ArtifactFailure(
-		ctx,
-		sqlc.ArtifactFailureParams{
-			ID:                id,
-			ProcessingFailure: "processing failed; retained evidence is safe",
-			ProcessingNext:    next.UTC().Format(time.RFC3339Nano),
-		},
-	)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.processingMu.Lock()
+	defer s.processingMu.Unlock()
+
+	if s.processingRetries == nil {
+		s.processingRetries = make(map[string]time.Time)
+	}
+
+	s.processingRetries[id] = next
+
+	return nil
+}
+
+func (s *Store) deferredProcessing(now time.Time) []string {
+	s.processingMu.Lock()
+	defer s.processingMu.Unlock()
+
+	ids := []string{}
+	for id, next := range s.processingRetries {
+		if next.After(now) {
+			ids = append(ids, id)
+		}
+	}
+
+	return ids
+}
+
+func (s *Store) clearProcessingFailure(id string) {
+	s.processingMu.Lock()
+	defer s.processingMu.Unlock()
+
+	delete(s.processingRetries, id)
+}
+
+func (s *Store) processingFailure(id string) string {
+	s.processingMu.Lock()
+	defer s.processingMu.Unlock()
+
+	if _, failed := s.processingRetries[id]; failed {
+		return "processing failed; retained evidence is safe"
+	}
+
+	return ""
 }
 
 func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string, now time.Time) error {
@@ -419,10 +454,16 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 }
 
 func (s *Store) RetryProcessing(ctx context.Context, id string) error {
-	n, err := s.queries.RetryProcessing(ctx, id)
-	if err == nil && n != 1 {
+	eligible, err := s.queries.CanRetryProcessing(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if !eligible {
 		return application.ErrInvalid
 	}
 
-	return err
+	s.clearProcessingFailure(id)
+
+	return nil
 }

@@ -83,7 +83,8 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 	}
 
 	if complete {
-		return s.queries.ArtifactProcessed(ctx, id)
+		s.clearProcessingFailure(id)
+		return nil
 	}
 
 	records, err := s.Records(ctx, id, version)
@@ -316,15 +317,18 @@ func (s *Store) Process(ctx context.Context, id, version string) error {
 		}
 	}
 
-	if err = q.ArtifactProcessed(ctx, id); err != nil {
-		return err
-	}
 	// Reinterpretation retires earlier meanings while retaining every source claim.
 	if _, err = tx.ExecContext(ctx, positionsStatement("InterpretationChanged"), id); err != nil {
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	if err = s.commit(ctx, tx); err != nil {
+		return err
+	}
+
+	s.clearProcessingFailure(id)
+
+	return nil
 }
 
 func acceptInstrument(

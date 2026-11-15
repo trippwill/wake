@@ -45,9 +45,7 @@ type Querier interface {
 	AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
-	ArtifactFailure(ctx context.Context, arg ArtifactFailureParams) error
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
-	ArtifactProcessed(ctx context.Context, id string) error
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
 	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
@@ -55,6 +53,7 @@ type Querier interface {
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
 	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
 	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error)
+	CanRetryProcessing(ctx context.Context, id string) (bool, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error)
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
@@ -175,7 +174,6 @@ type Querier interface {
 	PutSourceClaim(ctx context.Context, arg PutSourceClaimParams) error
 	PutSourceCorrection(ctx context.Context, arg PutSourceCorrectionParams) error
 	QualifyInstrument(ctx context.Context, arg QualifyInstrumentParams) error
-	QueueInterpretations(ctx context.Context, dollar_1 string) error
 	QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte, error)
 	QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error)
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
@@ -199,7 +197,6 @@ type Querier interface {
 	Retained(ctx context.Context, id string) (RetainedRow, error)
 	RetainedReferenceCandidates(ctx context.Context, instrumentID string) ([]RetainedReferenceCandidatesRow, error)
 	RetireListing(ctx context.Context, id string) error
-	RetryProcessing(ctx context.Context, id string) (int64, error)
 	RetryWork(ctx context.Context, arg RetryWorkParams) error
 	ReviewReference(ctx context.Context) error
 	RootCalculationInputs(ctx context.Context, id string) ([]RootCalculationInputsRow, error)

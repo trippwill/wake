@@ -328,26 +328,8 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 	return s.accessUpdated(ctx, "connection_credential", err)
 }
 
-// Supply uses the warehouse alone. Its work rows track local evidence
-// admission and never authorize or acknowledge an upstream operation.
-func (s *Store) beginWork(ctx context.Context, key host.WorkKey) (*sql.Tx, error) {
-	if key.Operation == "supply" {
-		return s.db.BeginTx(ctx, nil)
-	}
-
-	return beginUpstream(ctx, s.db)
-}
-
-func (s *Store) commitWork(ctx context.Context, tx *sql.Tx, key host.WorkKey) error {
-	if key.Operation == "supply" {
-		return tx.Commit()
-	}
-
-	return s.commitUpstream(ctx, tx, upstreamProgress)
-}
-
 func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint, error) {
-	tx, err := s.beginWork(ctx, k)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return host.Checkpoint{}, err
 	}
@@ -392,7 +374,7 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 	}
 
 	if changed != 0 {
-		if err = s.commitWork(ctx, tx, k); err != nil {
+		if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 			return host.Checkpoint{}, err
 		}
 	}
@@ -496,19 +478,23 @@ func (s *Store) Accept(
 	p provider.Progress,
 	cycle host.PollCycle,
 ) (string, error) {
+	if k.Operation == "supply" {
+		return "", provider.ErrInvalid
+	}
+
 	completed, total := p.Completed(), p.Total()
 	if completed > math.MaxInt64 || total > math.MaxInt64 {
 		return "", provider.ErrLimit
 	}
 
-	tx, err := s.beginWork(ctx, k)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return "", err
 	}
 
 	defer func() { _ = tx.Rollback() }()
 
-	if k.Operation != "supply" && upstream.Revision(ctx) == "" {
+	if upstream.Revision(ctx) == "" {
 		association, err := readUpstreamAssociation(ctx, tx)
 		if err != nil {
 			return "", err
@@ -594,11 +580,50 @@ func (s *Store) Accept(
 		}
 	}
 
-	if err = s.commitWork(ctx, tx, k); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 		return "", err
 	}
 
 	return id, nil
+}
+
+// SourceProvider reads the financial source descriptor without consulting
+// upstream configuration or authorization.
+func (s *Store) SourceProvider(ctx context.Context, id string) (string, error) {
+	descriptor, err := s.queries.Descriptor(ctx, id)
+	return descriptor.Provider, err
+}
+
+// RetainSupplied persists evidence and its receipt without a scheduler row.
+func (s *Store) RetainSupplied(
+	ctx context.Context,
+	id, stream string,
+	artifact provider.Artifact,
+) (string, error) {
+	step, err := provider.NewStep(provider.State{}, artifact, artifact.RetrievedAt())
+	if err != nil || artifact.IsZero() {
+		return "", provider.ErrInvalid
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	retained, _, err := retainReport(ctx, s.queries.WithTx(tx), host.WorkKey{
+		Connection: id, Stream: stream, Operation: "supply",
+	}, step)
+	if err != nil {
+		return "", err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+
+	return retained, nil
 }
 
 func nonNil(data []byte) []byte {
