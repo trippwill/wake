@@ -41,7 +41,8 @@ const (
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
 	schemaVersion              = "wake-warehouse/3"
 	accessSchemaVersion        = "wake-access/3"
-	syncSchemaVersion          = "wake-sync/1"
+	syncSchemaVersion          = "wake-sync/2"
+	syncArchiveVersion         = "wake-sync/1"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
@@ -71,7 +72,12 @@ var activityDateIndexesSQL string
 var connectionsSQL string
 
 //go:embed sync_schema.sql
-var syncSQL string
+var syncArchiveSQL string
+
+//go:embed recovery_schema.sql
+var recoverySchemaSQL string
+
+var syncSQL = syncArchiveSQL + "\n" + recoverySchemaSQL
 
 //go:embed connection.sql
 var connectionSQL string
@@ -117,6 +123,8 @@ type Store struct {
 }
 
 type storeMetadata struct{ kind, version, id string }
+
+func (s *Store) UpstreamAttached() bool { return s.owners[1] != nil && s.owners[2] != nil }
 
 // WarehouseSize reads the owned database file, excluding access storage and journals.
 func (s *Store) WarehouseSize() (int64, error) {

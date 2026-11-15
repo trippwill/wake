@@ -518,8 +518,13 @@ func (h *Host) step(
 	}
 
 	key := WorkKey{id, stream, operation}
+	work = upstream.WithWork(work, upstream.Work(key))
 
 	checkpoint, err := h.store.Checkpoint(work, key)
+	if errors.Is(err, provider.ErrUnavailable) || errors.Is(err, provider.ErrConflict) {
+		return "", err
+	}
+
 	if err != nil {
 		return "", ErrStorage
 	}

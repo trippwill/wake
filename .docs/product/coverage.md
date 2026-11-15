@@ -20,10 +20,10 @@ events and positions, without administrative authority or per-account scopes.
 They have no automatic expiry.
 
 Local pages, corrections, API reads, and retained-evidence processing run with
-the financial database and local authority. Live provider and reference work is
-disabled while synchronization recovery is being completed. The daemon does not
-need a credential key or usable synchronization or access databases to serve
-retained financial history.
+the financial database and local authority. The daemon resumes approved provider
+and reference work when the installed association and pacing state validate.
+Missing or unusable optional storage leaves retained history available. An
+unrecovered financial transaction requires its original participants.
 
 ## Account source authority
 
@@ -257,7 +257,10 @@ proposes non-secret settings for the same financial lineage. Review the current
 and proposed settings, then rerun with the same arguments and `--confirm <plan-id>`.
 The command preserves existing optional databases, keeps surviving credentials
 bound to their original sources, and leaves financial history and publication
-unchanged. Synchronization remains paused after recovery.
+unchanged. Use **Review recovery steps** in Connections after startup to approve
+the displayed account, stream, date range, and earliest request for each
+supported restart. Sources without an eligible plan stay paused. Review a
+changed configuration again before it resumes.
 
 ### Forward upgrades
 

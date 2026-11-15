@@ -224,7 +224,7 @@ func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string
 		return err
 	}
 
-	if err := renewRestoredStores(ctx, [storeCount]string{file.Name()}); err != nil {
+	if err := renewRestoredStores(ctx, [storeCount]string{file.Name()}, recoveryPacing{}); err != nil {
 		return err
 	}
 

@@ -115,6 +115,7 @@ func TestCommandDiscoveryReflectsCommandTree(t *testing.T) {
 		"wake positions get",
 		"wake serve",
 		"wake storage backup",
+		"wake storage recover-sync",
 		"wake storage reset",
 		"wake storage restore",
 		"wake storage snapshot warehouse",

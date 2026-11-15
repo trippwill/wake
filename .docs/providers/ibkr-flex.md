@@ -170,6 +170,12 @@ Changing a query restarts its own bounded source protocol while preserving
 the confirmed account and retained reports. Source financial authority stays with
 the confirmed connection, provider and qualified source account.
 
+Recovery starts with a fresh dated request for the reviewed range. Wake overlaps
+up to seven retained days where coverage is known and limits a restart request to
+365 days. An unavailable recovery window stays paused. Wake waits out the
+documented one-minute token pacing window and honors later surviving deadlines.
+[Flex request limits](https://ibkrcampus.com/docs/web-api/api-reference/send-request)
+
 Option execution terms retain the reported strike, currency, put/call, expiry and
 premium multiplier separately from the underlier.
 A structurally valid, checksum-valid `underlyingSecurityID` is retained as an ISIN

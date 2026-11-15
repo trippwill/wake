@@ -105,7 +105,7 @@ WHERE singleton=1;
 UPDATE access.upstream_grant
 SET actor=?,granted_at=?,granted_revision=revision WHERE singleton=1;
 -- name: InvalidateRecoveryPreview
-UPDATE sync.profile SET recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=1;
+UPDATE sync.profile SET recovery_revision=recovery_revision+1 WHERE singleton=1 AND (paused=1 OR EXISTS(SELECT 1 FROM sync.recovery_state));
 -- name: MarkRestoreAssociation
 UPDATE sync.sync_association SET bind_restore=1 WHERE singleton=1;
 
@@ -115,3 +115,72 @@ SELECT id,provider,name,settings FROM {{schema}}.configurations ORDER BY id;
 SELECT provider FROM main.connections WHERE id=?;
 -- name: ImportSyncConfiguration
 INSERT INTO sync.configurations(id,provider,name,settings) VALUES(?,?,?,?);
+
+-- name: ClearRecoveryScopes
+DELETE FROM sync.restart_scopes;
+DELETE FROM sync.recovery_sources;
+INSERT INTO sync.recovery_sources(connection_id) SELECT id FROM main.connections;
+-- name: SetRecoveryStart
+INSERT OR REPLACE INTO sync.recovery_state(singleton,recovered_at) VALUES(1,?);
+-- name: RecoveryStart
+SELECT recovered_at FROM sync.recovery_state WHERE singleton=1;
+-- name: RecoverySourceInputs
+SELECT f.id,f.provider,f.name,c.settings,coalesce(a.id,''),coalesce(a.revision,0),
+ coalesce(a.authority,''),coalesce(a.kind,''),coalesce(a.scope,''),coalesce(a.value,'')
+FROM sync.recovery_sources r JOIN main.connections f ON f.id=r.connection_id
+LEFT JOIN sync.configurations c ON c.id=f.id AND c.provider=f.provider
+LEFT JOIN main.accounts a ON a.connection_id=f.id AND a.provider=f.provider
+ORDER BY f.id;
+-- name: RecoveryCoverage
+SELECT b.stream,max(r.reported_to) FROM main.acquisition_receipts r JOIN main.artifacts b ON b.id=r.artifact_id
+WHERE b.connection_id=? AND r.operation IN ('acquire','supply') AND r.reported_to<>''
+GROUP BY b.stream;
+-- name: RecoveryPacingFloor
+SELECT next FROM sync.pacing WHERE provider=?;
+-- name: CurrentRestartScope
+SELECT c.settings,a.id,a.revision
+FROM sync.recovery_sources r
+JOIN sync.configurations c ON c.id=r.connection_id
+JOIN main.accounts a ON a.connection_id=c.id AND a.provider=c.provider
+WHERE r.connection_id=?;
+-- name: ApprovedRestartStreams
+SELECT r.stream FROM sync.restart_scopes r
+JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+JOIN main.accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+WHERE r.connection_id=?;
+-- name: CheckRestartScope
+SELECT EXISTS(SELECT 1 FROM sync.recovery_sources WHERE connection_id=?1),
+ coalesce((SELECT r.not_before FROM sync.restart_scopes r
+ JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+ JOIN main.accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+ WHERE r.connection_id=?1 AND r.stream=?2 AND ?3='acquire'),'');
+-- name: ApproveRestartScope
+INSERT OR REPLACE INTO sync.restart_scopes
+(connection_id,stream,settings,account_id,account_revision,not_before,requested_from,requested_to,approved_by,approved_at)
+VALUES(?,?,?,?,?,?,?,?,?,?);
+-- name: SeedRestartWork
+INSERT INTO sync.work(connection_id,stream,operation,state_version,state,next)
+VALUES(?,?,'acquire',?,?,?)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET
+ revision=sync.work.revision+1,state_version=excluded.state_version,state=excluded.state,next=excluded.next,
+ observed='',observed_completed=0,observed_total=0,acknowledged='',acknowledged_completed=0,acknowledged_total=0,
+ failure='',failure_code='';
+-- name: ResumeReviewedRecovery
+UPDATE sync.profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1;
+-- name: SetRecoveredReference
+UPDATE sync.recovery_state SET reference_granted=? WHERE singleton=1;
+-- name: RevokeRestartScopes
+DELETE FROM sync.restart_scopes WHERE connection_id=?;
+-- name: RevokeChangedRestartScopes
+DELETE FROM sync.restart_scopes WHERE connection_id=? AND NOT EXISTS(
+ SELECT 1 FROM sync.configurations c WHERE c.id=restart_scopes.connection_id AND c.settings=restart_scopes.settings);
+-- name: ReferenceRecoveryApproved
+SELECT coalesce((SELECT reference_granted FROM sync.recovery_state WHERE singleton=1),1);
+-- name: ReadPacingForRecovery
+SELECT provider,policy,scope,next FROM {{schema}}.pacing;
+-- name: ReadReferencePacingForRecovery
+SELECT window_start,cooldown FROM {{schema}}.reference_budget WHERE singleton=1;
+-- name: ExistingRecoveryPacing
+SELECT next FROM sync.pacing WHERE provider=? AND policy=? AND scope=?;
+-- name: PreserveRecoveryPacing
+INSERT OR REPLACE INTO sync.pacing(provider,policy,scope,next) VALUES(?,?,?,?);

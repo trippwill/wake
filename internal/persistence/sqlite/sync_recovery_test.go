@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -96,6 +97,59 @@ func TestRecoverSynchronization(t *testing.T) {
 		Scan(&continuations); err != nil ||
 		continuations != 0 {
 		t.Fatal("old provider work survived recovery", continuations, err)
+	}
+}
+
+func TestSynchronizationRecoveryResumesAfterProcessExit(t *testing.T) {
+	ctx := t.Context()
+
+	profile := seedUpgradeStores(t)
+	paths := profile.paths()
+	financial := readRestoreFixture(t, paths[0])
+	if err := os.Remove(paths[2]); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := RecoverSynchronization(ctx, profile, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := planSyncRecovery(ctx, paths, paths[0]+RestoreIntentSuffix, "", preview.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	//nolint:gosec // Re-execute this test binary against its disposable restore intent.
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestInterruptedInstallationChild$")
+	child.Dir = filepath.Dir(paths[0])
+
+	child.Env = append(os.Environ(), "WAKE_TEST_INTERRUPTED_RESTORE=1")
+
+	output, err := child.CombinedOutput()
+	if exit, ok := errors.AsType[*exec.ExitError](err); !ok || exit.ExitCode() != 39 {
+		t.Fatalf("interrupt recovery: %v\n%s", err, output)
+	}
+
+	if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("partially replaced store was visible", err)
+	}
+
+	if pending, err := RecoverSynchronization(
+		ctx,
+		profile,
+		"",
+		"",
+	); err != nil || pending.ID != preview.ID ||
+		!pending.Pending {
+		t.Fatal("durable plan could not be inspected", pending, err)
+	}
+
+	if applied, err := RecoverSynchronization(ctx, profile, "", preview.ID); err != nil || !applied.Applied {
+		t.Fatal("same plan did not resume", applied, err)
+	}
+
+	if !bytes.Equal(financial, readRestoreFixture(t, paths[0])) {
+		t.Fatal("sync-only recovery rewrote the warehouse")
 	}
 }
 

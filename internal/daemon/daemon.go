@@ -164,29 +164,25 @@ func run(
 
 	phase("opening private storage")
 
-	open := persistence.OpenFinancial
-	if options.openSources != nil {
-		open = options.openSources
+	profile := persistence.Profile{
+		WarehousePath: cfg.Storage.WarehousePath, Registrations: registrations,
+		ConnectionsPath: cfg.Storage.ConnectionsPath, SyncPath: cfg.Storage.SyncPath,
+		UnattendedUpgrade: cfg.Storage.UnattendedUpgrade,
 	}
 
-	store, err := open(
-		ctx,
-		persistence.Profile{
-			WarehousePath:     cfg.Storage.WarehousePath,
-			Registrations:     registrations,
-			ConnectionsPath:   cfg.Storage.ConnectionsPath,
-			SyncPath:          cfg.Storage.SyncPath,
-			UnattendedUpgrade: cfg.Storage.UnattendedUpgrade,
-		},
-		logger,
-	)
+	open := options.openSources
+	if open == nil {
+		open = openDaemonStore
+	}
+
+	store, err := open(ctx, profile, logger)
 	if err != nil {
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
 
 	var upstream upstreamServices
-	if options.openSources != nil {
+	if store.UpstreamAttached() {
 		upstream, err = openUpstream(ctx, cfg, store, options, registrations, logger)
 		if err != nil {
 			logger.WarnContext(
@@ -404,6 +400,32 @@ type serverDiagnostics struct{ logger *slog.Logger }
 func (w serverDiagnostics) Write(value []byte) (int, error) {
 	w.logger.Error("HTTP server diagnostic", "event", "http_server_failure", "code", "http_transport_failed")
 	return len(value), nil
+}
+
+func openDaemonStore(
+	ctx context.Context,
+	profile persistence.Profile,
+	logger *slog.Logger,
+) (*persistence.Store, error) {
+	store, err := persistence.OpenInstalled(ctx, profile, logger)
+	if err == nil {
+		return store, nil
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	logger.InfoContext(
+		ctx,
+		"using financial-only storage",
+		"event",
+		"upstream_storage_unavailable",
+		"code",
+		logging.Code(err),
+	)
+
+	return persistence.OpenFinancial(ctx, profile, logger)
 }
 
 // openUpstream owns optional source initialization. Local handlers and retained

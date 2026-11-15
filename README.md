@@ -141,8 +141,10 @@ and sidecar path, then run `wake storage restore history.tar`. Start Wake with
 local access set up to read the retained history. Restore preserves resource IDs
 and gives API consumers a fresh publication baseline.
 
-Use a compatible build for older formats or operational maintenance with saved
-credentials. With Wake stopped, `wake storage upgrade` checks the financial format.
+With Wake stopped, `wake storage backup installation.tar` saves a complete
+installation. Keep the credential key separately. See [backup and recovery](.docs/product/coverage.md#backup-and-recovery)
+for installation restore and source review. `wake storage upgrade` checks the
+financial format.
 
 To clear financial history or encrypted source access, stop Wake and preview
 the files selected by the reset:
@@ -153,8 +155,8 @@ wake storage reset warehouse --confirm
 ```
 
 Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present
-and works with corrupt or unsupported databases. Preserve any files you need before
-confirming.
+and works with corrupt or unsupported databases. Reset refuses unresolved SQLite
+journals. Preserve any files you need before confirming.
 
 ### Find help
 

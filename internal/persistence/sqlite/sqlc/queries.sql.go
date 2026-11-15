@@ -2538,7 +2538,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsPara
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_input_revision, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_input_revision, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND coalesce((SELECT reference_granted FROM sync.recovery_state WHERE singleton=1),1)=1 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -2583,7 +2583,19 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 }
 
 const pendingWork = `-- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
+SELECT work.connection_id,work.stream,work.operation
+FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
+WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0
+ AND enabled=1 AND (next='' OR julianday(next)<=julianday(?1))
+ AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit')
+ AND (NOT EXISTS(SELECT 1 FROM sync.recovery_sources AS recovery WHERE recovery.connection_id=work.connection_id)
+   OR (work.operation='acquire' AND EXISTS(
+      SELECT 1 FROM sync.restart_scopes r
+      JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+      JOIN accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+      WHERE r.connection_id=work.connection_id AND r.stream=work.stream
+        AND julianday(r.not_before)<=julianday(?1))))
+ORDER BY work.rowid LIMIT 20
 `
 
 type PendingWorkRow struct {
@@ -2592,8 +2604,8 @@ type PendingWorkRow struct {
 	Operation    string
 }
 
-func (q *Queries) PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error) {
-	rows, err := q.db.QueryContext(ctx, pendingWork, julianday)
+func (q *Queries) PendingWork(ctx context.Context, now interface{}) ([]PendingWorkRow, error) {
+	rows, err := q.db.QueryContext(ctx, pendingWork, now)
 	if err != nil {
 		return nil, err
 	}

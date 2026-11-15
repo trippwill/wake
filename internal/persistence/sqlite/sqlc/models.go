@@ -532,6 +532,16 @@ type SyncProfile struct {
 	ResumedAt        string
 }
 
+type SyncRecoverySource struct {
+	ConnectionID string
+}
+
+type SyncRecoveryState struct {
+	Singleton        int64
+	RecoveredAt      string
+	ReferenceGranted int64
+}
+
 type SyncReferenceBudget struct {
 	Singleton   int64
 	WindowStart string
@@ -556,6 +566,19 @@ type SyncReferenceDeadline struct {
 type SyncReferenceDiagnostic struct {
 	Singleton int64
 	Failure   string
+}
+
+type SyncRestartScope struct {
+	ConnectionID    string
+	Stream          string
+	Settings        []byte
+	AccountID       string
+	AccountRevision int64
+	NotBefore       string
+	RequestedFrom   string
+	RequestedTo     string
+	ApprovedBy      string
+	ApprovedAt      string
 }
 
 type SyncScheduled struct {

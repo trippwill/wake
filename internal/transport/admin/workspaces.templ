@@ -467,10 +467,55 @@ templ ReferenceSettings(csrf string, view sourceView) {
 	</section>
 }
 
+templ RestartReviewForm(csrf string, view sourceView) {
+	<section class="wake-card">
+		<h2>Review provider restart</h2>
+		<p>Approval applies to these source accounts and streams. Retained reports still record any gaps in history.</p>
+		<ul>
+			for _, scope := range view.RestartReview.Scopes {
+				<li>
+					<strong>{ scope.Name }</strong>
+					if scope.Account != "" {
+						<span>· { scope.Account }</span>
+					}
+					if scope.Stream != "" {
+						<span>· { known(scope.Stream) }</span>
+					}
+					if scope.Approved {
+						<p>Already approved.</p>
+					} else if scope.Blocked != "" {
+						<p>{ scope.Blocked } This source remains paused.</p>
+						<a href={ templ.SafeURL(connectionURL(scope.Connection, "access")) }>Review source access</a>
+					} else {
+						if !scope.Plan.From().IsZero() {
+							<p>{ scope.Plan.From().String() } through { scope.Plan.To().String() }</p>
+						}
+						<p>{ scope.Plan.Description() }</p>
+						<p>Earliest request <span>@SyncTime(scope.NotBefore)</span></p>
+					}
+				</li>
+			}
+		</ul>
+		if view.RestartReview.Reference {
+			<p>OpenFIGI mapping can resume after its recovery pacing window.</p>
+		} else {
+			<p>OpenFIGI mapping remains paused.</p>
+		}
+		<form method="post" action="/recovery/resume">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<input type="hidden" name="revision" value={ strconv.FormatInt(view.RestartReview.Revision, 10) }/>
+			<input type="hidden" name="plan" value={ view.RestartReview.Digest }/>
+			<button class="btn btn-primary" type="submit">Approve restart plan</button>
+		</form>
+	</section>
+}
+
 templ RecoveryPage(csrf string, view sourceView) {
 	@PageHeader("Review recovered access", "Retained financial history stays inspectable while upstream work is paused.")
 	@ConnectionsNavigation("recovery")
-	if !view.Storage.Paused {
+	if view.RestartReview.Required {
+		@RestartReviewForm(csrf, view)
+	} else if !view.Storage.Paused {
 		<section class="wake-card"><h2>Access review complete</h2><p>Upstream work is not paused for storage recovery.</p><a href="/connections">Inspect connections</a></section>
 	} else {
 		<section class="wake-card wake-priority" id="storage-recovery-title">

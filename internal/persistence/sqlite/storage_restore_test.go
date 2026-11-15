@@ -439,7 +439,12 @@ func TestInterruptedInstallationChild(t *testing.T) {
 	}
 	defer func() { _ = guard.Close() }()
 
-	ctx := interruptedInstallation{t.Context(), intent.Stores[0].Stage}
+	stage := intent.Stores[0].Stage
+	if intent.SyncOnly {
+		stage = intent.Stores[1].Stage
+	}
+
+	ctx := interruptedInstallation{t.Context(), stage}
 	err = installRestore(ctx, path, intent, nil)
 	t.Fatal("restore process did not stop at the first replacement", err)
 }

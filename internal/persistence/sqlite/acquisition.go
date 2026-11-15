@@ -191,6 +191,10 @@ func (s *Store) SavePolling(
 		return err
 	}
 
+	if _, err := tx.ExecContext(ctx, profileStatement("RevokeChangedRestartScopes", ""), c.ID); err != nil {
+		return err
+	}
+
 	if interval != 0 {
 		if _, err := reschedulePoll(ctx, q, c.ID, stream, interval); err != nil {
 			return err
@@ -248,6 +252,10 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		ctx,
 		sqlc.UpdateConnectionParams{ID: c.ID, Provider: c.Provider, Name: c.Name, Settings: data},
 	); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, profileStatement("RevokeChangedRestartScopes", ""), c.ID); err != nil {
 		return err
 	}
 
@@ -332,6 +340,10 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 		return err
 	}
 
+	if _, err := tx.ExecContext(ctx, profileStatement("RevokeRestartScopes", ""), id); err != nil {
+		return err
+	}
+
 	err = q.ReplaceSecret(
 		ctx,
 		sqlc.ReplaceSecretParams{ConnectionID: id, Key: key, Encrypted: payload},
@@ -363,6 +375,11 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	floor, err := checkRestartScope(ctx, tx, k)
+	if err != nil {
+		return host.Checkpoint{}, err
+	}
+
 	q := s.queries.WithTx(tx)
 
 	changed, err := q.EnsureCheckpointWork(
@@ -389,6 +406,21 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 	next, err := parseOptionalTime(row.Next)
 	if err != nil {
 		return host.Checkpoint{}, err
+	}
+
+	if row.StateVersion == pollCheckpointVersion {
+		_, pollFloor, err := readPollCheckpoint(row.State)
+		if err != nil {
+			return host.Checkpoint{}, err
+		}
+
+		if pollFloor.After(floor) {
+			floor = pollFloor
+		}
+	}
+
+	if floor.After(next) {
+		next = floor
 	}
 
 	observed, err := parseProgress(row.Observed, row.ObservedCompleted, row.ObservedTotal)
@@ -531,6 +563,10 @@ func (s *Store) Accept(
 		if err = association.admitted(ctx); err != nil {
 			return "", err
 		}
+	}
+
+	if _, err := checkRestartScope(ctx, tx, k); err != nil {
+		return "", err
 	}
 
 	q := s.queries.WithTx(tx)

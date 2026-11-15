@@ -44,6 +44,7 @@ func conversionQuantity(sent, received string) string {
 
 type (
 	sourceView struct {
+		RestartReview application.RestartReview
 		application.Prerequisites
 		application.PageInfo
 		Connections           []application.ConnectionView

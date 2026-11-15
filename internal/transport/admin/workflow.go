@@ -178,9 +178,13 @@ func registerWorkflowRoutes(
 				}
 
 				result, ready, e := workflow.Recovery(r.Context(), query)
+
 				err = e
 				view = sourcePage(result)
 				view.MissingRecoveryAccess = !ready
+				if err == nil {
+					view.RestartReview, err = workflow.PreviewRestart(r.Context())
+				}
 			} else {
 				result, e := workflow.SystemStatus(r.Context())
 				err = e
@@ -643,8 +647,15 @@ func registerWorkflowRoutes(
 		}
 
 		digest := sha256.Sum256([]byte(csrf))
+
 		actor := "admin/" + hex.EncodeToString(digest[:12])
-		if err = workflow.ResumeStorage(r.Context(), revision, actor); err != nil {
+		if plan := r.PostForm.Get("plan"); plan != "" {
+			err = workflow.ApproveRestart(r.Context(), revision, plan, actor)
+		} else {
+			err = workflow.ResumeStorage(r.Context(), revision, actor)
+		}
+
+		if err != nil {
 			failure(w, r, csrf, err)
 			return
 		}

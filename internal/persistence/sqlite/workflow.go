@@ -66,6 +66,10 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if _, err := checkRestartScope(ctx, tx, key); err != nil {
+		return err
+	}
+
 	q := s.queries.WithTx(tx)
 	if err = q.EnsureWork(
 		ctx,
@@ -361,6 +365,15 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	recoveredAt, err := recoveryStart(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	if !recoveredAt.IsZero() {
+		return application.ErrAccessReview
+	}
 
 	q := s.queries.WithTx(tx)
 

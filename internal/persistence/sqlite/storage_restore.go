@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.trippwill.dev/wake/internal/credential"
 )
@@ -213,7 +214,30 @@ func prepareRestore(
 		}
 	}
 
-	if err := renewRestoredStores(ctx, staged); err != nil {
+	var originals [storeCount]*os.File
+	defer func() { closeRestoreCopies(originals) }()
+
+	for i, path := range paths {
+		original, err := lockRestoreOriginal(path, replace)
+		if err != nil {
+			return nil, err
+		}
+
+		originals[i] = original
+	}
+
+	var pacing recoveryPacing
+	if originals[2] != nil {
+		prior, err := inspectRecoverableSync(ctx, paths[2], originals[2])
+		if err == nil {
+			pacing, err = readRecoveryPacing(ctx, prior)
+			if err := errors.Join(err, prior.Close()); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err := renewRestoredStores(ctx, staged, pacing); err != nil {
 		return nil, err
 	}
 
@@ -222,16 +246,7 @@ func prepareRestore(
 	}
 
 	for i, owner := range owners {
-		original, err := lockRestoreOriginal(paths[i], replace)
-		if err != nil {
-			return nil, err
-		}
-
-		if original != nil {
-			defer func() { _ = original.Close() }()
-		}
-
-		store, err := describeRestoreStore(ctx, paths[i], staged[i], owner, original, i)
+		store, err := describeRestoreStore(ctx, paths[i], staged[i], owner, originals[i], i)
 		if err != nil {
 			return nil, err
 		}
@@ -292,7 +307,12 @@ func copyRestoreArchive(
 		return nil, "", err
 	}
 
-	plan, err := validateStorageCopy(ctx, staged[:], owners[:])
+	baseline := releaseBaseline()
+	if manifest != nil && manifest.Storage.Stores[2].Format == syncArchiveVersion {
+		baseline = installationArchiveBaseline()
+	}
+
+	plan, err := validateStorageSet(ctx, staged[:], owners[:], baseline)
 	if err != nil {
 		return nil, "", err
 	}
@@ -363,7 +383,11 @@ func describeRestoreStore(
 	return store, syncUpgradeDir(path)
 }
 
-func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result error) {
+func renewRestoredStores(
+	ctx context.Context,
+	paths [storeCount]string,
+	pacing recoveryPacing,
+) (result error) {
 	uri := (&url.URL{Scheme: "file", Path: paths[0], RawQuery: "mode=rw&_pragma=synchronous(EXTRA)"}).String()
 
 	db, err := sql.Open("sqlite", uri)
@@ -401,11 +425,7 @@ func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result 
 	}
 
 	if paths[2] != "" {
-		if _, err := tx.ExecContext(
-			ctx,
-			profileStatement("RestoreReview", "sync"),
-			newRecoveryRevision(),
-		); err != nil {
+		if err := prepareRecoveredProfile(ctx, tx, time.Now()); err != nil {
 			return err
 		}
 
@@ -426,12 +446,55 @@ func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result 
 			}
 		}
 
+		if err := preserveRecoveryPacing(ctx, tx, pacing); err != nil {
+			return err
+		}
+
 		if err := bindUpstream(ctx, tx, metadata, false, true); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func prepareRecoveredProfile(ctx context.Context, tx *sql.Tx, at time.Time) error {
+	var kind, format, id string
+	if err := tx.QueryRowContext(ctx, profileStatement("Metadata", "sync")).
+		Scan(&kind, &format, &id); err != nil {
+		return err
+	}
+
+	if format == syncArchiveVersion {
+		if _, err := tx.ExecContext(ctx, recoverySchemaSQL); err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(
+			ctx,
+			profileStatement("AdvanceFormat", "sync"),
+			syncSchemaVersion,
+			format,
+		); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, profileStatement("ClearRecoveryScopes", "")); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		profileStatement("SetRecoveryStart", ""),
+		at.UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, profileStatement("RestoreReview", "sync"), newRecoveryRevision())
+
+	return err
 }
 
 func newRecoveryRevision() int64 {

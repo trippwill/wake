@@ -10,6 +10,7 @@ import (
 	"errors"
 	"time"
 
+	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 )
@@ -88,6 +89,10 @@ func beginUpstream(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
 		if upstream.Revision(ctx) != "" {
 			err = a.admitted(ctx)
 		}
+	}
+
+	if work := upstream.CurrentWork(ctx); err == nil && work.Connection != "" {
+		_, err = checkRestartScope(ctx, tx, host.WorkKey(work))
 	}
 
 	if err != nil {

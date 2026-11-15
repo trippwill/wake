@@ -120,6 +120,12 @@ func checkNoUpgrade(warehouse string) error {
 }
 
 func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File) (UpgradePlan, error) {
+	return validateStorageSet(ctx, paths, owners, releaseBaseline())
+}
+
+func validateStorageSet(
+	ctx context.Context, paths []string, owners []*os.File, baseline upgradeBaseline,
+) (UpgradePlan, error) {
 	var plan UpgradePlan
 	if len(paths) != len(owners) || (len(paths) != 1 && len(paths) != storeCount) {
 		return plan, ErrUnsupportedSchema
@@ -129,8 +135,6 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 		return plan, err
 	}
 
-	baseline := releaseBaseline()
-
 	var (
 		metadata [storeCount]storeMetadata
 		history  historyVersion
@@ -138,7 +142,7 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	)
 
 	for i, path := range paths {
-		db, m, err := inspectStorageMember(ctx, path, owners[i], i)
+		db, m, err := inspectStorageMemberAt(ctx, path, owners[i], i, baseline)
 		if err != nil {
 			return plan, err
 		}
@@ -219,6 +223,12 @@ func inspectStorageMember(
 	owner *os.File,
 	index int,
 ) (*sql.DB, storeMetadata, error) {
+	return inspectStorageMemberAt(ctx, path, owner, index, releaseBaseline())
+}
+
+func inspectStorageMemberAt(
+	ctx context.Context, path string, owner *os.File, index int, baseline upgradeBaseline,
+) (*sql.DB, storeMetadata, error) {
 	var metadata storeMetadata
 
 	db := sql.OpenDB(
@@ -226,7 +236,6 @@ func inspectStorageMember(
 	)
 	db.SetMaxOpenConns(1)
 
-	baseline := releaseBaseline()
 	err := db.QueryRowContext(ctx, profileStatement("Metadata", "main")).Scan(
 		&metadata.kind, &metadata.version, &metadata.id,
 	)

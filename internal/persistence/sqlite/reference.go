@@ -60,6 +60,10 @@ func (s *Store) ReferenceFailure(ctx context.Context, failure string) error {
 		return err
 	}
 
+	if _, err := tx.ExecContext(ctx, profileStatement("SetRecoveredReference", ""), false); err != nil {
+		return err
+	}
+
 	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
@@ -91,6 +95,16 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 	}
 
 	if profile.Paused != 0 {
+		return false, time.Time{}, nil
+	}
+
+	var approved bool
+	if err := tx.QueryRowContext(ctx, profileStatement("ReferenceRecoveryApproved", "")).
+		Scan(&approved); err != nil {
+		return false, time.Time{}, err
+	}
+
+	if !approved {
 		return false, time.Time{}, nil
 	}
 

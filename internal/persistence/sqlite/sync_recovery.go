@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const ErrSyncRecoveryPlan Error = "synchronization recovery plan changed; preview recovery again"
@@ -25,6 +26,7 @@ type SyncRecoveryPlan struct {
 	Applied      bool                `json:"applied"`
 	Current      []SyncConfiguration `json:"current_configuration,omitempty"`
 	Proposed     []SyncConfiguration `json:"proposed_configuration,omitempty"`
+	pacing       recoveryPacing
 }
 
 type SyncConfiguration struct {
@@ -153,10 +155,13 @@ func planSyncRecovery(
 	}
 
 	if originals[2] != nil {
-		db, _, err := inspectStorageMember(ctx, paths[2], originals[2], 2)
+		db, err := inspectRecoverableSync(ctx, paths[2], originals[2])
 		if err == nil {
 			plan.Current, _ = readSyncConfigurations(ctx, db)
-			_ = db.Close()
+			plan.pacing, err = readRecoveryPacing(ctx, db)
+			if err := errors.Join(err, db.Close()); err != nil {
+				return plan, err
+			}
 		}
 	}
 
@@ -165,9 +170,21 @@ func planSyncRecovery(
 		err           error
 	)
 	if archivePath != "" {
-		plan.Proposed, archiveDigest, err = readSyncRecoveryArchive(ctx, archivePath, paths[0], originals[0])
+		var archived recoveryPacing
+
+		plan.Proposed, archived, archiveDigest, err = readSyncRecoveryArchive(
+			ctx,
+			archivePath,
+			paths[0],
+			originals[0],
+		)
 		if err != nil {
 			return plan, err
+		}
+
+		plan.pacing.deadlines = append(plan.pacing.deadlines, archived.deadlines...)
+		if archived.reference.After(plan.pacing.reference) {
+			plan.pacing.reference = archived.reference
 		}
 	}
 
@@ -193,10 +210,10 @@ func planSyncRecovery(
 
 func readSyncRecoveryArchive(
 	ctx context.Context, archivePath, warehouse string, financialOwner *os.File,
-) ([]SyncConfiguration, string, error) {
+) ([]SyncConfiguration, recoveryPacing, string, error) {
 	archive, err := openBackup(archivePath)
 	if err != nil {
-		return nil, "", err
+		return nil, recoveryPacing{}, "", err
 	}
 	defer func() { _ = archive.Close() }()
 
@@ -218,49 +235,57 @@ func readSyncRecoveryArchive(
 
 	manifest, archiveDigest, err := copyRestoreArchive(ctx, archive, destinations, &copies, &owners)
 	if err != nil {
-		return nil, "", err
+		return nil, recoveryPacing{}, "", err
 	}
 
 	if manifest == nil {
-		return nil, "", ErrBackupScope
+		return nil, recoveryPacing{}, "", ErrBackupScope
 	}
 
 	financial, _, err := inspectStorageMember(ctx, warehouse, financialOwner, 0)
 	if err != nil {
-		return nil, "", err
+		return nil, recoveryPacing{}, "", err
 	}
 	defer func() { _ = financial.Close() }()
 
 	var lineage string
 	if err := financial.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).
 		Scan(&lineage); err != nil {
-		return nil, "", err
+		return nil, recoveryPacing{}, "", err
 	}
 
 	if lineage != manifest.Storage.Lineage {
-		return nil, "", ErrAssociation
+		return nil, recoveryPacing{}, "", ErrAssociation
 	}
 
-	sync, _, err := inspectStorageMember(ctx, copies[2], owners[2], 2)
-	if err != nil {
-		return nil, "", err
+	baseline := releaseBaseline()
+	if manifest.Storage.Stores[2].Format == syncArchiveVersion {
+		baseline = installationArchiveBaseline()
 	}
+
+	sync, _, err := inspectStorageMemberAt(ctx, copies[2], owners[2], 2, baseline)
+	if err != nil {
+		return nil, recoveryPacing{}, "", err
+	}
+
 	defer func() { _ = sync.Close() }()
 
 	configs, err := readSyncConfigurations(ctx, sync)
 	if err != nil {
-		return nil, "", err
+		return nil, recoveryPacing{}, "", err
 	}
 
 	for _, config := range configs {
 		var providerID string
 		if err := financial.QueryRowContext(ctx, profileStatement("RecoveryDescriptor", ""), config.ID).
 			Scan(&providerID); err != nil || providerID != config.Provider {
-			return nil, "", errors.Join(ErrAssociation, err)
+			return nil, recoveryPacing{}, "", errors.Join(ErrAssociation, err)
 		}
 	}
 
-	return configs, archiveDigest, nil
+	pacing, err := readRecoveryPacing(ctx, sync)
+
+	return configs, pacing, archiveDigest, err
 }
 
 func readSyncConfigurations(ctx context.Context, db *sql.DB) ([]SyncConfiguration, error) {
@@ -323,7 +348,7 @@ func prepareSyncRecovery(
 		defer func() { _ = owners[i].Close() }()
 	}
 
-	if err := buildSyncRecovery(ctx, staged, owners, access, plan.Proposed); err != nil {
+	if err := buildSyncRecovery(ctx, staged, owners, access, plan); err != nil {
 		return err
 	}
 
@@ -365,7 +390,7 @@ func buildSyncRecovery(
 	paths [storeCount]string,
 	owners [storeCount]*os.File,
 	access storeMetadata,
-	configs []SyncConfiguration,
+	plan SyncRecoveryPlan,
 ) error {
 	db := sql.OpenDB(
 		&connector{paths: [storeCount]string{paths[0]}, owners: [storeCount]*os.File{owners[0]}, probe: true},
@@ -419,11 +444,7 @@ func buildSyncRecovery(
 		return err
 	}
 
-	if _, err := tx.ExecContext(
-		ctx,
-		profileStatement("RestoreReview", "sync"),
-		newRecoveryRevision(),
-	); err != nil {
+	if err := prepareRecoveredProfile(ctx, tx, time.Now()); err != nil {
 		return err
 	}
 
@@ -437,11 +458,15 @@ func buildSyncRecovery(
 		return err
 	}
 
-	for _, config := range configs {
+	for _, config := range plan.Proposed {
 		if _, err := tx.ExecContext(ctx, profileStatement("ImportSyncConfiguration", ""),
 			config.ID, config.Provider, config.Name, []byte(config.Settings)); err != nil {
 			return err
 		}
+	}
+
+	if err := preserveRecoveryPacing(ctx, tx, plan.pacing); err != nil {
+		return err
 	}
 
 	return tx.Commit()

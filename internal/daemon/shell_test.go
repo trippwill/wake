@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -27,24 +28,37 @@ import (
 
 func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		options sourceOptions
-		corrupt bool
+		name               string
+		options            sourceOptions
+		corrupt, recovered bool
 	}{
-		{"local only", sourceOptions{}, false},
-		{"corrupt optional stores", sourceOptions{}, true},
-		{"upstream harness", sourceOptions{openSources: persistence.Open}, false},
-		{"upstream initialization failed", sourceOptions{openSources: persistence.Open, ReferenceURL: ":invalid"}, false},
+		{"local only", sourceOptions{}, false, false},
+		{"corrupt optional stores", sourceOptions{}, true, false},
+		{"installed recovery", sourceOptions{}, false, true},
+		{"upstream harness", sourceOptions{openSources: persistence.Open}, false, false},
+		{"upstream initialization failed", sourceOptions{openSources: persistence.Open, ReferenceURL: ":invalid"}, false, false},
 	} {
-		t.Run(tc.name, func(t *testing.T) { testShellStartupAndJoinedShutdown(t, tc.options, tc.corrupt) })
+		t.Run(
+			tc.name,
+			func(t *testing.T) { testShellStartupAndJoinedShutdown(t, tc.options, tc.corrupt, tc.recovered) },
+		)
 	}
 }
 
-func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corrupt bool) {
+func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corrupt, recovered bool) {
 	cfg := shellConfig(t)
 	seedAPIClient(t, cfg)
 
 	const invalid = "unrelated optional bytes"
+
+	profile := persistence.Profile{
+		WarehousePath:   cfg.Storage.WarehousePath,
+		ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath:        cfg.Storage.SyncPath,
+	}
+	if recovered {
+		seedShellRecovery(t, profile)
+	}
 
 	optional := []string{cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath}
 	if corrupt {
@@ -114,7 +128,10 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corr
 		t.Fatal("admin not protected", res.Status)
 	}
 
-	assertLocalFinancialAccess(t, ctx, cfg, client, browser)
+	cookies := assertLocalFinancialAccess(t, ctx, cfg, client, browser)
+	if recovered {
+		approveShellRecovery(t, cfg.Admin.Origin(), browser, cookies)
+	}
 
 	cancel()
 
@@ -137,7 +154,19 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corr
 		t.Fatal(err)
 	}
 
-	if options.openSources == nil {
+	if recovered {
+		store, err := persistence.OpenInstalled(t.Context(), profile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = store.Close() }()
+
+		if _, err := store.UpstreamRevision(t.Context()); err != nil {
+			t.Fatal("reviewed authorization did not survive daemon shutdown", err)
+		}
+	}
+
+	if options.openSources == nil && !recovered {
 		for _, path := range optional {
 			//nolint:gosec // The paths refer to this test's disposable stores.
 			data, err := os.ReadFile(path)
@@ -292,7 +321,7 @@ func assertLocalFinancialAccess(
 	ctx context.Context,
 	cfg config.Config,
 	api, browser *http.Client,
-) {
+) []*http.Cookie {
 	t.Helper()
 
 	snapshot, err := api.Get("http://wake/v1/snapshot")
@@ -377,4 +406,88 @@ func assertLocalFinancialAccess(
 			t.Fatal("local financial page unavailable", path, response.Status)
 		}
 	}
+
+	return login.Cookies()
+}
+
+func seedShellRecovery(t *testing.T, profile persistence.Profile) {
+	t.Helper()
+
+	store, err := persistence.OpenFinancial(t.Context(), profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := persistence.RecoverSynchronization(t.Context(), profile, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := persistence.RecoverSynchronization(t.Context(), profile, "", preview.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func approveShellRecovery(t *testing.T, origin string, browser *http.Client, cookies []*http.Cookie) {
+	t.Helper()
+
+	call := func(method, path string, data url.Values, status int) string {
+		t.Helper()
+
+		request, err := http.NewRequestWithContext(
+			t.Context(),
+			method,
+			origin+path,
+			strings.NewReader(data.Encode()),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Origin", origin)
+
+		for _, cookie := range cookies {
+			request.AddCookie(cookie)
+		}
+
+		response, err := browser.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer func() { _ = response.Body.Close() }()
+
+		body, err := io.ReadAll(response.Body)
+		if err != nil || response.StatusCode != status {
+			t.Fatal(path, response.Status, err)
+		}
+
+		return string(body)
+	}
+
+	page := call(http.MethodGet, "/connections/recovery", nil, http.StatusOK)
+	_, form, found := strings.Cut(page, `action="/recovery/resume"`)
+	if !found || !strings.Contains(page, "Review provider restart") {
+		t.Fatal("installed recovery did not use the scoped review form")
+	}
+
+	fields := url.Values{}
+	for _, pair := range regexp.MustCompile(`name="(csrf|revision|plan)" value="([^"]+)"`).FindAllStringSubmatch(form, -1) {
+		fields.Set(pair[1], pair[2])
+	}
+
+	if fields.Get("plan") == "" || fields.Get("csrf") == "" || fields.Get("revision") == "" {
+		t.Fatal("recovery form missing approval fields")
+	}
+
+	digest := fields.Get("plan")
+	fields.Set("plan", strings.Repeat("0", len(digest)))
+	call(http.MethodPost, "/recovery/resume", fields, http.StatusBadRequest)
+	fields.Set("plan", digest)
+	call(http.MethodPost, "/recovery/resume", fields, http.StatusSeeOther)
 }

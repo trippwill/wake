@@ -17,3 +17,19 @@ func Revision(ctx context.Context) string {
 	revision, _ := ctx.Value(revisionKey{}).(string)
 	return revision
 }
+
+type workKey struct{}
+
+type Work struct {
+	Connection, Stream, Operation string
+}
+
+func WithWork(ctx context.Context, work Work) context.Context {
+	return context.WithValue(ctx, workKey{}, work)
+}
+
+func CurrentWork(ctx context.Context) Work {
+	work, _ := ctx.Value(workKey{}).(Work)
+
+	return work
+}

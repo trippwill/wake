@@ -11,10 +11,11 @@ TCP endpoints serve that application and its clients. The financial store includ
 retained evidence and decisions as well as actively maintained accepted views.
 
 Financial, synchronization, and encrypted upstream access data have independent
-SQLite formats. The daemon opens only the financial database and the existing
-local authority. Public configuration and API names retain their warehouse
+SQLite formats. The daemon can open the financial database and existing local
+authority on their own. It attaches optional stores when their formats and
+association validate. Public configuration and API names retain their warehouse
 spelling. The [financial storage research](../research/financial-storage-architecture.md)
-describes the staged work on upstream recovery.
+explains the design and its rollback limits.
 
 ## One local application
 
@@ -87,8 +88,12 @@ synchronization store, configuration revision, and access grant before admitting
 network work and again before accepting results. Pacing and continuation writes
 rotate the witness shared by synchronization and access without advancing
 financial publication. Provider acceptance can also retain financial evidence and
-finalize publication in the same transaction. Upstream composition is exercised
-with synthetic providers while operational recovery is developed.
+finalize publication in the same transaction. A recovered source needs an
+approved restart scope bound to its current configuration and confirmed account.
+The new continuation, actor, requested range and pacing floor are saved together
+with the grant. A change to the configuration, account authority, or saved
+credential invalidates the applicable scope. Review of an independently eligible
+source can proceed while another source stays paused.
 
 Retained-data processing discovers unfinished work from acquisition evidence,
 confirmed source authority, and receipts for the installed interpretation.

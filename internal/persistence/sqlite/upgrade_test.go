@@ -302,7 +302,7 @@ func TestUpgradeIndependentChainsMatchFreshSchemas(t *testing.T) {
 
 			b := fixtureUpgrade(store == "warehouse", store == "connections", false)
 			if store == "synchronization" {
-				b.formats[2] = "wake-sync/2"
+				b.formats[2] = "wake-sync/3"
 				b.migrations[2] = []migration{
 					{
 						syncSchemaVersion,

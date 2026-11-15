@@ -134,7 +134,7 @@ type Querier interface {
 	PauseForCredentialKey(ctx context.Context) error
 	PendingArtifacts(ctx context.Context, arg PendingArtifactsParams) ([]PendingArtifactsRow, error)
 	PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error)
-	PendingWork(ctx context.Context, julianday interface{}) ([]PendingWorkRow, error)
+	PendingWork(ctx context.Context, now interface{}) ([]PendingWorkRow, error)
 	PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error)
 	PositionUnderlierInputs(ctx context.Context, underlierID string) ([]PositionUnderlierInputsRow, error)
 	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)

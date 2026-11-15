@@ -38,6 +38,13 @@ repeats. An unstable page sequence restarts from the beginning after a delay.
 Source status and retry timing are under **Status**. Processing and retained
 evidence are under **Reports**. See [SnapTrade data freshness](https://docs.snaptrade.com/docs/syncing).
 
+After synchronization recovery, Wake verifies the confirmed account again and
+starts the reviewed activity range from offset zero. Recovery keeps both UTC
+dates fixed across page retries and preserves a daily account activity pacing
+floor, plus any later surviving cooldown. Fidelity positions recovery retrieves a
+current snapshot after account verification.
+[SnapTrade polling guidance](https://docs.snaptrade.com/docs/launch-guide)
+
 Wake interprets equity, fund, and option purchases and sales at the reported
 transaction grain. It preserves exact trade terms and reported fees. Fidelity
 trades contribute a civil date. IBKR trades can also contribute a timestamp.

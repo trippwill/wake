@@ -122,7 +122,19 @@ WHERE EXISTS(SELECT 1 FROM sync.work JOIN sync.scheduled USING(connection_id,str
     AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id);
 -- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
+SELECT work.connection_id,work.stream,work.operation
+FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
+WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0
+ AND enabled=1 AND (next='' OR julianday(next)<=julianday(sqlc.arg(now)))
+ AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit')
+ AND (NOT EXISTS(SELECT 1 FROM sync.recovery_sources AS recovery WHERE recovery.connection_id=work.connection_id)
+   OR (work.operation='acquire' AND EXISTS(
+      SELECT 1 FROM sync.restart_scopes r
+      JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+      JOIN accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+      WHERE r.connection_id=work.connection_id AND r.stream=work.stream
+        AND julianday(r.not_before)<=julianday(sqlc.arg(now)))))
+ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
 SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
  coalesce(scheduled.enabled,0)=1 AS scheduled,
@@ -240,7 +252,7 @@ SELECT * FROM sync.reference_cache WHERE key=?;
 -- name: CacheReference :exec
 INSERT INTO sync.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
 -- name: PendingReference :many
-SELECT instruments.* FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100;
+SELECT instruments.* FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND coalesce((SELECT reference_granted FROM sync.recovery_state WHERE singleton=1),1)=1 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100;
 -- name: ResolveInstrument :exec
 UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(reference_figi),evidence_id=sqlc.arg(evidence_id),reference_status=sqlc.arg(reference_status),revision=revision+CASE WHEN name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(reference_figi) OR reference_status<>sqlc.arg(reference_status) THEN 1 ELSE 0 END WHERE id=sqlc.arg(id);
 -- name: SetListingFIGI :exec
