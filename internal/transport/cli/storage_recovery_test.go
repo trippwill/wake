@@ -70,6 +70,27 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 
+	localAuthPath := filepath.Join(cfg.Paths.ConfigDir, clientaccess.FileName)
+	//nolint:gosec // Deliberately loosen permissions on the disposable authentication fixture.
+	if err := os.Chmod(localAuthPath, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := run(
+		exitFailure,
+		"backup",
+		archive,
+	); !strings.Contains(
+		out,
+		"invalid private authentication state",
+	) {
+		t.Fatal(out)
+	}
+
+	if err := os.Chmod(localAuthPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	var result storageResult
 	if err := json.Unmarshal([]byte(run(exitOK, "backup", archive)), &result); err != nil ||
 		result.Event != "backup" || result.Archive != archive || !result.WithCredentials {
@@ -114,6 +135,17 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 
+	//nolint:gosec // Deliberately loosen permissions on the disposable credential key.
+	if err := os.Chmod(key, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	run(exitFailure, "restore", "--with-credentials", "--replace", archive)
+
+	if err := os.Chmod(key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	run(exitUsage, "restore", "--replace", archive)
 	run(exitOK, "restore", "--with-credentials", "--replace", archive)
 
@@ -130,6 +162,42 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 
 	if _, err := reopened.UpstreamRevision(ctx); err == nil {
 		t.Fatal("restore carried forward upstream authority")
+	}
+}
+
+func TestInstallationBackupReportsDestinationWithoutLocalAuth(t *testing.T) {
+	cfg, configPath, _ := setupDaemonFixture(t)
+	if err := config.Prepare(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := persistence.Open(t.Context(), persistence.Profile{
+		WarehousePath:   cfg.Storage.WarehousePath,
+		ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath:        cfg.Storage.SyncPath,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(cfg.Paths.RuntimeDir); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	archive := filepath.Join(cfg.Paths.ConfigDir, "offline.tar")
+	if status := Run(
+		[]string{"storage", "backup", "--config", configPath, archive},
+		&stdout,
+		&stderr,
+	); status != exitOK ||
+		!strings.Contains(stdout.String(), "Saved an installation backup to "+archive) {
+		t.Fatal(status, stdout.String(), stderr.String())
 	}
 }
 
@@ -259,6 +327,7 @@ func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
 		want string
 	}{
 		{"configuration", []string{"snapshot", "warehouse", configPath}, exitFailure, "unsafe"},
+		{"backup configuration", []string{"backup", configPath}, exitFailure, "unsafe"},
 		{"key", []string{"snapshot", "warehouse", cfg.Credentials.KeyPath}, exitFailure, "unsafe"},
 		{"sync sidecar", []string{"snapshot", "warehouse", cfg.Storage.SyncPath + "-journal"}, exitFailure, "unsafe"},
 		{"sidecar", []string{"snapshot", "warehouse", cfg.Storage.WarehousePath + "-wal"}, exitFailure, "unsafe"},

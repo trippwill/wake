@@ -1242,6 +1242,12 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	stopFollower()
 	stop()
+
+	installation := filepath.Join(filepath.Dir(profile.WarehousePath), "installation.tar")
+	if err = persistence.Backup(ctx, profile, installation); err != nil {
+		t.Fatal(err)
+	}
+
 	// Financial-only startup without access keeps the accepted publication intact.
 	localOnly = true
 
@@ -1286,6 +1292,60 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		)
 	}
 
+	readPositions := func(previous string) (string, string, json.RawMessage) {
+		t.Helper()
+
+		path := "http://wake/v1/accounts/" + accountID + "/positions"
+
+		request, e := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		request.Header.Set("If-None-Match", previous)
+
+		response, e := apiClient.Do(request)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		defer func() { _ = response.Body.Close() }()
+
+		var body struct {
+			WarehouseID string          `json:"warehouse_id"`
+			Positions   json.RawMessage `json:"positions"`
+		}
+		if e := json.NewDecoder(response.Body).Decode(&body); e != nil || response.StatusCode != http.StatusOK {
+			t.Fatal("positions response", response.StatusCode, e)
+		}
+
+		return response.Header.Get("ETag"), body.WarehouseID, body.Positions
+	}
+
+	previousTag, previousWarehouse, previousPositions := readPositions("")
+
+	stop()
+
+	if _, err = ReplaceStorage(ctx, cfg, "", installation); err != nil {
+		t.Fatal(err)
+	}
+
+	start()
+
+	result = consume(false)
+	installedPublication := mirror()
+	if string(result["new_baseline"]) != "true" || installedPublication.WarehouseID == restored.WarehouseID ||
+		installedPublication.Version == restored.Version || !reflect.DeepEqual(installedPublication.Resources, restored.Resources) {
+		t.Fatal("installation restore did not replace the independent consumer baseline")
+	}
+
+	tag, warehouse, installedPositions := readPositions(previousTag)
+	if tag == "" || tag == previousTag || warehouse == previousWarehouse ||
+		warehouse != installedPublication.WarehouseID ||
+		!bytes.Equal(previousPositions, installedPositions) {
+		t.Fatal("installation restore did not renew positions identity while preserving holdings", tag, warehouse)
+	}
+
 	stop()
 	// A different warehouse installs a complete, explicitly reported new baseline.
 	if err = os.Remove(profile.WarehousePath); err != nil {
@@ -1296,8 +1356,8 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	result = consume(false)
 	fresh := mirror()
-	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == restored.WarehouseID ||
-		fresh.Version == restored.Version ||
+	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == installedPublication.WarehouseID ||
+		fresh.Version == installedPublication.Version ||
 		len(fresh.Resources) != 0 {
 		t.Fatal("new warehouse did not atomically replace baseline", fresh)
 	}

@@ -5,9 +5,11 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -249,6 +251,16 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 	ctx := t.Context()
 	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+	// The database basename is valid beside its journals but leaves little
+	// room for a preservation suffix.
+	longName := filepath.Join(filepath.Dir(target.ConnectionsPath), strings.Repeat("a", 224))
+	if err := os.Rename(target.ConnectionsPath, longName); err != nil {
+		t.Fatal(err)
+	}
+
+	target.SyncPath = target.paths()[2]
+	target.ConnectionsPath = longName
+
 	archivePath := filepath.Join(filepath.Dir(source.WarehousePath), "installation.tar")
 	if err := Backup(ctx, source, archivePath); err != nil {
 		t.Fatal(err)
@@ -259,6 +271,32 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 	var originals [storeCount][]byte
 	for i, path := range paths {
 		originals[i] = readRestoreFixture(t, path)
+	}
+
+	journal := paths[2] + "-journal"
+	if err := os.WriteFile(journal, []byte("preserve orphan journal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := restore(ctx, target, archivePath, true, true, nil); !errors.Is(err, ErrRestoreOccupied) {
+		t.Fatal("replacement accepted an unrecovered journal", err)
+	}
+
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := lockStoreFile(paths[1], false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := restore(ctx, target, archivePath, true, true, nil); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("replacement accepted an owned database", err)
+	}
+
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
 	}
 
 	archive, err := openBackup(archivePath)
@@ -274,17 +312,23 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Two completed renames and an absent destination are both valid retry states.
-	for i, state := range intent.Stores[:2] {
-		if err := renameNewFile(state.Path, state.Original.Path); err != nil {
-			t.Fatal(err)
-		}
+	// The child exits after the warehouse swap. Also exercise a retry after
+	// preserving just the original access database.
+	//nolint:gosec // Re-execute this test binary against its disposable restore intent.
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestInterruptedInstallationChild$")
 
-		if i == 0 {
-			if err := renameNewFile(state.Stage, state.Path); err != nil {
-				t.Fatal(err)
-			}
-		}
+	child.Dir = filepath.Dir(intentPath)
+
+	child.Env = append(os.Environ(), "WAKE_TEST_INTERRUPTED_RESTORE=1")
+
+	output, err := child.CombinedOutput()
+	if exit, ok := errors.AsType[*exec.ExitError](err); !ok || exit.ExitCode() != 39 {
+		t.Fatalf("interrupt restore: %v\n%s", err, output)
+	}
+
+	state := intent.Stores[1]
+	if err := renameNewFile(state.Path, state.Original.Path); err != nil {
+		t.Fatal(err)
 	}
 
 	if _, err := OpenFinancial(ctx, target, nil); !errors.Is(err, ErrRestorePending) {
@@ -310,6 +354,19 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 	}
 
 	if err := os.WriteFile(stage, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	missingOriginal := intent.Stores[0].Original.Path
+	if err := os.Rename(missingOriginal, missingOriginal+".held"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := restore(ctx, target, archivePath, true, true, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("retry accepted a missing original", err)
+	}
+
+	if err := os.Rename(missingOriginal+".held", missingOriginal); err != nil {
 		t.Fatal(err)
 	}
 
@@ -344,6 +401,47 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 		previousGrants != 0 {
 		t.Fatal("restored upstream grant", previousGrants, err)
 	}
+}
+
+type interruptedInstallation struct {
+	context.Context
+	stagedWarehouse string
+}
+
+func (c interruptedInstallation) Err() error {
+	if _, err := os.Lstat(c.stagedWarehouse); os.IsNotExist(err) {
+		os.Exit(39)
+	}
+
+	return c.Context.Err()
+}
+
+func TestInterruptedInstallationChild(t *testing.T) {
+	if os.Getenv("WAKE_TEST_INTERRUPTED_RESTORE") != "1" {
+		t.Skip("invoked by the installation interruption test")
+	}
+
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(directory, "wake.db"+RestoreIntentSuffix)
+
+	intent, err := readRestoreIntent(path)
+	if err != nil || intent == nil {
+		t.Fatal(intent, err)
+	}
+
+	guard, err := lockStoreDirectory(intent.Stores[0].Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = guard.Close() }()
+
+	ctx := interruptedInstallation{t.Context(), intent.Stores[0].Stage}
+	err = installRestore(ctx, path, intent, nil)
+	t.Fatal("restore process did not stop at the first replacement", err)
 }
 
 func readRestoreFixture(t *testing.T, path string) []byte {

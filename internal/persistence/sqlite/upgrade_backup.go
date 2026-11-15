@@ -219,7 +219,11 @@ func openBackup(path string) (*os.File, error) {
 }
 
 func isRegularRecoveryEntry(entry *tar.Header, name string) bool {
-	if entry.Name != name || entry.Typeflag != tar.TypeReg || entry.Size <= 0 {
+	return entry.Size > 0 && isRecoveryEntry(entry, name)
+}
+
+func isRecoveryEntry(entry *tar.Header, name string) bool {
+	if entry.Name != name || entry.Typeflag != tar.TypeReg || entry.Size < 0 {
 		return false
 	}
 

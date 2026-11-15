@@ -458,6 +458,125 @@ VALUES ('backup-checksum','now',X'',CAST('original-paired-backup-evidence' AS BL
 	}
 }
 
+func TestInstallationManifestBindsDatabaseMetadata(t *testing.T) {
+	ctx := t.Context()
+	profile := seedUpgradeStores(t)
+	archive := filepath.Join(filepath.Dir(profile.WarehousePath), "installation.tar")
+	if err := BackupInstallation(ctx, profile, archive, InstallationEvidence{
+		Configuration: []byte("# synthetic configuration\n"),
+		LocalAuth:     []byte(`{"version":1,"grants":[]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readRestoreFixture(t, archive)
+	copied := 0
+	manifest, err := consumeRestoreArchive(
+		tar.NewReader(bytes.NewReader(data)),
+		func(_ int, member io.Reader) error {
+			copied++
+			_, err := io.Copy(io.Discard, member)
+
+			return err
+		},
+	)
+	if err != nil || manifest == nil || len(manifest.Members) != len(installationEntries) ||
+		copied != storeCount {
+		t.Fatal(manifest, err, copied)
+	}
+
+	for _, tc := range []struct{ before, after string }{
+		{`"scope":"installation"`, `"scope":"installati0n"`},
+		{`"target_rule":0`, `"target_rule":1`},
+		{"# synthetic configuration", "# corrupted configuration"},
+	} {
+		t.Run(tc.before, func(t *testing.T) {
+			if len(tc.before) != len(tc.after) || !bytes.Contains(data, []byte(tc.before)) {
+				t.Fatal("fixture lacks expected content")
+			}
+
+			changed := bytes.Replace(data, []byte(tc.before), []byte(tc.after), 1)
+			path := filepath.Join(filepath.Dir(archive), "altered.tar")
+			if err := os.WriteFile(path, changed, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			target := vacantRecoveryProfile(t)
+			if _, err := Restore(ctx, target, path, true); !errors.Is(err, ErrCorrupt) {
+				t.Fatal("restore admitted inconsistent archive", err)
+			}
+
+			if _, err := os.Lstat(target.WarehousePath + RestoreIntentSuffix); !os.IsNotExist(err) {
+				t.Fatal("refused archive published a restore intent", err)
+			}
+		})
+	}
+}
+
+func TestInstallationArchiveRejectsInvalidMembers(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		entries []string
+		want    error
+	}{
+		{"empty", nil, ErrBackupScope},
+		{"missing database", installationEntries[:1], ErrCorrupt},
+		{"wrong database", []string{installationEntries[0], installationEntries[2]}, ErrCorrupt},
+		{"missing manifest", installationEntries[:storeCount], ErrCorrupt},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var data bytes.Buffer
+
+			archive := tar.NewWriter(&data)
+			for _, name := range test.entries {
+				if err := writeRecoveryEntry(archive, name, 1, strings.NewReader("x")); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := archive.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := consumeRestoreArchive(tar.NewReader(&data), func(_ int, member io.Reader) error {
+				_, err := io.Copy(io.Discard, member)
+				return err
+			})
+			if !errors.Is(err, test.want) {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestInstallationBackupKeepsEmptyConfiguration(t *testing.T) {
+	ctx := t.Context()
+	profile := seedUpgradeStores(t)
+	path := filepath.Join(filepath.Dir(profile.WarehousePath), "empty-config.tar")
+	if err := BackupInstallation(
+		ctx,
+		profile,
+		path,
+		InstallationEvidence{Configuration: []byte{}},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	data := readRestoreFixture(t, path)
+	manifest, err := consumeRestoreArchive(
+		tar.NewReader(bytes.NewReader(data)),
+		func(_ int, member io.Reader) error {
+			_, err := io.Copy(io.Discard, member)
+			return err
+		},
+	)
+	if err != nil || len(manifest.Members) != storeCount+1 ||
+		manifest.Members[storeCount].Name != installationEntries[storeCount] ||
+		manifest.Members[storeCount].Size != 0 {
+		t.Fatal("empty configuration was not captured", manifest, err)
+	}
+}
+
 func TestStorageRestoreAcceptsLegacyPairedBackup(t *testing.T) {
 	source := seedUpgradeStores(t)
 

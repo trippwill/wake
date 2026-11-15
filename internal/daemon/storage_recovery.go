@@ -79,6 +79,10 @@ func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact 
 		return "", err
 	}
 
+	if err := config.Prepare(cfg); err != nil {
+		return "", err
+	}
+
 	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
 	if err != nil {
 		return "", err

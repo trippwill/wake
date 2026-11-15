@@ -120,7 +120,7 @@ func writeInstallationBackup(
 		}
 
 		for i, data := range [][]byte{evidence.Configuration, evidence.LocalAuth} {
-			if len(data) == 0 {
+			if data == nil {
 				continue
 			}
 
@@ -192,7 +192,7 @@ func consumeRestoreArchive(
 			continue
 		}
 
-		if !isRegularRecoveryEntry(entry, name) {
+		if !isRecoveryEntry(entry, name) || (entry.Size == 0 && i != storeCount) {
 			return nil, ErrCorrupt
 		}
 

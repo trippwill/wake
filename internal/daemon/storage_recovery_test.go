@@ -5,12 +5,52 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"go.trippwill.dev/wake/internal/config"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
+
+func TestBackupStorageRefusesOwnedOrChangedConfiguration(t *testing.T) {
+	ctx := t.Context()
+	cfg := shellConfig(t)
+	path := filepath.Join(cfg.Paths.ConfigDir, "config.toml")
+	cfg.Paths.ConfigFile = path
+	archive := filepath.Join(cfg.Paths.ConfigDir, "install.tar")
+
+	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.close()
+
+	if _, err = BackupStorage(ctx, cfg, path, archive); !errors.Is(err, ErrAlreadyOwned) {
+		t.Fatal("backup accepted a running instance", err)
+	}
+
+	owner.close()
+
+	if _, err = BackupStorage(ctx, cfg, path, archive); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("backup accepted missing configuration", err)
+	}
+
+	for _, contents := range []string{"[", fmt.Sprintf("[paths]\nruntime_dir=%q\n", cfg.Paths.RuntimeDir)} {
+		if err = os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err = BackupStorage(ctx, cfg, path, archive); !errors.Is(err, config.ErrInvalid) {
+			t.Fatal("backup accepted different configuration", err)
+		}
+	}
+
+	if _, err = os.Lstat(archive); !os.IsNotExist(err) {
+		t.Fatal("refused backup published an archive", err)
+	}
+}
 
 func TestFinancialRecoveryWithUnusableOptionalPaths(t *testing.T) {
 	ctx := t.Context()

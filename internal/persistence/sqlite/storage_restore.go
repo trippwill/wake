@@ -294,7 +294,7 @@ func prepareRestore(
 				store.Original = &originalStore{
 					Path: filepath.Join(
 						filepath.Dir(store.Path),
-						".wake-original-"+rand.Text()+"-"+filepath.Base(store.Path),
+						".wake-original-"+rand.Text()+"-"+storeKinds[i],
 					),
 					File: fileIdentity(info),
 				}
