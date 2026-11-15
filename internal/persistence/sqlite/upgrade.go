@@ -33,8 +33,8 @@ const (
 type migration struct{ from, to, sql string }
 
 type upgradeBaseline struct {
-	formats, schemas [2]string
-	migrations       [2][]migration
+	formats, schemas [storeCount]string
+	migrations       [storeCount][]migration
 	rule             application.FinancialRule
 	// Each entry describes the change introduced at that rule version.
 	notes map[int64]string
@@ -43,7 +43,7 @@ type upgradeBaseline struct {
 func releaseBaseline() upgradeBaseline {
 	return upgradeBaseline{
 		formats: storeVersions,
-		schemas: [2]string{schemaSQL, connectionsSQL},
+		schemas: [storeCount]string{schemaSQL, connectionsSQL, syncSQL},
 		rule:    application.RetainedClaimsRule,
 	}
 }
@@ -70,7 +70,7 @@ type RuleReleaseNote struct {
 
 type UpgradePlan struct {
 	ID              string            `json:"plan_id,omitempty"`
-	Stores          [2]UpgradeStore   `json:"stores"`
+	Stores          []UpgradeStore    `json:"stores"`
 	Steps           []UpgradeStep     `json:"steps"`
 	AppliedRule     int64             `json:"applied_rule,omitempty"`
 	TargetRule      string            `json:"target_rule,omitempty"`
@@ -160,14 +160,14 @@ func nextStoreFormat(from, to string) bool {
 type historyVersion struct{ applied, target int64 }
 
 func (b upgradeBaseline) plan(
-	paths [2]string,
-	metadata [2]storeMetadata,
-	present [2]bool,
+	paths [storeCount]string,
+	metadata [storeCount]storeMetadata,
+	present [storeCount]bool,
 	history historyVersion,
-) (UpgradePlan, [2][]migration, error) {
-	plan := UpgradePlan{Steps: []UpgradeStep{}}
+) (UpgradePlan, [storeCount][]migration, error) {
+	plan := UpgradePlan{Stores: make([]UpgradeStore, storeCount), Steps: []UpgradeStep{}}
 
-	var chains [2][]migration
+	var chains [storeCount][]migration
 
 	for i, path := range paths {
 		m := metadata[i]
@@ -252,7 +252,7 @@ func (b upgradeBaseline) plan(
 	return plan, chains, nil
 }
 
-func applyMigrations(ctx context.Context, tx *sql.Tx, chains [2][]migration) error {
+func applyMigrations(ctx context.Context, tx *sql.Tx, chains [storeCount][]migration) error {
 	for i, steps := range chains {
 		for _, step := range steps {
 			if _, err := tx.ExecContext(ctx, step.sql); err != nil {
@@ -292,9 +292,9 @@ type upgradeFile struct {
 }
 
 type upgradeIntent struct {
-	Plan         UpgradePlan    `json:"plan"`
-	Files        [2]upgradeFile `json:"files"`
-	BackupDigest string         `json:"backup_sha256"`
+	Plan         UpgradePlan             `json:"plan"`
+	Files        [storeCount]upgradeFile `json:"files"`
+	BackupDigest string                  `json:"backup_sha256"`
 }
 
 func readUpgradeIntent(path string) (upgradeIntent, error) {
@@ -364,12 +364,16 @@ func syncUpgradeDir(path string) error {
 	return dir.Sync()
 }
 
-func (b upgradeBaseline) checkIntent(paths [2]string, files [2]upgradeFile, intent upgradeIntent) error {
-	if intent.Files != files {
+func (b upgradeBaseline) checkIntent(
+	paths [storeCount]string,
+	files [storeCount]upgradeFile,
+	intent upgradeIntent,
+) error {
+	if intent.Files != files || len(intent.Plan.Stores) != storeCount {
 		return ErrUpgradeRecovery
 	}
 
-	var metadata [2]storeMetadata
+	var metadata [storeCount]storeMetadata
 	for i, store := range intent.Plan.Stores {
 		if store.Path != paths[i] || store.ID == "" {
 			return ErrUpgradeRecovery
@@ -380,7 +384,7 @@ func (b upgradeBaseline) checkIntent(paths [2]string, files [2]upgradeFile, inte
 
 	state := historyVersion{applied: intent.Plan.AppliedRule}
 
-	plan, _, err := b.plan(paths, metadata, [2]bool{true, true}, state)
+	plan, _, err := b.plan(paths, metadata, [storeCount]bool{true, true, true}, state)
 	if err != nil || plan.ID == "" || plan.ID != intent.Plan.ID {
 		return ErrUpgradeRecovery
 	}
@@ -398,7 +402,7 @@ func (b upgradeBaseline) checkIntent(paths [2]string, files [2]upgradeFile, inte
 func readUpgradeState(
 	ctx context.Context,
 	db *sql.DB,
-) (metadata [2]storeMetadata, history historyVersion, accessID string, err error) {
+) (metadata [storeCount]storeMetadata, history historyVersion, accessID string, err error) {
 	for i, schema := range storeSchemas {
 		m := &metadata[i]
 		if err = db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
@@ -407,7 +411,7 @@ func readUpgradeState(
 		}
 	}
 
-	if err = db.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
+	if err = db.QueryRowContext(ctx, profileStatement("Profile", "sync")).Scan(&accessID); err != nil {
 		return
 	}
 
@@ -418,13 +422,13 @@ func readUpgradeState(
 }
 
 func (b upgradeBaseline) recoveredMigrations(
-	paths [2]string,
-	metadata [2]storeMetadata,
+	paths [storeCount]string,
+	metadata [storeCount]storeMetadata,
 	history historyVersion,
 	accessID string,
 	intent upgradeIntent,
-) ([2][]migration, error) {
-	var noMigrations [2][]migration
+) ([storeCount][]migration, error) {
+	var noMigrations [storeCount][]migration
 	if accessID != metadata[1].id {
 		return noMigrations, ErrUpgradeRecovery
 	}
@@ -438,7 +442,7 @@ func (b upgradeBaseline) recoveredMigrations(
 		committed = committed && metadata[i].version == store.Target
 	}
 
-	plan, chains, err := b.plan(paths, metadata, [2]bool{true, true}, history)
+	plan, chains, err := b.plan(paths, metadata, [storeCount]bool{true, true, true}, history)
 	if err != nil {
 		return noMigrations, ErrUpgradeRecovery
 	}
@@ -456,7 +460,7 @@ func (b upgradeBaseline) recoveredMigrations(
 
 func (s *Store) recoverOrApplyUpgrade(
 	ctx context.Context,
-	paths [2]string,
+	paths [storeCount]string,
 	baseline upgradeBaseline,
 	intent upgradeIntent,
 	path string,
@@ -471,7 +475,14 @@ func (s *Store) recoverOrApplyUpgrade(
 		return err
 	}
 
-	if err = s.initialize(ctx, [2]bool{true, true}, metadata, false, baseline, chains); err != nil {
+	if err = s.initialize(
+		ctx,
+		[storeCount]bool{true, true, true},
+		metadata,
+		false,
+		baseline,
+		chains,
+	); err != nil {
 		return fmt.Errorf("%w: %w", ErrUpgradeRecovery, err)
 	}
 
@@ -486,7 +497,7 @@ func verifyFormats(
 	ctx context.Context,
 	tx *sql.Tx,
 	baseline upgradeBaseline,
-	metadata [2]storeMetadata,
+	metadata [storeCount]storeMetadata,
 ) error {
 	var err error
 	for i, schema := range storeSchemas {
@@ -511,7 +522,7 @@ func verifyFormats(
 	}
 
 	var accessID string
-	if err = tx.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
+	if err = tx.QueryRowContext(ctx, profileStatement("Profile", "sync")).Scan(&accessID); err != nil {
 		return err
 	}
 

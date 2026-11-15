@@ -10,14 +10,11 @@ Wake is a single-user financial application with a durable financial store. Its
 TCP endpoints serve that application and its clients. The financial store includes
 retained evidence and decisions as well as actively maintained accepted views.
 
-The implementation still uses warehouse names and currently stores financial and
-operational state together, as described below. The
-[financial storage research](../research/financial-storage-architecture.md) recommends
-a separate synchronization file and resolves proposed ownership and recovery
-boundaries. The target requires only the financial store and local access for
-browser/API operation; optional synchronization and upstream access failures must
-not block local financial use. That split is not implemented; existing public
-names remain unchanged.
+Financial, synchronization, and encrypted upstream access data have independent
+SQLite formats. The daemon opens only the financial database and the existing
+local authority. Public configuration and API names retain their warehouse
+spelling. The [financial storage research](../research/financial-storage-architecture.md)
+describes the staged work on upstream recovery.
 
 ## One local application
 
@@ -71,12 +68,11 @@ activity variants and dated instrument terms. Partial observations retain their 
 structure. Compact explanations expose applicable absence reasons and versioned provider
 expectations alongside the existing selection and conflict facts.
 
-Local financial handlers and retained-data processing use compiled interpretation
-capabilities independently of the upstream host and reference HTTP service. Failed
-upstream service initialization leaves those local paths available. Source commands
-require their upstream capability and report unavailability when it is absent.
-The daemon cancels and joins local work before releasing storage; upstream hosts
-also join their outstanding calls before credentials are cleared.
+Local financial handlers and retained-data processing use the compiled provider
+interpretations. The daemon starts without upstream provider work and reference
+enrichment. Local corrections and rebuilds continue with the financial file
+and local client authority. Source commands report that upstream work is
+unavailable. Shutdown cancels and joins local work before releasing the store.
 
 Activity correction policy and orchestration belong to the financial application.
 A consistent read callback prepares previews without writes; a write callback
@@ -86,21 +82,13 @@ inputs and persists explicit decisions and results. It finalizes publication in
 the same transaction and notifies subscribers only after successful commit.
 Instrument correction and identity orchestration remain in persistence.
 
-Upstream work carries an authorization revision across each network operation.
-The writer validates the paired stores and current grant before admitting work
-and checks the revision again when accepting results. Changes to access or
-configuration invalidate outstanding work. Pacing and continuation changes
-rotate a safety token in both stores in the same transaction without advancing
-financial publication. Transactions that also change published financial state
-finalize it before committing and notify readers afterward.
-
-In the current paired layout, the warehouse holds synchronization metadata and
-the access store holds its witness and grant. A witness mismatch prevents upstream
-work and leaves local financial reads and corrections available when the paired
-stores can open. An ordinary restart preserves authorization. Recovery and restore
-require a fresh grant, and repairing configuration during a pause invalidates an
-earlier resume review. The initial empty installation establishes its association
-and grant during setup.
+The upstream coordinator checks the financial lineage and publication epoch,
+synchronization store, configuration revision, and access grant before admitting
+network work and again before accepting results. Pacing and continuation writes
+rotate the witness shared by synchronization and access without advancing
+financial publication. Provider acceptance can also retain financial evidence and
+finalize publication in the same transaction. Upstream composition is exercised
+with synthetic providers while operational recovery is developed.
 
 Retained-data processing discovers unfinished work from acquisition evidence,
 confirmed source authority, and receipts for the installed interpretation.
@@ -449,62 +437,36 @@ verification of these boundaries for release.
 
 ## Persistence and work boundaries
 
-Warehouse and encrypted access formats are checked independently. An unsupported
-warehouse still fails closed with recreation instructions; an unchanged encrypted
-access seed remains reusable when only the warehouse format changes.
+The active warehouse contains source evidence and descriptors, confirmed account
+authority, receipts, accepted views, financial decisions, publication state, and
+the durable history rebuild cursor and validity gate. The synchronization schema
+contains non-secret provider settings, continuations, scheduling, pacing, reference
+cache and deadlines, and operational diagnostics. The upstream access schema
+contains encrypted credentials, their bound identities, and the grant. Local
+browser sessions and client token verifiers belong to the independent local
+access boundary.
 
-One daemon owns two SQLite files: a warehouse containing financial evidence and
-operational state, and an independent access store containing current connection
-settings and encrypted credentials. Both default to the selected TOML directory.
-The warehouse owns evidence, source descriptors, financial identities,
-decisions, checkpoints, coverage, processing receipts, pacing and execution state.
-Reference cache entries remain disposable; their supporting evidence is retained.
+The daemon serializes financial writes through one owned SQLite connection. A
+dedicated read-only activity connection can read committed state alongside the
+writer. The upstream integration harness checks cross-file references that cannot
+use SQLite foreign keys and uses DELETE rollback journals and EXTRA synchronization
+for its attached transactions. An unresolved journal can require the original
+participants. Local startup refuses the journal and preserves the files.
 
-One attached SQLite writer uses DELETE rollback journals and EXTRA synchronization
-for cross-store atomicity. Activity has a dedicated read-only warehouse
-connection, so it can read committed snapshots during ingestion while SQLite
-coordinates access at commit. Warehouse references use ordinary foreign keys;
-relationships to access configuration are checked in the shared transaction.
-Each file has an explicit format and independent identity. The access store has
-no reverse binding to a warehouse. Wake checks ownership and supported migration
-paths before opening a writable connection. A plan that requires a history rebuild
-needs explicit approval or the operator's unattended upgrade setting. Wake
-checks both databases under their ownership locks and verifies a durable copy of
-the pair before writing either store. The private upgrade intent binds approval
-to the original files and the backup checksum. An interrupted upgrade verifies
-and reuses that copy before SQLite recovers the attached transaction.
+A routine warehouse snapshot uses a read-only SQLite backup connection and verifies
+the self-contained committed copy before publishing the archive. Restore validates
+the archive and stages its warehouse beside the vacant destination. Activation
+holds the directory lock, rechecks intent and sidecar paths and uses a no-replace
+rename. Restore preserves lineage and financial resource IDs and renews the
+publication epoch that consumers receive as `warehouse_id`. Operational files and
+existing local authority are independent of that archive. Output to a vacant path
+and startup can proceed beside missing, damaged, or older optional files.
 
-Routine warehouse snapshots use a read-only SQLite backup connection. SQLite
-coordinates committed pages with the writer while financial reads remain enabled.
-Wake verifies the self-contained snapshot before publishing the archive.
-Operator-initiated offline backups reuse the checksummed paired archive created
-for upgrades. Restore stages both stores, checks the digests and storage
-invariants before publication, and uses a durable intent to block
-startup during installation. An interrupted installation resumes from the
-same archive and profile. Restored warehouses receive a new publication identity
-so consumers replace their checkpoints, and upstream work awaits operator review.
-
-Schema changes, format metadata, and the approved rebuild target commit together.
-The durable history checkpoint then governs rebuild progress across restarts.
-Unsupported formats fail closed and remain intact. Recreation is an explicit
-operator action, and credential encryption keys are provisioned explicitly.
-
-Offline CLI reset previews warehouse or credential files and requires explicit
-confirmation before deletion. Warehouse reset disposes its operational state in
-the same file and preserves encrypted access; credentials reset preserves the
-warehouse. Reset checks filesystem ownership without opening SQLite or reading keys.
-A warehouse remains inspectable without source credentials. Missing or replaced
-access starts upstream work paused until authenticated review, required repair
-and explicit resume. Retained pacing restrictions and acknowledged progress remain
-in the warehouse. An intact restart retains authority and scheduling.
-
-A fresh warehouse can reuse retained settings and encrypted credentials. It starts
-paused until explicit resume and bounded discovery; account confirmation is still
-required before financial synchronization. Development tests can copy a closed
-encrypted access seed into separate private profiles and use independent warehouse
-and access files. Those profiles never share a writable store or modify the seed.
-This keeps warehouse disposal independent of credential provisioning without a
-separate operational database or its association/rebinding lifecycle.
+Unsupported pre-release formats require a compatible build or explicit recreation.
+The offline warehouse and credential resets preview the selected file and its
+sidecars and require confirmation before deletion. They check ownership without
+opening SQLite or reading encryption keys. Operational backup and restore remain
+unavailable until synchronization recovery is ready.
 
 Operational diagnostics use structured, component-scoped events and configured log
 levels across acquisition, normalization, financial processing, reference work,

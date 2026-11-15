@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
-	"go.trippwill.dev/wake/provider"
 )
 
 func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
@@ -32,6 +31,17 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 		`INSERT INTO reference_evidence VALUES('large','now',X'',zeroblob(2097152),200,X'')`,
 	); err != nil {
 		t.Fatal(err)
+	}
+
+	var lineage string
+	if err := live.db.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).
+		Scan(&lineage); err != nil {
+		t.Fatal(err)
+	}
+
+	positionsBefore, err := live.PositionsPublications(ctx)
+	if err != nil || len(positionsBefore) != 1 {
+		t.Fatal(positionsBefore, err)
 	}
 
 	before, err := snapshotState(ctx, live)
@@ -72,7 +82,7 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 		t.Fatal("snapshot restore created an access store", err)
 	}
 
-	restored, err := Open(ctx, target, nil)
+	restored, err := OpenFinancial(ctx, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +94,36 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 		t.Fatal("restored history or publication identity differs", err)
 	}
 
-	var uncommitted, credentials, paused int
+	var uncommitted int
+	if err = restored.db.QueryRow(`SELECT count(*) FROM connections WHERE id='uncommitted'`).
+		Scan(&uncommitted); err != nil ||
+		uncommitted != 0 {
+		t.Fatal("snapshot included an uncommitted source", uncommitted, err)
+	}
 
-	err = restored.db.QueryRow(`SELECT (SELECT count(*) FROM connections WHERE id='uncommitted'),
-		(SELECT count(*) FROM access.credentials), (SELECT paused FROM profile)`).
-		Scan(&uncommitted, &credentials, &paused)
-	if err != nil || uncommitted != 0 || credentials != 0 || paused != 1 {
-		t.Fatal(uncommitted, credentials, paused, err)
+	var restoredLineage string
+	if err = restored.db.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).
+		Scan(&restoredLineage); err != nil ||
+		restoredLineage != lineage {
+		t.Fatal("snapshot lost financial lineage", restoredLineage, err)
+	}
+
+	conditional, err := restored.Snapshot(ctx, application.MatchingSnapshotVersions(before.Version))
+	if err != nil || conditional.Unchanged {
+		t.Fatal("restored snapshot reused its consumer baseline", err)
+	}
+
+	positionsAfter, err := restored.PositionsPublications(ctx)
+	if err != nil || len(positionsAfter) != 1 || positionsAfter[0].AccountID != positionsBefore[0].AccountID ||
+		positionsAfter[0].WarehouseID != after.WarehouseID || positionsAfter[0].Version == positionsBefore[0].Version {
+		t.Fatal("unexpected restored positions baseline", positionsAfter, err)
+	}
+
+	targetPaths := target.paths()
+	for _, path := range targetPaths[1:] {
+		if _, err = os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("restore or startup created an optional store", path, err)
+		}
 	}
 }
 
@@ -133,7 +166,42 @@ func TestStorageSnapshotRejectsChangedArchive(t *testing.T) {
 	}
 }
 
-func TestStorageSnapshotRebindsNewerAccessWithoutGrant(t *testing.T) {
+func TestStorageSnapshotRestoreCannotActivateWhileDirectoryOwned(t *testing.T) {
+	ctx := t.Context()
+	source := seedUpgradeStores(t)
+	archive := filepath.Join(filepath.Dir(source.WarehousePath), "history.tar")
+	if err := SnapshotWarehouse(ctx, source, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+
+	guard, err := lockStoreDirectory(target.WarehousePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = guard.Close() }()
+
+	if _, err = Restore(ctx, target, archive, false); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("restore activated while the directory was owned", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(target.WarehousePath))
+	if err != nil || len(entries) != 0 {
+		t.Fatal("failed restore left warehouse or staging files", entries, err)
+	}
+
+	if err = guard.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Restore(ctx, target, archive, false); err != nil {
+		t.Fatal("restore could not be retried", err)
+	}
+}
+
+func TestStorageSnapshotLeavesNewerOptionalStoresUntouched(t *testing.T) {
 	ctx := t.Context()
 	profile, live := profileFixture(t)
 	initial, witness := upstreamTokens(t, live)
@@ -158,6 +226,9 @@ func TestStorageSnapshotRebindsNewerAccessWithoutGrant(t *testing.T) {
 	if err := live.Close(); err != nil {
 		t.Fatal(err)
 	}
+
+	before := storeBytes(t, profile)
+
 	// Preserve the current warehouse to make a vacant destination.
 	//nolint:gosec // Both paths are in the synthetic profile's t.TempDir.
 	if err := os.Rename(profile.WarehousePath, profile.WarehousePath+".original"); err != nil {
@@ -168,41 +239,23 @@ func TestStorageSnapshotRebindsNewerAccessWithoutGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restored, err := Open(ctx, profile, nil)
+	restored, err := OpenFinancial(ctx, profile, nil)
 	if err != nil {
-		t.Fatal("restored warehouse could not open with newer access", err)
+		t.Fatal("restored warehouse could not open with newer optional stores", err)
 	}
-
-	defer func() { _ = restored.Close() }()
 
 	if _, err = restored.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
 		t.Fatal(err)
 	}
 
-	rebound, witness := upstreamTokens(t, restored)
-	if rebound == initial || rebound == newer || rebound != witness {
-		t.Fatal("restore did not bind a fresh pair")
+	if err = restored.Close(); err != nil {
+		t.Fatal(err)
 	}
 
-	association, err := readUpstreamAssociation(ctx, restored.db)
-	if err != nil || association.granted != "" {
-		t.Fatal("restored association has a grant before review", err)
-	}
-
-	view, err := restored.SourceAccess(ctx)
-	if err != nil || !view.Storage.Paused {
-		t.Fatal("restored upstream work was not paused", err)
-	}
-
-	if _, err = restored.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
-		t.Fatal("restored pair reused upstream grant", err)
-	}
-
-	if err = restored.ResumeStorage(ctx, view.Storage.Revision, "admin/test", time.Now()); err != nil {
-		t.Fatal("fresh review could not issue a grant", err)
-	}
-
-	if _, err = restored.UpstreamRevision(ctx); err != nil {
-		t.Fatal("new grant did not authorize restored pair", err)
+	after := storeBytes(t, profile)
+	for i := 1; i < len(before); i++ {
+		if !reflect.DeepEqual(before[i], after[i]) {
+			t.Fatal("restore changed optional store", storeKinds[i])
+		}
 	}
 }

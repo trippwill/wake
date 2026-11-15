@@ -67,7 +67,7 @@ func TestIndependentCallbackContextsRetainHostAuthorization(t *testing.T) {
 				t.Fatal("obsolete operation was accepted")
 			}
 			cp := f.checkpoint(t, "acquire")
-			if cp.Revision != 0 || cp.Observed.Phase() != "" || f.count(t, "pacing") != 0 {
+			if cp.Revision != 0 || cp.Observed.Phase() != "" || f.count(t, "sync.pacing") != 0 {
 				t.Fatal("obsolete callbacks changed durable state", cp)
 			}
 		})

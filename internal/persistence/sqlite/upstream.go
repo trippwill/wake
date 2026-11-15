@@ -126,12 +126,21 @@ func (s *Store) commitUpstream(ctx context.Context, tx *sql.Tx, mutation upstrea
 	return tx.Commit()
 }
 
-func bindUpstream(ctx context.Context, tx *sql.Tx, metadata [2]storeMetadata, fresh, recovering bool) error {
-	lineage := metadata[0].id
+func bindUpstream(
+	ctx context.Context,
+	tx *sql.Tx,
+	metadata [storeCount]storeMetadata,
+	fresh, recovering bool,
+) error {
+	var lineage string
+	if err := tx.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).Scan(&lineage); err != nil {
+		return err
+	}
+
 	if !fresh {
 		var restoring bool
 		if err := tx.QueryRowContext(ctx, profileStatement("Association", "")).
-			Scan(&lineage, &restoring); err != nil {
+			Scan(&restoring); err != nil {
 			return err
 		}
 
@@ -148,7 +157,7 @@ func bindUpstream(ctx context.Context, tx *sql.Tx, metadata [2]storeMetadata, fr
 		profileStatement("BindSync", ""),
 		lineage,
 		metadata[0].id,
-		rand.Text(),
+		metadata[2].id,
 		metadata[1].id,
 		rand.Text(),
 		revision,

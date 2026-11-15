@@ -40,7 +40,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 
 	var plan daemon.UpgradePlan
 	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || plan.ID != "" ||
-		plan.Stores[0].Target != "wake-warehouse/2" || plan.Stores[1].Target != "wake-access/2" {
+		len(plan.Stores) != 1 || plan.Stores[0].Target != "wake-warehouse/3" {
 		t.Fatal(stdout.String(), err)
 	}
 
@@ -165,9 +165,8 @@ func TestUpgradeCLIRejectsInvalidUsageAndMissingConfig(t *testing.T) {
 	}
 }
 
-func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
+func TestFinancialUpgradePreviewIgnoresCredentialKey(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
-	keyPath := cfg.Credentials.KeyPath
 	args := []string{"storage", "upgrade", "--config", path}
 
 	var stdout, stderr bytes.Buffer
@@ -175,28 +174,7 @@ func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 		t.Fatal("preview required a key", status, stderr.String())
 	}
 
-	args = append(args, "--confirm", "stale")
-	for _, want := range []string{"inspect credential encryption key file", "plan changed"} {
-		stdout.Reset()
-		stderr.Reset()
-
-		if status := Run(
-			args,
-			&stdout,
-			&stderr,
-		); status != exitFailure ||
-			!strings.Contains(stderr.String(), want) {
-			t.Fatal(status, stdout.String(), stderr.String())
-		}
-
-		if _, err := os.Stat(cfg.Storage.WarehousePath); !os.IsNotExist(err) {
-			t.Fatal("confirmation refusal created a warehouse", err)
-		}
-
-		if want == "inspect credential encryption key file" {
-			if err := credential.CreateMasterKey(keyPath); err != nil {
-				t.Fatal(err)
-			}
-		}
+	if _, err := os.Stat(cfg.Credentials.KeyPath); !os.IsNotExist(err) {
+		t.Fatal("preview created a credential key", err)
 	}
 }

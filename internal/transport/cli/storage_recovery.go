@@ -34,14 +34,13 @@ func performSnapshotWarehouse(ctx context.Context, c *cli.Command) error {
 	)
 }
 
-func performBackup(ctx context.Context, c *cli.Command) error {
+func performBackup(_ context.Context, c *cli.Command) error {
 	return runStorageRecovery(
 		c,
 		"backup",
-		"verifying and copying stopped storage",
-		func(resolved config.Resolution, artifact string) (storageResult, error) {
-			archive, err := daemon.BackupStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
-			return storageResult{Event: "backup", Archive: archive, WithCredentials: true}, err
+		"checking operational recovery availability",
+		func(config.Resolution, string) (storageResult, error) {
+			return storageResult{}, daemon.ErrOperationalRecoveryUnavailable
 		},
 	)
 }
@@ -113,17 +112,11 @@ func writeStorageResult(w io.Writer, asJSON bool, result storageResult) error {
 
 	switch result.Event {
 	case "restore":
-		guidance := "Review access before resuming upstream work."
-		if result.WithCredentials {
-			guidance = "Supply the original credential key and review access before resuming upstream work."
-		}
-
 		_, err := fmt.Fprintf(
 			w,
-			"Restored %s to %s. Start Wake to read retained history. %s\n",
+			"Restored %s to %s. Start Wake to read retained history.\n",
 			result.Archive,
 			strings.Join(result.Destinations, ", "),
-			guidance,
 		)
 
 		return err

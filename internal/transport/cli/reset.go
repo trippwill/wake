@@ -76,14 +76,14 @@ func performReset(ctx context.Context, c *cli.Command) error {
 			if target == daemon.ResetWarehouse {
 				writeString(
 					c.Writer,
-					"Warehouse reset clears financial history and its operational state. Credentials are retained; resume discovery and confirm an account after starting the fresh warehouse.\n",
+					"Warehouse reset clears financial history.\n",
 				)
 			}
 
 			if target == daemon.ResetCredentials {
 				writeString(
 					c.Writer,
-					"Financial data is retained. Repair credentials in the admin console and resume upstream work.\n",
+					"Credentials reset clears encrypted upstream access.\n",
 				)
 			}
 		}

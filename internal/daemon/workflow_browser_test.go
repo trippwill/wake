@@ -29,6 +29,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/currencycatalog"
+	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -193,7 +194,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		done       chan error
 	)
 
-	startDaemon := func() {
+	startDaemon := func(localOnly bool) {
 		//nolint:gosec // stopCurrent cancels and joins each daemon before restart and on test cleanup.
 		daemonContext, cancelDaemon := context.WithCancel(context.Background())
 		stopDaemon = cancelDaemon
@@ -202,6 +203,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		done = make(chan error, 1)
 
 		options := sourceOptions{
+			openSources:     persistence.Open,
 			IBKR:            ibkrflex.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL},
 			SnapTrade:       snaptrade.Options{HTTPClient: upstream.Client(), BaseURL: upstream.URL},
 			ReferenceClient: upstream.Client(),
@@ -214,8 +216,14 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			Now: now,
 		}
 
+		active := cfg
+		if localOnly {
+			options.openSources = nil
+			active.Admin.CurrencyRefresh = false
+		}
+
 		go func() {
-			done <- run(daemonContext, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), options, func(phase string) {
+			done <- run(daemonContext, active, slog.New(slog.NewTextHandler(io.Discard, nil)), options, func(phase string) {
 				if phase == "ready" {
 					close(ready)
 				}
@@ -243,7 +251,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		}
 	}
 
-	startDaemon()
+	startDaemon(false)
 
 	defer func() { stopCurrent() }()
 
@@ -1071,7 +1079,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	}
 
 	clock.Add(86400)
-	startDaemon()
+	startDaemon(false)
 	signIn()
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),
@@ -1168,93 +1176,24 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("explicit resume did not restore upstream work")
 	}
-	// Reset financial history through the offline command, retaining usable credentials.
-	stopCurrent()
-	//nolint:gosec // Synthetic credentials in this test's private directory.
-	credentialsBefore, err := os.ReadFile(cfg.Storage.ConnectionsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	result, err := ResetStorage(t.Context(), cfg, "", ResetWarehouse, true, nil)
-	if err != nil || result.DryRun {
-		t.Fatal("warehouse reset failed", result, err)
-	}
-	//nolint:gosec // Synthetic credentials in this test's private directory.
-	credentialsAfter, err := os.ReadFile(cfg.Storage.ConnectionsPath)
-	if err != nil || !bytes.Equal(credentialsBefore, credentialsAfter) {
-		t.Fatal("warehouse reset changed credentials", err)
-	}
+	tickCtx, stopClock := context.WithCancel(ctx)
+	defer stopClock()
 
-	callsBefore := reportCalls.Load()
+	go func() {
+		ticker := time.NewTicker(400 * time.Millisecond)
+		defer ticker.Stop()
 
-	clock.Add(86400)
-	startDaemon()
-	signIn()
-	check(
-		newDocument(chromedp.Navigate(origin+"/connections/recovery")),
-		chromedp.WaitVisible(chromedp.CSS("#warehouse-reset-notice")),
-		testbrowser.Evaluate(
-			`document.body.textContent.includes('Recovered IBKR')&&!document.querySelector('p[id^="access-missing-"]')&&!document.body.textContent.includes('Activated account:')`,
-			&ok,
-		),
-	)
-
-	if !ok || reportCalls.Load() != callsBefore {
-		t.Fatal("fresh warehouse lost settings or contacted upstream before resume")
-	}
-
-	check(
-		newDocument(chromedp.Click(chromedp.CSS(`form[action="/recovery/resume"] button`))),
-		chromedp.WaitNotPresent(chromedp.CSSAll("#storage-recovery-title")),
-	)
-
-	select {
-	case period := <-sent:
-		if period != "365" {
-			t.Fatal("fresh discovery period", period)
+		for {
+			select {
+			case <-tickCtx.Done():
+				return
+			case <-ticker.C:
+				clock.Add(2)
+			}
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("retained credentials did not start rediscovery")
-	}
+	}()
 
-	clock.Add(10)
-	check(
-		newDocument(chromedp.Navigate(origin+connectionPath+"?view=status")),
-		chromedp.Poll[chromedp.Void](`document.querySelector('a[href*="account=U-SYNTHETIC"]')!==null`),
-		testbrowser.Evaluate(`!document.body.textContent.includes('Activated account:')`, &ok),
-	)
-
-	if !ok || reportCalls.Load() != callsBefore+1 {
-		t.Fatal("rediscovery did not stop for confirmation")
-	}
-
-	check(
-		chromedp.Evaluate[chromedp.Void](`document.querySelector('a[href*="account=U-SYNTHETIC"]').click()`),
-		chromedp.WaitVisible(chromedp.CSS("#account-name")),
-		chromedp.SetValue(chromedp.CSS("#account-name"), "Fresh confirmed account"),
-		newDocument(chromedp.Click(chromedp.CSS(`form[action$="/confirm"] button[type="submit"]`))),
-		chromedp.WaitVisible(chromedp.CSS("#activity-rows")),
-		chromedp.Poll[chromedp.Void](
-			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
-		),
-	)
-	clock.Add(6)
-
-	select {
-	case <-sent:
-	case <-time.After(10 * time.Second):
-		t.Fatal("reconfirmed account did not start acquisition")
-	}
-
-	clock.Add(10)
-	check(
-		chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
-		chromedp.Click(chromedp.CSS("[data-grid-refresh]")),
-		chromedp.Poll[chromedp.Void](
-			`document.body.textContent.includes('Fresh confirmed account')&&document.body.textContent.includes('400.123456789')`,
-		),
-	)
 	// Add the supplementary query through the actual connection form. The same
 	// encrypted token acquires and publishes a result without another activity.
 	check(
@@ -1280,16 +1219,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		testbrowser.Evaluate(`document.body.textContent.includes('12.34000000000000001 USD')`, &ok),
 	)
 
-	if !ok {
-		check(
-			chromedp.WaitVisible(chromedp.CSS("[data-grid-refresh]")),
-			chromedp.Click(chromedp.CSS("[data-grid-refresh]")),
-		)
-	}
-
 	check(
 		chromedp.Poll[chromedp.Void](
-			`document.querySelector('.tabulator-row [tabulator-field="realized"]').textContent==='12.34000000000000001 USD'`,
+			`(()=>{const refresh=document.querySelector('[data-grid-refresh]');if(refresh&&!refresh.hidden)refresh.click();return document.querySelector('.tabulator-row [tabulator-field="realized"]')?.textContent==='12.34000000000000001 USD'})()`,
 		),
 		newDocument(chromedp.Click(chromedp.CSS(`.tabulator-row a[href^="/executions/"]`))),
 		chromedp.WaitVisible(chromedp.CSS("[data-reported-realized]")),
@@ -1371,23 +1303,6 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		capture(item.kind + "-correction")
 	}
 	// Add a distinct brokerage account through the normal form while Flex remains active.
-	tickCtx, stopClock := context.WithCancel(ctx)
-	defer stopClock()
-
-	go func() {
-		ticker := time.NewTicker(400 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-tickCtx.Done():
-				return
-			case <-ticker.C:
-				clock.Add(2)
-			}
-		}
-	}()
-
 	check(
 		newDocument(chromedp.Navigate(origin+"/connections/new")),
 		chromedp.WaitVisible(chromedp.CSS("#connection-name-snaptrade")),
@@ -1412,7 +1327,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			&snapAccount,
 		),
 		testbrowser.Evaluate(
-			`Array.from(document.querySelector('#activity-account').options).find(o=>o.text==='Fresh confirmed account').value`,
+			`Array.from(document.querySelector('#activity-account').options).find(o=>o.text==='My confirmed account').value`,
 			&flexAccount,
 		),
 	)
@@ -1499,7 +1414,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		}
 	}
 
-	if accounts[flexAccount] != "Fresh confirmed account" ||
+	if accounts[flexAccount] != "My confirmed account" ||
 		accounts[snapAccount] != "Confirmed Fidelity account" ||
 		len(trades[snapAccount]) != 1 ||
 		trades[snapAccount][0] != "21.12345678900001" ||
@@ -1543,5 +1458,52 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	if unchanged.StatusCode != http.StatusNotModified {
 		t.Fatalf("API positions conditional status=%d", unchanged.StatusCode)
+	}
+	// Restart in the financial-only composition with the same local credentials.
+	stopCurrent()
+
+	callsBefore := reportCalls.Load()
+
+	startDaemon(true)
+	signIn()
+	check(
+		newDocument(chromedp.Navigate(origin+"/activity?account="+snapAccount)),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('.tabulator-row')?.textContent.includes('21.12345678900001 USD')`,
+		),
+	)
+
+	if reportCalls.Load() != callsBefore {
+		t.Fatal("financial-only restart fetched upstream reports", reportCalls.Load(), callsBefore)
+	}
+
+	stopCurrent()
+	//nolint:gosec // Synthetic credentials in this test's private directory.
+	credentialsBefore, err := os.ReadFile(cfg.Storage.ConnectionsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ResetStorage(t.Context(), cfg, "", ResetWarehouse, true, nil)
+	if err != nil || result.DryRun {
+		t.Fatal("warehouse reset failed", result, err)
+	}
+	//nolint:gosec // Synthetic credentials in this test's private directory.
+	credentialsAfter, err := os.ReadFile(cfg.Storage.ConnectionsPath)
+	if err != nil || !bytes.Equal(credentialsBefore, credentialsAfter) {
+		t.Fatal("warehouse reset changed credentials", err)
+	}
+
+	startDaemon(true)
+	signIn()
+	check(
+		newDocument(chromedp.Navigate(origin+"/activity")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+		),
+	)
+
+	if reportCalls.Load() != callsBefore {
+		t.Fatal("fresh financial store activated older upstream configuration")
 	}
 }

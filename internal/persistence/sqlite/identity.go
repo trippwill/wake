@@ -197,7 +197,6 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 					ReferenceFigi:   r.ReferenceFigi,
 					EvidenceID:      r.EvidenceID,
 					ReferenceStatus: "conflict",
-					ReferenceNext:   r.ReferenceNext,
 				},
 			); err != nil {
 				return err

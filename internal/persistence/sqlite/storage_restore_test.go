@@ -80,7 +80,8 @@ func TestStorageBackupRestoresEvidenceAndAccess(t *testing.T) {
 	}
 
 	paths, err := Restore(ctx, target, archive, true)
-	if err != nil || !slices.Equal(paths, []string{target.WarehousePath, target.ConnectionsPath}) {
+	targetPaths := target.paths()
+	if err != nil || !slices.Equal(paths, targetPaths[:]) {
 		t.Fatal(paths, err)
 	}
 
@@ -126,9 +127,12 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 	ctx := t.Context()
 
 	source := seedUpgradeStores(t)
-	plan := UpgradePlan{BackupPath: source.WarehousePath + upgradeBackupSuffix}
+	plan := UpgradePlan{
+		Stores:     make([]UpgradeStore, storeCount),
+		BackupPath: source.WarehousePath + upgradeBackupSuffix,
+	}
 
-	var owners [2]*os.File
+	var owners [storeCount]*os.File
 	for i, p := range source.paths() {
 		f, err := lockStoreFile(p, false)
 		if err != nil {

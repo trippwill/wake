@@ -168,7 +168,7 @@ func TestPausedQueryRepairPreservesDeadline(t *testing.T) {
 			}
 
 			if lost {
-				if _, e := s.db.Exec(`DELETE FROM access.credentials; DELETE FROM access.configurations`); e != nil {
+				if _, e := s.db.Exec(`DELETE FROM access.credentials; DELETE FROM sync.configurations`); e != nil {
 					t.Fatal(e)
 				}
 			}

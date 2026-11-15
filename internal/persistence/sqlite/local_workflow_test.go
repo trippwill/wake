@@ -6,11 +6,14 @@ package persistence
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -43,6 +46,17 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	}
 
 	recordTestReceipt(t, s, "local")
+
+	profile := testProfile(s.owners[0].Name())
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = OpenFinancial(t.Context(), profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
 
 	registration, err := ibkrflex.Registration(ibkrflex.Options{})
 	if err != nil {
@@ -80,10 +94,12 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		}
 	}
 
-	view, err := s.Dashboard(t.Context())
-	if err != nil || len(view.Executions) != 1 {
-		t.Fatal(view, err)
+	executions, err := s.queries.Executions(t.Context())
+	if err != nil || len(executions) != 1 {
+		t.Fatal(executions, err)
 	}
+
+	retainDecision(t, s, "activity", executions[0].ID, "price", "2.340000000001", "USD", "set")
 
 	var normalized, processed int
 	if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM normalization_receipts WHERE artifact_id='local'),(SELECT count(*) FROM processing_receipts WHERE artifact_id='local')`).
@@ -114,4 +130,42 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	if err = w.SetReferenceKey(t.Context(), nil); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal(err)
 	}
+
+	// Simulate the next compiled rule with the same financial-only connection.
+	s.historyRule = "retained-claims-and-decisions/2"
+	if err = s.initializeFinancial(t.Context(), false); err != nil || !s.HistoryUpdating() {
+		t.Fatal("financial-only rebuild did not start", err)
+	}
+
+	response := httptest.NewRecorder()
+	financialapi.NewHandler(s, nil, nil).
+		ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil))
+
+	if response.Code != http.StatusServiceUnavailable || response.Header().Get("ETag") != "" {
+		t.Fatal("partially rebuilt financial state was readable", response.Code)
+	}
+
+	for range 5 {
+		if !s.HistoryUpdating() {
+			break
+		}
+
+		if err = w.RunOnce(t.Context(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	after, err := snapshotState(t.Context(), s)
+	if err != nil || s.HistoryUpdating() {
+		t.Fatal("financial-only rebuild did not publish", err)
+	}
+
+	for _, item := range after.Resources {
+		if item.ID == executions[0].ID && item.Activity != nil && item.Activity.Trade != nil &&
+			item.Activity.Trade.Price != nil && item.Activity.Trade.Price.Amount == "2.340000000001" {
+			return
+		}
+	}
+
+	t.Fatal("financial-only rebuild lost accepted correction")
 }

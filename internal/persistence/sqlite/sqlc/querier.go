@@ -48,16 +48,17 @@ type Querier interface {
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
-	Attempts(ctx context.Context, artifactID string) ([]Attempt, error)
+	Attempts(ctx context.Context, artifactID string) ([]SyncAttempt, error)
 	BindActivityInstrument(ctx context.Context, arg BindActivityInstrumentParams) error
+	BindCredentialIdentity(ctx context.Context, arg BindCredentialIdentityParams) (int64, error)
 	CacheReference(ctx context.Context, arg CacheReferenceParams) error
-	CachedReference(ctx context.Context, key string) (ReferenceCache, error)
+	CachedReference(ctx context.Context, key string) (SyncReferenceCache, error)
 	CalculationInputs(ctx context.Context, executionID sql.NullString) ([]CalculationInputsRow, error)
 	CanRetryProcessing(ctx context.Context, id string) (bool, error)
 	CandidateExists(ctx context.Context, arg CandidateExistsParams) (int64, error)
 	CandidateProfiles(ctx context.Context, connectionID string) ([]CandidateProfilesRow, error)
 	Candidates(ctx context.Context, connectionID string) ([]CandidatesRow, error)
-	Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error)
+	Checkpoint(ctx context.Context, arg CheckpointParams) (SyncWork, error)
 	ClaimProcessing(ctx context.Context, arg ClaimProcessingParams) (ClaimProcessingRow, error)
 	ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
@@ -92,7 +93,6 @@ type Querier interface {
 	Execution(ctx context.Context, id string) (Execution, error)
 	ExecutionLinks(ctx context.Context, executionID string) ([]string, error)
 	Executions(ctx context.Context) ([]Execution, error)
-	FailHistoryUpdate(ctx context.Context, retryAt string) error
 	FailWork(ctx context.Context, arg FailWorkParams) error
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
 	FinishHistoryUpdate(ctx context.Context) error
@@ -139,7 +139,7 @@ type Querier interface {
 	PositionUnderlierInputs(ctx context.Context, underlierID string) ([]PositionUnderlierInputsRow, error)
 	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)
 	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
-	Profile(ctx context.Context) (Profile, error)
+	Profile(ctx context.Context) (SyncProfile, error)
 	ProjectActivity(ctx context.Context, arg ProjectActivityParams) error
 	ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error
 	PutAccount(ctx context.Context, arg PutAccountParams) error
@@ -178,11 +178,11 @@ type Querier interface {
 	QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error)
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
-	ReferenceBudget(ctx context.Context) (ReferenceBudget, error)
+	ReferenceBudget(ctx context.Context) (SyncReferenceBudget, error)
 	ReferenceEvidence(ctx context.Context, id string) (ReferenceEvidence, error)
 	ReferenceFailure(ctx context.Context, failure string) error
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
-	ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error)
+	ReferenceSetting(ctx context.Context) (ReferenceSettingRow, error)
 	RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error)
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)

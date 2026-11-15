@@ -37,34 +37,22 @@ mise run bin -- storage reset warehouse --confirm
 mise run serve
 ```
 
-`wake storage reset` accepts `credentials` or `warehouse`, uses the configured
-file paths and previews by default. Only `--confirm` deletes files. Credentials reset removes
-the connections store; warehouse reset removes the financial warehouse and its
-operational state. Both include SQLite sidecars and super-journals, without opening SQLite or loading
-credentials; corrupt or unsupported databases do not prevent reset. Configuration,
-external keys and browser access files are retained. Ownership of every existing
-store is acquired before any deletion; locked stores, unsafe links and protected
-files are refused.
+`wake storage reset` accepts `credentials` or `warehouse` and previews by default.
+Only `--confirm` deletes files. The selected store's SQLite sidecars and
+super-journals are included. Reset checks ownership without opening SQLite or
+loading credentials. It refuses locked stores, unsafe links and protected files.
+A failed deletion reports which files were already removed.
 
 For a disposable instance, pass the same `--config /absolute/private/dev/config.toml`
-to reset and serve. The two `storage.*_path` settings select
-the actual files. Missing files are harmless, and reset creates no directories or
-databases. `--json` reports selected and removed files on stdout; activity and errors
-go to stderr.
+to reset and serve. The storage path settings select the actual files. Reset
+creates no directories or databases. `--json` reports selected and removed files
+on stdout; activity and errors go to stderr.
 
-Resetting credentials preserves financial history and pauses upstream work for
-access repair and explicit resume. Resetting the warehouse preserves connection
-settings and encrypted credentials. The fresh warehouse starts paused; resume
-runs bounded discovery, and account confirmation grants synchronization authority.
-Operational state shares the warehouse file and lifetime. A failed deletion reports
-the files already removed and returns failure; preflight refusal deletes nothing.
-
-For credential-bearing test seeds, stop the seed writer before copying its encrypted
-access file. Give every run its own private copy and warehouse; never point concurrent
-profiles at the seed or a shared access file. Provision the protection key separately.
-Tests and agents can then reuse protected credentials without receiving their plaintext,
-and a warehouse reset preserves the test profile's access copy. Use synthetic keys and
-credentials for ordinary automated verification.
+Local daemon verification needs only the financial store and local access. The
+provider integration harness uses separate private financial, synchronization,
+and access files. Use synthetic data, keys and credentials. Copy a closed
+encrypted access file only to verify its independent storage and original
+identity binding.
 
 ## Select meaningful verification
 

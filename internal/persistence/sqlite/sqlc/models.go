@@ -8,23 +8,20 @@ import (
 	"database/sql"
 )
 
-type AccessConfiguration struct {
-	ID       string
-	Provider string
-	Name     string
-	Settings []byte
-}
-
 type AccessCredential struct {
 	ConnectionID string
 	Key          string
 	Encrypted    []byte
 }
 
+type AccessIdentity struct {
+	ID       string
+	Provider string
+}
+
 type AccessReferenceSetting struct {
 	Singleton int64
 	Encrypted []byte
-	Failure   string
 }
 
 type AccessStoreMetadatum struct {
@@ -162,30 +159,19 @@ type AdminReview struct {
 }
 
 type Artifact struct {
-	ID                string
-	ConnectionID      string
-	Stream            string
-	Operation         string
-	Format            string
-	MediaType         string
-	Retrieved         string
-	Hash              string
-	Content           []byte
-	Processed         int64
-	ProcessingNext    string
-	ProcessingFailure string
-	RequestedFrom     string
-	RequestedTo       string
-	ReportedFrom      string
-	ReportedTo        string
-}
-
-type Attempt struct {
-	ID         string
-	ArtifactID string
-	Version    string
-	Outcome    string
-	Counts     []byte
+	ID            string
+	ConnectionID  string
+	Stream        string
+	Operation     string
+	Format        string
+	MediaType     string
+	Retrieved     string
+	Hash          string
+	Content       []byte
+	RequestedFrom string
+	RequestedTo   string
+	ReportedFrom  string
+	ReportedTo    string
 }
 
 type Candidate struct {
@@ -278,6 +264,11 @@ type ExecutionObservation struct {
 	Rule        string
 }
 
+type FinancialLineage struct {
+	Singleton int64
+	ID        string
+}
+
 type HistoryUpdate struct {
 	Singleton int64
 	Applied   int64
@@ -285,7 +276,6 @@ type HistoryUpdate struct {
 	Phase     string
 	Cursor    string
 	Completed int64
-	RetryAt   string
 }
 
 type Instrument struct {
@@ -302,7 +292,6 @@ type Instrument struct {
 	SelectionAuthority  string
 	ReferenceFigi       string
 	EvidenceID          string
-	ReferenceNext       string
 	Rule                string
 	CalculationRule     string
 	UnderlierID         sql.NullString
@@ -371,13 +360,6 @@ type OperatorDecision struct {
 	Request    []byte
 }
 
-type Pacing struct {
-	Provider string
-	Policy   string
-	Scope    string
-	Next     string
-}
-
 type PositionBinding struct {
 	ClaimID      string
 	Ordinal      int64
@@ -406,17 +388,6 @@ type PositionsDirty struct {
 type ProcessingReceipt struct {
 	ArtifactID string
 	Version    string
-}
-
-type Profile struct {
-	Singleton        int64
-	AccessID         string
-	Paused           int64
-	ReferenceReview  int64
-	WarehouseReset   int64
-	RecoveryRevision int64
-	ResumedBy        string
-	ResumedAt        string
 }
 
 type PublishedResource struct {
@@ -453,21 +424,6 @@ type RecordValue struct {
 	Ordinal    int64
 	Kind       string
 	Data       []byte
-}
-
-type ReferenceBudget struct {
-	Singleton   int64
-	WindowStart string
-	Used        int64
-	Cooldown    string
-}
-
-type ReferenceCache struct {
-	Key        string
-	Status     string
-	Records    []byte
-	Expires    string
-	EvidenceID string
 }
 
 type ReferenceEvidence struct {
@@ -510,13 +466,6 @@ type ResourceAlias struct {
 	TargetID string
 }
 
-type Scheduled struct {
-	ConnectionID string
-	Stream       string
-	Operation    string
-	Enabled      int64
-}
-
 type SourceClaim struct {
 	ID           string
 	ConnectionID string
@@ -549,7 +498,79 @@ type StoreMetadatum struct {
 	ID        string
 }
 
-type SyncAssociation struct {
+type SyncAttempt struct {
+	ID         string
+	ArtifactID string
+	Version    string
+	Outcome    string
+	Counts     []byte
+}
+
+type SyncConfiguration struct {
+	ID       string
+	Provider string
+	Name     string
+	Settings []byte
+}
+
+type SyncPacing struct {
+	Provider string
+	Policy   string
+	Scope    string
+	Next     string
+}
+
+type SyncProfile struct {
+	Singleton        int64
+	AccessID         string
+	Paused           int64
+	ReferenceReview  int64
+	WarehouseReset   int64
+	RecoveryRevision int64
+	ResumedBy        string
+	ResumedAt        string
+}
+
+type SyncReferenceBudget struct {
+	Singleton   int64
+	WindowStart string
+	Used        int64
+	Cooldown    string
+}
+
+type SyncReferenceCache struct {
+	Key        string
+	Status     string
+	Records    []byte
+	Expires    string
+	EvidenceID string
+}
+
+type SyncReferenceDeadline struct {
+	InstrumentID string
+	Next         string
+}
+
+type SyncReferenceDiagnostic struct {
+	Singleton int64
+	Failure   string
+}
+
+type SyncScheduled struct {
+	ConnectionID string
+	Stream       string
+	Operation    string
+	Enabled      int64
+}
+
+type SyncStoreMetadatum struct {
+	Singleton int64
+	Kind      string
+	Version   string
+	ID        string
+}
+
+type SyncSyncAssociation struct {
 	Singleton   int64
 	Lineage     string
 	Epoch       string
@@ -561,7 +582,7 @@ type SyncAssociation struct {
 	BindRestore int64
 }
 
-type Work struct {
+type SyncWork struct {
 	ConnectionID          string
 	Stream                string
 	Operation             string

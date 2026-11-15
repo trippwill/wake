@@ -33,24 +33,24 @@ const upgradeFixtureNote = "Retained selection changes. Activity and positions w
 func fixtureUpgrade(warehouse, access, rebuild bool) upgradeBaseline {
 	b := releaseBaseline()
 	if warehouse {
-		b.formats[0] = "wake-warehouse/3"
+		b.formats[0] = "wake-warehouse/4"
 		b.migrations[0] = []migration{{schemaVersion, b.formats[0], warehouseV2Migration}}
 		b.schemas[0] = strings.Replace(
 			b.schemas[0],
-			"resumed_at TEXT NOT NULL DEFAULT ''",
-			"resumed_at TEXT NOT NULL DEFAULT '', fixture_label TEXT NOT NULL DEFAULT 'v2'",
+			"id TEXT NOT NULL CHECK(id<>''))",
+			"id TEXT NOT NULL CHECK(id<>''), fixture_label TEXT NOT NULL DEFAULT 'v2')",
 			1,
 		) +
 			"\nCREATE TABLE main.fixture_warehouse(value TEXT NOT NULL) STRICT;"
 	}
 
 	if access {
-		b.formats[1] = "wake-access/3"
+		b.formats[1] = "wake-access/4"
 		b.migrations[1] = []migration{{accessSchemaVersion, b.formats[1], accessV2Migration}}
 		b.schemas[1] = strings.Replace(
 			b.schemas[1],
-			"settings BLOB NOT NULL)",
-			"settings BLOB NOT NULL, fixture_label TEXT NOT NULL DEFAULT 'v2')",
+			"provider TEXT NOT NULL)",
+			"provider TEXT NOT NULL, fixture_label TEXT NOT NULL DEFAULT 'v2')",
 			1,
 		) +
 			"\nCREATE TABLE access.fixture_access(value TEXT NOT NULL) STRICT;"
@@ -78,7 +78,8 @@ func seedUpgradeStores(t *testing.T) Profile {
 	retainDecision(t, s, "activity", view.Executions[0].ID(), "price", "2.340000000001", "USD", "set")
 
 	if _, err = s.db.Exec(
-		`INSERT INTO access.configurations(id,provider,settings) VALUES('synthetic','ibkr-flex',X'7b7d');
+		`INSERT INTO sync.configurations(id,provider,settings) VALUES('synthetic','ibkr-flex',X'7b7d');
+ INSERT INTO access.identities VALUES('synthetic','ibkr-flex');
  INSERT INTO access.credentials VALUES('synthetic','token',X'010203');
  INSERT INTO work(connection_id,stream,operation,state_version,state) VALUES('synthetic','confirmations','acquire','fixture',X'0102');`,
 	); err != nil {
@@ -110,10 +111,10 @@ func previewFixture(t *testing.T, p Profile, baseline upgradeBaseline) UpgradePl
 	return plan
 }
 
-func storeBytes(t *testing.T, p Profile) [2][]byte {
+func storeBytes(t *testing.T, p Profile) [storeCount][]byte {
 	t.Helper()
 
-	var result [2][]byte
+	var result [storeCount][]byte
 	for i, path := range p.paths() {
 		data, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
@@ -298,7 +299,25 @@ func TestUpgradeIndependentChainsMatchFreshSchemas(t *testing.T) {
 	for _, store := range storeKinds {
 		t.Run(store, func(t *testing.T) {
 			p := seedUpgradeStores(t)
+
 			b := fixtureUpgrade(store == "warehouse", store == "connections", false)
+			if store == "synchronization" {
+				b.formats[2] = "wake-sync/2"
+				b.migrations[2] = []migration{
+					{
+						syncSchemaVersion,
+						b.formats[2],
+						`ALTER TABLE sync.configurations ADD COLUMN fixture_label TEXT NOT NULL DEFAULT 'v2';`,
+					},
+				}
+				b.schemas[2] = strings.Replace(
+					b.schemas[2],
+					"settings BLOB NOT NULL)",
+					"settings BLOB NOT NULL, fixture_label TEXT NOT NULL DEFAULT 'v2')",
+					1,
+				)
+			}
+
 			plan := previewFixture(t, p, b)
 			if plan.ID == "" || len(plan.Steps) != 1 || plan.Steps[0].Store != store || plan.Rebuild != "" {
 				t.Fatal(plan)
@@ -330,8 +349,9 @@ func TestUpgradeIndependentChainsMatchFreshSchemas(t *testing.T) {
 			defer func() { _ = target.Close() }()
 
 			for _, query := range []string{
-				`SELECT group_concat(name||':'||type||':'||"notnull"||':'||coalesce(dflt_value,'')) FROM pragma_table_info('profile')`,
-				`SELECT group_concat(name||':'||type||':'||"notnull"||':'||coalesce(dflt_value,'')) FROM pragma_table_info('configurations','access')`,
+				`SELECT group_concat(name||':'||type||':'||"notnull"||':'||coalesce(dflt_value,'')) FROM pragma_table_info('financial_lineage','main')`,
+				`SELECT group_concat(name||':'||type||':'||"notnull"||':'||coalesce(dflt_value,'')) FROM pragma_table_info('identities','access')`,
+				`SELECT group_concat(name||':'||type||':'||"notnull"||':'||coalesce(dflt_value,'')) FROM pragma_table_info('configurations','sync')`,
 			} {
 				var upgraded, expected string
 				if err = s.db.QueryRowContext(ctx, query).Scan(&upgraded); err != nil {
@@ -393,7 +413,7 @@ func TestMigrationCrashHelper(t *testing.T) {
 
 	plan := previewFixture(t, p, b)
 
-	var owners [2]*os.File
+	var owners [storeCount]*os.File
 	for i, path := range p.paths() {
 		file, err := lockStoreFile(path, false)
 		if err != nil {
@@ -481,7 +501,8 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 			}
 
 			if mode == "uncommitted" {
-				for _, path := range p.paths() {
+				paths := p.paths()
+				for _, path := range paths[:2] {
 					info, err := os.Stat(path + "-journal")
 					if err != nil || info.Size() <= 512 {
 						t.Fatal("missing spilled rollback journal", path, err)
@@ -583,22 +604,22 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 func TestUpgradePlansInterveningStepsAndNotes(t *testing.T) {
 	p := seedUpgradeStores(t)
 	b := fixtureUpgrade(true, true, true)
-	b.formats[0] = "wake-warehouse/4"
-	b.migrations[0] = append(b.migrations[0], migration{"wake-warehouse/3", "wake-warehouse/4", "SELECT 1;"})
+	b.formats[0] = "wake-warehouse/5"
+	b.migrations[0] = append(b.migrations[0], migration{"wake-warehouse/4", "wake-warehouse/5", "SELECT 1;"})
 
 	b.rule = "retained-claims-and-decisions/3"
 	b.notes[3] = "Second retained selection change."
 	plan := previewFixture(t, p, b)
-	if len(plan.Steps) != 3 || plan.Steps[0].To != "wake-warehouse/3" ||
-		plan.Steps[1].To != "wake-warehouse/4" || plan.Steps[2].To != "wake-access/3" ||
+	if len(plan.Steps) != 3 || plan.Steps[0].To != "wake-warehouse/4" ||
+		plan.Steps[1].To != "wake-warehouse/5" || plan.Steps[2].To != "wake-access/4" ||
 		!reflect.DeepEqual(plan.ReleaseNotes, []RuleReleaseNote{{2, upgradeFixtureNote}, {3, b.notes[3]}}) {
 		t.Fatal(plan)
 	}
 
 	for _, steps := range [][]migration{
 		b.migrations[0][:1],
-		{{schemaVersion, "wake-warehouse/4", "SELECT 1;"}},
-		{{schemaVersion, "wake-access/3", "SELECT 1;"}},
+		{{schemaVersion, "wake-warehouse/5", "SELECT 1;"}},
+		{{schemaVersion, "wake-access/4", "SELECT 1;"}},
 	} {
 		before := storeBytes(t, p)
 		b.migrations[0] = steps
@@ -621,7 +642,7 @@ func TestUpgradePlansInterveningStepsAndNotes(t *testing.T) {
 	}
 }
 
-func assertBackupPair(t *testing.T, path string, expected [2][]byte) {
+func assertBackupPair(t *testing.T, path string, expected [storeCount][]byte) {
 	t.Helper()
 
 	file, err := openBackup(path)
@@ -871,7 +892,7 @@ func TestUpgradeRejectsMigrationsThatFailTargetVerification(t *testing.T) {
 	for _, fixture := range []struct{ name, sql string }{
 		{"unexpected table", "CREATE TABLE main.unexpected (value TEXT);"},
 		{"changed identity", "UPDATE main.store_metadata SET id='new'"},
-		{"lost pairing", "UPDATE main.profile SET access_id='unrelated'"},
+		{"lost pairing", "UPDATE sync.profile SET access_id='unrelated'"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			p := seedUpgradeStores(t)

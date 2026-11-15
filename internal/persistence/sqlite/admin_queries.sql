@@ -22,7 +22,8 @@ SELECT snapshot,selection_authority FROM admin_instruments CROSS JOIN ordering W
 -- name: AdminCounts :one
 SELECT (SELECT count(*) FROM published_resources WHERE kind='activity') AS activity_count,(SELECT count(*) FROM published_resources WHERE kind='instruments') AS instrument_count,(SELECT count(*) FROM connections) AS connection_count;
 -- name: AdminReferenceStatus :one
-SELECT length(encrypted)>0 AS has_key,failure FROM access.reference_settings WHERE singleton=1;
+SELECT CAST(length(coalesce((SELECT encrypted FROM access.reference_settings WHERE singleton=1),X''))>0 AS INTEGER) AS has_key,
+ CAST(coalesce((SELECT failure FROM sync.reference_diagnostics WHERE singleton=1),'') AS TEXT) AS failure;
 -- name: AdminSourceCount :one
 SELECT count(*) FROM connections WHERE sqlc.arg(search)='' OR wake_contains(name || ' ' || provider,sqlc.arg(search))=1;
 -- name: AdminSourceRows :many

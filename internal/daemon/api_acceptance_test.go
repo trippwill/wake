@@ -70,6 +70,17 @@ func TestAPIDaemonProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if os.Getenv("WAKE_API_DAEMON_LOCAL_ONLY") == "true" {
+		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+		defer cancel()
+
+		if err := Run(ctx, cfg, slog.New(slog.NewJSONHandler(os.Stderr, nil))); err != nil {
+			t.Fatal(err)
+		}
+
+		return
+	}
+
 	cert, err := base64.StdEncoding.DecodeString(os.Getenv("WAKE_API_DAEMON_CERT"))
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +115,7 @@ func TestAPIDaemonProcess(t *testing.T) {
 		cfg,
 		slog.New(slog.NewJSONHandler(os.Stderr, nil)),
 		sourceOptions{
+			openSources:     persistence.Open,
 			IBKR:            ibkrflex.Options{HTTPClient: client, BaseURL: endpoint},
 			Now:             clockNow,
 			ReferenceClient: client,
@@ -199,6 +211,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	profile := persistence.Profile{
 		WarehousePath:   cfg.Storage.WarehousePath,
 		ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath:        cfg.Storage.SyncPath,
 	}
 	open := func() *persistence.Store {
 		t.Helper()
@@ -419,6 +432,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	}
 	defer stop()
 
+	localOnly := false
 	start := func(status ...int) {
 		t.Helper()
 		logs.Reset()
@@ -434,6 +448,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		daemon.Env = append(
 			os.Environ(),
 			"WAKE_API_DAEMON_CONFIG="+string(data),
+			"WAKE_API_DAEMON_LOCAL_ONLY="+strconv.FormatBool(localOnly),
 			"WAKE_API_DAEMON_NOW="+now.UTC().Format(time.RFC3339Nano),
 			"WAKE_API_DAEMON_UPSTREAM="+upstream.URL,
 			"WAKE_API_DAEMON_CERT="+base64.StdEncoding.EncodeToString(upstream.Certificate().Raw),
@@ -1227,7 +1242,9 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	stopFollower()
 	stop()
-	// Recreating access keeps the warehouse identity and accepted publication intact.
+	// Financial-only startup without access keeps the accepted publication intact.
+	localOnly = true
+
 	if err = os.Remove(profile.ConnectionsPath); err != nil {
 		t.Fatal(err)
 	}
@@ -1240,6 +1257,35 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		t.Fatal("access recovery replaced financial baseline")
 	}
 
+	archive := filepath.Join(filepath.Dir(profile.WarehousePath), "history.tar")
+	if _, err = SnapshotWarehouse(ctx, cfg, "", archive); err != nil {
+		t.Fatal(err)
+	}
+
+	stop()
+
+	if err = os.Rename(profile.WarehousePath, profile.WarehousePath+".original"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = RestoreStorage(ctx, cfg, "", archive, false); err != nil {
+		t.Fatal(err)
+	}
+
+	start()
+
+	result = consume(false)
+	restored := mirror()
+	if string(result["new_baseline"]) != "true" || restored.WarehouseID == after.WarehouseID ||
+		restored.Version == after.Version || len(restored.Resources) != len(after.Resources) ||
+		restored.Resources["activity/"+id].Activity.Trade.Price.Amount != "402.0000" {
+		t.Fatal(
+			"restored publication lost history or kept its old baseline",
+			restored.WarehouseID,
+			restored.Version,
+		)
+	}
+
 	stop()
 	// A different warehouse installs a complete, explicitly reported new baseline.
 	if err = os.Remove(profile.WarehousePath); err != nil {
@@ -1250,8 +1296,8 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	result = consume(false)
 	fresh := mirror()
-	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == after.WarehouseID ||
-		fresh.Version == after.Version ||
+	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == restored.WarehouseID ||
+		fresh.Version == restored.Version ||
 		len(fresh.Resources) != 0 {
 		t.Fatal("new warehouse did not atomically replace baseline", fresh)
 	}

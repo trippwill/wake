@@ -48,6 +48,10 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 		return err
 	}
 
+	if err = bindCredentialIdentity(ctx, q, c.ID, c.Provider); err != nil {
+		return err
+	}
+
 	for key, payload := range secrets {
 		if err = q.PutSecret(
 			ctx,
@@ -317,7 +321,18 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	err = s.queries.WithTx(tx).ReplaceSecret(
+	q := s.queries.WithTx(tx)
+
+	connection, err := q.Connection(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if err = bindCredentialIdentity(ctx, q, id, connection.Provider); err != nil {
+		return err
+	}
+
+	err = q.ReplaceSecret(
 		ctx,
 		sqlc.ReplaceSecretParams{ConnectionID: id, Key: key, Encrypted: payload},
 	)
@@ -326,6 +341,19 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 	}
 
 	return s.accessUpdated(ctx, "connection_credential", err)
+}
+
+func bindCredentialIdentity(ctx context.Context, q *sqlc.Queries, id, providerID string) error {
+	rows, err := q.BindCredentialIdentity(ctx, sqlc.BindCredentialIdentityParams{ID: id, Provider: providerID})
+	if err != nil {
+		return err
+	}
+
+	if rows != 1 {
+		return ErrAssociation
+	}
+
+	return nil
 }
 
 func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint, error) {

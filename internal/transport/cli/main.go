@@ -151,14 +151,14 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			),
 			&cli.Command{
 				Name:      "backup",
-				Usage:     "Back up the warehouse and encrypted access with Wake stopped",
+				Usage:     "Check operational backup availability",
 				ArgsUsage: "<file>",
 				Flags:     common(),
 				Action:    performBackup,
 			},
 			&cli.Command{
 				Name:      "restore",
-				Usage:     "Restore a snapshot or backup into vacant storage paths with Wake stopped",
+				Usage:     "Restore a warehouse snapshot into a vacant storage path with Wake stopped",
 				ArgsUsage: "<file>",
 				Flags: append(common(), &cli.BoolFlag{
 					Name: "with-credentials", Usage: "Restore encrypted access alongside the warehouse",
@@ -167,7 +167,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			},
 			&cli.Command{
 				Name:  "upgrade",
-				Usage: "Preview a forward storage upgrade with Wake stopped",
+				Usage: "Check the financial storage format with Wake stopped",
 				Flags: append(common(), &cli.StringFlag{
 					Name: "confirm", Usage: "Apply the upgrade matching this plan ID",
 				}),
@@ -177,7 +177,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				Name:        "reset",
 				Usage:       "Preview or reset the selected store",
 				ArgsUsage:   "credentials|warehouse",
-				Description: "Stop Wake before reset. A warehouse reset includes its disposable operational state. Selected database files and SQLite sidecars are removed without opening SQLite or reading credentials. Configuration, key and browser access files are retained.",
+				Description: "Stop Wake before reset. The selected database and its SQLite sidecars are removed without opening SQLite or reading credentials.",
 				Flags: append(
 					common(),
 					&cli.BoolFlag{

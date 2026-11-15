@@ -24,8 +24,16 @@ const (
 )
 
 var (
-	backupEntries       = [2]string{"wake-backup/v1/warehouse.db", "wake-backup/v1/access.db"}
-	legacyBackupEntries = [2]string{"wake-upgrade/warehouse.db", "wake-upgrade/access.db"}
+	backupEntries = [storeCount]string{
+		"wake-backup/v2/warehouse.db",
+		"wake-backup/v2/access.db",
+		"wake-backup/v2/sync.db",
+	}
+	legacyBackupEntries = [storeCount]string{
+		"wake-upgrade/warehouse.db",
+		"wake-upgrade/access.db",
+		"wake-upgrade/sync.db",
+	}
 )
 
 type backupReader struct {
@@ -42,7 +50,9 @@ func (r backupReader) Read(data []byte) (int, error) {
 }
 
 func verifyBackupSource(ctx context.Context, path string, owner *os.File) error {
-	db := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{owner}, probe: true})
+	db := sql.OpenDB(
+		&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{owner}, probe: true},
+	)
 	defer func() { _ = db.Close() }()
 
 	var result string
@@ -59,7 +69,7 @@ func verifyBackupSource(ctx context.Context, path string, owner *os.File) error 
 
 // createUpgradeBackup copies both locked files before either writable SQLite
 // connection opens. The archive replaces the preceding backup atomically.
-func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.File) (string, error) {
+func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [storeCount]*os.File) (string, error) {
 	for i, store := range plan.Stores {
 		if err := checkUpgradeJournals(store.Path); err != nil {
 			return "", err
@@ -77,7 +87,12 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 	return writeBackupPair(ctx, plan.BackupPath, owners, true)
 }
 
-func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, replace bool) (string, error) {
+func writeBackupPair(
+	ctx context.Context,
+	path string,
+	owners [storeCount]*os.File,
+	replace bool,
+) (string, error) {
 	return writeRecoveryArchive(ctx, path, replace, func(archive *tar.Writer) error {
 		var digests strings.Builder
 		for i, owner := range owners {

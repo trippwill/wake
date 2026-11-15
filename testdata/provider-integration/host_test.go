@@ -81,7 +81,7 @@ func registration(t *testing.T) provider.Registration {
 func (f *fixtureHost) open(t *testing.T, r provider.Registration) {
 	t.Helper()
 	var err error
-	f.store, err = persistence.Open(context.Background(), persistence.Profile{WarehousePath: f.path, ConnectionsPath: filepath.Join(filepath.Dir(f.path), "connections.db")}, nil)
+	f.store, err = persistence.Open(context.Background(), persistence.Profile{WarehousePath: f.path, ConnectionsPath: filepath.Join(filepath.Dir(f.path), "connections.db"), SyncPath: f.syncPath()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,29 +90,36 @@ func (f *fixtureHost) open(t *testing.T, r provider.Registration) {
 		t.Fatal(err)
 	}
 }
-func (f *fixtureHost) sql(t *testing.T, text string, args ...any) {
+func (f *fixtureHost) syncPath() string {
+	return filepath.Join(filepath.Dir(f.path), "sync.db")
+}
+func (f *fixtureHost) openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", f.path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = db.Close() }()
-	if _, err = db.Exec("ATTACH DATABASE ? AS operational", filepath.Join(filepath.Dir(f.path), "operational.db")); err != nil {
+	db.SetMaxOpenConns(1)
+	if _, err = db.Exec("ATTACH DATABASE ? AS sync", f.syncPath()); err != nil {
+		_ = db.Close()
 		t.Fatal(err)
 	}
-	if _, err = db.Exec(text, args...); err != nil {
+	return db
+}
+func (f *fixtureHost) sql(t *testing.T, text string, args ...any) {
+	t.Helper()
+	db := f.openTestDB(t)
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(text, args...); err != nil {
 		t.Fatal(err)
 	}
 }
 func (f *fixtureHost) count(t *testing.T, table string) int {
 	t.Helper()
-	db, err := sql.Open("sqlite", f.path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := f.openTestDB(t)
 	defer func() { _ = db.Close() }()
 	var n int
-	if err = db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -142,12 +149,9 @@ func TestExternalProviderRealHostStoreAndRestart(t *testing.T) {
 		t.Fatal("discovery acknowledgement", cp)
 	}
 	// Discovery never creates financial accounts or recurring synchronization authority.
-	db, err := sql.Open("sqlite", f.path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := f.openTestDB(t)
 	var n int
-	err = db.QueryRow("SELECT (SELECT count(*) FROM accounts) + (SELECT count(*) FROM scheduled WHERE enabled=1)").Scan(&n)
+	err = db.QueryRow("SELECT (SELECT count(*) FROM accounts) + (SELECT count(*) FROM sync.scheduled WHERE enabled=1)").Scan(&n)
 	_ = db.Close()
 	if err != nil || n != 0 {
 		t.Fatal("discovery activated account", n, err)
@@ -507,7 +511,7 @@ func TestInterruptedAttemptRecoveryAndCredentialFreeNormalization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.sql(t, "INSERT INTO attempts(id,artifact_id,version,outcome,counts) VALUES ('interrupted-proof',?,'old-v1','running',X'')", artifact)
+	f.sql(t, "INSERT INTO sync.attempts(id,artifact_id,version,outcome,counts) VALUES ('interrupted-proof',?,'old-v1','running',X'')", artifact)
 	f.host.Close()
 	if err = f.store.Close(); err != nil {
 		t.Fatal(err)
@@ -564,7 +568,7 @@ func TestPacingStorageFailureCannotBeAcknowledged(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	f.sql(t, "CREATE TRIGGER fail_pacing BEFORE INSERT ON pacing BEGIN SELECT RAISE(ABORT,'synthetic pacing failure'); END")
+	f.sql(t, "CREATE TRIGGER sync.fail_pacing BEFORE INSERT ON pacing BEGIN SELECT RAISE(ABORT,'synthetic pacing failure'); END")
 	if _, err = f.host.Acquire(context.Background(), f.id, "statements"); !errors.Is(err, host.ErrStorage) {
 		t.Fatal("pacing failure acknowledged", err)
 	}
@@ -686,7 +690,7 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 	if err = f.host.CheckAccess(t.Context(), id); err != nil {
 		t.Fatal("normalizer required credentials", err)
 	}
-	if count := f.count(t, "scheduled"); count != 0 {
+	if count := f.count(t, "sync.scheduled"); count != 0 {
 		t.Fatal("normalizer scheduled upstream work", count)
 	}
 	view, err := inspectProvider(t, workflow)
@@ -703,17 +707,17 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 
 	// A stale upstream witness must not block local evidence admission or be
 	// overwritten by it. The mismatch affects only upstream admission.
-	f.sql(t, `UPDATE sync_association SET token='stale-fixture';
-CREATE TRIGGER reject_supply_sync_write BEFORE UPDATE ON sync_association
+	f.sql(t, `UPDATE sync.sync_association SET token='stale-fixture';
+CREATE TRIGGER sync.reject_supply_sync_write BEFORE UPDATE ON sync_association
 BEGIN SELECT RAISE(ABORT,'local supply touched upstream association'); END`)
 
-	workCount := f.count(t, "work")
+	workCount := f.count(t, "sync.work")
 
 	retainedID, err := f.host.Supply(t.Context(), id, "documents", artifact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.count(t, "work") != workCount {
+	if f.count(t, "sync.work") != workCount {
 		t.Fatal("local supply created scheduler work")
 	}
 
@@ -765,20 +769,17 @@ func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T
 	if _, err = workflow.Confirm(t.Context(), f.id, artifact, candidate.Candidate.Reference(), details); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", f.path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := f.openTestDB(t)
 	defer db.Close()
 	var scheduled int
-	if err = db.QueryRow("SELECT count(*) FROM scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
+	if err = db.QueryRow("SELECT count(*) FROM sync.scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
 		t.Fatal("discovery required an acquirer", scheduled, err)
 	}
 	settings, _ := provider.NewSettings(map[string]string{"tenant": "synthetic-tenant"})
 	if err = workflow.UpdateConnection(t.Context(), f.id, "Renamed discovery source", settings); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.QueryRow("SELECT count(*) FROM scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
+	if err = db.QueryRow("SELECT count(*) FROM sync.scheduled WHERE operation='acquire' AND enabled=1").Scan(&scheduled); err != nil || scheduled != 0 {
 		t.Fatal("settings update scheduled an unavailable acquirer", scheduled, err)
 	}
 
@@ -887,9 +888,8 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 }
 
 //nolint:gosec // Copy only encrypted synthetic fixtures into private disposable profiles.
-func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
-	registration := registration(t)
-	seed := newFixture(t, registration)
+func TestEncryptedAccessSeedStaysSeparateFromLocalWarehouses(t *testing.T) {
+	seed := newFixture(t, registration(t))
 	seed.host.Close()
 	if err := seed.store.Close(); err != nil {
 		t.Fatal(err)
@@ -902,70 +902,45 @@ func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
 	if bytes.Contains(original, []byte("synthetic-token")) {
 		t.Fatal("access seed retained plaintext credential")
 	}
-	hosts := []*host.Host{}
+
 	warehouseIDs := map[string]bool{}
 	for range 2 {
 		dir := t.TempDir()
 		if err = os.Chmod(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		access := filepath.Join(dir, "connections.db")
-		if err = os.WriteFile(access, original, 0o600); err != nil {
+		profile := persistence.Profile{
+			WarehousePath:   filepath.Join(dir, "history.sqlite"),
+			ConnectionsPath: filepath.Join(dir, "connections.db"),
+			SyncPath:        filepath.Join(dir, "sync.db"),
+		}
+		if err = os.WriteFile(profile.ConnectionsPath, original, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		profile := persistence.Profile{WarehousePath: filepath.Join(dir, "history.sqlite"), ConnectionsPath: access}
-		store, err := persistence.Open(t.Context(), profile, nil)
+		ctx := t.Context()
+		if err = persistence.CheckStoredCredentialKey(ctx, profile.ConnectionsPath, seed.envelope); err != nil {
+			t.Fatal("detached ciphertext failed its original identity binding", err)
+		}
+		store, err := persistence.OpenFinancial(ctx, profile, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		h, err := host.New(t.Context(), store, seed.envelope, nil, func() time.Time { return seed.now }, nil, registration)
-		if err != nil {
-			t.Fatal(err)
+		t.Cleanup(func() { _ = store.Close() })
+
+		snapshot, err := store.Snapshot(ctx, application.SnapshotCondition{})
+		id := snapshot.Snapshot.WarehouseID
+		if err != nil || id == "" || warehouseIDs[id] || len(snapshot.Snapshot.Resources) != 0 {
+			t.Fatal("local warehouse reused copied identity or configuration", id, err)
 		}
-		t.Cleanup(func() {
-			h.Close()
-			if err := store.Close(); err != nil {
-				t.Error(err)
-			}
-		})
-		workflow := application.New(store, h.Registrations(), h, nil, nil, nil)
-		view, err := inspectProvider(t, workflow)
-		if err != nil || !view.Storage.Paused || !view.Storage.WarehouseReset || len(view.Connections) != 1 || view.Connections[0].MissingAccess {
-			t.Fatal("copied seed lost access or resumed without review", view, err)
+		warehouseIDs[id] = true
+
+		if _, err = os.Stat(profile.SyncPath); !os.IsNotExist(err) {
+			t.Fatal("local startup created synchronization storage", err)
 		}
-		if err = h.CheckAccess(t.Context(), seed.id); err != nil {
-			t.Fatal("copied protected credentials unusable", err)
+		after, err := os.ReadFile(profile.ConnectionsPath)
+		if err != nil || !bytes.Equal(original, after) {
+			t.Fatal("local warehouse modified the independent access seed", err)
 		}
-		if err = workflow.ResumeStorage(t.Context(), view.Storage.Revision, "synthetic-test"); err != nil {
-			t.Fatal(err)
-		}
-		db, err := sql.Open("sqlite", profile.WarehousePath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var identity string
-		err = db.QueryRow("SELECT id FROM store_metadata").Scan(&identity)
-		_ = db.Close()
-		if err != nil || identity == "" || warehouseIDs[identity] {
-			t.Fatal("copied seed reused warehouse identity", identity, err)
-		}
-		warehouseIDs[identity] = true
-		hosts = append(hosts, h)
-	}
-	replacement := credential.NewSecret([]byte("synthetic-seed-replacement"))
-	defer replacement.Clear()
-	if err = hosts[0].ReplaceSecret(t.Context(), seed.id, "api_secret", replacement); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = hosts[0].Acquire(t.Context(), seed.id, "statements"); !errors.Is(err, provider.ErrUnauthorized) {
-		t.Fatal("changed clone credential was not isolated", err)
-	}
-	if id, err := hosts[1].Acquire(t.Context(), seed.id, "statements"); err != nil || id == "" {
-		t.Fatal("one clone changed another clone's credential/work", id, err)
-	}
-	after, err := os.ReadFile(seedPath)
-	if err != nil || !bytes.Equal(original, after) {
-		t.Fatal("disposable writers modified reusable encrypted seed", err)
 	}
 }
 

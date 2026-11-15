@@ -88,7 +88,7 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 
 			ready, done := make(chan struct{}), make(chan error, 1)
 			go func() {
-				done <- Run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), func(p string) {
+				done <- run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{openSources: persistence.Open}, func(p string) {
 					if p == "ready" {
 						close(ready)
 					}
@@ -148,6 +148,7 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 
 			open, err := persistence.Open(t.Context(), persistence.Profile{
 				WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+				SyncPath: cfg.Storage.SyncPath,
 			}, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -182,6 +183,7 @@ func seedSavedCredential(t *testing.T, cfg config.Config, reference bool) {
 
 	db, err := persistence.Open(t.Context(), persistence.Profile{
 		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath: cfg.Storage.SyncPath,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -301,6 +303,7 @@ func verifyCredentialRepair(t *testing.T, cfg config.Config, db *persistence.Sto
 
 	reopened, err := persistence.Open(t.Context(), persistence.Profile{
 		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath: cfg.Storage.SyncPath,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

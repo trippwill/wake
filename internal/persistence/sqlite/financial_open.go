@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"go.trippwill.dev/wake/internal/logging"
@@ -69,22 +70,19 @@ func OpenFinancial(ctx context.Context, profile Profile, logger *slog.Logger) (r
 	}
 
 	if fresh {
-		s.owners[0], err = claimFile(path)
-	} else {
-		err = validateStorageCopy(ctx, []string{path}, []*os.File{s.owners[0]})
-	}
-
-	if err != nil {
+		if err = s.createFinancial(ctx, path); err != nil {
+			return nil, err
+		}
+	} else if err = validateStorageCopy(ctx, []string{path}, []*os.File{s.owners[0]}); err != nil {
 		return nil, err
 	}
 
-	s.db = sql.OpenDB(&connector{paths: [2]string{path}, owners: s.owners})
-	s.db.SetMaxOpenConns(1)
-	s.db.SetMaxIdleConns(1)
+	s.connectFinancial(path)
 
-	s.queries = sqlc.New(s.db)
-	if err = s.initializeFinancial(ctx, fresh); err != nil {
-		return nil, err
+	if !fresh {
+		if err = s.initializeFinancial(ctx, false); err != nil {
+			return nil, err
+		}
 	}
 
 	if err = s.openActivityReader(ctx, path); err != nil {
@@ -92,6 +90,55 @@ func OpenFinancial(ctx context.Context, profile Profile, logger *slog.Logger) (r
 	}
 
 	return s, nil
+}
+
+func (s *Store) connectFinancial(path string) {
+	s.db = sql.OpenDB(&connector{paths: [storeCount]string{path}, owners: s.owners})
+	s.db.SetMaxOpenConns(1)
+	s.db.SetMaxIdleConns(1)
+	s.queries = sqlc.New(s.db)
+}
+
+func (s *Store) createFinancial(ctx context.Context, path string) error {
+	staged, err := os.CreateTemp(filepath.Dir(path), ".wake-create-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(staged.Name()) }()
+	defer func() { _ = staged.Close() }()
+
+	s.owners[0], err = lockStoreFile(staged.Name(), false)
+	if err != nil {
+		return err
+	}
+
+	s.connectFinancial(staged.Name())
+
+	if err = s.initializeFinancial(ctx, true); err != nil {
+		return err
+	}
+
+	if err = s.db.Close(); err != nil {
+		return err
+	}
+
+	if err = staged.Sync(); err != nil {
+		return err
+	}
+
+	if err = checkVacantStore(path, false); err != nil {
+		return err
+	}
+
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+
+	if err = renameNewFile(staged.Name(), path); err != nil {
+		return err
+	}
+
+	return syncUpgradeDir(path)
 }
 
 func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
@@ -115,13 +162,13 @@ func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
 		); err != nil {
 			return err
 		}
+
+		if _, err = tx.ExecContext(ctx, profileStatement("InitializeLineage", ""), rand.Text()); err != nil {
+			return err
+		}
 	}
 
 	if err = s.prepareHistoryUpdate(ctx, s.queries.WithTx(tx), fresh); err != nil {
-		return err
-	}
-
-	if _, err = tx.ExecContext(ctx, profileStatement("InterruptAttempts", "")); err != nil {
 		return err
 	}
 
@@ -134,4 +181,80 @@ func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
 	}
 
 	return s.commit(ctx, tx)
+}
+
+// PreviewFinancial examines the supported financial format without opening the
+// optional stores. This pre-release build has no incoming format migrations.
+func PreviewFinancial(ctx context.Context, path, confirm string) (UpgradePlan, error) {
+	var plan UpgradePlan
+	if err := rejectPendingRestore(path); err != nil {
+		return plan, err
+	}
+
+	if err := checkNoUpgrade(path); err != nil {
+		return plan, err
+	}
+
+	baseline := releaseBaseline()
+	files := [storeCount]string{path}
+
+	owner, err := lockStoreFile(path, false)
+	if err != nil {
+		if _, e := os.Lstat(path); os.IsNotExist(e) {
+			if confirm != "" {
+				return plan, ErrUpgradePlanChanged
+			}
+
+			if e = checkUpgradeJournals(path); e != nil && !os.IsNotExist(e) {
+				return plan, e
+			}
+
+			plan, _, e = baseline.plan(files, [storeCount]storeMetadata{}, [storeCount]bool{}, historyVersion{})
+			plan.Stores = plan.Stores[:1]
+
+			return plan, e
+		}
+
+		return plan, err
+	}
+
+	defer func() { _ = owner.Close() }()
+
+	if err = checkUpgradeJournals(path); err != nil {
+		return plan, err
+	}
+
+	if err = validateStorageCopy(ctx, []string{path}, []*os.File{owner}); err != nil {
+		return plan, err
+	}
+
+	db := sql.OpenDB(&connector{
+		paths: files, owners: [storeCount]*os.File{owner}, probe: true,
+	})
+	defer func() { _ = db.Close() }()
+
+	var (
+		metadata [storeCount]storeMetadata
+		history  historyVersion
+	)
+
+	m := &metadata[0]
+	if err = db.QueryRowContext(ctx, profileStatement("Metadata", "main")).
+		Scan(&m.kind, &m.version, &m.id); err != nil {
+		return plan, err
+	}
+
+	if err = db.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
+		Scan(&history.applied, &history.target); err != nil {
+		return plan, err
+	}
+
+	if confirm != "" {
+		return plan, ErrUpgradePlanChanged
+	}
+
+	plan, _, err = baseline.plan(files, metadata, [storeCount]bool{true}, history)
+	plan.Stores = plan.Stores[:1]
+
+	return plan, err
 }

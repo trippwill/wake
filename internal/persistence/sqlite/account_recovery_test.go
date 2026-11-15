@@ -217,7 +217,7 @@ func TestAccountRecoveryPreservesAcceptedActivityAcrossRetryAndRestart(t *testin
 	}
 	// Failed confirmation must leave neither an account nor acquisition intent.
 	if _, err = s.db.Exec(
-		`CREATE TRIGGER reject_account BEFORE INSERT ON scheduled WHEN NEW.operation='acquire' BEGIN SELECT RAISE(ABORT,'injected'); END`,
+		`CREATE TRIGGER sync.reject_account BEFORE INSERT ON scheduled WHEN NEW.operation='acquire' BEGIN SELECT RAISE(ABORT,'injected'); END`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestAccountRecoveryPreservesAcceptedActivityAcrossRetryAndRestart(t *testin
 		t.Fatal("partial confirmation", err)
 	}
 
-	if _, err = s.db.Exec(`DROP TRIGGER reject_account`); err != nil {
+	if _, err = s.db.Exec(`DROP TRIGGER sync.reject_account`); err != nil {
 		t.Fatal(err)
 	}
 

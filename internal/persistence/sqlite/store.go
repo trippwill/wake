@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-// Package persistence implements Wake's private two-store SQLite boundary.
+// Package persistence implements Wake's private SQLite storage.
 package persistence
 
 import (
@@ -32,24 +32,32 @@ type Error string
 
 func (e Error) Error() string { return string(e) }
 
+const storeCount = 3
+
 const (
 	ErrUnsupportedSchema Error = "unsupported store format; use a compatible Wake build or restore a matching backup; for an unsupported development store, stop Wake and preview wake storage reset warehouse or wake storage reset credentials"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-warehouse/2"
-	accessSchemaVersion        = "wake-access/2"
+	schemaVersion              = "wake-warehouse/3"
+	accessSchemaVersion        = "wake-access/3"
+	syncSchemaVersion          = "wake-sync/1"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
 type Profile struct {
-	WarehousePath, ConnectionsPath string
-	Registrations                  []provider.Registration
-	UnattendedUpgrade              bool
+	WarehousePath, ConnectionsPath, SyncPath string
+	Registrations                            []provider.Registration
+	UnattendedUpgrade                        bool
 }
 
-func (p Profile) paths() [2]string {
-	return [2]string{p.WarehousePath, p.ConnectionsPath}
+func (p Profile) paths() [storeCount]string {
+	syncPath := p.SyncPath
+	if syncPath == "" && p.ConnectionsPath != "" {
+		syncPath = p.ConnectionsPath + ".sync"
+	}
+
+	return [storeCount]string{p.WarehousePath, p.ConnectionsPath, syncPath}
 }
 
 //go:embed schema.sql
@@ -60,6 +68,9 @@ var activityDateIndexesSQL string
 
 //go:embed connections_schema.sql
 var connectionsSQL string
+
+//go:embed sync_schema.sql
+var syncSQL string
 
 //go:embed connection.sql
 var connectionSQL string
@@ -87,13 +98,14 @@ func profileStatement(name, schema string) string {
 type Store struct {
 	historyRule              application.FinancialRule
 	historyUpdating          atomic.Bool
+	historyRetry             atomic.Pointer[time.Time]
 	credentialKeyUnavailable atomic.Bool
 	registrations            []provider.Registration
 	db                       *sql.DB
 	activityDB               *sql.DB
 	activityQuery            *sql.Stmt
 	queries                  *sqlc.Queries
-	owners                   [2]*os.File
+	owners                   [storeCount]*os.File
 	logger                   *slog.Logger
 	closeOnce                sync.Once
 	closeError               error
@@ -120,9 +132,9 @@ func (s *Store) WarehouseSize() (int64, error) {
 }
 
 var (
-	storeKinds    = [2]string{"warehouse", "connections"}
-	storeSchemas  = [2]string{"main", "access"}
-	storeVersions = [2]string{schemaVersion, accessSchemaVersion}
+	storeKinds    = [storeCount]string{"warehouse", "connections", "synchronization"}
+	storeSchemas  = [storeCount]string{"main", "access", "sync"}
+	storeVersions = [storeCount]string{schemaVersion, accessSchemaVersion, syncSchemaVersion}
 )
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
@@ -160,7 +172,9 @@ func openStore(
 		}
 	}()
 
-	for _, dir := range []string{filepath.Dir(profile.WarehousePath), filepath.Dir(profile.ConnectionsPath)} {
+	paths := profile.paths()
+	for _, path := range paths {
+		dir := filepath.Dir(path)
 		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
 			return nil, ErrUnsafeStore
 		}
@@ -175,7 +189,6 @@ func openStore(
 		}
 	}
 
-	paths := profile.paths()
 	if err := rejectPendingRestore(paths[0]); err != nil {
 		return nil, err
 	}
@@ -208,8 +221,8 @@ func openStore(
 
 	var (
 		history  historyVersion
-		metadata [2]storeMetadata
-		present  [2]bool
+		metadata [storeCount]storeMetadata
+		present  [storeCount]bool
 		previous string
 	)
 	for i, path := range paths {
@@ -264,7 +277,9 @@ func openStore(
 			continue
 		}
 
-		probe := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{s.owners[i]}, probe: true})
+		probe := sql.OpenDB(
+			&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{s.owners[i]}, probe: true},
+		)
 
 		var count int
 
@@ -279,11 +294,13 @@ func openStore(
 				err = ErrUnsupportedSchema
 			}
 
-			if err == nil && i == 0 {
-				err = probe.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&previous)
-				if err == nil {
+			if err == nil {
+				switch i {
+				case 0:
 					err = probe.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
 						Scan(&history.applied, &history.target)
+				case 2:
+					err = probe.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&previous)
 				}
 			}
 		} else if err == nil {
@@ -335,7 +352,7 @@ func openStore(
 
 	var (
 		plan   UpgradePlan
-		chains [2][]migration
+		chains [storeCount][]migration
 	)
 	if intent.Plan.ID != "" {
 		files, e := upgradeFiles(s.owners)
@@ -356,7 +373,7 @@ func openStore(
 			return nil, err
 		}
 
-		if plan.needed() && (!present[0] || !present[1] || metadata[1].id != previous) {
+		if plan.needed() && (!present[0] || !present[1] || !present[2] || metadata[1].id != previous) {
 			return nil, ErrUpgradePair
 		}
 
@@ -417,7 +434,7 @@ func openStore(
 
 	stage, storeKind = "ownership", "profile"
 
-	if s.owners[0] == nil || s.owners[1] == nil {
+	if s.owners[0] == nil || s.owners[1] == nil || s.owners[2] == nil {
 		guard, err := lockStoreDirectory(paths[0])
 		if err != nil {
 			return nil, err
@@ -510,7 +527,7 @@ func openStore(
 
 func (s *Store) openActivityReader(ctx context.Context, path string) error {
 	s.activityDB = sql.OpenDB(&connector{
-		paths: [2]string{path}, owners: [2]*os.File{s.owners[0]}, activityRead: true,
+		paths: [storeCount]string{path}, owners: [storeCount]*os.File{s.owners[0]}, activityRead: true,
 	})
 	s.activityDB.SetMaxOpenConns(1)
 	s.activityDB.SetMaxIdleConns(1)
@@ -587,15 +604,17 @@ func (s *Store) Close() error {
 
 func (s *Store) initialize(
 	ctx context.Context,
-	present [2]bool,
-	metadata [2]storeMetadata,
+	present [storeCount]bool,
+	metadata [storeCount]storeMetadata,
 	accessChanged bool,
 	baseline upgradeBaseline,
-	chains [2][]migration,
+	chains [storeCount][]migration,
 ) error {
 	started := time.Now()
 
-	recovering := present[0] && (!present[1] || accessChanged)
+	freshProfile := !present[0] && !present[1] && !present[2]
+
+	recovering := !freshProfile && (!present[0] || !present[1] || !present[2] || accessChanged)
 	if recovering {
 		s.logger.WarnContext(
 			ctx,
@@ -639,7 +658,7 @@ func (s *Store) initialize(
 		}
 	}
 
-	if len(chains[0])+len(chains[1]) != 0 {
+	if len(chains[0])+len(chains[1])+len(chains[2]) != 0 {
 		if err = applyMigrations(ctx, tx, chains); err != nil {
 			return err
 		}
@@ -654,16 +673,20 @@ func (s *Store) initialize(
 	}
 
 	switch {
-	case !present[0] && present[1]:
+	case (!present[0] || !present[2]) && (present[0] || present[1]):
 		if _, err = tx.ExecContext(
 			ctx,
-			profileStatement("InitializeRetainedAccessProfile", ""),
+			profileStatement("InitializeRetainedAccessProfile", "sync"),
 			metadata[1].id,
 		); err != nil {
 			return err
 		}
-	case !present[0]:
-		if _, err = tx.ExecContext(ctx, profileStatement("InitializeProfile", ""), metadata[1].id); err != nil {
+	case !present[2]:
+		if _, err = tx.ExecContext(
+			ctx,
+			profileStatement("InitializeProfile", "sync"),
+			metadata[1].id,
+		); err != nil {
 			return err
 		}
 	case recovering:
@@ -674,7 +697,7 @@ func (s *Store) initialize(
 
 		if _, err = tx.ExecContext(
 			ctx,
-			profileStatement("RecoverProfile", ""),
+			profileStatement("RecoverProfile", "sync"),
 			metadata[1].id,
 			review,
 		); err != nil {
@@ -682,7 +705,13 @@ func (s *Store) initialize(
 		}
 	}
 
-	if err = bindUpstream(ctx, tx, metadata, !present[0], recovering || !present[0] && present[1]); err != nil {
+	if !present[0] {
+		if _, err = tx.ExecContext(ctx, profileStatement("InitializeLineage", ""), rand.Text()); err != nil {
+			return err
+		}
+	}
+
+	if err = bindUpstream(ctx, tx, metadata, freshProfile, recovering); err != nil {
 		return err
 	}
 
@@ -804,8 +833,8 @@ func (s *Store) initialize(
 // Every physical writer connection attaches the same owned files and establishes
 // rollback-journal safety before it can participate in a cross-store transaction.
 type connector struct {
-	paths        [2]string
-	owners       [2]*os.File
+	paths        [storeCount]string
+	owners       [storeCount]*os.File
 	probe        bool
 	accessProbe  bool
 	activityRead bool
@@ -865,18 +894,23 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 		return connection, nil
 	}
 
-	schemas := storeSchemas[:1]
-	if c.paths[1] != "" {
-		uri := (&url.URL{Scheme: "file", Path: c.paths[1], RawQuery: "mode=rw"}).String()
+	schemas := []string{"main"}
+	for i, schema := range storeSchemas[1:] {
+		path := c.paths[i+1]
+		if path == "" {
+			continue
+		}
+
+		uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=rw"}).String()
 		if _, err = executor.ExecContext(
 			ctx,
-			profileStatement("AttachAccess", ""),
+			profileStatement("Attach", schema),
 			[]driver.NamedValue{{Ordinal: 1, Value: uri}},
 		); err != nil {
 			return fail(err)
 		}
 
-		schemas = storeSchemas[:]
+		schemas = append(schemas, schema)
 	}
 
 	if _, err = executor.ExecContext(ctx, connectionSQL, nil); err != nil {

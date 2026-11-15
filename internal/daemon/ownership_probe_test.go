@@ -25,6 +25,10 @@ func TestStoppedProfileRetainsOwnershipDuringChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := os.Mkdir(filepath.Dir(cfg.Storage.ConnectionsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.WriteFile(cfg.Storage.ConnectionsPath, []byte("kept"), 0o600); err != nil {
 		t.Fatal(err)
 	}

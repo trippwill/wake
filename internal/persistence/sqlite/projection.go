@@ -134,7 +134,6 @@ func persistRootEnrichment(
 			sqlc.ResolveInstrumentParams{
 				ID:              root.ID,
 				ReferenceStatus: "conflict",
-				ReferenceNext:   root.ReferenceNext,
 			},
 		); err != nil {
 			return err

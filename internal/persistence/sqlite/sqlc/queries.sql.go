@@ -11,7 +11,7 @@ import (
 )
 
 const accessReadiness = `-- name: AccessReadiness :one
-SELECT EXISTS(SELECT 1 FROM access.configurations WHERE id=?1) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=?1) AS credential_stored
+SELECT EXISTS(SELECT 1 FROM sync.configurations WHERE id=?1) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=?1) AS credential_stored
 `
 
 type AccessReadinessRow struct {
@@ -382,7 +382,7 @@ func (q *Queries) AdvanceActivityRevision(ctx context.Context, id string) error 
 }
 
 const advanceHistoryUpdate = `-- name: AdvanceHistoryUpdate :exec
-UPDATE history_update SET phase=?,cursor=?,completed=completed+?3,retry_at='' WHERE singleton=1
+UPDATE history_update SET phase=?,cursor=?,completed=completed+?3 WHERE singleton=1
 `
 
 type AdvanceHistoryUpdateParams struct {
@@ -406,7 +406,10 @@ func (q *Queries) AdvanceInstrumentRevision(ctx context.Context, id string) erro
 }
 
 const advanceWork = `-- name: AdvanceWork :execrows
-UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,next,acknowledged,acknowledged_completed,acknowledged_total,failure,failure_code)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,?1,?2,?3,?4,?5,?6,?7,?8 FROM sync.work AS prior
+WHERE prior.connection_id=?9 AND prior.stream=?10 AND prior.operation=?11 AND prior.revision=?12
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, next=excluded.next, acknowledged=excluded.acknowledged, acknowledged_completed=excluded.acknowledged_completed, acknowledged_total=excluded.acknowledged_total, failure=excluded.failure, failure_code=excluded.failure_code
 `
 
 type AdvanceWorkParams struct {
@@ -538,18 +541,18 @@ func (q *Queries) ArtifactRootIDs(ctx context.Context, artifactID string) ([]str
 }
 
 const attempts = `-- name: Attempts :many
-SELECT id, artifact_id, version, outcome, counts FROM main.attempts WHERE artifact_id=? ORDER BY rowid
+SELECT id, artifact_id, version, outcome, counts FROM sync.attempts WHERE artifact_id=? ORDER BY rowid
 `
 
-func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]Attempt, error) {
+func (q *Queries) Attempts(ctx context.Context, artifactID string) ([]SyncAttempt, error) {
 	rows, err := q.db.QueryContext(ctx, attempts, artifactID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Attempt
+	var items []SyncAttempt
 	for rows.Next() {
-		var i Attempt
+		var i SyncAttempt
 		if err := rows.Scan(
 			&i.ID,
 			&i.ArtifactID,
@@ -584,8 +587,26 @@ func (q *Queries) BindActivityInstrument(ctx context.Context, arg BindActivityIn
 	return err
 }
 
+const bindCredentialIdentity = `-- name: BindCredentialIdentity :execrows
+INSERT INTO access.identities(id,provider) VALUES(?,?)
+ON CONFLICT(id) DO UPDATE SET provider=excluded.provider WHERE identities.provider=excluded.provider
+`
+
+type BindCredentialIdentityParams struct {
+	ID       string
+	Provider string
+}
+
+func (q *Queries) BindCredentialIdentity(ctx context.Context, arg BindCredentialIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, bindCredentialIdentity, arg.ID, arg.Provider)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const cacheReference = `-- name: CacheReference :exec
-INSERT INTO main.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id
+INSERT INTO sync.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id
 `
 
 type CacheReferenceParams struct {
@@ -608,12 +629,12 @@ func (q *Queries) CacheReference(ctx context.Context, arg CacheReferenceParams) 
 }
 
 const cachedReference = `-- name: CachedReference :one
-SELECT "key", status, records, expires, evidence_id FROM main.reference_cache WHERE key=?
+SELECT "key", status, records, expires, evidence_id FROM sync.reference_cache WHERE key=?
 `
 
-func (q *Queries) CachedReference(ctx context.Context, key string) (ReferenceCache, error) {
+func (q *Queries) CachedReference(ctx context.Context, key string) (SyncReferenceCache, error) {
 	row := q.db.QueryRowContext(ctx, cachedReference, key)
-	var i ReferenceCache
+	var i SyncReferenceCache
 	err := row.Scan(
 		&i.Key,
 		&i.Status,
@@ -807,7 +828,7 @@ func (q *Queries) Candidates(ctx context.Context, connectionID string) ([]Candid
 }
 
 const checkpoint = `-- name: Checkpoint :one
-SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure, failure_code FROM work WHERE connection_id=? AND stream=? AND operation=?
+SELECT connection_id, stream, operation, revision, state_version, state, next, observed, observed_completed, observed_total, acknowledged, acknowledged_completed, acknowledged_total, failure, failure_code FROM sync.work WHERE connection_id=? AND stream=? AND operation=?
 `
 
 type CheckpointParams struct {
@@ -816,9 +837,9 @@ type CheckpointParams struct {
 	Operation    string
 }
 
-func (q *Queries) Checkpoint(ctx context.Context, arg CheckpointParams) (Work, error) {
+func (q *Queries) Checkpoint(ctx context.Context, arg CheckpointParams) (SyncWork, error) {
 	row := q.db.QueryRowContext(ctx, checkpoint, arg.ConnectionID, arg.Stream, arg.Operation)
-	var i Work
+	var i SyncWork
 	err := row.Scan(
 		&i.ConnectionID,
 		&i.Stream,
@@ -899,7 +920,7 @@ func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]s
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.reference_next, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
 JOIN (
  SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
  UNION
@@ -936,7 +957,6 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
-			&i.ReferenceNext,
 			&i.Rule,
 			&i.CalculationRule,
 			&i.UnderlierID,
@@ -964,7 +984,7 @@ func (q *Queries) ConflictExecution(ctx context.Context, id string) error {
 }
 
 const connection = `-- name: Connection :one
-SELECT c.id, c.provider, c.name, c.settings, s.revision AS access_revision FROM access.configurations c CROSS JOIN sync_association s WHERE c.id=?
+SELECT c.id, c.provider, c.name, c.settings, s.revision AS access_revision FROM sync.configurations c CROSS JOIN sync.sync_association s WHERE c.id=?
 `
 
 type ConnectionRow struct {
@@ -989,7 +1009,7 @@ func (q *Queries) Connection(ctx context.Context, id string) (ConnectionRow, err
 }
 
 const connectionAccess = `-- name: ConnectionAccess :one
-SELECT count(*) FROM access.configurations c WHERE c.id=?
+SELECT count(*) FROM sync.configurations c WHERE c.id=?
 `
 
 func (q *Queries) ConnectionAccess(ctx context.Context, id string) (int64, error) {
@@ -1267,7 +1287,10 @@ func (q *Queries) Descriptor(ctx context.Context, id string) (Connection, error)
 }
 
 const disableAcquisition = `-- name: DisableAcquisition :exec
-UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='acquire'
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
+SELECT prior.connection_id,prior.stream,prior.operation,0 FROM sync.scheduled AS prior
+WHERE prior.connection_id=?1 AND prior.operation='acquire'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled
 `
 
 func (q *Queries) DisableAcquisition(ctx context.Context, connectionID string) error {
@@ -1276,7 +1299,10 @@ func (q *Queries) DisableAcquisition(ctx context.Context, connectionID string) e
 }
 
 const disableDiscovery = `-- name: DisableDiscovery :exec
-UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover'
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
+SELECT prior.connection_id,prior.stream,prior.operation,0 FROM sync.scheduled AS prior
+WHERE prior.connection_id=?1 AND prior.operation='discover'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled
 `
 
 func (q *Queries) DisableDiscovery(ctx context.Context, connectionID string) error {
@@ -1299,7 +1325,7 @@ func (q *Queries) DiscardActivitySupport(ctx context.Context, arg DiscardActivit
 }
 
 const enrichInstrument = `-- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END, reference_next='',reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=?5
+UPDATE instruments SET revision=revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=?5
 `
 
 type EnrichInstrumentParams struct {
@@ -1322,7 +1348,7 @@ func (q *Queries) EnrichInstrument(ctx context.Context, arg EnrichInstrumentPara
 }
 
 const ensureAccountAcquisitionWork = `-- name: EnsureAccountAcquisitionWork :execrows
-INSERT INTO work(connection_id,stream,operation)
+INSERT INTO sync.work(connection_id,stream,operation)
 SELECT connection_id,?1,'acquire' FROM accounts WHERE provider=?2
 ON CONFLICT DO NOTHING
 `
@@ -1341,7 +1367,7 @@ func (q *Queries) EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAc
 }
 
 const ensureCheckpointWork = `-- name: EnsureCheckpointWork :execrows
-INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING
+INSERT INTO sync.work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING
 `
 
 type EnsureCheckpointWorkParams struct {
@@ -1368,7 +1394,7 @@ func (q *Queries) EnsureInstrumentSelection(ctx context.Context, id string) erro
 }
 
 const ensureWork = `-- name: EnsureWork :exec
-INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING
+INSERT INTO sync.work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING
 `
 
 type EnsureWorkParams struct {
@@ -1521,17 +1547,11 @@ func (q *Queries) Executions(ctx context.Context) ([]Execution, error) {
 	return items, nil
 }
 
-const failHistoryUpdate = `-- name: FailHistoryUpdate :exec
-UPDATE history_update SET retry_at=? WHERE singleton=1
-`
-
-func (q *Queries) FailHistoryUpdate(ctx context.Context, retryAt string) error {
-	_, err := q.db.ExecContext(ctx, failHistoryUpdate, retryAt)
-	return err
-}
-
 const failWork = `-- name: FailWork :exec
-UPDATE work SET failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=?
+INSERT INTO sync.work(connection_id,stream,operation,failure,failure_code)
+SELECT prior.connection_id,prior.stream,prior.operation,?1,?2 FROM sync.work AS prior
+WHERE prior.connection_id=?3 AND prior.stream=?4 AND prior.operation=?5
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET failure=excluded.failure, failure_code=excluded.failure_code
 `
 
 type FailWorkParams struct {
@@ -1554,7 +1574,7 @@ func (q *Queries) FailWork(ctx context.Context, arg FailWorkParams) error {
 }
 
 const finishAttempt = `-- name: FinishAttempt :exec
-INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM main.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts
+INSERT INTO sync.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM sync.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts
 `
 
 type FinishAttemptParams struct {
@@ -1569,7 +1589,7 @@ func (q *Queries) FinishAttempt(ctx context.Context, arg FinishAttemptParams) er
 }
 
 const finishHistoryUpdate = `-- name: FinishHistoryUpdate :exec
-UPDATE history_update SET applied=target,target=0,phase='',cursor='',retry_at='' WHERE singleton=1
+UPDATE history_update SET applied=target,target=0,phase='',cursor='' WHERE singleton=1
 `
 
 func (q *Queries) FinishHistoryUpdate(ctx context.Context) error {
@@ -1662,7 +1682,7 @@ func (q *Queries) HistoryInstruments(ctx context.Context, cursor string) ([]stri
 }
 
 const historyUpdate = `-- name: HistoryUpdate :one
-SELECT singleton, applied, target, phase, cursor, completed, retry_at FROM history_update WHERE singleton=1
+SELECT singleton, applied, target, phase, cursor, completed FROM history_update WHERE singleton=1
 `
 
 func (q *Queries) HistoryUpdate(ctx context.Context) (HistoryUpdate, error) {
@@ -1675,7 +1695,6 @@ func (q *Queries) HistoryUpdate(ctx context.Context) (HistoryUpdate, error) {
 		&i.Phase,
 		&i.Cursor,
 		&i.Completed,
-		&i.RetryAt,
 	)
 	return i, err
 }
@@ -1732,7 +1751,7 @@ func (q *Queries) IdentityMetadata(ctx context.Context, arg IdentityMetadataPara
 }
 
 const identityRoots = `-- name: IdentityRoots :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
 `
 
 func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument, error) {
@@ -1758,7 +1777,6 @@ func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument,
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
-			&i.ReferenceNext,
 			&i.Rule,
 			&i.CalculationRule,
 			&i.UnderlierID,
@@ -1786,7 +1804,7 @@ func (q *Queries) InitializeHistoryUpdate(ctx context.Context, applied int64) er
 }
 
 const instrument = `-- name: Instrument :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE id=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id=?
 `
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
@@ -1806,7 +1824,6 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
-		&i.ReferenceNext,
 		&i.Rule,
 		&i.CalculationRule,
 		&i.UnderlierID,
@@ -1815,7 +1832,7 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 }
 
 const instrumentBindings = `-- name: InstrumentBindings :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.reference_next, i.rule, i.calculation_rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
 `
 
 func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrument, error) {
@@ -1841,7 +1858,6 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
-			&i.ReferenceNext,
 			&i.Rule,
 			&i.CalculationRule,
 			&i.UnderlierID,
@@ -1860,7 +1876,7 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 }
 
 const instrumentBySource = `-- name: InstrumentBySource :one
-SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.reference_next, target.rule, target.calculation_rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
+SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.rule, target.calculation_rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
 `
 
 func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error) {
@@ -1880,7 +1896,6 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.SelectionAuthority,
 		&i.ReferenceFigi,
 		&i.EvidenceID,
-		&i.ReferenceNext,
 		&i.Rule,
 		&i.CalculationRule,
 		&i.UnderlierID,
@@ -1992,7 +2007,7 @@ func (q *Queries) InstrumentSelection(ctx context.Context, instrumentID string) 
 }
 
 const instruments = `-- name: Instruments :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
 `
 
 func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
@@ -2018,7 +2033,6 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
-			&i.ReferenceNext,
 			&i.Rule,
 			&i.CalculationRule,
 			&i.UnderlierID,
@@ -2037,10 +2051,12 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 }
 
 const invalidateChangedSchedule = `-- name: InvalidateChangedSchedule :exec
-UPDATE work SET revision=revision+1
-WHERE work.connection_id=?1 AND work.stream=?2 AND work.operation=?3
-AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
- AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled<>?4)
+INSERT INTO sync.work(connection_id,stream,operation,revision)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1 FROM sync.work AS prior
+WHERE prior.connection_id=?1 AND prior.stream=?2 AND prior.operation=?3
+AND EXISTS(SELECT 1 FROM sync.scheduled WHERE scheduled.connection_id=prior.connection_id
+ AND scheduled.stream=prior.stream AND scheduled.operation=prior.operation AND enabled<>?4)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision
 `
 
 type InvalidateChangedScheduleParams struct {
@@ -2193,7 +2209,7 @@ func (q *Queries) ListingsByTerms(ctx context.Context, arg ListingsByTermsParams
 }
 
 const missingAccess = `-- name: MissingAccess :many
-SELECT c.id,c.provider FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid
+SELECT c.id,c.provider FROM connections c LEFT JOIN sync.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid
 `
 
 type MissingAccessRow struct {
@@ -2414,7 +2430,10 @@ func (q *Queries) ObservationExists(ctx context.Context, arg ObservationExistsPa
 }
 
 const observeWork = `-- name: ObserveWork :exec
-UPDATE work SET observed=?,observed_completed=?,observed_total=? WHERE connection_id=? AND stream=? AND operation=?
+INSERT INTO sync.work(connection_id,stream,operation,observed,observed_completed,observed_total)
+SELECT prior.connection_id,prior.stream,prior.operation,?1,?2,?3 FROM sync.work AS prior
+WHERE prior.connection_id=?4 AND prior.stream=?5 AND prior.operation=?6
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET observed=excluded.observed, observed_completed=excluded.observed_completed, observed_total=excluded.observed_total
 `
 
 type ObserveWorkParams struct {
@@ -2439,7 +2458,7 @@ func (q *Queries) ObserveWork(ctx context.Context, arg ObserveWorkParams) error 
 }
 
 const pacing = `-- name: Pacing :one
-SELECT next FROM pacing WHERE provider=? AND policy=? AND scope=?
+SELECT next FROM sync.pacing WHERE provider=? AND policy=? AND scope=?
 `
 
 type PacingParams struct {
@@ -2456,8 +2475,10 @@ func (q *Queries) Pacing(ctx context.Context, arg PacingParams) (string, error) 
 }
 
 const pauseForCredentialKey = `-- name: PauseForCredentialKey :exec
-UPDATE profile SET paused=1,recovery_revision=recovery_revision+1
-WHERE singleton=1 AND paused=0
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review,recovery_revision)
+SELECT prior.singleton,prior.access_id,1,prior.reference_review,prior.recovery_revision+1 FROM sync.profile AS prior
+WHERE prior.singleton=1 AND prior.paused=0
+ON CONFLICT(singleton) DO UPDATE SET paused=excluded.paused, recovery_revision=excluded.recovery_revision
 `
 
 func (q *Queries) PauseForCredentialKey(ctx context.Context) error {
@@ -2511,7 +2532,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsPara
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, reference_next, rule, calculation_rule, underlier_id FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -2537,7 +2558,6 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 			&i.SelectionAuthority,
 			&i.ReferenceFigi,
 			&i.EvidenceID,
-			&i.ReferenceNext,
 			&i.Rule,
 			&i.CalculationRule,
 			&i.UnderlierID,
@@ -2556,7 +2576,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 }
 
 const pendingWork = `-- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
+SELECT work.connection_id,work.stream,work.operation FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20
 `
 
 type PendingWorkRow struct {
@@ -2755,12 +2775,12 @@ func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) (
 }
 
 const profile = `-- name: Profile :one
-SELECT singleton, access_id, paused, reference_review, warehouse_reset, recovery_revision, resumed_by, resumed_at FROM profile WHERE singleton=1
+SELECT singleton, access_id, paused, reference_review, warehouse_reset, recovery_revision, resumed_by, resumed_at FROM sync.profile WHERE singleton=1
 `
 
-func (q *Queries) Profile(ctx context.Context) (Profile, error) {
+func (q *Queries) Profile(ctx context.Context) (SyncProfile, error) {
 	row := q.db.QueryRowContext(ctx, profile)
-	var i Profile
+	var i SyncProfile
 	err := row.Scan(
 		&i.Singleton,
 		&i.AccessID,
@@ -3040,7 +3060,7 @@ func (q *Queries) PutClaimProcessing(ctx context.Context, arg PutClaimProcessing
 }
 
 const putConnection = `-- name: PutConnection :exec
-INSERT INTO access.configurations(id,provider,name,settings) VALUES(?,?,?,?)
+INSERT INTO sync.configurations(id,provider,name,settings) VALUES(?,?,?,?)
 `
 
 type PutConnectionParams struct {
@@ -3593,7 +3613,7 @@ func (q *Queries) QualifyInstrument(ctx context.Context, arg QualifyInstrumentPa
 }
 
 const queuedPoll = `-- name: QueuedPoll :one
-SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
+SELECT work.state FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
 WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
   AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
@@ -3613,8 +3633,8 @@ func (q *Queries) QueuedPoll(ctx context.Context, arg QueuedPollParams) ([]byte,
 }
 
 const queuedPollConnections = `-- name: QueuedPollConnections :many
-SELECT id,provider,settings FROM access.configurations
-WHERE EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+SELECT id,provider,settings FROM sync.configurations
+WHERE EXISTS(SELECT 1 FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
    WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
     AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id)
@@ -3731,12 +3751,12 @@ func (q *Queries) Records(ctx context.Context, arg RecordsParams) ([]RecordValue
 }
 
 const referenceBudget = `-- name: ReferenceBudget :one
-SELECT singleton, window_start, used, cooldown FROM reference_budget WHERE singleton=1
+SELECT singleton, window_start, used, cooldown FROM sync.reference_budget WHERE singleton=1
 `
 
-func (q *Queries) ReferenceBudget(ctx context.Context) (ReferenceBudget, error) {
+func (q *Queries) ReferenceBudget(ctx context.Context) (SyncReferenceBudget, error) {
 	row := q.db.QueryRowContext(ctx, referenceBudget)
-	var i ReferenceBudget
+	var i SyncReferenceBudget
 	err := row.Scan(
 		&i.Singleton,
 		&i.WindowStart,
@@ -3765,7 +3785,7 @@ func (q *Queries) ReferenceEvidence(ctx context.Context, id string) (ReferenceEv
 }
 
 const referenceFailure = `-- name: ReferenceFailure :exec
-INSERT INTO access.reference_settings(singleton,encrypted,failure) VALUES(1,X'',?) ON CONFLICT(singleton) DO UPDATE SET failure=excluded.failure
+INSERT INTO sync.reference_diagnostics(singleton,failure) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET failure=excluded.failure
 `
 
 func (q *Queries) ReferenceFailure(ctx context.Context, failure string) error {
@@ -3774,43 +3794,50 @@ func (q *Queries) ReferenceFailure(ctx context.Context, failure string) error {
 }
 
 const referenceNext = `-- name: ReferenceNext :exec
-UPDATE instruments SET reference_next=? WHERE id=?
+INSERT INTO sync.reference_deadlines(instrument_id,next) VALUES(?,?) ON CONFLICT(instrument_id) DO UPDATE SET next=excluded.next
 `
 
 type ReferenceNextParams struct {
-	ReferenceNext string
-	ID            string
+	InstrumentID string
+	Next         string
 }
 
 func (q *Queries) ReferenceNext(ctx context.Context, arg ReferenceNextParams) error {
-	_, err := q.db.ExecContext(ctx, referenceNext, arg.ReferenceNext, arg.ID)
+	_, err := q.db.ExecContext(ctx, referenceNext, arg.InstrumentID, arg.Next)
 	return err
 }
 
 const referenceSetting = `-- name: ReferenceSetting :one
-SELECT singleton, encrypted, failure FROM access.reference_settings WHERE singleton=1
+SELECT CAST(coalesce((SELECT encrypted FROM access.reference_settings WHERE singleton=1),X'') AS BLOB) AS encrypted,
+ CAST(coalesce((SELECT failure FROM sync.reference_diagnostics WHERE singleton=1),'') AS TEXT) AS failure
 `
 
-func (q *Queries) ReferenceSetting(ctx context.Context) (AccessReferenceSetting, error) {
+type ReferenceSettingRow struct {
+	Encrypted []byte
+	Failure   string
+}
+
+func (q *Queries) ReferenceSetting(ctx context.Context) (ReferenceSettingRow, error) {
 	row := q.db.QueryRowContext(ctx, referenceSetting)
-	var i AccessReferenceSetting
-	err := row.Scan(&i.Singleton, &i.Encrypted, &i.Failure)
+	var i ReferenceSettingRow
+	err := row.Scan(&i.Encrypted, &i.Failure)
 	return i, err
 }
 
 const refreshPolls = `-- name: RefreshPolls :execrows
-UPDATE work
-SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(?1 AS TEXT)
-              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(?1 AS TEXT) END
-WHERE operation='acquire'
-  AND (SELECT paused FROM profile WHERE singleton=1)=0
-  AND failure='' AND failure_code=''
-  AND julianday(next)>julianday(?1)
-  AND julianday(next)>CASE WHEN state_version=?2
-                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
-  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
-             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
-  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id)
+INSERT INTO sync.work(connection_id,stream,operation,next)
+SELECT prior.connection_id,prior.stream,prior.operation,CASE WHEN json_extract(CAST(prior.state AS TEXT), '$.not_before')>CAST(?1 AS TEXT)
+              THEN json_extract(CAST(prior.state AS TEXT), '$.not_before') ELSE CAST(?1 AS TEXT) END FROM sync.work AS prior
+WHERE prior.operation='acquire'
+  AND (SELECT paused FROM sync.profile WHERE singleton=1)=0
+  AND prior.failure='' AND prior.failure_code=''
+  AND julianday(prior.next)>julianday(?1)
+  AND julianday(prior.next)>CASE WHEN prior.state_version=?2
+                           THEN julianday(json_extract(CAST(prior.state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM sync.scheduled WHERE scheduled.connection_id=prior.connection_id
+             AND scheduled.stream=prior.stream AND scheduled.operation=prior.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=prior.connection_id)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET next=excluded.next
 `
 
 type RefreshPollsParams struct {
@@ -3962,7 +3989,10 @@ func (q *Queries) ReportComparison(ctx context.Context, arg ReportComparisonPara
 }
 
 const resetStreamWork = `-- name: ResetStreamWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=? AND stream=?
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,next,failure,failure_code,observed,acknowledged)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,'',X'',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END,'','','','' FROM sync.work AS prior
+WHERE prior.connection_id=?1 AND prior.stream=?2
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, next=excluded.next, failure=excluded.failure, failure_code=excluded.failure_code, observed=excluded.observed, acknowledged=excluded.acknowledged
 `
 
 type ResetStreamWorkParams struct {
@@ -3976,7 +4006,7 @@ func (q *Queries) ResetStreamWork(ctx context.Context, arg ResetStreamWorkParams
 }
 
 const resolveInstrument = `-- name: ResolveInstrument :exec
-UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,reference_next=?6,revision=revision+CASE WHEN name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 THEN 1 ELSE 0 END WHERE id=?7
+UPDATE instruments SET name=?1,ticker=?2,reference_figi=?3,evidence_id=?4,reference_status=?5,revision=revision+CASE WHEN name<>?1 OR ticker<>?2 OR reference_figi<>?3 OR reference_status<>?5 THEN 1 ELSE 0 END WHERE id=?6
 `
 
 type ResolveInstrumentParams struct {
@@ -3985,7 +4015,6 @@ type ResolveInstrumentParams struct {
 	ReferenceFigi   string
 	EvidenceID      string
 	ReferenceStatus string
-	ReferenceNext   string
 	ID              string
 }
 
@@ -3996,7 +4025,6 @@ func (q *Queries) ResolveInstrument(ctx context.Context, arg ResolveInstrumentPa
 		arg.ReferenceFigi,
 		arg.EvidenceID,
 		arg.ReferenceStatus,
-		arg.ReferenceNext,
 		arg.ID,
 	)
 	return err
@@ -4019,7 +4047,10 @@ func (q *Queries) ResourceAlias(ctx context.Context, arg ResourceAliasParams) (s
 }
 
 const restartDiscovery = `-- name: RestartDiscovery :exec
-UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover'
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,failure,failure_code,next)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.state_version ELSE '' END,CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.state ELSE X'' END,'','',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END FROM sync.work AS prior
+WHERE prior.connection_id=?1 AND prior.stream=?2 AND prior.operation='discover'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, failure=excluded.failure, failure_code=excluded.failure_code, next=excluded.next
 `
 
 type RestartDiscoveryParams struct {
@@ -4033,7 +4064,10 @@ func (q *Queries) RestartDiscovery(ctx context.Context, arg RestartDiscoveryPara
 }
 
 const resumeStorage = `-- name: ResumeStorage :execrows
-UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL)
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review,warehouse_reset,resumed_by,resumed_at)
+SELECT prior.singleton,prior.access_id,0,prior.reference_review,0,?1,?2 FROM sync.profile AS prior
+WHERE prior.singleton=1 AND prior.paused=1 AND prior.recovery_revision=?3 AND prior.reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN sync.configurations a ON a.id=c.id WHERE a.id IS NULL)
+ON CONFLICT(singleton) DO UPDATE SET paused=excluded.paused, warehouse_reset=excluded.warehouse_reset, resumed_by=excluded.resumed_by, resumed_at=excluded.resumed_at
 `
 
 type ResumeStorageParams struct {
@@ -4051,27 +4085,24 @@ func (q *Queries) ResumeStorage(ctx context.Context, arg ResumeStorageParams) (i
 }
 
 const retained = `-- name: Retained :one
-SELECT artifacts.id, artifacts.connection_id, artifacts.stream, artifacts.operation, artifacts.format, artifacts.media_type, artifacts.retrieved, artifacts.hash, artifacts.content, artifacts.processed, artifacts.processing_next, artifacts.processing_failure, artifacts.requested_from, artifacts.requested_to, artifacts.reported_from, artifacts.reported_to,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?
+SELECT artifacts.id, artifacts.connection_id, artifacts.stream, artifacts.operation, artifacts.format, artifacts.media_type, artifacts.retrieved, artifacts.hash, artifacts.content, artifacts.requested_from, artifacts.requested_to, artifacts.reported_from, artifacts.reported_to,connections.provider FROM artifacts JOIN connections ON connections.id=artifacts.connection_id WHERE artifacts.id=?
 `
 
 type RetainedRow struct {
-	ID                string
-	ConnectionID      string
-	Stream            string
-	Operation         string
-	Format            string
-	MediaType         string
-	Retrieved         string
-	Hash              string
-	Content           []byte
-	Processed         int64
-	ProcessingNext    string
-	ProcessingFailure string
-	RequestedFrom     string
-	RequestedTo       string
-	ReportedFrom      string
-	ReportedTo        string
-	Provider          string
+	ID            string
+	ConnectionID  string
+	Stream        string
+	Operation     string
+	Format        string
+	MediaType     string
+	Retrieved     string
+	Hash          string
+	Content       []byte
+	RequestedFrom string
+	RequestedTo   string
+	ReportedFrom  string
+	ReportedTo    string
+	Provider      string
 }
 
 func (q *Queries) Retained(ctx context.Context, id string) (RetainedRow, error) {
@@ -4087,9 +4118,6 @@ func (q *Queries) Retained(ctx context.Context, id string) (RetainedRow, error) 
 		&i.Retrieved,
 		&i.Hash,
 		&i.Content,
-		&i.Processed,
-		&i.ProcessingNext,
-		&i.ProcessingFailure,
 		&i.RequestedFrom,
 		&i.RequestedTo,
 		&i.ReportedFrom,
@@ -4142,7 +4170,10 @@ func (q *Queries) RetireListing(ctx context.Context, id string) error {
 }
 
 const retryWork = `-- name: RetryWork :exec
-UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?
+INSERT INTO sync.work(connection_id,stream,operation,revision,failure,failure_code,next)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,'','',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END FROM sync.work AS prior
+WHERE prior.connection_id=?1 AND prior.stream=?2 AND prior.operation=?3
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, failure=excluded.failure, failure_code=excluded.failure_code, next=excluded.next
 `
 
 type RetryWorkParams struct {
@@ -4157,7 +4188,10 @@ func (q *Queries) RetryWork(ctx context.Context, arg RetryWorkParams) error {
 }
 
 const reviewReference = `-- name: ReviewReference :exec
-UPDATE profile SET reference_review=0 WHERE singleton=1
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review)
+SELECT prior.singleton,prior.access_id,prior.paused,0 FROM sync.profile AS prior
+WHERE prior.singleton=1
+ON CONFLICT(singleton) DO UPDATE SET reference_review=excluded.reference_review
 `
 
 func (q *Queries) ReviewReference(ctx context.Context) error {
@@ -4286,7 +4320,7 @@ func (q *Queries) SaveProcessingReceipt(ctx context.Context, arg SaveProcessingR
 
 const savedCredentials = `-- name: SavedCredentials :many
 SELECT c.connection_id, a.provider, c.key, c.encrypted
-FROM access.credentials c JOIN access.configurations a ON a.id=c.connection_id
+FROM access.credentials c JOIN access.identities a ON a.id=c.connection_id
 `
 
 type SavedCredentialsRow struct {
@@ -4336,7 +4370,7 @@ func (q *Queries) SavedReferenceCredential(ctx context.Context) ([]byte, error) 
 }
 
 const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :execrows
-INSERT INTO scheduled(connection_id,stream,operation,enabled)
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
 SELECT connection_id,?1,'acquire',1 FROM accounts WHERE provider=?2
 ON CONFLICT DO NOTHING
 `
@@ -4478,7 +4512,7 @@ func (q *Queries) SetObservationOutcome(ctx context.Context, arg SetObservationO
 }
 
 const setPacing = `-- name: SetPacing :exec
-INSERT INTO pacing(provider,policy,scope,next) VALUES(?,?,?,?) ON CONFLICT(provider,policy,scope) DO UPDATE SET next=excluded.next
+INSERT INTO sync.pacing(provider,policy,scope,next) VALUES(?,?,?,?) ON CONFLICT(provider,policy,scope) DO UPDATE SET next=excluded.next
 `
 
 type SetPacingParams struct {
@@ -4499,7 +4533,10 @@ func (q *Queries) SetPacing(ctx context.Context, arg SetPacingParams) error {
 }
 
 const setPollDeadline = `-- name: SetPollDeadline :exec
-UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire'
+INSERT INTO sync.work(connection_id,stream,operation,next,state)
+SELECT prior.connection_id,prior.stream,prior.operation,?1,?2 FROM sync.work AS prior
+WHERE prior.connection_id=?3 AND prior.stream=?4 AND prior.operation='acquire'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET next=excluded.next, state=excluded.state
 `
 
 type SetPollDeadlineParams struct {
@@ -4520,7 +4557,7 @@ func (q *Queries) SetPollDeadline(ctx context.Context, arg SetPollDeadlineParams
 }
 
 const setReferenceBudget = `-- name: SetReferenceBudget :exec
-INSERT INTO reference_budget(singleton,window_start,used,cooldown) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET window_start=excluded.window_start,used=excluded.used,cooldown=excluded.cooldown
+INSERT INTO sync.reference_budget(singleton,window_start,used,cooldown) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET window_start=excluded.window_start,used=excluded.used,cooldown=excluded.cooldown
 `
 
 type SetReferenceBudgetParams struct {
@@ -4535,7 +4572,7 @@ func (q *Queries) SetReferenceBudget(ctx context.Context, arg SetReferenceBudget
 }
 
 const setReferenceKey = `-- name: SetReferenceKey :exec
-INSERT INTO access.reference_settings(singleton,encrypted,failure) VALUES(1,?,'') ON CONFLICT(singleton) DO UPDATE SET encrypted=excluded.encrypted,failure=''
+INSERT INTO access.reference_settings(singleton,encrypted) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET encrypted=excluded.encrypted
 `
 
 func (q *Queries) SetReferenceKey(ctx context.Context, encrypted []byte) error {
@@ -4544,7 +4581,7 @@ func (q *Queries) SetReferenceKey(ctx context.Context, encrypted []byte) error {
 }
 
 const setScheduled = `-- name: SetScheduled :exec
-INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled
 `
 
 type SetScheduledParams struct {
@@ -4615,7 +4652,7 @@ func (q *Queries) SourceCorrections(ctx context.Context) ([]SourceCorrection, er
 }
 
 const startAttempt = `-- name: StartAttempt :exec
-INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'')
+INSERT INTO sync.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'')
 `
 
 type StartAttemptParams struct {
@@ -4630,7 +4667,7 @@ func (q *Queries) StartAttempt(ctx context.Context, arg StartAttemptParams) erro
 }
 
 const startHistoryUpdate = `-- name: StartHistoryUpdate :exec
-UPDATE history_update SET target=?,phase='activity',cursor='',completed=0,retry_at='' WHERE singleton=1
+UPDATE history_update SET target=?,phase='activity',cursor='',completed=0 WHERE singleton=1
 `
 
 func (q *Queries) StartHistoryUpdate(ctx context.Context, target int64) error {
@@ -4680,7 +4717,7 @@ func (q *Queries) SupersedeDecisions(ctx context.Context, arg SupersedeDecisions
 }
 
 const updateConnection = `-- name: UpdateConnection :exec
-INSERT INTO access.configurations(id,provider,name,settings) VALUES(?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider
+INSERT INTO sync.configurations(id,provider,name,settings) VALUES(?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider
 `
 
 type UpdateConnectionParams struct {
@@ -4715,7 +4752,7 @@ func (q *Queries) UpdateDescriptorName(ctx context.Context, arg UpdateDescriptor
 }
 
 const wakeReference = `-- name: WakeReference :exec
-UPDATE instruments SET reference_next='' WHERE reference_status<>'conflict' AND (SELECT paused FROM profile WHERE singleton=1)=0
+DELETE FROM sync.reference_deadlines WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND instrument_id IN (SELECT id FROM instruments WHERE reference_status<>'conflict')
 `
 
 func (q *Queries) WakeReference(ctx context.Context) error {
@@ -4733,7 +4770,7 @@ SELECT work.stream, work.operation, work.observed, work.observed_completed, work
   SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
   FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
  )), '') AS TEXT) AS last_retrieved
-FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream
+FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream
 `
 
 type WorkStatusesRow struct {

@@ -38,12 +38,15 @@ func (s *Store) Normalize(
 		return provider.Result{}, err
 	}
 
-	attempt := rand.Text()
-	if err = s.queries.StartAttempt(
-		ctx,
-		sqlc.StartAttemptParams{ID: attempt, ArtifactID: id, Version: version},
-	); err != nil {
-		return provider.Result{}, err
+	var attempt string
+	if s.owners[2] != nil {
+		attempt = rand.Text()
+		if err = s.queries.StartAttempt(
+			ctx,
+			sqlc.StartAttemptParams{ID: attempt, ArtifactID: id, Version: version},
+		); err != nil {
+			return provider.Result{}, err
+		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -110,17 +113,6 @@ func (s *Store) Normalize(
 		return provider.Result{}, err
 	}
 
-	if err = sink.q.FinishAttempt(
-		ctx,
-		sqlc.FinishAttemptParams{Outcome: "succeeded", Counts: data, ID: attempt},
-	); err != nil {
-		_ = tx.Rollback()
-
-		s.failedAttempt(ctx, attempt, "storage-failed")
-
-		return provider.Result{}, host.ErrStorage
-	}
-
 	if err = sink.q.SaveNormalizationReceipt(
 		ctx,
 		sqlc.SaveNormalizationReceiptParams{ArtifactID: id, Version: version, Counts: data},
@@ -140,10 +132,21 @@ func (s *Store) Normalize(
 		return provider.Result{}, host.ErrStorage
 	}
 
+	if attempt != "" {
+		_ = s.queries.FinishAttempt(
+			ctx,
+			sqlc.FinishAttemptParams{Outcome: "succeeded", Counts: data, ID: attempt},
+		)
+	}
+
 	return result, nil
 }
 
 func (s *Store) failedAttempt(ctx context.Context, id, outcome string) {
+	if id == "" {
+		return
+	}
+
 	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 

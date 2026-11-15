@@ -1,5 +1,8 @@
 # Set up IBKR Flex
 
+The current pre-release daemon serves retained history locally. Live synchronization
+is unavailable in this build.
+
 The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account per connection,
 with an optional Activity Flex query for transfers, non-trade cash postings and
 reported realized P&L on individual activities, and reported open positions.
@@ -159,7 +162,7 @@ progress. Unavailable ranges remain pending while recent work continues.
 A long routine polling interval leaves earlier unavailable-range retries eligible.
 
 Configure each recurring interval in the connection's **Access** view. See
-[Wake connection settings](../../README.md#connect-and-inspect).
+[retained history](../../README.md#inspect-retained-history).
 Generation polling, pacing and transient retries resume automatically. Invalid
 access or query configuration pauses the affected work. Renew the token or repair
 the saved query configuration, then use the connection's repair/retry controls.

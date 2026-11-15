@@ -141,7 +141,7 @@ func TestAuthorityChangeRejectsInflightResultsAndStaleSettings(t *testing.T) {
 	ctx := t.Context()
 	if _, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO access.configurations(id,provider,name,settings) VALUES('synthetic','ibkr-flex','Synthetic',X'7b7d')`,
+		`INSERT INTO sync.configurations(id,provider,name,settings) VALUES('synthetic','ibkr-flex','Synthetic',X'7b7d')`,
 	); err != nil {
 		t.Fatal(err)
 	}

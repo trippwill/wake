@@ -15,78 +15,25 @@ import (
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
-func TestStorageBackupAndRestoreCLI(t *testing.T) {
+func TestOperationalStorageRecoveryUnavailable(t *testing.T) {
 	cfg, configPath, _ := setupDaemonFixture(t)
-	if err := config.Prepare(cfg); err != nil {
-		t.Fatal(err)
-	}
-
-	store, err := persistence.Open(t.Context(), persistence.Profile{
-		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	archive := filepath.Join(cfg.Paths.ConfigDir, "offline.tar")
 
-	var stdout, stderr bytes.Buffer
-
-	backupArgs := []string{"--json", "storage", "backup", "--config", configPath, archive}
-	status := Run(backupArgs, &stdout, &stderr)
-
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if status == exitOK || !strings.Contains(stderr.String(), "Wake stopped") {
-		t.Fatal(status, stdout.String(), stderr.String())
-	}
-
-	stdout.Reset()
-	stderr.Reset()
-
-	if status := Run(backupArgs, &stdout, &stderr); status != exitOK {
-		t.Fatal(status, stdout.String(), stderr.String())
-	}
-
-	var result storageResult
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Event != "backup" ||
-		result.Archive != archive || !result.WithCredentials {
-		t.Fatal(stdout.String(), err)
-	}
-
-	stdout.Reset()
-	stderr.Reset()
-
-	if status := Run(
-		[]string{"storage", "backup", "--config", configPath, archive + ".other"},
-		&stdout,
-		&stderr,
-	); status != exitOK ||
-		!strings.Contains(stdout.String(), "Retain the credential key separately") {
-		t.Fatal(status, stdout.String(), stderr.String())
-	}
-
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
-		if err := os.Rename(path, path+".original"); err != nil {
-			t.Fatal(err)
+	for _, args := range [][]string{
+		{"storage", "backup", "--config", configPath, archive},
+		{"storage", "restore", "--with-credentials", "--config", configPath, archive},
+	} {
+		var stdout, stderr bytes.Buffer
+		if status := Run(args, &stdout, &stderr); status != exitFailure ||
+			!strings.Contains(stderr.String(), "operational storage recovery is unavailable") {
+			t.Fatal(status, stdout.String(), stderr.String())
 		}
 	}
 
-	stdout.Reset()
-	stderr.Reset()
-
-	// The automatic upgrade backup uses the same paired archive format.
-	upgradeArchive := cfg.Storage.WarehousePath + ".upgrade-backup.tar"
-	if err := os.Rename(archive, upgradeArchive); err != nil {
-		t.Fatal(err)
-	}
-
-	restoreArgs := []string{"storage", "restore", "--config", configPath, "--with-credentials", upgradeArchive}
-	if status := Run(restoreArgs, &stdout, &stderr); status != exitOK ||
-		!strings.Contains(stdout.String(), "original credential key") {
-		t.Fatal(status, stdout.String(), stderr.String())
+	for _, path := range []string{archive, cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("operational maintenance wrote a file", path, err)
+		}
 	}
 }
 
@@ -96,7 +43,7 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := persistence.Open(t.Context(), persistence.Profile{
+	store, err := persistence.OpenFinancial(t.Context(), persistence.Profile{
 		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
 	}, nil)
 	if err != nil {
@@ -178,11 +125,12 @@ func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
 		code int
 		want string
 	}{
-		{"configuration", []string{"backup", configPath}, exitFailure, "unsafe"},
+		{"configuration", []string{"snapshot", "warehouse", configPath}, exitFailure, "unsafe"},
 		{"key", []string{"snapshot", "warehouse", cfg.Credentials.KeyPath}, exitFailure, "unsafe"},
+		{"sync sidecar", []string{"snapshot", "warehouse", cfg.Storage.SyncPath + "-journal"}, exitFailure, "unsafe"},
 		{"sidecar", []string{"snapshot", "warehouse", cfg.Storage.WarehousePath + "-wal"}, exitFailure, "unsafe"},
 		{"existing archive", []string{"snapshot", "warehouse", existing}, exitFailure, "output already exists"},
-		{"missing output directory", []string{"backup", filepath.Join(cfg.Paths.ConfigDir, "missing", "archive")}, exitFailure, "no such file"},
+		{"missing output directory", []string{"snapshot", "warehouse", filepath.Join(cfg.Paths.ConfigDir, "missing", "archive")}, exitFailure, "no such file"},
 		{"protected restore source", []string{"restore", configPath}, exitFailure, "unsafe"},
 		{"missing restore archive", []string{"restore", filepath.Join(cfg.Paths.ConfigDir, "absent.tar")}, exitFailure, "no such file"},
 		{"missing snapshot output", []string{"snapshot", "warehouse"}, exitUsage, "requires one archive file path"},

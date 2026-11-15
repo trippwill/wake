@@ -149,7 +149,7 @@ func Load(command *cli.Command) (Config, error) {
 
 // Prepare creates and checks directories only for an operation that needs them.
 func Prepare(cfg Config) error {
-	for _, path := range []string{cfg.Paths.ConfigDir, filepath.Dir(cfg.Storage.WarehousePath), filepath.Dir(cfg.Storage.ConnectionsPath), cfg.Paths.RuntimeDir} {
+	for _, path := range []string{cfg.Paths.ConfigDir, filepath.Dir(cfg.Storage.WarehousePath), cfg.Paths.RuntimeDir} {
 		if err := ensurePrivateDir(path); err != nil {
 			return err
 		}

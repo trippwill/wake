@@ -60,7 +60,7 @@ func Run(
 // Source endpoints are composed here, never read from broker settings. Tests use
 // controlled TLS servers through the same daemon/host/store/admin composition.
 type sourceOptions struct {
-	WithoutUpstream bool
+	openSources     func(context.Context, persistence.Profile, *slog.Logger) (*persistence.Store, error)
 	IBKR            ibkrflex.Options
 	SnapTrade       snaptrade.Options
 	CurrencyCatalog currencycatalog.Options
@@ -164,12 +164,18 @@ func run(
 
 	phase("opening private storage")
 
-	store, err := persistence.Open(
+	open := persistence.OpenFinancial
+	if options.openSources != nil {
+		open = options.openSources
+	}
+
+	store, err := open(
 		ctx,
 		persistence.Profile{
 			WarehousePath:     cfg.Storage.WarehousePath,
 			Registrations:     registrations,
 			ConnectionsPath:   cfg.Storage.ConnectionsPath,
+			SyncPath:          cfg.Storage.SyncPath,
 			UnattendedUpgrade: cfg.Storage.UnattendedUpgrade,
 		},
 		logger,
@@ -184,7 +190,7 @@ func run(
 	defer func() { result = errors.Join(result, store.Close()) }()
 
 	var upstream upstreamServices
-	if !options.WithoutUpstream {
+	if options.openSources != nil {
 		upstream, err = openUpstream(ctx, cfg, store, options, registrations, logger)
 		if err != nil {
 			logger.WarnContext(

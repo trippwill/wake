@@ -13,17 +13,7 @@ import (
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
-func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
-	return stoppedStorage(
-		cfg,
-		configPath,
-		artifact,
-		true,
-		func(profile persistence.Profile, archive string) error {
-			return persistence.Backup(ctx, profile, archive)
-		},
-	)
-}
+const ErrOperationalRecoveryUnavailable persistence.Error = "operational storage recovery is unavailable; use a warehouse snapshot or a build that supports the original stores"
 
 func SnapshotWarehouse(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
 	profile, archive, err := recoveryPaths(cfg, configPath, artifact, true)
@@ -40,45 +30,26 @@ func RestoreStorage(
 	configPath, artifact string,
 	withCredentials bool,
 ) ([]string, error) {
-	var paths []string
-
-	_, err := stoppedStorage(
-		cfg,
-		configPath,
-		artifact,
-		false,
-		func(profile persistence.Profile, archive string) error {
-			var err error
-
-			paths, err = persistence.Restore(ctx, profile, archive, withCredentials)
-
-			return err
-		},
-	)
-
-	return paths, err
-}
-
-func stoppedStorage(
-	cfg config.Config, configPath, artifact string, creating bool,
-	fn func(persistence.Profile, string) error,
-) (string, error) {
-	if err := config.Prepare(cfg); err != nil {
-		return "", err
+	if withCredentials {
+		return nil, ErrOperationalRecoveryUnavailable
 	}
 
-	profile, archive, err := recoveryPaths(cfg, configPath, artifact, creating)
+	if err := config.Prepare(cfg); err != nil {
+		return nil, err
+	}
+
+	profile, archive, err := recoveryPaths(cfg, configPath, artifact, false)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer owner.close()
 
-	return archive, fn(profile, archive)
+	return persistence.Restore(ctx, profile, archive, false)
 }
 
 func recoveryPaths(
@@ -88,18 +59,24 @@ func recoveryPaths(
 ) (persistence.Profile, string, error) {
 	var profile persistence.Profile
 
-	for ptr, path := range map[*string]string{
-		&profile.WarehousePath:   cfg.Storage.WarehousePath,
-		&profile.ConnectionsPath: cfg.Storage.ConnectionsPath,
-	} {
-		canonical, err := storagePath(path)
-		if os.IsNotExist(err) {
-			canonical = path
-		} else if err != nil {
-			return profile, "", err
+	warehouse, err := storagePath(cfg.Storage.WarehousePath)
+	if err != nil {
+		return profile, "", err
+	}
+
+	optionalPath := func(path string) string {
+		if path != "" {
+			if canonical, err := storagePath(path); err == nil {
+				return canonical
+			}
 		}
 
-		*ptr = canonical
+		return path
+	}
+	profile = persistence.Profile{
+		WarehousePath:   warehouse,
+		ConnectionsPath: optionalPath(cfg.Storage.ConnectionsPath),
+		SyncPath:        optionalPath(cfg.Storage.SyncPath),
 	}
 
 	archive, err := storagePath(artifact)
@@ -122,7 +99,7 @@ func recoveryPaths(
 			continue
 		}
 
-		for _, candidate := range []string{archive, profile.WarehousePath, profile.ConnectionsPath} {
+		for _, candidate := range []string{archive, profile.WarehousePath, profile.ConnectionsPath, profile.SyncPath} {
 			if overlapsProtectedPath(candidate, path) {
 				return profile, "", fmt.Errorf("%w: %s", persistence.ErrUnsafeStore, candidate)
 			}

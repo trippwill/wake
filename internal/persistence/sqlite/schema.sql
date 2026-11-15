@@ -2,7 +2,7 @@
 -- SPDX-License-Identifier: MPL-2.0
 
 CREATE TABLE store_metadata(singleton INTEGER PRIMARY KEY CHECK(singleton=1), kind TEXT NOT NULL, version TEXT NOT NULL, id TEXT NOT NULL) STRICT;
-CREATE TABLE profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1), access_id TEXT NOT NULL, paused INTEGER NOT NULL CHECK(paused IN (0,1)), reference_review INTEGER NOT NULL CHECK(reference_review IN (0,1)), warehouse_reset INTEGER NOT NULL DEFAULT 0 CHECK(warehouse_reset IN (0,1)), recovery_revision INTEGER NOT NULL DEFAULT 0, resumed_by TEXT NOT NULL DEFAULT '', resumed_at TEXT NOT NULL DEFAULT '') STRICT;
+CREATE TABLE financial_lineage(singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL CHECK(id<>'')) STRICT;
 CREATE TABLE history_update(
  singleton INTEGER PRIMARY KEY CHECK(singleton=1),
  applied INTEGER NOT NULL CHECK(applied>0),
@@ -10,14 +10,12 @@ CREATE TABLE history_update(
  phase TEXT NOT NULL DEFAULT '' CHECK(phase IN ('','activity','instruments','positions')),
  cursor TEXT NOT NULL DEFAULT '',
  completed INTEGER NOT NULL DEFAULT 0 CHECK(completed>=0),
- retry_at TEXT NOT NULL DEFAULT '',
  CHECK((target=0)=(phase=''))
 ) STRICT;
 CREATE TABLE normalization_receipts(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, counts BLOB NOT NULL, PRIMARY KEY(artifact_id,version)) STRICT;
 CREATE TABLE processing_receipts(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, PRIMARY KEY(artifact_id,version)) STRICT;
 CREATE TABLE connections(id TEXT PRIMARY KEY NOT NULL, provider TEXT NOT NULL, name TEXT NOT NULL DEFAULT '') STRICT;
-CREATE TABLE work(connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, operation TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, state_version TEXT NOT NULL DEFAULT '', state BLOB NOT NULL DEFAULT X'', next TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '', observed_completed INTEGER NOT NULL DEFAULT 0, observed_total INTEGER NOT NULL DEFAULT 0, acknowledged TEXT NOT NULL DEFAULT '', acknowledged_completed INTEGER NOT NULL DEFAULT 0, acknowledged_total INTEGER NOT NULL DEFAULT 0, failure TEXT NOT NULL DEFAULT '', failure_code TEXT NOT NULL DEFAULT '', PRIMARY KEY(connection_id,stream,operation)) STRICT;
-CREATE TABLE artifacts(id TEXT PRIMARY KEY NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, operation TEXT NOT NULL, format TEXT NOT NULL, media_type TEXT NOT NULL, retrieved TEXT NOT NULL, hash TEXT NOT NULL, content BLOB NOT NULL, processed INTEGER NOT NULL DEFAULT 0, processing_next TEXT NOT NULL DEFAULT '', processing_failure TEXT NOT NULL DEFAULT '', requested_from TEXT NOT NULL DEFAULT '',requested_to TEXT NOT NULL DEFAULT '',reported_from TEXT NOT NULL DEFAULT '',reported_to TEXT NOT NULL DEFAULT '') STRICT;
+CREATE TABLE artifacts(id TEXT PRIMARY KEY NOT NULL, connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, operation TEXT NOT NULL, format TEXT NOT NULL, media_type TEXT NOT NULL, retrieved TEXT NOT NULL, hash TEXT NOT NULL, content BLOB NOT NULL, requested_from TEXT NOT NULL DEFAULT '',requested_to TEXT NOT NULL DEFAULT '',reported_from TEXT NOT NULL DEFAULT '',reported_to TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE report_comparisons(connection_id TEXT NOT NULL REFERENCES connections(id), stream TEXT NOT NULL, format TEXT NOT NULL, media_type TEXT NOT NULL, policy TEXT NOT NULL, digest TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), PRIMARY KEY(connection_id,stream,format,media_type,policy,digest)) STRICT;
 CREATE TABLE acquisition_receipts(sequence INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), operation TEXT NOT NULL, retrieved TEXT NOT NULL, hash TEXT NOT NULL, policy TEXT NOT NULL, digest TEXT NOT NULL, requested_from TEXT NOT NULL,requested_to TEXT NOT NULL,reported_from TEXT NOT NULL,reported_to TEXT NOT NULL,candidate_snapshot INTEGER NOT NULL DEFAULT 0 CHECK(candidate_snapshot IN (0,1))) STRICT;
 CREATE INDEX receipts_body ON acquisition_receipts(artifact_id,operation);
@@ -35,11 +33,9 @@ CREATE TABLE records(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version
 CREATE INDEX records_claim_appearances ON records(claim_id,ordinal,artifact_id,version,location);
 CREATE VIEW record_values AS SELECT r.artifact_id,r.version,r.location,r.claim_id,r.ordinal,c.kind,c.data FROM records r JOIN source_claims c ON c.id=r.claim_id;
 CREATE TABLE claim_processing(sequence INTEGER PRIMARY KEY,activity_support INTEGER NOT NULL DEFAULT 1 CHECK(activity_support IN (0,1)),claim_id TEXT NOT NULL REFERENCES source_claims(id), ordinal INTEGER NOT NULL, artifact_id TEXT NOT NULL, version TEXT NOT NULL, location TEXT NOT NULL, UNIQUE(claim_id,ordinal), FOREIGN KEY(artifact_id,version,location) REFERENCES records(artifact_id,version,location)) STRICT;
-CREATE TABLE pacing(provider TEXT NOT NULL, policy TEXT NOT NULL, scope TEXT NOT NULL, next TEXT NOT NULL, PRIMARY KEY(provider,policy,scope)) STRICT;
 
-CREATE TABLE scheduled(connection_id TEXT NOT NULL, stream TEXT NOT NULL, operation TEXT NOT NULL, enabled INTEGER NOT NULL, PRIMARY KEY(connection_id,stream,operation), FOREIGN KEY(connection_id,stream,operation) REFERENCES work(connection_id,stream,operation)) STRICT;
 CREATE TABLE accounts(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, currency TEXT NOT NULL, connection_id TEXT NOT NULL UNIQUE REFERENCES connections(id), provider TEXT NOT NULL, authority TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, value TEXT NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id),rule TEXT NOT NULL DEFAULT 'account-authority/1', UNIQUE(provider,authority,kind,scope,value)) STRICT;
-CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '', reference_next TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1', calculation_rule TEXT NOT NULL DEFAULT '', underlier_id TEXT REFERENCES instruments(id)) STRICT;
+CREATE TABLE instruments(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, source_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ticker TEXT NOT NULL, kind TEXT NOT NULL, reported BLOB NOT NULL, reference_status TEXT NOT NULL, reference_allocation TEXT NOT NULL DEFAULT '', reference_reason TEXT NOT NULL DEFAULT '', selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), reference_figi TEXT NOT NULL DEFAULT '', evidence_id TEXT NOT NULL DEFAULT '',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1', calculation_rule TEXT NOT NULL DEFAULT '', underlier_id TEXT REFERENCES instruments(id)) STRICT;
 CREATE INDEX instrument_figi ON instruments(reference_figi) WHERE reference_figi<>'';
 CREATE TABLE listings(revision INTEGER NOT NULL DEFAULT 1,id TEXT PRIMARY KEY NOT NULL, instrument_id TEXT NOT NULL REFERENCES instruments(id), venue TEXT NOT NULL, ticker TEXT NOT NULL, currency TEXT NOT NULL, figi TEXT NOT NULL DEFAULT '') STRICT;
 CREATE INDEX listing_terms ON listings(instrument_id,venue,ticker,currency);
@@ -49,7 +45,6 @@ CREATE INDEX alias_target ON resource_aliases(kind,target_id);
 CREATE TABLE executions(revision INTEGER NOT NULL DEFAULT 1,kind TEXT NOT NULL DEFAULT 'trade', id TEXT PRIMARY KEY NOT NULL, account_id TEXT NOT NULL REFERENCES accounts(id), instrument_id TEXT REFERENCES instruments(id), listing_id TEXT REFERENCES listings(id), accepted BLOB NOT NULL, status TEXT NOT NULL, review_reasons INTEGER NOT NULL DEFAULT 0 CHECK(review_reasons BETWEEN 0 AND 3), selection_authority TEXT NOT NULL DEFAULT 'automatic' CHECK(selection_authority IN ('automatic','operator')), rule TEXT NOT NULL, calculation_rule TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE event_links(distinct_event INTEGER NOT NULL DEFAULT 0 CHECK(distinct_event IN (0,1)),account_id TEXT NOT NULL REFERENCES accounts(id), reference TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), PRIMARY KEY(account_id,reference,execution_id)) STRICT;
 CREATE TABLE execution_observations(artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, location TEXT NOT NULL, execution_id TEXT REFERENCES executions(id), outcome TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(artifact_id,version,location)) STRICT;
-CREATE TABLE reference_budget(singleton INTEGER PRIMARY KEY CHECK(singleton=1), window_start TEXT NOT NULL, used INTEGER NOT NULL, cooldown TEXT NOT NULL) STRICT;
 CREATE TABLE reference_evidence(id TEXT PRIMARY KEY NOT NULL, retrieved TEXT NOT NULL, request BLOB NOT NULL, response BLOB NOT NULL, http_status INTEGER NOT NULL, headers BLOB NOT NULL) STRICT;
 CREATE TABLE instrument_reference_attempts(instrument_id TEXT NOT NULL REFERENCES instruments(id), evidence_id TEXT NOT NULL REFERENCES reference_evidence(id), status TEXT NOT NULL,rule TEXT NOT NULL, PRIMARY KEY(instrument_id,evidence_id)) STRICT;
 
@@ -104,9 +99,6 @@ CREATE INDEX corrections_replacement ON source_corrections(account_id,replacemen
 CREATE INDEX event_links_execution ON event_links(execution_id,account_id,reference);
 
 -- Operational execution belongs to the warehouse's lifetime and transaction.
-CREATE TABLE attempts(id TEXT PRIMARY KEY NOT NULL, artifact_id TEXT NOT NULL REFERENCES artifacts(id), version TEXT NOT NULL, outcome TEXT NOT NULL, counts BLOB NOT NULL) STRICT;
-CREATE INDEX attempts_artifact ON attempts(artifact_id,version,outcome);
-CREATE TABLE reference_cache(key TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, records BLOB NOT NULL, expires TEXT NOT NULL, evidence_id TEXT NOT NULL REFERENCES reference_evidence(id)) STRICT;
 
 CREATE TABLE instrument_claims(instrument_id TEXT NOT NULL REFERENCES instruments(id),claim_id TEXT NOT NULL REFERENCES source_claims(id),ordinal INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('subject','underlier')),outcome TEXT NOT NULL DEFAULT 'accepted',rule TEXT NOT NULL DEFAULT 'qualified-instrument-reference/1',PRIMARY KEY(instrument_id,claim_id,ordinal,role),FOREIGN KEY(claim_id,ordinal) REFERENCES claim_processing(claim_id,ordinal)) STRICT;
 CREATE INDEX instrument_claim_occurrence ON instrument_claims(claim_id,ordinal);
@@ -220,15 +212,3 @@ CREATE VIEW current_position_instruments AS
  FROM position_bindings b JOIN source_claims c ON c.id=b.claim_id JOIN claim_processing p ON p.claim_id=c.id AND p.ordinal=b.ordinal
  LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id
  WHERE EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=p.ordinal);
-
-CREATE TABLE sync_association (
- singleton INTEGER PRIMARY KEY CHECK(singleton=1),
- lineage TEXT NOT NULL,
- epoch TEXT NOT NULL,
- sync_id TEXT NOT NULL,
- access_id TEXT NOT NULL,
- generation TEXT NOT NULL,
- revision TEXT NOT NULL,
- token TEXT NOT NULL,
- bind_restore INTEGER NOT NULL DEFAULT 0 CHECK(bind_restore IN (0,1))
-) STRICT;

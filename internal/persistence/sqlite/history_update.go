@@ -5,7 +5,6 @@ package persistence
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -54,15 +53,26 @@ func (s *Store) prepareHistoryUpdate(ctx context.Context, q *sqlc.Queries, fresh
 }
 
 func (s *Store) RunHistoryUpdate(ctx context.Context, now time.Time) (bool, error) {
-	changed, err := s.historyBatch(ctx, now)
-	if err == nil || ctx.Err() != nil {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	if retry := s.historyRetry.Load(); retry != nil && now.Before(*retry) {
+		return false, nil
+	}
+
+	changed, err := s.historyBatch(ctx)
+	if err == nil {
+		s.historyRetry.Store(nil)
+		return changed, nil
+	}
+
+	if ctx.Err() != nil {
 		return changed, err
 	}
 
 	retry := now.Add(time.Minute).UTC()
-	if saveErr := s.queries.FailHistoryUpdate(ctx, retry.Format(time.RFC3339Nano)); saveErr != nil {
-		return false, errors.Join(err, saveErr)
-	}
+	s.historyRetry.Store(&retry)
 
 	s.logger.WarnContext(ctx, "retained history update will retry", "event", "history_update_retry",
 		"code", storageCode(err), "next_eligible_at", retry)
@@ -70,7 +80,7 @@ func (s *Store) RunHistoryUpdate(ctx context.Context, now time.Time) (bool, erro
 	return true, nil
 }
 
-func (s *Store) historyBatch(ctx context.Context, now time.Time) (bool, error) {
+func (s *Store) historyBatch(ctx context.Context) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -82,17 +92,6 @@ func (s *Store) historyBatch(ctx context.Context, now time.Time) (bool, error) {
 	state, err := q.HistoryUpdate(ctx)
 	if err != nil || state.Target == 0 {
 		return false, err
-	}
-
-	if state.RetryAt != "" {
-		retry, e := time.Parse(time.RFC3339Nano, state.RetryAt)
-		if e != nil {
-			return false, ErrCorrupt
-		}
-
-		if now.Before(retry) {
-			return false, nil
-		}
 	}
 
 	phase, cursor := state.Phase, state.Cursor

@@ -32,7 +32,7 @@ func TestStorageBackupRejectsInvalidSourceState(t *testing.T) {
 		},
 		{
 			"renamed access column",
-			"ALTER TABLE access.configurations RENAME COLUMN settings TO wrong_settings",
+			"ALTER TABLE sync.configurations RENAME COLUMN settings TO wrong_settings",
 			ErrUnsupportedSchema,
 		},
 		{"missing view", "DROP VIEW main.admin_activity", ErrUnsupportedSchema},
@@ -43,9 +43,9 @@ func TestStorageBackupRejectsInvalidSourceState(t *testing.T) {
 		},
 		{"invalid rule history", "UPDATE main.history_update SET applied=999", ErrHistoryVersion},
 		{"missing rule history", "DELETE FROM main.history_update", nil},
-		{"missing recovery profile", "DELETE FROM main.profile", nil},
-		{"wrong access store", "UPDATE main.profile SET access_id='other'", ErrAssociation},
-		{"provider differs", "UPDATE access.configurations SET provider='other'", ErrAssociation},
+		{"missing recovery profile", "DELETE FROM sync.profile", nil},
+		{"wrong access store", "UPDATE sync.profile SET access_id='other'", ErrAssociation},
+		{"provider differs", "UPDATE sync.configurations SET provider='other'", ErrAssociation},
 		{
 			"orphaned credentials",
 			"PRAGMA foreign_keys=OFF; UPDATE access.credentials SET connection_id='missing'",

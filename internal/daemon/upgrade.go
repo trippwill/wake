@@ -8,7 +8,6 @@ import (
 	"log/slog"
 
 	"go.trippwill.dev/wake/internal/config"
-	"go.trippwill.dev/wake/internal/credential"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
@@ -19,26 +18,8 @@ type UpgradePlan = persistence.UpgradePlan
 func UpgradeStorage(
 	ctx context.Context,
 	cfg config.Config,
-	logger *slog.Logger,
+	_ *slog.Logger,
 	confirm string,
 ) (UpgradePlan, error) {
-	if confirm != "" && cfg.Credentials.KeyPath != "" {
-		key, err := credential.LoadMasterKey(cfg.Credentials.KeyPath)
-		if err != nil {
-			return UpgradePlan{}, err
-		}
-
-		key.Clear()
-	}
-
-	registrations, err := (sourceOptions{}).registrations()
-	if err != nil {
-		return UpgradePlan{}, err
-	}
-
-	return persistence.Upgrade(ctx, persistence.Profile{
-		WarehousePath:   cfg.Storage.WarehousePath,
-		ConnectionsPath: cfg.Storage.ConnectionsPath,
-		Registrations:   registrations,
-	}, logger, confirm)
+	return persistence.PreviewFinancial(ctx, cfg.Storage.WarehousePath, confirm)
 }

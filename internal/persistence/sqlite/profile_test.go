@@ -140,8 +140,8 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 						}
 					}
 
-					if connection.SettingsStored == lostAccess || connection.CredentialStored == lostAccess ||
-						connection.MissingAccess != lostAccess {
+					if !connection.SettingsStored || connection.CredentialStored == lostAccess ||
+						connection.MissingAccess {
 						t.Fatal("incorrect recovery prerequisites", connection)
 					}
 				}
@@ -294,7 +294,7 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 	}
 }
 
-func TestTwoStorePartitionAndRollback(t *testing.T) {
+func TestThreeStorePartitionAndRollback(t *testing.T) {
 	_, s := profileFixture(t)
 	ctx := t.Context()
 	settings, _ := provider.NewSettings(map[string]string{"name": "Synthetic"})
@@ -313,7 +313,7 @@ func TestTwoStorePartitionAndRollback(t *testing.T) {
 		t.Fatal("fault ignored")
 	}
 
-	for _, table := range []string{"main.connections", "access.configurations", "access.credentials"} {
+	for _, table := range []string{"main.connections", "sync.configurations", "access.credentials"} {
 		var n int
 		if err := s.db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
 			t.Fatal("partial transaction", table, n, err)
@@ -340,7 +340,11 @@ func TestTwoStorePartitionAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for schema, tables := range map[string][]string{"main": {"connections", "work", "scheduled", "normalization_receipts", "operator_decisions", "attempts", "reference_cache"}, "access": {"configurations", "credentials", "reference_settings"}} {
+	for schema, tables := range map[string][]string{
+		"main":   {"connections", "financial_lineage", "normalization_receipts", "operator_decisions"},
+		"sync":   {"configurations", "work", "scheduled", "attempts", "reference_cache", "reference_deadlines"},
+		"access": {"identities", "credentials", "reference_settings"},
+	} {
 		for _, table := range tables {
 			var n int
 			if err := s.db.QueryRow("SELECT count(*) FROM "+schema+".sqlite_schema WHERE type='table' AND name=?", table).
@@ -406,14 +410,13 @@ func TestCredentialReplacementPreservesWarehouseAndRequiresReview(t *testing.T) 
 	}
 
 	view, err := reopened.Dashboard(ctx)
-	if err != nil || !view.Storage.Paused || !view.Storage.ReferenceReview || len(view.Connections) != 1 ||
-		view.Connections[0].MissingAccess {
+	if err != nil || !view.Storage.Paused || !view.Storage.ReferenceReview || len(view.Connections) != 0 {
 		t.Fatal("credential replacement did not require review", view, err)
 	}
 }
 
 func TestEveryCompanionOwnershipAndLinks(t *testing.T) {
-	for _, i := range []int{1} {
+	for _, i := range []int{1, 2} {
 		for _, mode := range []string{"lock", "symlink", "hardlink", "sidecar", "superjournal"} {
 			t.Run(storeKinds[i]+"/"+mode, func(t *testing.T) {
 				p, s := profileFixture(t)
@@ -489,7 +492,7 @@ func TestAttachedCrashHelper(t *testing.T) {
 	}
 
 	payload := strings.Repeat("synthetic committed transaction;", 32768)
-	for _, statement := range []string{`UPDATE reference_evidence SET response=CAST(? AS BLOB) WHERE id='e'`, `UPDATE access.configurations SET settings=CAST(? AS BLOB) WHERE id='crash'`, `UPDATE main.reference_cache SET status=? WHERE key='crash'`} {
+	for _, statement := range []string{`UPDATE reference_evidence SET response=CAST(? AS BLOB) WHERE id='e'`, `UPDATE sync.configurations SET settings=CAST(? AS BLOB) WHERE id='crash'`, `UPDATE sync.reference_cache SET status=? WHERE key='crash'`, `UPDATE access.credentials SET encrypted=CAST(? AS BLOB) WHERE connection_id='crash'`} {
 		if _, err = tx.Exec(statement, payload); err != nil {
 			t.Fatal(err)
 		}
@@ -509,7 +512,7 @@ func TestAttachedCrashRecoveryIsAtomic(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			p, s := profileFixture(t)
 			if _, err := s.db.Exec(
-				`INSERT INTO connections(id,provider) VALUES('crash','before'); INSERT INTO access.configurations(id,provider,settings) VALUES('crash','before',X'6265666f7265'); INSERT INTO reference_evidence VALUES('e','now',X'',X'6265666f7265',200,X''); INSERT INTO main.reference_cache VALUES('crash','before',X'','later','e');`,
+				`INSERT INTO connections(id,provider) VALUES('crash','before'); INSERT INTO sync.configurations(id,provider,settings) VALUES('crash','before',X'6265666f7265'); INSERT INTO access.identities VALUES('crash','before'); INSERT INTO access.credentials VALUES('crash','token',X'6265666f7265'); INSERT INTO reference_evidence VALUES('e','now',X'',X'6265666f7265',200,X''); INSERT INTO sync.reference_cache VALUES('crash','before',X'','later','e');`,
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -557,7 +560,7 @@ func TestAttachedCrashRecoveryIsAtomic(t *testing.T) {
 				want = strings.Repeat("synthetic committed transaction;", 32768)
 			}
 
-			for _, query := range []string{`SELECT CAST(response AS TEXT) FROM reference_evidence WHERE id='e'`, `SELECT CAST(settings AS TEXT) FROM access.configurations WHERE id='crash'`, `SELECT status FROM main.reference_cache WHERE key='crash'`} {
+			for _, query := range []string{`SELECT CAST(response AS TEXT) FROM reference_evidence WHERE id='e'`, `SELECT CAST(settings AS TEXT) FROM sync.configurations WHERE id='crash'`, `SELECT status FROM sync.reference_cache WHERE key='crash'`, `SELECT CAST(encrypted AS TEXT) FROM access.credentials WHERE connection_id='crash'`} {
 				var got string
 				if err := reopened.db.QueryRow(query).Scan(&got); err != nil || got != want {
 					t.Fatal("mixed crash outcome", len(got), err)
@@ -570,7 +573,7 @@ func TestAttachedCrashRecoveryIsAtomic(t *testing.T) {
 func TestInterruptedCompanionReconstructionRestartsPaused(t *testing.T) {
 	p, s := profileFixture(t)
 	if _, err := s.db.Exec(
-		`CREATE TRIGGER reject_recovery BEFORE UPDATE ON profile BEGIN SELECT RAISE(ABORT,'injected'); END`,
+		`CREATE TRIGGER sync.reject_recovery BEFORE UPDATE ON profile BEGIN SELECT RAISE(ABORT,'injected'); END`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +590,7 @@ func TestInterruptedCompanionReconstructionRestartsPaused(t *testing.T) {
 		t.Fatal("reconstruction fault ignored")
 	}
 
-	db, err := sql.Open("sqlite", p.paths()[0])
+	db, err := sql.Open("sqlite", p.paths()[2])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +622,7 @@ func TestRecoveryReferenceReviewPreservesRetryEligibility(t *testing.T) {
 
 	next := time.Now().UTC().Add(6 * time.Hour).Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(
-		`UPDATE instruments SET reference_status='no-match',reference_next=? WHERE id='instrument'`,
+		`UPDATE instruments SET reference_status='no-match' WHERE id='instrument'; INSERT INTO sync.reference_deadlines VALUES('instrument',?)`,
 		next,
 	); err != nil {
 		t.Fatal(err)
@@ -642,9 +645,12 @@ func TestRecoveryReferenceReviewPreservesRetryEligibility(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	instrument, err := recovered.queries.Instrument(ctx, "instrument")
-	if err != nil || instrument.ReferenceNext != next {
-		t.Fatal("reference review shortened retry eligibility", instrument.ReferenceNext, err)
+	var deadline string
+
+	err = recovered.db.QueryRowContext(ctx, "SELECT next FROM sync.reference_deadlines WHERE instrument_id='instrument'").
+		Scan(&deadline)
+	if err != nil || deadline != next {
+		t.Fatal("reference review shortened retry eligibility", deadline, err)
 	}
 
 	view, err := recovered.Dashboard(ctx)
@@ -665,129 +671,52 @@ func TestRecoveryReferenceReviewPreservesRetryEligibility(t *testing.T) {
 	}
 }
 
-//nolint:gosec // Read and remove only synthetic SQLite stores in private test directories.
-func TestFreshWarehouseRetainsAccessAndDiscardsOldExecution(t *testing.T) {
-	t.Run("reset", func(t *testing.T) {
-		p, s := profileFixture(t)
-		ctx := t.Context()
-		settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
-		token := []byte("opaque encrypted provider credential")
-		referenceKey := []byte("opaque encrypted reference credential")
+func TestFreshFinancialDoesNotReuseOptionalExecution(t *testing.T) {
+	p, s := profileFixture(t)
+	ctx := t.Context()
+	settings, _ := provider.NewSettings(map[string]string{"query_id": "123"})
+	if err := s.Configure(ctx, host.Connection{ID: "retained", Provider: "ibkr-flex", Settings: settings},
+		map[string][]byte{"token": []byte("opaque encrypted credential")}); err != nil {
+		t.Fatal(err)
+	}
 
-		if err := s.Configure(
-			ctx,
-			host.Connection{
-				ID:       "retained",
-				Provider: "ibkr-flex",
-				Name:     "Retained connection",
-				Settings: settings,
-			},
-			map[string][]byte{"token": token},
-		); err != nil {
-			t.Fatal(err)
+	before, err := snapshotState(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	files := storeBytes(t, p)
+	if err = os.Rename(p.WarehousePath, p.WarehousePath+".original"); err != nil {
+		t.Fatal(err)
+	}
+
+	fresh, err := OpenFinancial(ctx, p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fresh.Close() }()
+
+	after, err := snapshotState(ctx, fresh)
+	if err != nil || before.WarehouseID == after.WarehouseID || len(after.Resources) != 0 {
+		t.Fatal("fresh financial store reused an old identity or history", after, err)
+	}
+
+	if view, err := fresh.Overview(ctx); err != nil || len(view.Status.Connections) != 0 {
+		t.Fatal("fresh financial store activated optional configuration", view, err)
+	}
+
+	for i, path := range p.paths() {
+		if i == 0 {
+			continue
 		}
-
-		if err := s.SetReferenceKey(ctx, referenceKey); err != nil {
-			t.Fatal(err)
+		//nolint:gosec // Files belong to the disposable fixture.
+		data, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(files[i], data) {
+			t.Fatal("fresh warehouse rewrote optional storage", path, err)
 		}
-
-		if err := s.Schedule(
-			ctx,
-			host.WorkKey{Connection: "retained", Stream: "confirmations", Operation: "acquire"},
-			true,
-		); err != nil {
-			t.Fatal(err)
-		}
-
-		if _, err := s.db.Exec(
-			`INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('old-report','retained','confirmations','acquire','synthetic','application/xml','2026-10-20T00:00:00Z','synthetic',X'00');
- INSERT INTO reference_evidence VALUES('old-evidence','now',X'',X'',200,X'');
- INSERT INTO main.attempts VALUES('old-attempt','old-report','v1','succeeded',X'7b7d');
- INSERT INTO main.reference_cache VALUES('old-job','no-match',X'5b5d','later','old-evidence');`,
-		); err != nil {
-			t.Fatal(err)
-		}
-
-		var oldWarehouse, accessID string
-		if err := s.db.QueryRow(`SELECT id FROM main.store_metadata`).Scan(&oldWarehouse); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := s.db.QueryRow(`SELECT id FROM access.store_metadata`).Scan(&accessID); err != nil {
-			t.Fatal(err)
-		}
-
-		_ = s.Close()
-
-		if err := os.Remove(p.WarehousePath); err != nil {
-			t.Fatal(err)
-		}
-
-		s, err := Open(ctx, p, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		defer func() { _ = s.Close() }()
-
-		view, err := s.Dashboard(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !view.Storage.Paused || !view.Storage.WarehouseReset || view.Storage.ReferenceReview ||
-			view.Account.ID() != "" ||
-			len(view.Connections) != 1 ||
-			view.Connections[0].MissingAccess ||
-			view.Connections[0].Name != "Retained connection" {
-			t.Fatal("fresh warehouse did not retain reviewed access", view)
-		}
-
-		got, err := s.Secret(ctx, "retained", "token")
-		if err != nil || !bytes.Equal(got, token) {
-			t.Fatal("provider credential changed", err)
-		}
-
-		key, failure, err := s.ReferenceKey(ctx)
-		if err != nil || failure != "" || !bytes.Equal(key, referenceKey) {
-			t.Fatal("reference credential changed", err)
-		}
-
-		var newWarehouse, newAccessID string
-		if err := s.db.QueryRow(`SELECT id FROM main.store_metadata`).Scan(&newWarehouse); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := s.db.QueryRow(`SELECT id FROM access.store_metadata`).
-			Scan(&newAccessID); err != nil {
-			t.Fatal(err)
-		}
-
-		if oldWarehouse == newWarehouse || accessID != newAccessID {
-			t.Fatal("wrong fresh warehouse association")
-		}
-
-		for _, table := range []string{"main.accounts", "main.artifacts", "main.scheduled", "main.attempts", "main.reference_cache"} {
-			var n int
-			if err := s.db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
-				t.Fatal("old warehouse execution state survived", table, n, err)
-			}
-		}
-
-		if _, err := s.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
-			t.Fatal("fresh warehouse granted upstream authority", err)
-		}
-
-		_ = s.Close()
-
-		s, err = Open(ctx, p, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		view, err = s.Dashboard(ctx)
-		if err != nil || !view.Storage.Paused || !view.Storage.WarehouseReset || len(view.Connections) != 1 {
-			t.Fatal("intact restart lost retained access or pause", view, err)
-		}
-	})
+	}
 }

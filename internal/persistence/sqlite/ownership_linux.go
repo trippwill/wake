@@ -167,8 +167,8 @@ func openUpgradeIntent(path string, expected os.FileInfo) (*os.File, error) {
 	return file, nil
 }
 
-func upgradeFiles(owners [2]*os.File) ([2]upgradeFile, error) {
-	var files [2]upgradeFile
+func upgradeFiles(owners [storeCount]*os.File) ([storeCount]upgradeFile, error) {
+	var files [storeCount]upgradeFile
 	for i, owner := range owners {
 		if owner == nil {
 			return files, ErrUpgradeRecovery

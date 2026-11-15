@@ -76,6 +76,7 @@ func ResetStorage(
 		{Name: ResetWarehouse, Path: cfg.Storage.WarehousePath},
 		{Name: ResetCredentials, Path: cfg.Storage.ConnectionsPath},
 	}
+
 	selected := []ResetDatabase{}
 	snapshots := resetSnapshot{}
 	parents := resetSnapshot{}
@@ -88,7 +89,7 @@ func ResetStorage(
 		}
 	}
 
-	for _, path := range []string{configPath, cfg.Credentials.KeyPath} {
+	for _, path := range []string{configPath, cfg.Credentials.KeyPath, cfg.Storage.SyncPath} {
 		if path != "" {
 			protected[filepath.Clean(path)] = true
 		}
@@ -120,8 +121,7 @@ func ResetStorage(
 			return ResetResult{}, err
 		}
 
-		if (target == ResetCredentials && db.Name != ResetCredentials) ||
-			(target == ResetWarehouse && db.Name == ResetCredentials) {
+		if db.Name != target {
 			continue
 		}
 

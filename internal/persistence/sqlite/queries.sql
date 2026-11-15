@@ -4,25 +4,37 @@
 -- name: CountTables :one
 SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%';
 -- name: PutConnection :exec
-INSERT INTO access.configurations(id,provider,name,settings) VALUES(?,?,?,?);
+INSERT INTO sync.configurations(id,provider,name,settings) VALUES(?,?,?,?);
 -- name: Connection :one
-SELECT c.*, s.revision AS access_revision FROM access.configurations c CROSS JOIN sync_association s WHERE c.id=?;
+SELECT c.*, s.revision AS access_revision FROM sync.configurations c CROSS JOIN sync.sync_association s WHERE c.id=?;
+-- name: BindCredentialIdentity :execrows
+INSERT INTO access.identities(id,provider) VALUES(?,?)
+ON CONFLICT(id) DO UPDATE SET provider=excluded.provider WHERE identities.provider=excluded.provider;
 -- name: PutSecret :exec
 INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?);
 -- name: Secret :one
 SELECT encrypted FROM access.credentials WHERE connection_id=? AND key=?;
 -- name: EnsureWork :exec
-INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+INSERT INTO sync.work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: EnsureCheckpointWork :execrows
-INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+INSERT INTO sync.work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: Checkpoint :one
-SELECT * FROM work WHERE connection_id=? AND stream=? AND operation=?;
+SELECT * FROM sync.work WHERE connection_id=? AND stream=? AND operation=?;
 -- name: ObserveWork :exec
-UPDATE work SET observed=?,observed_completed=?,observed_total=? WHERE connection_id=? AND stream=? AND operation=?;
+INSERT INTO sync.work(connection_id,stream,operation,observed,observed_completed,observed_total)
+SELECT prior.connection_id,prior.stream,prior.operation,sqlc.arg(observed),sqlc.arg(observed_completed),sqlc.arg(observed_total) FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation=sqlc.arg(operation)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET observed=excluded.observed, observed_completed=excluded.observed_completed, observed_total=excluded.observed_total;
 -- name: FailWork :exec
-UPDATE work SET failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=?;
+INSERT INTO sync.work(connection_id,stream,operation,failure,failure_code)
+SELECT prior.connection_id,prior.stream,prior.operation,sqlc.arg(failure),sqlc.arg(failure_code) FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation=sqlc.arg(operation)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET failure=excluded.failure, failure_code=excluded.failure_code;
 -- name: AdvanceWork :execrows
-UPDATE work SET revision=revision+1,state_version=?,state=?,next=?,acknowledged=?,acknowledged_completed=?,acknowledged_total=?,failure=?,failure_code=? WHERE connection_id=? AND stream=? AND operation=? AND revision=?;
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,next,acknowledged,acknowledged_completed,acknowledged_total,failure,failure_code)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,sqlc.arg(state_version),sqlc.arg(state),sqlc.arg(next),sqlc.arg(acknowledged),sqlc.arg(acknowledged_completed),sqlc.arg(acknowledged_total),sqlc.arg(failure),sqlc.arg(failure_code) FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation=sqlc.arg(operation) AND prior.revision=sqlc.arg(revision)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, next=excluded.next, acknowledged=excluded.acknowledged, acknowledged_completed=excluded.acknowledged_completed, acknowledged_total=excluded.acknowledged_total, failure=excluded.failure, failure_code=excluded.failure_code;
 -- name: PutArtifact :exec
 INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content,requested_from,requested_to,reported_from,reported_to) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);
 -- name: Retained :one
@@ -32,73 +44,85 @@ INSERT INTO candidates(receipt_id,artifact_id,authority,kind,scope,value,name,cu
 -- name: Candidates :many
 SELECT DISTINCT candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value,candidates.name,candidates.currency FROM candidates JOIN artifacts ON artifacts.id=candidates.artifact_id WHERE artifacts.connection_id=? ORDER BY candidates.artifact_id,candidates.authority,candidates.kind,candidates.scope,candidates.value;
 -- name: StartAttempt :exec
-INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'');
+INSERT INTO sync.attempts(id,artifact_id,version,outcome,counts) VALUES(?,?,?,'running',X'');
 -- name: FinishAttempt :exec
-INSERT INTO main.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM main.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts;
+INSERT INTO sync.attempts(id,artifact_id,version,outcome,counts) SELECT a.id,a.artifact_id,a.version,?,? FROM sync.attempts a WHERE a.id=? ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,counts=excluded.counts;
 -- name: Succeeded :one
 SELECT counts FROM normalization_receipts WHERE artifact_id=? AND version=?;
 -- name: Attempts :many
-SELECT * FROM main.attempts WHERE artifact_id=? ORDER BY rowid;
+SELECT * FROM sync.attempts WHERE artifact_id=? ORDER BY rowid;
 -- name: PutRecord :exec
 INSERT INTO records(artifact_id,version,location,claim_id,ordinal) VALUES(?,?,?,?,?);
 -- name: Records :many
 SELECT * FROM record_values WHERE artifact_id=? AND version=? ORDER BY location;
 -- name: Pacing :one
-SELECT next FROM pacing WHERE provider=? AND policy=? AND scope=?;
+SELECT next FROM sync.pacing WHERE provider=? AND policy=? AND scope=?;
 -- name: SetPacing :exec
-INSERT INTO pacing(provider,policy,scope,next) VALUES(?,?,?,?) ON CONFLICT(provider,policy,scope) DO UPDATE SET next=excluded.next;
+INSERT INTO sync.pacing(provider,policy,scope,next) VALUES(?,?,?,?) ON CONFLICT(provider,policy,scope) DO UPDATE SET next=excluded.next;
 
 -- name: ReplaceSecret :exec
 INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?) ON CONFLICT(connection_id,key) DO UPDATE SET encrypted=excluded.encrypted;
 -- name: Connections :many
 SELECT id FROM connections ORDER BY rowid;
 -- name: SetScheduled :exec
-INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
 -- name: InvalidateChangedSchedule :exec
-UPDATE work SET revision=revision+1
-WHERE work.connection_id=sqlc.arg(connection_id) AND work.stream=sqlc.arg(stream) AND work.operation=sqlc.arg(operation)
-AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
- AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled<>sqlc.arg(enabled));
+INSERT INTO sync.work(connection_id,stream,operation,revision)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1 FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation=sqlc.arg(operation)
+AND EXISTS(SELECT 1 FROM sync.scheduled WHERE scheduled.connection_id=prior.connection_id
+ AND scheduled.stream=prior.stream AND scheduled.operation=prior.operation AND enabled<>sqlc.arg(enabled))
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision;
 -- name: EnsureAccountAcquisitionWork :execrows
-INSERT INTO work(connection_id,stream,operation)
+INSERT INTO sync.work(connection_id,stream,operation)
 SELECT connection_id,sqlc.arg(stream),'acquire' FROM accounts WHERE provider=sqlc.arg(provider)
 ON CONFLICT DO NOTHING;
 -- name: ScheduleMissingAccountAcquisition :execrows
-INSERT INTO scheduled(connection_id,stream,operation,enabled)
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
 SELECT connection_id,sqlc.arg(stream),'acquire',1 FROM accounts WHERE provider=sqlc.arg(provider)
 ON CONFLICT DO NOTHING;
 -- name: RetryWork :exec
-UPDATE work SET revision=revision+1,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation=?;
+INSERT INTO sync.work(connection_id,stream,operation,revision,failure,failure_code,next)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,'','',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation=sqlc.arg(operation)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, failure=excluded.failure, failure_code=excluded.failure_code, next=excluded.next;
 -- name: RestartDiscovery :exec
-UPDATE work SET revision=revision+1,state_version=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state_version ELSE '' END,state=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN state ELSE X'' END,failure='',failure_code='',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END WHERE connection_id=? AND stream=? AND operation='discover';
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,failure,failure_code,next)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.state_version ELSE '' END,CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.state ELSE X'' END,'','',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation='discover'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, failure=excluded.failure, failure_code=excluded.failure_code, next=excluded.next;
 -- name: RefreshPolls :execrows
-UPDATE work
-SET next=CASE WHEN json_extract(CAST(state AS TEXT), '$.not_before')>CAST(sqlc.arg(now) AS TEXT)
-              THEN json_extract(CAST(state AS TEXT), '$.not_before') ELSE CAST(sqlc.arg(now) AS TEXT) END
-WHERE operation='acquire'
-  AND (SELECT paused FROM profile WHERE singleton=1)=0
-  AND failure='' AND failure_code=''
-  AND julianday(next)>julianday(sqlc.arg(now))
-  AND julianday(next)>CASE WHEN state_version=sqlc.arg(poll_version)
-                           THEN julianday(json_extract(CAST(state AS TEXT), '$.not_before')) END
-  AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
-             AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled=1)
-  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
+INSERT INTO sync.work(connection_id,stream,operation,next)
+SELECT prior.connection_id,prior.stream,prior.operation,CASE WHEN json_extract(CAST(prior.state AS TEXT), '$.not_before')>CAST(sqlc.arg(now) AS TEXT)
+              THEN json_extract(CAST(prior.state AS TEXT), '$.not_before') ELSE CAST(sqlc.arg(now) AS TEXT) END FROM sync.work AS prior
+WHERE prior.operation='acquire'
+  AND (SELECT paused FROM sync.profile WHERE singleton=1)=0
+  AND prior.failure='' AND prior.failure_code=''
+  AND julianday(prior.next)>julianday(sqlc.arg(now))
+  AND julianday(prior.next)>CASE WHEN prior.state_version=sqlc.arg(poll_version)
+                           THEN julianday(json_extract(CAST(prior.state AS TEXT), '$.not_before')) END
+  AND EXISTS(SELECT 1 FROM sync.scheduled WHERE scheduled.connection_id=prior.connection_id
+             AND scheduled.stream=prior.stream AND scheduled.operation=prior.operation AND enabled=1)
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=prior.connection_id)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET next=excluded.next;
 -- name: QueuedPoll :one
-SELECT work.state FROM work JOIN scheduled USING(connection_id,stream,operation)
+SELECT work.state FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
 WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
   AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code=''
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=work.connection_id);
 -- name: SetPollDeadline :exec
-UPDATE work SET next=?,state=? WHERE connection_id=? AND stream=? AND operation='acquire';
+INSERT INTO sync.work(connection_id,stream,operation,next,state)
+SELECT prior.connection_id,prior.stream,prior.operation,sqlc.arg(next),sqlc.arg(state) FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream) AND prior.operation='acquire'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET next=excluded.next, state=excluded.state;
 -- name: QueuedPollConnections :many
-SELECT id,provider,settings FROM access.configurations
-WHERE EXISTS(SELECT 1 FROM work JOIN scheduled USING(connection_id,stream,operation)
+SELECT id,provider,settings FROM sync.configurations
+WHERE EXISTS(SELECT 1 FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
    WHERE work.connection_id=configurations.id AND work.operation='acquire' AND work.state_version=?
     AND enabled=1 AND work.next<>'' AND work.failure='' AND work.failure_code='')
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=configurations.id);
 -- name: PendingWork :many
-SELECT work.connection_id,work.stream,work.operation FROM work JOIN scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
+SELECT work.connection_id,work.stream,work.operation FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation) WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND enabled=1 AND (next='' OR julianday(next)<=julianday(?)) AND failure_code NOT IN ('unauthorized','invalid','unavailable','malformed','limit') ORDER BY work.rowid LIMIT 20;
 -- name: WorkStatuses :many
 SELECT work.stream, work.operation, work.observed, work.observed_completed, work.observed_total, work.failure, work.next,
  coalesce(scheduled.enabled,0)=1 AS scheduled,
@@ -109,9 +133,12 @@ SELECT work.stream, work.operation, work.observed, work.observed_completed, work
   SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
   FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
  )), '') AS TEXT) AS last_retrieved
-FROM work LEFT JOIN scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream;
+FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream;
 -- name: DisableDiscovery :exec
-UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='discover';
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
+SELECT prior.connection_id,prior.stream,prior.operation,0 FROM sync.scheduled AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.operation='discover'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
 -- name: Account :one
 SELECT * FROM accounts ORDER BY rowid LIMIT 1;
 -- name: AccountByConnection :one
@@ -192,33 +219,34 @@ SELECT count(*) FROM execution_observations WHERE artifact_id=? AND version=? AN
 -- name: ConflictExecution :exec
 UPDATE executions SET review_reasons=review_reasons|1 WHERE id=?;
 -- name: ReferenceSetting :one
-SELECT * FROM access.reference_settings WHERE singleton=1;
+SELECT CAST(coalesce((SELECT encrypted FROM access.reference_settings WHERE singleton=1),X'') AS BLOB) AS encrypted,
+ CAST(coalesce((SELECT failure FROM sync.reference_diagnostics WHERE singleton=1),'') AS TEXT) AS failure;
 -- name: SetReferenceKey :exec
-INSERT INTO access.reference_settings(singleton,encrypted,failure) VALUES(1,?,'') ON CONFLICT(singleton) DO UPDATE SET encrypted=excluded.encrypted,failure='';
+INSERT INTO access.reference_settings(singleton,encrypted) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET encrypted=excluded.encrypted;
 -- name: ReferenceFailure :exec
-INSERT INTO access.reference_settings(singleton,encrypted,failure) VALUES(1,X'',?) ON CONFLICT(singleton) DO UPDATE SET failure=excluded.failure;
+INSERT INTO sync.reference_diagnostics(singleton,failure) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET failure=excluded.failure;
 -- name: ReferenceBudget :one
-SELECT * FROM reference_budget WHERE singleton=1;
+SELECT * FROM sync.reference_budget WHERE singleton=1;
 -- name: SetReferenceBudget :exec
-INSERT INTO reference_budget(singleton,window_start,used,cooldown) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET window_start=excluded.window_start,used=excluded.used,cooldown=excluded.cooldown;
+INSERT INTO sync.reference_budget(singleton,window_start,used,cooldown) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET window_start=excluded.window_start,used=excluded.used,cooldown=excluded.cooldown;
 -- name: PutReferenceEvidence :exec
 INSERT INTO reference_evidence(id,retrieved,request,response,http_status,headers) VALUES(?,?,?,?,?,?);
 -- name: ReferenceEvidence :one
 SELECT * FROM reference_evidence WHERE id=?;
 -- name: CachedReference :one
-SELECT * FROM main.reference_cache WHERE key=?;
+SELECT * FROM sync.reference_cache WHERE key=?;
 -- name: CacheReference :exec
-INSERT INTO main.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
+INSERT INTO sync.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
 -- name: PendingReference :many
-SELECT * FROM instruments WHERE (SELECT paused FROM profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (reference_next='' OR julianday(reference_next)<=julianday(?)) ORDER BY rowid LIMIT 100;
+SELECT instruments.* FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100;
 -- name: ResolveInstrument :exec
-UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(reference_figi),evidence_id=sqlc.arg(evidence_id),reference_status=sqlc.arg(reference_status),reference_next=sqlc.arg(reference_next),revision=revision+CASE WHEN name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(reference_figi) OR reference_status<>sqlc.arg(reference_status) THEN 1 ELSE 0 END WHERE id=sqlc.arg(id);
+UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(reference_figi),evidence_id=sqlc.arg(evidence_id),reference_status=sqlc.arg(reference_status),revision=revision+CASE WHEN name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(reference_figi) OR reference_status<>sqlc.arg(reference_status) THEN 1 ELSE 0 END WHERE id=sqlc.arg(id);
 -- name: SetListingFIGI :exec
 UPDATE listings SET figi=? WHERE id=?;
 -- name: PutInstrumentReferenceAttempt :exec
 INSERT INTO instrument_reference_attempts(instrument_id,evidence_id,status,rule) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: WakeReference :exec
-UPDATE instruments SET reference_next='' WHERE reference_status<>'conflict' AND (SELECT paused FROM profile WHERE singleton=1)=0;
+DELETE FROM sync.reference_deadlines WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND instrument_id IN (SELECT id FROM instruments WHERE reference_status<>'conflict');
 -- name: InstrumentReferenceAttempts :many
 SELECT instrument_reference_attempts.*,reference_evidence.retrieved FROM instrument_reference_attempts JOIN reference_evidence ON reference_evidence.id=evidence_id WHERE instrument_id=? ORDER BY reference_evidence.rowid DESC;
 -- name: EventLinks :many
@@ -226,13 +254,13 @@ SELECT execution_id FROM event_links WHERE account_id=? AND reference=? ORDER BY
 -- name: ExecutionLinks :many
 SELECT reference FROM event_links WHERE execution_id=? AND distinct_event=1;
 -- name: UpdateConnection :exec
-INSERT INTO access.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(name),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider;
+INSERT INTO sync.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),sqlc.arg(provider),sqlc.arg(name),sqlc.arg(settings)) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,name=excluded.name WHERE configurations.provider=excluded.provider;
 
 -- name: SetUnderlier :exec
 UPDATE instruments SET underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND underlier_id IS NOT sqlc.narg(underlier_id);
 
 -- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END, reference_next='',reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=sqlc.arg(id);
+UPDATE instruments SET revision=revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=sqlc.arg(id);
 
 -- name: PutLifecycleActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES('lifecycle',?,?,?,?,'accepted',?);
@@ -283,7 +311,7 @@ SELECT * FROM listings WHERE id=?;
 SELECT e.id,e.request,e.response FROM instrument_reference_attempts a JOIN reference_evidence e ON a.evidence_id=e.id WHERE a.instrument_id=? ORDER BY e.rowid;
 
 -- name: ReferenceNext :exec
-UPDATE instruments SET reference_next=? WHERE id=?;
+INSERT INTO sync.reference_deadlines(instrument_id,next) VALUES(?,?) ON CONFLICT(instrument_id) DO UPDATE SET next=excluded.next;
 
 -- name: EnsureInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING;
@@ -298,20 +326,26 @@ INSERT INTO connections(id,provider,name) VALUES(?,?,?);
 -- name: SaveNormalizationReceipt :exec
 INSERT INTO normalization_receipts(artifact_id,version,counts) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: Profile :one
-SELECT * FROM profile WHERE singleton=1;
+SELECT * FROM sync.profile WHERE singleton=1;
 -- name: MissingAccess :many
-SELECT c.id,c.provider FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid;
+SELECT c.id,c.provider FROM connections c LEFT JOIN sync.configurations a ON a.id=c.id WHERE a.id IS NULL ORDER BY c.rowid;
 -- name: ReviewReference :exec
-UPDATE profile SET reference_review=0 WHERE singleton=1;
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review)
+SELECT prior.singleton,prior.access_id,prior.paused,0 FROM sync.profile AS prior
+WHERE prior.singleton=1
+ON CONFLICT(singleton) DO UPDATE SET reference_review=excluded.reference_review;
 -- name: ResumeStorage :execrows
-UPDATE profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHERE singleton=1 AND paused=1 AND recovery_revision=? AND reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN access.configurations a ON a.id=c.id WHERE a.id IS NULL);
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review,warehouse_reset,resumed_by,resumed_at)
+SELECT prior.singleton,prior.access_id,0,prior.reference_review,0,sqlc.arg(resumed_by),sqlc.arg(resumed_at) FROM sync.profile AS prior
+WHERE prior.singleton=1 AND prior.paused=1 AND prior.recovery_revision=sqlc.arg(recovery_revision) AND prior.reference_review=0 AND NOT EXISTS(SELECT 1 FROM connections c LEFT JOIN sync.configurations a ON a.id=c.id WHERE a.id IS NULL)
+ON CONFLICT(singleton) DO UPDATE SET paused=excluded.paused, warehouse_reset=excluded.warehouse_reset, resumed_by=excluded.resumed_by, resumed_at=excluded.resumed_at;
 -- name: Descriptor :one
 SELECT * FROM connections WHERE id=?;
 -- name: ConnectionAccess :one
-SELECT count(*) FROM access.configurations c WHERE c.id=?;
+SELECT count(*) FROM sync.configurations c WHERE c.id=?;
 
 -- name: AccessReadiness :one
-SELECT EXISTS(SELECT 1 FROM access.configurations WHERE id=sqlc.arg(connection_id)) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=sqlc.arg(connection_id)) AS credential_stored;
+SELECT EXISTS(SELECT 1 FROM sync.configurations WHERE id=sqlc.arg(connection_id)) AS settings_stored, EXISTS(SELECT 1 FROM access.credentials WHERE connection_id=sqlc.arg(connection_id)) AS credential_stored;
 
 -- name: RelatedSourceCorrections :many
 SELECT c.* FROM event_links e JOIN source_corrections c ON c.account_id=e.account_id AND c.target=e.reference WHERE e.execution_id=sqlc.arg(execution_id)
@@ -451,9 +485,15 @@ WITH bindings(id) AS (SELECT CAST(sqlc.arg(id) AS TEXT) AS id UNION SELECT alias
 SELECT DISTINCT CAST(coalesce(a.target_id,affected.id) AS TEXT) AS id FROM affected LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=affected.id ORDER BY id;
 
 -- name: DisableAcquisition :exec
-UPDATE scheduled SET enabled=0 WHERE connection_id=? AND operation='acquire';
+INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
+SELECT prior.connection_id,prior.stream,prior.operation,0 FROM sync.scheduled AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.operation='acquire'
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
 -- name: ResetStreamWork :exec
-UPDATE work SET revision=revision+1,state_version='',state=X'',next=CASE WHEN (SELECT paused FROM profile WHERE singleton=1)=1 THEN next ELSE '' END,failure='',failure_code='',observed='',acknowledged='' WHERE connection_id=? AND stream=?;
+INSERT INTO sync.work(connection_id,stream,operation,revision,state_version,state,next,failure,failure_code,observed,acknowledged)
+SELECT prior.connection_id,prior.stream,prior.operation,prior.revision+1,'',X'',CASE WHEN (SELECT paused FROM sync.profile WHERE singleton=1)=1 THEN prior.next ELSE '' END,'','','','' FROM sync.work AS prior
+WHERE prior.connection_id=sqlc.arg(connection_id) AND prior.stream=sqlc.arg(stream)
+ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revision, state_version=excluded.state_version, state=excluded.state, next=excluded.next, failure=excluded.failure, failure_code=excluded.failure_code, observed=excluded.observed, acknowledged=excluded.acknowledged;
 -- name: PutActivityReference :exec
 INSERT INTO activity_references(claim_id,ordinal,account_id,reference) VALUES(?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: ActivityToMatch :many
@@ -523,13 +563,11 @@ INSERT INTO history_update(singleton,applied) VALUES(1,?);
 -- name: HistoryUpdate :one
 SELECT * FROM history_update WHERE singleton=1;
 -- name: StartHistoryUpdate :exec
-UPDATE history_update SET target=?,phase='activity',cursor='',completed=0,retry_at='' WHERE singleton=1;
+UPDATE history_update SET target=?,phase='activity',cursor='',completed=0 WHERE singleton=1;
 -- name: AdvanceHistoryUpdate :exec
-UPDATE history_update SET phase=?,cursor=?,completed=completed+sqlc.arg(processed),retry_at='' WHERE singleton=1;
--- name: FailHistoryUpdate :exec
-UPDATE history_update SET retry_at=? WHERE singleton=1;
+UPDATE history_update SET phase=?,cursor=?,completed=completed+sqlc.arg(processed) WHERE singleton=1;
 -- name: FinishHistoryUpdate :exec
-UPDATE history_update SET applied=target,target=0,phase='',cursor='',retry_at='' WHERE singleton=1;
+UPDATE history_update SET applied=target,target=0,phase='',cursor='' WHERE singleton=1;
 -- name: HistoryActivities :many
 SELECT * FROM executions WHERE id>sqlc.arg(cursor) ORDER BY id LIMIT 50;
 -- name: HistoryInstruments :many
@@ -539,11 +577,13 @@ SELECT i.id FROM instruments i WHERE i.id>sqlc.arg(cursor)
 
 -- name: SavedCredentials :many
 SELECT c.connection_id, a.provider, c.key, c.encrypted
-FROM access.credentials c JOIN access.configurations a ON a.id=c.connection_id;
+FROM access.credentials c JOIN access.identities a ON a.id=c.connection_id;
 
 -- name: SavedReferenceCredential :one
 SELECT encrypted FROM access.reference_settings WHERE singleton=1;
 
 -- name: PauseForCredentialKey :exec
-UPDATE profile SET paused=1,recovery_revision=recovery_revision+1
-WHERE singleton=1 AND paused=0;
+INSERT INTO sync.profile(singleton,access_id,paused,reference_review,recovery_revision)
+SELECT prior.singleton,prior.access_id,1,prior.reference_review,prior.recovery_revision+1 FROM sync.profile AS prior
+WHERE prior.singleton=1 AND prior.paused=0
+ON CONFLICT(singleton) DO UPDATE SET paused=excluded.paused, recovery_revision=excluded.recovery_revision;

@@ -1,5 +1,8 @@
 # SnapTrade Personal
 
+The current pre-release daemon serves retained history locally. Live synchronization
+is unavailable in this build.
+
 Wake discovers existing Fidelity US and Interactive Brokers investment accounts
 in SnapTrade Personal. Wake reads cached purchases and sales for both brokers
 and reported positions for Fidelity US. Link or repair your
@@ -21,7 +24,7 @@ Use **Access** on the connection to replace the consumer key. If Wake reports
 that the upstream account is unavailable, check that the original brokerage
 connection is active in SnapTrade and retry after repairing it. An account with
 changed source identity requires a new connection and confirmation. Keep existing
-financial history when repairing credentials. See [Wake setup and recovery](../../README.md#connect-and-inspect).
+financial history when repairing credentials. See [storage recovery](../product/coverage.md#backup-and-recovery).
 
 ## Understand the history
 

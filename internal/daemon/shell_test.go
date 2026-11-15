@@ -6,6 +6,7 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -20,6 +21,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/currencycatalog"
+	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
 
@@ -27,18 +29,31 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		options sourceOptions
+		corrupt bool
 	}{
-		{"upstream available", sourceOptions{}},
-		{"local only", sourceOptions{WithoutUpstream: true}},
-		{"upstream initialization failed", sourceOptions{ReferenceURL: ":invalid"}},
+		{"local only", sourceOptions{}, false},
+		{"corrupt optional stores", sourceOptions{}, true},
+		{"upstream harness", sourceOptions{openSources: persistence.Open}, false},
+		{"upstream initialization failed", sourceOptions{openSources: persistence.Open, ReferenceURL: ":invalid"}, false},
 	} {
-		t.Run(tc.name, func(t *testing.T) { testShellStartupAndJoinedShutdown(t, tc.options) })
+		t.Run(tc.name, func(t *testing.T) { testShellStartupAndJoinedShutdown(t, tc.options, tc.corrupt) })
 	}
 }
 
-func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions) {
+func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corrupt bool) {
 	cfg := shellConfig(t)
 	seedAPIClient(t, cfg)
+
+	const invalid = "unrelated optional bytes"
+
+	optional := []string{cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath}
+	if corrupt {
+		for _, path := range optional {
+			if err := os.WriteFile(path, []byte(invalid), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 
 	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic-shell-unlock")); err != nil {
 		t.Fatal(err)
@@ -120,6 +135,16 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions) {
 
 	if err = Run(ctx, cfg, slog.Default()); err != nil {
 		t.Fatal(err)
+	}
+
+	if options.openSources == nil {
+		for _, path := range optional {
+			//nolint:gosec // The paths refer to this test's disposable stores.
+			data, err := os.ReadFile(path)
+			if corrupt && (err != nil || string(data) != invalid) || !corrupt && !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("daemon changed optional store", path, err)
+			}
+		}
 	}
 }
 
@@ -255,6 +280,7 @@ func shellConfig(t *testing.T) config.Config {
 		Storage: config.Storage{
 			WarehousePath:   filepath.Join(resetPrivateDir(t), "history.sqlite"),
 			ConnectionsPath: filepath.Join(resetPrivateDir(t), "credentials.sqlite"),
+			SyncPath:        filepath.Join(resetPrivateDir(t), "sync.sqlite"),
 		},
 		Admin: config.Admin{Port: adminPort},
 		API:   config.API{Port: apiPort},

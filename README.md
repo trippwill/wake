@@ -10,11 +10,9 @@ MPL-2.0 ([LICENSE](LICENSE)).
 Each instance serves one user. The browser and financial API listen on IPv4
 loopback. The operator provides any remote access and transport protection.
 
-Wake acquires IBKR Flex reports, cached SnapTrade Personal trade history, and
-reported Fidelity US positions through SnapTrade.
-Confirm one account per connection and inspect activity, instruments and available
-reported positions in the admin console. Wake retains original reports, exact
-financial values and conflicts.
+This pre-release build serves and processes retained history locally.
+Inspect activity, instruments, and available reported positions in the admin
+console. Wake retains original reports, exact financial values and conflicts.
 
 ### Set up and start
 
@@ -26,10 +24,10 @@ mise run build:release
 export PATH="$PWD/.cache/release:$PATH"
 ```
 
-With `wake` on `PATH`, create the configuration and key for a new instance:
+With `wake` on `PATH`, create the configuration and set a browser password:
 
 ```sh
-wake config init --generate-key
+wake config init
 wake access set password
 wake serve
 ```
@@ -44,7 +42,7 @@ TOML and fails if the path already exists. Repeat `--set KEY=VALUE` to write
 scalar settings listed by `wake config describe`.
 
 ```sh
-wake config init --set admin.port=8887 --set api.port=8888 --generate-key
+wake config init --set admin.port=8887 --set api.port=8888
 ```
 
 Omitted settings use the following defaults:
@@ -53,6 +51,7 @@ Omitted settings use the following defaults:
 [storage]
 warehouse_path = "wake.db"
 connections_path = "connections.db"
+sync_path = "sync.db"
 unattended_upgrade = false
 
 [credentials]
@@ -96,54 +95,18 @@ unavailable.
 For an existing TOML, run `wake config check` to verify the launch settings.
 `wake config get credentials.key_path` prints the expected key path. After
 provisioning the key, run `wake config check --check-key` to verify the key
-file's size, ownership, and permissions. Wake checks the key against any saved
-credentials when it starts.
+file's size, ownership, and permissions. Local startup does not read that key.
 See [operator access and restore](.docs/engineering/architecture.md#operator-access-and-restore)
 for the scope of each file.
 
-### Connect and inspect
+### Inspect retained history
 
-Open **Connections → Add source connection** and choose the provider. For IBKR Flex,
-enter the saved Confirmation Query ID and token. For SnapTrade Personal, enter the
-Personal client ID and consumer key. Wake encrypts secret fields and discovers
-accounts. See the [IBKR setup](.docs/providers/ibkr-flex.md) and
-[SnapTrade setup](.docs/providers/snaptrade.md) guides.
-
-Select **Confirm account**, enter a display name, and confirm the available
-details. Leave an unknown account currency empty. Confirmation grants automatic
-synchronization for that connection’s selected account. Configure another connection
-for a different brokerage account. Use the account selector in Activity or Positions
-when several accounts are confirmed.
-
-**Overview** shows setup steps, financial review and source work. Under
-**Synchronization**, **Refresh now** brings forward routine polls for confirmed
-sources within their pacing limits. It preserves pending retries and continuations. Use the sidebar's
-**Activity**, **Instruments**, **Positions** and **Needs review** destinations to inspect financial
-history, instrument identities, latest reported positions and unresolved questions. Each workspace
-has its own path. Activity, instrument and evidence pages retain a return path to the
-originating view within the current tab.
-Shared resource links open with canonical navigation. Unresolved financial and
-identity conflicts remain distinct from ordinary reference gaps and source failures.
-Positions shows its reported effective date/time and availability, exact quantities, reported
-contract terms and optional aggregate reported cost basis. It distinguishes an empty reported
-set from unavailable positions and links to instrument details and source reports.
-
-Under **Administration**, **Connections** groups each source's **Status**, **Reports**
-and **Access**. Repair its Query ID or token beside the affected source.
-**Access → Polling intervals** lets you set an interval for each recurring stream.
-Clear the field and save to inherit its default. **Status** shows the effective
-interval and the next eligible time. Changing the interval recalculates a queued
-routine poll from the previous cycle, subject to provider pacing. In-progress
-work and retries keep their own deadlines.
-
-To set an installation default, add an entry under `[polling.defaults]` in the
-launch configuration. Keys use the registered `provider-id:stream-id` and values
-are quoted durations, for example `"ibkr-flex:confirmations" = "10m"`.
-Use `wake config check` to validate the file before restarting. At startup, Wake
-recalculates queued routine polls whose inherited intervals changed.
-**Instrument reference** manages
-the optional encrypted OpenFIGI key independently of IBKR access. A rejected key
-stays visible until repaired or explicitly cleared for anonymous access.
+**Overview** shows local setup and financial review. Use **Activity**,
+**Instruments**, **Positions** and **Needs review** to inspect reports and
+unresolved questions. Activity, instrument and evidence pages retain a return
+path to the originating view within the current tab. Positions shows effective
+dates, exact quantities, contract terms and optional reported cost basis. An
+empty reported set and unavailable positions have distinct states.
 
 Use **Correct accepted data** or **Correct instrument data** to correct a field/link,
 compare retained evidence or manage decisions. The editor shows the current value;
@@ -157,21 +120,9 @@ Each source report shows its observed financial meaning in a searchable, paginat
 table with related activity, source locations and acceptance rules.
 
 **System → Status** shows the current financial database file size in readable
-units and exact bytes. This includes retained reports and warehouse operational
-data; encrypted access storage and temporary journals are separate.
+units and exact bytes. The measurement covers the warehouse file.
 **System → Configuration** identifies the TOML file loaded at startup, when present,
 alongside the effective storage and runtime paths.
-
-If `connections.db` is lost, Wake recreates it and pauses upstream work.
-A missing or mismatched credential encryption key also pauses synchronization.
-Retained history and existing API grants remain usable. Check **System → Status** for
-key recovery guidance and **Connections → Recovery** for source and reference review.
-After repair, select **Resume upstream work**. If the original key is unavailable,
-stop Wake and back up the files. Run `wake storage reset credentials` and review
-the preview.
-Confirm the reset, move any unusable key file aside, and run
-`wake access provision credential-key` with Wake stopped.
-Start Wake, enter your source credentials again, and resume synchronization.
 
 The admin console requires JavaScript. Activity, instrument, positions and observation tables
 load authenticated JSON, with filtering, exact ordering and pagination performed on
@@ -185,36 +136,25 @@ failures and recovery actions. Startup reports both listeners. Set `[log] level 
 in the TOML for stage, validation, pacing, and cache detail.
 
 For a routine backup, run `wake storage snapshot warehouse history.tar` while
-Wake runs. To recover the warehouse, stop Wake, select a configuration with a
-vacant warehouse path and run `wake storage restore history.tar`. Retained history
-is available after startup once local access is set up. Review source access
-before resuming upstream work.
+Wake runs. To restore, stop Wake, select a configuration with a vacant warehouse
+and sidecar path, then run `wake storage restore history.tar`. Start Wake with
+local access set up to read the retained history. Restore preserves resource IDs
+and gives API consumers a fresh publication baseline.
 
-For a backup that includes encrypted access, stop Wake and run
-`wake storage backup before-maintenance.tar`. Keep the TOML and credential
-encryption key separately. With Wake stopped, use
-`wake storage restore --with-credentials before-maintenance.tar` with a compatible
-Wake build. Select a configuration whose warehouse and access paths are vacant,
-including their SQLite sidecars. Supply the original key to reuse saved credentials.
-After startup, review access before resuming upstream work.
+Use a compatible build for older formats or operational maintenance with saved
+credentials. With Wake stopped, `wake storage upgrade` checks the financial format.
 
-To check storage compatibility, stop Wake and run `wake storage upgrade` with
-the new binary and the same profile. Review any plan before applying it.
-See [forward upgrades](.docs/product/coverage.md#forward-upgrades).
-
-To clear credentials or financial history, stop Wake and preview the reset:
+To clear financial history or encrypted source access, stop Wake and preview
+the files selected by the reset:
 
 ```sh
 wake storage reset warehouse
 wake storage reset warehouse --confirm
 ```
 
-Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
-and works with corrupt or unsupported databases. A warehouse reset also clears its
-operational state and retains credentials. Start Wake, select **Resume upstream
-work**, then confirm the rediscovered accounts. A credentials reset retains financial
-history; repair access in **Connections** and resume. Configuration, keys and browser
-access are retained.
+Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present
+and works with corrupt or unsupported databases. Preserve any files you need before
+confirming.
 
 ### Find help
 

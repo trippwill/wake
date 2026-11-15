@@ -380,11 +380,12 @@ func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservation
 }
 
 const adminReferenceStatus = `-- name: AdminReferenceStatus :one
-SELECT length(encrypted)>0 AS has_key,failure FROM access.reference_settings WHERE singleton=1
+SELECT CAST(length(coalesce((SELECT encrypted FROM access.reference_settings WHERE singleton=1),X''))>0 AS INTEGER) AS has_key,
+ CAST(coalesce((SELECT failure FROM sync.reference_diagnostics WHERE singleton=1),'') AS TEXT) AS failure
 `
 
 type AdminReferenceStatusRow struct {
-	HasKey  bool
+	HasKey  int64
 	Failure string
 }
 

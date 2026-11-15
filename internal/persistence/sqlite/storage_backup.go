@@ -18,11 +18,17 @@ const ErrBackupScope Error = "archive does not match the requested restore scope
 // CheckArtifactPath reserves the database, journal and maintenance paths.
 func (p Profile) CheckArtifactPath(path string, creating bool) error {
 	paths := p.paths()
-	if overlapsStore(paths[0], paths[1]) || overlapsStore(paths[1], paths[0]) {
-		return ErrUnsafeStore
-	}
+	for i, store := range paths {
+		if store == "" {
+			continue
+		}
 
-	for _, store := range paths {
+		for _, other := range paths[:i] {
+			if other != "" && (overlapsStore(store, other) || overlapsStore(other, store)) {
+				return ErrUnsafeStore
+			}
+		}
+
 		if !creating && store == p.WarehousePath && path == store+upgradeBackupSuffix {
 			continue
 		}
@@ -52,7 +58,7 @@ func Backup(ctx context.Context, profile Profile, path string) error {
 		return err
 	}
 
-	var owners [2]*os.File
+	var owners [storeCount]*os.File
 	for i, source := range profile.paths() {
 		file, err := lockStoreFile(source, false)
 		if err != nil {
@@ -95,6 +101,10 @@ func checkNoUpgrade(warehouse string) error {
 }
 
 func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File) error {
+	if len(paths) != len(owners) || (len(paths) != 1 && len(paths) != storeCount) {
+		return ErrUnsupportedSchema
+	}
+
 	if err := registerCollations(); err != nil {
 		return err
 	}
@@ -102,13 +112,15 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	baseline := releaseBaseline()
 
 	var (
-		metadata [2]storeMetadata
+		metadata [storeCount]storeMetadata
 		history  historyVersion
 		accessID string
 	)
 
 	for i, path := range paths {
-		db := sql.OpenDB(&connector{paths: [2]string{path}, owners: [2]*os.File{owners[i]}, probe: true})
+		db := sql.OpenDB(
+			&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{owners[i]}, probe: true},
+		)
 		defer func() { _ = db.Close() }()
 
 		db.SetMaxOpenConns(1)
@@ -149,15 +161,27 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 				return err
 			}
 
-			if len(paths) == 2 {
-				if err := db.QueryRowContext(ctx, profileStatement("Profile", "")).Scan(&accessID); err != nil {
-					return err
-				}
+			var lineage string
+			if err := db.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).
+				Scan(&lineage); err != nil ||
+				lineage == "" {
+				return errors.Join(ErrCorrupt, err)
+			}
+		}
+
+		if i == 2 {
+			if err := db.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&accessID); err != nil {
+				return err
 			}
 		}
 	}
 
-	if _, _, err := baseline.plan([2]string{}, metadata, [2]bool{true, len(paths) == 2}, history); err != nil {
+	if _, _, err := baseline.plan(
+		[storeCount]string{},
+		metadata,
+		[storeCount]bool{true, len(paths) == storeCount, len(paths) == storeCount},
+		history,
+	); err != nil {
 		return err
 	}
 
@@ -169,14 +193,19 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 		return ErrAssociation
 	}
 
-	db := sql.OpenDB(&connector{paths: [2]string{paths[0]}, owners: [2]*os.File{owners[0]}, probe: true})
+	db := sql.OpenDB(
+		&connector{paths: [storeCount]string{paths[0]}, owners: [storeCount]*os.File{owners[0]}, probe: true},
+	)
 	defer func() { _ = db.Close() }()
 
 	db.SetMaxOpenConns(1)
 
-	uri := (&url.URL{Scheme: "file", Path: paths[1], RawQuery: "mode=ro&immutable=1"}).String()
-	if _, err := db.ExecContext(ctx, profileStatement("AttachAccess", ""), uri); err != nil {
-		return err
+	for i, path := range paths[1:] {
+		schema := storeSchemas[i+1]
+		uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&immutable=1"}).String()
+		if _, err := db.ExecContext(ctx, profileStatement("Attach", schema), uri); err != nil {
+			return err
+		}
 	}
 
 	var invalid int
@@ -214,8 +243,8 @@ func validateCopySchema(ctx context.Context, db *sql.DB, definition, schema stri
 
 	reference.SetMaxOpenConns(1)
 
-	if schema == "access" {
-		if _, err := reference.ExecContext(ctx, profileStatement("AttachAccess", ""), ":memory:"); err != nil {
+	if schema != "main" {
+		if _, err := reference.ExecContext(ctx, profileStatement("Attach", schema), ":memory:"); err != nil {
 			return err
 		}
 	}

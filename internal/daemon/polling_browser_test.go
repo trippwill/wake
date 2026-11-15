@@ -35,6 +35,7 @@ func TestBrowserPollingIntervals(t *testing.T) {
 
 	store, err := persistence.Open(t.Context(), persistence.Profile{
 		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath: cfg.Storage.SyncPath,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -69,7 +69,11 @@ func WithStoppedProfile(cfg config.Config, change func() error) error {
 	}
 	defer owner.close()
 
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
+		if path == "" {
+			continue
+		}
+
 		file, err := claimOwnershipFile(
 			path,
 			os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK,

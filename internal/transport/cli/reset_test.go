@@ -348,7 +348,7 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 	}
 
 	if !strings.Contains(stdout.String(), "Dry run") || !strings.Contains(stdout.String(), "--confirm") ||
-		!strings.Contains(stdout.String(), "Credentials are retained") {
+		!strings.Contains(stdout.String(), "Warehouse reset clears financial history") {
 		t.Fatal(stdout.String())
 	}
 

@@ -62,6 +62,7 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		persistence.Profile{
 			WarehousePath:   cfg.Storage.WarehousePath,
 			ConnectionsPath: cfg.Storage.ConnectionsPath,
+			SyncPath:        cfg.Storage.SyncPath,
 		},
 		nil,
 	)
@@ -101,7 +102,7 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{IBKR: options})
+		done <- run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), sourceOptions{openSources: persistence.Open, IBKR: options})
 	}()
 
 	select {
@@ -134,6 +135,7 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		persistence.Profile{
 			WarehousePath:   cfg.Storage.WarehousePath,
 			ConnectionsPath: cfg.Storage.ConnectionsPath,
+			SyncPath:        cfg.Storage.SyncPath,
 		},
 		nil,
 	)

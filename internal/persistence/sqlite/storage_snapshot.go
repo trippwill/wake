@@ -101,7 +101,9 @@ func copyWarehouse(ctx context.Context, source string, owner *os.File, destinati
 		return err
 	}
 
-	db := sql.OpenDB(&connector{paths: [2]string{source}, owners: [2]*os.File{owner}, activityRead: true})
+	db := sql.OpenDB(
+		&connector{paths: [storeCount]string{source}, owners: [storeCount]*os.File{owner}, activityRead: true},
+	)
 	defer func() { _ = db.Close() }()
 
 	conn, err := db.Conn(ctx)
@@ -192,19 +194,8 @@ func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 	return verifyRecoveryDigest(archive, hex.EncodeToString(hash.Sum(nil)))
 }
 
-func restoreWarehouseSnapshot(ctx context.Context, paths [2]string, archivePath string) error {
-	warehouse := paths[0]
-	if err := checkVacantStores(paths[:1]); err != nil {
-		return err
-	}
-
-	if _, err := os.Lstat(paths[1]); err == nil {
-		owner, err := lockStoreFile(paths[1], false)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = owner.Close() }()
-	} else if !os.IsNotExist(err) {
+func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string) error {
+	if err := checkVacantStores([]string{warehouse}); err != nil {
 		return err
 	}
 
@@ -236,7 +227,7 @@ func restoreWarehouseSnapshot(ctx context.Context, paths [2]string, archivePath 
 		return err
 	}
 
-	if err := pauseRestoredWarehouse(ctx, file.Name()); err != nil {
+	if err := pauseRestoredWarehouse(ctx, file.Name(), ""); err != nil {
 		return err
 	}
 
@@ -250,7 +241,11 @@ func restoreWarehouseSnapshot(ctx context.Context, paths [2]string, archivePath 
 		return err
 	}
 
-	if err := checkVacantStores(paths[:1]); err != nil {
+	if err := checkNoUpgrade(warehouse); err != nil {
+		return err
+	}
+
+	if err := checkVacantStores([]string{warehouse}); err != nil {
 		return err
 	}
 

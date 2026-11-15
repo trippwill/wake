@@ -521,13 +521,6 @@ func resolveAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.Res
 		return err
 	}
 
-	if err = q.ReferenceNext(
-		ctx,
-		sqlc.ReferenceNextParams{ID: p.ID, ReferenceNext: p.ReferenceNext},
-	); err != nil {
-		return err
-	}
-
 	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
 }
 

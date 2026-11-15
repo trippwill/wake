@@ -214,7 +214,11 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		return update.Completed, update.RetryAt
+		if retry := s.historyRetry.Load(); retry != nil {
+			return update.Completed, retry.Format(time.RFC3339Nano)
+		}
+
+		return update.Completed, ""
 	}
 
 	run(store, now)
@@ -232,29 +236,6 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	if count, retry := state(store); count != historyBatchSize || retry != "" {
 		t.Fatal("cancellation advanced checkpoint or set failure", count, retry)
-	}
-
-	// A storage failure that prevents saving both the checkpoint and its retry
-	// must reach the scheduler and leave the current batch eligible to retry.
-	if _, err = store.db.ExecContext(
-		ctx,
-		`CREATE TRIGGER reject_history_checkpoint BEFORE UPDATE ON history_update
-  BEGIN SELECT RAISE(ABORT,'injected checkpoint failure'); END`,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	workflow := application.New(store, nil, nil, nil, nil, nil)
-	if err = workflow.RunOnce(ctx, now); err == nil {
-		t.Fatal("workflow swallowed failure to record the retry")
-	}
-
-	if count, retry := state(store); count != historyBatchSize || retry != "" {
-		t.Fatal("failed checkpoint advanced progress or recorded a retry", count, retry)
-	}
-
-	if _, err = store.db.ExecContext(ctx, `DROP TRIGGER reject_history_checkpoint`); err != nil {
-		t.Fatal(err)
 	}
 
 	if _, err = store.db.ExecContext(
@@ -285,8 +266,6 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store = reopen(store)
-	checkGated(store)
 	run(store, now)
 
 	if count, _ := state(store); count != historyBatchSize {
@@ -297,7 +276,14 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	if err != nil || overview.Status.HistoryUpdate.Completed != historyBatchSize ||
 		overview.Status.HistoryUpdate.Rule != string(futureRule) ||
 		!overview.Status.HistoryUpdate.RetryAt.Equal(now.Add(time.Minute)) {
-		t.Fatal("overview lost durable progress and retry", overview.Status.HistoryUpdate, err)
+		t.Fatal("overview lost progress or retry", overview.Status.HistoryUpdate, err)
+	}
+
+	store = reopen(store)
+	checkGated(store)
+
+	if count, retry := state(store); count != historyBatchSize || retry != "" {
+		t.Fatal("restart lost durable progress or carried runtime retry", count, retry)
 	}
 
 	if _, err = store.db.ExecContext(

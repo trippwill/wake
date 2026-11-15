@@ -248,7 +248,7 @@ func TestStoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			ctx := t.Context()
 			profile, store := profileFixture(t)
-			for schema, expected := range map[string]string{"main": "wake-warehouse/2", "access": "wake-access/2"} {
+			for schema, expected := range map[string]string{"main": schemaVersion, "access": accessSchemaVersion} {
 				var metadata storeMetadata
 				if err := store.db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
 					Scan(&metadata.kind, &metadata.version, &metadata.id); err != nil ||
@@ -269,7 +269,7 @@ func TestStoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			baseline := [2][]byte{}
+			baseline := [storeCount][]byte{}
 			for i, path := range profile.paths() {
 				var err error
 

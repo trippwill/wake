@@ -1,13 +1,10 @@
 # Current coverage
 
-Wake supports IBKR Flex and SnapTrade Personal in the same warehouse, with one
-confirmed account per connection. Flex supplies Confirmation reports and optional
-Activity reports for security transfers, non-trade cash postings, reported realized
-P&L and reported positions. SnapTrade supplies cached purchases and sales for Fidelity
-US and IBKR, and reported positions for Fidelity US.
-This document owns
-coverage and limitations; the [README](../../README.md) provides usage help and
-the [domain vocabulary](domain.md) owns financial policy.
+Wake serves retained IBKR Flex and SnapTrade Personal financial history, with one
+confirmed account per source. The current pre-release build runs local financial
+work only. The provider descriptions below cover the retained evidence and tested
+provider capabilities. See the [README](../../README.md) for usage and the
+[domain vocabulary](domain.md) for financial policy.
 
 ## Network access
 
@@ -22,28 +19,19 @@ bearer token. Tokens grant the instance's published financial reads, including
 events and positions, without administrative authority or per-account scopes.
 They have no automatic expiry.
 
-Local financial pages, corrections, and retained-evidence processing do not require
-an upstream host or reference HTTP service. If upstream service initialization fails,
-those local functions remain available while source commands report unavailability.
-The current storage profile still requires its paired warehouse and access files;
-this does not provide financial-file-only startup or restore.
+Local pages, corrections, API reads, and retained-evidence processing run with
+the financial database and local authority. Live provider and reference work is
+disabled while synchronization recovery is being completed. The daemon does not
+need a credential key or usable synchronization or access databases to serve
+retained financial history.
 
-## Account setup and authority
+## Account source authority
 
-The workflow is:
-
-1. The operator creates a connection with the selected provider’s settings and credentials.
-2. Wake discovers the account information available through that connection.
-3. The operator selects one discovered account and confirms or edits its details.
-4. Wake creates the financial account and binds its reported account reference to
-   the connection and provider as its authoritative financial source.
-5. Automatic synchronization and financial processing start for that account.
-
-Discovery may return several candidates. Each connection can activate one. Confirmation
-creates the account and starts ongoing synchronization. Configure separate real accounts
-when using both providers.
-The [domain vocabulary](../product/domain.md#account-source-authority) defines
-account identity, source authority and financial meaning.
+Each retained connection can have multiple discovery candidates and one confirmed
+account. Confirmation retains the chosen qualified source-account reference and
+the details used to establish the binding. The
+[domain vocabulary](../product/domain.md#account-source-authority) defines account
+identity, source authority, and financial meaning.
 
 Each account has one designated authoritative connection and provider, bound to its
 qualified source-account reference. This does not designate IBKR as the instrument
@@ -234,109 +222,32 @@ retained source evidence. Private store formats govern whether the executable ca
 open its databases.
 
 Patch releases preserve usability of supported stores. An incompatible minor release
-documents its supported upgrade or explicit recreation procedure. Pre-release
-development formats have no automatic compatibility migration. The warehouse and
-encrypted access store have independent format identifiers. The current paired
-formats include upstream authorization and matching safety tokens. Wake refuses
-upstream work if the tokens disagree. Earlier pre-release stores require a
-compatible build or an explicit reset after preserving the old files.
-Back up stores and sidecars before explicitly moving or resetting them.
-The warehouse retains financial evidence, decisions and operational progress in one database. The
-encrypted access store has an independent path. Replacing that store preserves the warehouse and
-pauses upstream work until access is repaired and explicitly resumed. The same
-recovery pause applies if saved credentials cannot be decrypted. Both cases preserve
-current browser/API authority and retained reads. Explicit warehouse
-recreation preserves reusable encrypted access but starts a new history with new financial
-identities. Preserve the old warehouse for any needed evidence and decisions, then confirm
-source accounts and reacquire history in the new warehouse. See
-[architecture](../engineering/architecture.md) for trust and recovery boundaries and
-[development](../engineering/development.md) for verification and reset procedures. No version tag
-is implied by this coverage.
+documents its supported upgrade or explicit recreation procedure. This pre-release
+storage format assigns separate files to financial data (`storage.warehouse_path`),
+execution state (`storage.sync_path`), and encrypted upstream access
+(`storage.connections_path`). Use a compatible build for earlier formats or preserve
+the existing files and sidecars before explicitly recreating the warehouse. Wake
+refuses unsupported formats without rewriting them.
 
 ### Backup and recovery
 
-A routine warehouse snapshot captures committed financial history, evidence,
-decisions, and sync progress while Wake runs. Financial API reads remain enabled.
-A snapshot can recover retained history on a new installation without the original
-source access or encryption key. Restoring a warehouse snapshot leaves existing
-access state in place and requires a vacant warehouse path and sidecar paths.
-The explicit restore starts a fresh paused association, including when the retained
-access store has advanced since the snapshot.
+Use a warehouse snapshot to capture committed financial history, evidence,
+decisions, and publication while Wake runs. To restore, stop Wake and choose a
+vacant warehouse and sidecar path. The restored warehouse retains financial IDs
+and gets a fresh publication epoch, so consumers retrieve fresh snapshots and
+positions baselines. A new installation supplies its own local authority.
+Existing sessions, client grants, and optional databases belong to the installation
+and remain outside the archive.
 
-An offline storage backup captures the warehouse and encrypted access state at
-the same point. The configuration, browser and API authority, and credential
-encryption key have independent lifetimes. Reusing restored credentials requires
-the matching key. New paired backups carry a checksum for each store. Restore
-verifies these checksums before installing into vacant storage paths. Earlier
-pre-upgrade archives without embedded checksums remain readable and undergo format,
-integrity, and association checks. Use a Wake build compatible with the stored
-formats. Existing SQLite sidecars count as occupied
-paths. The restored warehouse has a fresh publication identity and starts with
-upstream work paused until the operator reviews access and resumes it.
+Operational backup and restore with credentials are unavailable in this build.
+Keep original stores and credential keys for access through a compatible build.
+See [architecture](../engineering/architecture.md#persistence-and-work-boundaries)
+for storage boundaries.
 
 ### Forward upgrades
 
-Stop Wake, then run `wake storage upgrade` with the new binary and the same profile.
-Review the format changes, backup destination, rebuild requirements, and rule release
-notes. Copy the printed confirmation command to apply that exact plan, then start
-Wake. The preview leaves the stores and backup destination untouched.
-
-Startup applies supported format changes that need no rebuild. When a rebuild
-requires approval, startup reports the preview command and exits. Set
-`storage.unattended_upgrade = true` in the storage configuration to authorize
-these upgrades at startup. Wake logs the plan and release notes before applying
-it. An approved rebuild starts and resumes automatically, including after the
-setting is turned off. Overview shows rebuild progress.
-
-Before either upgrade path writes to storage, Wake verifies a full backup of both
-databases in a private archive beside the warehouse. Its name is the warehouse
-filename with `.upgrade-backup.tar` appended. A failed backup stops the upgrade.
-Each new upgrade replaces the previous archive only after verifying the new pair.
-An interrupted upgrade reuses and verifies its original archive.
-
-Keep the configuration and matching credential encryption key separately protected. If a migration
-is interrupted, keep the original files and restart with the matching build. If
-recovery cannot proceed, stop Wake and preserve the interrupted databases,
-their sidecars, and the upgrade intent together. Restore the automatic archive
-with `wake storage restore --with-credentials` into vacant paths. Use a Wake build
-compatible with the backed-up stores and the matching credential encryption key.
-Wake refuses a credentials reset while an interrupted upgrade still needs the
-original access store.
-
-Admin activity, instrument, positions, review and retained-observation lists use server filtering
-and stable ordering, with 50 rows per page by default. JavaScript is required for
-administration. Tabulator renders activity, instrument, positions and observation tables from
-authenticated JSON; source/status regions use focused updates, and accepted detail
-pages offer an explicit refresh action. Retained observations preserve original
-source bindings, underliers and appearance multiplicity after operator relinks.
-Numeric ordering preserves exact decimal values,
-keeps currency/unit roles distinct and places unknown values last. Status and setup
-prerequisites use focused metadata reads; source detail loads one connection and a
-bounded account-candidate page. Result counts and page links preserve intentional
-URL filters. These bounds limit response memory; filtered counts and sorting still
-require SQLite to inspect the matching history.
-
-The Positions workspace shows account availability and reported as-of time alongside
-exact signed quantities, long/short meaning, applicable reported contract terms and optional
-reported unit cost basis. Missing cost differs from explicit zero. Empty reported sets,
-unavailable sets and filters with no matches have separate explanations. Instrument and source
-links open existing inspection pages. Updates are offered explicitly and apply metadata and
-rows together; unavailable results contain no earlier fallback positions. Display-label changes
-are detected independently of the positions version. The workspace adds no position-correction
-workflow, valuation, aggregate portfolio totals or lot reconstruction.
-
-Processing, correction preflight, saved decisions and releases share deterministic
-financial calculations. Synthetic proofs cover exact decimal and timestamp
-precision, source disagreement, read-only checks, decision release and transaction
-rollback. The retained-history contribution requirement remains in the
-[development guide](../engineering/development.md). Provider interpretation versions
-automatically queue retained reports. When the warehouse format is supported, a new
-retained-claims calculation rule automatically updates activity and instrument selections
-in place. Wake keeps the retained evidence, financial identities and operator decisions.
-Overview shows progress and retry status. Affected financial views become
-available together after the update.
-
-Correction reconciliation connects ambiguous endpoints through a shared anchor and visits each
-replacement path once. Synthetic long-chain, cycle and wide-ambiguity proofs preserve whole-group
-review behavior. Large retained groups still require memory and calculation inside the writer
-transaction; these checks do not establish unlimited history capacity.
+Stop Wake and run `wake storage upgrade` with the selected configuration to check
+the financial format. The check leaves the stores untouched. Pre-release formats
+have no compatibility migrations. The financial store keeps the durable rebuild
+cursor and serves progress in Overview. A partially rebuilt view remains gated
+until its rebuild finishes.

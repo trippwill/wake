@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
@@ -45,7 +44,7 @@ func (s *Store) prerequisites(ctx context.Context, q *sqlc.Queries) (application
 	if s.owners[1] != nil {
 		setting, err := q.AdminReferenceStatus(ctx)
 		if err == nil {
-			out.ReferenceKey = setting.HasKey
+			out.ReferenceKey = setting.HasKey != 0
 			out.ReferenceFailure = setting.Failure
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return out, err
@@ -354,11 +353,8 @@ func (s *Store) systemStatus(ctx context.Context, q *sqlc.Queries) (application.
 		out.HistoryUpdate = application.HistoryUpdateStatus{
 			Rule: string(s.historyRule), Phase: update.Phase, Completed: update.Completed,
 		}
-		if update.RetryAt != "" {
-			out.HistoryUpdate.RetryAt, err = time.Parse(time.RFC3339Nano, update.RetryAt)
-			if err != nil {
-				return out, ErrCorrupt
-			}
+		if retry := s.historyRetry.Load(); retry != nil {
+			out.HistoryUpdate.RetryAt = *retry
 		}
 	}
 

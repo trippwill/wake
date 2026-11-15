@@ -30,8 +30,8 @@ const (
 // The intent is durable before either destination is installed. On retry only
 // the specific staged files, identified by inode, may occupy the destinations.
 type restoreIntent struct {
-	ArchiveDigest string          `json:"archive_sha256"`
-	Stores        [2]restoreStore `json:"stores"`
+	ArchiveDigest string                   `json:"archive_sha256"`
+	Stores        [storeCount]restoreStore `json:"stores"`
 }
 
 type restoreStore struct {
@@ -58,7 +58,7 @@ func Restore(
 			return nil, err
 		}
 
-		return paths[:1], restoreWarehouseSnapshot(ctx, paths, archivePath)
+		return paths[:1], restoreWarehouseSnapshot(ctx, paths[0], archivePath)
 	}
 
 	intent, err := readRestoreIntent(intentPath)
@@ -137,13 +137,13 @@ func checkVacantStore(path string, installed bool) error {
 func prepareRestore(
 	ctx context.Context,
 	archive *os.File,
-	paths [2]string,
+	paths [storeCount]string,
 	intentPath string,
 ) (*restoreIntent, error) {
 	var (
 		intent restoreIntent
-		staged [2]string
-		owners [2]*os.File
+		staged [storeCount]string
+		owners [storeCount]*os.File
 	)
 
 	published := false
@@ -192,7 +192,7 @@ func prepareRestore(
 		return nil, err
 	}
 
-	if err := pauseRestoredWarehouse(ctx, staged[0]); err != nil {
+	if err := pauseRestoredWarehouse(ctx, staged[0], staged[2]); err != nil {
 		return nil, err
 	}
 
@@ -234,7 +234,7 @@ func prepareRestore(
 	return &intent, nil
 }
 
-func pauseRestoredWarehouse(ctx context.Context, path string) (result error) {
+func pauseRestoredWarehouse(ctx context.Context, path, syncPath string) (result error) {
 	uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=rw&_pragma=synchronous(EXTRA)"}).String()
 
 	db, err := sql.Open("sqlite", uri)
@@ -244,26 +244,36 @@ func pauseRestoredWarehouse(ctx context.Context, path string) (result error) {
 
 	defer func() { result = errors.Join(result, db.Close()) }()
 
+	db.SetMaxOpenConns(1)
+
+	if syncPath != "" {
+		if _, err := db.ExecContext(ctx, profileStatement("Attach", "sync"), syncPath); err != nil {
+			return err
+		}
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var nonce [8]byte
-	rand.Read(nonce[:])
-	revision := int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
-
 	if _, err := tx.ExecContext(ctx, profileStatement("RestoreWarehouse", ""), rand.Text()); err != nil {
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, profileStatement("RestoreReview", ""), revision); err != nil {
-		return err
-	}
+	if syncPath != "" {
+		var nonce [8]byte
+		rand.Read(nonce[:])
+		revision := int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
 
-	if _, err := tx.ExecContext(ctx, profileStatement("MarkRestoreAssociation", "")); err != nil {
-		return err
+		if _, err := tx.ExecContext(ctx, profileStatement("RestoreReview", "sync"), revision); err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, profileStatement("MarkRestoreAssociation", "")); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
@@ -318,7 +328,12 @@ func publishRestoreIntent(path string, intent restoreIntent) (bool, error) {
 	return true, syncUpgradeDir(path)
 }
 
-func matchRestore(ctx context.Context, intent *restoreIntent, archive *os.File, paths [2]string) error {
+func matchRestore(
+	ctx context.Context,
+	intent *restoreIntent,
+	archive *os.File,
+	paths [storeCount]string,
+) error {
 	for i, store := range intent.Stores {
 		if store.Path != paths[i] || filepath.Clean(store.Stage) != store.Stage ||
 			filepath.Dir(store.Stage) != filepath.Dir(store.Path) ||
@@ -340,7 +355,7 @@ func matchRestore(ctx context.Context, intent *restoreIntent, archive *os.File, 
 }
 
 func installRestore(ctx context.Context, intentPath string, intent *restoreIntent) error {
-	var installed [2]bool
+	var installed [storeCount]bool
 	for i, store := range intent.Stores {
 		_, err := os.Lstat(store.Stage)
 		if err != nil && !os.IsNotExist(err) {

@@ -10,11 +10,13 @@ SELECT count(*) FROM {{schema}}.sqlite_schema WHERE type='table' AND name NOT LI
 -- name: RecoverySchema
 SELECT type,name,sql FROM {{schema}}.sqlite_schema WHERE substr(name,1,7)<>'sqlite_' AND sql IS NOT NULL;
 -- name: Profile
-SELECT access_id FROM profile WHERE singleton=1;
+SELECT access_id FROM {{schema}}.profile WHERE singleton=1;
 -- name: InitializeProfile
-INSERT INTO profile(singleton,access_id,paused,reference_review) VALUES(1,?,0,0);
+INSERT INTO {{schema}}.profile(singleton,access_id,paused,reference_review) VALUES(1,?,0,0);
 -- name: RecoverProfile
-UPDATE profile SET access_id=?,paused=1,reference_review=max(reference_review,?),recovery_revision=recovery_revision+1 WHERE singleton=1;
+UPDATE {{schema}}.profile SET access_id=?,paused=1,reference_review=max(reference_review,?),recovery_revision=recovery_revision+1 WHERE singleton=1;
+-- name: Attach
+ATTACH DATABASE ? AS {{schema}};
 -- name: AttachAccess
 ATTACH DATABASE ? AS access;
 -- name: Journal
@@ -24,18 +26,26 @@ PRAGMA {{schema}}.synchronous=EXTRA;
 -- name: SyncCheck
 PRAGMA {{schema}}.synchronous;
 -- name: InterruptAttempts
-UPDATE main.attempts SET outcome='interrupted' WHERE outcome='running';
+UPDATE sync.attempts SET outcome='interrupted' WHERE outcome='running';
 -- name: AssociationCheck
-SELECT count(*) FROM access.configurations a LEFT JOIN main.connections c ON c.id=a.id WHERE c.id IS NULL OR c.provider<>a.provider;
+SELECT
+ (SELECT count(*) FROM sync.configurations s LEFT JOIN main.connections f ON f.id=s.id
+  LEFT JOIN access.identities a ON a.id=s.id WHERE f.id IS NULL OR f.provider<>s.provider OR (a.id IS NOT NULL AND a.provider<>s.provider))
+ + (SELECT count(*) FROM access.identities a JOIN main.connections f ON f.id=a.id WHERE f.provider<>a.provider)
+ + (SELECT count(*) FROM sync.work w LEFT JOIN main.connections f ON f.id=w.connection_id WHERE f.id IS NULL)
+ + (SELECT count(*) FROM sync.reference_cache c LEFT JOIN main.reference_evidence e ON e.id=c.evidence_id WHERE e.id IS NULL)
+ + (SELECT count(*) FROM sync.reference_deadlines d LEFT JOIN main.instruments i ON i.id=d.instrument_id WHERE i.id IS NULL)
+ + (SELECT count(*) FROM sync.attempts a LEFT JOIN main.artifacts f ON f.id=a.artifact_id WHERE f.id IS NULL);
 -- name: Integrity
 PRAGMA {{schema}}.quick_check;
 -- name: ForeignCheck
 PRAGMA {{schema}}.foreign_key_check;
 
 -- name: InitializeRetainedAccessProfile
-INSERT INTO profile(singleton,access_id,paused,reference_review,warehouse_reset,recovery_revision) VALUES(1,?,1,0,1,1);
+INSERT INTO {{schema}}.profile(singleton,access_id,paused,reference_review,warehouse_reset,recovery_revision) VALUES(1,?,1,0,1,1)
+ON CONFLICT(singleton) DO UPDATE SET paused=1,warehouse_reset=1,recovery_revision=recovery_revision+1;
 -- name: RetainConnections
-INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM access.configurations WHERE true ON CONFLICT(id) DO NOTHING;
+INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM sync.configurations WHERE true ON CONFLICT(id) DO NOTHING;
 
 -- name: HistoryVersion
 SELECT applied,target FROM {{schema}}.history_update WHERE singleton=1;
@@ -44,43 +54,49 @@ UPDATE {{schema}}.store_metadata SET version=? WHERE singleton=1 AND version=?;
 -- name: RestoreWarehouse
 UPDATE store_metadata SET id=? WHERE singleton=1;
 -- name: RestoreReview
-UPDATE profile SET paused=1,recovery_revision=?,resumed_by='',resumed_at='' WHERE singleton=1;
+UPDATE {{schema}}.profile SET paused=1,recovery_revision=?,resumed_by='',resumed_at='' WHERE singleton=1;
 
+-- name: InitializeLineage
+INSERT INTO main.financial_lineage(singleton,id) VALUES(1,?);
+-- name: FinancialLineage
+SELECT id FROM main.financial_lineage WHERE singleton=1;
 -- name: Association
-SELECT lineage,bind_restore FROM main.sync_association WHERE singleton=1;
+SELECT EXISTS(SELECT 1 FROM sync.sync_association WHERE singleton=1 AND epoch<>(SELECT id FROM main.store_metadata));
 -- name: VerifyUpstreamWitness
 SELECT s.revision, p.paused,
  CASE WHEN a.actor<>'' AND a.granted_at<>'' THEN a.granted_revision ELSE '' END,
  s.epoch=m.id, s.bind_restore
-FROM main.sync_association s JOIN access.upstream_grant a USING(singleton)
-JOIN main.profile p USING(singleton) JOIN main.store_metadata m USING(singleton)
+FROM sync.sync_association s JOIN access.upstream_grant a USING(singleton)
+JOIN sync.profile p USING(singleton) JOIN main.store_metadata m USING(singleton)
 JOIN access.store_metadata k USING(singleton)
-WHERE s.lineage=a.lineage AND s.epoch=a.epoch AND s.sync_id=a.sync_id
+JOIN sync.store_metadata y USING(singleton)
+JOIN main.financial_lineage l USING(singleton)
+WHERE s.lineage=a.lineage AND s.lineage=l.id AND s.epoch=a.epoch AND s.sync_id=a.sync_id AND s.sync_id=y.id
 AND s.access_id=a.access_id AND s.access_id=k.id AND s.access_id=p.access_id
 AND s.generation=a.generation AND s.revision=a.revision AND s.token=a.token
 AND s.token<>'' AND s.revision<>'';
 -- name: BindSync
-INSERT OR REPLACE INTO main.sync_association(singleton,lineage,epoch,sync_id,access_id,generation,revision,token)
+INSERT OR REPLACE INTO sync.sync_association(singleton,lineage,epoch,sync_id,access_id,generation,revision,token)
 VALUES(1,?,?,?,?,?,?,?);
 -- name: BindGrant
 INSERT OR REPLACE INTO access.upstream_grant
 SELECT singleton,lineage,epoch,sync_id,access_id,generation,revision,token,?,?,?
-FROM main.sync_association;
+FROM sync.sync_association;
 -- name: RotateSync
-UPDATE main.sync_association SET token=?,revision=coalesce(?,revision) WHERE singleton=1;
+UPDATE sync.sync_association SET token=?,revision=coalesce(?,revision) WHERE singleton=1;
 -- name: RotateWitness
 UPDATE access.upstream_grant SET
- token=(SELECT token FROM main.sync_association WHERE singleton=1),
- revision=(SELECT revision FROM main.sync_association WHERE singleton=1),
+ token=(SELECT token FROM sync.sync_association WHERE singleton=1),
+ revision=(SELECT revision FROM sync.sync_association WHERE singleton=1),
  granted_revision=CASE
- WHEN (SELECT paused FROM main.profile WHERE singleton=1)<>0 THEN ''
- WHEN granted_revision=revision AND actor<>'' AND granted_at<>'' THEN (SELECT revision FROM main.sync_association WHERE singleton=1)
+ WHEN (SELECT paused FROM sync.profile WHERE singleton=1)<>0 THEN ''
+ WHEN granted_revision=revision AND actor<>'' AND granted_at<>'' THEN (SELECT revision FROM sync.sync_association WHERE singleton=1)
  ELSE '' END
 WHERE singleton=1;
 -- name: IssueGrant
 UPDATE access.upstream_grant
 SET actor=?,granted_at=?,granted_revision=revision WHERE singleton=1;
 -- name: InvalidateRecoveryPreview
-UPDATE main.profile SET recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=1;
+UPDATE sync.profile SET recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=1;
 -- name: MarkRestoreAssociation
-UPDATE main.sync_association SET bind_restore=1 WHERE singleton=1;
+UPDATE sync.sync_association SET bind_restore=1 WHERE singleton=1;

@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,35 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 )
+
+func TestCancelledFinancialCreationLeavesDestinationVacant(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := Profile{WarehousePath: filepath.Join(dir, "wake.db")}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if store, err := OpenFinancial(ctx, profile, nil); store != nil || !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled creation did not stop", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("canceled creation left warehouse or staging files", entries, err)
+	}
+
+	store, err := OpenFinancial(t.Context(), profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestFinancialOpenIgnoresOptionalAccessFile(t *testing.T) {
 	ctx := t.Context()

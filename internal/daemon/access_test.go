@@ -48,6 +48,7 @@ func TestResetAccessRequiresStoppedProfile(t *testing.T) {
 	profile := persistence.Profile{
 		WarehousePath:   cfg.Storage.WarehousePath,
 		ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath:        cfg.Storage.SyncPath,
 	}
 
 	store, err := persistence.Open(t.Context(), profile, nil)

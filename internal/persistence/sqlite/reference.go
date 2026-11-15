@@ -38,6 +38,10 @@ func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
 		return err
 	}
 
+	if err = q.ReferenceFailure(ctx, ""); err != nil {
+		return err
+	}
+
 	if err = q.ReviewReference(ctx); err != nil {
 		return err
 	}
@@ -455,7 +459,7 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 
 	if err = q.ReferenceNext(
 		ctx,
-		sqlc.ReferenceNextParams{ID: id, ReferenceNext: result.Next.UTC().Format(time.RFC3339Nano)},
+		sqlc.ReferenceNextParams{InstrumentID: id, Next: result.Next.UTC().Format(time.RFC3339Nano)},
 	); err != nil {
 		return err
 	}

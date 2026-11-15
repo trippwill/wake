@@ -195,7 +195,7 @@ func TestWarehouseSizeReadsOwnedFileWithoutPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = (&Store{owners: [2]*os.File{closed}}).WarehouseSize(); !errors.Is(err, os.ErrClosed) {
+	if _, err = (&Store{owners: [storeCount]*os.File{closed}}).WarehouseSize(); !errors.Is(err, os.ErrClosed) {
 		t.Fatal("closed warehouse reported a size", err)
 	}
 }

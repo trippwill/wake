@@ -47,7 +47,7 @@ func CheckStoredCredentialKey(ctx context.Context, path string, envelope *creden
 		return err
 	}
 
-	db := sql.OpenDB(&connector{paths: [2]string{path}, probe: true, accessProbe: true})
+	db := sql.OpenDB(&connector{paths: [storeCount]string{path}, probe: true, accessProbe: true})
 	defer func() { _ = db.Close() }()
 
 	var kind, format, id string
