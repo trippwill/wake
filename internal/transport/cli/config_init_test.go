@@ -173,6 +173,56 @@ func TestConfigInitUsesSettingsAndSelectedPath(t *testing.T) {
 	}
 }
 
+func TestConfigInitChecksPrivacyOfDirectoryAliasTarget(t *testing.T) {
+	setupEnvironment(t)
+
+	for _, test := range []struct {
+		name string
+		mode os.FileMode
+		want int
+	}{
+		{"private", 0o700, exitOK},
+		{"group-accessible", 0o750, exitFailure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "profile")
+			alias := filepath.Join(root, "alias")
+
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Chmod(dir, test.mode); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.Symlink(dir, alias); err != nil {
+				t.Fatal(err)
+			}
+
+			var stdout, stderr bytes.Buffer
+			if code := run(
+				[]string{"config", "init", "--config", filepath.Join(alias, "config.toml")},
+				&stdout,
+				&stderr,
+			); code != test.want {
+				t.Fatal(code, stdout.String(), stderr.String())
+			}
+
+			path := filepath.Join(dir, "config.toml")
+			if test.want == exitOK {
+				if !strings.Contains(stdout.String(), path) || len(readTestMaterial(t, path)) == 0 {
+					t.Fatal("expected a TOML at the canonical path", stdout.String())
+				}
+			} else if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) ||
+				!strings.Contains(stderr.String(), "must not be accessible by group or other users") {
+				t.Fatal("expected the nonprivate target to be rejected", err, stderr.String())
+			}
+		})
+	}
+}
+
 func TestConfigInitRejectsInvalidSettingsBeforeCreatingFiles(t *testing.T) {
 	dir := setupEnvironment(t)
 

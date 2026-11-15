@@ -33,6 +33,14 @@ func Initialize(command *cli.Command) (Resolution, error) {
 		return Resolution{}, err
 	}
 
+	dir := filepath.Dir(path)
+	if canonical, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = canonical
+		path = filepath.Join(dir, filepath.Base(path))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Resolution{}, err
+	}
+
 	content, err := initialConfig(command.StringSlice("set"))
 	if err != nil {
 		return Resolution{}, err
@@ -45,7 +53,6 @@ func Initialize(command *cli.Command) (Resolution, error) {
 		return Resolution{}, err
 	}
 
-	dir := filepath.Dir(path)
 	if err := ensurePrivateDir(dir); err != nil {
 		return Resolution{}, err
 	}
