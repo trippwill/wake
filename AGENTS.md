@@ -100,8 +100,6 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - Deliver coherent changes with meaningful functional verification. See the
   [development guide](.docs/engineering/development.md#browser-and-frontend-verification)
   for browser and frontend checks.
-- Get approval to commit and push the initial reviewed changes to the stated
-  PR branch.
 - The GitHub repository owner lands Wake PRs manually using the ruleset
   bypass for direct pushes.
   Preserve the individual signed commits with a fast-forward-only update of
