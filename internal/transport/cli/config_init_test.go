@@ -67,7 +67,11 @@ func TestConfigInitGeneratesKeyAndRefusesExistingTOML(t *testing.T) {
 	configPath := filepath.Join(dir, "config.toml")
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"config", "init", "--generate-key"}, &stdout, &stderr); code != exitOK {
+	if code := run(
+		[]string{"config", "init", "--generate-key", "--set", "storage.connections_path=optional/connections.db"},
+		&stdout,
+		&stderr,
+	); code != exitOK {
 		t.Fatal(code, stderr.String())
 	}
 
@@ -88,7 +92,7 @@ func TestConfigInitGeneratesKeyAndRefusesExistingTOML(t *testing.T) {
 		t.Fatal("generation created an unlock", err)
 	}
 
-	for _, name := range []string{"wake.db", "connections.db"} {
+	for _, name := range []string{"wake.db", "optional"} {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatal("generation created a database", name, err)
 		}

@@ -18,7 +18,9 @@ func TestProvisionCredentialKeyPreservesExistingTOML(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "profile")
 	path := filepath.Join(dir, "existing.toml")
 	keyPath := filepath.Join(dir, "operator.key")
-	content := []byte("# keep this comment and formatting\n[credentials]\nkey_path='operator.key'\n")
+	content := []byte(
+		"# keep this comment and formatting\n[credentials]\nkey_path='operator.key'\n[storage]\nconnections_path='optional/connections.db'\n",
+	)
 	writeTestConfig(t, path, content)
 
 	args := []string{"--json", "access", "provision", "credential-key", "--config", path}
@@ -56,6 +58,34 @@ func TestProvisionCredentialKeyPreservesExistingTOML(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 2 {
 		t.Fatal("provisioning created other instance files", entries, err)
+	}
+
+	accessDir := filepath.Join(dir, "optional")
+	if err = os.Mkdir(accessDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	journal := filepath.Join(accessDir, "connections.db-journal")
+	pending := []byte("pending SQLite recovery")
+	if err = os.WriteFile(journal, pending, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = os.Remove(keyPath); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	if code := run(args, &stdout, &stderr); code != exitFailure ||
+		!strings.Contains(stderr.String(), "upgrade recovery required") {
+		t.Fatal("provisioning ignored an orphaned access journal", code, stderr.String())
+	}
+
+	if _, err = os.Lstat(keyPath); !errors.Is(err, os.ErrNotExist) ||
+		!bytes.Equal(pending, readTestMaterial(t, journal)) {
+		t.Fatal("provisioning changed an unresolved access profile", err)
 	}
 }
 

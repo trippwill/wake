@@ -26,6 +26,10 @@ func CheckStoredCredentialKey(ctx context.Context, path string, envelope *creden
 		}
 
 		sidecars, err := storeSidecars(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
 		if err != nil {
 			return err
 		}
