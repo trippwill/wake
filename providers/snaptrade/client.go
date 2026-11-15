@@ -21,14 +21,15 @@ import (
 )
 
 const (
-	streamID        = "activities"
-	format          = "snaptrade-json"
-	positionsID     = "positions"
-	positionsFormat = "snaptrade-positions-json"
-	clientField     = "client_id"
-	keyField        = "consumer_key"
-	clientPacing    = "customer"
-	accountPacing   = "account"
+	streamID               = "activities"
+	format                 = "snaptrade-json"
+	positionsID            = "positions"
+	positionsFormat        = "snaptrade-positions-json"
+	clientField            = "client_id"
+	keyField               = "consumer_key"
+	clientPacing           = "customer"
+	accountPacing          = "account"
+	recoveryActivityPacing = "recovery-activity"
 )
 
 type Options struct {
@@ -82,10 +83,11 @@ func Registration(options Options) (provider.Registration, error) {
 	key, _ := provider.NewField(keyField, "Personal consumer key", provider.SecretField, true)
 	customer, _ := provider.NewPacingPolicy(clientPacing, time.Second)
 	account, _ := provider.NewPacingPolicy(accountPacing, 15*time.Second)
+	recovery, _ := provider.NewPacingPolicy(recoveryActivityPacing, recoveryActivitySpacing)
 
 	descriptor, err := provider.NewDescriptor(
 		"snaptrade", "SnapTrade Personal", []provider.Stream{stream, positions}, []provider.Field{clientID, key},
-		[]provider.PacingPolicy{customer, account},
+		[]provider.PacingPolicy{customer, account, recovery},
 	)
 	if err != nil {
 		return provider.Registration{}, err

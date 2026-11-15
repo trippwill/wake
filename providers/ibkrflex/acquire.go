@@ -39,6 +39,7 @@ type (
 		LastRecent string          `json:"last_recent,omitempty"`
 		Recent     bool            `json:"recent,omitempty"`
 		Failures   int             `json:"failures,omitempty"`
+		Recovery   bool            `json:"recovery,omitempty"`
 	}
 )
 
@@ -61,9 +62,9 @@ func (s *Source) acquire(
 		return provider.Step{}, provider.ErrInvalid
 	}
 
-	queryKey := "query_id"
-	if request.Stream == Activity {
-		queryKey = "activity_query_id"
+	queryKey, err := flexQueryKey(request.Stream)
+	if err != nil {
+		return provider.Step{}, err
 	}
 
 	query, ok := request.Settings.Get(queryKey)
@@ -212,7 +213,7 @@ func (s *Source) acquire(
 				state.LastRecent = request.Now.UTC().Format(time.RFC3339Nano)
 			}
 
-			state.Recent = false
+			state.Recent, state.Recovery = false, false
 			if metadata.lastTo > state.LastTo {
 				state.LastFrom, state.LastTo = metadata.lastFrom, metadata.lastTo
 			}
@@ -253,7 +254,7 @@ func (s *Source) acquire(
 		case "1017":
 			state.Reference = ""
 		case "1003":
-			if discovery {
+			if discovery || state.Recovery {
 				return provider.ErrUnavailable
 			}
 
@@ -313,6 +314,10 @@ func readContinuation(saved provider.State, query string) (continuation, error) 
 		state.Failures < 0 || state.Failures > 10 || len(state.Queue) > 64 || len(state.Missing) > 512 ||
 		(state.Reference != "" && !safeText(state.Reference, 1024)) || state.Period < 0 || state.Period > 365 ||
 		(state.Current != nil && state.Period != 0) || (state.Period != 0 && state.Anchor == "") {
+		return continuation{}, provider.ErrInvalid
+	}
+
+	if state.Recovery && (state.Current == nil || len(state.Queue) != 0 || len(state.Missing) != 0) {
 		return continuation{}, provider.ErrInvalid
 	}
 

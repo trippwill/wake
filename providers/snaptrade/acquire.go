@@ -24,6 +24,8 @@ type scan struct {
 	Authorizations map[string]accountScope
 	Verified       bool
 	End            string
+	Start          string `json:",omitempty"`
+	Recovery       bool   `json:",omitempty"`
 	Offset         int
 	Total          int
 	Boundary       string
@@ -37,6 +39,16 @@ func (s scan) state() (provider.State, error) {
 	}
 
 	return provider.NewState(continuation, body)
+}
+
+func (s scan) restartVerification() scan {
+	// A retry can discard the cursor and reverify authority, but it must
+	// retain the approved bounds of an interrupted recovery scan.
+	if s.Recovery {
+		return scan{Start: s.Start, End: s.End, Recovery: true, Failures: s.Failures}
+	}
+
+	return scan{Failures: s.Failures}
 }
 
 func (s scan) retry(now, until time.Time, reason provider.RetryReason, code string) (provider.Step, error) {
@@ -128,6 +140,18 @@ func (a *adapter) attempt(
 		return provider.Step{}, nil, provider.ErrInvalid
 	}
 
+	if cursor.Recovery {
+		if discovery || cursor.End == "" || !positions && cursor.Start == "" {
+			return provider.Step{}, nil, provider.ErrInvalid
+		}
+
+		if cursor.Start != "" {
+			if _, err := financial.ParseDate(cursor.Start); err != nil || cursor.Start > cursor.End {
+				return provider.Step{}, nil, provider.ErrInvalid
+			}
+		}
+	}
+
 	path := "/authorizations"
 	params := url.Values{}
 	account := ""
@@ -168,6 +192,11 @@ func (a *adapter) attempt(
 				path = "/accounts/" + account + "/activities"
 
 				params.Set("endDate", cursor.End)
+
+				if cursor.Start != "" {
+					params.Set("startDate", cursor.Start)
+				}
+
 				params.Set("offset", strconv.Itoa(cursor.Offset))
 				params.Set("limit", strconv.Itoa(pageLimit))
 				params.Set("type", "BUY,SELL")
@@ -227,6 +256,10 @@ func (a *adapter) attempt(
 		if !discovery {
 			candidate, ok := scopes[scope.Connection]
 			if !ok || candidate.Broker != scope.Broker || candidate.Institution != scope.Institution {
+				if cursor.Recovery {
+					return provider.Step{}, nil, provider.ErrUnauthorized
+				}
+
 				step, err := unavailable(ctx, access, artifact, r.Now)
 
 				return step, nil, err
@@ -269,12 +302,20 @@ func (a *adapter) attempt(
 					return provider.Step{}, nil, err
 				}
 
-				step, err := provider.NewStep(provider.State{}, artifact, r.Now.Add(time.Hour))
+				var state provider.State
+				if cursor.Recovery {
+					state, err = cursor.restartVerification().state()
+					if err != nil {
+						return provider.Step{}, nil, err
+					}
+				}
+
+				step, err := provider.NewStep(state, artifact, r.Now.Add(time.Hour))
 
 				return step, nil, err
 			}
 
-			state, err := (scan{Verified: true, End: cursor.End, Failures: cursor.Failures}).state()
+			state, err := (scan{Verified: true, Start: cursor.Start, End: cursor.End, Recovery: cursor.Recovery, Failures: cursor.Failures}).state()
 			if err != nil {
 				return provider.Step{}, nil, err
 			}
@@ -283,6 +324,10 @@ func (a *adapter) attempt(
 
 			return step, nil, err
 		}
+	}
+
+	if cursor.Recovery {
+		return provider.Step{}, nil, provider.ErrUnauthorized
 	}
 
 	step, err := unavailable(ctx, access, artifact, r.Now)
@@ -319,7 +364,13 @@ func (a *adapter) fetch(
 		}
 	}
 
-	reservation, err := reserveRequest(ctx, access, customer, accountScope)
+	reservation, err := reserveRequest(
+		ctx,
+		access,
+		customer,
+		accountScope,
+		cursor.Recovery && r.Stream == streamID,
+	)
 	if err != nil {
 		return response{}, provider.Step{}, err
 	}
@@ -407,7 +458,7 @@ func (a *adapter) fetch(
 	default:
 		if reply.status >= 500 || reply.status == http.StatusNotFound && account != "" {
 			if reply.status == http.StatusNotFound {
-				cursor = scan{Failures: cursor.Failures}
+				cursor = cursor.restartVerification()
 			}
 
 			step, err := cursor.retry(now, retry, provider.RetryUpstream, "snaptrade-upstream")
@@ -422,7 +473,7 @@ func (a *adapter) fetch(
 func reserveRequest(
 	ctx context.Context,
 	access provider.Access,
-	customer, account provider.PacingScope,
+	customer, account provider.PacingScope, recoveryActivity bool,
 ) (provider.Reservation, error) {
 	if account.Digest() == "" {
 		return access.ReservePacing(ctx, clientPacing, customer)
@@ -433,11 +484,15 @@ func reserveRequest(
 		return provider.Reservation{}, provider.ErrUnavailable
 	}
 
-	return pacer.ReservePacingTogether(
-		ctx,
-		provider.PacingBudget{Policy: clientPacing, Scope: customer},
-		provider.PacingBudget{Policy: accountPacing, Scope: account},
-	)
+	budgets := []provider.PacingBudget{
+		{Policy: clientPacing, Scope: customer},
+		{Policy: accountPacing, Scope: account},
+	}
+	if recoveryActivity {
+		budgets = append(budgets, provider.PacingBudget{Policy: recoveryActivityPacing, Scope: account})
+	}
+
+	return pacer.ReservePacingTogether(ctx, budgets...)
 }
 
 func boundary(id string, raw json.RawMessage) string {
@@ -455,7 +510,7 @@ func (a *adapter) activityStep(
 ) (provider.Step, error) {
 	page, ids, err := parsePage(reply.body)
 	if err != nil {
-		return (scan{Failures: cursor.Failures}).retry(
+		return cursor.restartVerification().retry(
 			now,
 			time.Time{},
 			provider.RetryUpstream,
@@ -470,7 +525,7 @@ func (a *adapter) activityStep(
 	if offset != cursor.Offset || (cursor.Boundary != "" &&
 		(total != cursor.Total || len(ids) < 2 || boundary(ids[0], page.Data[0]) != cursor.Boundary)) ||
 		(next < total && len(ids) < 2) {
-		return (scan{Failures: cursor.Failures}).retry(
+		return cursor.restartVerification().retry(
 			now,
 			time.Time{},
 			provider.RetryUpstream,
@@ -506,7 +561,12 @@ func (a *adapter) activityStep(
 	}
 
 	if next == total {
-		step, err = step.NotBefore(reply.notBefore).WithPollCompleted()
+		floor := reply.notBefore
+		if cursor.Recovery {
+			floor = latest(floor, now.Add(recoveryActivitySpacing))
+		}
+
+		step, err = step.NotBefore(floor).WithPollCompleted()
 		if err != nil {
 			return provider.Step{}, err
 		}
@@ -517,7 +577,15 @@ func (a *adapter) activityStep(
 		return provider.Step{}, provider.ErrInvalid
 	}
 
-	coverage, err := provider.NewCoverage(financial.Date{}, end, financial.Date{}, financial.Date{})
+	var start financial.Date
+	if cursor.Start != "" {
+		start, err = financial.ParseDate(cursor.Start)
+		if err != nil {
+			return provider.Step{}, provider.ErrInvalid
+		}
+	}
+
+	coverage, err := provider.NewCoverage(start, end, financial.Date{}, financial.Date{})
 	if err != nil {
 		return provider.Step{}, err
 	}
