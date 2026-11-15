@@ -33,7 +33,9 @@ func TestStoppedProfileRetainsOwnershipDuringChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := WithStoppedProfile(cfg, func() error {
+	stores := []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath}
+
+	err := withStoppedStores(cfg, stores, func() error {
 		if owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir); !errors.Is(err, ErrAlreadyOwned) {
 			if owner != nil {
 				owner.close()
@@ -44,7 +46,7 @@ func TestStoppedProfileRetainsOwnershipDuringChange(t *testing.T) {
 
 		alternative := cfg
 		alternative.Paths.RuntimeDir = filepath.Join(root, "other-run")
-		if err := WithStoppedProfile(alternative, func() error {
+		if err := withStoppedStores(alternative, stores, func() error {
 			t.Fatal("accepted a busy store")
 			return nil
 		}); !errors.Is(err, ErrAlreadyOwned) {
@@ -57,7 +59,7 @@ func TestStoppedProfileRetainsOwnershipDuringChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := WithStoppedProfile(cfg, func() error { return nil }); err != nil {
+	if err := withStoppedStores(cfg, stores, func() error { return nil }); err != nil {
 		t.Fatal("lock retained after change", err)
 	}
 

@@ -56,9 +56,8 @@ func claimOwnershipFile(path string, flags int, private bool) (*os.File, error) 
 	return file, nil
 }
 
-// WithStoppedProfile holds process and existing store ownership while applying
-// an offline change. It shares the daemon's lock order and never opens SQLite.
-func WithStoppedProfile(cfg config.Config, change func() error) error {
+// withStoppedStores holds process ownership and the offline operation's database locks.
+func withStoppedStores(cfg config.Config, stores []string, change func() error) error {
 	if err := config.Prepare(cfg); err != nil {
 		return err
 	}
@@ -69,7 +68,7 @@ func WithStoppedProfile(cfg config.Config, change func() error) error {
 	}
 	defer owner.close()
 
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
+	for _, path := range stores {
 		if path == "" {
 			continue
 		}

@@ -138,8 +138,12 @@ func TestBrowserAccessRejectsInvalidCommandsAndProfiles(t *testing.T) {
 	}
 }
 
-func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
+func TestResetAccessCommandRevokesClientWithUnusableSyncStorage(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
+	if err := os.Mkdir(cfg.Storage.SyncPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
 		t.Fatal(err)
 	}
@@ -191,5 +195,9 @@ func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatal("reset created a database", filepath.Base(path), err)
 		}
+	}
+
+	if info, err := os.Lstat(cfg.Storage.SyncPath); err != nil || !info.IsDir() {
+		t.Fatal("access reset changed the optional synchronization path", err)
 	}
 }

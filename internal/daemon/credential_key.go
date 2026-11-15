@@ -16,7 +16,8 @@ import (
 // EnsureCredentialKey checks an existing key or creates a missing key offline.
 func EnsureCredentialKey(ctx context.Context, cfg config.Config) (bool, error) {
 	generated := false
-	err := WithStoppedProfile(cfg, func() error {
+	stores := []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath}
+	err := withStoppedStores(cfg, stores, func() error {
 		path := cfg.Credentials.KeyPath
 
 		envelope, err := openCredentialKey(path)
