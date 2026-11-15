@@ -49,6 +49,7 @@ type Profile struct {
 	WarehousePath, ConnectionsPath, SyncPath string
 	Registrations                            []provider.Registration
 	UnattendedUpgrade                        bool
+	requireInstalled                         bool
 }
 
 func (p Profile) paths() [storeCount]string {
@@ -139,6 +140,13 @@ var (
 
 func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
 	return openStore(ctx, profile, logger, releaseBaseline(), upgradeOptions{})
+}
+
+// OpenInstalled opens a complete matching installation without reconstructing
+// missing stores or rebinding an obsolete association.
+func OpenInstalled(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
+	profile.requireInstalled = true
+	return Open(ctx, profile, logger)
 }
 
 func openStore(
@@ -234,6 +242,10 @@ func openStore(
 
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
+			if profile.requireInstalled {
+				return nil, ErrAssociation
+			}
+
 			sidecars, e := storeSidecars(path)
 			if upgrade.preview && os.IsNotExist(e) {
 				continue
@@ -338,6 +350,22 @@ func openStore(
 	}
 
 	stage, storeKind = "upgrade_plan", "profile"
+
+	if profile.requireInstalled {
+		if !present[0] || !present[1] || !present[2] || intent.Plan.ID != "" {
+			return nil, ErrAssociation
+		}
+
+		for i, member := range metadata {
+			if member.version != baseline.formats[i] {
+				return nil, ErrUnsupportedSchema
+			}
+		}
+
+		if err := checkInstalledStores(ctx, paths, s.owners); err != nil {
+			return nil, err
+		}
+	}
 
 	// Read again under the store locks to reject an intent that changed while
 	// ownership was being acquired.

@@ -24,9 +24,17 @@ type associationReader interface {
 }
 
 func readUpstreamAssociation(ctx context.Context, db associationReader) (upstreamAssociation, error) {
+	return readAssociation(ctx, db, true)
+}
+
+func readAssociation(
+	ctx context.Context,
+	db associationReader,
+	requireWitness bool,
+) (upstreamAssociation, error) {
 	var a upstreamAssociation
 
-	err := db.QueryRowContext(ctx, profileStatement("VerifyUpstreamWitness", "")).Scan(
+	err := db.QueryRowContext(ctx, profileStatement("VerifyUpstreamWitness", ""), requireWitness).Scan(
 		&a.revision, &a.paused, &a.granted, &a.epochMatches, &a.restoring,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
