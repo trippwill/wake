@@ -138,42 +138,13 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	)
 
 	for i, path := range paths {
-		db := sql.OpenDB(
-			&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{owners[i]}, probe: true},
-		)
+		db, m, err := inspectStorageMember(ctx, path, owners[i], i)
+		if err != nil {
+			return plan, err
+		}
 		defer func() { _ = db.Close() }()
 
-		db.SetMaxOpenConns(1)
-
-		m := &metadata[i]
-
-		err := db.QueryRowContext(ctx, profileStatement("Metadata", "main")).Scan(&m.kind, &m.version, &m.id)
-		if err != nil {
-			return plan, errors.Join(ErrUnsupportedSchema, err)
-		}
-
-		if m.kind != storeKinds[i] || m.version != baseline.formats[i] || m.id == "" {
-			return plan, ErrUnsupportedSchema
-		}
-
-		if err := validateCopySchema(ctx, db, baseline.schemas[i], storeSchemas[i]); err != nil {
-			return plan, err
-		}
-
-		var integrity string
-
-		err = db.QueryRowContext(ctx, profileStatement("Integrity", "main")).Scan(&integrity)
-		if err != nil {
-			return plan, err
-		}
-
-		if integrity != "ok" {
-			return plan, ErrCorrupt
-		}
-
-		if err := checkCopyForeignKeys(ctx, db); err != nil {
-			return plan, err
-		}
+		metadata[i] = m
 
 		if i == 0 {
 			if err := db.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
@@ -240,6 +211,51 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	}
 
 	return plan, nil
+}
+
+func inspectStorageMember(
+	ctx context.Context,
+	path string,
+	owner *os.File,
+	index int,
+) (*sql.DB, storeMetadata, error) {
+	var metadata storeMetadata
+
+	db := sql.OpenDB(
+		&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{owner}, probe: true},
+	)
+	db.SetMaxOpenConns(1)
+
+	baseline := releaseBaseline()
+	err := db.QueryRowContext(ctx, profileStatement("Metadata", "main")).Scan(
+		&metadata.kind, &metadata.version, &metadata.id,
+	)
+	if err != nil || metadata.kind != storeKinds[index] || metadata.version != baseline.formats[index] ||
+		metadata.id == "" {
+		_ = db.Close()
+		return nil, metadata, errors.Join(ErrUnsupportedSchema, err)
+	}
+
+	err = validateCopySchema(ctx, db, baseline.schemas[index], storeSchemas[index])
+	if err == nil {
+		var integrity string
+
+		err = db.QueryRowContext(ctx, profileStatement("Integrity", "main")).Scan(&integrity)
+		if err == nil && integrity != "ok" {
+			err = ErrCorrupt
+		}
+	}
+
+	if err == nil {
+		err = checkCopyForeignKeys(ctx, db)
+	}
+
+	if err != nil {
+		_ = db.Close()
+		return nil, metadata, err
+	}
+
+	return db, metadata, nil
 }
 
 func openInstallationCopy(ctx context.Context, paths [storeCount]string, owner *os.File) (*sql.DB, error) {

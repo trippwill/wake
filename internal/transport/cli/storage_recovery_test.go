@@ -309,6 +309,57 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 	}
 }
 
+func TestRecoverSyncCLIRequiresReviewedPlan(t *testing.T) {
+	cfg, configPath, _ := setupDaemonFixture(t)
+	if err := config.Prepare(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := persistence.OpenFinancial(
+		t.Context(),
+		persistence.Profile{WarehousePath: cfg.Storage.WarehousePath},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	args := []string{"--json", "storage", "recover-sync", "--config", configPath}
+	if status := Run(args, &stdout, &stderr); status != exitOK {
+		t.Fatal(status, stdout.String(), stderr.String())
+	}
+
+	var plan persistence.SyncRecoveryPlan
+	if err := json.Unmarshal(
+		stdout.Bytes(),
+		&plan,
+	); err != nil || plan.ID == "" || plan.Applied ||
+		plan.RetainAccess {
+		t.Fatal(plan, err)
+	}
+
+	if _, err := os.Lstat(cfg.Storage.SyncPath); !os.IsNotExist(err) {
+		t.Fatal("preview created optional files", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	if status := Run(append(args, "--confirm", plan.ID), &stdout, &stderr); status != exitOK {
+		t.Fatal(status, stdout.String(), stderr.String())
+	}
+
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || !plan.Applied {
+		t.Fatal(plan, err)
+	}
+}
+
 func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
 	cfg, configPath, _ := setupDaemonFixture(t)
 	if err := config.Prepare(cfg); err != nil {

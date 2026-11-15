@@ -34,6 +34,7 @@ const (
 type restoreIntent struct {
 	ArchiveDigest string                   `json:"archive_sha256"`
 	Replace       bool                     `json:"replace"`
+	SyncOnly      bool                     `json:"sync_only,omitempty"`
 	Stores        [storeCount]restoreStore `json:"stores"`
 }
 
@@ -197,56 +198,14 @@ func prepareRestore(
 		}
 	}()
 
-	hash := sha256.New()
-	reader := io.TeeReader(backupReader{ctx, archive}, hash)
+	_, archiveDigest, err := copyRestoreArchive(ctx, archive, paths, &staged, &owners)
+	defer closeRestoreCopies(owners)
 
-	manifest, err := consumeRestoreArchive(tar.NewReader(reader), func(i int, member io.Reader) error {
-		file, err := os.CreateTemp(filepath.Dir(paths[i]), ".wake-restore-")
-		if err != nil {
-			return err
-		}
-
-		staged[i] = file.Name()
-		_, err = io.Copy(file, member)
-
-		return errors.Join(err, file.Sync(), file.Close())
-	})
 	if err != nil {
 		return nil, err
 	}
 
-	for i, path := range staged {
-		owner, err := lockStoreFile(path, false)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = owner.Close() }()
-
-		owners[i] = owner
-	}
-
-	if _, err := io.Copy(io.Discard, reader); err != nil {
-		return nil, err
-	}
-
-	intent.ArchiveDigest = hex.EncodeToString(hash.Sum(nil))
-	intent.Replace = replace
-
-	plan, err := validateStorageCopy(ctx, staged[:], owners[:])
-	if err != nil {
-		return nil, err
-	}
-
-	if manifest != nil {
-		metadata, err := readInstallationMetadata(ctx, staged, owners[0], plan)
-		if err != nil {
-			return nil, err
-		}
-
-		if metadata != manifest.Storage {
-			return nil, ErrCorrupt
-		}
-	}
+	intent.ArchiveDigest, intent.Replace = archiveDigest, replace
 
 	if checkAccess != nil {
 		if err := checkAccess(staged[1]); err != nil {
@@ -262,52 +221,22 @@ func prepareRestore(
 		return nil, err
 	}
 
-	for i, path := range staged {
-		info, err := owners[i].Stat()
+	for i, owner := range owners {
+		original, err := lockRestoreOriginal(paths[i], replace)
 		if err != nil {
 			return nil, err
 		}
 
-		digest, err := restoreDigest(ctx, owners[i])
+		if original != nil {
+			defer func() { _ = original.Close() }()
+		}
+
+		store, err := describeRestoreStore(ctx, paths[i], staged[i], owner, original, i)
 		if err != nil {
-			return nil, err
-		}
-
-		store := restoreStore{Path: paths[i], Stage: path, File: fileIdentity(info), Digest: digest}
-		if err := checkVacantStore(store.Path, true); err != nil {
-			return nil, err
-		}
-
-		if replace {
-			if _, err := os.Lstat(store.Path); !os.IsNotExist(err) {
-				owner, err := lockStoreFile(store.Path, false)
-				if err != nil {
-					return nil, err
-				}
-				defer func() { _ = owner.Close() }()
-
-				info, err := owner.Stat()
-				if err != nil {
-					return nil, err
-				}
-
-				store.Original = &originalStore{
-					Path: filepath.Join(
-						filepath.Dir(store.Path),
-						".wake-original-"+rand.Text()+"-"+storeKinds[i],
-					),
-					File: fileIdentity(info),
-				}
-			}
-		} else if err := checkVacantStore(store.Path, false); err != nil {
 			return nil, err
 		}
 
 		intent.Stores[i] = store
-
-		if err := syncUpgradeDir(path); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := rejectPendingRestore(paths[0]); err != nil {
@@ -324,6 +253,114 @@ func prepareRestore(
 	}
 
 	return &intent, nil
+}
+
+// copyRestoreArchive verifies complete archive members before callers use
+// either their data or metadata. The caller owns the staged files and locks.
+func copyRestoreArchive(
+	ctx context.Context, archive *os.File, destinations [storeCount]string,
+	staged *[storeCount]string, owners *[storeCount]*os.File,
+) (*installationManifest, string, error) {
+	hash := sha256.New()
+	reader := io.TeeReader(backupReader{ctx, archive}, hash)
+
+	manifest, err := consumeRestoreArchive(tar.NewReader(reader), func(i int, member io.Reader) error {
+		file, err := os.CreateTemp(filepath.Dir(destinations[i]), ".wake-restore-")
+		if err != nil {
+			return err
+		}
+
+		staged[i] = file.Name()
+		_, err = io.Copy(file, member)
+
+		return errors.Join(err, file.Sync(), file.Close())
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	for i, path := range staged {
+		owner, err := lockStoreFile(path, false)
+		if err != nil {
+			return nil, "", err
+		}
+
+		owners[i] = owner
+	}
+
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return nil, "", err
+	}
+
+	plan, err := validateStorageCopy(ctx, staged[:], owners[:])
+	if err != nil {
+		return nil, "", err
+	}
+
+	if manifest != nil {
+		metadata, err := readInstallationMetadata(ctx, *staged, owners[0], plan)
+		if err != nil {
+			return nil, "", err
+		}
+
+		if metadata != manifest.Storage {
+			return nil, "", ErrCorrupt
+		}
+	}
+
+	return manifest, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func closeRestoreCopies(owners [storeCount]*os.File) {
+	for _, owner := range owners {
+		if owner != nil {
+			_ = owner.Close()
+		}
+	}
+}
+
+func lockRestoreOriginal(path string, replace bool) (*os.File, error) {
+	if err := checkVacantStore(path, replace); err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	return lockStoreFile(path, false)
+}
+
+func describeRestoreStore(
+	ctx context.Context, path, stage string, owner, original *os.File, index int,
+) (restoreStore, error) {
+	store := restoreStore{Path: path, Stage: stage}
+
+	info, err := owner.Stat()
+	if err != nil {
+		return store, err
+	}
+
+	store.File = fileIdentity(info)
+
+	store.Digest, err = restoreDigest(ctx, owner)
+	if err != nil {
+		return store, err
+	}
+
+	if original != nil {
+		info, err := original.Stat()
+		if err != nil {
+			return store, err
+		}
+
+		store.Original = &originalStore{
+			Path: filepath.Join(filepath.Dir(path), ".wake-original-"+rand.Text()+"-"+storeKinds[index]),
+			File: fileIdentity(info),
+		}
+	}
+
+	return store, syncUpgradeDir(path)
 }
 
 func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result error) {
@@ -364,11 +401,11 @@ func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result 
 	}
 
 	if paths[2] != "" {
-		var nonce [8]byte
-		rand.Read(nonce[:])
-		revision := int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
-
-		if _, err := tx.ExecContext(ctx, profileStatement("RestoreReview", "sync"), revision); err != nil {
+		if _, err := tx.ExecContext(
+			ctx,
+			profileStatement("RestoreReview", "sync"),
+			newRecoveryRevision(),
+		); err != nil {
 			return err
 		}
 
@@ -395,6 +432,13 @@ func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result 
 	}
 
 	return tx.Commit()
+}
+
+func newRecoveryRevision() int64 {
+	var nonce [8]byte
+	rand.Read(nonce[:])
+
+	return int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
 }
 
 func rejectPendingRestore(warehouse string) error {
@@ -453,20 +497,12 @@ func matchRestore(
 	paths [storeCount]string,
 	replace bool,
 ) error {
-	if intent.Replace != replace {
+	if intent.SyncOnly || intent.Replace != replace {
 		return ErrRestorePending
 	}
 
-	for i, store := range intent.Stores {
-		if store.Path != paths[i] || !restorePathMatches(store.Path, store.Stage, ".wake-restore-") ||
-			len(store.Digest) != sha256.Size*2 {
-			return ErrRestorePending
-		}
-
-		if store.Original != nil && (!replace ||
-			!restorePathMatches(store.Path, store.Original.Path, ".wake-original-")) {
-			return ErrRestorePending
-		}
+	if err := matchRestorePaths(intent, paths); err != nil {
+		return err
 	}
 
 	hash := sha256.New()
@@ -476,6 +512,30 @@ func matchRestore(
 
 	if hex.EncodeToString(hash.Sum(nil)) != intent.ArchiveDigest {
 		return ErrRestorePending
+	}
+
+	return nil
+}
+
+func matchRestorePaths(intent *restoreIntent, paths [storeCount]string) error {
+	for i, store := range intent.Stores {
+		if store.Path != paths[i] || len(store.Digest) != sha256.Size*2 {
+			return ErrRestorePending
+		}
+
+		if i == 0 && intent.SyncOnly {
+			if store.Stage != "" || store.Original != nil {
+				return ErrRestorePending
+			}
+
+			continue
+		}
+
+		if !restorePathMatches(store.Path, store.Stage, ".wake-restore-") ||
+			store.Original != nil && (!intent.Replace ||
+				!restorePathMatches(store.Path, store.Original.Path, ".wake-original-")) {
+			return ErrRestorePending
+		}
 	}
 
 	return nil
@@ -517,7 +577,7 @@ func installRestore(
 			return err
 		}
 
-		installed[i] = os.IsNotExist(err)
+		installed[i] = i == 0 && intent.SyncOnly || os.IsNotExist(err)
 
 		path := store.Stage
 		if installed[i] {

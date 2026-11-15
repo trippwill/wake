@@ -106,6 +106,27 @@ func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact 
 	})
 }
 
+func RecoverSynchronization(
+	ctx context.Context, cfg config.Config, configPath, artifact, confirm string,
+) (persistence.SyncRecoveryPlan, error) {
+	if err := config.PrepareInstallationRestore(cfg); err != nil {
+		return persistence.SyncRecoveryPlan{}, err
+	}
+
+	profile, archive, err := recoveryPaths(cfg, configPath, artifact, false)
+	if err != nil {
+		return persistence.SyncRecoveryPlan{}, err
+	}
+
+	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
+	if err != nil {
+		return persistence.SyncRecoveryPlan{}, err
+	}
+	defer owner.close()
+
+	return persistence.RecoverSynchronization(ctx, profile, archive, confirm)
+}
+
 func recoveryPaths(
 	cfg config.Config,
 	configPath, artifact string,
@@ -133,9 +154,12 @@ func recoveryPaths(
 		SyncPath:        optionalPath(cfg.Storage.SyncPath),
 	}
 
-	archive, err := storagePath(artifact)
-	if err != nil {
-		return profile, "", err
+	var archive string
+	if artifact != "" {
+		archive, err = storagePath(artifact)
+		if err != nil {
+			return profile, "", err
+		}
 	}
 
 	if err := profile.CheckArtifactPath(archive, creating); err != nil {

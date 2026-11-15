@@ -472,6 +472,14 @@ A durable intent binds the archive, original file identities, and prepared diges
 Startup refuses the profile until the same restore finishes. Explicit replacement
 moves original databases to recovery names before installing the staged set.
 
+Synchronization-only recovery uses the same durable intent for the optional
+replacements and pins the unchanged warehouse by identity and digest. It rejects
+outstanding journals, retains surviving encrypted access under its original
+bindings, and starts a fresh paused association. A stopped-instance preview binds
+the selected files and any reviewed configuration archive. The archive can supply
+settings for matching retained source identities. Runtime state and grants from
+that archive stay outside the recovered association.
+
 Unsupported pre-release formats require a compatible build or explicit recreation.
 The offline warehouse and credential resets preview the selected file and its
 sidecars and require confirmation before deletion. They check ownership without

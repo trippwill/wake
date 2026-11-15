@@ -251,6 +251,14 @@ The restored synchronization association starts paused with new identities and
 without saved continuations or grants. See [architecture](../engineering/architecture.md#persistence-and-work-boundaries)
 for storage boundaries.
 
+With Wake stopped, use `wake storage recover-sync [installation-backup]` to
+preview recovery of optional synchronization storage. An installation backup
+proposes non-secret settings for the same financial lineage. Review the current
+and proposed settings, then rerun with the same arguments and `--confirm <plan-id>`.
+The command preserves existing optional databases, keeps surviving credentials
+bound to their original sources, and leaves financial history and publication
+unchanged. Synchronization remains paused after recovery.
+
 ### Forward upgrades
 
 Stop Wake and run `wake storage upgrade` with the selected configuration to check

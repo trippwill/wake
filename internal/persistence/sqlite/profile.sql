@@ -108,3 +108,10 @@ SET actor=?,granted_at=?,granted_revision=revision WHERE singleton=1;
 UPDATE sync.profile SET recovery_revision=recovery_revision+1 WHERE singleton=1 AND paused=1;
 -- name: MarkRestoreAssociation
 UPDATE sync.sync_association SET bind_restore=1 WHERE singleton=1;
+
+-- name: SyncRecoveryConfigurations
+SELECT id,provider,name,settings FROM {{schema}}.configurations ORDER BY id;
+-- name: RecoveryDescriptor
+SELECT provider FROM main.connections WHERE id=?;
+-- name: ImportSyncConfiguration
+INSERT INTO sync.configurations(id,provider,name,settings) VALUES(?,?,?,?);

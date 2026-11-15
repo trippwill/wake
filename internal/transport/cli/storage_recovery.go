@@ -84,6 +84,35 @@ func performRestore(ctx context.Context, c *cli.Command) error {
 	)
 }
 
+func performRecoverSync(ctx context.Context, c *cli.Command) error {
+	if c.NArg() > 1 || c.NArg() == 1 && strings.TrimSpace(c.Args().First()) == "" {
+		return usageError("recover-sync accepts at most one installation backup path")
+	}
+
+	resolved, err := config.Resolve(c)
+	if err != nil {
+		return failure("configure synchronization recovery: %v", err)
+	}
+
+	plan, err := daemon.RecoverSynchronization(
+		ctx,
+		resolved.Config,
+		resolved.ConfigPath,
+		c.Args().First(),
+		c.String("confirm"),
+	)
+	if err != nil {
+		return failure("recover synchronization: %v", err)
+	}
+
+	encoder := json.NewEncoder(c.Writer)
+	if !commandJSON(c) {
+		encoder.SetIndent("", "  ")
+	}
+
+	return encoder.Encode(plan)
+}
+
 func runStorageRecovery(
 	c *cli.Command, operation, phase string,
 	run func(config.Resolution, string) (storageResult, error),

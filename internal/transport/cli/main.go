@@ -174,6 +174,15 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				Action: performRestore,
 			},
 			&cli.Command{
+				Name:      "recover-sync",
+				Usage:     "Preview or rebuild synchronization with Wake stopped",
+				ArgsUsage: "[installation-backup]",
+				Flags: append(common(), &cli.StringFlag{
+					Name: "confirm", Usage: "Apply the recovery matching this plan ID",
+				}),
+				Action: performRecoverSync,
+			},
+			&cli.Command{
 				Name:  "upgrade",
 				Usage: "Check the financial storage format with Wake stopped",
 				Flags: append(common(), &cli.StringFlag{
