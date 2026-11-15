@@ -168,4 +168,49 @@ func TestRestartPlansOnlySupportedSnapTradeAccounts(t *testing.T) {
 	if _, err := planner.PlanRestart(request); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("unsupported stream received recovery", err)
 	}
+
+	for _, fixture := range []struct {
+		name    string
+		request provider.RestartRequest
+		want    error
+	}{
+		{"missing time", provider.RestartRequest{Settings: settings, SourceAccount: account, Stream: streamID}, provider.ErrInvalid},
+		{"missing settings", provider.RestartRequest{RecoveredAt: at, SourceAccount: account, Stream: streamID}, provider.ErrInvalid},
+		{"missing account", provider.RestartRequest{RecoveredAt: at, Settings: settings, Stream: streamID}, provider.ErrUnavailable},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			if _, err := planner.PlanRestart(fixture.request); !errors.Is(err, fixture.want) {
+				t.Fatal("invalid input received a plan", err)
+			}
+		})
+	}
+}
+
+func TestRecoveryContinuationsRejectInvalidBounds(t *testing.T) {
+	registration, err := Registration(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, cursor := range []scan{
+		{Recovery: true},
+		{Recovery: true, End: "2026-10-23"},
+		{Recovery: true, Start: "2026-10-24", End: "2026-10-23"},
+		{Recovery: true, Start: "2026-10-22", End: "2026-02-31"},
+	} {
+		request := confirmedRequest(t)
+
+		request.State, err = cursor.state()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := registration.Acquirer().
+			Acquire(t.Context(), request, nil); !errors.Is(
+			err,
+			provider.ErrInvalid,
+		) {
+			t.Fatal("invalid continuation reached acquisition", err)
+		}
+	}
 }

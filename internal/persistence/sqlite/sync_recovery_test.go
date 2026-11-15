@@ -406,3 +406,52 @@ func TestSynchronizationRecoveryRejectsObsoleteOrInvalidArchivedSettings(t *test
 		t.Fatal("missing archive produced an approvable import", err)
 	}
 }
+
+func TestSynchronizationRecoveryRequiresAnInstallationBackupFromItsOwnLineage(t *testing.T) {
+	ctx := t.Context()
+	profile := seedUpgradeStores(t)
+	foreign := seedUpgradeStores(t)
+	dir := filepath.Dir(profile.WarehousePath)
+
+	installation := filepath.Join(dir, "foreign-installation.tar")
+	if err := Backup(ctx, foreign, installation); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RecoverSynchronization(ctx, profile, installation, ""); !errors.Is(err, ErrAssociation) {
+		t.Fatal("accepted unrelated configuration and pacing", err)
+	}
+
+	var owners [storeCount]*os.File
+	for i, path := range profile.paths() {
+		var err error
+
+		owners[i], err = lockStoreFile(path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer func() { _ = owners[i].Close() }()
+	}
+
+	legacy := filepath.Join(dir, "pre-upgrade.tar")
+	if _, err := writeBackupPair(ctx, legacy, owners, false); err != nil {
+		t.Fatal(err)
+	}
+
+	closeRestoreCopies(owners)
+
+	if _, err := RecoverSynchronization(ctx, profile, legacy, ""); !errors.Is(err, ErrBackupScope) {
+		t.Fatal("accepted a pre-upgrade archive without installation metadata", err)
+	}
+
+	// Refusing either archive leaves no maintenance guard behind.
+	store, err := OpenInstalled(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

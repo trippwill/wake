@@ -387,6 +387,8 @@ func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
 		{"protected restore source", []string{"restore", configPath}, exitFailure, "unsafe"},
 		{"missing restore archive", []string{"restore", filepath.Join(cfg.Paths.ConfigDir, "absent.tar")}, exitFailure, "no such file"},
 		{"missing snapshot output", []string{"snapshot", "warehouse"}, exitUsage, "requires one archive file path"},
+		{"protected synchronization archive", []string{"recover-sync", configPath}, exitFailure, "unsafe"},
+		{"multiple synchronization archives", []string{"recover-sync", "first.tar", "second.tar"}, exitUsage, "at most one installation backup path"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer

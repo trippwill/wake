@@ -70,6 +70,16 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := store.Delay(
+		ctx,
+		"ibkr-flex",
+		"web-service",
+		"surviving-budget",
+		floor.Add(-time.Hour),
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	if allowed, _, err := store.ReserveReference(ctx, time.Now(), 25); err != nil || !allowed {
 		t.Fatal("unable to reserve reference fixture", err)
 	}
@@ -241,16 +251,33 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		wantedTo.Store(compactFixtureDate(scope.Plan.To().String()))
 	}
 
-	for _, table := range []string{"restart_scopes", "work", "scheduled"} {
+	if err := store.ApproveRestart(ctx, review, "", now); !errors.Is(err, application.ErrAccessReview) {
+		t.Fatal("storage accepted an approval without an actor", err)
+	}
+
+	stale := review
+	stale.Revision--
+	if err := store.ApproveRestart(ctx, stale, "admin/fixture", now); !errors.Is(err, application.ErrStale) {
+		t.Fatal("storage accepted an obsolete approval revision", err)
+	}
+
+	for _, write := range []string{
+		"INSERT ON sync.restart_scopes",
+		"INSERT ON sync.work",
+		"INSERT ON sync.scheduled",
+		"UPDATE ON sync.recovery_state",
+		"UPDATE ON sync.profile",
+		"UPDATE ON access.upstream_grant",
+	} {
 		//nolint:gosec // The test uses only fixed table names to inject failures.
-		query := "CREATE TEMP TRIGGER refuse_restart BEFORE INSERT ON sync." + table +
+		query := "CREATE TEMP TRIGGER refuse_restart BEFORE " + write +
 			" BEGIN SELECT RAISE(ABORT,'fixture restart failure'); END"
 		if _, err := store.db.Exec(query); err != nil {
 			t.Fatal(err)
 		}
 
 		if err := workflow.ApproveRestart(ctx, review.Revision, review.Digest, "admin/fixture"); err == nil {
-			t.Fatal("approval ignored failed write", table)
+			t.Fatal("approval ignored failed write", write)
 		}
 
 		if _, err := store.db.Exec("DROP TRIGGER temp.refuse_restart"); err != nil {
@@ -258,7 +285,7 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		}
 
 		if _, err := store.Checkpoint(ctx, key); !errors.Is(err, provider.ErrUnavailable) {
-			t.Fatal("partial approval was visible", table, err)
+			t.Fatal("partial approval was visible", write, err)
 		}
 	}
 
