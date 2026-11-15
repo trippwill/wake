@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.trippwill.dev/wake/internal/credential"
 )
 
 const (
@@ -55,13 +57,17 @@ func Restore(
 	archivePath string,
 	withCredentials bool,
 ) ([]string, error) {
-	return restore(ctx, profile, archivePath, withCredentials, false)
+	return restore(ctx, profile, archivePath, withCredentials, false, nil)
 }
 
-// ReplaceInstallation restores an installation backup and preserves the files
-// it replaces alongside their original paths.
-func ReplaceInstallation(ctx context.Context, profile Profile, archivePath string) ([]string, error) {
-	return restore(ctx, profile, archivePath, true, true)
+// RestoreInstallation verifies encrypted access against the selected key before
+// activating the paused association. An explicit replacement keeps originals.
+func RestoreInstallation(
+	ctx context.Context, profile Profile, archivePath string, replace bool, envelope *credential.Envelope,
+) ([]string, error) {
+	return restore(ctx, profile, archivePath, true, replace, func(path string) error {
+		return CheckStoredCredentialKey(ctx, path, envelope)
+	})
 }
 
 func restore(
@@ -69,6 +75,7 @@ func restore(
 	profile Profile,
 	archivePath string,
 	withCredentials, replace bool,
+	checkAccess func(string) error,
 ) ([]string, error) {
 	paths := profile.paths()
 	intentPath := paths[0] + RestoreIntentSuffix
@@ -116,7 +123,7 @@ func restore(
 			return nil, err
 		}
 	} else {
-		prepared, err := prepareRestore(ctx, archive, paths, intentPath, replace)
+		prepared, err := prepareRestore(ctx, archive, paths, intentPath, replace, checkAccess)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +131,7 @@ func restore(
 		intent = prepared
 	}
 
-	if err := installRestore(ctx, intentPath, intent); err != nil {
+	if err := installRestore(ctx, intentPath, intent, checkAccess); err != nil {
 		return nil, err
 	}
 
@@ -173,6 +180,7 @@ func prepareRestore(
 	paths [storeCount]string,
 	intentPath string,
 	replace bool,
+	checkAccess func(string) error,
 ) (*restoreIntent, error) {
 	var (
 		intent restoreIntent
@@ -192,7 +200,7 @@ func prepareRestore(
 	hash := sha256.New()
 	reader := io.TeeReader(backupReader{ctx, archive}, hash)
 
-	if err := consumeBackupPair(tar.NewReader(reader), func(i int, member io.Reader) error {
+	manifest, err := consumeRestoreArchive(tar.NewReader(reader), func(i int, member io.Reader) error {
 		file, err := os.CreateTemp(filepath.Dir(paths[i]), ".wake-restore-")
 		if err != nil {
 			return err
@@ -202,7 +210,8 @@ func prepareRestore(
 		_, err = io.Copy(file, member)
 
 		return errors.Join(err, file.Sync(), file.Close())
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -223,8 +232,26 @@ func prepareRestore(
 	intent.ArchiveDigest = hex.EncodeToString(hash.Sum(nil))
 	intent.Replace = replace
 
-	if _, err := validateStorageCopy(ctx, staged[:], owners[:]); err != nil {
+	plan, err := validateStorageCopy(ctx, staged[:], owners[:])
+	if err != nil {
 		return nil, err
+	}
+
+	if manifest != nil {
+		metadata, err := readInstallationMetadata(ctx, staged, owners[0], plan)
+		if err != nil {
+			return nil, err
+		}
+
+		if metadata != manifest.Storage {
+			return nil, ErrCorrupt
+		}
+	}
+
+	if checkAccess != nil {
+		if err := checkAccess(staged[1]); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := renewRestoredStores(ctx, staged); err != nil {
@@ -265,7 +292,10 @@ func prepareRestore(
 				}
 
 				store.Original = &originalStore{
-					Path: filepath.Join(filepath.Dir(store.Path), ".wake-original-"+rand.Text()),
+					Path: filepath.Join(
+						filepath.Dir(store.Path),
+						".wake-original-"+rand.Text()+"-"+filepath.Base(store.Path),
+					),
 					File: fileIdentity(info),
 				}
 			}
@@ -288,7 +318,7 @@ func prepareRestore(
 		return nil, err
 	}
 
-	published, err := publishRestoreIntent(intentPath, intent)
+	published, err = publishRestoreIntent(intentPath, intent)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +504,12 @@ func restoreDigest(ctx context.Context, file *os.File) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func installRestore(ctx context.Context, intentPath string, intent *restoreIntent) error {
+func installRestore(
+	ctx context.Context,
+	intentPath string,
+	intent *restoreIntent,
+	checkAccess func(string) error,
+) error {
 	var installed, preserve [storeCount]bool
 	for i, store := range intent.Stores {
 		_, err := os.Lstat(store.Stage)
@@ -508,6 +543,12 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 
 		if digest != store.Digest {
 			return ErrRestorePending
+		}
+
+		if i == 1 && checkAccess != nil {
+			if err := checkAccess(path); err != nil {
+				return err
+			}
 		}
 
 		if !installed[i] {

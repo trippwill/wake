@@ -33,6 +33,17 @@ type FileStore struct{ dir string }
 
 func NewFileStore(dir string) FileStore { return FileStore{dir: dir} }
 
+// BackupEvidence returns private local authority state for a stopped-instance
+// backup. The caller must clear the bytes, and restore never activates them.
+func (s FileStore) BackupEvidence() ([]byte, error) {
+	data, err := readPrivateFile(filepath.Join(s.dir, FileName), maxAuthBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+
+	return data, err
+}
+
 type authRecord struct {
 	Version    int           `json:"version"`
 	Unlock     string        `json:"unlock_verifier,omitempty"`

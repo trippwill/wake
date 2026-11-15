@@ -158,6 +158,20 @@ func Prepare(cfg Config) error {
 	return nil
 }
 
+func PrepareInstallationRestore(cfg Config) error {
+	if err := Prepare(cfg); err != nil {
+		return err
+	}
+
+	for _, path := range []string{cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
+		if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ResolveConfigDir resolves the user-scoped path without creating it.
 func ResolveConfigDir() (string, error) {
 	root, err := xdgRoot("XDG_CONFIG_HOME", ".config")

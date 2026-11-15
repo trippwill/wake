@@ -51,9 +51,24 @@ func overlapsStore(path, store string) bool {
 	return strings.HasPrefix(path, store+"-mj")
 }
 
-// Backup saves a verified, stopped warehouse and access store in the same
-// archive format as the automatic pre-upgrade backup.
+// Backup saves a verified, stopped installation without separate file evidence.
 func Backup(ctx context.Context, profile Profile, path string) error {
+	return BackupInstallation(ctx, profile, path, InstallationEvidence{})
+}
+
+// InstallationEvidence is captured under stopped-instance ownership. The
+// configuration and local auth entries are never activated by restore.
+type InstallationEvidence struct {
+	Configuration []byte
+	LocalAuth     []byte
+}
+
+func BackupInstallation(
+	ctx context.Context,
+	profile Profile,
+	path string,
+	evidence InstallationEvidence,
+) error {
 	if err := rejectPendingRestore(profile.WarehousePath); err != nil {
 		return err
 	}
@@ -77,14 +92,18 @@ func Backup(ctx context.Context, profile Profile, path string) error {
 		return err
 	}
 
-	paths := profile.paths()
-	if _, err := validateStorageCopy(ctx, paths[:], owners[:]); err != nil {
+	if err := rejectPendingRestore(profile.WarehousePath); err != nil {
 		return err
 	}
 
-	_, err := writeBackupPair(ctx, path, owners, false)
+	paths := profile.paths()
 
-	return err
+	plan, err := validateStorageCopy(ctx, paths[:], owners[:])
+	if err != nil {
+		return err
+	}
+
+	return writeInstallationBackup(ctx, path, paths, owners, plan, evidence)
 }
 
 func checkNoUpgrade(warehouse string) error {
@@ -196,20 +215,11 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 		return plan, ErrAssociation
 	}
 
-	db := sql.OpenDB(
-		&connector{paths: [storeCount]string{paths[0]}, owners: [storeCount]*os.File{owners[0]}, probe: true},
-	)
-	defer func() { _ = db.Close() }()
-
-	db.SetMaxOpenConns(1)
-
-	for i, path := range paths[1:] {
-		schema := storeSchemas[i+1]
-		uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&immutable=1"}).String()
-		if _, err := db.ExecContext(ctx, profileStatement("Attach", schema), uri); err != nil {
-			return plan, err
-		}
+	db, err := openInstallationCopy(ctx, storePaths, owners[0])
+	if err != nil {
+		return plan, err
 	}
+	defer func() { _ = db.Close() }()
 
 	var invalid int
 	if err := db.QueryRowContext(ctx, profileStatement("AssociationCheck", "")).Scan(&invalid); err != nil {
@@ -230,6 +240,24 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	}
 
 	return plan, nil
+}
+
+func openInstallationCopy(ctx context.Context, paths [storeCount]string, owner *os.File) (*sql.DB, error) {
+	db := sql.OpenDB(
+		&connector{paths: [storeCount]string{paths[0]}, owners: [storeCount]*os.File{owner}, probe: true},
+	)
+	db.SetMaxOpenConns(1)
+
+	for i, path := range paths[1:] {
+		schema := storeSchemas[i+1]
+		uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&immutable=1"}).String()
+		if _, err := db.ExecContext(ctx, profileStatement("Attach", schema), uri); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+
+	return db, nil
 }
 
 type recoverySchemaObject struct{ kind, name, definition string }

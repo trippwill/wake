@@ -34,32 +34,45 @@ func performSnapshotWarehouse(ctx context.Context, c *cli.Command) error {
 	)
 }
 
-func performBackup(_ context.Context, c *cli.Command) error {
+func performBackup(ctx context.Context, c *cli.Command) error {
 	return runStorageRecovery(
 		c,
 		"backup",
-		"checking operational recovery availability",
-		func(config.Resolution, string) (storageResult, error) {
-			return storageResult{}, daemon.ErrOperationalRecoveryUnavailable
+		"verifying and copying the stopped installation",
+		func(resolved config.Resolution, artifact string) (storageResult, error) {
+			archive, err := daemon.BackupStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
+			return storageResult{Event: "backup", Archive: archive, WithCredentials: true}, err
 		},
 	)
 }
 
 func performRestore(ctx context.Context, c *cli.Command) error {
 	withCredentials := c.Bool("with-credentials")
+	replace := c.Bool("replace")
+	if replace && !withCredentials {
+		return usageError("--replace requires --with-credentials")
+	}
 
 	return runStorageRecovery(
 		c,
 		"restore",
-		"checking vacant destinations and validating the backup",
+		"checking destinations and validating the backup",
 		func(resolved config.Resolution, artifact string) (storageResult, error) {
-			paths, err := daemon.RestoreStorage(
-				ctx,
-				resolved.Config,
-				resolved.ConfigPath,
-				artifact,
-				withCredentials,
+			var (
+				paths []string
+				err   error
 			)
+			if replace {
+				paths, err = daemon.ReplaceStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
+			} else {
+				paths, err = daemon.RestoreStorage(
+					ctx,
+					resolved.Config,
+					resolved.ConfigPath,
+					artifact,
+					withCredentials,
+				)
+			}
 
 			return storageResult{
 				Event:           "restore",
@@ -123,7 +136,15 @@ func writeStorageResult(w io.Writer, asJSON bool, result storageResult) error {
 	case "snapshot":
 		_, err := fmt.Fprintf(w, "Saved a warehouse snapshot to %s.\n", result.Archive)
 		return err
+	case "backup":
+		_, err := fmt.Fprintf(
+			w,
+			"Saved an installation backup to %s. Keep the credential key separately.\n",
+			result.Archive,
+		)
+
+		return err
 	default:
-		return daemon.ErrOperationalRecoveryUnavailable
+		return failure("unknown storage recovery result %q", result.Event)
 	}
 }

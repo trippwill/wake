@@ -151,18 +151,26 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			),
 			&cli.Command{
 				Name:      "backup",
-				Usage:     "Check operational backup availability",
+				Usage:     "Capture a verified installation backup with Wake stopped",
 				ArgsUsage: "<file>",
 				Flags:     common(),
 				Action:    performBackup,
 			},
 			&cli.Command{
 				Name:      "restore",
-				Usage:     "Restore a warehouse snapshot into a vacant storage path with Wake stopped",
+				Usage:     "Restore a warehouse snapshot or installation backup with Wake stopped",
 				ArgsUsage: "<file>",
-				Flags: append(common(), &cli.BoolFlag{
-					Name: "with-credentials", Usage: "Restore encrypted access alongside the warehouse",
-				}),
+				Flags: append(
+					common(),
+					&cli.BoolFlag{
+						Name:  "with-credentials",
+						Usage: "Restore an installation backup with its matching credential key",
+					},
+					&cli.BoolFlag{
+						Name:  "replace",
+						Usage: "Replace installed history with the backup and preserve the original databases",
+					},
+				),
 				Action: performRestore,
 			},
 			&cli.Command{

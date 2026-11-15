@@ -239,9 +239,16 @@ positions baselines. A new installation supplies its own local authority.
 Existing sessions, client grants, and optional databases belong to the installation
 and remain outside the archive.
 
-Operational backup and restore with credentials are unavailable in this build.
-Keep original stores and credential keys for access through a compatible build.
-See [architecture](../engineering/architecture.md#persistence-and-work-boundaries)
+`wake storage backup <file>` captures a stopped installation with a verified
+financial, synchronization, and encrypted access set. Keep the credential key
+separately and protect the archive, which also contains configuration and local
+authentication evidence. `wake storage restore --with-credentials <file>`
+requires the matching key when the backup contains encrypted credentials.
+An explicit `--replace` replaces active history and preserves the original stores
+alongside their installed paths. Restore preserves current local authentication.
+A new installation sets up browser access and enrolls clients separately.
+The restored synchronization association starts paused with new identities and
+without saved continuations or grants. See [architecture](../engineering/architecture.md#persistence-and-work-boundaries)
 for storage boundaries.
 
 ### Forward upgrades

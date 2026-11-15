@@ -168,7 +168,8 @@ func stepWarehouseBackup(ctx context.Context, backup *sqlite.Backup) error {
 
 func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 	entry, err := archive.Next()
-	if err == nil && (entry.Name == backupEntries[0] || entry.Name == legacyBackupEntries[0]) {
+	if err == nil && (entry.Name == backupEntries[0] || entry.Name == legacyBackupEntries[0] ||
+		entry.Name == installationEntries[0]) {
 		return fmt.Errorf("%w; add --with-credentials to restore the backup", ErrBackupScope)
 	}
 

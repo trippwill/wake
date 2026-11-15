@@ -426,11 +426,11 @@ serialize through the instance directory lock. The daemon tracks active browser
 sessions in memory. Signing out revokes that session and closes its event
 streams. Restarting the daemon requires a fresh browser sign-in.
 
-Restoring a financial database does not change client authority. Restoring an old
-auth file can resurrect revoked grants. Before serving a restored auth file, run
-`wake access reset` with Wake stopped. It revokes client grants and rotates
-the session key while retaining the password. Keep source access withheld until
-the operator has reviewed restored synchronization state.
+Supported restores preserve installed local authority. A backup's local auth
+entry is protected evidence. A new installation provisions browser access and
+enrolls clients again. After any manual replacement of local authentication state,
+run `wake access reset` with Wake stopped to revoke client grants and rotate the
+session key while retaining the password.
 
 The [release security review](https://github.com/trippwill/wake/issues/52) tracks
 verification of these boundaries for release.
@@ -462,11 +462,20 @@ publication epoch that consumers receive as `warehouse_id`. Operational files an
 existing local authority are independent of that archive. Output to a vacant path
 and startup can proceed beside missing, damaged, or older optional files.
 
+Installation backup holds stopped-store ownership while checking formats,
+integrity, and matching association witnesses. Its manifest records store
+identities, rebuild state, and each member's length and digest. The operator
+keeps encryption keys separately. Restore verifies the source archive and stages
+the new publication epoch and paused synchronization association. It checks
+ciphertext against the configured key and discards saved continuations and grants.
+A durable intent binds the archive, original file identities, and prepared digests.
+Startup refuses the profile until the same restore finishes. Explicit replacement
+moves original databases to recovery names before installing the staged set.
+
 Unsupported pre-release formats require a compatible build or explicit recreation.
 The offline warehouse and credential resets preview the selected file and its
 sidecars and require confirmation before deletion. They check ownership without
-opening SQLite or reading encryption keys. Operational backup and restore remain
-unavailable until synchronization recovery is ready.
+opening SQLite or reading encryption keys.
 
 Operational diagnostics use structured, component-scoped events and configured log
 levels across acquisition, normalization, financial processing, reference work,

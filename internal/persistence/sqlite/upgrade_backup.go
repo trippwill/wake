@@ -254,6 +254,12 @@ func consumeBackupPair(archive *tar.Reader, consume func(int, io.Reader) error) 
 		return ErrBackupScope
 	}
 
+	return consumeBackupStores(archive, entry, consume)
+}
+
+func consumeBackupStores(archive *tar.Reader, entry *tar.Header, consume func(int, io.Reader) error) error {
+	var err error
+
 	legacy := entry.Name == legacyBackupEntries[0]
 	names := backupEntries
 	if legacy {

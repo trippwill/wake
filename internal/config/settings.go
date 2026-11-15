@@ -409,6 +409,31 @@ func readConfigSnapshot(path string) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
+// BackupEvidence reads the selected non-secret TOML for a stopped-instance
+// backup. Paths and keys inside the file are not followed.
+func BackupEvidence(cfg Config, path string) ([]byte, error) {
+	if err := requireAbsolute("config path", path); err != nil {
+		return nil, err
+	}
+
+	data, err := readConfigSnapshot(path)
+	if err != nil {
+		return nil, err
+	}
+
+	resolved, err := resolveSnapshot(path, "backup", data, true)
+	if err != nil {
+		return nil, err
+	}
+
+	current := resolved.Config
+	if current.Storage != cfg.Storage || current.Paths != cfg.Paths || current.Credentials != cfg.Credentials {
+		return nil, fmt.Errorf("%w: instance paths changed before backup; run the command again", ErrInvalid)
+	}
+
+	return data, nil
+}
+
 func checkDatabasePath(path string) error {
 	if err := requireAbsolute("database file", path); err != nil {
 		return err

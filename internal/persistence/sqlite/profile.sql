@@ -81,6 +81,8 @@ WHERE s.lineage=a.lineage AND s.lineage=l.id AND s.epoch=a.epoch AND s.sync_id=a
 AND s.access_id=a.access_id AND s.access_id=k.id AND s.access_id=p.access_id
 AND s.generation=a.generation AND s.revision=a.revision AND s.token=a.token
 AND s.token<>'' AND s.revision<>'';
+-- name: BackupAssociation
+SELECT lineage,generation,token FROM sync.sync_association WHERE singleton=1;
 -- name: BindSync
 INSERT OR REPLACE INTO sync.sync_association(singleton,lineage,epoch,sync_id,access_id,generation,revision,token)
 VALUES(1,?,?,?,?,?,?,?);

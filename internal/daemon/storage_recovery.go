@@ -5,15 +5,15 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
-
-const ErrOperationalRecoveryUnavailable persistence.Error = "operational storage recovery is unavailable; use a warehouse snapshot or a build that supports the original stores"
 
 func SnapshotWarehouse(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
 	profile, archive, err := recoveryPaths(cfg, configPath, artifact, true)
@@ -30,11 +30,22 @@ func RestoreStorage(
 	configPath, artifact string,
 	withCredentials bool,
 ) ([]string, error) {
+	return restoreStorage(ctx, cfg, configPath, artifact, withCredentials, false)
+}
+
+func ReplaceStorage(ctx context.Context, cfg config.Config, configPath, artifact string) ([]string, error) {
+	return restoreStorage(ctx, cfg, configPath, artifact, true, true)
+}
+
+func restoreStorage(
+	ctx context.Context, cfg config.Config, configPath, artifact string, withCredentials, replace bool,
+) ([]string, error) {
+	prepare := config.Prepare
 	if withCredentials {
-		return nil, ErrOperationalRecoveryUnavailable
+		prepare = config.PrepareInstallationRestore
 	}
 
-	if err := config.Prepare(cfg); err != nil {
+	if err := prepare(cfg); err != nil {
 		return nil, err
 	}
 
@@ -49,7 +60,46 @@ func RestoreStorage(
 	}
 	defer owner.close()
 
+	if withCredentials {
+		envelope, err := openCredentialKey(cfg.Credentials.KeyPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		defer envelope.Clear()
+
+		return persistence.RestoreInstallation(ctx, profile, archive, replace, envelope)
+	}
+
 	return persistence.Restore(ctx, profile, archive, false)
+}
+
+func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
+	profile, archive, err := recoveryPaths(cfg, configPath, artifact, true)
+	if err != nil {
+		return "", err
+	}
+
+	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
+	if err != nil {
+		return "", err
+	}
+	defer owner.close()
+
+	configuration, err := config.BackupEvidence(cfg, configPath)
+	if err != nil {
+		return "", err
+	}
+
+	auth, err := clientaccess.NewFileStore(cfg.Paths.ConfigDir).BackupEvidence()
+	if err != nil {
+		return "", err
+	}
+	defer clear(auth)
+
+	return archive, persistence.BackupInstallation(ctx, profile, archive, persistence.InstallationEvidence{
+		Configuration: configuration,
+		LocalAuth:     auth,
+	})
 }
 
 func recoveryPaths(

@@ -11,29 +11,162 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/credential"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
-func TestOperationalStorageRecoveryUnavailable(t *testing.T) {
+func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T) {
+	ctx := t.Context()
 	cfg, configPath, _ := setupDaemonFixture(t)
-	archive := filepath.Join(cfg.Paths.ConfigDir, "offline.tar")
-
-	for _, args := range [][]string{
-		{"storage", "backup", "--config", configPath, archive},
-		{"storage", "restore", "--with-credentials", "--config", configPath, archive},
-	} {
-		var stdout, stderr bytes.Buffer
-		if status := Run(args, &stdout, &stderr); status != exitFailure ||
-			!strings.Contains(stderr.String(), "operational storage recovery is unavailable") {
-			t.Fatal(status, stdout.String(), stderr.String())
-		}
+	if err := config.Prepare(cfg); err != nil {
+		t.Fatal(err)
 	}
 
-	for _, path := range []string{archive, cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatal("operational maintenance wrote a file", path, err)
+	profile := persistence.Profile{
+		WarehousePath: cfg.Storage.WarehousePath, ConnectionsPath: cfg.Storage.ConnectionsPath,
+		SyncPath: cfg.Storage.SyncPath,
+	}
+
+	store, err := persistence.Open(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seedRecoveryCredential(t, cfg.Credentials.KeyPath, store)
+
+	auth := clientaccess.New(clientaccess.NewFileStore(cfg.Paths.ConfigDir))
+
+	client, token, err := auth.Create(ctx, "synthetic backup client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer token.Clear()
+
+	run := func(want int, command ...string) string {
+		t.Helper()
+
+		var stdout, stderr bytes.Buffer
+
+		args := append([]string{"--json", "storage"}, command...)
+		args = append(args, "--config", configPath)
+
+		if status := Run(args, &stdout, &stderr); status != want {
+			t.Fatal(status, stdout.String(), stderr.String())
 		}
+
+		if want == exitOK {
+			return stdout.String()
+		}
+
+		return stderr.String()
+	}
+
+	archive := filepath.Join(cfg.Paths.ConfigDir, "offline.tar")
+	run(exitFailure, "backup", archive)
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var result storageResult
+	if err := json.Unmarshal([]byte(run(exitOK, "backup", archive)), &result); err != nil ||
+		result.Event != "backup" || result.Archive != archive || !result.WithCredentials {
+		t.Fatal(result, err)
+	}
+
+	if err := auth.Revoke(ctx, client.ID()); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := run(exitFailure, "restore", "--with-credentials", archive); !strings.Contains(out, "occupied") {
+		t.Fatal(out)
+	}
+
+	key := cfg.Credentials.KeyPath
+	if err := os.Rename(key, key+".original"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := credential.CreateMasterKey(key); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := run(
+		exitFailure,
+		"restore",
+		"--with-credentials",
+		"--replace",
+		archive,
+	); !strings.Contains(
+		out,
+		"matching credential encryption key",
+	) {
+		t.Fatal(out)
+	}
+
+	if _, err := os.Stat(cfg.Storage.WarehousePath + persistence.RestoreIntentSuffix); !os.IsNotExist(err) {
+		t.Fatal("wrong credential key published a restore intent", err)
+	}
+
+	if err := os.Rename(key+".original", key); err != nil {
+		t.Fatal(err)
+	}
+
+	run(exitUsage, "restore", "--replace", archive)
+	run(exitOK, "restore", "--with-credentials", "--replace", archive)
+
+	clients, err := auth.Clients(ctx)
+	if err != nil || len(clients) != 0 {
+		t.Fatal("restore resurrected a revoked client", clients, err)
+	}
+
+	reopened, err := persistence.Open(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.Close() }()
+
+	if _, err := reopened.UpstreamRevision(ctx); err == nil {
+		t.Fatal("restore carried forward upstream authority")
+	}
+}
+
+func seedRecoveryCredential(t *testing.T, path string, store *persistence.Store) {
+	t.Helper()
+
+	if err := credential.CreateMasterKey(path); err != nil {
+		t.Fatal(err)
+	}
+
+	key, err := credential.LoadMasterKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Clear()
+
+	envelope, err := credential.NewEnvelope(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer envelope.Clear()
+
+	secret := credential.NewSecret([]byte("synthetic backup fixture"))
+	defer secret.Clear()
+
+	encrypted, err := envelope.Encrypt(secret, credential.ReferenceKeyAAD())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := encrypted.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetReferenceKey(t.Context(), body); err != nil {
+		t.Fatal(err)
 	}
 }
 

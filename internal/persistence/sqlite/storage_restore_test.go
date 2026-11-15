@@ -36,7 +36,7 @@ func TestStorageStartupLeavesDestinationsVacantWhenRestorePublishesIntent(t *tes
 	intentPath := target.WarehousePath + RestoreIntentSuffix
 	writer := restoreLogWriter(func(data []byte) (int, error) {
 		if strings.Contains(string(data), "event=storage_vacant store=connections") {
-			if _, err := prepareRestore(ctx, file, target.paths(), intentPath, false); err != nil {
+			if _, err := prepareRestore(ctx, file, target.paths(), intentPath, false, nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -157,7 +157,7 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	intent, err := prepareRestore(ctx, file, target.paths(), intentPath, false)
+	intent, err := prepareRestore(ctx, file, target.paths(), intentPath, false, nil)
 	_ = file.Close()
 
 	if err != nil {
@@ -267,7 +267,7 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 	}
 
 	intentPath := paths[0] + RestoreIntentSuffix
-	intent, err := prepareRestore(ctx, archive, paths, intentPath, true)
+	intent, err := prepareRestore(ctx, archive, paths, intentPath, true, nil)
 	_ = archive.Close()
 
 	if err != nil {
@@ -301,7 +301,7 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ReplaceInstallation(ctx, target, archivePath); !errors.Is(err, ErrRestorePending) {
+	if _, err := restore(ctx, target, archivePath, true, true, nil); !errors.Is(err, ErrRestorePending) {
 		t.Fatal("retry accepted modified bytes at the same inode", err)
 	}
 
@@ -313,7 +313,7 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := ReplaceInstallation(ctx, target, archivePath); err != nil {
+	if _, err := restore(ctx, target, archivePath, true, true, nil); err != nil {
 		t.Fatal(err)
 	}
 
