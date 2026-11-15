@@ -402,7 +402,7 @@ func TestEveryCompanionOwnershipAndLinks(t *testing.T) {
 				path := p.paths()[i]
 				switch mode {
 				case "lock":
-					owner, e := claimFile(path)
+					owner, e := lockStoreFile(path, false)
 					if e != nil {
 						t.Fatal(e)
 					}

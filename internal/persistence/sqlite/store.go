@@ -234,6 +234,8 @@ func openStore(
 				}
 			}
 
+			logger.DebugContext(ctx, "store path is vacant", "event", "storage_vacant", "store", storeKind)
+
 			continue
 		}
 
@@ -412,6 +414,19 @@ func openStore(
 	}
 
 	stage, storeKind = "ownership", "profile"
+
+	if s.owners[0] == nil || s.owners[1] == nil {
+		guard, err := lockStoreDirectory(paths[0])
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = guard.Close() }()
+	}
+
+	if err := rejectPendingRestore(paths[0]); err != nil {
+		return nil, err
+	}
+
 	// Do not create missing files until every existing store has passed preflight.
 	for i, path := range paths {
 		if s.owners[i] == nil {
@@ -424,10 +439,6 @@ func openStore(
 				return nil, err
 			}
 		}
-	}
-
-	if err := rejectPendingRestore(paths[0]); err != nil {
-		return nil, err
 	}
 
 	s.db = sql.OpenDB(&connector{paths: paths, owners: s.owners})

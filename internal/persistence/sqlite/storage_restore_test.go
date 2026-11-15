@@ -5,12 +5,61 @@ package persistence
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
+
+type restoreLogWriter func([]byte) (int, error)
+
+func (w restoreLogWriter) Write(data []byte) (int, error) { return w(data) }
+
+func TestStorageStartupLeavesDestinationsVacantWhenRestorePublishesIntent(t *testing.T) {
+	ctx := t.Context()
+	source := seedUpgradeStores(t)
+	archive := filepath.Join(filepath.Dir(source.WarehousePath), "manual.backup")
+	if err := Backup(ctx, source, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := openBackup(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+
+	target := vacantRecoveryProfile(t)
+	intentPath := target.WarehousePath + RestoreIntentSuffix
+	writer := restoreLogWriter(func(data []byte) (int, error) {
+		if strings.Contains(string(data), "event=storage_vacant store=connections") {
+			if _, err := prepareRestore(ctx, file, target.paths(), intentPath); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		return len(data), nil
+	})
+
+	logger := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	if store, err := Open(ctx, target, logger); !errors.Is(err, ErrRestorePending) {
+		if store != nil {
+			_ = store.Close()
+		}
+
+		t.Fatalf("startup must refuse a pending restore: %v", err)
+	}
+
+	if err := checkVacantStores([]string{target.WarehousePath, target.ConnectionsPath}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, target, archive, true); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestStorageBackupRestoresEvidenceAndAccess(t *testing.T) {
 	ctx := t.Context()
@@ -121,6 +170,32 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 		}
 
 		t.Fatalf("startup must refuse a partial restore: %v", err)
+	}
+
+	journal := target.WarehousePath + "-journal"
+	if err := os.WriteFile(journal, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, target, plan.BackupPath, true); !errors.Is(err, ErrRestoreOccupied) ||
+		!strings.Contains(err.Error(), journal) {
+		t.Fatalf("retry must refuse a sidecar at the installed database: %v", err)
+	}
+
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(intentPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(target.ConnectionsPath); !os.IsNotExist(err) {
+		t.Fatal("retry installed access despite the occupied sidecar", err)
+	}
+
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
 	}
 
 	if _, err := Restore(ctx, target, plan.BackupPath, true); err != nil {

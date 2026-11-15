@@ -101,17 +101,33 @@ func Restore(
 func checkVacantStores(paths []string) error {
 	var occupied error
 	for _, path := range paths {
-		sidecars, err := storeSidecars(path)
-		if err != nil {
+		err := checkVacantStore(path, false)
+		if err != nil && !errors.Is(err, ErrRestoreOccupied) {
 			return err
 		}
 
-		for _, candidate := range append([]string{path}, sidecars...) {
-			if _, err := os.Lstat(candidate); err == nil {
-				occupied = errors.Join(occupied, fmt.Errorf("%w: %s", ErrRestoreOccupied, candidate))
-			} else if !os.IsNotExist(err) {
-				return err
-			}
+		occupied = errors.Join(occupied, err)
+	}
+
+	return occupied
+}
+
+func checkVacantStore(path string, installed bool) error {
+	paths, err := storeSidecars(path)
+	if err != nil {
+		return err
+	}
+
+	if !installed {
+		paths = append([]string{path}, paths...)
+	}
+
+	var occupied error
+	for _, candidate := range paths {
+		if _, err := os.Lstat(candidate); err == nil {
+			occupied = errors.Join(occupied, fmt.Errorf("%w: %s", ErrRestoreOccupied, candidate))
+		} else if !os.IsNotExist(err) {
+			return err
 		}
 	}
 
@@ -200,6 +216,16 @@ func prepareRestore(
 		}
 	}
 
+	guard, err := lockStoreDirectory(paths[0])
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = guard.Close() }()
+
+	if err := rejectPendingRestore(paths[0]); err != nil {
+		return nil, err
+	}
+
 	if err := checkVacantStores(paths[:]); err != nil {
 		return nil, err
 	}
@@ -207,8 +233,6 @@ func prepareRestore(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	var err error
 
 	published, err = publishRestoreIntent(intentPath, intent)
 	if err != nil {
@@ -323,16 +347,11 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 	var installed [2]bool
 	for i, store := range intent.Stores {
 		_, err := os.Lstat(store.Stage)
-		switch {
-		case err == nil:
-			if err := checkVacantStores([]string{store.Path}); err != nil {
-				return err
-			}
-		case os.IsNotExist(err):
-			installed[i] = true
-		default:
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
+
+		installed[i] = os.IsNotExist(err)
 
 		path := store.Stage
 		if installed[i] {
@@ -351,8 +370,14 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 			return ErrRestorePending
 		}
 
-		if err := checkUpgradeJournals(path); err != nil {
+		if err := checkVacantStore(store.Path, installed[i]); err != nil {
 			return err
+		}
+
+		if !installed[i] {
+			if err := checkUpgradeJournals(path); err != nil {
+				return err
+			}
 		}
 	}
 

@@ -21,6 +21,25 @@ func fileIdentity(info os.FileInfo) upgradeFile {
 	return upgradeFile{Device: stat.Dev, Inode: stat.Ino}
 }
 
+// Serialize creation of store paths with restore publication, even across
+// daemons with different runtime directories.
+func lockStoreDirectory(path string) (*os.File, error) {
+	dir := filepath.Dir(path)
+	//nolint:gosec // The directory is opened without following its final component and checked below.
+	file, err := os.OpenFile(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, ErrUnsafeStore
+	}
+
+	info, err := file.Stat()
+	if err != nil || !privateOwned(info) || unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) != nil {
+		_ = file.Close()
+		return nil, ErrUnsafeStore
+	}
+
+	return file, nil
+}
+
 func claimFile(path string) (*os.File, error) {
 	return lockStoreFile(path, true)
 }
@@ -41,7 +60,7 @@ func openStoreFile(path string, create, exclusive bool) (*os.File, error) {
 
 	flags := os.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
 	if create {
-		flags = os.O_CREATE | os.O_RDWR | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
+		flags = os.O_CREATE | os.O_EXCL | os.O_RDWR | syscall.O_NOFOLLOW | syscall.O_NONBLOCK | syscall.O_CLOEXEC
 	}
 	//nolint:gosec // Absolute path in a private owned directory; reject final-component symlinks and special files.
 	file, err := os.OpenFile(

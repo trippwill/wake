@@ -254,6 +254,16 @@ func restoreWarehouseSnapshot(ctx context.Context, paths [2]string, archivePath 
 		return err
 	}
 
+	guard, err := lockStoreDirectory(warehouse)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = guard.Close() }()
+
+	if err := rejectPendingRestore(warehouse); err != nil {
+		return err
+	}
+
 	if err := checkVacantStores(paths[:1]); err != nil {
 		return err
 	}
