@@ -57,8 +57,10 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 		templ.Handler(ChangePassword(csrf, "")).ServeHTTP(w, r)
 	})
 	auth.gate(mux, "POST "+passwordPath, auth.changePassword)
-	auth.gate(mux, "POST /logout", func(w http.ResponseWriter, r *http.Request, _ string) {
-		//nolint:gosec // Expire the HTTP loopback session cookie.
+	auth.gate(mux, "POST /logout", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		auth.revokeSession(csrf)
+
+		//nolint:gosec // Remove the existing cookie over Wake's HTTP loopback listener.
 		http.SetCookie(w, &http.Cookie{
 			Name: sessionCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		})

@@ -800,8 +800,9 @@ func registerWorkflowRoutes(
 		})
 	}
 
-	gate("GET /events", func(w http.ResponseWriter, r *http.Request, _ string) {
-		if http.NewResponseController(w).SetWriteDeadline(time.Time{}) != nil {
+	gate("GET /events", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		sessionDone := auth.sessionDone(csrf)
+		if sessionDone == nil {
 			return
 		}
 
@@ -814,39 +815,37 @@ func registerWorkflowRoutes(
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
 
-		if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
-			return
-		}
+		controller := http.NewResponseController(w)
 
-		if http.NewResponseController(w).Flush() != nil {
+		send := func(frame string) bool {
+			if controller.SetWriteDeadline(time.Now().Add(5*time.Second)) != nil {
+				return false
+			}
+
+			_, err := fmt.Fprint(w, frame)
+
+			return err == nil && controller.Flush() == nil && controller.SetWriteDeadline(time.Time{}) == nil
+		}
+		if !send(": connected\n\n") {
 			return
 		}
 
 		for {
+			var frame string
 			select {
 			case <-stopping:
 				return
 			case <-r.Context().Done():
 				return
+			case <-sessionDone:
+				return
 			case <-ch:
-				if _, ok := auth.session(r); !ok {
-					return
-				}
-
-				if _, err := fmt.Fprint(w, "event: refresh\ndata: {}\n\n"); err != nil {
-					return
-				}
+				frame = "event: refresh\ndata: {}\n\n"
 			case <-ticker.C:
-				if _, ok := auth.session(r); !ok {
-					return
-				}
-
-				if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
-					return
-				}
+				frame = ": keepalive\n\n"
 			}
 
-			if http.NewResponseController(w).Flush() != nil {
+			if _, ok := auth.session(r); !ok || !send(frame) {
 				return
 			}
 		}

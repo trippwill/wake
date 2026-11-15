@@ -209,9 +209,9 @@ func testAdminHandler(t *testing.T, dir string) http.Handler {
 	return handler
 }
 
-func testLogin(t *testing.T, dir, unlock string, wantStatus int) *http.Cookie {
+func testLogin(t *testing.T, handler http.Handler, unlock string, wantStatus int) *http.Cookie {
 	t.Helper()
-	handler := testAdminHandler(t, dir)
+
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/login",
 		strings.NewReader(url.Values{"password": {unlock}}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")

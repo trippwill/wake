@@ -342,14 +342,18 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		)
 	}
 
-	check(
-		testbrowser.SetViewport(1440, 1000),
-		newDocument(chromedp.Navigate(origin+"/login")),
-		chromedp.WaitVisible(chromedp.CSS("#password")),
-		chromedp.SendKeys(chromedp.CSS("#password"), "synthetic-browser-unlock"),
-	)
-	navigate(chromedp.Click(chromedp.CSS(`form[action="/login"] button[type="submit"]`)))
-	check(chromedp.WaitVisible(chromedp.CSS("#main-navigation")))
+	signIn := func() {
+		check(
+			newDocument(chromedp.Navigate(origin+"/login")),
+			chromedp.WaitVisible(chromedp.CSS("#password")),
+			chromedp.SendKeys(chromedp.CSS("#password"), "synthetic-browser-unlock"),
+		)
+		navigate(chromedp.Click(chromedp.CSS(`form[action="/login"] button[type="submit"]`)))
+		check(chromedp.WaitVisible(chromedp.CSS("#main-navigation")))
+	}
+
+	check(testbrowser.SetViewport(1440, 1000))
+	signIn()
 	navigate(chromedp.Click(chromedp.CSS(`a[href="/connections"]`)))
 	navigate(chromedp.Click(chromedp.CSS(`a[href="/connections/new"]`)))
 	check(
@@ -1068,6 +1072,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(86400)
 	startDaemon()
+	signIn()
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),
 		chromedp.Poll[chromedp.Void](`document.querySelectorAll(".tabulator-row").length===5`),
@@ -1185,6 +1190,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	clock.Add(86400)
 	startDaemon()
+	signIn()
 	check(
 		newDocument(chromedp.Navigate(origin+"/connections/recovery")),
 		chromedp.WaitVisible(chromedp.CSS("#warehouse-reset-notice")),

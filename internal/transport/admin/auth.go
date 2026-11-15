@@ -63,8 +63,16 @@ type authenticator struct {
 	passwordSlots chan struct{}
 	attemptMu     sync.Mutex
 	nextAttempt   time.Time
+	sessionMu     sync.Mutex
+	sessions      map[string]browserSession
+	nextSweep     int64
 	now           func() time.Time
 	lifetime      time.Duration
+}
+
+type browserSession struct {
+	expires int64
+	done    chan struct{}
 }
 
 // SetPassword sets the operator password and invalidates existing browser sessions.
@@ -115,6 +123,7 @@ func Open(configDir, origin string) (*authenticator, bool, error) {
 	auth := &authenticator{
 		origin: parsed, state: clientaccess.NewFileStore(configDir),
 		passwordSlots: make(chan struct{}, maxPasswordAttempts),
+		sessions:      make(map[string]browserSession),
 		now:           time.Now, lifetime: 8 * time.Hour,
 	}
 
@@ -198,8 +207,12 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 	_, _ = rand.Read(csrf)
 	defer clear(csrf)
 
-	expires := a.now().Add(a.lifetime).Unix()
-	payload := fmt.Sprintf("%d.%s", expires, base64.RawURLEncoding.EncodeToString(csrf))
+	now := a.now()
+	expires := now.Add(a.lifetime).Unix()
+	id := base64.RawURLEncoding.EncodeToString(csrf)
+	a.registerSession(id, expires, now.Unix())
+
+	payload := fmt.Sprintf("%d.%s", expires, id)
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(payload))
 	value := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -215,7 +228,42 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 			MaxAge:   int(a.lifetime.Seconds()),
 		})
 
-	return base64.RawURLEncoding.EncodeToString(csrf)
+	return id
+}
+
+func (a *authenticator) registerSession(id string, expires, now int64) {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+
+	if now >= a.nextSweep {
+		for id, session := range a.sessions {
+			if now >= session.expires {
+				delete(a.sessions, id)
+				close(session.done)
+			}
+		}
+
+		a.nextSweep = now + 60
+	}
+
+	a.sessions[id] = browserSession{expires: expires, done: make(chan struct{})}
+}
+
+func (a *authenticator) sessionDone(id string) <-chan struct{} {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+
+	return a.sessions[id].done
+}
+
+func (a *authenticator) revokeSession(id string) {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+
+	if session, ok := a.sessions[id]; ok {
+		delete(a.sessions, id)
+		close(session.done)
+	}
 }
 
 func (a *authenticator) session(r *http.Request) (string, bool) {
@@ -255,7 +303,7 @@ func (a *authenticator) sessionWithKey(r *http.Request, key []byte) (string, boo
 	}
 
 	var expires int64
-	if _, err = fmt.Sscanf(parts[0], "%d", &expires); err != nil || a.now().Unix() > expires {
+	if _, err = fmt.Sscanf(parts[0], "%d", &expires); err != nil || a.now().Unix() >= expires {
 		return "", false
 	}
 
@@ -266,6 +314,10 @@ func (a *authenticator) sessionWithKey(r *http.Request, key []byte) (string, boo
 	}
 
 	clear(csrf)
+
+	if a.sessionDone(parts[1]) == nil {
+		return "", false
+	}
 
 	return parts[1], true
 }

@@ -7,13 +7,91 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
+
+func TestRevokeSessionsCommandKeepsPasswordAndAPIGrants(t *testing.T) {
+	cfg, path, _ := setupDaemonFixture(t)
+
+	const password = "synthetic browser password"
+
+	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte(password)); err != nil {
+		t.Fatal(err)
+	}
+
+	clients := clientaccess.New(clientaccess.NewFileStore(cfg.Paths.ConfigDir))
+
+	_, token, err := clients.Create(t.Context(), "Synthetic reader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer token.Clear()
+
+	value, err := token.Copy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(value)
+
+	handler := testAdminHandler(t, cfg.Paths.ConfigDir)
+	cookie := testLogin(t, handler, password, http.StatusSeeOther)
+
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/system/contact", nil)
+	request.AddCookie(cookie)
+
+	before := httptest.NewRecorder()
+	handler.ServeHTTP(before, request)
+
+	if before.Code != http.StatusOK {
+		t.Fatal("original session rejected", before.Code)
+	}
+
+	for _, jsonMode := range []bool{false, true} {
+		args := []string{"access", "revoke", "sessions", "--config", path}
+		if jsonMode {
+			args = append([]string{"--json"}, args...)
+		}
+
+		var stdout, stderr bytes.Buffer
+
+		if code := run(args, &stdout, &stderr); code != exitOK {
+			t.Fatal(code, stderr.String())
+		}
+
+		if jsonMode {
+			var result map[string]bool
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || !result["sessions_revoked"] {
+				t.Fatal("missing session revocation result", stdout.String(), err)
+			}
+		} else if !strings.Contains(stdout.String(), "Revoked all browser sessions") {
+			t.Fatal("missing session revocation result", stdout.String())
+		}
+	}
+
+	after := httptest.NewRecorder()
+	handler.ServeHTTP(after, request)
+
+	if after.Code != http.StatusUnauthorized {
+		t.Fatal("session survived revocation", after.Code)
+	}
+
+	testLogin(t, testAdminHandler(t, cfg.Paths.ConfigDir), password, http.StatusSeeOther)
+
+	_, release, err := clients.Admit(t.Context(), string(value))
+	if err != nil {
+		t.Fatal("financial API grant was revoked", err)
+	}
+
+	release()
+}
 
 func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)

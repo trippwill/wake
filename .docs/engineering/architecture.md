@@ -380,7 +380,9 @@ a CLI prompt that hides input. The password is stored as an Argon2 verifier.
 Changing or resetting a password replaces its verifier and rotates the browser
 session key atomically while preserving financial grants. Sign-in verifies the
 password and signs the session against the same auth snapshot. Live changes
-serialize through the instance directory lock.
+serialize through the instance directory lock. The daemon tracks active browser
+sessions in memory. Signing out revokes that session and closes its event
+streams. Restarting the daemon requires a fresh browser sign-in.
 
 Restoring a financial database does not change client authority. Restoring an old
 auth file can resurrect revoked grants. Before serving a restored auth file, run

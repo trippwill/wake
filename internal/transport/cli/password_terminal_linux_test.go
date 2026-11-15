@@ -84,20 +84,21 @@ func TestSetPasswordThroughTerminal(t *testing.T) {
 
 	set("synthetic first unlock", "synthetic first unlock", exitOK, "Password set")
 
-	cookie := testLogin(t, dir, "synthetic first unlock", http.StatusSeeOther)
+	handler := testAdminHandler(t, dir)
+	cookie := testLogin(t, handler, "synthetic first unlock", http.StatusSeeOther)
 
 	set("short", "short", exitFailure, "at least 12 bytes")
 	set("synthetic first unlock", "synthetic second unlock", exitFailure, "do not match")
-	testLogin(t, dir, "synthetic first unlock", http.StatusSeeOther)
+	testLogin(t, testAdminHandler(t, dir), "synthetic first unlock", http.StatusSeeOther)
 
 	set("synthetic second unlock", "synthetic second unlock", exitOK, "Password set")
-	testLogin(t, dir, "synthetic second unlock", http.StatusSeeOther)
+	testLogin(t, testAdminHandler(t, dir), "synthetic second unlock", http.StatusSeeOther)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/", nil)
 	request.AddCookie(cookie)
 
 	response := httptest.NewRecorder()
-	testAdminHandler(t, dir).ServeHTTP(response, request)
+	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
 		t.Fatal("accepted a session issued before setting the new unlock", response.Code)
@@ -109,7 +110,7 @@ func TestSetPasswordThroughTerminal(t *testing.T) {
 
 	longest := strings.Repeat("&", admin.MaxPasswordBytes)
 	set(longest, longest, exitOK, "Password set")
-	testLogin(t, dir, longest, http.StatusSeeOther)
+	testLogin(t, testAdminHandler(t, dir), longest, http.StatusSeeOther)
 }
 
 func TestSetPasswordRejectsNonterminalInput(t *testing.T) {
