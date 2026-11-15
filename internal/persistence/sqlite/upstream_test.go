@@ -4,6 +4,8 @@
 package persistence
 
 import (
+	"bytes"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -453,5 +455,38 @@ func TestUpstreamAdmissionAndBackupRequireCurrentFinancialEpoch(t *testing.T) {
 		ErrAssociation,
 	) {
 		t.Fatal("backup accepted mismatched epoch", err)
+	}
+}
+
+func TestReplaceSecretChecksStoredProviderBinding(t *testing.T) {
+	ctx := t.Context()
+	s, _ := testStore(t)
+	original := []byte("original synthetic ciphertext")
+	if err := s.Configure(
+		ctx,
+		host.Connection{ID: "bound", Provider: "synthetic"},
+		map[string][]byte{"token": original},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ReplaceSecret(ctx, "unknown", "token", []byte("replacement")); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("replacement accepted an unknown connection", err)
+	}
+
+	if _, err := s.db.ExecContext(
+		ctx,
+		`UPDATE access.identities SET provider='other' WHERE id='bound'`,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ReplaceSecret(ctx, "bound", "token", []byte("replacement")); !errors.Is(err, ErrAssociation) {
+		t.Fatal("replacement accepted a provider mismatch", err)
+	}
+
+	stillStored, err := s.Secret(ctx, "bound", "token")
+	if err != nil || !bytes.Equal(stillStored, original) {
+		t.Fatal("provider mismatch changed encrypted credentials", err)
 	}
 }

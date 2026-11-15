@@ -32,11 +32,7 @@ func OpenFinancial(ctx context.Context, profile Profile, logger *slog.Logger) (r
 
 	defer func() { _ = guard.Close() }()
 
-	if err = rejectPendingRestore(path); err != nil {
-		return nil, err
-	}
-
-	if err = checkNoUpgrade(path); err != nil {
+	if err = checkFinancialMaintenance(path); err != nil {
 		return nil, err
 	}
 
@@ -126,19 +122,32 @@ func (s *Store) createFinancial(ctx context.Context, path string) error {
 		return err
 	}
 
-	if err = checkVacantStore(path, false); err != nil {
+	return activateFinancial(ctx, staged.Name(), path)
+}
+
+// The caller holds the destination directory lock until publication is durable.
+func activateFinancial(ctx context.Context, stage, path string) error {
+	if err := checkVacantStore(path, false); err != nil {
 		return err
 	}
 
-	if err = ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if err = renameNewFile(staged.Name(), path); err != nil {
+	if err := renameNewFile(stage, path); err != nil {
 		return err
 	}
 
 	return syncUpgradeDir(path)
+}
+
+func checkFinancialMaintenance(path string) error {
+	if err := rejectPendingRestore(path); err != nil {
+		return err
+	}
+
+	return checkNoUpgrade(path)
 }
 
 func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
@@ -172,11 +181,7 @@ func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, activityDateIndexesSQL); err != nil {
-		return err
-	}
-
-	if _, err = tx.ExecContext(ctx, activitySearchIndexSQL); err != nil {
+	if _, err = tx.ExecContext(ctx, activityDateIndexesSQL+"\n"+activitySearchIndexSQL); err != nil {
 		return err
 	}
 
@@ -187,11 +192,7 @@ func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
 // optional stores. This pre-release build has no incoming format migrations.
 func PreviewFinancial(ctx context.Context, path, confirm string) (UpgradePlan, error) {
 	var plan UpgradePlan
-	if err := rejectPendingRestore(path); err != nil {
-		return plan, err
-	}
-
-	if err := checkNoUpgrade(path); err != nil {
+	if err := checkFinancialMaintenance(path); err != nil {
 		return plan, err
 	}
 

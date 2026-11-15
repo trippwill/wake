@@ -19,10 +19,6 @@ import (
 
 func (s *Store) ReferenceKey(ctx context.Context) ([]byte, string, error) {
 	r, err := s.queries.ReferenceSetting(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, "", nil
-	}
-
 	return r.Encrypted, r.Failure, err
 }
 

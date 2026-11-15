@@ -299,29 +299,29 @@ func TestThreeStorePartitionAndRollback(t *testing.T) {
 	ctx := t.Context()
 	settings, _ := provider.NewSettings(map[string]string{"name": "Synthetic"})
 
-	if _, err := s.db.Exec(
-		`CREATE TRIGGER access.reject_secret BEFORE INSERT ON credentials BEGIN SELECT RAISE(ABORT,'injected'); END`,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.Configure(
-		ctx,
-		host.Connection{ID: "new", Provider: "synthetic", Settings: settings},
-		map[string][]byte{"token": []byte("encrypted")},
-	); err == nil {
-		t.Fatal("fault ignored")
-	}
-
-	for _, table := range []string{"main.connections", "sync.configurations", "access.credentials"} {
-		var n int
-		if err := s.db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
-			t.Fatal("partial transaction", table, n, err)
+	for _, fixture := range []struct{ table, trigger string }{
+		{"identities", `CREATE TRIGGER access.reject_write BEFORE INSERT ON identities BEGIN SELECT RAISE(ABORT,'injected'); END`},
+		{"credentials", `CREATE TRIGGER access.reject_write BEFORE INSERT ON credentials BEGIN SELECT RAISE(ABORT,'injected'); END`},
+	} {
+		if _, err := s.db.Exec(fixture.trigger); err != nil {
+			t.Fatal(err)
 		}
-	}
 
-	if _, err := s.db.Exec(`DROP TRIGGER access.reject_secret`); err != nil {
-		t.Fatal(err)
+		if err := s.Configure(ctx, host.Connection{ID: "new", Provider: "synthetic", Settings: settings},
+			map[string][]byte{"token": []byte("encrypted")}); err == nil {
+			t.Fatal("fault ignored", fixture.table)
+		}
+
+		for _, table := range []string{"main.connections", "sync.configurations", "access.identities", "access.credentials"} {
+			var n int
+			if err := s.db.QueryRow("SELECT count(*) FROM " + table).Scan(&n); err != nil || n != 0 {
+				t.Fatal("partial transaction", fixture.table, table, n, err)
+			}
+		}
+
+		if _, err := s.db.Exec(`DROP TRIGGER access.reject_write`); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if err := s.Configure(

@@ -247,3 +247,123 @@ func TestFinancialMaintenanceIntentsBlockStartupAndPreview(t *testing.T) {
 
 	check(ErrUpgradeRecovery)
 }
+
+func TestFinancialActivationPreservesOccupiedDestination(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	stage := filepath.Join(dir, "prepared")
+	if err := os.WriteFile(stage, []byte("prepared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(dir, "wake.db")
+
+	guard, err := lockStoreDirectory(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = guard.Close() }()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err = activateFinancial(ctx, stage, target); !errors.Is(err, context.Canceled) {
+		t.Fatal("activation ignored cancellation", err)
+	}
+
+	if _, err = os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("canceled activation published a file", err)
+	}
+
+	if err = os.WriteFile(target, []byte("other store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = activateFinancial(t.Context(), stage, target); !errors.Is(err, ErrRestoreOccupied) {
+		t.Fatal("activation accepted an occupied destination", err)
+	}
+
+	//nolint:gosec // This file belongs to the private synthetic profile.
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != "other store" {
+		t.Fatal("activation replaced the destination", err)
+	}
+}
+
+func TestFinancialOpenRefusesLinkedWarehouse(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := Profile{WarehousePath: filepath.Join(dir, "wake.db")}
+
+	store, err := OpenFinancial(t.Context(), profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(dir, "linked.db")
+	if err = os.Symlink(profile.WarehousePath, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if linked, err := OpenFinancial(
+		t.Context(),
+		Profile{WarehousePath: link},
+		nil,
+	); linked != nil ||
+		!errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("startup opened a linked warehouse", err)
+	}
+}
+
+func TestFinancialOpenRequiresWritableWarehouse(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("file permission admission requires an unprivileged operator")
+	}
+
+	ctx := t.Context()
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := Profile{WarehousePath: filepath.Join(dir, "wake.db")}
+	if opened, err := OpenFinancial(ctx, profile, nil); opened != nil || !errors.Is(err, os.ErrPermission) {
+		t.Fatal("accepted creation in a read-only directory", err)
+	}
+
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := OpenFinancial(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = os.Chmod(profile.WarehousePath, 0o400); err != nil {
+		t.Fatal(err)
+	}
+
+	if opened, err := OpenFinancial(ctx, profile, nil); opened != nil || err == nil {
+		t.Fatal("accepted an existing read-only warehouse", err)
+	}
+}

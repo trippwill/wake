@@ -392,3 +392,30 @@ func TestReferenceDuplicateJobsAndRetainedEvidence(t *testing.T) {
 		t.Fatal("cache expiry erased accepted evidence", err)
 	}
 }
+
+func TestReferenceKeyUpdateRollsBackWhenDiagnosticCannotBeCleared(t *testing.T) {
+	ctx := t.Context()
+	store, _ := testStore(t)
+	original := []byte("original synthetic ciphertext")
+	if err := store.SetReferenceKey(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.ReferenceFailure(ctx, "synthetic failure"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.db.ExecContext(ctx, `CREATE TRIGGER sync.reject_reference_diagnostic
+BEFORE UPDATE ON reference_diagnostics BEGIN SELECT RAISE(ABORT,'injected'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SetReferenceKey(ctx, []byte("replacement")); err == nil {
+		t.Fatal("key change succeeded without clearing its diagnostic")
+	}
+
+	value, failure, err := store.ReferenceKey(ctx)
+	if err != nil || string(value) != string(original) || failure != "synthetic failure" {
+		t.Fatal("diagnostic failure allowed a partial key change", failure, err)
+	}
+}

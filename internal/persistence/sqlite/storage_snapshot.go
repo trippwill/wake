@@ -31,11 +31,7 @@ const (
 // Only the warehouse is opened. SQLite coordinates locks with the daemon.
 func SnapshotWarehouse(ctx context.Context, profile Profile, output string) error {
 	source := profile.WarehousePath
-	if err := rejectPendingRestore(source); err != nil {
-		return err
-	}
-
-	if err := checkNoUpgrade(source); err != nil {
+	if err := checkFinancialMaintenance(source); err != nil {
 		return err
 	}
 
@@ -195,7 +191,7 @@ func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 }
 
 func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string) error {
-	if err := checkVacantStores([]string{warehouse}); err != nil {
+	if err := checkVacantStore(warehouse, false); err != nil {
 		return err
 	}
 
@@ -237,25 +233,9 @@ func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string
 	}
 	defer func() { _ = guard.Close() }()
 
-	if err := rejectPendingRestore(warehouse); err != nil {
+	if err := checkFinancialMaintenance(warehouse); err != nil {
 		return err
 	}
 
-	if err := checkNoUpgrade(warehouse); err != nil {
-		return err
-	}
-
-	if err := checkVacantStores([]string{warehouse}); err != nil {
-		return err
-	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	if err := renameNewFile(file.Name(), warehouse); err != nil {
-		return err
-	}
-
-	return syncUpgradeDir(warehouse)
+	return activateFinancial(ctx, file.Name(), warehouse)
 }

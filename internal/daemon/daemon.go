@@ -181,10 +181,6 @@ func run(
 		logger,
 	)
 	if err != nil {
-		if errors.Is(err, persistence.ErrUpgradeConfirmation) {
-			return ErrUpgradeConfirmation
-		}
-
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()

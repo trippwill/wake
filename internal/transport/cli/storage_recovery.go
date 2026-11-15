@@ -124,12 +124,6 @@ func writeStorageResult(w io.Writer, asJSON bool, result storageResult) error {
 		_, err := fmt.Fprintf(w, "Saved a warehouse snapshot to %s.\n", result.Archive)
 		return err
 	default:
-		_, err := fmt.Fprintf(
-			w,
-			"Backed up the warehouse and encrypted access to %s. Retain the credential key separately.\n",
-			result.Archive,
-		)
-
-		return err
+		return daemon.ErrOperationalRecoveryUnavailable
 	}
 }
