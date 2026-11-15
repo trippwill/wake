@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -129,4 +130,120 @@ func TestFinancialOpenRefusesUnresolvedJournal(t *testing.T) {
 	if err != nil || string(actual) != "synthetic unresolved journal" {
 		t.Fatal("journal was modified", err)
 	}
+}
+
+func TestFinancialPreviewValidatesExistingWarehouse(t *testing.T) {
+	for _, tc := range []struct {
+		name, statement, confirm string
+		want                     error
+	}{
+		{name: "current"},
+		{name: "stale confirmation", confirm: "earlier-plan", want: ErrUpgradePlanChanged},
+		{name: "old format", statement: "UPDATE store_metadata SET version='wake-warehouse/2'", want: ErrUnsupportedSchema},
+		{name: "missing lineage", statement: "DELETE FROM financial_lineage", want: ErrCorrupt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := filepath.Join(t.TempDir(), "private")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			profile := Profile{WarehousePath: filepath.Join(dir, "wake.db")}
+
+			store, err := OpenFinancial(ctx, profile, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer func() { _ = store.Close() }()
+
+			if _, err = PreviewFinancial(ctx, profile.WarehousePath, ""); !errors.Is(err, ErrUnsafeStore) {
+				t.Fatal("preview opened an owned warehouse", err)
+			}
+
+			if tc.statement != "" {
+				if _, err = store.db.ExecContext(ctx, tc.statement); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err = store.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			//nolint:gosec // This file belongs to the private synthetic profile.
+			before, err := os.ReadFile(profile.WarehousePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			plan, err := PreviewFinancial(ctx, profile.WarehousePath, tc.confirm)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("preview error = %v, want %v", err, tc.want)
+			}
+
+			if tc.want == nil && (len(plan.Stores) != 1 || plan.Stores[0].Path != profile.WarehousePath ||
+				plan.Stores[0].Current != schemaVersion || plan.Stores[0].ID == "" || plan.AppliedRule != 1) {
+				t.Fatal("invalid installed format preview", plan)
+			}
+
+			if tc.statement != "" {
+				if _, err = OpenFinancial(ctx, profile, nil); !errors.Is(err, tc.want) {
+					t.Fatalf("startup error = %v, want %v", err, tc.want)
+				}
+			}
+
+			//nolint:gosec // This file belongs to the private synthetic profile.
+			after, err := os.ReadFile(profile.WarehousePath)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("format checking changed the warehouse", err)
+			}
+		})
+	}
+}
+
+func TestFinancialMaintenanceIntentsBlockStartupAndPreview(t *testing.T) {
+	ctx := t.Context()
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := Profile{WarehousePath: filepath.Join(dir, "wake.db")}
+
+	intent := profile.WarehousePath + RestoreIntentSuffix
+	if err := os.WriteFile(intent, []byte("pending restore"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(want error) {
+		t.Helper()
+
+		if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, want) {
+			t.Fatalf("startup error = %v, want %v", err, want)
+		}
+
+		if _, err := PreviewFinancial(ctx, profile.WarehousePath, ""); !errors.Is(err, want) {
+			t.Fatalf("preview error = %v, want %v", err, want)
+		}
+
+		if _, err := os.Stat(profile.WarehousePath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("maintenance created a warehouse", err)
+		}
+	}
+	check(ErrRestorePending)
+
+	if err := os.Remove(intent); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeUpgradeIntent(
+		profile.WarehousePath+UpgradeIntentSuffix,
+		upgradeIntent{Plan: UpgradePlan{ID: "pending"}},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	check(ErrUpgradeRecovery)
 }

@@ -280,17 +280,8 @@ func (s *Store) PendingArtifacts(
 		return nil, nil
 	}
 
-	versions, err := json.Marshal(providers)
-	if err != nil {
-		return nil, err
-	}
-
-	deferred := s.deferredProcessing(now)
-
-	payload, err := json.Marshal(deferred)
-	if err != nil {
-		return nil, err
-	}
+	versions, _ := json.Marshal(providers)
+	payload, _ := json.Marshal(s.deferredProcessing(now))
 
 	rows, err := s.queries.PendingArtifacts(ctx, sqlc.PendingArtifactsParams{
 		Versions: string(versions), Deferred: string(payload),

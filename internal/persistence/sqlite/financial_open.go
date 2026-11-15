@@ -73,7 +73,7 @@ func OpenFinancial(ctx context.Context, profile Profile, logger *slog.Logger) (r
 		if err = s.createFinancial(ctx, path); err != nil {
 			return nil, err
 		}
-	} else if err = validateStorageCopy(ctx, []string{path}, []*os.File{s.owners[0]}); err != nil {
+	} else if _, err = validateStorageCopy(ctx, []string{path}, []*os.File{s.owners[0]}); err != nil {
 		return nil, err
 	}
 
@@ -224,37 +224,14 @@ func PreviewFinancial(ctx context.Context, path, confirm string) (UpgradePlan, e
 		return plan, err
 	}
 
-	if err = validateStorageCopy(ctx, []string{path}, []*os.File{owner}); err != nil {
-		return plan, err
-	}
-
-	db := sql.OpenDB(&connector{
-		paths: files, owners: [storeCount]*os.File{owner}, probe: true,
-	})
-	defer func() { _ = db.Close() }()
-
-	var (
-		metadata [storeCount]storeMetadata
-		history  historyVersion
-	)
-
-	m := &metadata[0]
-	if err = db.QueryRowContext(ctx, profileStatement("Metadata", "main")).
-		Scan(&m.kind, &m.version, &m.id); err != nil {
-		return plan, err
-	}
-
-	if err = db.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
-		Scan(&history.applied, &history.target); err != nil {
+	plan, err = validateStorageCopy(ctx, []string{path}, []*os.File{owner})
+	if err != nil {
 		return plan, err
 	}
 
 	if confirm != "" {
-		return plan, ErrUpgradePlanChanged
+		return UpgradePlan{}, ErrUpgradePlanChanged
 	}
 
-	plan, _, err = baseline.plan(files, metadata, [storeCount]bool{true}, history)
-	plan.Stores = plan.Stores[:1]
-
-	return plan, err
+	return plan, nil
 }

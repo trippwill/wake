@@ -78,7 +78,7 @@ func Backup(ctx context.Context, profile Profile, path string) error {
 	}
 
 	paths := profile.paths()
-	if err := validateStorageCopy(ctx, paths[:], owners[:]); err != nil {
+	if _, err := validateStorageCopy(ctx, paths[:], owners[:]); err != nil {
 		return err
 	}
 
@@ -100,13 +100,14 @@ func checkNoUpgrade(warehouse string) error {
 	return nil
 }
 
-func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File) error {
+func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File) (UpgradePlan, error) {
+	var plan UpgradePlan
 	if len(paths) != len(owners) || (len(paths) != 1 && len(paths) != storeCount) {
-		return ErrUnsupportedSchema
+		return plan, ErrUnsupportedSchema
 	}
 
 	if err := registerCollations(); err != nil {
-		return err
+		return plan, err
 	}
 
 	baseline := releaseBaseline()
@@ -129,68 +130,70 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 
 		err := db.QueryRowContext(ctx, profileStatement("Metadata", "main")).Scan(&m.kind, &m.version, &m.id)
 		if err != nil {
-			return errors.Join(ErrUnsupportedSchema, err)
+			return plan, errors.Join(ErrUnsupportedSchema, err)
 		}
 
 		if m.kind != storeKinds[i] || m.version != baseline.formats[i] || m.id == "" {
-			return ErrUnsupportedSchema
+			return plan, ErrUnsupportedSchema
 		}
 
 		if err := validateCopySchema(ctx, db, baseline.schemas[i], storeSchemas[i]); err != nil {
-			return err
+			return plan, err
 		}
 
 		var integrity string
 
 		err = db.QueryRowContext(ctx, profileStatement("Integrity", "main")).Scan(&integrity)
 		if err != nil {
-			return err
+			return plan, err
 		}
 
 		if integrity != "ok" {
-			return ErrCorrupt
+			return plan, ErrCorrupt
 		}
 
 		if err := checkCopyForeignKeys(ctx, db); err != nil {
-			return err
+			return plan, err
 		}
 
 		if i == 0 {
 			if err := db.QueryRowContext(ctx, profileStatement("HistoryVersion", "main")).
 				Scan(&history.applied, &history.target); err != nil {
-				return err
+				return plan, err
 			}
 
 			var lineage string
 			if err := db.QueryRowContext(ctx, profileStatement("FinancialLineage", "")).
 				Scan(&lineage); err != nil ||
 				lineage == "" {
-				return errors.Join(ErrCorrupt, err)
+				return plan, errors.Join(ErrCorrupt, err)
 			}
 		}
 
 		if i == 2 {
 			if err := db.QueryRowContext(ctx, profileStatement("Profile", "main")).Scan(&accessID); err != nil {
-				return err
+				return plan, err
 			}
 		}
 	}
 
-	if _, _, err := baseline.plan(
-		[storeCount]string{},
-		metadata,
-		[storeCount]bool{true, len(paths) == storeCount, len(paths) == storeCount},
-		history,
-	); err != nil {
-		return err
+	var storePaths [storeCount]string
+	copy(storePaths[:], paths)
+
+	full := len(paths) == storeCount
+
+	plan, _, err := baseline.plan(storePaths, metadata, [storeCount]bool{true, full, full}, history)
+	if err != nil {
+		return plan, err
 	}
 
-	if len(paths) == 1 {
-		return nil
+	if !full {
+		plan.Stores = plan.Stores[:1]
+		return plan, nil
 	}
 
 	if accessID != metadata[1].id {
-		return ErrAssociation
+		return plan, ErrAssociation
 	}
 
 	db := sql.OpenDB(
@@ -204,29 +207,29 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 		schema := storeSchemas[i+1]
 		uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&immutable=1"}).String()
 		if _, err := db.ExecContext(ctx, profileStatement("Attach", schema), uri); err != nil {
-			return err
+			return plan, err
 		}
 	}
 
 	var invalid int
 	if err := db.QueryRowContext(ctx, profileStatement("AssociationCheck", "")).Scan(&invalid); err != nil {
-		return err
+		return plan, err
 	}
 
 	if invalid != 0 {
-		return ErrAssociation
+		return plan, ErrAssociation
 	}
 
 	association, err := readUpstreamAssociation(ctx, db)
 	if err != nil {
-		return err
+		return plan, err
 	}
 
 	if !association.epochMatches || association.restoring {
-		return ErrAssociation
+		return plan, ErrAssociation
 	}
 
-	return nil
+	return plan, nil
 }
 
 type recoverySchemaObject struct{ kind, name, definition string }

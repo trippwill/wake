@@ -188,7 +188,7 @@ func prepareRestore(
 
 	intent.ArchiveDigest = hex.EncodeToString(hash.Sum(nil))
 
-	if err := validateStorageCopy(ctx, staged[:], owners[:]); err != nil {
+	if _, err := validateStorageCopy(ctx, staged[:], owners[:]); err != nil {
 		return nil, err
 	}
 

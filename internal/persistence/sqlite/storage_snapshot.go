@@ -64,7 +64,7 @@ func SnapshotWarehouse(ctx context.Context, profile Profile, output string) erro
 		return err
 	}
 
-	if err := validateStorageCopy(ctx, []string{staged.Name()}, []*os.File{staged}); err != nil {
+	if _, err := validateStorageCopy(ctx, []string{staged.Name()}, []*os.File{staged}); err != nil {
 		return err
 	}
 
@@ -223,7 +223,7 @@ func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string
 	}
 	defer func() { _ = owner.Close() }()
 
-	if err := validateStorageCopy(ctx, []string{file.Name()}, []*os.File{owner}); err != nil {
+	if _, err := validateStorageCopy(ctx, []string{file.Name()}, []*os.File{owner}); err != nil {
 		return err
 	}
 
