@@ -107,6 +107,7 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 				nil,
 				nil,
 				nil,
+				nil,
 			)
 
 			handler, err := NewHandler(auth, Dependencies{Workflow: workflow})

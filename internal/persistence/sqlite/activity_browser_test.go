@@ -431,7 +431,7 @@ func activityPerformanceServer(t *testing.T, s *Store, observe func(*http.Reques
 
 	handler, err := admin.NewHandler(auth, admin.Dependencies{
 		Stopping: stopping,
-		Workflow: application.New(s, nil, nil, nil, nil),
+		Workflow: application.New(s, nil, nil, nil, nil, nil),
 	})
 	if err != nil {
 		t.Fatal(err)

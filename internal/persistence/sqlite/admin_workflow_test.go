@@ -75,7 +75,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, refs, func() time.Time { return now }, nil)
+	workflow := application.New(store, h.Registrations(), h, refs, func() time.Time { return now }, nil)
 
 	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetPassword(dir, []byte("synthetic-http-unlock")); err != nil {

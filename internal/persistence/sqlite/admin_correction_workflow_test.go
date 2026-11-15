@@ -30,7 +30,7 @@ func TestAuthenticatedCorrectionsAndRecoveryHTTP(t *testing.T) {
 
 	id := view.Executions[0].ID()
 	instrument := view.Executions[0].Instrument()
-	workflow := application.New(store, nil, nil, nil, nil)
+	workflow := application.New(store, nil, nil, nil, nil, nil)
 
 	dir := filepath.Dir(authFixturePath(t))
 	if err = admin.SetPassword(dir, []byte("synthetic-correction-unlock")); err != nil {

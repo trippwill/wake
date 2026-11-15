@@ -226,7 +226,14 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, providerHost, nil, func() time.Time { return now }, nil)
+	workflow := application.New(
+		store,
+		providerHost.Registrations(),
+		providerHost,
+		nil,
+		func() time.Time { return now },
+		nil,
+	)
 
 	secret := credential.NewSecret([]byte("api-synthetic-token"))
 	defer secret.Clear()
@@ -968,7 +975,14 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow = application.New(store, providerHost, nil, func() time.Time { return now }, nil)
+	workflow = application.New(
+		store,
+		providerHost.Registrations(),
+		providerHost,
+		nil,
+		func() time.Time { return now },
+		nil,
+	)
 
 	id, replacementID := "", ""
 	for _, execution := range dashboard.Executions {

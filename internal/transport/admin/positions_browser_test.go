@@ -147,7 +147,7 @@ func TestBrowserPositionsInspectionAndRefresh(t *testing.T) {
 
 	handler, err := NewHandler(
 		auth,
-		Dependencies{Workflow: application.New(store, nil, nil, nil, nil), Stopping: stopping},
+		Dependencies{Workflow: application.New(store, nil, nil, nil, nil, nil), Stopping: stopping},
 	)
 	if err != nil {
 		t.Fatal(err)

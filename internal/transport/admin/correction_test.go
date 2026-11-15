@@ -54,7 +54,7 @@ func TestStaleCorrectionRetainsDraftAndShowsCurrentRevision(t *testing.T) {
 
 	csrf := issueTestSession(t, auth, login)
 
-	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil)
+	workflow := application.New(staleCorrectionStore{}, nil, nil, nil, nil, nil)
 
 	handler, err := NewHandler(auth, Dependencies{
 		Workflow:      workflow,
@@ -230,7 +230,7 @@ func TestCorrectionCheckIsAuthenticatedAndDoesNotSubmit(t *testing.T) {
 
 	handler, err := NewHandler(
 		auth,
-		Dependencies{Workflow: application.New(store, nil, nil, nil, nil)},
+		Dependencies{Workflow: application.New(store, nil, nil, nil, nil, nil)},
 	)
 	if err != nil {
 		t.Fatal(err)

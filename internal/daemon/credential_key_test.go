@@ -336,7 +336,7 @@ func verifyCredentialRepair(t *testing.T, cfg config.Config, db *persistence.Sto
 		t.Fatal("repair resumed upstream work without review", err)
 	}
 
-	workflow := application.New(reopened, providers, ref, nil, nil)
+	workflow := application.New(reopened, providers.Registrations(), providers, ref, nil, nil)
 	if err := workflow.ResumeStorage(t.Context(), access.Storage.Revision, "test"); err != nil {
 		t.Fatal("repair could not resume upstream work", err)
 	}

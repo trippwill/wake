@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,6 +77,7 @@ type (
 		RefreshPolls(context.Context, time.Time) (int64, error)
 		PendingArtifacts(context.Context, time.Time, map[string]string) ([]PendingArtifact, error)
 		Process(context.Context, string, string) error
+		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
 		ProcessingFailure(context.Context, string, time.Time) error
 		ExecutionDetail(context.Context, string) (ExecutionDetail, error)
 		LifecycleDetail(context.Context, string) (LifecycleDetail, error)
@@ -98,19 +100,21 @@ type (
 		SetKey(context.Context, *credential.Secret) error
 	}
 	Workflow struct {
-		logger      *slog.Logger
-		store       Store
-		host        *host.Host
-		reference   Reference
-		wake        chan struct{}
-		now         func() time.Time
-		mu          sync.Mutex
-		subscribers map[chan struct{}]bool
+		logger        *slog.Logger
+		store         Store
+		registrations []provider.Registration
+		host          *host.Host
+		reference     Reference
+		wake          chan struct{}
+		now           func() time.Time
+		mu            sync.Mutex
+		subscribers   map[chan struct{}]bool
 	}
 )
 
 func New(
 	store Store,
+	registrations []provider.Registration,
 	h *host.Host,
 	reference Reference,
 	now func() time.Time,
@@ -121,13 +125,14 @@ func New(
 	}
 
 	return &Workflow{
-		logger:      logging.Component(logger, "workflow"),
-		store:       store,
-		host:        h,
-		reference:   reference,
-		wake:        make(chan struct{}, 1),
-		now:         now,
-		subscribers: map[chan struct{}]bool{},
+		logger:        logging.Component(logger, "workflow"),
+		store:         store,
+		registrations: slices.Clone(registrations),
+		host:          h,
+		reference:     reference,
+		wake:          make(chan struct{}, 1),
+		now:           now,
+		subscribers:   map[chan struct{}]bool{},
 	}
 }
 
@@ -160,19 +165,23 @@ func (w *Workflow) Subscribe() (chan struct{}, func()) {
 
 // Providers exposes only the compiled registrations selected by composition.
 func (w *Workflow) Providers() []provider.Registration {
-	if w.host == nil {
-		return nil
-	}
+	out := slices.Clone(w.registrations)
+	slices.SortFunc(
+		out,
+		func(a, b provider.Registration) int { return strings.Compare(a.Descriptor().ID(), b.Descriptor().ID()) },
+	)
 
-	return w.host.Registrations()
+	return out
 }
 
 func (w *Workflow) Provider(id string) (provider.Registration, bool) {
-	if w.host == nil {
-		return provider.Registration{}, false
+	for _, r := range w.registrations {
+		if r.Descriptor().ID() == id {
+			return r, true
+		}
 	}
 
-	return w.host.Registration(id)
+	return provider.Registration{}, false
 }
 
 // ConnectionDescriptor reads provider metadata without decoding financial history.
@@ -200,6 +209,10 @@ func (w *Workflow) CreateConnection(
 	settings provider.Settings,
 	secrets map[string]*credential.Secret,
 ) (result string, resultErr error) {
+	if w.host == nil {
+		return "", provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_create")
 	defer func() { finishLog(resultErr) }()
 
@@ -250,6 +263,10 @@ func (w *Workflow) ReplaceSecret(
 	id, key string,
 	secret *credential.Secret,
 ) (resultErr error) {
+	if w.host == nil {
+		return provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_access_repair")
 	defer func() { finishLog(resultErr) }()
 
@@ -265,6 +282,10 @@ func (w *Workflow) UpdateConnection(
 	id, name string,
 	settings provider.Settings,
 ) (resultErr error) {
+	if w.host == nil {
+		return provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_update")
 	defer func() { finishLog(resultErr) }()
 
@@ -278,6 +299,10 @@ func (w *Workflow) UpdateConnection(
 }
 
 func (w *Workflow) UpdatePolling(ctx context.Context, id, stream, value string) error {
+	if w.host == nil {
+		return provider.ErrUnavailable
+	}
+
 	if err := w.host.UpdatePolling(ctx, id, stream, value); err != nil {
 		return err
 	}
@@ -288,6 +313,10 @@ func (w *Workflow) UpdatePolling(ctx context.Context, id, stream, value string) 
 }
 
 func (w *Workflow) RefreshPolls(ctx context.Context) (bool, error) {
+	if w.host == nil {
+		return false, provider.ErrUnavailable
+	}
+
 	count, err := w.store.RefreshPolls(ctx, w.now())
 	if err == nil && count != 0 {
 		w.notify()
@@ -297,6 +326,10 @@ func (w *Workflow) RefreshPolls(ctx context.Context) (bool, error) {
 }
 
 func (w *Workflow) Retry(ctx context.Context, id string) (resultErr error) {
+	if w.host == nil {
+		return provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "acquisition_retry")
 	defer func() { finishLog(resultErr) }()
 
@@ -367,6 +400,10 @@ func (w *Workflow) confirmAccount(
 	ref source.Reference,
 	details AccountDetails,
 ) (Account, error) {
+	if w.host == nil {
+		return Account{}, provider.ErrUnavailable
+	}
+
 	connection, err := w.host.Connection(ctx, id)
 	if err != nil {
 		return Account{}, err
@@ -383,7 +420,7 @@ func (w *Workflow) confirmAccount(
 	}
 
 	connection.Streams = make([]provider.Stream, 0, len(configured))
-	connection.CanAcquire = registration.Acquirer() != nil
+	connection.CanAcquire = w.host != nil && registration.Acquirer() != nil
 	for _, configuration := range configured {
 		connection.Streams = append(connection.Streams, configuration.Stream())
 	}
@@ -397,6 +434,10 @@ func (w *Workflow) confirmAccount(
 }
 
 func (w *Workflow) SetReferenceKey(ctx context.Context, key *credential.Secret) (resultErr error) {
+	if w.reference == nil {
+		return provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "reference_access_repair")
 	defer func() { finishLog(resultErr) }()
 
@@ -421,13 +462,13 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 	}
 
 	connection.Descriptor = registration.Descriptor()
-	if connection.SettingsStored {
+	if connection.SettingsStored && w.host != nil {
 		connection.Polling = w.host.PollSettings(connection.Provider, connection.PollOverrides)
 	}
 
-	connection.CanAcquire = registration.Acquirer() != nil
+	connection.CanAcquire = w.host != nil && registration.Acquirer() != nil
 
-	connection.CanDiscover = registration.Discoverer() != nil
+	connection.CanDiscover = w.host != nil && registration.Discoverer() != nil
 	connection.CanNormalize = registration.Normalizer() != nil
 	connection.CredentialStored = true
 	for _, field := range connection.Descriptor.Fields() {
@@ -437,7 +478,7 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 		}
 	}
 
-	connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+	connection.MissingAccess = w.host == nil || !connection.SettingsStored || !connection.CredentialStored
 }
 
 func (w *Workflow) Prerequisites(ctx context.Context) (Prerequisites, error) {
@@ -617,28 +658,31 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		}
 	}
 
-	work, err := w.store.PendingWork(ctx, now)
-	if err != nil {
-		return err
-	}
-
-	for _, key := range work {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if key.Operation == "discover" {
-			_, err = w.host.Discover(ctx, key.Connection, key.Stream)
-		} else {
-			_, err = w.host.Acquire(ctx, key.Connection, key.Stream)
-		}
-
-		if errors.Is(err, host.ErrStorage) {
+	var err error
+	if w.host != nil {
+		work, err := w.store.PendingWork(ctx, now)
+		if err != nil {
 			return err
 		}
-		// Safe source failures are retained by the host; independent work continues.
-		if err == nil {
-			w.notifyReaders()
+
+		for _, key := range work {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			if key.Operation == "discover" {
+				_, err = w.host.Discover(ctx, key.Connection, key.Stream)
+			} else {
+				_, err = w.host.Acquire(ctx, key.Connection, key.Stream)
+			}
+
+			if errors.Is(err, host.ErrStorage) {
+				return err
+			}
+			// Safe source failures are retained by the host; independent work continues.
+			if err == nil {
+				w.notifyReaders()
+			}
 		}
 	}
 
@@ -668,7 +712,7 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		case registration.Normalizer() == nil:
 			continue
 		default:
-			if _, err = w.host.Normalize(work, id, registration.Version()); err == nil {
+			if _, err = w.normalize(work, id, registration); err == nil {
 				processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
 				err = w.store.Process(processContext, id, registration.Version())
 				finish(err)
@@ -766,6 +810,10 @@ func (w *Workflow) RetryProcessing(ctx context.Context, id string) (resultErr er
 
 // ResumeStorage grants upstream authority only after local access is repaired and reviewed.
 func (w *Workflow) ResumeStorage(ctx context.Context, revision int64, actor string) (resultErr error) {
+	if w.host == nil {
+		return provider.ErrUnavailable
+	}
+
 	ctx, finishLog := logging.Start(ctx, w.logger, "storage_resume")
 	defer func() { finishLog(resultErr) }()
 
@@ -882,4 +930,31 @@ func (w *Workflow) ActivityFieldDetails(
 	}
 
 	return explanation.Fields
+}
+
+// normalize interprets retained evidence without upstream access. The workflow's
+// joined runner owns its lifetime; successful receipts remain owned by storage.
+func (w *Workflow) normalize(
+	ctx context.Context,
+	id string,
+	registration provider.Registration,
+) (result provider.Result, resultErr error) {
+	ctx, finish := logging.Start(ctx, w.logger, "normalize", "artifact_id", id)
+	defer func() {
+		finish(
+			resultErr,
+			"rows",
+			result.Rows(),
+			"activity_observations",
+			result.Activities(),
+			"instruments",
+			result.Instruments(),
+			"rejected",
+			result.Rejected(),
+			"ignored",
+			result.Ignored(),
+		)
+	}()
+
+	return w.store.Normalize(ctx, id, registration.Version(), registration.Normalizer())
 }

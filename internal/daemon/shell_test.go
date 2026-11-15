@@ -21,6 +21,19 @@ import (
 )
 
 func TestShellStartupAndJoinedShutdown(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options sourceOptions
+	}{
+		{"upstream available", sourceOptions{}},
+		{"local only", sourceOptions{WithoutUpstream: true}},
+		{"upstream initialization failed", sourceOptions{ReferenceURL: ":invalid"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testShellStartupAndJoinedShutdown(t, tc.options) })
+	}
+}
+
+func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions) {
 	cfg := shellConfig(t)
 	seedAPIClient(t, cfg)
 
@@ -34,7 +47,7 @@ func TestShellStartupAndJoinedShutdown(t *testing.T) {
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), func(p string) {
+		done <- run(ctx, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), options, func(p string) {
 			if p == "ready" {
 				close(ready)
 			}

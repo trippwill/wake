@@ -739,7 +739,7 @@ func TestRecoveryReadinessAndRepairPageIncludeLateConnections(t *testing.T) {
 	}
 	defer h.Close()
 
-	workflow := application.New(s, h, nil, nil, nil)
+	workflow := application.New(s, h.Registrations(), h, nil, nil, nil)
 	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
 
 	first, ready, err := workflow.Recovery(ctx, query)
@@ -816,7 +816,7 @@ func TestRecoveryAuthorityDoesNotEnumerateMutableUIPages(t *testing.T) {
 	defer h.Close()
 
 	wrapped := &renameDuringRecovery{Store: s}
-	workflow := application.New(wrapped, h, nil, nil, nil)
+	workflow := application.New(wrapped, h.Registrations(), h, nil, nil, nil)
 	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
 
 	_, ready, err := workflow.Recovery(t.Context(), query)

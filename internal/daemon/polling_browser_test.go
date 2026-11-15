@@ -84,7 +84,7 @@ func TestBrowserPollingIntervals(t *testing.T) {
 	stopping := make(chan struct{})
 
 	server.Config.Handler, err = admin.NewHandler(auth, admin.Dependencies{
-		Workflow: application.New(store, h, nil, nil, nil), Stopping: stopping,
+		Workflow: application.New(store, h.Registrations(), h, nil, nil, nil), Stopping: stopping,
 	})
 	if err != nil {
 		t.Fatal(err)

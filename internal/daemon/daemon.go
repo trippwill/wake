@@ -19,6 +19,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/logging"
@@ -59,6 +60,7 @@ func Run(
 // Source endpoints are composed here, never read from broker settings. Tests use
 // controlled TLS servers through the same daemon/host/store/admin composition.
 type sourceOptions struct {
+	WithoutUpstream bool
 	IBKR            ibkrflex.Options
 	SnapTrade       snaptrade.Options
 	CurrencyCatalog currencycatalog.Options
@@ -145,10 +147,6 @@ func run(
 		return err
 	}
 
-	if err := host.CheckPollingDefaults(cfg.PollDefaults, registrations); err != nil {
-		return err
-	}
-
 	phase("claiming private process paths")
 
 	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
@@ -185,57 +183,23 @@ func run(
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
 
-	envelope, keyIssue, err := loadSyncCredentials(ctx, cfg, store)
-	if err != nil {
-		return err
+	var upstream upstreamServices
+	if !options.WithoutUpstream {
+		upstream, err = openUpstream(ctx, cfg, store, options, registrations, logger)
+		if err != nil {
+			logger.WarnContext(
+				ctx,
+				"upstream services unavailable",
+				"event",
+				"upstream_unavailable",
+				"code",
+				logging.Code(err),
+			)
+		}
 	}
-	defer envelope.Clear()
+	defer upstream.close()
 
-	if keyIssue != "" {
-		logger.WarnContext(
-			ctx,
-			"source synchronization paused",
-			"event",
-			"credential_key_unavailable",
-			"reason",
-			keyIssue,
-		)
-	}
-
-	providerHost, err := host.New(
-		ctx,
-		store,
-		envelope,
-		logger,
-		options.Now,
-		cfg.PollDefaults,
-		registrations...,
-	)
-	if err != nil {
-		return err
-	}
-	defer providerHost.Close()
-
-	if err := store.ScheduleMissingAcquisition(ctx, "snaptrade", "positions"); err != nil {
-		return err
-	}
-
-	if err := store.ReconcilePolls(ctx, providerHost.PollSettings); err != nil {
-		return err
-	}
-
-	referenceService, err := reference.New(
-		store,
-		envelope,
-		options.ReferenceClient,
-		options.ReferenceURL,
-		options.Now, logger,
-	)
-	if err != nil {
-		return err
-	}
-
-	workflow := application.New(store, providerHost, referenceService, options.Now, logger)
+	workflow := application.New(store, registrations, upstream.host, upstream.reference, options.Now, logger)
 
 	workContext, cancelWork := context.WithCancel(ctx)
 
@@ -287,8 +251,8 @@ func run(
 		admin.Dependencies{
 			Queries: shell{
 				status: admin.Status{
-					CredentialProtection: envelope != nil,
-					CredentialIssue:      keyIssue,
+					CredentialProtection: upstream.envelope != nil,
+					CredentialIssue:      upstream.keyIssue,
 					StartedAt:            time.Now().UTC().Format(time.RFC3339),
 				},
 				warehouseSize: store.WarehouseSize,
@@ -438,4 +402,94 @@ type serverDiagnostics struct{ logger *slog.Logger }
 func (w serverDiagnostics) Write(value []byte) (int, error) {
 	w.logger.Error("HTTP server diagnostic", "event", "http_server_failure", "code", "http_transport_failed")
 	return len(value), nil
+}
+
+// openUpstream owns optional source initialization. Local handlers and retained
+// processing are composed independently, including when initialization fails.
+func openUpstream(
+	ctx context.Context,
+	cfg config.Config,
+	store *persistence.Store,
+	options sourceOptions,
+	registrations []provider.Registration,
+	logger *slog.Logger,
+) (upstreamServices, error) {
+	envelope, keyIssue, err := loadSyncCredentials(ctx, cfg, store)
+	if err != nil {
+		return upstreamServices{}, err
+	}
+
+	ready := false
+	defer func() {
+		if !ready {
+			envelope.Clear()
+		}
+	}()
+
+	if keyIssue != "" {
+		logger.WarnContext(
+			ctx,
+			"source synchronization paused",
+			"event",
+			"credential_key_unavailable",
+			"reason",
+			keyIssue,
+		)
+	}
+
+	providerHost, err := host.New(
+		ctx,
+		store,
+		envelope,
+		logger,
+		options.Now,
+		cfg.PollDefaults,
+		registrations...,
+	)
+	if err != nil {
+		return upstreamServices{}, err
+	}
+	defer func() {
+		if !ready {
+			providerHost.Close()
+		}
+	}()
+
+	if err := store.ScheduleMissingAcquisition(ctx, "snaptrade", "positions"); err != nil {
+		return upstreamServices{}, err
+	}
+
+	if err := store.ReconcilePolls(ctx, providerHost.PollSettings); err != nil {
+		return upstreamServices{}, err
+	}
+
+	referenceService, err := reference.New(
+		store,
+		envelope,
+		options.ReferenceClient,
+		options.ReferenceURL,
+		options.Now, logger,
+	)
+	if err != nil {
+		return upstreamServices{}, err
+	}
+
+	ready = true
+
+	return upstreamServices{providerHost, referenceService, envelope, keyIssue}, nil
+}
+
+type upstreamServices struct {
+	host      *host.Host
+	reference application.Reference
+	envelope  *credential.Envelope
+	keyIssue  string
+}
+
+func (u upstreamServices) close() {
+	if u.host != nil {
+		u.host.Close()
+	}
+
+	u.envelope.Clear()
 }

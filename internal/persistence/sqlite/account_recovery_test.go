@@ -144,7 +144,7 @@ func TestAccountRecoveryPreservesAcceptedActivityAcrossRetryAndRestart(t *testin
 		t.Fatal(err)
 	}
 
-	workflow := application.New(s, h, refs, nil, logger)
+	workflow := application.New(s, h.Registrations(), h, refs, nil, logger)
 
 	token := credential.NewSecret([]byte("synthetic-private-token"))
 	defer token.Clear()

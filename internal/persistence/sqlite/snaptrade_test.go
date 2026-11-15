@@ -152,7 +152,7 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 	h := makeHost(s)
 	defer h.Close()
 
-	w := application.New(s, h, nil, clock, nil)
+	w := application.New(s, h.Registrations(), h, nil, clock, nil)
 
 	advance := func(delay time.Duration) {
 		t.Helper()
@@ -233,7 +233,7 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 	h = makeHost(s)
 	defer h.Close()
 
-	w = application.New(s, h, nil, clock, nil)
+	w = application.New(s, h.Registrations(), h, nil, clock, nil)
 
 	advance(10 * time.Second)
 
@@ -360,7 +360,7 @@ func TestSnapTradeResumesRetainedPageAndPacingAfterStoreRestart(t *testing.T) {
 	h = makeHost(s)
 	defer h.Close()
 
-	w = application.New(s, h, nil, clock, nil)
+	w = application.New(s, h.Registrations(), h, nil, clock, nil)
 	if err = s.ScheduleMissingAcquisition(ctx, "snaptrade", "positions"); err != nil {
 		t.Fatal(err)
 	}

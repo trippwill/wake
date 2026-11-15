@@ -678,7 +678,7 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 			t.Error(err)
 		}
 	})
-	workflow := application.New(f.store, f.host, nil, nil, nil)
+	workflow := application.New(f.store, f.host.Registrations(), f.host, nil, nil, nil)
 	id, err := workflow.CreateConnection(t.Context(), "Supplied document", registration.Descriptor().ID(), provider.Settings{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -731,7 +731,7 @@ func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	workflow := application.New(f.store, f.host, nil, nil, nil)
+	workflow := application.New(f.store, f.host.Registrations(), f.host, nil, nil, nil)
 	artifact, err := f.host.Discover(t.Context(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
@@ -774,7 +774,7 @@ func TestAcquisitionWithoutNormalizerRetainsEvidenceWithoutProcessingRetries(t *
 		t.Fatal(err)
 	}
 	f := newFixture(t, r)
-	workflow := application.New(f.store, f.host, nil, nil, nil)
+	workflow := application.New(f.store, f.host.Registrations(), f.host, nil, nil, nil)
 	artifact, err := f.host.Discover(t.Context(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
@@ -834,7 +834,7 @@ func TestPendingMetadataSelectsNormalizerWithoutReadingArtifactBodies(t *testing
 		t.Fatal(err)
 	}
 	reads := &workflowReadProof{Store: f.store}
-	workflow := application.New(reads, f.host, nil, nil, nil)
+	workflow := application.New(reads, f.host.Registrations(), f.host, nil, nil, nil)
 	discovery, err := f.host.Discover(t.Context(), f.id, "statements")
 	if err != nil {
 		t.Fatal(err)
@@ -911,7 +911,7 @@ func TestEncryptedAccessSeedCopiesHaveIndependentWarehouses(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		workflow := application.New(store, h, nil, nil, nil)
+		workflow := application.New(store, h.Registrations(), h, nil, nil, nil)
 		view, err := inspectProvider(t, workflow)
 		if err != nil || !view.Storage.Paused || !view.Storage.WarehouseReset || len(view.Connections) != 1 || view.Connections[0].MissingAccess {
 			t.Fatal("copied seed lost access or resumed without review", view, err)

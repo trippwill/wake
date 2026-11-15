@@ -34,7 +34,7 @@ func TestBrowserSignOutRevokesOnlyCurrentSessionAndClosesStream(t *testing.T) {
 	}
 
 	server.Config.Handler, err = NewHandler(auth, Dependencies{
-		Workflow: application.New(nil, nil, nil, nil, nil),
+		Workflow: application.New(nil, nil, nil, nil, nil, nil),
 	})
 	if err != nil {
 		t.Fatal(err)

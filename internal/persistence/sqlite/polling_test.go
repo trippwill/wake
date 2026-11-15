@@ -312,7 +312,7 @@ func TestIdlePollingDoesNotLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(s, h, refs, nil, logger)
+	workflow := application.New(s, h.Registrations(), h, refs, nil, logger)
 	for range 100 {
 		if err := workflow.RunOnce(ctx, time.Now()); err != nil {
 			t.Fatal(err)

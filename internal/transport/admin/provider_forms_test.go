@@ -70,7 +70,7 @@ func TestAccountConfirmationRetryKeepsDiscoveredCurrency(t *testing.T) {
 	}
 
 	handler, err := NewHandler(auth, Dependencies{
-		Workflow:      application.New(store, nil, nil, nil, nil),
+		Workflow:      application.New(store, nil, nil, nil, nil, nil),
 		CurrencyCodes: func() []string { return []string{"USD"} },
 	})
 	if err != nil {
@@ -170,7 +170,7 @@ func formWorkflow(t *testing.T) (*application.Workflow, *formStore, provider.Des
 
 	t.Cleanup(h.Close)
 	// A nil financial store makes an accidental dashboard read fail this focused proof.
-	return application.New(nil, h, nil, nil, nil), store, descriptor
+	return application.New(nil, h.Registrations(), h, nil, nil, nil), store, descriptor
 }
 
 func TestConnectionDescriptorNeedsNoFinancialHistory(t *testing.T) {
@@ -292,7 +292,7 @@ func TestCredentialKeysStayInPostBodyAndRetryOnlyTheirOwnFields(t *testing.T) {
 			}
 			defer h.Close()
 
-			workflow := application.New(nil, h, nil, nil, nil)
+			workflow := application.New(nil, h.Registrations(), h, nil, nil, nil)
 
 			var access strings.Builder
 			if err = ConnectionAccess(

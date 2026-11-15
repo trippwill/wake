@@ -27,7 +27,7 @@ func TestExternalResultsDoNotRequireSeparateQueriesOrTradeCurrency(t *testing.T)
 				t.Fatal(err)
 			}
 			f := newFixture(t, registration)
-			workflow := application.New(f.store, f.host, nil, func() time.Time { return f.now }, nil)
+			workflow := application.New(f.store, f.host.Registrations(), f.host, nil, func() time.Time { return f.now }, nil)
 			partial, _ := provider.NewSettings(map[string]string{"tenant": "synthetic-tenant", "results_delivery": "separate"})
 			if err = workflow.UpdateConnection(t.Context(), f.id, "Results source", partial); err != nil {
 				t.Fatal(err)
@@ -134,7 +134,7 @@ func TestConfirmationUsesCommittedStreamSettings(t *testing.T) {
 			}
 			f := newFixture(t, registration)
 			gate := &confirmationGate{Store: f.store, started: make(chan struct{}), resume: make(chan struct{})}
-			workflow := application.New(gate, f.host, nil, nil, nil)
+			workflow := application.New(gate, f.host.Registrations(), f.host, nil, nil, nil)
 			settings := func(include bool) provider.Settings {
 				values := map[string]string{"tenant": "synthetic-tenant", "results_delivery": "separate"}
 				if include {

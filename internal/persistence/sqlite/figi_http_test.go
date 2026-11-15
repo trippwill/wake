@@ -59,7 +59,10 @@ func TestCombinedInstrumentHTTPRedirectPreservesCorrectionView(t *testing.T) {
 	}
 	defer h.Close()
 
-	handler, err := admin.NewHandler(auth, admin.Dependencies{Workflow: application.New(s, h, nil, nil, nil)})
+	handler, err := admin.NewHandler(
+		auth,
+		admin.Dependencies{Workflow: application.New(s, h.Registrations(), h, nil, nil, nil)},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

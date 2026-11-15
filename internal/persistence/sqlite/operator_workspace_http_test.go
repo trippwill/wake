@@ -121,7 +121,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 	}
 	defer h.Close()
 
-	workflow := application.New(s, h, nil, nil, nil)
+	workflow := application.New(s, h.Registrations(), h, nil, nil, nil)
 
 	handler, err := admin.NewHandler(auth, admin.Dependencies{Workflow: workflow})
 	if err != nil {

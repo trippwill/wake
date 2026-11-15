@@ -116,7 +116,7 @@ func TestWorkflowRetryRefusesActiveDiscovery(t *testing.T) {
 
 	defer func() { cancel(); h.Close() }()
 
-	w := application.New(s, h, nil, nil, nil)
+	w := application.New(s, h.Registrations(), h, nil, nil, nil)
 
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()

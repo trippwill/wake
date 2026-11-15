@@ -26,7 +26,10 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := NewHandler(auth, Dependencies{Workflow: application.New(workspaceStore{}, nil, nil, nil, nil)})
+	h, err := NewHandler(
+		auth,
+		Dependencies{Workflow: application.New(workspaceStore{}, nil, nil, nil, nil, nil)},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

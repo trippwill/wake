@@ -71,6 +71,13 @@ activity variants and dated instrument terms. Partial observations retain their 
 structure. Compact explanations expose applicable absence reasons and versioned provider
 expectations alongside the existing selection and conflict facts.
 
+Local financial handlers and retained-data processing use compiled interpretation
+capabilities independently of the upstream host and reference HTTP service. Failed
+upstream service initialization leaves those local paths available. Source commands
+require their upstream capability and report unavailability when it is absent.
+The daemon cancels and joins local work before releasing storage; upstream hosts
+also join their outstanding calls before credentials are cleared.
+
 ## Evidence before conclusions
 
 Preserve immutable evidence and qualified claims independently of accepted views.

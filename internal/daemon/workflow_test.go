@@ -74,7 +74,7 @@ func TestDurableDiscoveryResumesAndJoinsCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, h, nil, nil, nil)
+	workflow := application.New(store, h.Registrations(), h, nil, nil, nil)
 
 	token := credential.NewSecret([]byte("synthetic-token"))
 	defer token.Clear()

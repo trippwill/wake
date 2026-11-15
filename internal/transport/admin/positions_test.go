@@ -264,7 +264,7 @@ func TestPositionsAuthenticatedPageGridAndFailures(t *testing.T) {
 				return data, tc.failure
 			}}
 
-			handler, e := NewHandler(auth, Dependencies{Workflow: application.New(store, nil, nil, nil, nil)})
+			handler, e := NewHandler(auth, Dependencies{Workflow: application.New(store, nil, nil, nil, nil, nil)})
 			if e != nil {
 				t.Fatal(e)
 			}

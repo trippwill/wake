@@ -100,7 +100,7 @@ func TestMovementHTTPDetailsGridAndCorrectionChoices(t *testing.T) {
 	request := func(store movementReadStore, route string) *httptest.ResponseRecorder {
 		t.Helper()
 
-		h, e := NewHandler(auth, Dependencies{Workflow: application.New(store, nil, nil, nil, nil)})
+		h, e := NewHandler(auth, Dependencies{Workflow: application.New(store, nil, nil, nil, nil, nil)})
 		if e != nil {
 			t.Fatal(e)
 		}

@@ -196,7 +196,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	run := func(s *Store, at time.Time) {
 		t.Helper()
 
-		if e := application.New(s, nil, nil, nil, nil).RunOnce(ctx, at); e != nil {
+		if e := application.New(s, nil, nil, nil, nil, nil).RunOnce(ctx, at); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -238,7 +238,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workflow := application.New(store, nil, nil, nil, nil)
+	workflow := application.New(store, nil, nil, nil, nil, nil)
 	if err = workflow.RunOnce(ctx, now); err == nil {
 		t.Fatal("workflow swallowed failure to record the retry")
 	}
