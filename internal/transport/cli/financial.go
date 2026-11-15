@@ -97,8 +97,8 @@ func financialCommands() []*cli.Command {
 		group("positions", "Read reported account positions",
 			read("get", "Read the latest reported positions view as JSON", "ACCOUNT_ID", getPositions),
 		),
-		read("doctor", "Check access to Wake's private financial API as JSON", "", financialDoctor),
-		group("request", "Call the private financial API",
+		group("api", "Inspect and call the private financial API",
+			read("check", "Check access to Wake's private financial API as JSON", "", checkFinancialAPI),
 			read("get", "Read a finite v1 API route as JSON", "PATH", rawFinancialGet),
 		),
 	}
@@ -426,9 +426,9 @@ func getPositions(ctx context.Context, c *cli.Command) error {
 	return json.NewEncoder(c.Writer).Encode(response.body)
 }
 
-func financialDoctor(ctx context.Context, c *cli.Command) error {
+func checkFinancialAPI(ctx context.Context, c *cli.Command) error {
 	if c.NArg() != 0 {
-		return usageError("doctor takes no arguments")
+		return usageError("api check takes no arguments")
 	}
 
 	endpoint, err := financialEndpoint(c)

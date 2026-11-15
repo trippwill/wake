@@ -386,7 +386,7 @@ streams. Restarting the daemon requires a fresh browser sign-in.
 
 Restoring a financial database does not change client authority. Restoring an old
 auth file can resurrect revoked grants. Before serving a restored auth file, run
-`wake admin reset-access` with Wake stopped. It revokes client grants and rotates
+`wake access reset` with Wake stopped. It revokes client grants and rotates
 the session key while retaining the password. Keep source access withheld until
 the operator has reviewed restored synchronization state.
 

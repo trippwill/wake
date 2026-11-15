@@ -91,7 +91,7 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 
-			args := []string{"--json", "reset", target, "--config", path}
+			args := []string{"--json", "storage", "reset", target, "--config", path}
 			for _, dryArgs := range [][]string{args, append(append([]string{}, args...), "--confirm=false")} {
 				stdout.Reset()
 				stderr.Reset()
@@ -184,7 +184,7 @@ func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
 			for _, target := range []string{"warehouse", "credentials"} {
 				var stdout, stderr bytes.Buffer
 				if code := run(
-					[]string{"reset", target, "--confirm", "--config", path},
+					[]string{"storage", "reset", target, "--confirm", "--config", path},
 					&stdout,
 					&stderr,
 				); code != exitFailure ||
@@ -204,7 +204,11 @@ func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
 			}
 
 			var stdout, stderr bytes.Buffer
-			if code := run([]string{"reset", "warehouse", "--config", path}, &stdout, &stderr); code != exitOK {
+			if code := run(
+				[]string{"storage", "reset", "warehouse", "--config", path},
+				&stdout,
+				&stderr,
+			); code != exitOK {
 				t.Fatal("failed reset leaked a lock", code, stderr.String())
 			}
 		})
@@ -215,7 +219,7 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 	for _, kind := range []string{"symlink", "hardlink", "sidecar", "superjournal", "configuration", "master-key", "browser-key"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg, path, files := resetFixture(t)
-			args := []string{"reset", "warehouse", "--confirm", "--config", path}
+			resetTarget := "warehouse"
 			switch kind {
 			case "symlink", "hardlink":
 				alias := filepath.Join(cfg.Paths.ConfigDir, "alias")
@@ -248,7 +252,7 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 				// Readback follows this synthetic link only to verify no selected data was deleted.
 				files[sidecar] = files[cfg.Storage.WarehousePath]
 			case "configuration", "master-key", "browser-key":
-				args[1] = "credentials"
+				resetTarget = "credentials"
 				target := map[string]string{
 					"configuration": path,
 					"master-key":    cfg.Credentials.KeyPath,
@@ -256,6 +260,8 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 				}[kind]
 				changeResetConnections(t, path, files, cfg.Storage.ConnectionsPath, target)
 			}
+
+			args := []string{"storage", "reset", resetTarget, "--confirm", "--config", path}
 
 			var stdout, stderr bytes.Buffer
 			if code := run(args, &stdout, &stderr); code != exitFailure {
@@ -283,7 +289,7 @@ func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	args := []string{"--json", "reset", "warehouse", "--config", path}
+	args := []string{"--json", "storage", "reset", "warehouse", "--config", path}
 
 	for _, confirm := range []bool{false, true} {
 		current := append([]string{}, args...)
@@ -315,7 +321,15 @@ func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
 
 func TestResetUsageAndHumanPreview(t *testing.T) {
 	_, path, files := resetFixture(t)
-	for _, args := range [][]string{{"reset"}, {"reset", "--confirm"}, {"reset", "invalid"}, {"reset", "all"}, {"reset", "connections"}, {"reset", "operational"}, {"reset", "warehouse", "warehouse"}} {
+	for _, args := range [][]string{
+		{"storage", "reset"},
+		{"storage", "reset", "--confirm"},
+		{"storage", "reset", "invalid"},
+		{"storage", "reset", "all"},
+		{"storage", "reset", "connections"},
+		{"storage", "reset", "operational"},
+		{"storage", "reset", "warehouse", "warehouse"},
+	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != exitUsage {
 			t.Fatal("invalid selection accepted", code, stderr.String())
@@ -325,7 +339,11 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"reset", "warehouse", "--config", path}, &stdout, &stderr); code != exitOK {
+	if code := run(
+		[]string{"storage", "reset", "warehouse", "--config", path},
+		&stdout,
+		&stderr,
+	); code != exitOK {
 		t.Fatal(code, stderr.String())
 	}
 
@@ -350,7 +368,7 @@ func TestResetRefusesRunningDaemon(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"reset", "warehouse", "--confirm", "--config", path},
+		[]string{"storage", "reset", "warehouse", "--confirm", "--config", path},
 		&stdout,
 		&stderr,
 	); code != exitFailure ||
@@ -369,7 +387,7 @@ func TestResetRemovesOrphanSidecarsWithoutCreatingDatabase(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"--json", "reset", "credentials", "--confirm", "--config", path},
+		[]string{"--json", "storage", "reset", "credentials", "--confirm", "--config", path},
 		&stdout,
 		&stderr,
 	); code != exitOK {
@@ -410,8 +428,8 @@ func TestResetPreservesAccessNeededByAnInterruptedUpgrade(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"reset", "credentials", "--config", path},
-		{"reset", "credentials", "--config", path, "--confirm"},
+		{"storage", "reset", "credentials", "--config", path},
+		{"storage", "reset", "credentials", "--config", path, "--confirm"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != exitFailure ||
@@ -424,7 +442,7 @@ func TestResetPreservesAccessNeededByAnInterruptedUpgrade(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"reset", "warehouse", "--config", path, "--confirm"},
+		[]string{"storage", "reset", "warehouse", "--config", path, "--confirm"},
 		&stdout,
 		&stderr,
 	); code != exitOK {
@@ -451,7 +469,7 @@ func TestWarehouseResetRefusesAnAccessStoreAtTheUpgradeIntentPath(t *testing.T) 
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"reset", "warehouse", "--config", path, "--confirm"},
+		[]string{"storage", "reset", "warehouse", "--config", path, "--confirm"},
 		&stdout,
 		&stderr,
 	); code != exitFailure || !strings.Contains(stderr.String(), "reset refuses unsafe") {

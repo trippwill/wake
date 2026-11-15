@@ -157,52 +157,32 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Flags:  serveFlags,
 			Action: performServe,
 		},
-		{
-			Name:  "upgrade",
-			Usage: "Preview a forward storage upgrade with Wake stopped",
-			Flags: append(common(), &cli.StringFlag{
-				Name: "confirm", Usage: "Apply the upgrade matching this plan ID",
-			}),
-			Action: performUpgrade,
-		},
-		{
-			Name:        "reset",
-			Usage:       "Preview resetting credentials or financial data; --confirm executes",
-			ArgsUsage:   "credentials|warehouse",
-			Description: "Stop Wake before reset. A warehouse reset includes its disposable operational state. Selected database files and SQLite sidecars are removed without opening SQLite or reading credentials. Configuration, key and browser access files are retained.",
-			Flags: append(
-				common(),
-				&cli.BoolFlag{
-					Name:  "confirm",
-					Usage: "Delete the selected files; without this flag only preview the reset",
-				},
-			),
-			Action: performReset,
-		},
-		{
-			Name:            "admin",
-			Usage:           "Manage operator and client access",
-			HideHelpCommand: true,
-			Action: func(_ context.Context, c *cli.Command) error {
-				printCommandHelp(stderr, c)
-
-				if c.NArg() != 0 {
-					return usageError("unknown admin command " + c.Args().First())
-				}
-
-				return usageError("specify an admin command")
+		commandGroup("storage", "Maintain the warehouse and credentials stores",
+			&cli.Command{
+				Name:  "upgrade",
+				Usage: "Preview a forward storage upgrade with Wake stopped",
+				Flags: append(common(), &cli.StringFlag{
+					Name: "confirm", Usage: "Apply the upgrade matching this plan ID",
+				}),
+				Action: performUpgrade,
 			},
-			Commands: []*cli.Command{
-				{
-					Name:   "reset-access",
-					Usage:  "Revoke all API clients and browser sessions with Wake stopped",
-					Flags:  common(),
-					Action: performResetAccess,
-				},
+			&cli.Command{
+				Name:        "reset",
+				Usage:       "Preview or reset the selected store",
+				ArgsUsage:   "credentials|warehouse",
+				Description: "Stop Wake before reset. A warehouse reset includes its disposable operational state. Selected database files and SQLite sidecars are removed without opening SQLite or reading credentials. Configuration, key and browser access files are retained.",
+				Flags: append(
+					common(),
+					&cli.BoolFlag{
+						Name:  "confirm",
+						Usage: "Delete the selected files; without this flag only preview the reset",
+					},
+				),
+				Action: performReset,
 			},
-		},
-		accessGroup("access", "Manage browser access",
-			accessGroup("set", "Set browser access credentials",
+		),
+		commandGroup("access", "Manage browser and API client access",
+			commandGroup("set", "Set browser access credentials",
 				&cli.Command{
 					Name:   "password",
 					Usage:  "Set or replace the browser password",
@@ -210,12 +190,18 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 					Action: performSetPassword,
 				},
 			),
-			accessGroup("revoke", "Revoke browser access",
+			commandGroup("revoke", "Revoke browser access",
 				&cli.Command{
 					Name: "sessions", Usage: "Sign out all browsers and retain the password",
 					Flags: common(), Action: performRevokeSessions,
 				},
 			),
+			&cli.Command{
+				Name:   "reset",
+				Usage:  "Revoke all API clients and browser sessions with Wake stopped",
+				Flags:  common(),
+				Action: performResetAccess,
+			},
 		),
 		{
 			Name:            "config",
@@ -268,7 +254,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	return root
 }
 
-func accessGroup(name, usage string, children ...*cli.Command) *cli.Command {
+func commandGroup(name, usage string, children ...*cli.Command) *cli.Command {
 	return &cli.Command{
 		Name: name, Usage: usage, Commands: children, HideHelpCommand: true,
 		Action: func(_ context.Context, c *cli.Command) error {

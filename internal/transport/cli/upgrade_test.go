@@ -31,7 +31,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 		t.Fatal(err)
 	}
 
-	args := []string{"--json", "upgrade", "--config", configPath}
+	args := []string{"--json", "storage", "upgrade", "--config", configPath}
 
 	var stdout, stderr bytes.Buffer
 	if status := Run(args, &stdout, &stderr); status != 0 {
@@ -58,7 +58,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 	stderr.Reset()
 
 	if status := Run(
-		[]string{"upgrade", "--config", path, "--confirm", "stale"},
+		[]string{"storage", "upgrade", "--config", path, "--confirm", "stale"},
 		&stdout,
 		&stderr,
 	); status != exitFailure ||
@@ -81,7 +81,7 @@ func TestUpgradeConfirmationCommandQuotesExplicitProfile(t *testing.T) {
 	}
 
 	got := upgradeConfirmationCommand(resolved, "abc")
-	want := `wake upgrade --config '/tmp/Wake'"'"'s config.toml' --confirm abc`
+	want := `wake storage upgrade --config '/tmp/Wake'"'"'s config.toml' --confirm abc`
 	if got != want {
 		t.Fatal(got)
 	}
@@ -106,7 +106,7 @@ func TestUpgradeOutputIncludesApprovedPlanAndReleaseNotes(t *testing.T) {
 		name, expected                string
 		recovery, approved, confirmed bool
 	}{
-		{name: "preview", expected: "wake upgrade --confirm fixture-plan"},
+		{name: "preview", expected: "wake storage upgrade --confirm fixture-plan"},
 		{name: "interrupted", recovery: true, expected: "Start the matching Wake build to recover it."},
 		{name: "approved", approved: true, expected: "Start Wake to resume the approved rebuild."},
 		{name: "confirmed", confirmed: true, expected: "Upgrade applied."},
@@ -154,9 +154,9 @@ func TestUpgradeOutputIncludesApprovedPlanAndReleaseNotes(t *testing.T) {
 
 func TestUpgradeCLIRejectsInvalidUsageAndMissingConfig(t *testing.T) {
 	for _, args := range [][]string{
-		{"upgrade", "unexpected"},
-		{"upgrade", "--confirm="},
-		{"upgrade", "--config", filepath.Join(t.TempDir(), "missing.toml")},
+		{"storage", "upgrade", "unexpected"},
+		{"storage", "upgrade", "--confirm="},
+		{"storage", "upgrade", "--config", filepath.Join(t.TempDir(), "missing.toml")},
 	} {
 		var stdout, stderr bytes.Buffer
 		if status := Run(args, &stdout, &stderr); status == exitOK || stdout.Len() != 0 || stderr.Len() == 0 {
@@ -168,7 +168,7 @@ func TestUpgradeCLIRejectsInvalidUsageAndMissingConfig(t *testing.T) {
 func TestUpgradeConfirmationChecksConfiguredKey(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
 	keyPath := cfg.Credentials.KeyPath
-	args := []string{"upgrade", "--config", path}
+	args := []string{"storage", "upgrade", "--config", path}
 
 	var stdout, stderr bytes.Buffer
 	if status := Run(args, &stdout, &stderr); status != exitOK {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func startShellDaemon(t *testing.T, cfg config.Config) (func(), *http.Client) {
 	return stop, nil
 }
 
-func TestCommandDiscoveryReflectsFoundation(t *testing.T) {
+func TestCommandDiscoveryReflectsCommandTree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"--json", "help"}, &stdout, &stderr); code != exitOK {
 		t.Fatal(code, stderr.String())
@@ -78,15 +79,45 @@ func TestCommandDiscoveryReflectsFoundation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	names := map[string]bool{}
-	for _, command := range tree.Commands {
-		names[command.Name] = true
+	var names []string
+
+	var collectLeaves func(commandDescription)
+
+	collectLeaves = func(command commandDescription) {
+		if len(command.Commands) == 0 {
+			names = append(names, command.Name)
+		}
+
+		for _, child := range command.Commands {
+			collectLeaves(child)
+		}
 	}
 
-	for _, name := range []string{"wake credentials", "wake serve", "wake admin", "wake config", "wake reset", "wake help"} {
-		if !names[name] {
-			t.Fatal("retained command missing", name)
-		}
+	collectLeaves(tree)
+	slices.Sort(names)
+
+	want := []string{
+		"wake access reset",
+		"wake access revoke sessions",
+		"wake access set password",
+		"wake accounts get",
+		"wake accounts list",
+		"wake activity query",
+		"wake api check",
+		"wake api get",
+		"wake config check",
+		"wake config describe",
+		"wake config get",
+		"wake config show",
+		"wake credentials generate-key",
+		"wake help",
+		"wake positions get",
+		"wake serve",
+		"wake storage reset",
+		"wake storage upgrade",
+	}
+	if !slices.Equal(names, want) {
+		t.Fatalf("command paths:\n got %q\nwant %q", names, want)
 	}
 
 	for _, name := range []string{"setup", "ingest", "trades", "connections", "warehouse"} {

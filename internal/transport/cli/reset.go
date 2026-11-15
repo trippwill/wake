@@ -14,7 +14,7 @@ import (
 
 func performReset(ctx context.Context, c *cli.Command) error {
 	if c.NArg() != 1 {
-		return usageError("reset requires one target: credentials or warehouse")
+		return usageError("storage reset requires one target: credentials or warehouse")
 	}
 
 	target, err := daemon.ParseResetTarget(c.Args().First())

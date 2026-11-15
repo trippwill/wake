@@ -33,13 +33,13 @@ rather than app-specific wrappers.
 To reset development storage, stop Wake and preview the selected files:
 
 ```sh
-mise run bin -- reset warehouse
-mise run bin -- reset warehouse --confirm
+mise run bin -- storage reset warehouse
+mise run bin -- storage reset warehouse --confirm
 mise run serve
 ```
 
-`wake reset` accepts `credentials` or `warehouse`, uses the configured file paths
-and previews by default. Only `--confirm` deletes files. Credentials reset removes
+`wake storage reset` accepts `credentials` or `warehouse`, uses the configured
+file paths and previews by default. Only `--confirm` deletes files. Credentials reset removes
 the connections store; warehouse reset removes the financial warehouse and its
 operational state. Both include SQLite sidecars and super-journals, without opening SQLite or loading
 credentials; corrupt or unsupported databases do not prevent reset. Configuration,

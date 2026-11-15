@@ -107,7 +107,7 @@ func TestBrowserAccessRejectsInvalidCommandsAndProfiles(t *testing.T) {
 	}
 
 	assertFailure([]string{"access", "revoke"}, exitUsage, "specify a command after wake access revoke")
-	assertFailure([]string{"access", "reset"}, exitUsage, "unknown command reset")
+	assertFailure([]string{"access", "reset", "extra"}, exitUsage, "unexpected argument extra")
 	assertFailure([]string{"access", "revoke", "sessions", "extra"}, exitUsage, "unexpected argument extra")
 
 	missing := filepath.Join(cfg.Paths.ConfigDir, "missing.toml")
@@ -166,7 +166,7 @@ func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"--json", "admin", "reset-access", "--config", path},
+		[]string{"--json", "access", "reset", "--config", path},
 		&stdout,
 		&stderr,
 	); code != exitOK {

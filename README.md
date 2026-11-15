@@ -156,7 +156,8 @@ A missing or mismatched credential encryption key also pauses synchronization.
 Retained history and existing API grants remain usable. Check **System → Status** for
 key recovery guidance and **Connections → Recovery** for source and reference review.
 After repair, select **Resume upstream work**. If the original key is unavailable,
-stop Wake, back up the files, run `wake reset credentials`, and review the preview.
+stop Wake and back up the files. Run `wake storage reset credentials` and review
+the preview.
 Confirm the reset and provision a usable key. To generate a replacement, move any
 unusable key file aside and run `wake credentials generate-key` with Wake stopped.
 Start Wake, enter your source credentials again, and resume synchronization.
@@ -172,15 +173,15 @@ The daemon writes structured operational logs to stderr, including completed wor
 failures and recovery actions. Startup reports both listeners. Set `[log] level = "debug"`
 in the TOML for stage, validation, pacing, and cache detail.
 
-To check storage compatibility with a new version, stop Wake and run `wake upgrade`
-using the new binary and the same profile. Review any plan before applying it.
+To check storage compatibility, stop Wake and run `wake storage upgrade` with
+the new binary and the same profile. Review any plan before applying it.
 See [forward upgrades](.docs/product/coverage.md#forward-upgrades).
 
 To clear credentials or financial history, stop Wake and preview the reset:
 
 ```sh
-wake reset warehouse
-wake reset warehouse --confirm
+wake storage reset warehouse
+wake storage reset warehouse --confirm
 ```
 
 Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present,
@@ -215,12 +216,12 @@ Save it in a private token file on the client with mode `0600`.
 ```sh
 export WAKE_ENDPOINT=http://127.0.0.1:8788
 export WAKE_TOKEN_FILE="$HOME/.config/wake/laptop.token"
-wake --json doctor
+wake --json api check
 wake --json accounts list
 wake --json accounts get "$ACCOUNT_ID"
 wake --json activity query --account "$ACCOUNT_ID" --from 2026-10-01 --to 2026-10-31 --family trade
 wake --json positions get "$ACCOUNT_ID"
-wake --json request get '/v1/activity/ACTIVITY_ID'
+wake --json api get '/v1/activity/ACTIVITY_ID'
 ```
 
 Set `ACCOUNT_ID` to an ID from `resources[].id` in the accounts list.

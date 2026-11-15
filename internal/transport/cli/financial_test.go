@@ -210,16 +210,16 @@ func TestFinancialCLIReads(t *testing.T) {
 	financialResourceIDs(t, call("activity", "query", "--account", "missing"))
 	financialResourceIDs(t, call("activity", "query", "--offset", "1000"))
 
-	doctor := call("doctor")
-	if !bytes.Contains(doctor, []byte(`"auth":"client_token"`)) ||
-		!bytes.Contains(doctor, []byte(`"reachable":true`)) {
-		t.Fatal(string(doctor))
+	check := call("api", "check")
+	if !bytes.Contains(check, []byte(`"auth":"client_token"`)) ||
+		!bytes.Contains(check, []byte(`"reachable":true`)) {
+		t.Fatal(string(check))
 	}
 
 	raw := financialCLI(
 		t,
 		exitOK,
-		"request",
+		"api",
 		"get",
 		"--endpoint",
 		endpoint,
@@ -285,13 +285,13 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 		{"activity", "query", "--state", "unknown"},
 		{"accounts", "get", "a/b"},
 		{"positions", "get"},
-		{"doctor", "--endpoint", "relative.sock"},
-		{"doctor", "--config", "/profile.toml", "--endpoint", "/socket"},
-		{"request", "get", "https://example.invalid/v1/snapshot"},
-		{"request", "get", "/v1/events?extra=1"},
-		{"request", "get", "/v1/%65vents"},
-		{"request", "get", "/v1/a/../events"},
-		{"request", "post", "/v1/snapshot"},
+		{"api", "check", "--endpoint", "relative.sock"},
+		{"api", "check", "--config", "/profile.toml", "--endpoint", "/socket"},
+		{"api", "get", "https://example.invalid/v1/snapshot"},
+		{"api", "get", "/v1/events?extra=1"},
+		{"api", "get", "/v1/%65vents"},
+		{"api", "get", "/v1/a/../events"},
+		{"api", "post", "/v1/snapshot"},
 	} {
 		financialCLI(t, exitUsage, args...)
 	}
@@ -316,8 +316,8 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 		t.Fatal(string(errOut))
 	}
 
-	financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint, "/v1/accounts/redirect")
-	financialCLI(t, exitFailure, "doctor", "--endpoint", "http://127.0.0.1:1")
+	financialCLI(t, exitFailure, "api", "get", "--endpoint", endpoint, "/v1/accounts/redirect")
+	financialCLI(t, exitFailure, "api", "check", "--endpoint", "http://127.0.0.1:1")
 }
 
 func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
@@ -343,7 +343,7 @@ func TestFinancialCLIPreservesValidatedErrorCodes(t *testing.T) {
 				w.WriteHeader(tc.status)
 				_, _ = fmt.Fprint(w, tc.body)
 			})
-			out := financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint,
+			out := financialCLI(t, exitFailure, "api", "get", "--endpoint", endpoint,
 				"/v1/accounts/acct/explanation?revision=3")
 			if !bytes.Contains(out, []byte(`"code":"`+tc.code+`"`)) ||
 				bytes.Contains(out, []byte("private diagnostic text")) {
@@ -406,7 +406,7 @@ func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
 					t.Fatal(string(out))
 				}
 			} else {
-				financialCLI(t, exitFailure, "request", "get", "--endpoint", endpoint, tc.start)
+				financialCLI(t, exitFailure, "api", "get", "--endpoint", endpoint, tc.start)
 			}
 
 			if got := requests.Load(); got != tc.followed+1 {
@@ -417,7 +417,7 @@ func TestFinancialCLIConfinesIdentityRedirects(t *testing.T) {
 }
 
 func TestFinancialCLIHelp(t *testing.T) {
-	for _, command := range []string{"accounts list", "accounts get", "activity query", "positions get", "request get", "doctor"} {
+	for _, command := range []string{"accounts list", "accounts get", "activity query", "positions get", "api get", "api check"} {
 		body := financialCLI(t, exitOK, append([]string{"help"}, strings.Fields(command)...)...)
 		if !bytes.Contains(body, []byte(`"name":"wake `+command+`"`)) ||
 			!bytes.Contains(body, []byte(`"names":["endpoint"]`)) {
@@ -436,7 +436,7 @@ func TestFinancialCLIEndpointResolution(t *testing.T) {
 		args []string
 		want string
 	}{{nil, first}, {[]string{"--endpoint", second}, second}} {
-		body := financialCLI(t, exitOK, append([]string{"doctor"}, test.args...)...)
+		body := financialCLI(t, exitOK, append([]string{"api", "check"}, test.args...)...)
 
 		var result struct {
 			Endpoint string `json:"endpoint"`
@@ -474,7 +474,7 @@ func TestFinancialCLIProtectsTransportCredentials(t *testing.T) {
 	)
 	defer tlsServer.Close()
 
-	financialCLI(t, exitFailure, "doctor", "--endpoint", tlsServer.URL)
+	financialCLI(t, exitFailure, "api", "check", "--endpoint", tlsServer.URL)
 
 	if received.Load() != 0 {
 		t.Fatal("untrusted TLS peer received credential")

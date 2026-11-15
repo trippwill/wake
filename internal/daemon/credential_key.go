@@ -67,7 +67,7 @@ func loadSyncCredentials(
 
 	reason := "Restore a usable credential encryption key. If the key file is missing, generate one with wake credentials generate-key while Wake is stopped."
 	if errors.Is(keyErr, persistence.ErrCredentialKeyRequired) {
-		reason = "Restore the matching credential encryption key, or use wake reset credentials while Wake is stopped and then provision a usable key."
+		reason = "Restore the matching credential encryption key, or use wake storage reset credentials while Wake is stopped and then provision a usable key."
 	}
 
 	return nil, reason, store.PauseForCredentialKey(ctx)

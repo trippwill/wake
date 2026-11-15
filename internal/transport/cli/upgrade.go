@@ -21,7 +21,7 @@ func performUpgrade(ctx context.Context, c *cli.Command) error {
 
 	confirm := c.String("confirm")
 	if c.IsSet("confirm") && confirm == "" {
-		return usageError("--confirm requires the plan ID from wake upgrade")
+		return usageError("--confirm requires the plan ID from wake storage upgrade")
 	}
 
 	resolved, err := config.ResolveReadOnly(c)
@@ -110,7 +110,7 @@ func writeUpgradeResult(
 }
 
 func upgradeConfirmationCommand(resolved config.Resolution, id string) string {
-	args := []string{"wake", "upgrade"}
+	args := []string{"wake", "storage", "upgrade"}
 	if resolved.ConfigSource != "default" && resolved.ConfigPath != "" ||
 		resolved.Config.Paths.ConfigFile != "" {
 		args = append(args, "--config", shellQuote(resolved.ConfigPath))

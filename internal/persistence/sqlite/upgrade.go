@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	ErrUpgradeConfirmation Error = "upgrade confirmation required; stop Wake and run wake upgrade with the same configuration"
-	ErrUpgradePlanChanged  Error = "upgrade plan changed; run wake upgrade again"
+	ErrUpgradeConfirmation Error = "upgrade confirmation required; stop Wake and run wake storage upgrade with the same configuration"
+	ErrUpgradePlanChanged  Error = "upgrade plan changed; run wake storage upgrade again"
 	ErrUpgradeRecovery     Error = "upgrade recovery required; use the matching Wake build and original stores or restore the paired backup"
 	ErrUpgradeNotes        Error = "retained-history rule update is missing release notes"
 	ErrUpgradePair         Error = "upgrade requires the matching warehouse and access store; recover the pair before upgrading"

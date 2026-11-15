@@ -251,7 +251,7 @@ is implied by this coverage.
 
 ### Forward upgrades
 
-Stop Wake and use the new binary with the same profile to run `wake upgrade`.
+Stop Wake, then run `wake storage upgrade` with the new binary and the same profile.
 Review the format changes, backup destination, rebuild requirements, and rule release
 notes. Copy the printed confirmation command to apply that exact plan, then start
 Wake. The preview leaves the stores and backup destination untouched.
