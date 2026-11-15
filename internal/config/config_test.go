@@ -46,6 +46,7 @@ func TestLoadDefaults(t *testing.T) {
 	assertPath(t, cfg.Paths.ConfigDir, filepath.Join(roots.config, "wake"))
 	assertPath(t, cfg.Storage.WarehousePath, filepath.Join(roots.config, "wake", "wake.db"))
 	assertPath(t, cfg.Storage.ConnectionsPath, filepath.Join(roots.config, "wake", "connections.db"))
+	assertPath(t, cfg.Storage.SyncPath, filepath.Join(roots.config, "wake", "sync.db"))
 	assertPath(
 		t,
 		cfg.Paths.RuntimeDir,

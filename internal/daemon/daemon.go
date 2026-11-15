@@ -352,7 +352,7 @@ func currencyCachePath(cfg config.Config) string {
 	cache := filepath.Join(cfg.Paths.RuntimeDir, currencycatalog.CacheName)
 	cached, err := os.Stat(cache)
 
-	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Paths.ConfigFile, cfg.Credentials.KeyPath} {
+	for _, path := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath, cfg.Paths.ConfigFile, cfg.Credentials.KeyPath} {
 		if path == cache {
 			return ""
 		}

@@ -49,6 +49,7 @@ type Paths struct {
 type Storage struct {
 	WarehousePath     string `toml:"warehouse_path"`
 	ConnectionsPath   string `toml:"connections_path"`
+	SyncPath          string `toml:"sync_path"`
 	UnattendedUpgrade bool   `toml:"unattended_upgrade"`
 }
 

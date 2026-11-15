@@ -78,6 +78,8 @@ func TestConfigRejectsFormerOverridesAndUnsafeFileAliases(t *testing.T) {
 		"[credentials]\nmaster_key_path='x'\n",
 		"[storage]\nwarehouse_path='auth.json'\n",
 		"[storage]\nconnections_path='wake.db-journal'\n",
+		"[storage]\nsync_path='connections.db-journal'\n",
+		"[storage]\nsync_path='auth.json'\n",
 		"[Storage]\nwarehouse_path='elsewhere'\n",
 		"[admin]\ncurrency_refresh='invalid'\n",
 	} {

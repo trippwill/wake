@@ -47,6 +47,12 @@ func Settings() []Setting {
 			Description: "Path to the source connection and encrypted credential database",
 		},
 		{
+			Key:         "storage.sync_path",
+			Type:        "string",
+			Default:     "sync.db",
+			Description: "Path to the optional synchronization database",
+		},
+		{
 			Key:  "storage.unattended_upgrade",
 			Type: "bool", Default: "false",
 			Description: "Approve supported upgrades that rebuild retained history during startup",
@@ -175,7 +181,9 @@ func resolveSnapshot(path, source string, content []byte, runtimeRequired bool) 
 	}
 
 	file.Storage.WarehousePath = instancePath(dir, file.Storage.WarehousePath, "wake.db")
+
 	file.Storage.ConnectionsPath = instancePath(dir, file.Storage.ConnectionsPath, "connections.db")
+	file.Storage.SyncPath = instancePath(dir, file.Storage.SyncPath, "sync.db")
 	file.Credentials.KeyPath = instancePath(dir, file.Credentials.KeyPath, "credentials.key")
 	if file.Paths.RuntimeDir != "" {
 		file.Paths.RuntimeDir = instancePath(dir, file.Paths.RuntimeDir, "")
@@ -265,7 +273,7 @@ func checkInstancePaths(cfg Config) error {
 			}
 		}
 
-		for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
+		for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath} {
 			db = comparablePath(db)
 			for _, suffix := range []string{"", "-wal", "-shm", "-journal", ".upgrade-intent", ".upgrade-backup.tar", ".restore-intent"} {
 				if path == db+suffix || strings.HasPrefix(path, db+"-mj") {
@@ -287,6 +295,7 @@ func fileSettingValues(file fileConfig) map[string]any {
 	return map[string]any{
 		"storage.warehouse_path":     file.Storage.WarehousePath,
 		"storage.connections_path":   file.Storage.ConnectionsPath,
+		"storage.sync_path":          file.Storage.SyncPath,
 		"storage.unattended_upgrade": file.Storage.UnattendedUpgrade,
 		"paths.runtime_dir":          file.Paths.RuntimeDir,
 		"log.level":                  file.Log.Level,
@@ -302,7 +311,7 @@ func fileSettingValues(file fileConfig) map[string]any {
 func checkFileSetting(setting Setting, value any) error {
 	text := fmt.Sprint(value)
 	switch setting.Key {
-	case "storage.warehouse_path", "storage.connections_path":
+	case "storage.warehouse_path", "storage.connections_path", "storage.sync_path":
 		if text == "" {
 			return fmt.Errorf("%w: %s requires a file path", ErrInvalid, setting.Key)
 		}
@@ -413,7 +422,7 @@ func checkDatabasePath(path string) error {
 }
 
 func checkStorage(storage Storage) error {
-	paths := []string{storage.WarehousePath, storage.ConnectionsPath}
+	paths := []string{storage.WarehousePath, storage.ConnectionsPath, storage.SyncPath}
 	for i, path := range paths {
 		if err := checkDatabasePath(path); err != nil {
 			return err
