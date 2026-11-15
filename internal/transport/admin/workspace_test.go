@@ -422,3 +422,42 @@ func TestHistoryUpdateOverviewAndMaintenanceRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestUnavailableUpstreamKeepsAcquisitionAndAvoidsFalseRepair(t *testing.T) {
+	details, _ := application.NewAccountDetails("Synthetic", "")
+	ref, _ := source.NewReference("ibkr", "account", "", "one")
+	account, _ := application.NewAccount("id", "connection", "ibkr-flex", ref, details, "rule")
+
+	c := application.ConnectionView{
+		ID:                  "connection",
+		Name:                "Synthetic",
+		Account:             account,
+		CanAcquire:          true,
+		CanDiscover:         true,
+		UpstreamUnavailable: true,
+		Work: []application.WorkStatus{
+			{Operation: "acquire", Scheduled: true, Failure: "retained failure"},
+			{Operation: "discover", Scheduled: true},
+		},
+	}
+	work := sourceWork(c)
+	if len(work) != 1 || work[0].Operation != "acquire" || work[0].Failure != "retained failure" {
+		t.Fatal(work)
+	}
+
+	for _, item := range repairs(sourceView{Connections: []application.ConnectionView{c}}) {
+		if strings.Contains(item.Reason, "credentials are missing") {
+			t.Fatal(item)
+		}
+	}
+
+	var out strings.Builder
+	if err := ConnectionPage("csrf", sourceView{}, c).Render(context.Background(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), "Upstream services could not start") ||
+		strings.Contains(out.String(), "Retry connection") {
+		t.Fatal(out.String())
+	}
+}

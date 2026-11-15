@@ -54,7 +54,7 @@ type (
 		Descriptor                            provider.Descriptor
 		CredentialKeys                        []string
 		CanDiscover, CanAcquire, CanNormalize bool
-		MissingAccess                         bool
+		MissingAccess, UpstreamUnavailable    bool
 		SettingsStored, CredentialStored      bool
 		Candidates                            []Candidate
 		Work                                  []WorkStatus
@@ -419,7 +419,7 @@ func (w *Workflow) confirmAccount(
 	}
 
 	connection.Streams = make([]provider.Stream, 0, len(configured))
-	connection.CanAcquire = w.host != nil && registration.Acquirer() != nil
+	connection.CanAcquire = registration.Acquirer() != nil
 	for _, configuration := range configured {
 		connection.Streams = append(connection.Streams, configuration.Stream())
 	}
@@ -465,9 +465,9 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 		connection.Polling = w.host.PollSettings(connection.Provider, connection.PollOverrides)
 	}
 
-	connection.CanAcquire = w.host != nil && registration.Acquirer() != nil
+	connection.CanAcquire = registration.Acquirer() != nil
 
-	connection.CanDiscover = w.host != nil && registration.Discoverer() != nil
+	connection.CanDiscover = registration.Discoverer() != nil
 	connection.CanNormalize = registration.Normalizer() != nil
 	connection.CredentialStored = true
 	for _, field := range connection.Descriptor.Fields() {
@@ -477,7 +477,8 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 		}
 	}
 
-	connection.MissingAccess = w.host == nil || !connection.SettingsStored || !connection.CredentialStored
+	connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+	connection.UpstreamUnavailable = w.host == nil
 }
 
 func (w *Workflow) Prerequisites(ctx context.Context) (Prerequisites, error) {
@@ -510,7 +511,7 @@ func (w *Workflow) Recovery(ctx context.Context, query ListQuery) (SourcePage, b
 	w.decorateConnections(access.Connections)
 
 	for _, connection := range access.Connections {
-		if connection.MissingAccess {
+		if connection.MissingAccess || connection.UpstreamUnavailable {
 			return view, false, nil
 		}
 	}
