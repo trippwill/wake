@@ -25,6 +25,22 @@ func TestStorageBackupRejectsInvalidSourceState(t *testing.T) {
 		{"missing metadata", "DROP TABLE main.store_metadata", ErrUnsupportedSchema},
 		{"unknown format", "UPDATE main.store_metadata SET version='wake-warehouse/999'", ErrUnsupportedSchema},
 		{"extra table", "CREATE TABLE main.unexpected(value TEXT)", ErrUnsupportedSchema},
+		{
+			"renamed warehouse column",
+			"ALTER TABLE main.connections RENAME COLUMN name TO wrong_name",
+			ErrUnsupportedSchema,
+		},
+		{
+			"renamed access column",
+			"ALTER TABLE access.configurations RENAME COLUMN settings TO wrong_settings",
+			ErrUnsupportedSchema,
+		},
+		{"missing view", "DROP VIEW main.admin_activity", ErrUnsupportedSchema},
+		{
+			"altered search index",
+			"DROP INDEX activity_publication_search_v1; CREATE INDEX activity_publication_search_v1 ON published_resources(id)",
+			ErrUnsupportedSchema,
+		},
 		{"invalid rule history", "UPDATE main.history_update SET applied=999", ErrHistoryVersion},
 		{"missing rule history", "DELETE FROM main.history_update", nil},
 		{"missing recovery profile", "DELETE FROM main.profile", nil},
@@ -444,6 +460,60 @@ VALUES ('backup-checksum','now',X'',CAST('original-paired-backup-evidence' AS BL
 
 func TestStorageRestoreAcceptsLegacyPairedBackup(t *testing.T) {
 	source := seedUpgradeStores(t)
+
+	store, err := Open(t.Context(), source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.db.Exec("DROP INDEX activity_publication_search_v1")
+	if err := errors.Join(err, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	if _, err := Restore(t.Context(), target, legacyPairedBackup(t, source), true); err != nil {
+		t.Fatal(err)
+	}
+
+	assertRestoredPair(t, target)
+}
+
+func TestStorageRestoreRejectsLegacySchemaMismatchBeforeInstallation(t *testing.T) {
+	source := seedUpgradeStores(t)
+
+	store, err := Open(t.Context(), source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.db.Exec("ALTER TABLE main.connections RENAME COLUMN name TO wrong_name")
+	if err := errors.Join(err, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	if _, err := Restore(
+		t.Context(),
+		target,
+		legacyPairedBackup(t, source),
+		true,
+	); !errors.Is(
+		err,
+		ErrUnsupportedSchema,
+	) {
+		t.Fatalf("restore accepted an incompatible schema: %v", err)
+	}
+
+	paths := target.paths()
+	if err := checkVacantStores(paths[:]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func legacyPairedBackup(t *testing.T, source Profile) string {
+	t.Helper()
+
 	contents := storeBytes(t, source)
 
 	var data bytes.Buffer
@@ -469,10 +539,5 @@ func TestStorageRestoreAcceptsLegacyPairedBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	target := vacantRecoveryProfile(t)
-	if _, err := Restore(t.Context(), target, path, true); err != nil {
-		t.Fatal(err)
-	}
-
-	assertRestoredPair(t, target)
+	return path
 }

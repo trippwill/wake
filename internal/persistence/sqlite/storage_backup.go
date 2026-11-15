@@ -124,15 +124,8 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 			return ErrUnsupportedSchema
 		}
 
-		var count int
-
-		err = db.QueryRowContext(ctx, profileStatement("ObjectCount", "main")).Scan(&count)
-		if err != nil {
+		if err := validateCopySchema(ctx, db, baseline.schemas[i], storeSchemas[i]); err != nil {
 			return err
-		}
-
-		if count != strings.Count(baseline.schemas[i], "CREATE TABLE") {
-			return ErrUnsupportedSchema
 		}
 
 		var integrity string
@@ -194,6 +187,90 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 	}
 
 	return nil
+}
+
+type recoverySchemaObject struct{ kind, name, definition string }
+
+// Compare the catalog against the schema of the declared format. Build the
+// reference independently so schema content from the archive is never executed.
+func validateCopySchema(ctx context.Context, db *sql.DB, definition, schema string) error {
+	// Use the registered driver with one connection so the reference stays in memory.
+	reference, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reference.Close() }()
+
+	reference.SetMaxOpenConns(1)
+
+	if schema == "access" {
+		if _, err := reference.ExecContext(ctx, profileStatement("AttachAccess", ""), ":memory:"); err != nil {
+			return err
+		}
+	}
+
+	if _, err := reference.ExecContext(ctx, definition); err != nil {
+		return err
+	}
+
+	required, err := readRecoverySchema(ctx, reference, schema)
+	if err != nil {
+		return err
+	}
+
+	allowed := required
+	if schema == "main" {
+		// Startup can recreate these indexes if an older archive lacks them.
+		if _, err := reference.ExecContext(ctx, activityDateIndexesSQL+"\n"+activitySearchIndexSQL); err != nil {
+			return err
+		}
+
+		allowed, err = readRecoverySchema(ctx, reference, schema)
+		if err != nil {
+			return err
+		}
+	}
+
+	actual, err := readRecoverySchema(ctx, db, "main")
+	if err != nil {
+		return errors.Join(ErrUnsupportedSchema, err)
+	}
+
+	for object := range required {
+		if _, ok := actual[object]; !ok {
+			return fmt.Errorf("%w: missing or changed %s %s", ErrUnsupportedSchema, object.kind, object.name)
+		}
+	}
+
+	for object := range actual {
+		if _, ok := allowed[object]; !ok {
+			return fmt.Errorf("%w: unexpected %s %s", ErrUnsupportedSchema, object.kind, object.name)
+		}
+	}
+
+	return nil
+}
+
+func readRecoverySchema(
+	ctx context.Context, db *sql.DB, schema string,
+) (map[recoverySchemaObject]struct{}, error) {
+	rows, err := db.QueryContext(ctx, profileStatement("RecoverySchema", schema))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	objects := make(map[recoverySchemaObject]struct{})
+	for rows.Next() {
+		var object recoverySchemaObject
+		if err := rows.Scan(&object.kind, &object.name, &object.definition); err != nil {
+			return nil, err
+		}
+
+		objects[object] = struct{}{}
+	}
+
+	return objects, rows.Err()
 }
 
 func checkCopyForeignKeys(ctx context.Context, db *sql.DB) error {

@@ -7,6 +7,8 @@ SELECT kind,version,id FROM {{schema}}.store_metadata WHERE singleton=1;
 INSERT INTO {{schema}}.store_metadata(singleton,kind,version,id) VALUES(1,?,?,?);
 -- name: ObjectCount
 SELECT count(*) FROM {{schema}}.sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%';
+-- name: RecoverySchema
+SELECT type,name,sql FROM {{schema}}.sqlite_schema WHERE substr(name,1,7)<>'sqlite_' AND sql IS NOT NULL;
 -- name: Profile
 SELECT access_id FROM profile WHERE singleton=1;
 -- name: InitializeProfile
