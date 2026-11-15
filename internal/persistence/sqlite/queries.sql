@@ -167,7 +167,7 @@ FROM artifacts
 JOIN connections ON connections.id=artifacts.connection_id
 JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider
 JOIN json_each(CAST(sqlc.arg(versions) AS TEXT)) version ON version.key=connections.provider
-WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation IN ('acquire','supply'))
 AND NOT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=version.value)
 AND NOT EXISTS(SELECT 1 FROM json_each(CAST(sqlc.arg(deferred) AS TEXT)) retry WHERE retry.value=artifacts.id)
 ORDER BY artifacts.rowid LIMIT 20;
@@ -179,7 +179,7 @@ SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,
  (SELECT count(*) FROM execution_observations o WHERE o.artifact_id=artifacts.id AND o.version=sqlc.arg(version) AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id
 LEFT JOIN normalization_receipts n ON n.artifact_id=artifacts.id AND n.version=sqlc.arg(version)
-WHERE artifacts.connection_id=sqlc.arg(connection_id) AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
+WHERE artifacts.connection_id=sqlc.arg(connection_id) AND receipt.operation IN ('acquire','supply') ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT target.* FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?;
 -- name: QualifyInstrument :exec
@@ -321,7 +321,7 @@ INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status
 -- name: CanRetryProcessing :one
 SELECT EXISTS(SELECT 1 FROM artifacts
  WHERE artifacts.id=?
- AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+ AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation IN ('acquire','supply'))
  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id));
 -- name: PutDescriptor :exec
 INSERT INTO connections(id,provider,name) VALUES(?,?,?);

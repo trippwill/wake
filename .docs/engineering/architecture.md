@@ -497,8 +497,9 @@ entering interpretation retries. Providers translate protocol progress and retry
 causes into shared typed outcomes;
 the core never infers their meaning from a native code or reference kind.
 Normalization-only providers can interpret explicitly supplied bounded evidence
-without acquisition credentials or scheduled upstream work. Supply grants no
-account authority. Normalization receives retained bytes and a sequential claim
+without acquisition credentials or scheduled upstream work. Supplied reports
+for a confirmed source enter local processing under its existing account
+authority. Normalization receives retained bytes and a sequential claim
 sink; it receives no credentials, reference lookup, SQL or presentation services.
 
 The host scopes work and credential callbacks to a connection and joins admitted

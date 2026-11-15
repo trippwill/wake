@@ -39,16 +39,6 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.db.Exec(
-		`INSERT INTO artifacts(id,connection_id,stream,operation,format,media_type,retrieved,hash,content) VALUES('local','synthetic','confirmations','acquire','ibkr-flex-confirmation-xml','application/xml','2026-10-20T00:00:00Z',?,?)`,
-		artifact.Hash(),
-		body,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	recordTestReceipt(t, s, "local")
-
 	profile := testProfile(s.owners[0].Name())
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
@@ -60,6 +50,11 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
+	id, err := s.RetainSupplied(t.Context(), "synthetic", "confirmations", artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	registration, err := ibkrflex.Registration(ibkrflex.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +65,22 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	now := time.Now()
 	versions := map[string]string{registration.Descriptor().ID(): registration.Version()}
 
-	if err = s.ProcessingFailure(t.Context(), "local", now.Add(time.Minute)); err != nil {
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err = s.ProcessingFailure(canceled, id, now.Add(time.Hour)); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled failure changed the processing retry", err)
+	}
+
+	if _, err = s.PendingArtifacts(canceled, now, versions); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled read returned processing work", err)
+	}
+
+	if err = s.RetryProcessing(canceled, id); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled retry cleared the processing failure", err)
+	}
+
+	if err = s.ProcessingFailure(t.Context(), id, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +88,7 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		t.Fatal("deferred artifact was eligible", pending, e)
 	}
 
-	if err = s.RetryProcessing(t.Context(), "local"); err != nil {
+	if err = s.RetryProcessing(t.Context(), id); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,7 +97,7 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		now,
 		versions,
 	); e != nil || len(pending) != 1 ||
-		pending[0].ID != "local" {
+		pending[0].ID != id {
 		t.Fatal("retry did not make retained artifact eligible", pending, e)
 	}
 
@@ -106,7 +116,7 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 	retainDecision(t, s, "activity", executions[0].ID, "price", "2.340000000001", "USD", "set")
 
 	var normalized, processed int
-	if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM normalization_receipts WHERE artifact_id='local'),(SELECT count(*) FROM processing_receipts WHERE artifact_id='local')`).
+	if err = s.db.QueryRow(`SELECT (SELECT count(*) FROM normalization_receipts WHERE artifact_id=?),(SELECT count(*) FROM processing_receipts WHERE artifact_id=?)`, id, id).
 		Scan(&normalized, &processed); err != nil ||
 		normalized != 1 ||
 		processed != 1 {
@@ -151,7 +161,7 @@ func TestLocalWorkflowProcessesRetainedEvidenceWithoutUpstream(t *testing.T) {
 		now,
 		versions,
 	); e != nil || len(pending) != 1 ||
-		pending[0].ID != "local" {
+		pending[0].ID != id {
 		t.Fatal("changed interpretation did not rediscover retained evidence", pending, e)
 	}
 
@@ -251,6 +261,19 @@ BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;`); err != nil {
 		t.Fatal("empty evidence was accepted", id, err)
 	}
 
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if id, err := store.RetainSupplied(
+		canceled,
+		"local",
+		"reports",
+		artifact,
+	); id != "" ||
+		!errors.Is(err, context.Canceled) {
+		t.Fatal("canceled supply acknowledged evidence", id, err)
+	}
+
 	if id, err := store.RetainSupplied(ctx, "local", "reports", artifact); id != "" || err == nil {
 		t.Fatal("failed receipt acknowledged a report", id, err)
 	}
@@ -266,8 +289,13 @@ BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;`); err != nil {
 		t.Fatal(err)
 	}
 
-	if id, err := store.RetainSupplied(ctx, "local", "reports", artifact); id == "" || err != nil {
+	id, err := store.RetainSupplied(ctx, "local", "reports", artifact)
+	if id == "" || err != nil {
 		t.Fatal("could not retain evidence after retry", id, err)
+	}
+
+	if err = store.RetryProcessing(ctx, id); !errors.Is(err, application.ErrInvalid) {
+		t.Fatal("supplied evidence received account authority", err)
 	}
 
 	if err = store.RetryProcessing(ctx, "missing"); !errors.Is(err, application.ErrInvalid) {

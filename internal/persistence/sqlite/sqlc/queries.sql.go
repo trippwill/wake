@@ -695,7 +695,7 @@ func (q *Queries) CalculationInputs(ctx context.Context, executionID sql.NullStr
 const canRetryProcessing = `-- name: CanRetryProcessing :one
 SELECT EXISTS(SELECT 1 FROM artifacts
  WHERE artifacts.id=?
- AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+ AND EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation IN ('acquire','supply'))
  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=artifacts.connection_id))
 `
 
@@ -2498,7 +2498,7 @@ FROM artifacts
 JOIN connections ON connections.id=artifacts.connection_id
 JOIN accounts ON accounts.connection_id=artifacts.connection_id AND accounts.provider=connections.provider
 JOIN json_each(CAST(?1 AS TEXT)) version ON version.key=connections.provider
-WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation='acquire')
+WHERE EXISTS(SELECT 1 FROM acquisition_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.operation IN ('acquire','supply'))
 AND NOT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_id=artifacts.id AND receipt.version=version.value)
 AND NOT EXISTS(SELECT 1 FROM json_each(CAST(?2 AS TEXT)) retry WHERE retry.value=artifacts.id)
 ORDER BY artifacts.rowid LIMIT 20
@@ -2725,7 +2725,7 @@ SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,
  (SELECT count(*) FROM execution_observations o WHERE o.artifact_id=artifacts.id AND o.version=?1 AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
 FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id
 LEFT JOIN normalization_receipts n ON n.artifact_id=artifacts.id AND n.version=?1
-WHERE artifacts.connection_id=?2 AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
+WHERE artifacts.connection_id=?2 AND receipt.operation IN ('acquire','supply') ORDER BY receipt.rowid DESC LIMIT 10
 `
 
 type ProcessingStatusesParams struct {
