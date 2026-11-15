@@ -697,6 +697,16 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = f.host.Acquire(t.Context(), id, "documents"); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("normalizer acquired upstream data", err)
+	}
+
+	// A stale upstream witness must not block local evidence admission or be
+	// overwritten by it. The mismatch affects only upstream admission.
+	f.sql(t, `UPDATE sync_association SET token='stale-fixture';
+CREATE TRIGGER reject_supply_sync_write BEFORE UPDATE ON sync_association
+BEGIN SELECT RAISE(ABORT,'local supply touched upstream association'); END`)
+
 	retainedID, err := f.host.Supply(t.Context(), id, "documents", artifact)
 	if err != nil {
 		t.Fatal(err)
@@ -719,9 +729,10 @@ func TestNormalizationOnlyProviderAdmitsSuppliedEvidenceWithoutCredentials(t *te
 	if err != nil || len(attempts) != 1 {
 		t.Fatal("successful normalization replay repeated work", attempts, err)
 	}
-	if _, err = f.host.Acquire(t.Context(), id, "documents"); !errors.Is(err, provider.ErrUnavailable) {
-		t.Fatal("normalizer acquired upstream data", err)
+	if _, err = f.store.UpstreamRevision(t.Context()); !errors.Is(err, persistence.ErrAssociation) {
+		t.Fatal("local supply repaired upstream witness", err)
 	}
+
 }
 
 func TestDiscoveryOnlyConfirmationDoesNotScheduleMissingAcquisition(t *testing.T) {

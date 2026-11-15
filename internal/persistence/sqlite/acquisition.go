@@ -328,8 +328,26 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 	return s.accessUpdated(ctx, "connection_credential", err)
 }
 
+// Supply uses the warehouse alone. Its work rows track local evidence
+// admission and never authorize or acknowledge an upstream operation.
+func (s *Store) beginWork(ctx context.Context, key host.WorkKey) (*sql.Tx, error) {
+	if key.Operation == "supply" {
+		return s.db.BeginTx(ctx, nil)
+	}
+
+	return beginUpstream(ctx, s.db)
+}
+
+func (s *Store) commitWork(ctx context.Context, tx *sql.Tx, key host.WorkKey) error {
+	if key.Operation == "supply" {
+		return tx.Commit()
+	}
+
+	return s.commitUpstream(ctx, tx, upstreamProgress)
+}
+
 func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint, error) {
-	tx, err := beginUpstream(ctx, s.db)
+	tx, err := s.beginWork(ctx, k)
 	if err != nil {
 		return host.Checkpoint{}, err
 	}
@@ -374,7 +392,7 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 	}
 
 	if changed != 0 {
-		if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
+		if err = s.commitWork(ctx, tx, k); err != nil {
 			return host.Checkpoint{}, err
 		}
 	}
@@ -483,7 +501,7 @@ func (s *Store) Accept(
 		return "", provider.ErrLimit
 	}
 
-	tx, err := beginUpstream(ctx, s.db)
+	tx, err := s.beginWork(ctx, k)
 	if err != nil {
 		return "", err
 	}
@@ -576,7 +594,7 @@ func (s *Store) Accept(
 		}
 	}
 
-	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
+	if err = s.commitWork(ctx, tx, k); err != nil {
 		return "", err
 	}
 

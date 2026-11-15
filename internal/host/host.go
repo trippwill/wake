@@ -732,29 +732,30 @@ type access struct {
 	failure      error
 }
 
-func (a *access) enter(ctx context.Context) (func(), error) {
+func (a *access) enter(ctx context.Context) (context.Context, func(), error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if !a.live {
-		return nil, provider.ErrUnauthorized
+		return nil, nil, provider.ErrUnauthorized
 	}
 
 	if err := a.ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	a.active.Add(1)
 
-	return a.active.Done, nil
+	// The callback owns cancellation and its deadline. The host owns authorization.
+	return upstream.WithRevision(ctx, upstream.Revision(a.ctx)), a.active.Done, nil
 }
 func (a *access) close() { a.mu.Lock(); a.live = false; a.mu.Unlock(); a.active.Wait() }
 func (a *access) WithSecret(ctx context.Context, key string, fn func([]byte) error) error {
-	done, err := a.enter(ctx)
+	ctx, done, err := a.enter(ctx)
 	if err != nil {
 		return err
 	}
@@ -800,7 +801,7 @@ func (a *access) WithSecret(ctx context.Context, key string, fn func([]byte) err
 }
 
 func (a *access) Report(ctx context.Context, p provider.Progress) error {
-	done, err := a.enter(ctx)
+	ctx, done, err := a.enter(ctx)
 	if err != nil {
 		return err
 	}
@@ -846,7 +847,7 @@ func (a *access) ReservePacingTogether(
 	ctx context.Context,
 	requested ...provider.PacingBudget,
 ) (provider.Reservation, error) {
-	done, err := a.enter(ctx)
+	ctx, done, err := a.enter(ctx)
 	if err != nil {
 		return provider.Reservation{}, err
 	}
@@ -897,7 +898,7 @@ func (a *access) DelayPacing(
 	scope provider.PacingScope,
 	until time.Time,
 ) error {
-	done, err := a.enter(ctx)
+	ctx, done, err := a.enter(ctx)
 	if err != nil {
 		return err
 	}
