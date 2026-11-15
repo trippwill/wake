@@ -117,6 +117,7 @@ func TestCommandDiscoveryReflectsCommandTree(t *testing.T) {
 		"wake storage backup",
 		"wake storage reset",
 		"wake storage restore",
+		"wake storage snapshot warehouse",
 		"wake storage upgrade",
 	}
 	if !slices.Equal(names, want) {

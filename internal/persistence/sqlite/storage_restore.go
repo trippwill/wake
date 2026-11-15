@@ -40,12 +40,25 @@ type restoreStore struct {
 	File  upgradeFile `json:"file"`
 }
 
-// Restore installs a paired backup, including archives made by storage upgrade.
-func Restore(ctx context.Context, profile Profile, archivePath string) ([]string, error) {
+// Restore installs a warehouse snapshot or an explicitly selected paired backup.
+func Restore(
+	ctx context.Context,
+	profile Profile,
+	archivePath string,
+	withCredentials bool,
+) ([]string, error) {
 	paths := profile.paths()
 	intentPath := paths[0] + RestoreIntentSuffix
 	if err := checkNoUpgrade(paths[0]); err != nil {
 		return nil, err
+	}
+
+	if !withCredentials {
+		if err := rejectPendingRestore(paths[0]); err != nil {
+			return nil, err
+		}
+
+		return paths[:1], restoreWarehouseSnapshot(ctx, paths, archivePath)
 	}
 
 	intent, err := readRestoreIntent(intentPath)

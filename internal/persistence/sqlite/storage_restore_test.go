@@ -25,7 +25,12 @@ func TestStorageBackupRestoresEvidenceAndAccess(t *testing.T) {
 	}
 
 	target := vacantRecoveryProfile(t)
-	paths, err := Restore(ctx, target, archive)
+	if _, err := Restore(ctx, target, archive, false); !errors.Is(err, ErrBackupScope) ||
+		!strings.Contains(err.Error(), "--with-credentials") {
+		t.Fatalf("paired backup should require explicit credential restore: %v", err)
+	}
+
+	paths, err := Restore(ctx, target, archive, true)
 	if err != nil || !slices.Equal(paths, []string{target.WarehousePath, target.ConnectionsPath}) {
 		t.Fatal(paths, err)
 	}
@@ -47,7 +52,7 @@ func TestStorageRestoreRefusesBothOccupiedDestinations(t *testing.T) {
 		}
 	}
 
-	_, err := Restore(ctx, target, filepath.Join(t.TempDir(), "missing.backup"))
+	_, err := Restore(ctx, target, filepath.Join(t.TempDir(), "missing.backup"), true)
 	if !errors.Is(err, ErrRestoreOccupied) {
 		t.Fatal(err)
 	}
@@ -118,7 +123,7 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 		t.Fatalf("startup must refuse a partial restore: %v", err)
 	}
 
-	if _, err := Restore(ctx, target, plan.BackupPath); err != nil {
+	if _, err := Restore(ctx, target, plan.BackupPath, true); err != nil {
 		t.Fatal(err)
 	}
 

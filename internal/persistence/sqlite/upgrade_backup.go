@@ -72,6 +72,45 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 }
 
 func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, replace bool) (string, error) {
+	return writeRecoveryArchive(ctx, path, replace, func(archive *tar.Writer) error {
+		for i, owner := range owners {
+			info, err := owner.Stat()
+			if err != nil {
+				return err
+			}
+
+			reader := io.NewSectionReader(owner, 0, info.Size())
+			if err := writeRecoveryEntry(
+				archive,
+				backupEntries[i],
+				info.Size(),
+				backupReader{ctx, reader},
+			); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, readBackupPair)
+}
+
+func writeRecoveryEntry(archive *tar.Writer, name string, size int64, reader io.Reader) error {
+	if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: size}); err != nil {
+		return err
+	}
+
+	_, err := io.Copy(archive, reader)
+
+	return err
+}
+
+func writeRecoveryArchive(
+	ctx context.Context,
+	path string,
+	replace bool,
+	write func(*tar.Writer) error,
+	check func(*tar.Reader) error,
+) (string, error) {
 	temp, err := os.CreateTemp(filepath.Dir(path), ".wake-backup-")
 	if err != nil {
 		return "", err
@@ -83,22 +122,8 @@ func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, repla
 	hash := sha256.New()
 
 	archive := tar.NewWriter(io.MultiWriter(temp, hash))
-	for i, owner := range owners {
-		info, err := owner.Stat()
-		if err != nil {
-			return "", err
-		}
-
-		if err = archive.WriteHeader(
-			&tar.Header{Name: backupEntries[i], Mode: 0o600, Size: info.Size()},
-		); err != nil {
-			return "", err
-		}
-
-		reader := io.NewSectionReader(owner, 0, info.Size())
-		if _, err = io.Copy(archive, backupReader{ctx, reader}); err != nil {
-			return "", err
-		}
+	if err := write(archive); err != nil {
+		return "", err
 	}
 
 	if err = archive.Close(); err != nil {
@@ -114,7 +139,7 @@ func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, repla
 	}
 
 	expected := hex.EncodeToString(hash.Sum(nil))
-	if err = verifyUpgradeBackup(ctx, temp.Name(), expected); err != nil {
+	if err = verifyRecoveryArchive(ctx, temp.Name(), expected, check); err != nil {
 		return "", err
 	}
 
@@ -179,6 +204,10 @@ func readBackupPair(archive *tar.Reader) error {
 }
 
 func verifyUpgradeBackup(ctx context.Context, path, expected string) error {
+	return verifyRecoveryArchive(ctx, path, expected, readBackupPair)
+}
+
+func verifyRecoveryArchive(ctx context.Context, path, expected string, check func(*tar.Reader) error) error {
 	file, err := openBackup(path)
 	if err != nil {
 		return err
@@ -188,7 +217,7 @@ func verifyUpgradeBackup(ctx context.Context, path, expected string) error {
 	hash := sha256.New()
 
 	reader := io.TeeReader(backupReader{ctx, file}, hash)
-	if err = readBackupPair(tar.NewReader(reader)); err != nil {
+	if err = check(tar.NewReader(reader)); err != nil {
 		return err
 	}
 

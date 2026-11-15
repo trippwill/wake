@@ -25,7 +25,21 @@ func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact 
 	)
 }
 
-func RestoreStorage(ctx context.Context, cfg config.Config, configPath, artifact string) ([]string, error) {
+func SnapshotWarehouse(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
+	profile, archive, err := recoveryPaths(cfg, configPath, artifact, true)
+	if err != nil {
+		return "", err
+	}
+
+	return archive, persistence.SnapshotWarehouse(ctx, profile, archive)
+}
+
+func RestoreStorage(
+	ctx context.Context,
+	cfg config.Config,
+	configPath, artifact string,
+	withCredentials bool,
+) ([]string, error) {
 	var paths []string
 
 	_, err := stoppedStorage(
@@ -36,7 +50,7 @@ func RestoreStorage(ctx context.Context, cfg config.Config, configPath, artifact
 		func(profile persistence.Profile, archive string) error {
 			var err error
 
-			paths, err = persistence.Restore(ctx, profile, archive)
+			paths, err = persistence.Restore(ctx, profile, archive, withCredentials)
 
 			return err
 		},
@@ -79,7 +93,9 @@ func recoveryPaths(
 		&profile.ConnectionsPath: cfg.Storage.ConnectionsPath,
 	} {
 		canonical, err := storagePath(path)
-		if err != nil {
+		if os.IsNotExist(err) {
+			canonical = path
+		} else if err != nil {
 			return profile, "", err
 		}
 

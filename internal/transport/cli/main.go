@@ -140,6 +140,15 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Action: performServe,
 		},
 		commandGroup("storage", "Maintain the warehouse and credentials stores",
+			commandGroup("snapshot", "Take a consistent snapshot while Wake runs",
+				&cli.Command{
+					Name:      "warehouse",
+					Usage:     "Save a consistent snapshot of the warehouse while Wake runs",
+					ArgsUsage: "<file>",
+					Flags:     common(),
+					Action:    performSnapshotWarehouse,
+				},
+			),
 			&cli.Command{
 				Name:      "backup",
 				Usage:     "Back up the warehouse and encrypted access with Wake stopped",
@@ -149,7 +158,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			},
 			&cli.Command{
 				Name:      "restore",
-				Usage:     "Restore a backup into vacant storage paths with Wake stopped",
+				Usage:     "Restore a snapshot or backup into vacant storage paths with Wake stopped",
 				ArgsUsage: "<file>",
 				Flags: append(common(), &cli.BoolFlag{
 					Name: "with-credentials", Usage: "Restore encrypted access alongside the warehouse",

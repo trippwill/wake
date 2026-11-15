@@ -184,13 +184,7 @@ func openStore(
 		}
 
 		for _, other := range paths[:i] {
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, RestoreIntentSuffix} {
-				if path == other+suffix || other == path+suffix {
-					return nil, ErrUnsafeStore
-				}
-			}
-
-			if strings.HasPrefix(path, other+"-mj") || strings.HasPrefix(other, path+"-mj") {
+			if overlapsStore(path, other) || overlapsStore(other, path) {
 				return nil, ErrUnsafeStore
 			}
 		}

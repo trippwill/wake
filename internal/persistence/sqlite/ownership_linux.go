@@ -26,6 +26,10 @@ func claimFile(path string) (*os.File, error) {
 }
 
 func lockStoreFile(path string, create bool) (*os.File, error) {
+	return openStoreFile(path, create, true)
+}
+
+func openStoreFile(path string, create, exclusive bool) (*os.File, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return nil, ErrUnsafeStore
 	}
@@ -49,9 +53,11 @@ func lockStoreFile(path string, create bool) (*os.File, error) {
 		return nil, ErrUnsafeStore
 	}
 
-	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = file.Close()
-		return nil, ErrUnsafeStore
+	if exclusive {
+		if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			_ = file.Close()
+			return nil, ErrUnsafeStore
+		}
 	}
 
 	if err = checkFile(path, file); err != nil {

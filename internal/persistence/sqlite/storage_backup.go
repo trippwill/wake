@@ -23,7 +23,11 @@ func (p Profile) CheckArtifactPath(path string, creating bool) error {
 	}
 
 	for _, store := range paths {
-		if overlapsStore(path, store) || creating && path == store+upgradeBackupSuffix {
+		if !creating && store == p.WarehousePath && path == store+upgradeBackupSuffix {
+			continue
+		}
+
+		if overlapsStore(path, store) {
 			return fmt.Errorf("%w: %s", ErrUnsafeStore, path)
 		}
 	}
@@ -32,7 +36,7 @@ func (p Profile) CheckArtifactPath(path string, creating bool) error {
 }
 
 func overlapsStore(path, store string) bool {
-	for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, RestoreIntentSuffix} {
+	for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, RestoreIntentSuffix} {
 		if path == store+suffix {
 			return true
 		}

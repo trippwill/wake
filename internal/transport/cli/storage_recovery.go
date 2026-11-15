@@ -22,6 +22,18 @@ type storageResult struct {
 	Destinations    []string `json:"destinations,omitempty"`
 }
 
+func performSnapshotWarehouse(ctx context.Context, c *cli.Command) error {
+	return runStorageRecovery(
+		c,
+		"snapshot",
+		"copying and verifying the warehouse snapshot",
+		func(resolved config.Resolution, artifact string) (storageResult, error) {
+			archive, err := daemon.SnapshotWarehouse(ctx, resolved.Config, resolved.ConfigPath, artifact)
+			return storageResult{Event: "snapshot", Archive: archive}, err
+		},
+	)
+}
+
 func performBackup(ctx context.Context, c *cli.Command) error {
 	return runStorageRecovery(
 		c,
@@ -35,21 +47,25 @@ func performBackup(ctx context.Context, c *cli.Command) error {
 }
 
 func performRestore(ctx context.Context, c *cli.Command) error {
-	if !c.Bool("with-credentials") {
-		return usageError("restore requires --with-credentials for a backup that contains encrypted access")
-	}
+	withCredentials := c.Bool("with-credentials")
 
 	return runStorageRecovery(
 		c,
 		"restore",
 		"checking vacant destinations and validating the backup",
 		func(resolved config.Resolution, artifact string) (storageResult, error) {
-			paths, err := daemon.RestoreStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
+			paths, err := daemon.RestoreStorage(
+				ctx,
+				resolved.Config,
+				resolved.ConfigPath,
+				artifact,
+				withCredentials,
+			)
 
 			return storageResult{
 				Event:           "restore",
 				Archive:         artifact,
-				WithCredentials: true,
+				WithCredentials: withCredentials,
 				Destinations:    paths,
 			}, err
 		},
@@ -67,7 +83,12 @@ func runStorageRecovery(
 	activity := newActivity(c.ErrWriter, commandJSON(c), operation, "resolving configured storage paths")
 	defer activity.Stop()
 
-	resolved, err := config.Resolve(c)
+	resolve := config.Resolve
+	if operation == "snapshot" {
+		resolve = config.ResolveReadOnly
+	}
+
+	resolved, err := resolve(c)
 	if err != nil {
 		return failure("configure %s: %v", operation, err)
 	}
@@ -90,22 +111,32 @@ func writeStorageResult(w io.Writer, asJSON bool, result storageResult) error {
 		return json.NewEncoder(w).Encode(result)
 	}
 
-	if result.Event == "restore" {
+	switch result.Event {
+	case "restore":
+		guidance := "Review access before resuming upstream work."
+		if result.WithCredentials {
+			guidance = "Supply the original credential key and review access before resuming upstream work."
+		}
+
 		_, err := fmt.Fprintf(
 			w,
-			"Restored %s to %s. Start Wake to read retained history. Supply the original credential key and review access before resuming upstream work.\n",
+			"Restored %s to %s. Start Wake to read retained history. %s\n",
 			result.Archive,
 			strings.Join(result.Destinations, ", "),
+			guidance,
+		)
+
+		return err
+	case "snapshot":
+		_, err := fmt.Fprintf(w, "Saved a warehouse snapshot to %s.\n", result.Archive)
+		return err
+	default:
+		_, err := fmt.Fprintf(
+			w,
+			"Backed up the warehouse and encrypted access to %s. Retain the credential key separately.\n",
+			result.Archive,
 		)
 
 		return err
 	}
-
-	_, err := fmt.Fprintf(
-		w,
-		"Backed up the warehouse and encrypted access to %s. Retain the credential key separately.\n",
-		result.Archive,
-	)
-
-	return err
 }

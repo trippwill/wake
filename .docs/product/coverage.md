@@ -251,6 +251,12 @@ is implied by this coverage.
 
 ### Backup and recovery
 
+A routine warehouse snapshot captures committed financial history, evidence,
+decisions, and sync progress while Wake runs. Financial API reads remain enabled.
+A snapshot can recover retained history on a new installation without the original
+source access or encryption key. Restoring a warehouse snapshot leaves existing
+access state in place and requires a vacant warehouse path and sidecar paths.
+
 An offline storage backup captures the warehouse and encrypted access state at
 the same point. The configuration, browser and API authority, and credential
 encryption key have independent lifetimes. Reusing restored credentials requires

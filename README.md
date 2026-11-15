@@ -184,6 +184,12 @@ The daemon writes structured operational logs to stderr, including completed wor
 failures and recovery actions. Startup reports both listeners. Set `[log] level = "debug"`
 in the TOML for stage, validation, pacing, and cache detail.
 
+For a routine backup, run `wake storage snapshot warehouse history.tar` while
+Wake runs. To recover the warehouse, stop Wake, select a configuration with a
+vacant warehouse path and run `wake storage restore history.tar`. Retained history
+is available after startup once local access is set up. Review source access
+before resuming upstream work.
+
 For a backup that includes encrypted access, stop Wake and run
 `wake storage backup before-maintenance.tar`. Keep the TOML and credential
 encryption key separately. With Wake stopped, use
