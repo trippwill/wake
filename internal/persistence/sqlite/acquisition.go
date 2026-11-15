@@ -187,7 +187,7 @@ func (s *Store) SavePolling(
 		}
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func sourceAccount(ctx context.Context, q *sqlc.Queries, connection string) (source.Reference, error) {
@@ -622,7 +622,7 @@ func (s *Store) ReserveTogether(
 		}
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err = tx.Commit(); err != nil {
 		return provider.Reservation{}, err
 	}
 
@@ -668,7 +668,7 @@ func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.T
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 var _ host.Store = (*Store)(nil)

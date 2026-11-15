@@ -123,7 +123,7 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 		return false, time.Time{}, err
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err = tx.Commit(); err != nil {
 		return false, time.Time{}, err
 	}
 
@@ -164,7 +164,7 @@ func (s *Store) ReferenceCooldown(ctx context.Context, until time.Time) error {
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Time) error {
@@ -202,7 +202,7 @@ func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Tim
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func (s *Store) ReferenceCached(

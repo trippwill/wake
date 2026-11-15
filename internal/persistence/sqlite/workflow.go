@@ -51,7 +51,7 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
@@ -97,7 +97,7 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func accountValue(row sqlc.Account) (application.Account, error) {

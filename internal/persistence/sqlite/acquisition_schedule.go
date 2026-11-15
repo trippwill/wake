@@ -34,7 +34,7 @@ func (s *Store) ScheduleMissingAcquisition(ctx context.Context, providerID, stre
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return tx.Commit()
 }
 
 func scheduleAcquisition(
