@@ -10,6 +10,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/provider"
 )
 
 func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
@@ -126,5 +130,79 @@ func TestStorageSnapshotRejectsChangedArchive(t *testing.T) {
 
 	if _, err := os.Stat(target.WarehousePath); !os.IsNotExist(err) {
 		t.Fatal("corrupt snapshot installed", err)
+	}
+}
+
+func TestStorageSnapshotRebindsNewerAccessWithoutGrant(t *testing.T) {
+	ctx := t.Context()
+	profile, live := profileFixture(t)
+	initial, witness := upstreamTokens(t, live)
+	if initial != witness {
+		t.Fatal("initial witnesses disagree")
+	}
+
+	archive := filepath.Join(t.TempDir(), "history.tar")
+	if err := SnapshotWarehouse(ctx, profile, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := live.Delay(ctx, "ibkr-flex", "requests", "scope", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	newer, witness := upstreamTokens(t, live)
+	if newer == initial || newer != witness {
+		t.Fatal("access witness did not advance")
+	}
+
+	if err := live.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Preserve the current warehouse to make a vacant destination.
+	//nolint:gosec // Both paths are in the synthetic profile's t.TempDir.
+	if err := os.Rename(profile.WarehousePath, profile.WarehousePath+".original"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, profile, archive, false); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := Open(ctx, profile, nil)
+	if err != nil {
+		t.Fatal("restored warehouse could not open with newer access", err)
+	}
+
+	defer func() { _ = restored.Close() }()
+
+	if _, err = restored.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
+		t.Fatal(err)
+	}
+
+	rebound, witness := upstreamTokens(t, restored)
+	if rebound == initial || rebound == newer || rebound != witness {
+		t.Fatal("restore did not bind a fresh pair")
+	}
+
+	association, err := readUpstreamAssociation(ctx, restored.db)
+	if err != nil || association.granted != "" {
+		t.Fatal("restored association has a grant before review", err)
+	}
+
+	view, err := restored.SourceAccess(ctx)
+	if err != nil || !view.Storage.Paused {
+		t.Fatal("restored upstream work was not paused", err)
+	}
+
+	if _, err = restored.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("restored pair reused upstream grant", err)
+	}
+
+	if err = restored.ResumeStorage(ctx, view.Storage.Revision, "admin/test", time.Now()); err != nil {
+		t.Fatal("fresh review could not issue a grant", err)
+	}
+
+	if _, err = restored.UpstreamRevision(ctx); err != nil {
+		t.Fatal("new grant did not authorize restored pair", err)
 	}
 }

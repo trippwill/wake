@@ -135,15 +135,11 @@ func bindUpstream(ctx context.Context, tx *sql.Tx, metadata [2]storeMetadata, fr
 			return err
 		}
 
-		if !recovering {
-			if !restoring {
-				return nil
-			}
-
-			if _, err := readUpstreamAssociation(ctx, tx); err != nil {
-				return err
-			}
+		if !recovering && !restoring {
+			return nil
 		}
+		// An explicit restore marks the prepared warehouse and pauses upstream
+		// work before activation. Bind it without reviving the previous grant.
 	}
 
 	revision := rand.Text()
