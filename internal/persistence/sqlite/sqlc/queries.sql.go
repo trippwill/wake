@@ -920,7 +920,7 @@ func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]s
 }
 
 const competingFIGI = `-- name: CompetingFIGI :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_input_revision, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
 JOIN (
  SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
  UNION
@@ -951,6 +951,7 @@ func (q *Queries) CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([
 			&i.Ticker,
 			&i.Kind,
 			&i.Reported,
+			&i.ReferenceInputRevision,
 			&i.ReferenceStatus,
 			&i.ReferenceAllocation,
 			&i.ReferenceReason,
@@ -1325,7 +1326,7 @@ func (q *Queries) DiscardActivitySupport(ctx context.Context, arg DiscardActivit
 }
 
 const enrichInstrument = `-- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=?5
+UPDATE instruments SET revision=revision+1,reference_input_revision=reference_input_revision+1,kind=?1,reported=?2,name=CASE WHEN name='' THEN ?3 ELSE name END,ticker=CASE WHEN ticker='' THEN ?4 ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=?5
 `
 
 type EnrichInstrumentParams struct {
@@ -1751,7 +1752,7 @@ func (q *Queries) IdentityMetadata(ctx context.Context, arg IdentityMetadataPara
 }
 
 const identityRoots = `-- name: IdentityRoots :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_input_revision, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
 `
 
 func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument, error) {
@@ -1771,6 +1772,7 @@ func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument,
 			&i.Ticker,
 			&i.Kind,
 			&i.Reported,
+			&i.ReferenceInputRevision,
 			&i.ReferenceStatus,
 			&i.ReferenceAllocation,
 			&i.ReferenceReason,
@@ -1804,7 +1806,7 @@ func (q *Queries) InitializeHistoryUpdate(ctx context.Context, applied int64) er
 }
 
 const instrument = `-- name: Instrument :one
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id=?
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_input_revision, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id=?
 `
 
 func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error) {
@@ -1818,6 +1820,7 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 		&i.Ticker,
 		&i.Kind,
 		&i.Reported,
+		&i.ReferenceInputRevision,
 		&i.ReferenceStatus,
 		&i.ReferenceAllocation,
 		&i.ReferenceReason,
@@ -1832,7 +1835,7 @@ func (q *Queries) Instrument(ctx context.Context, id string) (Instrument, error)
 }
 
 const instrumentBindings = `-- name: InstrumentBindings :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_input_revision, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i WHERE i.id=?1 OR i.id IN (SELECT a.id FROM resource_aliases a WHERE a.kind='instruments' AND a.target_id=?1) ORDER BY i.rowid
 `
 
 func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrument, error) {
@@ -1852,6 +1855,7 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 			&i.Ticker,
 			&i.Kind,
 			&i.Reported,
+			&i.ReferenceInputRevision,
 			&i.ReferenceStatus,
 			&i.ReferenceAllocation,
 			&i.ReferenceReason,
@@ -1876,7 +1880,7 @@ func (q *Queries) InstrumentBindings(ctx context.Context, id string) ([]Instrume
 }
 
 const instrumentBySource = `-- name: InstrumentBySource :one
-SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.rule, target.calculation_rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
+SELECT target.revision, target.id, target.source_key, target.name, target.ticker, target.kind, target.reported, target.reference_input_revision, target.reference_status, target.reference_allocation, target.reference_reason, target.selection_authority, target.reference_figi, target.evidence_id, target.rule, target.calculation_rule, target.underlier_id FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?
 `
 
 func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Instrument, error) {
@@ -1890,6 +1894,7 @@ func (q *Queries) InstrumentBySource(ctx context.Context, sourceKey string) (Ins
 		&i.Ticker,
 		&i.Kind,
 		&i.Reported,
+		&i.ReferenceInputRevision,
 		&i.ReferenceStatus,
 		&i.ReferenceAllocation,
 		&i.ReferenceReason,
@@ -2007,7 +2012,7 @@ func (q *Queries) InstrumentSelection(ctx context.Context, instrumentID string) 
 }
 
 const instruments = `-- name: Instruments :many
-SELECT revision, id, source_key, name, ticker, kind, reported, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
+SELECT revision, id, source_key, name, ticker, kind, reported, reference_input_revision, reference_status, reference_allocation, reference_reason, selection_authority, reference_figi, evidence_id, rule, calculation_rule, underlier_id FROM instruments WHERE id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY rowid
 `
 
 func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
@@ -2027,6 +2032,7 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 			&i.Ticker,
 			&i.Kind,
 			&i.Reported,
+			&i.ReferenceInputRevision,
 			&i.ReferenceStatus,
 			&i.ReferenceAllocation,
 			&i.ReferenceReason,
@@ -2532,7 +2538,7 @@ func (q *Queries) PendingArtifacts(ctx context.Context, arg PendingArtifactsPara
 }
 
 const pendingReference = `-- name: PendingReference :many
-SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100
+SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_input_revision, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100
 `
 
 func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) ([]Instrument, error) {
@@ -2552,6 +2558,7 @@ func (q *Queries) PendingReference(ctx context.Context, julianday interface{}) (
 			&i.Ticker,
 			&i.Kind,
 			&i.Reported,
+			&i.ReferenceInputRevision,
 			&i.ReferenceStatus,
 			&i.ReferenceAllocation,
 			&i.ReferenceReason,
@@ -2712,12 +2719,19 @@ func (q *Queries) ProcessingComplete(ctx context.Context, arg ProcessingComplete
 
 const processingStatuses = `-- name: ProcessingStatuses :many
 SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,CAST(EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id
- AND p.version=(SELECT n.version FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1)) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
- CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
- (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
-FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
+ AND p.version=?1) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ CAST(coalesce(json_extract(n.counts,'$.Activities'),0) AS INTEGER) AS activity_claims,
+ CAST(coalesce(json_extract(n.counts,'$.Rejected'),0) AS INTEGER) AS excluded_rows,
+ (SELECT count(*) FROM execution_observations o WHERE o.artifact_id=artifacts.id AND o.version=?1 AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
+FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id
+LEFT JOIN normalization_receipts n ON n.artifact_id=artifacts.id AND n.version=?1
+WHERE artifacts.connection_id=?2 AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10
 `
+
+type ProcessingStatusesParams struct {
+	Version      string
+	ConnectionID string
+}
 
 type ProcessingStatusesRow struct {
 	ID             string
@@ -2736,8 +2750,8 @@ type ProcessingStatusesRow struct {
 	NeedsReview    int64
 }
 
-func (q *Queries) ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error) {
-	rows, err := q.db.QueryContext(ctx, processingStatuses, connectionID)
+func (q *Queries) ProcessingStatuses(ctx context.Context, arg ProcessingStatusesParams) ([]ProcessingStatusesRow, error) {
+	rows, err := q.db.QueryContext(ctx, processingStatuses, arg.Version, arg.ConnectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -3794,16 +3808,17 @@ func (q *Queries) ReferenceFailure(ctx context.Context, failure string) error {
 }
 
 const referenceNext = `-- name: ReferenceNext :exec
-INSERT INTO sync.reference_deadlines(instrument_id,next) VALUES(?,?) ON CONFLICT(instrument_id) DO UPDATE SET next=excluded.next
+INSERT INTO sync.reference_deadlines(instrument_id,input_revision,next) VALUES(?,?,?) ON CONFLICT(instrument_id) DO UPDATE SET input_revision=excluded.input_revision,next=excluded.next
 `
 
 type ReferenceNextParams struct {
-	InstrumentID string
-	Next         string
+	InstrumentID  string
+	InputRevision int64
+	Next          string
 }
 
 func (q *Queries) ReferenceNext(ctx context.Context, arg ReferenceNextParams) error {
-	_, err := q.db.ExecContext(ctx, referenceNext, arg.InstrumentID, arg.Next)
+	_, err := q.db.ExecContext(ctx, referenceNext, arg.InstrumentID, arg.InputRevision, arg.Next)
 	return err
 }
 

@@ -622,7 +622,8 @@ func TestRecoveryReferenceReviewPreservesRetryEligibility(t *testing.T) {
 
 	next := time.Now().UTC().Add(6 * time.Hour).Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(
-		`UPDATE instruments SET reference_status='no-match' WHERE id='instrument'; INSERT INTO sync.reference_deadlines VALUES('instrument',?)`,
+		`UPDATE instruments SET reference_status='no-match' WHERE id='instrument';
+INSERT INTO sync.reference_deadlines SELECT id,reference_input_revision,? FROM instruments WHERE id='instrument'`,
 		next,
 	); err != nil {
 		t.Fatal(err)

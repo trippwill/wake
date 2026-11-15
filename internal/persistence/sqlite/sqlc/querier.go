@@ -138,7 +138,7 @@ type Querier interface {
 	PositionBindings(ctx context.Context, accountID string) ([]PositionBindingsRow, error)
 	PositionUnderlierInputs(ctx context.Context, underlierID string) ([]PositionUnderlierInputsRow, error)
 	ProcessingComplete(ctx context.Context, arg ProcessingCompleteParams) (bool, error)
-	ProcessingStatuses(ctx context.Context, connectionID string) ([]ProcessingStatusesRow, error)
+	ProcessingStatuses(ctx context.Context, arg ProcessingStatusesParams) ([]ProcessingStatusesRow, error)
 	Profile(ctx context.Context) (SyncProfile, error)
 	ProjectActivity(ctx context.Context, arg ProjectActivityParams) error
 	ProjectInstrument(ctx context.Context, arg ProjectInstrumentParams) error

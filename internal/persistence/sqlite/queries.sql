@@ -173,11 +173,13 @@ AND NOT EXISTS(SELECT 1 FROM json_each(CAST(sqlc.arg(deferred) AS TEXT)) retry W
 ORDER BY artifacts.rowid LIMIT 20;
 -- name: ProcessingStatuses :many
 SELECT artifacts.id,artifacts.stream,receipt.id AS receipt_id,receipt.retrieved,receipt.hash,receipt.policy,CAST(EXISTS(SELECT 1 FROM processing_receipts p WHERE p.artifact_id=artifacts.id
- AND p.version=(SELECT n.version FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1)) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
- CAST(coalesce((SELECT json_extract(counts,'$.Activities') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS activity_claims,
- CAST(coalesce((SELECT json_extract(counts,'$.Rejected') FROM normalization_receipts n WHERE n.artifact_id=artifacts.id ORDER BY n.rowid DESC LIMIT 1),0) AS INTEGER) AS excluded_rows,
- (SELECT count(*) FROM execution_observations WHERE execution_observations.artifact_id=artifacts.id AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
-FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id WHERE artifacts.connection_id=? AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
+ AND p.version=sqlc.arg(version)) AS INTEGER) AS processed,receipt.requested_from,receipt.requested_to,receipt.reported_from,receipt.reported_to,
+ CAST(coalesce(json_extract(n.counts,'$.Activities'),0) AS INTEGER) AS activity_claims,
+ CAST(coalesce(json_extract(n.counts,'$.Rejected'),0) AS INTEGER) AS excluded_rows,
+ (SELECT count(*) FROM execution_observations o WHERE o.artifact_id=artifacts.id AND o.version=sqlc.arg(version) AND outcome IN ('identity-review','native-review','incomplete','incomplete-conflict')) AS needs_review
+FROM acquisition_receipts receipt JOIN artifacts ON artifacts.id=receipt.artifact_id
+LEFT JOIN normalization_receipts n ON n.artifact_id=artifacts.id AND n.version=sqlc.arg(version)
+WHERE artifacts.connection_id=sqlc.arg(connection_id) AND receipt.operation='acquire' ORDER BY receipt.rowid DESC LIMIT 10;
 -- name: InstrumentBySource :one
 SELECT target.* FROM instruments original JOIN instruments target ON target.id=coalesce((SELECT target_id FROM resource_aliases WHERE kind='instruments' AND id=original.id),original.id) WHERE original.source_key=?;
 -- name: QualifyInstrument :exec
@@ -238,7 +240,7 @@ SELECT * FROM sync.reference_cache WHERE key=?;
 -- name: CacheReference :exec
 INSERT INTO sync.reference_cache(key,status,records,expires,evidence_id) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET status=excluded.status,records=excluded.records,expires=excluded.expires,evidence_id=excluded.evidence_id;
 -- name: PendingReference :many
-SELECT instruments.* FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100;
+SELECT instruments.* FROM instruments LEFT JOIN sync.reference_deadlines d ON d.instrument_id=instruments.id AND d.input_revision=instruments.reference_input_revision WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0 AND id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') AND reference_reason<>'missing_identifier' AND reference_status<>'conflict' AND (d.next IS NULL OR julianday(d.next)<=julianday(?)) ORDER BY instruments.rowid LIMIT 100;
 -- name: ResolveInstrument :exec
 UPDATE instruments SET name=sqlc.arg(name),ticker=sqlc.arg(ticker),reference_figi=sqlc.arg(reference_figi),evidence_id=sqlc.arg(evidence_id),reference_status=sqlc.arg(reference_status),revision=revision+CASE WHEN name<>sqlc.arg(name) OR ticker<>sqlc.arg(ticker) OR reference_figi<>sqlc.arg(reference_figi) OR reference_status<>sqlc.arg(reference_status) THEN 1 ELSE 0 END WHERE id=sqlc.arg(id);
 -- name: SetListingFIGI :exec
@@ -260,7 +262,7 @@ INSERT INTO sync.configurations(id,provider,name,settings) VALUES(sqlc.arg(id),s
 UPDATE instruments SET underlier_id=sqlc.narg(underlier_id),revision=revision+1 WHERE id=sqlc.arg(id) AND underlier_id IS NOT sqlc.narg(underlier_id);
 
 -- name: EnrichInstrument :exec
-UPDATE instruments SET revision=revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=sqlc.arg(id);
+UPDATE instruments SET revision=revision+1,reference_input_revision=reference_input_revision+1,kind=sqlc.arg(kind),reported=sqlc.arg(reported),name=CASE WHEN name='' THEN sqlc.arg(name) ELSE name END,ticker=CASE WHEN ticker='' THEN sqlc.arg(ticker) ELSE ticker END,reference_reason=CASE WHEN reference_reason='missing_identifier' THEN '' ELSE reference_reason END WHERE id=sqlc.arg(id);
 
 -- name: PutLifecycleActivity :exec
 INSERT INTO executions(kind,id,account_id,instrument_id,accepted,status,rule) VALUES('lifecycle',?,?,?,?,'accepted',?);
@@ -311,7 +313,7 @@ SELECT * FROM listings WHERE id=?;
 SELECT e.id,e.request,e.response FROM instrument_reference_attempts a JOIN reference_evidence e ON a.evidence_id=e.id WHERE a.instrument_id=? ORDER BY e.rowid;
 
 -- name: ReferenceNext :exec
-INSERT INTO sync.reference_deadlines(instrument_id,next) VALUES(?,?) ON CONFLICT(instrument_id) DO UPDATE SET next=excluded.next;
+INSERT INTO sync.reference_deadlines(instrument_id,input_revision,next) VALUES(?,?,?) ON CONFLICT(instrument_id) DO UPDATE SET input_revision=excluded.input_revision,next=excluded.next;
 
 -- name: EnsureInstrumentSelection :exec
 INSERT INTO instrument_selections(instrument_id,name,ticker,figi,evidence,status,underlier_id) SELECT id,name,ticker,reference_figi,evidence_id,reference_status,underlier_id FROM instruments WHERE id=? ON CONFLICT DO NOTHING;

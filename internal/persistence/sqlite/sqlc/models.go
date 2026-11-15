@@ -279,22 +279,23 @@ type HistoryUpdate struct {
 }
 
 type Instrument struct {
-	Revision            int64
-	ID                  string
-	SourceKey           string
-	Name                string
-	Ticker              string
-	Kind                string
-	Reported            []byte
-	ReferenceStatus     string
-	ReferenceAllocation string
-	ReferenceReason     string
-	SelectionAuthority  string
-	ReferenceFigi       string
-	EvidenceID          string
-	Rule                string
-	CalculationRule     string
-	UnderlierID         sql.NullString
+	Revision               int64
+	ID                     string
+	SourceKey              string
+	Name                   string
+	Ticker                 string
+	Kind                   string
+	Reported               []byte
+	ReferenceInputRevision int64
+	ReferenceStatus        string
+	ReferenceAllocation    string
+	ReferenceReason        string
+	SelectionAuthority     string
+	ReferenceFigi          string
+	EvidenceID             string
+	Rule                   string
+	CalculationRule        string
+	UnderlierID            sql.NullString
 }
 
 type InstrumentClaim struct {
@@ -547,8 +548,9 @@ type SyncReferenceCache struct {
 }
 
 type SyncReferenceDeadline struct {
-	InstrumentID string
-	Next         string
+	InstrumentID  string
+	InputRevision int64
+	Next          string
 }
 
 type SyncReferenceDiagnostic struct {

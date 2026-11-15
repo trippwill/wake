@@ -22,5 +22,5 @@ CREATE TABLE sync.sync_association (
  bind_restore INTEGER NOT NULL DEFAULT 0 CHECK(bind_restore IN (0,1))
 ) STRICT;
 CREATE INDEX sync.attempts_artifact ON attempts(artifact_id,version,outcome);
-CREATE TABLE sync.reference_deadlines(instrument_id TEXT PRIMARY KEY NOT NULL, next TEXT NOT NULL) STRICT;
+CREATE TABLE sync.reference_deadlines(instrument_id TEXT PRIMARY KEY NOT NULL, input_revision INTEGER NOT NULL CHECK(input_revision>0), next TEXT NOT NULL) STRICT;
 CREATE TABLE sync.reference_diagnostics(singleton INTEGER PRIMARY KEY CHECK(singleton=1), failure TEXT NOT NULL) STRICT;

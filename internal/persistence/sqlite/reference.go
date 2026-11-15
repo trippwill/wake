@@ -342,7 +342,10 @@ func (s *Store) PendingReference(ctx context.Context, now time.Time) ([]referenc
 			return nil, e
 		}
 
-		out = append(out, reference.Pending{ID: r.ID, Instrument: i.Reported()})
+		out = append(
+			out,
+			reference.Pending{ID: r.ID, Instrument: i.Reported(), InputRevision: r.ReferenceInputRevision},
+		)
 	}
 
 	return out, nil
@@ -357,15 +360,21 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 
 	q := s.queries.WithTx(tx)
 
-	id, err = canonicalID(ctx, q, "instruments", id)
+	target, err := canonicalID(ctx, q, "instruments", id)
 	if err != nil {
 		return err
 	}
 
-	root, err := q.Instrument(ctx, id)
+	root, err := q.Instrument(ctx, target)
 	if err != nil {
 		return err
 	}
+
+	if result.InputRevision != 0 && (id != target || result.InputRevision != root.ReferenceInputRevision) {
+		return nil
+	}
+
+	id = target
 
 	if err = q.EnsureInstrumentSelection(ctx, id); err != nil {
 		return err
@@ -459,7 +468,11 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 
 	if err = q.ReferenceNext(
 		ctx,
-		sqlc.ReferenceNextParams{InstrumentID: id, Next: result.Next.UTC().Format(time.RFC3339Nano)},
+		sqlc.ReferenceNextParams{
+			InstrumentID:  id,
+			InputRevision: root.ReferenceInputRevision,
+			Next:          result.Next.UTC().Format(time.RFC3339Nano),
+		},
 	); err != nil {
 		return err
 	}

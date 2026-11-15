@@ -120,7 +120,10 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 			return out, e
 		}
 
-		processing, e := s.queries.ProcessingStatuses(ctx, id)
+		processing, e := s.queries.ProcessingStatuses(ctx, sqlc.ProcessingStatusesParams{
+			ConnectionID: id,
+			Version:      s.interpretationVersion(c.Provider),
+		})
 		if e != nil {
 			return out, e
 		}

@@ -51,10 +51,12 @@ type (
 		Records          []Record
 		Next             time.Time
 		Supporting       []Attempt
+		InputRevision    int64
 	}
 	Pending struct {
-		ID         string
-		Instrument source.Instrument
+		ID            string
+		Instrument    source.Instrument
+		InputRevision int64
 	}
 	Evidence struct {
 		At                time.Time
@@ -281,7 +283,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 	}
 
 	jobs := []Job{}
-	owners := map[string][]string{}
+	owners := map[string][]Pending{}
 	changed := false
 	for _, p := range pending {
 		j, ok := job(p)
@@ -289,7 +291,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			if err = s.store.ApplyReference(
 				ctx,
 				p.ID,
-				Result{Status: "provisional", Next: now.Add(24 * time.Hour)},
+				Result{Status: "provisional", Next: now.Add(24 * time.Hour), InputRevision: p.InputRevision},
 			); err != nil {
 				return changed, err
 			}
@@ -312,6 +314,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 				return changed, e
 			}
 
+			cached.InputRevision = p.InputRevision
 			if e = s.store.ApplyReference(ctx, p.ID, cached); e != nil {
 				return changed, e
 			}
@@ -340,7 +343,7 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			jobs = append(jobs, j)
 		}
 
-		owners[j.Key()] = append(owners[j.Key()], p.ID)
+		owners[j.Key()] = append(owners[j.Key()], p)
 	}
 
 	if len(jobs) == 0 {
@@ -375,20 +378,14 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			outcomes["other"]++
 		}
 
-		for _, id := range owners[j.Key()] {
-			result := results[i]
-			for _, p := range pending {
-				if p.ID == id {
-					result, err = s.parents(ctx, p.Instrument.Kind(), result, now, limit, secret, parentOutcomes)
-					if err != nil {
-						return changed, err
-					}
-
-					break
-				}
+		for _, p := range owners[j.Key()] {
+			result, err := s.parents(ctx, p.Instrument.Kind(), results[i], now, limit, secret, parentOutcomes)
+			if err != nil {
+				return changed, err
 			}
 
-			if err = s.store.ApplyReference(ctx, id, result); err != nil {
+			result.InputRevision = p.InputRevision
+			if err = s.store.ApplyReference(ctx, p.ID, result); err != nil {
 				return changed, err
 			}
 

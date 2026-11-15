@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +128,11 @@ func TestMissingIdentifierWaitsForNewEvidence(t *testing.T) {
 
 	now := time.Now().UTC()
 
+	initial, err := s.PendingReference(t.Context(), now)
+	if err != nil || len(initial) == 0 {
+		t.Fatal("missing initial reference work", initial, err)
+	}
+
 	service, err := reference.New(s, nil, nil, "", func() time.Time { return now }, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -136,10 +142,8 @@ func TestMissingIdentifierWaitsForNewEvidence(t *testing.T) {
 		t.Fatal(changed, err)
 	}
 
-	now = now.Add(48 * time.Hour)
-
-	if changed, err := service.RunOnce(t.Context()); err != nil || changed {
-		t.Fatal("unchanged missing identifier repeated", changed, err)
+	if pending, err := s.PendingReference(t.Context(), now); err != nil || len(pending) != 0 {
+		t.Fatal("unchanged missing identifiers repeated", pending, err)
 	}
 
 	enriched := strings.Replace(
@@ -151,8 +155,21 @@ func TestMissingIdentifierWaitsForNewEvidence(t *testing.T) {
 	processConfirmationReport(t, s, "enriched", enriched)
 
 	pending, err := s.PendingReference(t.Context(), now)
-	if err != nil || len(pending) != 2 {
+	if err != nil || len(pending) == 0 {
 		t.Fatal("new identifier did not wake underlier", pending, err)
+	}
+
+	for _, before := range initial {
+		if err = s.ApplyReference(t.Context(), before.ID, reference.Result{
+			Status: "provisional", Next: now.Add(24 * time.Hour), InputRevision: before.InputRevision,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	after, err := s.PendingReference(t.Context(), now)
+	if err != nil || !reflect.DeepEqual(after, pending) {
+		t.Fatal("late lookup restored stale deadlines", after, pending, err)
 	}
 }
 

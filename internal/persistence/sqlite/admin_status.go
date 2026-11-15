@@ -143,7 +143,10 @@ func (s *Store) connectionStatus(
 		}
 	}
 
-	processing, err := q.ProcessingStatuses(ctx, connection.ID)
+	processing, err := q.ProcessingStatuses(ctx, sqlc.ProcessingStatusesParams{
+		ConnectionID: connection.ID,
+		Version:      s.interpretationVersion(connection.Provider),
+	})
 	if err != nil {
 		return view, err
 	}
@@ -172,6 +175,16 @@ func (s *Store) connectionStatus(
 	}
 
 	return view, nil
+}
+
+func (s *Store) interpretationVersion(providerID string) string {
+	for _, registration := range s.registrations {
+		if registration.Descriptor().ID() == providerID && registration.Normalizer() != nil {
+			return registration.Version()
+		}
+	}
+
+	return ""
 }
 
 func connectionWork(ctx context.Context, q *sqlc.Queries, id string) ([]application.WorkStatus, error) {
