@@ -204,14 +204,30 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 		t.Fatal("wrong origin accepted", got)
 	}
 
+	now := time.Now()
+	auth.now = func() time.Time { return now }
+
 	original := cookieFrom(post("/login", form, nil, authTestOrigin))
+
+	invalidLogin := httptest.NewRequest(
+		http.MethodPost,
+		authTestOrigin+"/login",
+		strings.NewReader("password=%"),
+	)
+	invalidLogin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	invalidLogin.Header.Set("Origin", authTestOrigin)
+
+	invalidLoginResult := httptest.NewRecorder()
+	handler.ServeHTTP(invalidLoginResult, invalidLogin)
+
+	if invalidLoginResult.Code != http.StatusBadRequest {
+		t.Fatal("accepted a malformed login form", invalidLoginResult.Code)
+	}
 
 	csrf, ok := active(original)
 	if !ok {
 		t.Fatal("original session rejected")
 	}
-
-	auth.now = func() time.Time { return time.Now().Add(time.Second) }
 
 	form = url.Values{
 		"password": {"synthetic changed password"}, "confirm": {"synthetic changed password"},
@@ -223,6 +239,10 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 
 	form.Set("csrf", csrf)
 
+	if got := post(passwordPath, form, original, authTestOrigin).Code; got != http.StatusTooManyRequests {
+		t.Fatal("password change did not respect the login attempt limit", got)
+	}
+
 	settings := httptest.NewRequest(http.MethodGet, authTestOrigin+passwordPath, nil)
 	settings.AddCookie(original)
 
@@ -233,7 +253,6 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 		t.Fatal("password change form unavailable", page.Code)
 	}
 
-	now := time.Now().Add(time.Second)
 	for _, test := range []struct {
 		field, value, message string
 	}{
@@ -257,7 +276,6 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 		}
 
 		now = now.Add(attemptInterval)
-		auth.now = func() time.Time { return now }
 
 		result := post(passwordPath, invalid, original, authTestOrigin)
 		if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), test.message) {
@@ -310,4 +328,108 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 	}
 
 	release()
+}
+
+func TestExpiredBrowserSessionIsRejectedAndPruned(t *testing.T) {
+	dir := privateAuthDir(t)
+	if err := SetPassword(dir, []byte("synthetic browser password")); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, _, err := Open(dir, authTestOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	auth.now = func() time.Time { return now }
+
+	original := httptest.NewRecorder()
+	id := issueTestSession(t, auth, original)
+	done := auth.sessionDone(id)
+
+	now = now.Add(auth.lifetime)
+
+	r := httptest.NewRequest(http.MethodGet, authTestOrigin+"/system/contact", nil)
+	r.AddCookie(original.Result().Cookies()[0])
+
+	if _, ok := auth.session(r); ok {
+		t.Fatal("session remained valid at its expiry")
+	}
+
+	issueTestSession(t, auth, httptest.NewRecorder())
+
+	select {
+	case <-done:
+	default:
+		t.Fatal("expired session was not closed during sign-in")
+	}
+
+	if auth.sessionDone(id) != nil {
+		t.Fatal("expired session remained registered")
+	}
+}
+
+func TestBrowserPasswordChangeRejectsConcurrentReset(t *testing.T) {
+	dir := privateAuthDir(t)
+
+	const (
+		originalPassword = "synthetic original password"
+		resetPassword    = "synthetic reset password"
+	)
+
+	if err := SetPassword(dir, []byte(originalPassword)); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, _, err := Open(dir, authTestOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHandler(auth, Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	login := httptest.NewRecorder()
+	csrf := issueTestSession(t, auth, login)
+
+	form := url.Values{
+		"csrf": {csrf}, "current": {originalPassword},
+		"password": {"synthetic browser replacement"}, "confirm": {"synthetic browser replacement"},
+	}
+
+	r := httptest.NewRequest(http.MethodPost, authTestOrigin+passwordPath, strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Origin", authTestOrigin)
+	r.AddCookie(login.Result().Cookies()[0])
+
+	now := time.Now()
+	clockReads := 0
+	auth.now = func() time.Time {
+		clockReads++
+		// The handler has loaded and validated the original snapshot when it reserves the attempt.
+		if clockReads == 3 {
+			if err := SetPassword(dir, []byte(resetPassword)); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		return now
+	}
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/login" {
+		t.Fatal("password change did not require sign-in after concurrent reset", w.Code)
+	}
+
+	verifier, key, err := auth.state.Browser()
+	clear(key[:])
+
+	if err != nil || !matchesPassword(verifier, resetPassword) {
+		t.Fatal("browser password change replaced the concurrently reset password", err)
+	}
 }

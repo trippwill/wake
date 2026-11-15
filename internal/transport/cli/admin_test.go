@@ -93,6 +93,51 @@ func TestRevokeSessionsCommandKeepsPasswordAndAPIGrants(t *testing.T) {
 	release()
 }
 
+func TestBrowserAccessRejectsInvalidCommandsAndProfiles(t *testing.T) {
+	cfg, path, _ := setupDaemonFixture(t)
+
+	assertFailure := func(args []string, want int, diagnostic string) {
+		t.Helper()
+
+		var stdout, stderr bytes.Buffer
+
+		if code := run(args, &stdout, &stderr); code != want || !strings.Contains(stderr.String(), diagnostic) {
+			t.Fatal("unexpected command status", code, stderr.String())
+		}
+	}
+
+	assertFailure([]string{"access", "revoke"}, exitUsage, "specify a command after wake access revoke")
+	assertFailure([]string{"access", "reset"}, exitUsage, "unknown command reset")
+	assertFailure([]string{"access", "revoke", "sessions", "extra"}, exitUsage, "unexpected argument extra")
+
+	missing := filepath.Join(cfg.Paths.ConfigDir, "missing.toml")
+	assertFailure(
+		[]string{"access", "set", "password", "--config", missing},
+		exitFailure,
+		"configure browser password",
+	)
+	assertFailure(
+		[]string{"access", "revoke", "sessions", "--config", missing},
+		exitFailure,
+		"configure browser session revocation",
+	)
+
+	authPath := filepath.Join(cfg.Paths.ConfigDir, clientaccess.FileName)
+	if err := os.WriteFile(authPath, []byte("invalid authentication data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFailure(
+		[]string{"access", "revoke", "sessions", "--config", path},
+		exitFailure,
+		"invalid private authentication state",
+	)
+
+	if !bytes.Equal(readTestMaterial(t, authPath), []byte("invalid authentication data")) {
+		t.Fatal("overwrote invalid authentication data")
+	}
+}
+
 func TestResetAccessCommandRevokesClientWithoutDatabases(t *testing.T) {
 	cfg, path, _ := setupDaemonFixture(t)
 	if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("synthetic operator unlock")); err != nil {
