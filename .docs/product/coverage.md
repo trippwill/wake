@@ -22,6 +22,12 @@ bearer token. Tokens grant the instance's published financial reads, including
 events and positions, without administrative authority or per-account scopes.
 They have no automatic expiry.
 
+Local financial pages, corrections, and retained-evidence processing do not require
+an upstream host or reference HTTP service. If upstream service initialization fails,
+those local functions remain available while source commands report unavailability.
+The current storage profile still requires its paired warehouse and access files;
+this does not provide financial-file-only startup or restore.
+
 ## Account setup and authority
 
 The workflow is:

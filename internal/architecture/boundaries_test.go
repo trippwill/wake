@@ -79,6 +79,11 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					t.Errorf("presentation bypasses application boundary: %s", rel)
 				}
 
+				if strings.HasPrefix(rel, "internal/application/") &&
+					(value == "database/sql" || strings.Contains(value, "sqlite") || strings.Contains(value, "/internal/persistence/") || strings.Contains(value, "/internal/transport/")) {
+					t.Errorf("application depends on implementation adapter: %s imports %s", rel, value)
+				}
+
 				if strings.HasPrefix(rel, "internal/host/") &&
 					(value == "database/sql" || strings.Contains(value, "/internal/persistence/") || strings.Contains(value, "/internal/transport/")) {
 					t.Errorf("host depends on implementation adapter: %s", value)

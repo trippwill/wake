@@ -4,14 +4,17 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +98,8 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions) {
 	if res.StatusCode != http.StatusSeeOther {
 		t.Fatal("admin not protected", res.Status)
 	}
+
+	assertLocalFinancialAccess(t, ctx, cfg, client, browser)
 
 	cancel()
 
@@ -253,5 +258,97 @@ func shellConfig(t *testing.T) config.Config {
 		},
 		Admin: config.Admin{Port: adminPort},
 		API:   config.API{Port: apiPort},
+	}
+}
+
+func assertLocalFinancialAccess(
+	t *testing.T,
+	ctx context.Context,
+	cfg config.Config,
+	api, browser *http.Client,
+) {
+	t.Helper()
+
+	snapshot, err := api.Get("http://wake/v1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = snapshot.Body.Close()
+	etag := snapshot.Header.Get("ETag")
+	if snapshot.StatusCode != http.StatusOK || etag == "" {
+		t.Fatal("local snapshot unavailable", snapshot.Status, etag)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request.Header.Set("If-None-Match", etag)
+
+	response, err := api.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNotModified {
+		t.Fatal("conditional local read failed", response.Status)
+	}
+
+	stream, err := api.Get("http://wake/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	line, err := bufio.NewReader(stream.Body).ReadString('\n')
+	_ = stream.Body.Close()
+	if err != nil || stream.StatusCode != http.StatusOK || line != "event: publication\n" {
+		t.Fatal("local event stream unavailable", line, err)
+	}
+
+	request, err = http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		cfg.Admin.Origin()+"/login",
+		strings.NewReader(url.Values{"password": {"synthetic-shell-unlock"}}.Encode()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", cfg.Admin.Origin())
+
+	login, err := browser.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusSeeOther || len(login.Cookies()) == 0 {
+		t.Fatal("local login failed", login.Status)
+	}
+
+	for _, path := range []string{"/activity", "/instruments", "/positions"} {
+		request, err = http.NewRequestWithContext(ctx, http.MethodGet, cfg.Admin.Origin()+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, cookie := range login.Cookies() {
+			request.AddCookie(cookie)
+		}
+
+		response, err = browser.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatal("local financial page unavailable", path, response.Status)
+		}
 	}
 }
