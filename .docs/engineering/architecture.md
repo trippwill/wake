@@ -93,7 +93,10 @@ approved restart scope bound to its current configuration and confirmed account.
 The new continuation, actor, requested range and pacing floor are saved together
 with the grant. A change to the configuration, account authority, or saved
 credential invalidates the applicable scope. Review of an independently eligible
-source can proceed while another source stays paused.
+source can proceed while another source stays paused. A settings or credential
+change that revokes an approved scope records a new planning time so review can
+include coverage acquired since the original recovery. Changing or removing the
+OpenFIGI key also requires fresh approval after recovery.
 
 Retained-data processing discovers unfinished work from acquisition evidence,
 confirmed source authority, and receipts for the installed interpretation.

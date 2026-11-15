@@ -17,6 +17,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -41,6 +42,7 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 	}
 
 	floor := time.Now().Add(2 * time.Hour).UTC()
+	refFloor := floor.Add(time.Hour)
 
 	store, err := OpenInstalled(ctx, profile, nil)
 	if err != nil {
@@ -49,11 +51,30 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 
 	if _, err := store.db.Exec(`UPDATE sync.configurations SET settings=CAST('{"query_id":"123"}' AS BLOB);
 	INSERT INTO main.connections(id,provider,name) VALUES('unsupported','unknown-provider','Unsupported source');
-	INSERT INTO sync.configurations(id,provider,settings) VALUES('unsupported','unknown-provider',X'7b7d');`); err != nil {
+	INSERT INTO sync.configurations(id,provider,settings) VALUES('unsupported','unknown-provider',X'7b7d');
+	INSERT INTO main.connections(id,provider,name) VALUES('unconfirmed','ibkr-flex','Unconfirmed account');
+	INSERT INTO sync.configurations(id,provider,settings) VALUES('unconfirmed','ibkr-flex',X'7b7d');
+	INSERT INTO main.connections(id,provider,name) VALUES('unprovisioned','ibkr-flex','Unprovisioned account');
+	INSERT INTO main.accounts(id,name,currency,connection_id,provider,authority,kind,scope,value,artifact_id)
+	VALUES('unprovisioned-account','Unprovisioned account','','unprovisioned','ibkr-flex','ibkr','account','','U2','discovery');
+	INSERT INTO sync.configurations(id,provider,settings) VALUES('unprovisioned','ibkr-flex',X'7b7d');`); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := store.ReplaceSecret(ctx, "synthetic", "token", payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.db.Exec("UPDATE acquisition_receipts SET reported_to=? WHERE operation='acquire'",
+		time.Now().AddDate(0, 0, -3).UTC().Format(time.DateOnly)); err != nil {
+		t.Fatal(err)
+	}
+
+	if allowed, _, err := store.ReserveReference(ctx, time.Now(), 25); err != nil || !allowed {
+		t.Fatal("unable to reserve reference fixture", err)
+	}
+
+	if err := store.ReferenceCooldown(ctx, refFloor); err != nil {
 		t.Fatal(err)
 	}
 
@@ -73,6 +94,10 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 	}
 
 	if err := store.Delay(ctx, "ibkr-flex", "web-service", "surviving-budget", floor); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.db.Exec("DELETE FROM sync.reference_budget"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,6 +157,11 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 
 	defer func() { _ = store.Close() }()
 
+	if _, err := store.db.Exec("UPDATE sync.recovery_state SET recovered_at=?",
+		time.Now().UTC().AddDate(0, 0, -2).Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+
 	now := floor.Add(-time.Second)
 
 	providerHost, err := host.New(ctx, store, envelope, nil, func() time.Time { return now }, nil, registration)
@@ -156,9 +186,14 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 	}
 
 	original, err := workflow.PreviewRestart(ctx)
-	if err != nil || !original.Required || len(original.Scopes) != 2 ||
-		original.Scopes[0].Blocked == "" && original.Scopes[1].Blocked == "" {
+	if err != nil || !original.Required || len(original.Scopes) != 4 {
 		t.Fatal(original, err)
+	}
+
+	for _, scope := range original.Scopes {
+		if scope.Connection != key.Connection && scope.Blocked == "" {
+			t.Fatal("ineligible scope was presented for approval", scope.Connection)
+		}
 	}
 
 	changeSettings := func(queryID string) {
@@ -206,6 +241,27 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		wantedTo.Store(compactFixtureDate(scope.Plan.To().String()))
 	}
 
+	for _, table := range []string{"restart_scopes", "work", "scheduled"} {
+		//nolint:gosec // The test uses only fixed table names to inject failures.
+		query := "CREATE TEMP TRIGGER refuse_restart BEFORE INSERT ON sync." + table +
+			" BEGIN SELECT RAISE(ABORT,'fixture restart failure'); END"
+		if _, err := store.db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := workflow.ApproveRestart(ctx, review.Revision, review.Digest, "admin/fixture"); err == nil {
+			t.Fatal("approval ignored failed write", table)
+		}
+
+		if _, err := store.db.Exec("DROP TRIGGER temp.refuse_restart"); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := store.Checkpoint(ctx, key); !errors.Is(err, provider.ErrUnavailable) {
+			t.Fatal("partial approval was visible", table, err)
+		}
+	}
+
 	if err := workflow.ApproveRestart(ctx, review.Revision, review.Digest, "admin/fixture"); err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +287,133 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		t.Fatal("approved source did not request its bounded report", err, called.Load())
 	}
 
+	refService, err := reference.New(
+		store,
+		envelope,
+		server.Client(),
+		server.URL+"/mapping",
+		func() time.Time { return now },
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	withReference := application.New(
+		store,
+		profile.Registrations,
+		providerHost,
+		refService,
+		func() time.Time { return now },
+		nil,
+	)
+
+	referenceReview, err := withReference.PreviewRestart(ctx)
+	if err != nil || !referenceReview.Reference || !referenceReview.ReferenceAt.Equal(refFloor) ||
+		!referenceReview.Scopes[0].Approved {
+		t.Fatal("review lost the reference floor or existing scope", referenceReview, err)
+	}
+
+	if err := withReference.ApproveRestart(
+		ctx,
+		referenceReview.Revision,
+		referenceReview.Digest,
+		"admin/fixture",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if allowed, next, err := store.ReserveReference(
+		ctx,
+		now,
+		25,
+	); err != nil || allowed ||
+		!next.Equal(refFloor) {
+		t.Fatal("reference approval bypassed a surviving cooldown", allowed, next, err)
+	}
+
+	if allowed, _, err := store.ReserveReference(ctx, refFloor.Add(time.Second), 25); err != nil || !allowed {
+		t.Fatal("reference remained paused after approved pacing expired", err)
+	}
+
+	referenceReview, err = withReference.PreviewRestart(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before, _ := upstreamTokens(t, store)
+	if err := withReference.ApproveRestart(
+		ctx,
+		referenceReview.Revision,
+		referenceReview.Digest,
+		"admin/fixture",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if token, _ := upstreamTokens(t, store); token != before {
+		t.Fatal("repeat approval changed existing authority")
+	}
+
+	for _, configured := range []string{"synthetic replacement key", ""} {
+		updated := credential.NewSecret([]byte(configured))
+		err := withReference.SetReferenceKey(ctx, updated)
+		updated.Clear()
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		afterCooldown := refFloor.Add(2 * time.Minute)
+		if allowed, _, err := store.ReserveReference(ctx, afterCooldown, 25); err != nil || allowed {
+			t.Fatal("changed OpenFIGI key inherited the old grant", err)
+		}
+
+		if err := withReference.ApproveRestart(
+			ctx,
+			referenceReview.Revision,
+			referenceReview.Digest,
+			"admin/fixture",
+		); !errors.Is(
+			err,
+			application.ErrStale,
+		) {
+			t.Fatal("old review authorized changed OpenFIGI credentials", err)
+		}
+
+		referenceReview, err = withReference.PreviewRestart(ctx)
+		if err != nil || !referenceReview.Reference {
+			t.Fatal("updated OpenFIGI configuration could not be reviewed", err)
+		}
+
+		if err := withReference.ApproveRestart(
+			ctx,
+			referenceReview.Revision,
+			referenceReview.Digest,
+			"admin/fixture",
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		if allowed, _, err := store.ReserveReference(ctx, afterCooldown, 25); err != nil || !allowed {
+			t.Fatal("fresh reference grant did not admit work", err)
+		}
+
+		referenceReview, err = withReference.PreviewRestart(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A report can advance durable coverage long after the original recovery.
+	through := time.Now().UTC().Format(time.DateOnly)
+	if _, err := store.db.Exec(
+		"UPDATE acquisition_receipts SET reported_to=? WHERE operation='acquire'",
+		through,
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	revision, err := store.UpstreamRevision(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +435,34 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 
 	if _, err := store.Checkpoint(ctx, key); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("restoring prior settings revived the revoked scope", err)
+	}
+
+	review, err = withReference.PreviewRestart(ctx)
+	if err != nil || review.Scopes[0].Connection != key.Connection ||
+		review.Scopes[0].Blocked != "" || review.Scopes[0].Plan.To().String() != through {
+		t.Fatal("reapproval did not include newer retained coverage", review, err)
+	}
+
+	repeated, err := withReference.PreviewRestart(ctx)
+	if err != nil || repeated.Digest != review.Digest {
+		t.Fatal("source planning time changed between previews", err)
+	}
+
+	if err := withReference.ApproveRestart(ctx, review.Revision, review.Digest, "admin/fixture"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.ReplaceSecret(ctx, key.Connection, "token", payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Checkpoint(ctx, key); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("replacement credential inherited the prior scope", err)
+	}
+
+	review, err = withReference.PreviewRestart(ctx)
+	if err != nil || review.Scopes[0].Blocked != "" || review.Scopes[0].Plan.To().String() != through {
+		t.Fatal("replacement credential could not be reviewed", review, err)
 	}
 }
 

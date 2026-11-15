@@ -448,6 +448,36 @@ func (q *Queries) AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64
 	return result.RowsAffected()
 }
 
+const approvedRestartStreams = `-- name: ApprovedRestartStreams :many
+SELECT r.stream FROM sync.restart_scopes r
+JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+JOIN main.accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+WHERE r.connection_id=?
+`
+
+func (q *Queries) ApprovedRestartStreams(ctx context.Context, connectionID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, approvedRestartStreams, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var stream string
+		if err := rows.Scan(&stream); err != nil {
+			return nil, err
+		}
+		items = append(items, stream)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const artifactInstrumentClaims = `-- name: ArtifactInstrumentClaims :many
 SELECT r.kind,r.data,r.location,r.claim_id,r.ordinal,b.instrument_id FROM execution_observations o JOIN record_values r USING(artifact_id,version,location) JOIN claim_processing p ON p.claim_id=r.claim_id AND p.ordinal=r.ordinal AND p.artifact_id=r.artifact_id AND p.version=r.version AND p.location=r.location JOIN activity_bases b ON b.activity_id=o.execution_id WHERE o.execution_id IN (SELECT affected.execution_id FROM execution_observations affected WHERE affected.artifact_id=?) AND r.kind='activity' ORDER BY o.rowid
 `
@@ -1143,6 +1173,27 @@ func (q *Queries) CredentialKeys(ctx context.Context, connectionID string) ([]st
 		return nil, err
 	}
 	return items, nil
+}
+
+const currentRestartScope = `-- name: CurrentRestartScope :one
+SELECT c.settings,a.id,a.revision
+FROM sync.recovery_sources r
+JOIN sync.configurations c ON c.id=r.connection_id
+JOIN main.accounts a ON a.connection_id=c.id AND a.provider=c.provider
+WHERE r.connection_id=?
+`
+
+type CurrentRestartScopeRow struct {
+	Settings []byte
+	ID       string
+	Revision int64
+}
+
+func (q *Queries) CurrentRestartScope(ctx context.Context, connectionID string) (CurrentRestartScopeRow, error) {
+	row := q.db.QueryRowContext(ctx, currentRestartScope, connectionID)
+	var i CurrentRestartScopeRow
+	err := row.Scan(&i.Settings, &i.ID, &i.Revision)
+	return i, err
 }
 
 const decisionSubmission = `-- name: DecisionSubmission :one
@@ -3762,6 +3813,125 @@ func (q *Queries) Records(ctx context.Context, arg RecordsParams) ([]RecordValue
 			&i.Ordinal,
 			&i.Kind,
 			&i.Data,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recoveryCoverage = `-- name: RecoveryCoverage :many
+SELECT b.stream,CAST(max(r.reported_to) AS TEXT) AS through FROM main.acquisition_receipts r JOIN main.artifacts b ON b.id=r.artifact_id
+WHERE b.connection_id=? AND r.operation IN ('acquire','supply') AND r.reported_to<>''
+GROUP BY b.stream
+`
+
+type RecoveryCoverageRow struct {
+	Stream  string
+	Through string
+}
+
+func (q *Queries) RecoveryCoverage(ctx context.Context, connectionID string) ([]RecoveryCoverageRow, error) {
+	rows, err := q.db.QueryContext(ctx, recoveryCoverage, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecoveryCoverageRow
+	for rows.Next() {
+		var i RecoveryCoverageRow
+		if err := rows.Scan(&i.Stream, &i.Through); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recoveryPacingFloor = `-- name: RecoveryPacingFloor :many
+SELECT next FROM sync.pacing WHERE provider=?
+`
+
+func (q *Queries) RecoveryPacingFloor(ctx context.Context, provider string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, recoveryPacingFloor, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var next string
+		if err := rows.Scan(&next); err != nil {
+			return nil, err
+		}
+		items = append(items, next)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recoverySourceInputs = `-- name: RecoverySourceInputs :many
+SELECT f.id,f.provider,f.name,c.settings,r.replan_at,CAST(coalesce(a.id,'') AS TEXT) AS account_id,CAST(coalesce(a.revision,0) AS INTEGER) AS account_revision,
+ CAST(coalesce(a.authority,'') AS TEXT) AS authority,CAST(coalesce(a.kind,'') AS TEXT) AS kind,CAST(coalesce(a.scope,'') AS TEXT) AS scope,CAST(coalesce(a.value,'') AS TEXT) AS value
+FROM sync.recovery_sources r JOIN main.connections f ON f.id=r.connection_id
+LEFT JOIN sync.configurations c ON c.id=f.id AND c.provider=f.provider
+LEFT JOIN main.accounts a ON a.connection_id=f.id AND a.provider=f.provider
+ORDER BY f.id
+`
+
+type RecoverySourceInputsRow struct {
+	ID              string
+	Provider        string
+	Name            string
+	Settings        []byte
+	ReplanAt        string
+	AccountID       string
+	AccountRevision int64
+	Authority       string
+	Kind            string
+	Scope           string
+	Value           string
+}
+
+func (q *Queries) RecoverySourceInputs(ctx context.Context) ([]RecoverySourceInputsRow, error) {
+	rows, err := q.db.QueryContext(ctx, recoverySourceInputs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecoverySourceInputsRow
+	for rows.Next() {
+		var i RecoverySourceInputsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.Name,
+			&i.Settings,
+			&i.ReplanAt,
+			&i.AccountID,
+			&i.AccountRevision,
+			&i.Authority,
+			&i.Kind,
+			&i.Scope,
+			&i.Value,
 		); err != nil {
 			return nil, err
 		}

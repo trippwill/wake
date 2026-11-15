@@ -38,6 +38,10 @@ func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
 		return err
 	}
 
+	if err = revokeReferenceRestart(ctx, tx); err != nil {
+		return err
+	}
+
 	if err = q.ReviewReference(ctx); err != nil {
 		return err
 	}
@@ -60,11 +64,17 @@ func (s *Store) ReferenceFailure(ctx context.Context, failure string) error {
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, profileStatement("SetRecoveredReference", ""), false); err != nil {
+	if err := revokeReferenceRestart(ctx, tx); err != nil {
 		return err
 	}
 
 	return s.commitUpstream(ctx, tx, upstreamProgress)
+}
+
+func revokeReferenceRestart(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, profileStatement("SetRecoveredReference", ""), false)
+
+	return err
 }
 
 func (s *Store) ReferenceEvidence(ctx context.Context, id string) (application.ReferenceEvidence, error) {

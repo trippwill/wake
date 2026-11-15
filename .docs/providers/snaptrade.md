@@ -40,9 +40,10 @@ evidence are under **Reports**. See [SnapTrade data freshness](https://docs.snap
 
 After synchronization recovery, Wake verifies the confirmed account again and
 starts the reviewed activity range from offset zero. Recovery keeps both UTC
-dates fixed across page retries and preserves a daily account activity pacing
-floor, plus any later surviving cooldown. Fidelity positions recovery retrieves a
-current snapshot after account verification.
+dates fixed across page retries. Starting or restarting a recovery scan observes
+the daily account activity limit and any later surviving cooldown. Continuation
+pages use the ordinary customer and account pacing. Fidelity positions recovery
+retrieves a current snapshot after account verification.
 [SnapTrade polling guidance](https://docs.snaptrade.com/docs/launch-guide)
 
 Wake interprets equity, fund, and option purchases and sales at the reported

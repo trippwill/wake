@@ -45,6 +45,7 @@ type Querier interface {
 	AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
+	ApprovedRestartStreams(ctx context.Context, connectionID string) ([]string, error)
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactProvider(ctx context.Context, id string) (string, error)
 	ArtifactRootIDs(ctx context.Context, artifactID string) ([]string, error)
@@ -73,6 +74,7 @@ type Querier interface {
 	// SPDX-License-Identifier: MPL-2.0
 	CountTables(ctx context.Context) (int64, error)
 	CredentialKeys(ctx context.Context, connectionID string) ([]string, error)
+	CurrentRestartScope(ctx context.Context, connectionID string) (CurrentRestartScopeRow, error)
 	DecisionSubmission(ctx context.Context, submission string) (OperatorDecision, error)
 	Decisions(ctx context.Context, arg DecisionsParams) ([]DecisionsRow, error)
 	DeleteInstrumentClaim(ctx context.Context, arg DeleteInstrumentClaimParams) error
@@ -178,6 +180,9 @@ type Querier interface {
 	QueuedPollConnections(ctx context.Context, stateVersion string) ([]QueuedPollConnectionsRow, error)
 	RecentAcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	Records(ctx context.Context, arg RecordsParams) ([]RecordValue, error)
+	RecoveryCoverage(ctx context.Context, connectionID string) ([]RecoveryCoverageRow, error)
+	RecoveryPacingFloor(ctx context.Context, provider string) ([]string, error)
+	RecoverySourceInputs(ctx context.Context) ([]RecoverySourceInputsRow, error)
 	ReferenceBudget(ctx context.Context) (SyncReferenceBudget, error)
 	ReferenceEvidence(ctx context.Context, id string) (ReferenceEvidence, error)
 	ReferenceFailure(ctx context.Context, failure string) error

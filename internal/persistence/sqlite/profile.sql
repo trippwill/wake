@@ -124,30 +124,6 @@ INSERT INTO sync.recovery_sources(connection_id) SELECT id FROM main.connections
 INSERT OR REPLACE INTO sync.recovery_state(singleton,recovered_at) VALUES(1,?);
 -- name: RecoveryStart
 SELECT recovered_at FROM sync.recovery_state WHERE singleton=1;
--- name: RecoverySourceInputs
-SELECT f.id,f.provider,f.name,c.settings,coalesce(a.id,''),coalesce(a.revision,0),
- coalesce(a.authority,''),coalesce(a.kind,''),coalesce(a.scope,''),coalesce(a.value,'')
-FROM sync.recovery_sources r JOIN main.connections f ON f.id=r.connection_id
-LEFT JOIN sync.configurations c ON c.id=f.id AND c.provider=f.provider
-LEFT JOIN main.accounts a ON a.connection_id=f.id AND a.provider=f.provider
-ORDER BY f.id;
--- name: RecoveryCoverage
-SELECT b.stream,max(r.reported_to) FROM main.acquisition_receipts r JOIN main.artifacts b ON b.id=r.artifact_id
-WHERE b.connection_id=? AND r.operation IN ('acquire','supply') AND r.reported_to<>''
-GROUP BY b.stream;
--- name: RecoveryPacingFloor
-SELECT next FROM sync.pacing WHERE provider=?;
--- name: CurrentRestartScope
-SELECT c.settings,a.id,a.revision
-FROM sync.recovery_sources r
-JOIN sync.configurations c ON c.id=r.connection_id
-JOIN main.accounts a ON a.connection_id=c.id AND a.provider=c.provider
-WHERE r.connection_id=?;
--- name: ApprovedRestartStreams
-SELECT r.stream FROM sync.restart_scopes r
-JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
-JOIN main.accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
-WHERE r.connection_id=?;
 -- name: CheckRestartScope
 SELECT EXISTS(SELECT 1 FROM sync.recovery_sources WHERE connection_id=?1),
  coalesce((SELECT r.not_before FROM sync.restart_scopes r
@@ -171,9 +147,9 @@ UPDATE sync.profile SET paused=0,warehouse_reset=0,resumed_by=?,resumed_at=? WHE
 UPDATE sync.recovery_state SET reference_granted=? WHERE singleton=1;
 -- name: RevokeRestartScopes
 DELETE FROM sync.restart_scopes WHERE connection_id=?;
--- name: RevokeChangedRestartScopes
-DELETE FROM sync.restart_scopes WHERE connection_id=? AND NOT EXISTS(
- SELECT 1 FROM sync.configurations c WHERE c.id=restart_scopes.connection_id AND c.settings=restart_scopes.settings);
+-- name: ReplanRestartScopes
+UPDATE sync.recovery_sources SET replan_at=?2 WHERE connection_id=?1
+ AND EXISTS(SELECT 1 FROM sync.restart_scopes WHERE connection_id=?1);
 -- name: ReferenceRecoveryApproved
 SELECT coalesce((SELECT reference_granted FROM sync.recovery_state WHERE singleton=1),1);
 -- name: ReadPacingForRecovery

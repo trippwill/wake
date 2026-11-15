@@ -534,6 +534,7 @@ type SyncProfile struct {
 
 type SyncRecoverySource struct {
 	ConnectionID string
+	ReplanAt     string
 }
 
 type SyncRecoveryState struct {

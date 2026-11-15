@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -191,8 +192,10 @@ func (s *Store) SavePolling(
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, profileStatement("RevokeChangedRestartScopes", ""), c.ID); err != nil {
-		return err
+	if !bytes.Equal(current.Settings, data) {
+		if err := revokeRestartScopes(ctx, tx, c.ID); err != nil {
+			return err
+		}
 	}
 
 	if interval != 0 {
@@ -237,15 +240,13 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return ErrAssociation
 	}
 
-	if c.AccessRevision != "" {
-		current, err := q.Connection(ctx, c.ID)
-		if err != nil {
-			return err
-		}
+	current, err := q.Connection(ctx, c.ID)
+	if err != nil && (c.AccessRevision != "" || !errors.Is(err, sql.ErrNoRows)) {
+		return err
+	}
 
-		if current.AccessRevision != c.AccessRevision {
-			return provider.ErrConflict
-		}
+	if c.AccessRevision != "" && current.AccessRevision != c.AccessRevision {
+		return provider.ErrConflict
 	}
 
 	if err = q.UpdateConnection(
@@ -255,8 +256,10 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, profileStatement("RevokeChangedRestartScopes", ""), c.ID); err != nil {
-		return err
+	if !bytes.Equal(current.Settings, data) {
+		if err := revokeRestartScopes(ctx, tx, c.ID); err != nil {
+			return err
+		}
 	}
 
 	if err = q.UpdateDescriptorName(ctx, sqlc.UpdateDescriptorNameParams{Name: c.Name, ID: c.ID}); err != nil {
@@ -340,7 +343,7 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, profileStatement("RevokeRestartScopes", ""), id); err != nil {
+	if err := revokeRestartScopes(ctx, tx, id); err != nil {
 		return err
 	}
 

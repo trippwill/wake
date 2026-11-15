@@ -369,7 +369,7 @@ func (a *adapter) fetch(
 		access,
 		customer,
 		accountScope,
-		cursor.Recovery && r.Stream == streamID,
+		cursor.Recovery && r.Stream == streamID && cursor.Offset == 0,
 	)
 	if err != nil {
 		return response{}, provider.Step{}, err

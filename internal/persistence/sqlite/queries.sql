@@ -601,3 +601,32 @@ INSERT INTO sync.profile(singleton,access_id,paused,reference_review,recovery_re
 SELECT prior.singleton,prior.access_id,1,prior.reference_review,prior.recovery_revision+1 FROM sync.profile AS prior
 WHERE prior.singleton=1 AND prior.paused=0
 ON CONFLICT(singleton) DO UPDATE SET paused=excluded.paused, recovery_revision=excluded.recovery_revision;
+
+-- name: RecoverySourceInputs :many
+SELECT f.id,f.provider,f.name,c.settings,r.replan_at,CAST(coalesce(a.id,'') AS TEXT) AS account_id,CAST(coalesce(a.revision,0) AS INTEGER) AS account_revision,
+ CAST(coalesce(a.authority,'') AS TEXT) AS authority,CAST(coalesce(a.kind,'') AS TEXT) AS kind,CAST(coalesce(a.scope,'') AS TEXT) AS scope,CAST(coalesce(a.value,'') AS TEXT) AS value
+FROM sync.recovery_sources r JOIN main.connections f ON f.id=r.connection_id
+LEFT JOIN sync.configurations c ON c.id=f.id AND c.provider=f.provider
+LEFT JOIN main.accounts a ON a.connection_id=f.id AND a.provider=f.provider
+ORDER BY f.id;
+
+-- name: RecoveryCoverage :many
+SELECT b.stream,CAST(max(r.reported_to) AS TEXT) AS through FROM main.acquisition_receipts r JOIN main.artifacts b ON b.id=r.artifact_id
+WHERE b.connection_id=? AND r.operation IN ('acquire','supply') AND r.reported_to<>''
+GROUP BY b.stream;
+
+-- name: RecoveryPacingFloor :many
+SELECT next FROM sync.pacing WHERE provider=?;
+
+-- name: CurrentRestartScope :one
+SELECT c.settings,a.id,a.revision
+FROM sync.recovery_sources r
+JOIN sync.configurations c ON c.id=r.connection_id
+JOIN main.accounts a ON a.connection_id=c.id AND a.provider=c.provider
+WHERE r.connection_id=?;
+
+-- name: ApprovedRestartStreams :many
+SELECT r.stream FROM sync.restart_scopes r
+JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings
+JOIN main.accounts a ON a.connection_id=r.connection_id AND a.id=r.account_id AND a.revision=r.account_revision
+WHERE r.connection_id=?;

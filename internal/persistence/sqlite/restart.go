@@ -35,20 +35,31 @@ func (s *Store) RestartInputs(ctx context.Context) (application.RestartInputs, e
 		return result, err
 	}
 
-	profile, err := s.queries.WithTx(tx).Profile(ctx)
+	q := s.queries.WithTx(tx)
+
+	profile, err := q.Profile(ctx)
 	if err != nil {
 		return result, err
 	}
 
 	result.At, result.Revision = at, profile.RecoveryRevision
+	budget, err := q.ReferenceBudget(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return result, err
+	}
 
-	result.Sources, err = restartSources(ctx, tx)
+	result.ReferenceFloor, err = parseOptionalTime(budget.Cooldown)
+	if err != nil {
+		return result, err
+	}
+
+	result.Sources, err = restartSources(ctx, q)
 	if err != nil {
 		return result, err
 	}
 
 	for i := range result.Sources {
-		if err := restartSourceState(ctx, tx, &result.Sources[i]); err != nil {
+		if err := restartSourceState(ctx, q, &result.Sources[i]); err != nil {
 			return result, err
 		}
 	}
@@ -71,33 +82,32 @@ func recoveryStart(ctx context.Context, db associationReader) (time.Time, error)
 	return time.Parse(time.RFC3339Nano, text)
 }
 
-func restartSources(ctx context.Context, tx *sql.Tx) ([]application.RestartInput, error) {
-	rows, err := tx.QueryContext(ctx, profileStatement("RecoverySourceInputs", ""))
+func restartSources(ctx context.Context, q *sqlc.Queries) ([]application.RestartInput, error) {
+	rows, err := q.RecoverySourceInputs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 
-	var result []application.RestartInput
-	for rows.Next() {
-		var (
-			input                         application.RestartInput
-			settings                      []byte
-			authority, kind, scope, value string
-		)
-		if err := rows.Scan(&input.ID, &input.Provider, &input.Name, &settings, &input.AccountID,
-			&input.AccountRevision, &authority, &kind, &scope, &value); err != nil {
+	result := make([]application.RestartInput, 0, len(rows))
+	for _, row := range rows {
+		input := application.RestartInput{
+			ID: row.ID, Provider: row.Provider, Name: row.Name,
+			AccountID: row.AccountID, AccountRevision: row.AccountRevision,
+		}
+
+		input.ReplanAt, err = parseOptionalTime(row.ReplanAt)
+		if err != nil {
 			return nil, err
 		}
 
-		if len(settings) != 0 {
-			if decoded, _, err := decodeConnectionSettings(settings); err == nil {
-				input.Settings, input.Binding = decoded, digest(settings)
+		if len(row.Settings) != 0 {
+			if decoded, _, err := decodeConnectionSettings(row.Settings); err == nil {
+				input.Settings, input.Binding = decoded, digest(row.Settings)
 			}
 		}
 
-		if input.AccountID != "" {
-			input.Account, err = source.NewReference(authority, kind, scope, value)
+		if row.AccountID != "" {
+			input.Account, err = source.NewReference(row.Authority, row.Kind, row.Scope, row.Value)
 			if err != nil {
 				return nil, err
 			}
@@ -106,47 +116,42 @@ func restartSources(ctx context.Context, tx *sql.Tx) ([]application.RestartInput
 		result = append(result, input)
 	}
 
-	return result, rows.Err()
+	return result, nil
 }
 
-func restartSourceState(ctx context.Context, tx *sql.Tx, input *application.RestartInput) error {
-	coverage, err := tx.QueryContext(ctx, profileStatement("RecoveryCoverage", ""), input.ID)
+func revokeRestartScopes(ctx context.Context, tx *sql.Tx, connection string) error {
+	at := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := tx.ExecContext(ctx, profileStatement("ReplanRestartScopes", ""), connection, at); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, profileStatement("RevokeRestartScopes", ""), connection)
+
+	return err
+}
+
+func restartSourceState(ctx context.Context, q *sqlc.Queries, input *application.RestartInput) error {
+	coverage, err := q.RecoveryCoverage(ctx, input.ID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = coverage.Close() }()
 
-	input.Retained = map[string]financial.Date{}
-	for coverage.Next() {
-		var stream, bound string
-		if err := coverage.Scan(&stream, &bound); err != nil {
-			return err
-		}
-
-		date, err := financial.ParseDate(bound)
+	input.Retained = make(map[string]financial.Date, len(coverage))
+	for _, row := range coverage {
+		date, err := financial.ParseDate(row.Through)
 		if err != nil {
 			return err
 		}
 
-		input.Retained[stream] = date
+		input.Retained[row.Stream] = date
 	}
 
-	if err := coverage.Err(); err != nil {
-		return err
-	}
-
-	pacing, err := tx.QueryContext(ctx, profileStatement("RecoveryPacingFloor", ""), input.Provider)
+	pacing, err := q.RecoveryPacingFloor(ctx, input.Provider)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = pacing.Close() }()
 
-	for pacing.Next() {
-		var deadline string
-		if err := pacing.Scan(&deadline); err != nil {
-			return err
-		}
-
+	for _, deadline := range pacing {
 		at, err := parseOptionalTime(deadline)
 		if err != nil {
 			return err
@@ -157,27 +162,17 @@ func restartSourceState(ctx context.Context, tx *sql.Tx, input *application.Rest
 		}
 	}
 
-	if err := pacing.Err(); err != nil {
-		return err
-	}
-
-	approved, err := tx.QueryContext(ctx, profileStatement("ApprovedRestartStreams", ""), input.ID)
+	approved, err := q.ApprovedRestartStreams(ctx, input.ID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = approved.Close() }()
 
-	input.Approved = map[string]bool{}
-	for approved.Next() {
-		var stream string
-		if err := approved.Scan(&stream); err != nil {
-			return err
-		}
-
+	input.Approved = make(map[string]bool, len(approved))
+	for _, stream := range approved {
 		input.Approved[stream] = true
 	}
 
-	return approved.Err()
+	return nil
 }
 
 func (s *Store) ApproveRestart(
@@ -268,18 +263,17 @@ func (s *Store) ApproveRestart(
 func approveRestartScope(
 	ctx context.Context, tx *sql.Tx, q *sqlc.Queries, scope application.RestartScope, actor, at string,
 ) error {
-	var (
-		settings []byte
-		account  string
-		revision int64
-	)
-	if err := tx.QueryRowContext(ctx, profileStatement("CurrentRestartScope", ""), scope.Connection).
-		Scan(&settings, &account, &revision); err != nil {
+	current, err := q.CurrentRestartScope(ctx, scope.Connection)
+	if errors.Is(err, sql.ErrNoRows) {
+		return application.ErrStale
+	}
+
+	if err != nil {
 		return err
 	}
 
-	if digest(settings) != scope.Binding || account != scope.AccountID || revision != scope.AccountRevision ||
-		scope.Plan.State().IsZero() {
+	if digest(current.Settings) != scope.Binding || current.ID != scope.AccountID ||
+		current.Revision != scope.AccountRevision || scope.Plan.State().IsZero() {
 		return application.ErrStale
 	}
 
@@ -289,9 +283,9 @@ func approveRestartScope(
 		profileStatement("ApproveRestartScope", ""),
 		scope.Connection,
 		scope.Stream,
-		settings,
-		account,
-		revision,
+		current.Settings,
+		current.ID,
+		current.Revision,
 		next,
 		scope.Plan.From().String(),
 		scope.Plan.To().String(),

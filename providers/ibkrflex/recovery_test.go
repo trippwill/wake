@@ -62,3 +62,37 @@ func TestRestartRequestsFreshFlexReportWithinReviewedBounds(t *testing.T) {
 		t.Fatal("unavailable recovery expanded the approved range", err)
 	}
 }
+
+func TestRestartRequiresConfirmedFlexAccountAndSupportedRange(t *testing.T) {
+	registration, err := Registration(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	planner := registration.Acquirer().(provider.RestartPlanner)
+	at := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	settings, _ := provider.NewSettings(map[string]string{"query_id": "123", "activity_query_id": "456"})
+
+	request := provider.RestartRequest{Stream: Activity, Settings: settings, RecoveredAt: at}
+	if _, err := planner.PlanRestart(request); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("unconfirmed account received recovery", err)
+	}
+
+	request.SourceAccount, _ = source.NewReference("ibkr", "account", "", "U1")
+
+	plan, err := planner.PlanRestart(request)
+	if err != nil || plan.From().String() != at.AddDate(0, 0, -364).Format(time.DateOnly) ||
+		plan.To().String() != at.Format(time.DateOnly) {
+		t.Fatal("uncovered history was not bounded", plan.From(), plan.To(), err)
+	}
+
+	request.RetainedThrough, _ = financial.ParseDate("2026-11-16")
+	if _, err := planner.PlanRestart(request); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("future retained date was accepted", err)
+	}
+
+	request.Stream = "unavailable"
+	if _, err := planner.PlanRestart(request); !errors.Is(err, provider.ErrUnavailable) {
+		t.Fatal("unsupported stream received recovery", err)
+	}
+}

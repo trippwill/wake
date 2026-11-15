@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -144,12 +145,79 @@ func TestSynchronizationRecoveryResumesAfterProcessExit(t *testing.T) {
 		t.Fatal("durable plan could not be inspected", pending, err)
 	}
 
+	different := profile
+	different.SyncPath += ".different"
+	if _, err := RecoverSynchronization(ctx, different, "", preview.ID); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("pending plan accepted a changed store path", err)
+	}
+
+	if _, err := RecoverSynchronization(
+		ctx,
+		profile,
+		"",
+		"another-plan",
+	); !errors.Is(
+		err,
+		ErrSyncRecoveryPlan,
+	) {
+		t.Fatal("pending plan accepted a different confirmation", err)
+	}
+
+	altered := append(bytes.Clone(financial), 0)
+	if err := os.WriteFile(paths[0], altered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RecoverSynchronization(ctx, profile, "", preview.ID); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("pending plan accepted a changed warehouse", err)
+	}
+
+	if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("rejected retry cleared the startup guard", err)
+	}
+
+	if err := os.WriteFile(paths[0], financial, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	if applied, err := RecoverSynchronization(ctx, profile, "", preview.ID); err != nil || !applied.Applied {
 		t.Fatal("same plan did not resume", applied, err)
 	}
 
 	if !bytes.Equal(financial, readRestoreFixture(t, paths[0])) {
 		t.Fatal("sync-only recovery rewrote the warehouse")
+	}
+}
+
+func TestSynchronizationRecoveryRefusesInvalidRequiredState(t *testing.T) {
+	for _, role := range []int{0, 1} {
+		t.Run([]string{"warehouse", "access"}[role], func(t *testing.T) {
+			profile := seedUpgradeStores(t)
+			if err := os.WriteFile(profile.paths()[role], []byte("not a database"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := RecoverSynchronization(t.Context(), profile, "", ""); err == nil {
+				t.Fatal("accepted damaged required state")
+			}
+		})
+	}
+
+	profile := seedUpgradeStores(t)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := RecoverSynchronization(cancelled, profile, "", ""); !errors.Is(err, context.Canceled) {
+		t.Fatal("accepted cancelled recovery", err)
+	}
+
+	intent := profile.WarehousePath + RestoreIntentSuffix
+	if err := os.WriteFile(intent, []byte("invalid restore metadata"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RecoverSynchronization(t.Context(), profile, "", ""); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("accepted unrecognized maintenance intent", err)
 	}
 }
 
@@ -225,5 +293,116 @@ func TestRecoverSynchronizationImportsOnlyReviewedConfiguration(t *testing.T) {
 
 	if _, err := store.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("configuration import admitted network work", err)
+	}
+}
+
+func TestSynchronizationRecoveryRefusesUnrelatedMaintenance(t *testing.T) {
+	fixtures := []struct {
+		name    string
+		prepare func(*testing.T, Profile)
+		want    error
+	}{
+		{"overlapping stores", nil, ErrUnsafeStore},
+		{"missing warehouse", func(t *testing.T, profile Profile) {
+			if err := os.Remove(profile.WarehousePath); err != nil {
+				t.Fatal(err)
+			}
+		}, os.ErrNotExist},
+		{"pending upgrade", func(t *testing.T, profile Profile) {
+			if err := os.WriteFile(
+				profile.WarehousePath+UpgradeIntentSuffix,
+				[]byte("pending"),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrUpgradeRecovery},
+		{"pending installation restore", func(t *testing.T, profile Profile) {
+			intent := restoreIntent{ArchiveDigest: digest([]byte("other installation"))}
+			if _, err := publishRestoreIntent(profile.WarehousePath+RestoreIntentSuffix, intent); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrRestorePending},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			profile := seedUpgradeStores(t)
+			if fixture.prepare == nil {
+				profile.SyncPath = profile.ConnectionsPath
+			} else {
+				fixture.prepare(t, profile)
+			}
+
+			if _, err := RecoverSynchronization(t.Context(), profile, "", ""); !errors.Is(err, fixture.want) {
+				t.Fatal("unsafe recovery preview succeeded", err)
+			}
+		})
+	}
+}
+
+func TestSynchronizationRecoveryRejectsObsoleteOrInvalidArchivedSettings(t *testing.T) {
+	ctx := t.Context()
+	profile := seedUpgradeStores(t)
+	change := func(query string) {
+		t.Helper()
+
+		store, err := OpenInstalled(ctx, profile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = store.db.Exec(query)
+		if err := errors.Join(err, store.Close()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	change(`INSERT INTO main.connections(id,provider,name) VALUES('obsolete','ibkr-flex','Obsolete source');
+	INSERT INTO sync.configurations(id,provider,settings) VALUES('obsolete','ibkr-flex',X'7b7d');`)
+
+	dir := filepath.Dir(profile.WarehousePath)
+	obsolete := filepath.Join(dir, "obsolete.tar")
+	if err := Backup(ctx, profile, obsolete); err != nil {
+		t.Fatal(err)
+	}
+
+	change(
+		`DELETE FROM sync.configurations WHERE id='obsolete'; DELETE FROM main.connections WHERE id='obsolete';`,
+	)
+
+	if _, err := RecoverSynchronization(ctx, profile, obsolete, ""); !errors.Is(err, ErrAssociation) {
+		t.Fatal("import recreated an obsolete source", err)
+	}
+
+	change(`UPDATE sync.configurations SET settings=X'5b5d' WHERE id='synthetic';`)
+
+	malformed := filepath.Join(dir, "invalid-settings.tar")
+	if err := Backup(ctx, profile, malformed); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RecoverSynchronization(ctx, profile, malformed, ""); !errors.Is(err, ErrCorrupt) {
+		t.Fatal("malformed settings produced an approvable plan", err)
+	}
+
+	warehouse := filepath.Join(dir, "warehouse-only.tar")
+	if err := SnapshotWarehouse(ctx, profile, warehouse); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RecoverSynchronization(ctx, profile, warehouse, ""); !errors.Is(err, ErrBackupScope) {
+		t.Fatal("warehouse snapshot was mistaken for configuration", err)
+	}
+
+	if _, err := RecoverSynchronization(
+		ctx,
+		profile,
+		warehouse+".absent",
+		"",
+	); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatal("missing archive produced an approvable import", err)
 	}
 }

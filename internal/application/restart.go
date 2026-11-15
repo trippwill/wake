@@ -25,12 +25,13 @@ type RestartInput struct {
 	Retained                               map[string]financial.Date
 	Approved                               map[string]bool
 	PacingFloor                            time.Time
+	ReplanAt                               time.Time
 }
 
 type RestartInputs struct {
-	At       time.Time
-	Revision int64
-	Sources  []RestartInput
+	At, ReferenceFloor time.Time
+	Revision           int64
+	Sources            []RestartInput
 }
 
 type RestartScope struct {
@@ -68,6 +69,10 @@ func (w *Workflow) PreviewRestart(ctx context.Context) (RestartReview, error) {
 	}
 
 	review := RestartReview{Required: true, Revision: inputs.Revision, ReferenceAt: inputs.At.Add(time.Minute)}
+	if inputs.ReferenceFloor.After(review.ReferenceAt) {
+		review.ReferenceAt = inputs.ReferenceFloor
+	}
+
 	review.Reference = w.reference != nil && w.reference.CheckAccess(ctx) == nil
 
 	for _, input := range inputs.Sources {
@@ -91,11 +96,12 @@ func (w *Workflow) PreviewRestart(ctx context.Context) (RestartReview, error) {
 	}
 
 	data, err := json.Marshal(struct {
-		Revision  int64
-		At        time.Time
-		Reference bool
-		Bindings  []scopeBinding
-	}{review.Revision, inputs.At, review.Reference, bindings})
+		Revision    int64
+		At          time.Time
+		Reference   bool
+		ReferenceAt time.Time
+		Bindings    []scopeBinding
+	}{review.Revision, inputs.At, review.Reference, review.ReferenceAt, bindings})
 	if err != nil {
 		return RestartReview{}, err
 	}
@@ -107,6 +113,10 @@ func (w *Workflow) PreviewRestart(ctx context.Context) (RestartReview, error) {
 }
 
 func (w *Workflow) planSourceRestart(ctx context.Context, at time.Time, input RestartInput) []RestartScope {
+	if input.ReplanAt.After(at) {
+		at = input.ReplanAt
+	}
+
 	scope := RestartScope{
 		Connection: input.ID, Provider: input.Provider, Name: input.Name,
 		AccountID: input.AccountID, Account: input.Account.Value(),

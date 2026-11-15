@@ -49,8 +49,12 @@ func checkInstalledStores(ctx context.Context, paths [storeCount]string, owners 
 		hot = hot || err != nil
 	}
 
+	var supers []string
 	if hot {
-		if err := recoverInstalledJournals(ctx, paths, owners); err != nil {
+		var err error
+
+		supers, err = recoverInstalledJournals(ctx, paths, owners)
+		if err != nil {
 			return err
 		}
 	}
@@ -64,7 +68,27 @@ func checkInstalledStores(ctx context.Context, paths [storeCount]string, owners 
 		if err := discardColdJournal(path + "-journal"); err != nil {
 			return err
 		}
+	}
 
+	// SQLite may have stopped after removing the final child journal. Once
+	// the complete recovered set agrees and no child journals remain, the
+	// validated super-journal has no recovery work left.
+	for _, path := range supers {
+		err := os.Remove(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if err := syncUpgradeDir(path); err != nil {
+			return err
+		}
+	}
+
+	for _, path := range paths {
 		if err := checkUpgradeJournals(path); err != nil {
 			return err
 		}
@@ -77,21 +101,21 @@ func recoverInstalledJournals(
 	ctx context.Context,
 	paths [storeCount]string,
 	owners [storeCount]*os.File,
-) error {
+) ([]string, error) {
 	// The stable identities survive partially flushed progress and authority
 	// writes. The rotating witness is checked only after SQLite has recovered.
 	probe, err := openInstallationCopy(ctx, paths, owners[0])
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	a, err := readAssociation(ctx, probe, false)
 	if err := errors.Join(err, probe.Close()); err != nil {
-		return err
+		return nil, err
 	}
 
 	if !a.epochMatches || a.restoring {
-		return ErrAssociation
+		return nil, ErrAssociation
 	}
 
 	var journals [storeCount]string
@@ -102,16 +126,19 @@ func recoverInstalledJournals(
 		maximumSize += len(journals[i]) + 1
 	}
 
+	var supers []string
 	for _, path := range paths {
 		sidecars, err := storeSidecars(path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, super := range sidecars[3:] {
 			if err := checkSuperJournal(super, journals, maximumSize); err != nil {
-				return err
+				return nil, err
 			}
+
+			supers = append(supers, super)
 		}
 	}
 
@@ -124,11 +151,11 @@ func recoverInstalledJournals(
 		var kind, version, id string
 		if err := db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
 			Scan(&kind, &version, &id); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return supers, nil
 }
 
 // SQLite ignores a rollback journal whose header was never made hot. Remove
@@ -184,12 +211,16 @@ func checkSuperJournal(path string, journals [storeCount]string, limit int) erro
 			return ErrUpgradeRecovery
 		}
 
+		seen[name] = true
+
 		info, err := os.Lstat(name)
+		if os.IsNotExist(err) {
+			continue
+		}
+
 		if err != nil || !info.Mode().IsRegular() || !privateOwned(info) || !singleLink(info) {
 			return ErrUpgradeRecovery
 		}
-
-		seen[name] = true
 	}
 
 	return nil

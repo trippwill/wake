@@ -497,7 +497,7 @@ templ RestartReviewForm(csrf string, view sourceView) {
 			}
 		</ul>
 		if view.RestartReview.Reference {
-			<p>OpenFIGI mapping can resume after its recovery pacing window.</p>
+			<p>OpenFIGI mapping can resume after <span>@SyncTime(view.RestartReview.ReferenceAt)</span>.</p>
 		} else {
 			<p>OpenFIGI mapping remains paused.</p>
 		}

@@ -7,7 +7,10 @@ CREATE TABLE sync.recovery_state(
  reference_granted INTEGER NOT NULL DEFAULT 0 CHECK(reference_granted IN (0,1))
 ) STRICT;
 
-CREATE TABLE sync.recovery_sources(connection_id TEXT PRIMARY KEY NOT NULL) STRICT;
+CREATE TABLE sync.recovery_sources(
+ connection_id TEXT PRIMARY KEY NOT NULL,
+ replan_at TEXT NOT NULL DEFAULT ''
+) STRICT;
 
 CREATE TABLE sync.restart_scopes(
  connection_id TEXT NOT NULL REFERENCES recovery_sources(connection_id),
