@@ -161,7 +161,7 @@ func prepareRestore(
 	entries := tar.NewReader(reader)
 	for i, path := range paths {
 		entry, err := entries.Next()
-		if err != nil || entry.Name != backupEntries[i] || entry.Typeflag != tar.TypeReg || entry.Size <= 0 {
+		if err != nil || !isRegularRecoveryEntry(entry, backupEntries[i]) {
 			return nil, ErrBackupScope
 		}
 
@@ -171,7 +171,7 @@ func prepareRestore(
 		}
 
 		staged[i] = file.Name()
-		//nolint:gosec // The plain tar member is streamed to disk and cannot expand beyond the archive bytes.
+		//nolint:gosec // The checked member is non-sparse and cannot expand beyond its archive bytes.
 		_, err = io.Copy(file, entries)
 		if err = errors.Join(err, file.Sync(), file.Close()); err != nil {
 			return nil, err

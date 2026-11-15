@@ -174,19 +174,18 @@ func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 		return fmt.Errorf("%w; add --with-credentials to restore the backup", ErrBackupScope)
 	}
 
-	if err != nil || entry.Name != snapshotWarehouseEntry || entry.Typeflag != tar.TypeReg || entry.Size <= 0 {
+	if err != nil || !isRegularRecoveryEntry(entry, snapshotWarehouseEntry) {
 		return ErrBackupScope
 	}
 
 	hash := sha256.New()
-	//nolint:gosec // A plain tar member cannot expand beyond the archive bytes.
+	//nolint:gosec // The checked member is non-sparse and cannot expand beyond its archive bytes.
 	if _, err := io.Copy(io.MultiWriter(destination, hash), archive); err != nil {
 		return err
 	}
 
 	entry, err = archive.Next()
-	if err != nil || entry.Name != snapshotDigestEntry || entry.Typeflag != tar.TypeReg ||
-		entry.Size != sha256.Size*2 {
+	if err != nil || !isRegularRecoveryEntry(entry, snapshotDigestEntry) || entry.Size != sha256.Size*2 {
 		return ErrCorrupt
 	}
 

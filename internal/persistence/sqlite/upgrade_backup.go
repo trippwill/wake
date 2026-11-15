@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -188,10 +189,25 @@ func openBackup(path string) (*os.File, error) {
 	return openUpgradeIntent(path, info)
 }
 
+func isRegularRecoveryEntry(entry *tar.Header, name string) bool {
+	if entry.Name != name || entry.Typeflag != tar.TypeReg || entry.Size <= 0 {
+		return false
+	}
+
+	// Go's tar reader can expand GNU sparse PAX members with type TypeReg.
+	for key := range entry.PAXRecords {
+		if strings.HasPrefix(key, "GNU.sparse.") {
+			return false
+		}
+	}
+
+	return true
+}
+
 func readBackupPair(archive *tar.Reader) error {
 	for _, name := range backupEntries {
 		entry, err := archive.Next()
-		if err != nil || entry.Name != name || entry.Typeflag != tar.TypeReg || entry.Size <= 0 {
+		if err != nil || !isRegularRecoveryEntry(entry, name) {
 			return ErrCorrupt
 		}
 	}

@@ -313,3 +313,77 @@ func TestStorageSnapshotRejectsUnusableSource(t *testing.T) {
 		t.Fatalf("invalid source yielded an archive: %v", err)
 	}
 }
+
+func TestStorageSnapshotRejectsSparseMemberBeforeCopying(t *testing.T) {
+	archive := sparseRecoveryArchive(t, []string{snapshotWarehouseEntry}, 0)
+
+	var output bytes.Buffer
+
+	err := readWarehouseSnapshot(tar.NewReader(bytes.NewReader(archive)), &output)
+	if !errors.Is(err, ErrBackupScope) || output.Len() != 0 {
+		t.Fatalf("sparse snapshot: got error %v after writing %d bytes", err, output.Len())
+	}
+}
+
+func TestStoragePairedRestoreRejectsSparseMembers(t *testing.T) {
+	for i, kind := range storeKinds {
+		t.Run(kind, func(t *testing.T) {
+			archive := sparseRecoveryArchive(t, backupEntries[:], i)
+			target := vacantRecoveryProfile(t)
+			file := filepath.Join(t.TempDir(), "sparse.tar")
+			if err := os.WriteFile(file, archive, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := Restore(t.Context(), target, file, true); !errors.Is(err, ErrBackupScope) {
+				t.Fatalf("sparse paired restore: %v", err)
+			}
+
+			if err := readBackupPair(tar.NewReader(bytes.NewReader(archive))); !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("sparse upgrade archive: %v", err)
+			}
+
+			for _, path := range target.paths() {
+				items, err := os.ReadDir(filepath.Dir(path))
+				if err != nil || len(items) != 0 {
+					t.Fatalf("rejected restore left files in %s: %v, %v", filepath.Dir(path), items, err)
+				}
+			}
+		})
+	}
+}
+
+func sparseRecoveryArchive(t *testing.T, names []string, sparseIndex int) []byte {
+	t.Helper()
+
+	var data bytes.Buffer
+
+	archive := tar.NewWriter(&data)
+
+	for i, name := range names {
+		entry := tar.Header{Name: name, Typeflag: tar.TypeReg, Size: 1, Mode: 0o600}
+		if i == sparseIndex {
+			// Go's writer reserves GNU.sparse keys. Write equal-length vendor
+			// keys and substitute the prefix in the PAX body after closing.
+			entry.PAXRecords = map[string]string{
+				"WAK.sparse.map":       "0,1",
+				"WAK.sparse.numblocks": "1",
+				"WAK.sparse.size":      "2",
+			}
+		}
+
+		if err := archive.WriteHeader(&entry); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := archive.Write([]byte{'x'}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	return bytes.ReplaceAll(data.Bytes(), []byte("WAK.sparse."), []byte("GNU.sparse."))
+}
