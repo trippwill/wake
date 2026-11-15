@@ -12,46 +12,22 @@ import (
 )
 
 type preparedCorrection struct {
-	row        sqlc.Execution
-	activity   application.ActivityCalculation
 	instrument application.InstrumentCalculation
 }
 
-// prepareCorrection evaluates exactly the prospective retained decision set used
+// prepareInstrumentCorrection evaluates exactly the prospective retained decision set used
 // by saving. All data belongs to the caller's transaction; evaluation writes nothing.
-func prepareCorrection(
+func prepareInstrumentCorrection(
 	ctx context.Context,
 	q *sqlc.Queries,
 	f application.DecisionInput,
 ) (preparedCorrection, error) {
 	var out preparedCorrection
-	if _, err := application.NewDecision(f); err != nil {
-		return out, err
+	if f.TargetKind != "instrument" {
+		return out, application.ErrInvalid
 	}
 
-	if f.TargetKind == "activity" {
-		row, err := q.Execution(ctx, f.TargetID)
-		if err != nil {
-			return out, err
-		}
-
-		if row.Revision != f.ExpectedRevision {
-			return out, application.ErrStale
-		}
-
-		states, err := readCorrectionStates(ctx, q)
-		if err != nil {
-			return out, err
-		}
-
-		in, err := loadActivityCalculation(ctx, q, row, states[row.ID], &f)
-		if err != nil {
-			return out, err
-		}
-
-		out.row = row
-		out.activity, err = application.CalculateActivity(in)
-
+	if _, err := application.NewDecision(f); err != nil {
 		return out, err
 	}
 
@@ -85,7 +61,7 @@ func prepareCorrection(
 
 // CheckCorrection uses the same pure calculation as saving, in one consistent
 // read. It does not write decisions, projections, revisions or operational work.
-func (s *Store) CheckCorrection(ctx context.Context, decision application.Decision) error {
+func (s *Store) CheckInstrumentCorrection(ctx context.Context, decision application.Decision) error {
 	if s.HistoryUpdating() {
 		return application.ErrHistoryUpdating
 	}
@@ -97,7 +73,7 @@ func (s *Store) CheckCorrection(ctx context.Context, decision application.Decisi
 
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = prepareCorrection(ctx, s.queries.WithTx(tx), decision.Fields())
+	_, err = prepareInstrumentCorrection(ctx, s.queries.WithTx(tx), decision.Fields())
 
 	return err
 }

@@ -54,7 +54,7 @@ func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		e = s.CheckCorrection(t.Context(), decision)
+		e = application.CheckCorrection(t.Context(), s, decision)
 		if (e == nil) != wantValid || (!wantValid && !errors.Is(e, application.ErrInvalid)) {
 			t.Fatal("preflight disagrees with dependent listing constraint", e)
 		}

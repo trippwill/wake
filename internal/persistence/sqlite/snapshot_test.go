@@ -160,7 +160,7 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(ctx, decision, "synthetic/operator", time.Now()); err != nil {
+	if err = application.SaveDecision(ctx, s, decision, "synthetic/operator", time.Now()); err != nil {
 		t.Fatal("slow client blocked accepted writes", err)
 	}
 

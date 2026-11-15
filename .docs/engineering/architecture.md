@@ -78,6 +78,14 @@ require their upstream capability and report unavailability when it is absent.
 The daemon cancels and joins local work before releasing storage; upstream hosts
 also join their outstanding calls before credentials are cleared.
 
+Activity correction policy and orchestration belong to the financial application.
+A consistent read callback prepares previews without writes; a write callback
+checks submission idempotency before revalidating the revision, expands prospective
+decisions, and calculates their result. SQLite supplies typed transaction-bound
+inputs and persists explicit decisions and results. It finalizes publication in
+the same transaction and notifies subscribers only after successful commit.
+Instrument correction and identity orchestration remain in persistence.
+
 ## Evidence before conclusions
 
 Preserve immutable evidence and qualified claims independently of accepted views.

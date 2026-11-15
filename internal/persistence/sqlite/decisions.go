@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,12 +31,21 @@ func activeDecisions(rows []sqlc.DecisionsRow) map[string]sqlc.OperatorDecision 
 	return active
 }
 
-func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor string, at time.Time) error {
+func (s *Store) SaveInstrumentDecision(
+	ctx context.Context,
+	d application.Decision,
+	actor string,
+	at time.Time,
+) error {
 	if s.HistoryUpdating() {
 		return application.ErrHistoryUpdating
 	}
 
 	f := d.Fields()
+	if f.TargetKind != "instrument" {
+		return application.ErrInvalid
+	}
+
 	if _, err := application.NewDecision(f); err != nil {
 		return err
 	}
@@ -73,7 +81,7 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 		return err
 	}
 
-	prepared, err := prepareCorrection(ctx, q, f)
+	prepared, err := prepareInstrumentCorrection(ctx, q, f)
 	if err != nil {
 		return err
 	}
@@ -85,78 +93,58 @@ func (s *Store) SaveDecision(ctx context.Context, d application.Decision, actor 
 
 	active := activeDecisions(rows)
 
-	fields, err := activityDecisionFields(ctx, q, f, active)
-	if err != nil {
+	field := f
+	old := active[field.Scope]
+	if field.Action == "release" && old.ID == "" {
+		return application.ErrInvalid
+	}
+
+	decisionID := rand.Text()
+	submission := f.Submission
+
+	if err = q.PutDecision(
+		ctx,
+		sqlc.PutDecisionParams{
+			ID:         decisionID,
+			TargetKind: f.TargetKind,
+			TargetID:   f.TargetID,
+			Scope:      field.Scope,
+			Text:       field.Text,
+			Currency:   field.Currency,
+			Action:     field.Action,
+			Actor:      actor,
+			At:         at.UTC().Format(time.RFC3339Nano),
+			Rationale:  f.Rationale,
+			Supersedes: old.ID,
+			Submission: submission,
+			Request:    request,
+		},
+	); err != nil {
 		return err
 	}
 
-	for i, field := range fields {
-		old := active[field.Scope]
-		if field.Action == "release" && old.ID == "" {
-			return application.ErrInvalid
-		}
-
-		decisionID := rand.Text()
-
-		submission := f.Submission
-		if i > 0 {
-			submission = f.Submission + "/" + strconv.Itoa(i)
-		}
-
-		if err = q.PutDecision(
-			ctx,
-			sqlc.PutDecisionParams{
-				ID:         decisionID,
-				TargetKind: f.TargetKind,
-				TargetID:   f.TargetID,
-				Scope:      field.Scope,
-				Text:       field.Text,
-				Currency:   field.Currency,
-				Action:     field.Action,
-				Actor:      actor,
-				At:         at.UTC().Format(time.RFC3339Nano),
-				Rationale:  f.Rationale,
-				Supersedes: old.ID,
-				Submission: submission,
-				Request:    request,
-			},
-		); err != nil {
-			return err
-		}
-
-		if err = q.SupersedeDecisions(
-			ctx,
-			sqlc.SupersedeDecisionsParams{
-				DecisionID: decisionID,
-				TargetKind: f.TargetKind,
-				TargetID:   f.TargetID,
-				Scope:      field.Scope,
-			},
-		); err != nil {
-			return err
-		}
+	if err = q.SupersedeDecisions(
+		ctx,
+		sqlc.SupersedeDecisionsParams{
+			DecisionID: decisionID,
+			TargetKind: f.TargetKind,
+			TargetID:   f.TargetID,
+			Scope:      field.Scope,
+		},
+	); err != nil {
+		return err
 	}
 
-	if f.TargetKind == "activity" {
-		if err = persistActivityCalculation(ctx, q, prepared.row, prepared.activity); err != nil {
-			return err
-		}
-		// Choosing a value changes edit authority even when its text already matches.
-		if err = q.AdvanceActivityRevision(ctx, f.TargetID); err != nil {
-			return err
-		}
-	} else {
-		if err = persistInstrumentCalculation(ctx, q, f.TargetID, prepared.instrument); err != nil {
-			return err
-		}
+	if err = persistInstrumentCalculation(ctx, q, f.TargetID, prepared.instrument); err != nil {
+		return err
+	}
 
-		if err = q.AdvanceInstrumentRevision(ctx, f.TargetID); err != nil {
-			return err
-		}
+	if err = q.AdvanceInstrumentRevision(ctx, f.TargetID); err != nil {
+		return err
+	}
 
-		if err = combineIdentity(ctx, q, f.TargetID); err != nil {
-			return err
-		}
+	if err = combineIdentity(ctx, q, f.TargetID); err != nil {
+		return err
 	}
 
 	return s.commit(ctx, tx)

@@ -87,8 +87,7 @@ type (
 		EvidenceContext(context.Context, string) (EvidenceContext, error)
 		ReferenceEvidence(context.Context, string) (ReferenceEvidence, error)
 		CorrectionForm(context.Context, string, string) (CorrectionForm, error)
-		SaveDecision(context.Context, Decision, string, time.Time) error
-		CheckCorrection(context.Context, Decision) error
+		CorrectionStore
 		RetryProcessing(context.Context, string) error
 	}
 )
@@ -788,7 +787,7 @@ func (w *Workflow) SaveDecision(ctx context.Context, d Decision, actor string) (
 	ctx, finishLog := logging.Start(ctx, w.logger, "decision_save")
 	defer func() { finishLog(resultErr) }()
 
-	err := w.store.SaveDecision(ctx, d, actor, w.now())
+	err := SaveDecision(ctx, w.store, d, actor, w.now())
 	if err == nil {
 		w.notify()
 	}
@@ -904,7 +903,7 @@ type (
 
 // CheckCorrection checks an edit without retaining a decision or scheduling work.
 func (w *Workflow) CheckCorrection(ctx context.Context, d Decision) error {
-	return w.store.CheckCorrection(ctx, d)
+	return CheckCorrection(ctx, w.store, d)
 }
 
 func (w *Workflow) Resource(ctx context.Context, kind, id string) (CanonicalResource, error) {

@@ -68,7 +68,7 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			if e = s.CheckCorrection(ctx, decision); e != nil {
+			if e = application.CheckCorrection(ctx, s, decision); e != nil {
 				t.Fatal("preflight rejected valid retained calculation", e)
 			}
 
@@ -80,7 +80,7 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal("preflight published", changes)
 			}
 
-			if e = s.SaveDecision(ctx, decision, "synthetic", time.Now()); e != nil {
+			if e = application.SaveDecision(ctx, s, decision, "synthetic", time.Now()); e != nil {
 				t.Fatal("save disagreed with preflight", e)
 			}
 
@@ -103,11 +103,11 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			if e = s.CheckCorrection(ctx, release); e != nil {
+			if e = application.CheckCorrection(ctx, s, release); e != nil {
 				t.Fatal("release preflight", e)
 			}
 
-			if e = s.SaveDecision(ctx, release, "synthetic", time.Now()); e != nil {
+			if e = application.SaveDecision(ctx, s, release, "synthetic", time.Now()); e != nil {
 				t.Fatal("release save", e)
 			}
 
@@ -150,7 +150,7 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 		t.Fatal(err)
 	}
 
-	if err = s.CheckCorrection(ctx, decision); err != nil {
+	if err = application.CheckCorrection(ctx, s, decision); err != nil {
 		t.Fatal(err)
 	}
 
@@ -165,7 +165,7 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(ctx, decision, "synthetic", time.Now()); err == nil {
+	if err = application.SaveDecision(ctx, s, decision, "synthetic", time.Now()); err == nil {
 		t.Fatal("failed derived write was acknowledged")
 	}
 
@@ -222,11 +222,11 @@ func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testin
 		t.Fatal(err)
 	}
 
-	if err = s.CheckCorrection(ctx, decision); err != nil {
+	if err = application.CheckCorrection(ctx, s, decision); err != nil {
 		t.Fatal("retained observation cannot be checked", err)
 	}
 
-	if err = s.SaveDecision(ctx, decision, "synthetic", time.Now()); err != nil {
+	if err = application.SaveDecision(ctx, s, decision, "synthetic", time.Now()); err != nil {
 		t.Fatal("retained observation cannot be selected", err)
 	}
 

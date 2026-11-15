@@ -115,8 +115,7 @@ func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(
-		ctx,
+	if err = application.SaveDecision(ctx, s,
 		duplicate,
 		"admin/synthetic-session",
 		time.Now(),

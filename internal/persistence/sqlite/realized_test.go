@@ -183,7 +183,7 @@ func TestRealizedRestatementsUseSharedDecisionPreflightSaveAndRelease(t *testing
 	}
 
 	before, _ := snapshotState(t.Context(), s)
-	if err = s.CheckCorrection(t.Context(), decision); err != nil {
+	if err = application.CheckCorrection(t.Context(), s, decision); err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,7 +192,7 @@ func TestRealizedRestatementsUseSharedDecisionPreflightSaveAndRelease(t *testing
 		t.Fatal("preflight wrote state")
 	}
 
-	if err = s.SaveDecision(t.Context(), decision, "synthetic", time.Now()); err != nil {
+	if err = application.SaveDecision(t.Context(), s, decision, "synthetic", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

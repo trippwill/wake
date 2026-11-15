@@ -271,8 +271,7 @@ func TestFIGICombinationRollsBackAndRetainsIndependentReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(
-		t.Context(),
+	if err = application.SaveDecision(t.Context(), s,
 		stale,
 		"synthetic/operator",
 		time.Now(),

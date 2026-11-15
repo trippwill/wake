@@ -129,7 +129,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err = s.CheckCorrection(ctx, command); err != nil {
+			if err = application.CheckCorrection(ctx, s, command); err != nil {
 				t.Fatal("net correction preflight", err)
 			}
 

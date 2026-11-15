@@ -74,7 +74,7 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		e = s.CheckCorrection(ctx, command)
+		e = application.CheckCorrection(ctx, s, command)
 		if (e == nil) != test.valid {
 			t.Errorf("%s=%s: %v", test.scope, test.value, e)
 		}
@@ -107,7 +107,7 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 			ExpectedRevision: form.Revision + 1,
 		},
 	)
-	if err = s.CheckCorrection(ctx, stale); !errors.Is(err, application.ErrStale) {
+	if err = application.CheckCorrection(ctx, s, stale); !errors.Is(err, application.ErrStale) {
 		t.Fatal("stale check accepted", err)
 	}
 

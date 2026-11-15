@@ -73,7 +73,7 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 	}
 	// A decision changing authority must publish even when its value already matches.
 	d := retainDecision(t, s, "activity", id, "price", "100.0000", "USD", "set")
-	if err = s.SaveDecision(ctx, d, "admin/synthetic-session", time.Now()); err != nil {
+	if err = application.SaveDecision(ctx, s, d, "admin/synthetic-session", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,7 +144,7 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(ctx, command, "test", time.Now()); err == nil {
+	if err = application.SaveDecision(ctx, s, command, "test", time.Now()); err == nil {
 		t.Fatal("publication fault acknowledged")
 	}
 

@@ -203,7 +203,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 
 				before, _ := snapshotState(t.Context(), s)
 				roots := tableCount(t, s, "instruments")
-				if err = s.CheckCorrection(t.Context(), d); err != nil {
+				if err = application.CheckCorrection(t.Context(), s, d); err != nil {
 					t.Fatal(err)
 				}
 
@@ -219,7 +219,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err == nil {
+					if err = application.SaveDecision(t.Context(), s, d, "synthetic", time.Now()); err == nil {
 						t.Fatal("failed binding was accepted")
 					}
 
@@ -233,7 +233,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 					}
 				}
 
-				if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err != nil {
+				if err = application.SaveDecision(t.Context(), s, d, "synthetic", time.Now()); err != nil {
 					t.Fatal(err)
 				}
 
@@ -253,7 +253,7 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 				}
 
 				before, _ = snapshotState(t.Context(), s)
-				if err = s.SaveDecision(t.Context(), d, "synthetic", time.Now()); err != nil {
+				if err = application.SaveDecision(t.Context(), s, d, "synthetic", time.Now()); err != nil {
 					t.Fatal(err)
 				}
 
@@ -377,11 +377,11 @@ func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) 
 		t.Fatal("decision", err)
 	}
 
-	if err = s.CheckCorrection(t.Context(), decision); err != nil {
+	if err = application.CheckCorrection(t.Context(), s, decision); err != nil {
 		t.Fatal("preflight", err)
 	}
 
-	if err = s.SaveDecision(t.Context(), decision, "synthetic", time.Now()); err != nil {
+	if err = application.SaveDecision(t.Context(), s, decision, "synthetic", time.Now()); err != nil {
 		t.Fatal("save", err)
 	}
 
@@ -695,11 +695,11 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					if err = s.CheckCorrection(t.Context(), decision); err != nil {
+					if err = application.CheckCorrection(t.Context(), s, decision); err != nil {
 						t.Fatal("offered link failed preflight", err)
 					}
 
-					if err = s.SaveDecision(t.Context(), decision, "synthetic", time.Now()); err != nil {
+					if err = application.SaveDecision(t.Context(), s, decision, "synthetic", time.Now()); err != nil {
 						t.Fatal(err)
 					}
 

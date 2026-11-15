@@ -12,15 +12,19 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/source"
 )
 
 type staleCorrectionStore struct{ application.Store }
 
-func (staleCorrectionStore) SaveDecision(context.Context, application.Decision, string, time.Time) error {
+func (staleCorrectionStore) UpdateActivityCorrection(
+	context.Context,
+	func(application.ActivityCorrectionWriter) error,
+) error {
 	return application.ErrStale
 }
 
@@ -190,18 +194,67 @@ type correctionCheckStore struct {
 	calls int
 }
 
-func (s *correctionCheckStore) CheckCorrection(_ context.Context, d application.Decision) error {
+func (s *correctionCheckStore) ViewActivityCorrection(
+	ctx context.Context,
+	fn func(application.ActivityCorrectionReader) error,
+) error {
 	s.calls++
+	return fn(correctionCheckReader{})
+}
 
-	if d.Fields().ExpectedRevision != 8 {
-		return application.ErrStale
+type correctionCheckReader struct {
+	application.ActivityCorrectionReader
+}
+
+func (correctionCheckReader) ActivityRevision(context.Context, string) (int64, error) { return 8, nil }
+
+func (correctionCheckReader) ActivityDecisions(
+	context.Context,
+	string,
+) ([]application.DecisionRecord, error) {
+	return nil, nil
+}
+
+func (correctionCheckReader) ActivityInputs(
+	_ context.Context,
+	_ string,
+	selections []application.FieldSelection,
+) (application.ActivityCalculationInput, error) {
+	usd, _ := financial.ParseCurrency("USD")
+	account, _ := source.NewReference("synthetic", "account", "", "one")
+	ref, _ := source.NewReference("synthetic", "instrument", "", "one")
+
+	instrument, err := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
+	if err != nil {
+		return application.ActivityCalculationInput{}, err
 	}
 
-	if d.Fields().Scope != "price" || d.Fields().Text != "12.34" {
-		return application.ErrInvalid
+	quantity, _ := financial.ParseQuantity("1")
+	price, _ := financial.ParsePrice("100", usd)
+	date, _ := financial.ParseDate("2026-10-20")
+
+	trade, err := source.NewTrade(
+		source.TradeInput{
+			Location:   "synthetic",
+			Account:    account,
+			Instrument: instrument,
+			Quantity:   quantity,
+			Price:      price,
+			Side:       source.Buy,
+			Date:       date,
+		},
+	)
+	if err != nil {
+		return application.ActivityCalculationInput{}, err
 	}
 
-	return nil
+	terms, err := application.TradeTerms(trade)
+
+	return application.ActivityCalculationInput{
+		Rule:      application.RetainedClaimsRule,
+		Baseline:  terms,
+		Decisions: selections,
+	}, err
 }
 
 func (*correctionCheckStore) CorrectionForm(

@@ -44,7 +44,13 @@ func retainDecision(
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(context.Background(), d, "admin/synthetic-session", time.Now()); err != nil {
+	if err = application.SaveDecision(
+		context.Background(),
+		s,
+		d,
+		"admin/synthetic-session",
+		time.Now(),
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,7 +70,7 @@ func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T
 	id := v.Executions[0].ID()
 
 	d := retainDecision(t, s, "activity", id, "price", "2.12345678900000001", "USD", "set")
-	if err = s.SaveDecision(ctx, d, "admin/synthetic-session", time.Now()); err != nil {
+	if err = application.SaveDecision(ctx, s, d, "admin/synthetic-session", time.Now()); err != nil {
 		t.Fatal("duplicate submission", err)
 	}
 
@@ -82,8 +88,7 @@ func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T
 		t.Fatal(err)
 	}
 
-	if err = s.SaveDecision(
-		ctx,
+	if err = application.SaveDecision(ctx, s,
 		command,
 		"admin/synthetic-session",
 		time.Now(),
@@ -231,7 +236,7 @@ func TestLinkDecisionPreservesIdentitiesAndRejectsWrongListing(t *testing.T) {
 			ExpectedRevision: form.Revision,
 		},
 	)
-	if err = s.SaveDecision(ctx, invalid, "admin/synthetic-session", time.Now()); err == nil {
+	if err = application.SaveDecision(ctx, s, invalid, "admin/synthetic-session", time.Now()); err == nil {
 		t.Fatal("listing from wrong root accepted")
 	}
 
@@ -319,7 +324,7 @@ func TestReferenceCandidateSelectionStaysWithinItsMappingJob(t *testing.T) {
 			ExpectedRevision: form.Revision,
 		},
 	)
-	if err = s.SaveDecision(ctx, bad, "admin/synthetic-session", time.Now()); err == nil {
+	if err = application.SaveDecision(ctx, s, bad, "admin/synthetic-session", time.Now()); err == nil {
 		t.Fatal("foreign mapping job selected")
 	}
 }
@@ -390,7 +395,7 @@ func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 			ExpectedRevision: form.Revision,
 		},
 	)
-	if err = s.SaveDecision(ctx, command, "admin/synthetic-session", time.Now()); err == nil {
+	if err = application.SaveDecision(ctx, s, command, "admin/synthetic-session", time.Now()); err == nil {
 		t.Fatal("failed projection acknowledged decision")
 	}
 

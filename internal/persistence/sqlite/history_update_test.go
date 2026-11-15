@@ -164,12 +164,18 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 	checkGated(store)
 
-	if err = store.CheckCorrection(ctx, decision); !errors.Is(err, application.ErrHistoryUpdating) {
+	if err = application.CheckCorrection(
+		ctx,
+		store,
+		decision,
+	); !errors.Is(
+		err,
+		application.ErrHistoryUpdating,
+	) {
 		t.Fatal("correction validation during history update", err)
 	}
 
-	if err = store.SaveDecision(
-		ctx,
+	if err = application.SaveDecision(ctx, store,
 		decision,
 		"admin/synthetic-session",
 		now,
@@ -352,7 +358,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal("retained inputs or receipts changed")
 	}
 
-	if err = store.SaveDecision(ctx, decision, "admin/synthetic-session", now); err != nil {
+	if err = application.SaveDecision(ctx, store, decision, "admin/synthetic-session", now); err != nil {
 		t.Fatal(err)
 	}
 

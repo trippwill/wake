@@ -19,14 +19,13 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-// loadActivityCalculation gathers a consistent retained input set. A prospective
-// decision replaces its active scope in memory, without inserting or projecting it.
+// loadActivityCalculation gathers retained inputs for explicit application selections.
 func loadActivityCalculation(
 	ctx context.Context,
 	q *sqlc.Queries,
 	row sqlc.Execution,
 	state application.ActivityState,
-	proposed *application.DecisionInput,
+	selections []application.FieldSelection,
 ) (application.ActivityCalculationInput, error) {
 	in := application.ActivityCalculationInput{
 		Rule:        application.RetainedClaimsRule,
@@ -64,35 +63,6 @@ func loadActivityCalculation(
 
 	in.BaselineFields = selected.Baseline
 
-	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
-	if err != nil {
-		return in, err
-	}
-
-	active := activeDecisions(rows)
-	if proposed != nil {
-		fields, e := activityDecisionFields(ctx, q, *proposed, active)
-		if e != nil {
-			return in, e
-		}
-
-		for _, field := range fields {
-			if field.Action == "release" {
-				if _, ok := active[field.Scope]; !ok {
-					return in, application.ErrInvalid
-				}
-
-				delete(active, field.Scope)
-			} else {
-				active[field.Scope] = sqlc.OperatorDecision{
-					Scope:    field.Scope,
-					Text:     field.Text,
-					Currency: field.Currency,
-				}
-			}
-		}
-	}
-
 	if row.InstrumentID.Valid {
 		root, e := q.Instrument(ctx, row.InstrumentID.String)
 		if e != nil {
@@ -111,7 +81,8 @@ func loadActivityCalculation(
 		in.Links.Listings[listing.ID] = listing.InstrumentID
 	}
 
-	for scope, d := range active {
+	for _, d := range selections {
+		scope := d.Scope
 		if d.Text != "" && (scope == "instrument" || scope == "listing") {
 			kind := "instruments"
 			if scope == "listing" {
@@ -199,7 +170,20 @@ func projectActivity(
 	state application.ActivityState,
 	rule application.FinancialRule,
 ) error {
-	in, err := loadActivityCalculation(ctx, q, row, state, nil)
+	records, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
+	if err != nil {
+		return err
+	}
+
+	selections := []application.FieldSelection{}
+	for scope, record := range activeDecisions(records) {
+		selections = append(
+			selections,
+			application.FieldSelection{Scope: scope, Text: record.Text, Currency: record.Currency},
+		)
+	}
+
+	in, err := loadActivityCalculation(ctx, q, row, state, selections)
 	if err != nil {
 		return err
 	}
