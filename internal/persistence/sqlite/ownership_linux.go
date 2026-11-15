@@ -8,7 +8,18 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
+
+func renameNewFile(from, to string) error {
+	return unix.Renameat2(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_NOREPLACE)
+}
+
+func fileIdentity(info os.FileInfo) upgradeFile {
+	stat := info.Sys().(*syscall.Stat_t)
+	return upgradeFile{Device: stat.Dev, Inode: stat.Ino}
+}
 
 func claimFile(path string) (*os.File, error) {
 	return lockStoreFile(path, true)
@@ -143,8 +154,7 @@ func upgradeFiles(owners [2]*os.File) ([2]upgradeFile, error) {
 			return files, ErrUpgradeRecovery
 		}
 
-		stat := info.Sys().(*syscall.Stat_t)
-		files[i] = upgradeFile{Device: stat.Dev, Inode: stat.Ino}
+		files[i] = fileIdentity(info)
 	}
 
 	return files, nil

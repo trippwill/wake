@@ -174,13 +174,17 @@ func openStore(
 	}
 
 	paths := profile.paths()
+	if err := rejectPendingRestore(paths[0]); err != nil {
+		return nil, err
+	}
+
 	for i, path := range paths {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			return nil, ErrUnsafeStore
 		}
 
 		for _, other := range paths[:i] {
-			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix} {
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm", UpgradeIntentSuffix, upgradeBackupSuffix, RestoreIntentSuffix} {
 				if path == other+suffix || other == path+suffix {
 					return nil, ErrUnsafeStore
 				}
@@ -428,6 +432,10 @@ func openStore(
 		}
 	}
 
+	if err := rejectPendingRestore(paths[0]); err != nil {
+		return nil, err
+	}
+
 	s.db = sql.OpenDB(&connector{paths: paths, owners: s.owners})
 	s.db.SetMaxOpenConns(1)
 	s.db.SetMaxIdleConns(1)
@@ -508,6 +516,8 @@ func storageCode(err error) string {
 		return "upgrade_confirmation_required"
 	case errors.Is(err, ErrUpgradeRecovery):
 		return "upgrade_recovery_required"
+	case errors.Is(err, ErrRestorePending):
+		return "restore_recovery_required"
 	case errors.Is(err, ErrUpgradeBackup):
 		return "upgrade_backup_failed"
 	case errors.Is(err, ErrUpgradeNotes):

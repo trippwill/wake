@@ -68,7 +68,11 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 		return "", err
 	}
 
-	temp, err := os.CreateTemp(filepath.Dir(plan.BackupPath), ".wake-backup-")
+	return writeBackupPair(ctx, plan.BackupPath, owners, true)
+}
+
+func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, replace bool) (string, error) {
+	temp, err := os.CreateTemp(filepath.Dir(path), ".wake-backup-")
 	if err != nil {
 		return "", err
 	}
@@ -118,11 +122,16 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 		return "", err
 	}
 
-	if err = os.Rename(temp.Name(), plan.BackupPath); err != nil {
+	publish := renameNewFile
+	if replace {
+		publish = os.Rename
+	}
+
+	if err = publish(temp.Name(), path); err != nil {
 		return "", err
 	}
 
-	return expected, syncUpgradeDir(plan.BackupPath)
+	return expected, syncUpgradeDir(path)
 }
 
 // checkBackupDestination protects existing files outside Wake's archive format.

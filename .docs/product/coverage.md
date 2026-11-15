@@ -249,6 +249,16 @@ source accounts and reacquire history in the new warehouse. See
 [development](../engineering/development.md) for verification and reset procedures. No version tag
 is implied by this coverage.
 
+### Backup and recovery
+
+An offline storage backup captures the warehouse and encrypted access state at
+the same point. The configuration, browser and API authority, and credential
+encryption key have independent lifetimes. Reusing restored credentials requires
+the matching key. Restore validates the backup with a compatible Wake build and
+installs it into vacant storage paths. Existing SQLite sidecars count as occupied
+paths. The restored warehouse has a fresh publication identity and starts with
+upstream work paused until the operator reviews access and resumes it.
+
 ### Forward upgrades
 
 Stop Wake, then run `wake storage upgrade` with the new binary and the same profile.
@@ -271,10 +281,10 @@ An interrupted upgrade reuses and verifies its original archive.
 
 Keep the configuration and matching credential encryption key separately protected. If a migration
 is interrupted, keep the original files and restart with the matching build. If
-recovery cannot proceed, stop Wake, set the interrupted databases and sidecars aside,
-then extract `wake-upgrade/warehouse.db` and `wake-upgrade/access.db` from the same
-archive. Restore both files together to the paths from the original configuration.
-Use the Wake version that wrote the backed-up stores and the matching credential encryption key.
+recovery cannot proceed, stop Wake and preserve the interrupted databases,
+their sidecars, and the upgrade intent together. Restore the automatic archive
+with `wake storage restore --with-credentials` into vacant paths. Use a Wake build
+compatible with the backed-up stores and the matching credential encryption key.
 Wake refuses a credentials reset while an interrupted upgrade still needs the
 original access store.
 

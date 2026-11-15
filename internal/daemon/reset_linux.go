@@ -227,6 +227,10 @@ func ResetStorage(
 		return ResetResult{}, err
 	}
 
+	if _, err := os.Lstat(cfg.Storage.WarehousePath + persistence.RestoreIntentSuffix); !os.IsNotExist(err) {
+		return ResetResult{}, persistence.ErrRestorePending
+	}
+
 	if target == ResetCredentials {
 		intent, err := snapshotResetFile(cfg.Storage.WarehousePath+persistence.UpgradeIntentSuffix, snapshots)
 		if err != nil {

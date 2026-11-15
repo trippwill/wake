@@ -141,6 +141,22 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		},
 		commandGroup("storage", "Maintain the warehouse and credentials stores",
 			&cli.Command{
+				Name:      "backup",
+				Usage:     "Back up the warehouse and encrypted access with Wake stopped",
+				ArgsUsage: "<file>",
+				Flags:     common(),
+				Action:    performBackup,
+			},
+			&cli.Command{
+				Name:      "restore",
+				Usage:     "Restore a backup into vacant storage paths with Wake stopped",
+				ArgsUsage: "<file>",
+				Flags: append(common(), &cli.BoolFlag{
+					Name: "with-credentials", Usage: "Restore encrypted access alongside the warehouse",
+				}),
+				Action: performRestore,
+			},
+			&cli.Command{
 				Name:  "upgrade",
 				Usage: "Preview a forward storage upgrade with Wake stopped",
 				Flags: append(common(), &cli.StringFlag{

@@ -267,7 +267,7 @@ func checkInstancePaths(cfg Config) error {
 
 		for _, db := range []string{cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath} {
 			db = comparablePath(db)
-			for _, suffix := range []string{"", "-wal", "-shm", "-journal", ".upgrade-intent", ".upgrade-backup.tar"} {
+			for _, suffix := range []string{"", "-wal", "-shm", "-journal", ".upgrade-intent", ".upgrade-backup.tar", ".restore-intent"} {
 				if path == db+suffix || strings.HasPrefix(path, db+"-mj") {
 					return fmt.Errorf("%w: database overlaps instance files at %s", ErrInvalid, path)
 				}

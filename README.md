@@ -184,6 +184,14 @@ The daemon writes structured operational logs to stderr, including completed wor
 failures and recovery actions. Startup reports both listeners. Set `[log] level = "debug"`
 in the TOML for stage, validation, pacing, and cache detail.
 
+For a backup that includes encrypted access, stop Wake and run
+`wake storage backup before-maintenance.tar`. Keep the TOML and credential
+encryption key separately. With Wake stopped, use
+`wake storage restore --with-credentials before-maintenance.tar` with a compatible
+Wake build. Select a configuration whose warehouse and access paths are vacant,
+including their SQLite sidecars. Supply the original key to reuse saved credentials.
+After startup, review access before resuming upstream work.
+
 To check storage compatibility, stop Wake and run `wake storage upgrade` with
 the new binary and the same profile. Review any plan before applying it.
 See [forward upgrades](.docs/product/coverage.md#forward-upgrades).

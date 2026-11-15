@@ -422,6 +422,12 @@ the pair before writing either store. The private upgrade intent binds approval
 to the original files and the backup checksum. An interrupted upgrade verifies
 and reuses that copy before SQLite recovers the attached transaction.
 
+Operator-initiated offline backups reuse the same paired archive. Restore stages
+and validates both stores before publication and uses a durable intent to block
+startup during installation. An interrupted installation resumes from the
+same archive and profile. Restored warehouses receive a new publication identity
+so consumers replace their checkpoints, and upstream work awaits operator review.
+
 Schema changes, format metadata, and the approved rebuild target commit together.
 The durable history checkpoint then governs rebuild progress across restarts.
 Unsupported formats fail closed and remain intact. Recreation is an explicit

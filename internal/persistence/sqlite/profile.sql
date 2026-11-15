@@ -39,3 +39,7 @@ INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM acce
 SELECT applied,target FROM {{schema}}.history_update WHERE singleton=1;
 -- name: AdvanceFormat
 UPDATE {{schema}}.store_metadata SET version=? WHERE singleton=1 AND version=?;
+-- name: RestoreWarehouse
+UPDATE store_metadata SET id=? WHERE singleton=1;
+-- name: RestoreReview
+UPDATE profile SET paused=1,recovery_revision=?,resumed_by='',resumed_at='' WHERE singleton=1;

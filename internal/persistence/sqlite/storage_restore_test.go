@@ -1,0 +1,174 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package persistence
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestStorageBackupRestoresEvidenceAndAccess(t *testing.T) {
+	ctx := t.Context()
+	source := seedUpgradeStores(t)
+	archive := filepath.Join(filepath.Dir(source.WarehousePath), "manual.backup")
+	if err := Backup(ctx, source, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Backup(ctx, source, archive); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("backup should protect an existing archive: %v", err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	paths, err := Restore(ctx, target, archive)
+	if err != nil || !slices.Equal(paths, []string{target.WarehousePath, target.ConnectionsPath}) {
+		t.Fatal(paths, err)
+	}
+
+	assertRestoredPair(t, target)
+}
+
+func TestStorageRestoreRefusesBothOccupiedDestinations(t *testing.T) {
+	ctx := t.Context()
+	target := vacantRecoveryProfile(t)
+	blocking := []string{
+		target.WarehousePath + "-wal",
+		target.ConnectionsPath,
+		target.ConnectionsPath + "-mjabcdef9ab",
+	}
+	for _, path := range blocking {
+		if err := os.WriteFile(path, []byte("preserve"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := Restore(ctx, target, filepath.Join(t.TempDir(), "missing.backup"))
+	if !errors.Is(err, ErrRestoreOccupied) {
+		t.Fatal(err)
+	}
+
+	for _, path := range blocking {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("missing blocked path %s", path)
+		}
+		//nolint:gosec // Private synthetic restore destination.
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != "preserve" {
+			t.Fatal(path, err)
+		}
+	}
+
+	if _, err := os.Stat(target.WarehousePath); !os.IsNotExist(err) {
+		t.Fatal("unexpected warehouse", err)
+	}
+}
+
+func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
+	ctx := t.Context()
+
+	source := seedUpgradeStores(t)
+	plan := UpgradePlan{BackupPath: source.WarehousePath + upgradeBackupSuffix}
+
+	var owners [2]*os.File
+	for i, p := range source.paths() {
+		f, err := lockStoreFile(p, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = f.Close() }()
+
+		owners[i] = f
+		plan.Stores[i].Path = p
+	}
+
+	if _, err := createUpgradeBackup(ctx, plan, owners); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	intentPath := target.WarehousePath + RestoreIntentSuffix
+
+	file, err := openBackup(plan.BackupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intent, err := prepareRestore(ctx, file, target.paths(), intentPath)
+	_ = file.Close()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Interruption after installing the warehouse, before installing access.
+	if err := renameNewFile(intent.Stores[0].Stage, target.WarehousePath); err != nil {
+		t.Fatal(err)
+	}
+
+	if store, err := Open(ctx, target, nil); !errors.Is(err, ErrRestorePending) {
+		if store != nil {
+			_ = store.Close()
+		}
+
+		t.Fatalf("startup must refuse a partial restore: %v", err)
+	}
+
+	if _, err := Restore(ctx, target, plan.BackupPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(intentPath); !os.IsNotExist(err) {
+		t.Fatal("completed restore left an intent", err)
+	}
+
+	assertRestoredPair(t, target)
+}
+
+func vacantRecoveryProfile(t *testing.T) Profile {
+	t.Helper()
+
+	profile := Profile{
+		WarehousePath:   filepath.Join(t.TempDir(), "warehouse.db"),
+		ConnectionsPath: filepath.Join(t.TempDir(), "access.db"),
+	}
+	for _, path := range profile.paths() {
+		//nolint:gosec // Private synthetic restore destinations need owner traversal permission.
+		if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return profile
+}
+
+func assertRestoredPair(t *testing.T, target Profile) {
+	t.Helper()
+
+	store, err := Open(t.Context(), target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = store.Close() }()
+
+	view, err := store.Dashboard(t.Context())
+	if err != nil || len(view.Executions) != 1 {
+		t.Fatal(view, err)
+	}
+
+	var encrypted, paused int
+	if err := store.db.QueryRow("SELECT count(*) FROM access.credentials WHERE encrypted=X'010203'").
+		Scan(&encrypted); err != nil ||
+		encrypted != 1 {
+		t.Fatal(encrypted, err)
+	}
+
+	if err := store.db.QueryRow("SELECT paused FROM profile").Scan(&paused); err != nil || paused != 1 {
+		t.Fatal(paused, err)
+	}
+}
