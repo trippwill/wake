@@ -435,8 +435,8 @@ func TestAccountRecoveryPreservesAcceptedActivityAcrossRetryAndRestart(t *testin
 	replacement := credential.NewSecret([]byte("replacement-token"))
 	defer replacement.Clear()
 
-	if err = workflow.ReplaceSecret(ctx, id, "token", replacement); err != nil {
-		t.Fatal(err)
+	if review, err := workflow.ReplaceSecret(ctx, id, "token", replacement); err != nil || review {
+		t.Fatal("ordinary credential rotation did not retry normally", err)
 	}
 
 	run()

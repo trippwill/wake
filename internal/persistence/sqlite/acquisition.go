@@ -325,10 +325,10 @@ func (s *Store) Secret(ctx context.Context, id, key string) ([]byte, error) {
 	return s.queries.WithTx(tx).Secret(ctx, params)
 }
 
-func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byte) error {
+func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byte) (bool, error) {
 	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -336,15 +336,20 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 
 	connection, err := q.Connection(ctx, id)
 	if err != nil {
-		return err
+		return false, err
+	}
+
+	recovered, err := q.IsRecoverySource(ctx, id)
+	if err != nil {
+		return false, err
 	}
 
 	if err = bindCredentialIdentity(ctx, q, id, connection.Provider); err != nil {
-		return err
+		return false, err
 	}
 
 	if err := revokeRestartScopes(ctx, tx, id); err != nil {
-		return err
+		return false, err
 	}
 
 	err = q.ReplaceSecret(
@@ -355,7 +360,7 @@ func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byt
 		err = s.commitUpstream(ctx, tx, upstreamAuthority)
 	}
 
-	return s.accessUpdated(ctx, "connection_credential", err)
+	return err == nil && recovered, s.accessUpdated(ctx, "connection_credential", err)
 }
 
 func bindCredentialIdentity(ctx context.Context, q *sqlc.Queries, id, providerID string) error {

@@ -76,7 +76,7 @@ type (
 		Retry(context.Context, WorkKey) error
 		Connection(context.Context, string) (Connection, error)
 		Secret(context.Context, string, string) ([]byte, error)
-		ReplaceSecret(context.Context, string, string, []byte) error
+		ReplaceSecret(context.Context, string, string, []byte) (requiresReview bool, err error)
 		Checkpoint(context.Context, WorkKey) (Checkpoint, error)
 		Observe(context.Context, WorkKey, provider.Progress) error
 		Fail(context.Context, WorkKey, FailureCode, string) error
@@ -370,22 +370,23 @@ func (h *Host) UpdateSettings(ctx context.Context, id, name string, settings pro
 	return nil
 }
 
-// ReplaceSecret preserves connection identity and all durable continuations.
-func (h *Host) ReplaceSecret(ctx context.Context, id, key string, secret *credential.Secret) error {
+// ReplaceSecret preserves connection identity and reports whether the new
+// credential needs recovery approval before restarting work.
+func (h *Host) ReplaceSecret(ctx context.Context, id, key string, secret *credential.Secret) (bool, error) {
 	work, finish, err := h.admit(ctx, id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer finish()
 
 	c, err := h.store.Connection(work, id)
 	if err != nil {
-		return ErrStorage
+		return false, ErrStorage
 	}
 
 	r, ok := h.registrations[c.Provider]
 	if !ok {
-		return provider.ErrUnavailable
+		return false, provider.ErrUnavailable
 	}
 
 	allowed := false
@@ -396,24 +397,25 @@ func (h *Host) ReplaceSecret(ctx context.Context, id, key string, secret *creden
 	}
 
 	if !allowed || h.envelope == nil || secret == nil {
-		return provider.ErrUnauthorized
+		return false, provider.ErrUnauthorized
 	}
 
 	encrypted, err := h.envelope.Encrypt(secret, credential.SourceSecretAAD(c.ID, c.Provider, key))
 	if err != nil {
-		return provider.ErrUnauthorized
+		return false, provider.ErrUnauthorized
 	}
 
 	payload, err := encrypted.MarshalBinary()
 	if err != nil {
-		return provider.ErrUnauthorized
+		return false, provider.ErrUnauthorized
 	}
 
-	if err = h.store.ReplaceSecret(work, id, key, payload); err != nil {
-		return ErrStorage
+	requiresReview, err := h.store.ReplaceSecret(work, id, key, payload)
+	if err != nil {
+		return false, ErrStorage
 	}
 
-	return nil
+	return requiresReview, nil
 }
 
 // Retry serializes checkpoint repair with acquisition, discovery and access changes.

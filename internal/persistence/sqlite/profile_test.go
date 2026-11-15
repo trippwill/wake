@@ -201,7 +201,7 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					if err := recovered.ReplaceSecret(
+					if _, err := recovered.ReplaceSecret(
 						ctx,
 						"connection",
 						"token",

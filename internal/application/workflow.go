@@ -261,19 +261,25 @@ func (w *Workflow) ReplaceSecret(
 	ctx context.Context,
 	id, key string,
 	secret *credential.Secret,
-) (resultErr error) {
+) (requiresReview bool, resultErr error) {
 	if w.host == nil {
-		return provider.ErrUnavailable
+		return false, provider.ErrUnavailable
 	}
 
 	ctx, finishLog := logging.Start(ctx, w.logger, "connection_access_repair")
 	defer func() { finishLog(resultErr) }()
 
-	if err := w.host.ReplaceSecret(ctx, id, key, secret); err != nil {
-		return err
+	requiresReview, err := w.host.ReplaceSecret(ctx, id, key, secret)
+	if err != nil {
+		return false, err
 	}
 
-	return w.Retry(ctx, id)
+	if requiresReview {
+		w.notify()
+		return true, nil
+	}
+
+	return false, w.Retry(ctx, id)
 }
 
 func (w *Workflow) UpdateConnection(

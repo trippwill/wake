@@ -191,7 +191,7 @@ func TestPausedQueryRepairPreservesDeadline(t *testing.T) {
 			}
 
 			if lost {
-				if e := s.ReplaceSecret(ctx, connection.ID, "token", []byte("synthetic")); e != nil {
+				if _, e := s.ReplaceSecret(ctx, connection.ID, "token", []byte("synthetic")); e != nil {
 					t.Fatal(e)
 				}
 			}

@@ -610,6 +610,9 @@ LEFT JOIN sync.configurations c ON c.id=f.id AND c.provider=f.provider
 LEFT JOIN main.accounts a ON a.connection_id=f.id AND a.provider=f.provider
 ORDER BY f.id;
 
+-- name: IsRecoverySource :one
+SELECT EXISTS(SELECT 1 FROM sync.recovery_sources WHERE connection_id=?);
+
 -- name: RecoveryCoverage :many
 SELECT b.stream,CAST(max(r.reported_to) AS TEXT) AS through FROM main.acquisition_receipts r JOIN main.artifacts b ON b.id=r.artifact_id
 WHERE b.connection_id=? AND r.operation IN ('acquire','supply') AND r.reported_to<>''

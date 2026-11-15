@@ -61,7 +61,7 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.ReplaceSecret(ctx, "synthetic", "token", payload); err != nil {
+	if _, err := store.ReplaceSecret(ctx, "synthetic", "token", payload); err != nil {
 		t.Fatal(err)
 	}
 
@@ -479,8 +479,12 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.ReplaceSecret(ctx, key.Connection, "token", payload); err != nil {
-		t.Fatal(err)
+	replacement := credential.NewSecret([]byte("replacement synthetic token"))
+	defer replacement.Clear()
+
+	needsReview, err := withReference.ReplaceSecret(ctx, key.Connection, "token", replacement)
+	if err != nil || !needsReview {
+		t.Fatal("recovered credential replacement did not request a fresh review", err)
 	}
 
 	if _, err := store.Checkpoint(ctx, key); !errors.Is(err, provider.ErrUnavailable) {

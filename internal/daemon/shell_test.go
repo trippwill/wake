@@ -57,6 +57,12 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corr
 		SyncPath:        cfg.Storage.SyncPath,
 	}
 	if recovered {
+		cfg.Credentials.KeyPath = filepath.Join(cfg.Paths.ConfigDir, "credentials.key")
+		if generated, err := EnsureCredentialKey(t.Context(), cfg); err != nil || !generated {
+			t.Fatal("expected a new credential key", err)
+		}
+
+		seedSavedCredential(t, cfg, false)
 		seedShellRecovery(t, profile)
 	}
 
@@ -413,21 +419,17 @@ func assertLocalFinancialAccess(
 func seedShellRecovery(t *testing.T, profile persistence.Profile) {
 	t.Helper()
 
-	store, err := persistence.OpenFinancial(t.Context(), profile, nil)
+	archive := filepath.Join(filepath.Dir(profile.WarehousePath), "installation.tar")
+	if err := persistence.Backup(t.Context(), profile, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := persistence.RecoverSynchronization(t.Context(), profile, archive, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	preview, err := persistence.RecoverSynchronization(t.Context(), profile, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := persistence.RecoverSynchronization(t.Context(), profile, "", preview.ID); err != nil {
+	if _, err := persistence.RecoverSynchronization(t.Context(), profile, archive, preview.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -435,7 +437,7 @@ func seedShellRecovery(t *testing.T, profile persistence.Profile) {
 func approveShellRecovery(t *testing.T, origin string, browser *http.Client, cookies []*http.Cookie) {
 	t.Helper()
 
-	call := func(method, path string, data url.Values, status int) string {
+	call := func(method, path string, data url.Values, status int, redirect string) string {
 		t.Helper()
 
 		request, err := http.NewRequestWithContext(
@@ -463,14 +465,14 @@ func approveShellRecovery(t *testing.T, origin string, browser *http.Client, coo
 		defer func() { _ = response.Body.Close() }()
 
 		body, err := io.ReadAll(response.Body)
-		if err != nil || response.StatusCode != status {
-			t.Fatal(path, response.Status, err)
+		if err != nil || response.StatusCode != status || response.Header.Get("Location") != redirect {
+			t.Fatal(path, response.Status, response.Header.Get("Location"), err)
 		}
 
 		return string(body)
 	}
 
-	page := call(http.MethodGet, "/connections/recovery", nil, http.StatusOK)
+	page := call(http.MethodGet, "/connections/recovery", nil, http.StatusOK, "")
 	_, form, found := strings.Cut(page, `action="/recovery/resume"`)
 	if !found || !strings.Contains(page, "Review provider restart") {
 		t.Fatal("installed recovery did not use the scoped review form")
@@ -487,7 +489,14 @@ func approveShellRecovery(t *testing.T, origin string, browser *http.Client, coo
 
 	digest := fields.Get("plan")
 	fields.Set("plan", strings.Repeat("0", len(digest)))
-	call(http.MethodPost, "/recovery/resume", fields, http.StatusBadRequest)
+	call(http.MethodPost, "/recovery/resume", fields, http.StatusBadRequest, "")
 	fields.Set("plan", digest)
-	call(http.MethodPost, "/recovery/resume", fields, http.StatusSeeOther)
+	call(http.MethodPost, "/recovery/resume", fields, http.StatusSeeOther, "/connections")
+
+	call(http.MethodPost, "/connections/source-id/secrets", url.Values{
+		"csrf":         {fields.Get("csrf")},
+		"secret_key":   {"token"},
+		"secret.token": {"replacement synthetic token"},
+	}, http.StatusSeeOther, "/connections/recovery")
+	call(http.MethodPost, "/recovery/resume", fields, http.StatusBadRequest, "")
 }

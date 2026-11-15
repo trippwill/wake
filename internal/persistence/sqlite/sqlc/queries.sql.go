@@ -2133,6 +2133,17 @@ func (q *Queries) InvalidateChangedSchedule(ctx context.Context, arg InvalidateC
 	return err
 }
 
+const isRecoverySource = `-- name: IsRecoverySource :one
+SELECT EXISTS(SELECT 1 FROM sync.recovery_sources WHERE connection_id=?)
+`
+
+func (q *Queries) IsRecoverySource(ctx context.Context, connectionID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, isRecoverySource, connectionID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listing = `-- name: Listing :one
 SELECT revision, id, instrument_id, venue, ticker, currency, figi FROM listings WHERE id=?
 `

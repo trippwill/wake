@@ -172,7 +172,10 @@ func TestAuthorityChangeRejectsInflightResultsAndStaleSettings(t *testing.T) {
 	}
 
 	changed := make(chan error, 1)
-	go func() { changed <- s.ReplaceSecret(ctx, "synthetic", "token", []byte("test ciphertext")) }()
+	go func() {
+		_, err := s.ReplaceSecret(ctx, "synthetic", "token", []byte("test ciphertext"))
+		changed <- err
+	}()
 
 	if err = <-changed; err != nil {
 		t.Fatal(err)
@@ -394,7 +397,7 @@ func TestConfirmationRequiresCurrentConfigurationRevision(t *testing.T) {
 	}
 	// The settings bytes are unchanged, but the credential repair invalidates
 	// the earlier confirmation snapshot.
-	if err = s.ReplaceSecret(ctx, connection.ID, "token", []byte("synthetic")); err != nil {
+	if _, err = s.ReplaceSecret(ctx, connection.ID, "token", []byte("synthetic")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -470,7 +473,8 @@ func TestReplaceSecretChecksStoredProviderBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.ReplaceSecret(ctx, "unknown", "token", []byte("replacement")); !errors.Is(err, sql.ErrNoRows) {
+	_, err := s.ReplaceSecret(ctx, "unknown", "token", []byte("replacement"))
+	if !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("replacement accepted an unknown connection", err)
 	}
 
@@ -481,7 +485,8 @@ func TestReplaceSecretChecksStoredProviderBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.ReplaceSecret(ctx, "bound", "token", []byte("replacement")); !errors.Is(err, ErrAssociation) {
+	_, err = s.ReplaceSecret(ctx, "bound", "token", []byte("replacement"))
+	if !errors.Is(err, ErrAssociation) {
 		t.Fatal("replacement accepted a provider mismatch", err)
 	}
 

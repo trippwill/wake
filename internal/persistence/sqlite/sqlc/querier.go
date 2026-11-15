@@ -114,6 +114,7 @@ type Querier interface {
 	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
 	Instruments(ctx context.Context) ([]Instrument, error)
 	InvalidateChangedSchedule(ctx context.Context, arg InvalidateChangedScheduleParams) error
+	IsRecoverySource(ctx context.Context, connectionID string) (bool, error)
 	Listing(ctx context.Context, id string) (Listing, error)
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)

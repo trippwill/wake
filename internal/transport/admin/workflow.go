@@ -319,18 +319,21 @@ func registerWorkflowRoutes(
 		secrets := formSecrets(r, descriptor)
 		defer clearSecrets(secrets)
 
-		if err := workflow.ReplaceSecret(
+		requiresReview, err := workflow.ReplaceSecret(
 			r.Context(),
 			r.PathValue("id"),
 			r.PostForm.Get("secret_key"),
 			secrets[r.PostForm.Get("secret_key")],
-		); err != nil {
+		)
+		if err != nil {
 			failure(w, r, csrf, err)
 			return
 		}
 
 		destination := connectionURL(r.PathValue("id"), "access")
-		if view, e := workflow.Prerequisites(r.Context()); e == nil && view.Storage.Paused {
+		if requiresReview {
+			destination = "/connections/recovery"
+		} else if view, e := workflow.Prerequisites(r.Context()); e == nil && view.Storage.Paused {
 			destination = "/connections/recovery"
 		}
 		//nolint:gosec // Destination is either a fixed recovery route or connectionURL's local prefix and escaped ID.
