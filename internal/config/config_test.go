@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -12,6 +13,27 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+func TestPublishNewConfigPreservesAnOccupiedDestination(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	original := []byte("# written by another initializer\n")
+	writeTestConfig(t, path, original)
+
+	if err := publishNewConfig(path, []byte("[admin]\nport = 8887\n")); !errors.Is(err, os.ErrExist) {
+		t.Fatal("expected exclusive publication to fail", err)
+	}
+
+	content, err := readConfigSnapshot(path)
+	if err != nil || !bytes.Equal(content, original) {
+		t.Fatal("existing config was changed", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("temporary config was left behind", entries, err)
+	}
+}
 
 func TestLoadDefaults(t *testing.T) {
 	roots := configureEnvironment(t, true)

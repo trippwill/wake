@@ -12,6 +12,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.trippwill.dev/wake/internal/config"
+	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/daemon"
 )
 
@@ -117,13 +118,35 @@ func checkConfig(_ context.Context, c *cli.Command) error {
 		return failure("configure: %v", err)
 	}
 
+	var keyPath string
+	if c.Bool("check-key") {
+		activity.Phase("checking configured credential key file")
+
+		keyPath = out.Config.Credentials.KeyPath
+
+		key, err := credential.LoadMasterKey(keyPath)
+		if err != nil {
+			return failure("check credential encryption key at %s: %v", keyPath, err)
+		}
+
+		key.Clear()
+	}
+
 	activity.Stop()
 
 	if c.Bool("json") {
-		return json.NewEncoder(c.Writer).Encode(map[string]any{"valid": true, "config_path": out.ConfigPath})
+		return json.NewEncoder(c.Writer).Encode(struct {
+			Valid      bool   `json:"valid"`
+			ConfigPath string `json:"config_path"`
+			KeyPath    string `json:"key_path,omitempty"`
+		}{true, out.ConfigPath, keyPath})
 	}
 
 	writef(c.Writer, "wake: local launch configuration is valid: %s\n", out.ConfigPath)
+
+	if keyPath != "" {
+		writef(c.Writer, "wake: credential encryption key file is valid: %s\n", keyPath)
+	}
 
 	return nil
 }

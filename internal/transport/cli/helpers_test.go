@@ -97,6 +97,7 @@ func TestCommandDiscoveryReflectsCommandTree(t *testing.T) {
 	slices.Sort(names)
 
 	want := []string{
+		"wake access provision credential-key",
 		"wake access reset",
 		"wake access revoke sessions",
 		"wake access set password",
@@ -108,8 +109,8 @@ func TestCommandDiscoveryReflectsCommandTree(t *testing.T) {
 		"wake config check",
 		"wake config describe",
 		"wake config get",
+		"wake config init",
 		"wake config show",
-		"wake credentials generate-key",
 		"wake help",
 		"wake positions get",
 		"wake serve",

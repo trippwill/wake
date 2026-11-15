@@ -13,11 +13,17 @@ import (
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 )
 
-func GenerateCredentialKey(ctx context.Context, cfg config.Config) error {
-	return WithStoppedProfile(cfg, func() error {
+// EnsureCredentialKey checks an existing key or creates a missing key offline.
+func EnsureCredentialKey(ctx context.Context, cfg config.Config) (bool, error) {
+	generated := false
+	err := WithStoppedProfile(cfg, func() error {
 		path := cfg.Credentials.KeyPath
-		if _, err := os.Lstat(path); err == nil {
-			return credential.ErrMasterKeyExists
+
+		envelope, err := openCredentialKey(path)
+		if err == nil {
+			defer envelope.Clear()
+
+			return persistence.CheckStoredCredentialKey(ctx, cfg.Storage.ConnectionsPath, envelope)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -26,8 +32,16 @@ func GenerateCredentialKey(ctx context.Context, cfg config.Config) error {
 			return err
 		}
 
-		return credential.CreateMasterKey(path)
+		if err := credential.CreateMasterKey(path); err != nil {
+			return err
+		}
+
+		generated = true
+
+		return nil
 	})
+
+	return generated, err
 }
 
 func openCredentialKey(path string) (*credential.Envelope, error) {
@@ -65,9 +79,9 @@ func loadSyncCredentials(
 		return envelope, "", nil
 	}
 
-	reason := "Restore a usable credential encryption key. If the key file is missing, generate one with wake credentials generate-key while Wake is stopped."
+	reason := "Restore a usable credential encryption key at the configured path. For a new credentials store, stop Wake and run wake access provision credential-key."
 	if errors.Is(keyErr, persistence.ErrCredentialKeyRequired) {
-		reason = "Restore the matching credential encryption key, or use wake storage reset credentials while Wake is stopped and then provision a usable key."
+		reason = "Restore the matching credential encryption key, or stop Wake, run wake storage reset credentials, then run wake access provision credential-key."
 	}
 
 	return nil, reason, store.PauseForCredentialKey(ctx)

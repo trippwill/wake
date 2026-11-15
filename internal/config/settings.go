@@ -163,6 +163,12 @@ func resolve(command *cli.Command, runtimeRequired bool) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("%w: read config %s: %v", ErrInvalid, path, err)
 	}
 
+	return resolveSnapshot(path, source, content, runtimeRequired)
+}
+
+func resolveSnapshot(path, source string, content []byte, runtimeRequired bool) (Resolution, error) {
+	dir := filepath.Dir(path)
+
 	file, metadata, err := decodeFileConfigSnapshot(content)
 	if err != nil {
 		return Resolution{}, err

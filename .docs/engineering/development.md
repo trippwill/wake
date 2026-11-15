@@ -21,8 +21,7 @@ symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary siz
 Use an ordinary build when debugger symbols are needed. `mise run build` continues
 to check all Go packages with the existing development build settings.
 
-For a foreground development instance, create a private instance directory with an
-empty `config.toml`. Run `mise run bin -- credentials generate-key`, then
+For a foreground development instance, run `mise run bin -- config init --generate-key`, then
 `mise run bin -- access set password` and `mise run serve`. Select the
 same TOML for all three commands. Sign in with the password entered at the prompt.
 

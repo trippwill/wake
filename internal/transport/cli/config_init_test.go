@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/clientaccess"
+	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
 
@@ -32,36 +33,49 @@ func setupEnvironment(t *testing.T) string {
 	return filepath.Join(root, "config", "wake")
 }
 
-func TestGenerateKeyRequiresExistingConfig(t *testing.T) {
+func TestConfigInitCreatesOnlyTOMLByDefault(t *testing.T) {
 	dir := setupEnvironment(t)
+	t.Setenv("XDG_RUNTIME_DIR", "")
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"credentials", "generate-key"}, &stdout, &stderr); code != exitFailure ||
-		!strings.Contains(stderr.String(), "config.toml") {
+	if code := run([]string{"--json", "config", "init"}, &stdout, &stderr); code != exitOK {
 		t.Fatal(code, stderr.String())
 	}
 
-	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("generation created the instance directory without a config", err)
+	var result struct {
+		ConfigPath   string `json:"config_path"`
+		KeyGenerated bool   `json:"key_generated"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil ||
+		result.ConfigPath != filepath.Join(dir, "config.toml") || result.KeyGenerated {
+		t.Fatal("unexpected init result", stdout.String(), err)
+	}
+
+	info, err := os.Stat(result.ConfigPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("expected private TOML", info, err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "config.toml" {
+		t.Fatal("expected only the TOML", entries, err)
 	}
 }
 
-func TestGenerateKeyIsNoninteractiveAndPreservesOperator(t *testing.T) {
+func TestConfigInitGeneratesKeyAndRefusesExistingTOML(t *testing.T) {
 	dir := setupEnvironment(t)
 	configPath := filepath.Join(dir, "config.toml")
-	writeTestConfig(t, configPath, nil)
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"credentials", "generate-key"}, &stdout, &stderr); code != exitOK {
+	if code := run([]string{"config", "init", "--generate-key"}, &stdout, &stderr); code != exitOK {
 		t.Fatal(code, stderr.String())
 	}
 
 	keyPath := filepath.Join(dir, "credentials.key")
-	key := readTestMaterial(t, keyPath)
-	configFile := readTestMaterial(t, configPath)
 
-	if len(key) != 32 || len(configFile) != 0 {
-		t.Fatal("expected a 32-byte key and empty config")
+	key := readTestMaterial(t, keyPath)
+	if len(key) != 32 {
+		t.Fatal("expected a 32-byte key")
 	}
 
 	info, err := os.Stat(keyPath)
@@ -85,19 +99,27 @@ func TestGenerateKeyIsNoninteractiveAndPreservesOperator(t *testing.T) {
 	}
 
 	unlock := readTestMaterial(t, unlockPath)
-	if code := run([]string{"credentials", "generate-key"}, &stdout, &stderr); code != exitFailure ||
-		!strings.Contains(stderr.String(), "already exists") {
-		t.Fatal(code, stderr.String())
+	invalid := []byte("unparsed TOML [")
+	writeTestConfig(t, configPath, invalid)
+
+	for _, opts := range [][]string{nil, {"--set", "admin.port=8887"}, {"--generate-key"}} {
+		stderr.Reset()
+
+		if code := run(append([]string{"config", "init"}, opts...), &stdout, &stderr); code != exitFailure ||
+			!strings.Contains(stderr.String(), "configuration already exists at "+configPath) ||
+			!strings.Contains(stderr.String(), "wake config check") {
+			t.Fatal(code, stderr.String())
+		}
 	}
 
 	if !bytes.Equal(key, readTestMaterial(t, keyPath)) ||
-		!bytes.Equal(configFile, readTestMaterial(t, configPath)) ||
+		!bytes.Equal(invalid, readTestMaterial(t, configPath)) ||
 		!bytes.Equal(unlock, readTestMaterial(t, unlockPath)) {
 		t.Fatal("generation changed existing instance material")
 	}
 }
 
-func TestGenerateKeyUsesConfiguredPath(t *testing.T) {
+func TestConfigInitUsesSettingsAndSelectedPath(t *testing.T) {
 	dir := setupEnvironment(t)
 	alt := filepath.Join(t.TempDir(), "private")
 	path := filepath.Join(alt, "container.toml")
@@ -108,12 +130,19 @@ func TestGenerateKeyUsesConfiguredPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, keyPath := range []string{"custom.key", filepath.Join(keyDir, "custom.key")} {
-		configBytes := []byte("# preserve the comment\n[credentials]\nkey_path=" + strconv.Quote(keyPath) + "\n")
-		writeTestConfig(t, path, configBytes)
+	for _, keyPath := range []string{"custom, key=1.key", filepath.Join(keyDir, "custom.key")} {
+		args := []string{
+			"--json", "config", "init", "--generate-key",
+			"--set", "admin.port=8887", "--set", "api.port=8888",
+			"--set", "admin.currency_refresh=true", "--set", "credentials.key_path=" + keyPath,
+		}
+		if filepath.IsAbs(keyPath) {
+			path = filepath.Join(alt, "other.toml")
+			args = append(args, "--config", path)
+		}
 
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{"--json", "credentials", "generate-key"}, &stdout, &stderr); code != exitOK {
+		if code := run(args, &stdout, &stderr); code != exitOK {
 			t.Fatal(code, stderr.String())
 		}
 
@@ -122,17 +151,20 @@ func TestGenerateKeyUsesConfiguredPath(t *testing.T) {
 		}
 
 		var result struct {
-			Generated  bool   `json:"generated"`
-			ConfigPath string `json:"config_path"`
-			KeyPath    string `json:"key_path"`
+			KeyGenerated bool   `json:"key_generated"`
+			ConfigPath   string `json:"config_path"`
+			KeyPath      string `json:"key_path"`
 		}
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil ||
-			!result.Generated || result.ConfigPath != path || result.KeyPath != keyPath {
+			!result.KeyGenerated || result.ConfigPath != path || result.KeyPath != keyPath {
 			t.Fatal("unexpected generation result", stdout.String(), err)
 		}
 
-		if len(readTestMaterial(t, keyPath)) != 32 || !bytes.Equal(configBytes, readTestMaterial(t, path)) {
-			t.Fatal("expected a key at the configured path and an unchanged TOML")
+		resolved, err := launchForTest(path, false)
+		if err != nil || resolved.Config.Admin.Port != 8887 || resolved.Config.API.Port != 8888 ||
+			!resolved.Config.Admin.CurrencyRefresh || resolved.Config.Credentials.KeyPath != keyPath ||
+			len(readTestMaterial(t, keyPath)) != 32 {
+			t.Fatal("expected a key and a TOML with the overrides", err)
 		}
 	}
 
@@ -141,7 +173,59 @@ func TestGenerateKeyUsesConfiguredPath(t *testing.T) {
 	}
 }
 
-func TestGenerateKeyRejectsRunningInstance(t *testing.T) {
+func TestConfigInitRejectsInvalidSettingsBeforeCreatingFiles(t *testing.T) {
+	dir := setupEnvironment(t)
+
+	for _, opts := range [][]string{
+		{"--set", "admin.port"},
+		{"--set", "admin.unknown=1"},
+		{"--set", "admin.currency_refresh=maybe"},
+		{"--set", "admin.port=abc"},
+		{"--set", "admin.port=65536"},
+		{"--set", "admin.port=8788"},
+		{"--set", "admin.port=8887", "--set", "admin.port=8889"},
+		{"--set", "credentials.key_path=config.toml"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(
+			append([]string{"config", "init", "--generate-key"}, opts...),
+			&stdout,
+			&stderr,
+		); code != exitFailure {
+			t.Fatal(opts, code, stderr.String())
+		}
+
+		if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("invalid init created the instance directory", err)
+		}
+	}
+}
+
+func TestConfigInitReusesExistingKey(t *testing.T) {
+	dir := setupEnvironment(t)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	keyPath := filepath.Join(dir, "credentials.key")
+	if err := credential.CreateMasterKey(keyPath); err != nil {
+		t.Fatal(err)
+	}
+
+	key := readTestMaterial(t, keyPath)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"config", "init", "--generate-key"}, &stdout, &stderr); code != exitOK ||
+		!strings.Contains(stdout.String(), "Using existing credential encryption key") {
+		t.Fatal(code, stdout.String(), stderr.String())
+	}
+
+	if !bytes.Equal(key, readTestMaterial(t, keyPath)) {
+		t.Fatal("init changed the existing key")
+	}
+}
+
+func TestConfigInitCannotGenerateKeyForRunningInstance(t *testing.T) {
 	dir := setupEnvironment(t)
 	path := filepath.Join(dir, "config.toml")
 
@@ -164,10 +248,19 @@ func TestGenerateKeyRejectsRunningInstance(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"credentials", "generate-key"},
+		[]string{"config", "init", "--generate-key", "--config", filepath.Join(dir, "other.toml")},
 		&stdout,
 		&stderr,
 	); code != exitFailure ||
+		!strings.Contains(stderr.String(), "key provisioning failed") ||
+		!strings.Contains(stderr.String(), "another process owns") ||
+		!strings.Contains(stderr.String(), "wake access provision credential-key --config") {
+		t.Fatal(code, stderr.String())
+	}
+
+	stderr.Reset()
+
+	if code := run([]string{"access", "provision", "credential-key"}, &stdout, &stderr); code != exitFailure ||
 		!strings.Contains(stderr.String(), "another process owns") {
 		t.Fatal(code, stderr.String())
 	}

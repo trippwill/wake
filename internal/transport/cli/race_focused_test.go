@@ -9,5 +9,5 @@ import "testing"
 
 func TestRaceFocused(t *testing.T) {
 	t.Run("PasswordInputCancellationRestoresTerminal", TestPasswordInputCancellationRestoresTerminal)
-	t.Run("GenerateKeyRejectsRunningInstance", TestGenerateKeyRejectsRunningInstance)
+	t.Run("ConfigInitCannotGenerateKeyForRunningInstance", TestConfigInitCannotGenerateKeyForRunningInstance)
 }

@@ -26,26 +26,28 @@ mise run build:release
 export PATH="$PWD/.cache/release:$PATH"
 ```
 
-With `wake` on `PATH`, create the configuration and key for a new instance at the
-default path:
+With `wake` on `PATH`, create the configuration and key for a new instance:
 
 ```sh
-install -d -m 0700 "${XDG_CONFIG_HOME:-$HOME/.config}/wake"
-touch "${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml"
-wake credentials generate-key
+wake config init --generate-key
 wake access set password
 wake serve
 ```
 
-`wake credentials generate-key` uses the existing TOML and creates a private
-key at `credentials.key_path`. For a custom key path, create its private parent
-directory first. When you already have a TOML and usable key, start with `wake serve`.
 Enter and confirm a password when prompted. Use it to sign in at the URL the
 command prints. Stop the foreground daemon with Ctrl+C.
 
 Wake selects `config.toml` through `--config`, `WAKE_CONFIG`, or
 `${XDG_CONFIG_HOME:-$HOME/.config}/wake/config.toml` in that order. Use the same
-file for key generation, serving, and recovery. An empty file uses the following defaults:
+file for initialization, serving, and recovery. `config init` creates a private
+TOML and fails if the path already exists. Repeat `--set KEY=VALUE` to write
+scalar settings listed by `wake config describe`.
+
+```sh
+wake config init --set admin.port=8887 --set api.port=8888 --generate-key
+```
+
+Omitted settings use the following defaults:
 
 ```toml
 [storage]
@@ -83,10 +85,19 @@ Both listeners bind to `127.0.0.1` and use distinct ports. To access Wake throug
 an SSH tunnel, forward the admin port to the same local port on your browser's
 machine and use the printed loopback URL.
 
-For a prebuilt Linux binary on PATH, start by creating the instance directory.
-For a prepared configuration, you can supply an existing private
-regular file containing 32 raw random bytes at `credentials.key_path`. Setup
-verifies the file and its ability to decrypt saved source credentials, if present.
+Omit `--generate-key` to create only the TOML. To provision the key for an
+existing TOML or retry a failed key setup, stop Wake and run
+`wake access provision credential-key`. Both provisioning paths create a private
+key at `credentials.key_path` if it is missing or reuse a valid existing key. Saved
+credentials require their original key. For a custom key path, first create its
+private parent directory. Set `paths.runtime_dir` if `XDG_RUNTIME_DIR` is
+unavailable.
+
+For an existing TOML, run `wake config check` to verify the launch settings.
+`wake config get credentials.key_path` prints the expected key path. After
+provisioning the key, run `wake config check --check-key` to verify the key
+file's size, ownership, and permissions. Wake checks the key against any saved
+credentials when it starts.
 See [operator access and restore](.docs/engineering/architecture.md#operator-access-and-restore)
 for the scope of each file.
 
@@ -158,8 +169,8 @@ key recovery guidance and **Connections → Recovery** for source and reference 
 After repair, select **Resume upstream work**. If the original key is unavailable,
 stop Wake and back up the files. Run `wake storage reset credentials` and review
 the preview.
-Confirm the reset and provision a usable key. To generate a replacement, move any
-unusable key file aside and run `wake credentials generate-key` with Wake stopped.
+Confirm the reset, move any unusable key file aside, and run
+`wake access provision credential-key` with Wake stopped.
 Start Wake, enter your source credentials again, and resume synchronization.
 
 The admin console requires JavaScript. Activity, instrument, positions and observation tables
@@ -195,7 +206,8 @@ access are retained.
 
 ```sh
 wake help
-wake help credentials generate-key
+wake help config init
+wake help access provision credential-key
 wake config describe
 wake config check
 ```

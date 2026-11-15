@@ -368,10 +368,12 @@ on the user's host and storage protection as well as Wake's credential handling.
 
 ### Operator access and restore
 
-`wake credentials generate-key` provisions a key offline at the configured path
-when the file is absent and no saved ciphertext depends on it. Startup keeps serving retained
-history when the key is unavailable. Upstream work pauses before a provider can use
-unreadable credentials and requires explicit resume after repair.
+The operator provisions a key offline with `wake config init --generate-key` for
+a new configuration or `wake access provision credential-key` for an existing
+TOML. Both reuse a valid key at the configured path and check for saved ciphertext
+that needs the original key. Startup keeps serving retained history when the key is
+unavailable. Upstream work pauses before a provider can use unreadable
+credentials and requires explicit resume after repair.
 
 Wake stores the password verifier, session signing key, and financial grants in
 private auth state. The host operator provisions or resets the password through

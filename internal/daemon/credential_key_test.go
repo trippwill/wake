@@ -30,8 +30,8 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			cfg := shellConfig(t)
 			cfg.Credentials.KeyPath = filepath.Join(cfg.Paths.ConfigDir, "credentials.key")
-			if err := GenerateCredentialKey(t.Context(), cfg); err != nil {
-				t.Fatal(err)
+			if generated, err := EnsureCredentialKey(t.Context(), cfg); err != nil || !generated {
+				t.Fatal("expected a new credential key", err)
 			}
 
 			if err := admin.SetPassword(cfg.Paths.ConfigDir, []byte("original synthetic unlock")); err != nil {
@@ -40,6 +40,10 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 
 			seedAPIClient(t, cfg)
 			seedSavedCredential(t, cfg, kind == "key mismatched")
+
+			if generated, err := EnsureCredentialKey(t.Context(), cfg); err != nil || generated {
+				t.Fatal("expected to reuse the matching key", err)
+			}
 
 			// #nosec G304 -- Synthetic key in the test instance.
 			matchingKey, err := os.ReadFile(cfg.Credentials.KeyPath)
@@ -67,15 +71,15 @@ func TestCredentialLossPreservesFinancialAccess(t *testing.T) {
 				}
 			}
 
-			if kind == "key missing" {
-				if err := GenerateCredentialKey(
+			if kind != "connections missing" {
+				if _, err := EnsureCredentialKey(
 					t.Context(),
 					cfg,
 				); !errors.Is(
 					err,
 					persistence.ErrCredentialKeyRequired,
 				) {
-					t.Fatal("generated a key while saved ciphertext still required the original", err)
+					t.Fatal("accepted a missing or incorrect key while saved ciphertext required the original", err)
 				}
 			}
 

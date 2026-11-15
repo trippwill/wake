@@ -134,24 +134,6 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 	root.Commands = []*cli.Command{
 		{
-			Name:            "credentials",
-			Usage:           "Manage the credential encryption key",
-			HideHelpCommand: true,
-			Action: func(_ context.Context, c *cli.Command) error {
-				printCommandHelp(stderr, c)
-				return usageError("specify credentials generate-key")
-			},
-			Commands: []*cli.Command{
-				{
-					Name:        "generate-key",
-					Usage:       "Generate a credential encryption key with Wake stopped",
-					Description: "Uses credentials.key_path from an existing TOML. Refuses an existing key file or saved credentials that require their original key.",
-					Flags:       common(),
-					Action:      performGenerateCredentialKey,
-				},
-			},
-		},
-		{
 			Name:   "serve",
 			Usage:  "Run the Wake daemon",
 			Flags:  serveFlags,
@@ -181,13 +163,22 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				Action: performReset,
 			},
 		),
-		commandGroup("access", "Manage browser and API client access",
+		commandGroup("access", "Manage browser access, API client access, and credential encryption",
 			commandGroup("set", "Set browser access credentials",
 				&cli.Command{
 					Name:   "password",
 					Usage:  "Set or replace the browser password",
 					Flags:  common(),
 					Action: performSetPassword,
+				},
+			),
+			commandGroup("provision", "Provision the credential encryption key",
+				&cli.Command{
+					Name:        "credential-key",
+					Usage:       "Create or reuse the encryption key for stored credentials",
+					Description: "Use the key path from an existing TOML. Stop Wake first. Saved credentials require their original key.",
+					Flags:       common(),
+					Action:      performProvisionCredentialKey,
 				},
 			),
 			commandGroup("revoke", "Revoke browser access",
@@ -205,13 +196,28 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		),
 		{
 			Name:            "config",
-			Usage:           "Discover local launch configuration without changing it",
+			Usage:           "Create and inspect local launch configuration",
 			HideHelpCommand: true,
 			Action: func(_ context.Context, c *cli.Command) error {
 				printCommandHelp(stderr, c)
-				return usageError("specify config describe, show, get or check")
+				return usageError("specify config init, describe, show, get or check")
 			},
 			Commands: []*cli.Command{
+				{
+					Name:                      "init",
+					Usage:                     "Create a new TOML configuration",
+					Description:               "The TOML path must be unused. Values omitted from --set use Wake defaults.",
+					DisableSliceFlagSeparator: true,
+					Flags: append(
+						common(),
+						&cli.StringSliceFlag{Name: "set", Usage: "Set a TOML setting as `KEY=VALUE` (repeatable)"},
+						&cli.BoolFlag{
+							Name:  "generate-key",
+							Usage: "Create the credential encryption key if missing, with Wake stopped",
+						},
+					),
+					Action: performConfigInit,
+				},
 				{
 					Name:   "describe",
 					Usage:  "Describe supported non-secret settings",
@@ -232,9 +238,11 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 					Action:    getConfig,
 				},
 				{
-					Name:   "check",
-					Usage:  "Check launch settings",
-					Flags:  common(),
+					Name:  "check",
+					Usage: "Check launch settings",
+					Flags: append(common(), &cli.BoolFlag{
+						Name: "check-key", Usage: "Also check the configured credential encryption key file",
+					}),
 					Action: checkConfig,
 				},
 			},
