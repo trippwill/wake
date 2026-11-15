@@ -4,6 +4,21 @@ This overview describes Wake's architectural responsibilities and consequential
 choices. Code and tests define the implementation;
 [current coverage](../product/coverage.md) owns supported behavior and limitations.
 
+## Terminology and storage evolution
+
+Wake is a single-user financial application with a durable financial store. Its
+TCP endpoints serve that application and its clients. The financial store includes
+retained evidence and decisions as well as actively maintained accepted views.
+
+The implementation still uses warehouse names and currently stores financial and
+operational state together, as described below. The
+[financial storage research](../research/financial-storage-architecture.md) recommends
+a separate synchronization file and resolves proposed ownership and recovery
+boundaries. The target requires only the financial store and local access for
+browser/API operation; optional synchronization and upstream access failures must
+not block local financial use. That split is not implemented; existing public
+names remain unchanged.
+
 ## One local application
 
 Wake is one daemon with one ordinary writer of private SQLite storage. The CLI

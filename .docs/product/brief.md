@@ -1,9 +1,20 @@
 # Wake product brief
 
 Wake exists to make financial history trustworthy, explainable, and usable.
-It is a standalone, local-first, self-hostable financial evidence
-warehouse that takes responsibility for acquiring evidence, understanding source
-claims, and reconciling what they mean.
+It is a standalone, local-first, self-hostable, single-user financial application
+that acquires evidence, understands source claims, and reconciles what they mean
+in a durable financial store. Its browser interface and TCP API provide access to
+that application; they do not make Wake a shared service provider.
+
+The financial store preserves evidence, provenance, financial identities and
+operator decisions alongside actively maintained accepted views. It remains useful
+without current source access. Synchronization machinery and access authority have
+separate responsibilities and lifetimes. Financial store describes this durable,
+active core without implying a frozen archive or a conventional data warehouse.
+
+A financial store and local access store are sufficient for browser and read-only
+API access. Synchronization state and upstream credentials are optional for local
+financial use; their loss must not prevent the user from accessing retained history.
 
 Wake should be useful on its own for inspecting financial history and resolving
 uncertainty. Applications that use its data should be able to work with financial

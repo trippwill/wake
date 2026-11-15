@@ -25,3 +25,7 @@ for research content and maintenance rules.
   measurements and limits.
 - [SQLite indexes for Activity browsing](sqlite-activity-browsing.md) — query plans, FTS5
   availability and the tradeoff of compiling SQLite as C.
+
+- [Financial storage architecture and recovery](financial-storage-architecture.md) — application and
+  storage ownership, independent local access, synchronization technology, restore protocol and one
+  dependency-ordered implementation plan.
