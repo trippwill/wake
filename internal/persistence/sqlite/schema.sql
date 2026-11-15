@@ -220,3 +220,15 @@ CREATE VIEW current_position_instruments AS
  FROM position_bindings b JOIN source_claims c ON c.id=b.claim_id JOIN claim_processing p ON p.claim_id=c.id AND p.ordinal=b.ordinal
  LEFT JOIN resource_aliases a ON a.kind='instruments' AND a.id=b.instrument_id
  WHERE EXISTS(SELECT 1 FROM current_position_claims active WHERE active.claim_id=c.id AND active.ordinal=p.ordinal);
+
+CREATE TABLE sync_association (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+ lineage TEXT NOT NULL,
+ epoch TEXT NOT NULL,
+ sync_id TEXT NOT NULL,
+ access_id TEXT NOT NULL,
+ generation TEXT NOT NULL,
+ revision TEXT NOT NULL,
+ token TEXT NOT NULL,
+ bind_restore INTEGER NOT NULL DEFAULT 0 CHECK(bind_restore IN (0,1))
+) STRICT;

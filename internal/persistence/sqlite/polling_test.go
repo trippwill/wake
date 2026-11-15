@@ -71,7 +71,7 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 	}
 
 	for _, stream := range []string{"routine", "continuing", "failed", "disabled"} {
-		if err := reschedulePoll(ctx, s.queries, "synthetic", stream, 20*time.Minute); err != nil {
+		if _, err := reschedulePoll(ctx, s.queries, "synthetic", stream, 20*time.Minute); err != nil {
 			t.Fatal(err)
 		}
 

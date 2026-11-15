@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
+	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -61,6 +63,7 @@ type (
 		Headers           http.Header
 	}
 	Store interface {
+		UpstreamRevision(context.Context) (string, error)
 		ReferenceKey(context.Context) ([]byte, string, error)
 		SetReferenceKey(context.Context, []byte) error
 		ReferenceFailure(context.Context, string) error
@@ -184,6 +187,17 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 	if err != nil || len(pending) == 0 {
 		return false, err
 	}
+
+	revision, err := s.store.UpstreamRevision(ctx)
+	if errors.Is(err, provider.ErrUnavailable) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	ctx = upstream.WithRevision(ctx, revision)
 
 	payload, failure, err := s.store.ReferenceKey(ctx)
 	if err != nil {

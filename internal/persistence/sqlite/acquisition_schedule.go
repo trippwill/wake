@@ -12,7 +12,7 @@ import (
 
 // ScheduleMissingAcquisition enables a newly shipped input for confirmed accounts.
 func (s *Store) ScheduleMissingAcquisition(ctx context.Context, providerID, stream string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -20,21 +20,25 @@ func (s *Store) ScheduleMissingAcquisition(ctx context.Context, providerID, stre
 
 	q := s.queries.WithTx(tx)
 
-	err = q.EnsureAccountAcquisitionWork(ctx, sqlc.EnsureAccountAcquisitionWorkParams{
+	created, err := q.EnsureAccountAcquisitionWork(ctx, sqlc.EnsureAccountAcquisitionWorkParams{
 		Provider: providerID, Stream: stream,
 	})
 	if err != nil {
 		return err
 	}
 
-	err = q.ScheduleMissingAccountAcquisition(ctx, sqlc.ScheduleMissingAccountAcquisitionParams{
+	scheduled, err := q.ScheduleMissingAccountAcquisition(ctx, sqlc.ScheduleMissingAccountAcquisitionParams{
 		Provider: providerID, Stream: stream,
 	})
 	if err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	if created == 0 && scheduled == 0 {
+		return nil
+	}
+
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func scheduleAcquisition(

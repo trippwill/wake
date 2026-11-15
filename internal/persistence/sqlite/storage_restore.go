@@ -262,6 +262,10 @@ func pauseRestoredWarehouse(ctx context.Context, path string) (result error) {
 		return err
 	}
 
+	if _, err := tx.ExecContext(ctx, profileStatement("MarkRestoreAssociation", "")); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 

@@ -975,17 +975,26 @@ func (q *Queries) ConflictExecution(ctx context.Context, id string) error {
 }
 
 const connection = `-- name: Connection :one
-SELECT id, provider, name, settings FROM access.configurations WHERE id=?
+SELECT c.id, c.provider, c.name, c.settings, s.revision AS access_revision FROM access.configurations c CROSS JOIN sync_association s WHERE c.id=?
 `
 
-func (q *Queries) Connection(ctx context.Context, id string) (AccessConfiguration, error) {
+type ConnectionRow struct {
+	ID             string
+	Provider       string
+	Name           string
+	Settings       []byte
+	AccessRevision string
+}
+
+func (q *Queries) Connection(ctx context.Context, id string) (ConnectionRow, error) {
 	row := q.db.QueryRowContext(ctx, connection, id)
-	var i AccessConfiguration
+	var i ConnectionRow
 	err := row.Scan(
 		&i.ID,
 		&i.Provider,
 		&i.Name,
 		&i.Settings,
+		&i.AccessRevision,
 	)
 	return i, err
 }
@@ -1323,7 +1332,7 @@ func (q *Queries) EnrichInstrument(ctx context.Context, arg EnrichInstrumentPara
 	return err
 }
 
-const ensureAccountAcquisitionWork = `-- name: EnsureAccountAcquisitionWork :exec
+const ensureAccountAcquisitionWork = `-- name: EnsureAccountAcquisitionWork :execrows
 INSERT INTO work(connection_id,stream,operation)
 SELECT connection_id,?1,'acquire' FROM accounts WHERE provider=?2
 ON CONFLICT DO NOTHING
@@ -1334,9 +1343,30 @@ type EnsureAccountAcquisitionWorkParams struct {
 	Provider string
 }
 
-func (q *Queries) EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) error {
-	_, err := q.db.ExecContext(ctx, ensureAccountAcquisitionWork, arg.Stream, arg.Provider)
-	return err
+func (q *Queries) EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ensureAccountAcquisitionWork, arg.Stream, arg.Provider)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const ensureCheckpointWork = `-- name: EnsureCheckpointWork :execrows
+INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING
+`
+
+type EnsureCheckpointWorkParams struct {
+	ConnectionID string
+	Stream       string
+	Operation    string
+}
+
+func (q *Queries) EnsureCheckpointWork(ctx context.Context, arg EnsureCheckpointWorkParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ensureCheckpointWork, arg.ConnectionID, arg.Stream, arg.Operation)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const ensureInstrumentSelection = `-- name: EnsureInstrumentSelection :exec
@@ -2015,6 +2045,30 @@ func (q *Queries) Instruments(ctx context.Context) ([]Instrument, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const invalidateChangedSchedule = `-- name: InvalidateChangedSchedule :exec
+UPDATE work SET revision=revision+1
+WHERE work.connection_id=?1 AND work.stream=?2 AND work.operation=?3
+AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+ AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled<>?4)
+`
+
+type InvalidateChangedScheduleParams struct {
+	ConnectionID string
+	Stream       string
+	Operation    string
+	Enabled      int64
+}
+
+func (q *Queries) InvalidateChangedSchedule(ctx context.Context, arg InvalidateChangedScheduleParams) error {
+	_, err := q.db.ExecContext(ctx, invalidateChangedSchedule,
+		arg.ConnectionID,
+		arg.Stream,
+		arg.Operation,
+		arg.Enabled,
+	)
+	return err
 }
 
 const listing = `-- name: Listing :one
@@ -4319,7 +4373,7 @@ func (q *Queries) SavedReferenceCredential(ctx context.Context) ([]byte, error) 
 	return encrypted, err
 }
 
-const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :exec
+const scheduleMissingAccountAcquisition = `-- name: ScheduleMissingAccountAcquisition :execrows
 INSERT INTO scheduled(connection_id,stream,operation,enabled)
 SELECT connection_id,?1,'acquire',1 FROM accounts WHERE provider=?2
 ON CONFLICT DO NOTHING
@@ -4330,9 +4384,12 @@ type ScheduleMissingAccountAcquisitionParams struct {
 	Provider string
 }
 
-func (q *Queries) ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error {
-	_, err := q.db.ExecContext(ctx, scheduleMissingAccountAcquisition, arg.Stream, arg.Provider)
-	return err
+func (q *Queries) ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, scheduleMissingAccountAcquisition, arg.Stream, arg.Provider)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const secret = `-- name: Secret :one

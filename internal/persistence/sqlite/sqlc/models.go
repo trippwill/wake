@@ -34,6 +34,20 @@ type AccessStoreMetadatum struct {
 	ID        string
 }
 
+type AccessUpstreamGrant struct {
+	Singleton       int64
+	Lineage         string
+	Epoch           string
+	SyncID          string
+	AccessID        string
+	Generation      string
+	Revision        string
+	Token           string
+	GrantedRevision string
+	Actor           string
+	GrantedAt       string
+}
+
 type Account struct {
 	Revision     int64
 	ID           string
@@ -533,6 +547,18 @@ type StoreMetadatum struct {
 	Kind      string
 	Version   string
 	ID        string
+}
+
+type SyncAssociation struct {
+	Singleton   int64
+	Lineage     string
+	Epoch       string
+	SyncID      string
+	AccessID    string
+	Generation  string
+	Revision    string
+	Token       string
+	BindRestore int64
 }
 
 type Work struct {

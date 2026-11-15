@@ -15,12 +15,11 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
 
 func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -39,6 +38,12 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		flag = 1
 	}
 
+	if err = q.InvalidateChangedSchedule(ctx, sqlc.InvalidateChangedScheduleParams{
+		ConnectionID: key.Connection, Stream: key.Stream, Operation: key.Operation, Enabled: flag,
+	}); err != nil {
+		return err
+	}
+
 	if err = q.SetScheduled(
 		ctx,
 		sqlc.SetScheduledParams{
@@ -51,11 +56,11 @@ func (s *Store) Schedule(ctx context.Context, key host.WorkKey, enabled bool) er
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -97,7 +102,7 @@ func (s *Store) Retry(ctx context.Context, key host.WorkKey) error {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func accountValue(row sqlc.Account) (application.Account, error) {
@@ -136,7 +141,7 @@ func (s *Store) Confirm(
 		return application.Account{}, application.ErrInvalid
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return application.Account{}, err
 	}
@@ -184,7 +189,8 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if c.Provider != connection.Provider || !bytes.Equal(c.Settings, settings) {
+	if c.Provider != connection.Provider || !bytes.Equal(c.Settings, settings) ||
+		(connection.AccessRevision != "" && c.AccessRevision != connection.AccessRevision) {
 		return application.Account{}, application.ErrConnectionChanged
 	}
 
@@ -244,7 +250,7 @@ func (s *Store) Confirm(
 		return application.Account{}, err
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamAuthority|upstreamFinancial); err != nil {
 		return application.Account{}, err
 	}
 
@@ -324,7 +330,7 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 		return application.ErrInvalid
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -342,6 +348,15 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 	}
 
 	if profile.Paused == 0 {
+		a, err := readUpstreamAssociation(ctx, tx)
+		if err != nil {
+			return err
+		}
+
+		if a.granted != a.revision {
+			return application.ErrAccessReview
+		}
+
 		return nil
 	}
 
@@ -376,7 +391,16 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 		return application.ErrAccessReview
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if _, err = tx.ExecContext(
+		ctx,
+		profileStatement("IssueGrant", ""),
+		actor,
+		now.UTC().Format(time.RFC3339Nano),
+	); err != nil {
+		return err
+	}
+
+	if err = s.commitUpstream(ctx, tx, upstreamAuthority); err != nil {
 		return err
 	}
 
@@ -390,19 +414,6 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 		"revision",
 		revision,
 	)
-
-	return nil
-}
-
-func (s *Store) UpstreamAllowed(ctx context.Context) error {
-	p, err := s.queries.Profile(ctx)
-	if err != nil {
-		return err
-	}
-
-	if p.Paused != 0 {
-		return provider.ErrUnavailable
-	}
 
 	return nil
 }

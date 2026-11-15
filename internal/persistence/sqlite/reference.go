@@ -27,7 +27,7 @@ func (s *Store) ReferenceKey(ctx context.Context) ([]byte, string, error) {
 }
 
 func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -46,11 +46,21 @@ func (s *Store) SetReferenceKey(ctx context.Context, payload []byte) error {
 		return err
 	}
 
-	return s.accessUpdated(ctx, "reference_setting", s.commit(ctx, tx))
+	return s.accessUpdated(ctx, "reference_setting", s.commitUpstream(ctx, tx, upstreamAuthority))
 }
 
 func (s *Store) ReferenceFailure(ctx context.Context, failure string) error {
-	return s.queries.ReferenceFailure(ctx, failure)
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err = s.queries.WithTx(tx).ReferenceFailure(ctx, failure); err != nil {
+		return err
+	}
+
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) ReferenceEvidence(ctx context.Context, id string) (application.ReferenceEvidence, error) {
@@ -67,7 +77,7 @@ func (s *Store) ReferenceEvidence(ctx context.Context, id string) (application.R
 }
 
 func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) (bool, time.Time, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return false, time.Time{}, err
 	}
@@ -81,6 +91,15 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 	}
 
 	if profile.Paused != 0 {
+		return false, time.Time{}, nil
+	}
+
+	setting, e := q.ReferenceSetting(ctx)
+	if e != nil && !errors.Is(e, sql.ErrNoRows) {
+		return false, time.Time{}, e
+	}
+
+	if setting.Failure != "" {
 		return false, time.Time{}, nil
 	}
 
@@ -123,7 +142,7 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 		return false, time.Time{}, err
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 		return false, time.Time{}, err
 	}
 
@@ -131,7 +150,7 @@ func (s *Store) ReserveReference(ctx context.Context, now time.Time, limit int) 
 }
 
 func (s *Store) ReferenceCooldown(ctx context.Context, until time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -164,11 +183,11 @@ func (s *Store) ReferenceCooldown(ctx context.Context, until time.Time) error {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -202,7 +221,7 @@ func (s *Store) ReferenceAllowance(ctx context.Context, used int, reset time.Tim
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) ReferenceCached(
@@ -246,7 +265,7 @@ func (s *Store) SaveReference(
 		return nil, ErrCorrupt
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +318,7 @@ func (s *Store) SaveReference(
 		}
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 		return nil, err
 	}
 
@@ -326,7 +345,7 @@ func (s *Store) PendingReference(ctx context.Context, now time.Time) ([]referenc
 }
 
 func (s *Store) ApplyReference(ctx context.Context, id string, result reference.Result) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -488,5 +507,5 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	return s.commit(ctx, tx)
+	return s.commitUpstream(ctx, tx, upstreamFinancial)
 }

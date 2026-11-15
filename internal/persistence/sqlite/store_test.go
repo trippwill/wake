@@ -238,17 +238,17 @@ func TestUnsupportedWALStorePreflightPreservesAllFiles(t *testing.T) {
 	}
 }
 
-func TestV1StoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
+func TestStoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
 	for _, fixture := range []struct {
 		name, update, legacy string
 	}{
-		{name: "warehouse", update: "UPDATE main.store_metadata SET version=?", legacy: "wake-financial-variants-2"},
-		{name: "access", update: "UPDATE access.store_metadata SET version=?", legacy: "wake-simplification-4"},
+		{name: "warehouse", update: "UPDATE main.store_metadata SET version=?", legacy: "wake-warehouse/1"},
+		{name: "access", update: "UPDATE access.store_metadata SET version=?", legacy: "wake-access/1"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			ctx := t.Context()
 			profile, store := profileFixture(t)
-			for schema, expected := range map[string]string{"main": "wake-warehouse/1", "access": "wake-access/1"} {
+			for schema, expected := range map[string]string{"main": "wake-warehouse/2", "access": "wake-access/2"} {
 				var metadata storeMetadata
 				if err := store.db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
 					Scan(&metadata.kind, &metadata.version, &metadata.id); err != nil ||

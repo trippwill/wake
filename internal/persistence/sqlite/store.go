@@ -37,8 +37,8 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt           Error = "invalid retained store data"
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-warehouse/1"
-	accessSchemaVersion        = "wake-access/1"
+	schemaVersion              = "wake-warehouse/2"
+	accessSchemaVersion        = "wake-access/2"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
@@ -671,6 +671,10 @@ func (s *Store) initialize(
 		); err != nil {
 			return err
 		}
+	}
+
+	if err = bindUpstream(ctx, tx, metadata, !present[0], recovering || !present[0] && present[1]); err != nil {
+		return err
 	}
 
 	if _, err = tx.ExecContext(ctx, profileStatement("RetainConnections", "")); err != nil {

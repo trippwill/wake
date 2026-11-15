@@ -40,7 +40,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 
 	var plan daemon.UpgradePlan
 	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || plan.ID != "" ||
-		plan.Stores[0].Target != "wake-warehouse/1" || plan.Stores[1].Target != "wake-access/1" {
+		plan.Stores[0].Target != "wake-warehouse/2" || plan.Stores[1].Target != "wake-access/2" {
 		t.Fatal(stdout.String(), err)
 	}
 

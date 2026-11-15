@@ -186,6 +186,15 @@ func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File)
 		return ErrAssociation
 	}
 
+	association, err := readUpstreamAssociation(ctx, db)
+	if err != nil {
+		return err
+	}
+
+	if !association.epochMatches || association.restoring {
+		return ErrAssociation
+	}
+
 	return nil
 }
 

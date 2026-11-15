@@ -19,6 +19,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
+	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -36,6 +37,7 @@ const (
 type (
 	Connection struct {
 		ID, Provider, Name      string
+		AccessRevision          string
 		Settings                provider.Settings
 		PollOverrides           map[string]time.Duration
 		SourceAccount           source.Reference
@@ -67,7 +69,7 @@ type (
 	}
 	// Store is the host's transactional persistence capability, never passed to providers.
 	Store interface {
-		UpstreamAllowed(context.Context) error
+		UpstreamRevision(context.Context) (string, error)
 		Configure(context.Context, Connection, map[string][]byte) error
 		Reconfigure(context.Context, Connection) error
 		SavePolling(context.Context, Connection, string, time.Duration) error
@@ -471,9 +473,12 @@ func (h *Host) step(
 	}
 	defer finish()
 
-	if err = h.store.UpstreamAllowed(work); err != nil {
+	revision, err := h.store.UpstreamRevision(work)
+	if err != nil {
 		return "", err
 	}
+
+	work = upstream.WithRevision(work, revision)
 
 	c, err := h.store.Connection(work, id)
 	if err != nil {

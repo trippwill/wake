@@ -95,21 +95,21 @@ func reschedulePoll(
 	q *sqlc.Queries,
 	connection, stream string,
 	interval time.Duration,
-) error {
+) (bool, error) {
 	payload, err := q.QueuedPoll(ctx, sqlc.QueuedPollParams{
 		ConnectionID: connection, Stream: stream, StateVersion: pollCheckpointVersion,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return false, nil
 	}
 
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	checkpoint, floor, err := readPollCheckpoint(payload)
 	if err != nil || checkpoint.CycleAt.IsZero() || checkpoint.Interval == interval {
-		return err
+		return false, err
 	}
 
 	next := checkpoint.CycleAt.Add(interval)
@@ -121,12 +121,14 @@ func reschedulePoll(
 
 	state, err := json.Marshal(checkpoint)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return q.SetPollDeadline(ctx, sqlc.SetPollDeadlineParams{
+	err = q.SetPollDeadline(ctx, sqlc.SetPollDeadlineParams{
 		ConnectionID: connection, Stream: stream, State: state, Next: next.UTC().Format(time.RFC3339Nano),
 	})
+
+	return err == nil, err
 }
 
 // ReconcilePolls applies the launch configuration before acquisition starts.
@@ -134,7 +136,7 @@ func (s *Store) ReconcilePolls(
 	ctx context.Context,
 	settings func(string, map[string]time.Duration) []host.PollSetting,
 ) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -147,6 +149,8 @@ func (s *Store) ReconcilePolls(
 		return err
 	}
 
+	changed := false
+
 	for _, connection := range connections {
 		_, overrides, err := decodeConnectionSettings(connection.Settings)
 		if err != nil {
@@ -154,17 +158,39 @@ func (s *Store) ReconcilePolls(
 		}
 
 		for _, setting := range settings(connection.Provider, overrides) {
-			if err := reschedulePoll(ctx, q, connection.ID, setting.Stream, setting.Effective()); err != nil {
+			updated, err := reschedulePoll(ctx, q, connection.ID, setting.Stream, setting.Effective())
+			if err != nil {
 				return err
 			}
+
+			changed = changed || updated
 		}
 	}
 
-	return s.commit(ctx, tx)
+	if !changed {
+		return nil
+	}
+
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) RefreshPolls(ctx context.Context, now time.Time) (int64, error) {
-	return s.queries.RefreshPolls(ctx, sqlc.RefreshPollsParams{
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	n, err := s.queries.WithTx(tx).RefreshPolls(ctx, sqlc.RefreshPollsParams{
 		Now: now.UTC().Format(pollDeadlineFormat), PollVersion: pollCheckpointVersion,
 	})
+	if err != nil || n == 0 {
+		return n, err
+	}
+
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
+		return 0, err
+	}
+
+	return n, nil
 }

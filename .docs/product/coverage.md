@@ -235,13 +235,11 @@ open its databases.
 
 Patch releases preserve usability of supported stores. An incompatible minor release
 documents its supported upgrade or explicit recreation procedure. Pre-release
-development formats have no automatic compatibility migration. The v0.1.0
-warehouse and encrypted access store have independent version-1 formats. Older
-development formats fail closed with recreation guidance and preserve the original
-files. The pre-release access format that included client grants is incompatible with this
-layout. Preserve its files, recreate the access store explicitly, and re-enter
-source credentials. Set a browser password and enroll clients in the new auth state.
-Retain the warehouse through that process.
+development formats have no automatic compatibility migration. The warehouse and
+encrypted access store have independent format identifiers. The current paired
+formats include upstream authorization and matching safety tokens. Wake refuses
+upstream work if the tokens disagree. Earlier pre-release stores require a
+compatible build or an explicit reset after preserving the old files.
 Back up stores and sidecars before explicitly moving or resetting them.
 The warehouse retains financial evidence, decisions and operational progress in one database. The
 encrypted access store has an independent path. Replacing that store preserves the warehouse and

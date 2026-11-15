@@ -72,7 +72,17 @@ func (s *Store) CheckCredentialKey(ctx context.Context, envelope *credential.Env
 }
 
 func (s *Store) PauseForCredentialKey(ctx context.Context) error {
-	if err := s.queries.PauseForCredentialKey(ctx); err != nil {
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err = s.queries.WithTx(tx).PauseForCredentialKey(ctx); err != nil {
+		return err
+	}
+
+	if err = s.commitUpstream(ctx, tx, upstreamAuthority); err != nil {
 		return err
 	}
 

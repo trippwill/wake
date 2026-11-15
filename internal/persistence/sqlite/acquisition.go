@@ -15,6 +15,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -25,7 +26,7 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 		return err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (s *Store) Configure(ctx context.Context, c host.Connection, secrets map[st
 		}
 	}
 
-	return s.commit(ctx, tx)
+	return s.commitUpstream(ctx, tx, upstreamAuthority)
 }
 
 func (s *Store) Connection(ctx context.Context, id string) (host.Connection, error) {
@@ -91,12 +92,13 @@ func (s *Store) Connection(ctx context.Context, id string) (host.Connection, err
 	ref, err := sourceAccount(ctx, s.queries, row.ID)
 
 	return host.Connection{
-		ID:            row.ID,
-		Provider:      row.Provider,
-		Name:          row.Name,
-		Settings:      settings,
-		PollOverrides: overrides,
-		SourceAccount: ref,
+		ID:             row.ID,
+		AccessRevision: row.AccessRevision,
+		Provider:       row.Provider,
+		Name:           row.Name,
+		Settings:       settings,
+		PollOverrides:  overrides,
+		SourceAccount:  ref,
 	}, err
 }
 
@@ -157,7 +159,7 @@ func (s *Store) SavePolling(
 		return err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -171,6 +173,10 @@ func (s *Store) SavePolling(
 		return err
 	}
 
+	if c.AccessRevision != "" && current.AccessRevision != c.AccessRevision {
+		return provider.ErrConflict
+	}
+
 	if current.Provider != c.Provider {
 		return ErrAssociation
 	}
@@ -182,12 +188,12 @@ func (s *Store) SavePolling(
 	}
 
 	if interval != 0 {
-		if err := reschedulePoll(ctx, q, c.ID, stream, interval); err != nil {
+		if _, err := reschedulePoll(ctx, q, c.ID, stream, interval); err != nil {
 			return err
 		}
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamAuthority)
 }
 
 func sourceAccount(ctx context.Context, q *sqlc.Queries, connection string) (source.Reference, error) {
@@ -209,7 +215,7 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		return err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -221,6 +227,17 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 	descriptor, e := q.Descriptor(ctx, c.ID)
 	if e != nil || descriptor.Provider != c.Provider {
 		return ErrAssociation
+	}
+
+	if c.AccessRevision != "" {
+		current, err := q.Connection(ctx, c.ID)
+		if err != nil {
+			return err
+		}
+
+		if current.AccessRevision != c.AccessRevision {
+			return provider.ErrConflict
+		}
 	}
 
 	if err = q.UpdateConnection(
@@ -270,31 +287,65 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 		}
 	}
 
-	return s.accessUpdated(ctx, "connection_settings", s.commit(ctx, tx))
+	return s.accessUpdated(
+		ctx,
+		"connection_settings",
+		s.commitUpstream(ctx, tx, upstreamAuthority|upstreamFinancial),
+	)
 }
 
 func (s *Store) Secret(ctx context.Context, id, key string) ([]byte, error) {
-	return s.queries.Secret(ctx, sqlc.SecretParams{ConnectionID: id, Key: key})
+	params := sqlc.SecretParams{ConnectionID: id, Key: key}
+	if upstream.Revision(ctx) == "" {
+		return s.queries.Secret(ctx, params)
+	}
+
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	return s.queries.WithTx(tx).Secret(ctx, params)
 }
 
 func (s *Store) ReplaceSecret(ctx context.Context, id, key string, payload []byte) error {
-	err := s.queries.ReplaceSecret(
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	err = s.queries.WithTx(tx).ReplaceSecret(
 		ctx,
 		sqlc.ReplaceSecretParams{ConnectionID: id, Key: key, Encrypted: payload},
 	)
+	if err == nil {
+		err = s.commitUpstream(ctx, tx, upstreamAuthority)
+	}
 
 	return s.accessUpdated(ctx, "connection_credential", err)
 }
 
 func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint, error) {
-	if err := s.queries.EnsureWork(
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return host.Checkpoint{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	q := s.queries.WithTx(tx)
+
+	changed, err := q.EnsureCheckpointWork(
 		ctx,
-		sqlc.EnsureWorkParams{ConnectionID: k.Connection, Stream: k.Stream, Operation: k.Operation},
-	); err != nil {
+		sqlc.EnsureCheckpointWorkParams{ConnectionID: k.Connection, Stream: k.Stream, Operation: k.Operation},
+	)
+	if err != nil {
 		return host.Checkpoint{}, err
 	}
 
-	row, err := s.queries.Checkpoint(
+	row, err := q.Checkpoint(
 		ctx,
 		sqlc.CheckpointParams{ConnectionID: k.Connection, Stream: k.Stream, Operation: k.Operation},
 	)
@@ -320,6 +371,12 @@ func (s *Store) Checkpoint(ctx context.Context, k host.WorkKey) (host.Checkpoint
 	ack, err := parseProgress(row.Acknowledged, row.AcknowledgedCompleted, row.AcknowledgedTotal)
 	if err != nil {
 		return host.Checkpoint{}, err
+	}
+
+	if changed != 0 {
+		if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
+			return host.Checkpoint{}, err
+		}
 	}
 
 	return host.Checkpoint{
@@ -364,7 +421,13 @@ func (s *Store) Observe(ctx context.Context, k host.WorkKey, p provider.Progress
 		return provider.ErrLimit
 	}
 
-	return s.queries.ObserveWork(
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	err = s.queries.WithTx(tx).ObserveWork(
 		ctx,
 		sqlc.ObserveWorkParams{
 			Observed:          string(p.Phase()),
@@ -375,10 +438,21 @@ func (s *Store) Observe(ctx context.Context, k host.WorkKey, p provider.Progress
 			Operation:         k.Operation,
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *Store) Fail(ctx context.Context, k host.WorkKey, code host.FailureCode, message string) error {
-	return s.queries.FailWork(
+	tx, err := beginUpstream(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	err = s.queries.WithTx(tx).FailWork(
 		ctx,
 		sqlc.FailWorkParams{
 			Failure:      message,
@@ -388,6 +462,11 @@ func (s *Store) Fail(ctx context.Context, k host.WorkKey, code host.FailureCode,
 			Operation:    k.Operation,
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 func (s *Store) Accept(
@@ -404,12 +483,23 @@ func (s *Store) Accept(
 		return "", provider.ErrLimit
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return "", err
 	}
 
 	defer func() { _ = tx.Rollback() }()
+
+	if k.Operation != "supply" && upstream.Revision(ctx) == "" {
+		association, err := readUpstreamAssociation(ctx, tx)
+		if err != nil {
+			return "", err
+		}
+
+		if err = association.admitted(ctx); err != nil {
+			return "", err
+		}
+	}
 
 	q := s.queries.WithTx(tx)
 
@@ -486,7 +576,7 @@ func (s *Store) Accept(
 		}
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 		return "", err
 	}
 
@@ -578,7 +668,7 @@ func (s *Store) ReserveTogether(
 	now time.Time,
 	budgets ...host.PacingBudget,
 ) (provider.Reservation, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return provider.Reservation{}, err
 	}
@@ -622,7 +712,7 @@ func (s *Store) ReserveTogether(
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
+	if err = s.commitUpstream(ctx, tx, upstreamProgress); err != nil {
 		return provider.Reservation{}, err
 	}
 
@@ -639,7 +729,7 @@ func pacingDeadline(ctx context.Context, q *sqlc.Queries, p, policy, scope strin
 }
 
 func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.Time) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginUpstream(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -668,7 +758,7 @@ func (s *Store) Delay(ctx context.Context, p, policy, scope string, until time.T
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitUpstream(ctx, tx, upstreamProgress)
 }
 
 var _ host.Store = (*Store)(nil)

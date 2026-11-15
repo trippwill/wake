@@ -158,7 +158,7 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 					t.Fatal("unreviewed execution", work, err)
 				}
 
-				if err := recovered.UpstreamAllowed(ctx); !errors.Is(err, provider.ErrUnavailable) {
+				if _, err := recovered.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
 					t.Fatal(err)
 				}
 
@@ -225,6 +225,25 @@ func TestCompanionLossPreservesFinancialHistoryAndRestrictions(t *testing.T) {
 					application.ErrStale,
 				) {
 					t.Fatal("stale resume", err)
+				}
+
+				if view.Storage.ReferenceReview {
+					if err := recovered.ResumeStorage(
+						ctx,
+						view.Storage.Revision,
+						"admin/test",
+						now,
+					); !errors.Is(
+						err,
+						application.ErrStale,
+					) {
+						t.Fatal("access repairs did not invalidate review", err)
+					}
+
+					view, err = recovered.Dashboard(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 
 				if err := recovered.ResumeStorage(ctx, view.Storage.Revision, "admin/test", now); err != nil {
@@ -755,7 +774,7 @@ func TestFreshWarehouseRetainsAccessAndDiscardsOldExecution(t *testing.T) {
 			}
 		}
 
-		if err := s.UpstreamAllowed(ctx); !errors.Is(err, provider.ErrUnavailable) {
+		if _, err := s.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
 			t.Fatal("fresh warehouse granted upstream authority", err)
 		}
 

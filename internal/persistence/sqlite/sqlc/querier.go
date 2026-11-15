@@ -63,7 +63,7 @@ type Querier interface {
 	ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]string, error)
 	CompetingFIGI(ctx context.Context, arg CompetingFIGIParams) ([]Instrument, error)
 	ConflictExecution(ctx context.Context, id string) error
-	Connection(ctx context.Context, id string) (AccessConfiguration, error)
+	Connection(ctx context.Context, id string) (ConnectionRow, error)
 	ConnectionAccess(ctx context.Context, id string) (int64, error)
 	Connections(ctx context.Context) ([]string, error)
 	CopyClaimCorrection(ctx context.Context, arg CopyClaimCorrectionParams) error
@@ -84,7 +84,8 @@ type Querier interface {
 	DisableDiscovery(ctx context.Context, connectionID string) error
 	DiscardActivitySupport(ctx context.Context, arg DiscardActivitySupportParams) error
 	EnrichInstrument(ctx context.Context, arg EnrichInstrumentParams) error
-	EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) error
+	EnsureAccountAcquisitionWork(ctx context.Context, arg EnsureAccountAcquisitionWorkParams) (int64, error)
+	EnsureCheckpointWork(ctx context.Context, arg EnsureCheckpointWorkParams) (int64, error)
 	EnsureInstrumentSelection(ctx context.Context, id string) error
 	EnsureWork(ctx context.Context, arg EnsureWorkParams) error
 	EventLink(ctx context.Context, arg EventLinkParams) (string, error)
@@ -111,6 +112,7 @@ type Querier interface {
 	InstrumentReferenceAttempts(ctx context.Context, instrumentID string) ([]InstrumentReferenceAttemptsRow, error)
 	InstrumentSelection(ctx context.Context, instrumentID string) (InstrumentSelection, error)
 	Instruments(ctx context.Context) ([]Instrument, error)
+	InvalidateChangedSchedule(ctx context.Context, arg InvalidateChangedScheduleParams) error
 	Listing(ctx context.Context, id string) (Listing, error)
 	ListingByTerms(ctx context.Context, arg ListingByTermsParams) (Listing, error)
 	Listings(ctx context.Context, instrumentID string) ([]Listing, error)
@@ -207,7 +209,7 @@ type Querier interface {
 	SaveProcessingReceipt(ctx context.Context, arg SaveProcessingReceiptParams) error
 	SavedCredentials(ctx context.Context) ([]SavedCredentialsRow, error)
 	SavedReferenceCredential(ctx context.Context) ([]byte, error)
-	ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) error
+	ScheduleMissingAccountAcquisition(ctx context.Context, arg ScheduleMissingAccountAcquisitionParams) (int64, error)
 	Secret(ctx context.Context, arg SecretParams) ([]byte, error)
 	SeedArtifactBases(ctx context.Context, artifactID string) error
 	SeedInstrumentSelections(ctx context.Context) error

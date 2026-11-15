@@ -6,12 +6,14 @@ SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_
 -- name: PutConnection :exec
 INSERT INTO access.configurations(id,provider,name,settings) VALUES(?,?,?,?);
 -- name: Connection :one
-SELECT * FROM access.configurations WHERE id=?;
+SELECT c.*, s.revision AS access_revision FROM access.configurations c CROSS JOIN sync_association s WHERE c.id=?;
 -- name: PutSecret :exec
 INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?);
 -- name: Secret :one
 SELECT encrypted FROM access.credentials WHERE connection_id=? AND key=?;
 -- name: EnsureWork :exec
+INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
+-- name: EnsureCheckpointWork :execrows
 INSERT INTO work(connection_id,stream,operation) VALUES(?,?,?) ON CONFLICT DO NOTHING;
 -- name: Checkpoint :one
 SELECT * FROM work WHERE connection_id=? AND stream=? AND operation=?;
@@ -52,11 +54,16 @@ INSERT INTO access.credentials(connection_id,key,encrypted) VALUES(?,?,?) ON CON
 SELECT id FROM connections ORDER BY rowid;
 -- name: SetScheduled :exec
 INSERT INTO scheduled(connection_id,stream,operation,enabled) VALUES(?,?,?,?) ON CONFLICT(connection_id,stream,operation) DO UPDATE SET enabled=excluded.enabled;
--- name: EnsureAccountAcquisitionWork :exec
+-- name: InvalidateChangedSchedule :exec
+UPDATE work SET revision=revision+1
+WHERE work.connection_id=sqlc.arg(connection_id) AND work.stream=sqlc.arg(stream) AND work.operation=sqlc.arg(operation)
+AND EXISTS(SELECT 1 FROM scheduled WHERE scheduled.connection_id=work.connection_id
+ AND scheduled.stream=work.stream AND scheduled.operation=work.operation AND enabled<>sqlc.arg(enabled));
+-- name: EnsureAccountAcquisitionWork :execrows
 INSERT INTO work(connection_id,stream,operation)
 SELECT connection_id,sqlc.arg(stream),'acquire' FROM accounts WHERE provider=sqlc.arg(provider)
 ON CONFLICT DO NOTHING;
--- name: ScheduleMissingAccountAcquisition :exec
+-- name: ScheduleMissingAccountAcquisition :execrows
 INSERT INTO scheduled(connection_id,stream,operation,enabled)
 SELECT connection_id,sqlc.arg(stream),'acquire',1 FROM accounts WHERE provider=sqlc.arg(provider)
 ON CONFLICT DO NOTHING;

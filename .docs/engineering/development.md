@@ -129,8 +129,8 @@ partial results or duplicate financial activity. Record why no historical update
 is needed when a change leaves retained results valid.
 
 The first release starts the Wake-owned rule, interpretation, continuation,
-checkpoint, comparison, and store format identifiers at version 1. Advance the
-identifier whose meaning changed.
+checkpoint and comparison identifiers at version 1. Advance the identifier whose
+meaning changed. Private store formats advance independently as their schemas change.
 
 - Core rule and provider interpretation changes that affect existing financial
   results require a retained-history update or provider replay, respectively.
@@ -149,10 +149,10 @@ evidence-preservation guidance.
 ## Forward store upgrades
 
 The warehouse and access store each have an ordered migration chain starting at
-their v1 release formats. When either format changes, embed the forward migration
+the first supported release formats. When either format changes, embed the forward migration
 as external SQL and update the matching fresh schema. Migration files run inside
 Wake's attached SQLite transaction. Keep transaction control and format metadata
-updates in the runner. Test the upgrade from retained v1 data and compare the
+updates in the runner. Test the upgrade from the earliest supported data and compare the
 result with a fresh store at the target format. Keep migration SQL stable once
 released because its contents identify the approved plan.
 

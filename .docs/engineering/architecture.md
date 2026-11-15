@@ -86,6 +86,22 @@ inputs and persists explicit decisions and results. It finalizes publication in
 the same transaction and notifies subscribers only after successful commit.
 Instrument correction and identity orchestration remain in persistence.
 
+Upstream work carries an authorization revision across each network operation.
+The writer validates the paired stores and current grant before admitting work
+and checks the revision again when accepting results. Changes to access or
+configuration invalidate outstanding work. Pacing and continuation changes
+rotate a safety token in both stores in the same transaction without advancing
+financial publication. Transactions that also change published financial state
+finalize it before committing and notify readers afterward.
+
+In the current paired layout, the warehouse holds synchronization metadata and
+the access store holds its witness and grant. A witness mismatch prevents upstream
+work and leaves local financial reads and corrections available when the paired
+stores can open. An ordinary restart preserves authorization. Recovery and restore
+require a fresh grant, and repairing configuration during a pause invalidates an
+earlier resume review. The initial empty installation establishes its association
+and grant during setup.
+
 ## Evidence before conclusions
 
 Preserve immutable evidence and qualified claims independently of accepted views.
