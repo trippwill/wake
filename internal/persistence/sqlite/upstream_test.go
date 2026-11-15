@@ -6,6 +6,7 @@ package persistence
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -198,6 +199,10 @@ func TestAuthorityChangeRejectsInflightResultsAndStaleSettings(t *testing.T) {
 		t.Fatal("stale polling change accepted", err)
 	}
 
+	if err = s.Reconfigure(ctx, conn); !errors.Is(err, provider.ErrConflict) {
+		t.Fatal("stale settings change accepted", err)
+	}
+
 	current, err := s.Checkpoint(ctx, key)
 	if err != nil || current.Revision != checkpoint.Revision {
 		t.Fatal("stale result advanced checkpoint", current, err)
@@ -254,6 +259,17 @@ func TestRestartRejectsOlderAccessCopyWithSameIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err = Backup(
+		ctx,
+		profile,
+		filepath.Join(t.TempDir(), "stale-pair.tar"),
+	); !errors.Is(
+		err,
+		ErrAssociation,
+	) {
+		t.Fatal("backup accepted mismatched witnesses", err)
+	}
+
 	s, err = Open(ctx, profile, nil)
 	if err != nil {
 		t.Fatal("older access copy blocked local startup", err)
@@ -284,6 +300,23 @@ func TestOperationalWriteCannotRenewStaleGrant(t *testing.T) {
 
 	if _, err := s.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
 		t.Fatal("operational write revived stale authorization", err)
+	}
+
+	view, err := s.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.ResumeStorage(
+		ctx,
+		view.Storage.Revision,
+		"admin/test",
+		time.Now(),
+	); !errors.Is(
+		err,
+		application.ErrAccessReview,
+	) {
+		t.Fatal("unpaused profile bypassed the required grant", err)
 	}
 }
 
@@ -379,5 +412,46 @@ func TestConfirmationRequiresCurrentConfigurationRevision(t *testing.T) {
 
 	if _, err = s.Confirm(ctx, current, id, ref, details); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUpstreamAdmissionAndBackupRequireCurrentFinancialEpoch(t *testing.T) {
+	profile, s := profileFixture(t)
+	ctx := t.Context()
+	// Simulate replacing the financial publication identity outside the restore workflow.
+	if _, err := s.db.ExecContext(ctx, `UPDATE store_metadata SET id='different-epoch'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.UpstreamRevision(ctx); !errors.Is(err, ErrAssociation) {
+		t.Fatal("admission accepted the old grant for a different epoch", err)
+	}
+
+	if err := s.Delay(
+		ctx,
+		"ibkr-flex",
+		"requests",
+		"scope",
+		time.Now().Add(time.Minute),
+	); !errors.Is(
+		err,
+		ErrAssociation,
+	) {
+		t.Fatal("write rotated witnesses after an epoch mismatch", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Backup(
+		ctx,
+		profile,
+		filepath.Join(t.TempDir(), "stale-epoch.tar"),
+	); !errors.Is(
+		err,
+		ErrAssociation,
+	) {
+		t.Fatal("backup accepted mismatched epoch", err)
 	}
 }
