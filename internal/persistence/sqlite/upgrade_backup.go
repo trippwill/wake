@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,10 +19,14 @@ import (
 
 const (
 	upgradeBackupSuffix       = ".upgrade-backup.tar"
+	backupDigestEntry         = "wake-backup/v1/sha256"
 	ErrUpgradeBackup    Error = "pre-upgrade backup unavailable; check the backup path and free space or restore a verified pair"
 )
 
-var backupEntries = [2]string{"wake-upgrade/warehouse.db", "wake-upgrade/access.db"}
+var (
+	backupEntries       = [2]string{"wake-backup/v1/warehouse.db", "wake-backup/v1/access.db"}
+	legacyBackupEntries = [2]string{"wake-upgrade/warehouse.db", "wake-upgrade/access.db"}
+)
 
 type backupReader struct {
 	ctx    context.Context
@@ -74,24 +79,33 @@ func createUpgradeBackup(ctx context.Context, plan UpgradePlan, owners [2]*os.Fi
 
 func writeBackupPair(ctx context.Context, path string, owners [2]*os.File, replace bool) (string, error) {
 	return writeRecoveryArchive(ctx, path, replace, func(archive *tar.Writer) error {
+		var digests strings.Builder
 		for i, owner := range owners {
 			info, err := owner.Stat()
 			if err != nil {
 				return err
 			}
 
-			reader := io.NewSectionReader(owner, 0, info.Size())
+			hash := sha256.New()
+			reader := backupReader{ctx, io.NewSectionReader(owner, 0, info.Size())}
 			if err := writeRecoveryEntry(
 				archive,
 				backupEntries[i],
 				info.Size(),
-				backupReader{ctx, reader},
+				io.TeeReader(reader, hash),
 			); err != nil {
 				return err
 			}
+
+			digests.WriteString(hex.EncodeToString(hash.Sum(nil)))
 		}
 
-		return nil
+		return writeRecoveryEntry(
+			archive,
+			backupDigestEntry,
+			int64(digests.Len()),
+			strings.NewReader(digests.String()),
+		)
 	}, readBackupPair)
 }
 
@@ -205,11 +219,71 @@ func isRegularRecoveryEntry(entry *tar.Header, name string) bool {
 }
 
 func readBackupPair(archive *tar.Reader) error {
-	for _, name := range backupEntries {
-		entry, err := archive.Next()
+	err := consumeBackupPair(archive, func(_ int, member io.Reader) error {
+		_, err := io.Copy(io.Discard, member)
+
+		return err
+	})
+	if errors.Is(err, ErrBackupScope) {
+		return ErrCorrupt
+	}
+
+	return err
+}
+
+// Versioned member names require a digest record. Only the original member
+// names can use the legacy format, which has no embedded checksums.
+func consumeBackupPair(archive *tar.Reader, consume func(int, io.Reader) error) error {
+	entry, err := archive.Next()
+	if err != nil {
+		return ErrBackupScope
+	}
+
+	legacy := entry.Name == legacyBackupEntries[0]
+	names := backupEntries
+	if legacy {
+		names = legacyBackupEntries
+	}
+
+	var digests strings.Builder
+	for i, name := range names {
 		if err != nil || !isRegularRecoveryEntry(entry, name) {
-			return ErrCorrupt
+			return ErrBackupScope
 		}
+
+		hash := sha256.New()
+		if err := consume(i, io.TeeReader(archive, hash)); err != nil {
+			return err
+		}
+
+		digests.WriteString(hex.EncodeToString(hash.Sum(nil)))
+
+		entry, err = archive.Next()
+	}
+
+	if legacy {
+		if err != io.EOF {
+			return ErrBackupScope
+		}
+
+		return nil
+	}
+
+	if err != nil || !isRegularRecoveryEntry(entry, backupDigestEntry) || entry.Size != int64(digests.Len()) {
+		return ErrCorrupt
+	}
+
+	return verifyRecoveryDigest(archive, digests.String())
+}
+
+func verifyRecoveryDigest(archive *tar.Reader, expected string) error {
+	actual := make([]byte, len(expected))
+	if _, err := io.ReadFull(archive, actual); err != nil {
+		return err
+	}
+
+	if string(actual) != expected {
+		return fmt.Errorf("%w: archive checksum mismatch", ErrCorrupt)
 	}
 
 	if _, err := archive.Next(); err != io.EOF {

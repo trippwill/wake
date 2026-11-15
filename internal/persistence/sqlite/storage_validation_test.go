@@ -173,8 +173,10 @@ func TestStorageRestoreRejectsInvalidPairedArchives(t *testing.T) {
 		want    error
 	}{
 		{"missing access", backupEntries[:1], ErrBackupScope},
-		{"extra member", []string{backupEntries[0], backupEntries[1], "extra"}, ErrBackupScope},
-		{"invalid stores", backupEntries[:], ErrUnsupportedSchema},
+		{"mixed versions", []string{legacyBackupEntries[0], backupEntries[1]}, ErrBackupScope},
+		{"extra legacy member", []string{legacyBackupEntries[0], legacyBackupEntries[1], "extra"}, ErrBackupScope},
+		{"missing checksums", backupEntries[:], ErrCorrupt},
+		{"invalid stores", legacyBackupEntries[:], ErrUnsupportedSchema},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var data bytes.Buffer
@@ -386,4 +388,91 @@ func sparseRecoveryArchive(t *testing.T, names []string, sparseIndex int) []byte
 	}
 
 	return bytes.ReplaceAll(data.Bytes(), []byte("WAK.sparse."), []byte("GNU.sparse."))
+}
+
+func TestStorageRestoreValidatesPairedBackupChecksums(t *testing.T) {
+	ctx := t.Context()
+	source := seedUpgradeStores(t)
+
+	store, err := Open(ctx, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.db.Exec(`INSERT INTO reference_evidence
+VALUES ('backup-checksum','now',X'',CAST('original-paired-backup-evidence' AS BLOB),200,X'')`)
+	if err := errors.Join(err, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Dir(source.WarehousePath)
+	archive := filepath.Join(dir, "paired.tar")
+	if err := Backup(ctx, source, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	//nolint:gosec // Read the synthetic archive produced by this test.
+	contents, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	original := []byte("original-paired-backup-evidence")
+	if bytes.Count(contents, original) != 1 {
+		t.Fatal("expected one evidence value in the archive")
+	}
+
+	altered := bytes.Replace(contents, original, []byte("modified-paired-backup-evidence"), 1)
+	//nolint:gosec // Overwrite only the synthetic archive produced by this test.
+	if err := os.WriteFile(archive, altered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	if _, err := Restore(ctx, target, archive, true); !errors.Is(err, ErrCorrupt) ||
+		!strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("restore accepted altered evidence: %v", err)
+	}
+
+	for _, path := range target.paths() {
+		items, err := os.ReadDir(filepath.Dir(path))
+		if err != nil || len(items) != 0 {
+			t.Fatalf("failed restore left files in %s: %v, %v", filepath.Dir(path), items, err)
+		}
+	}
+}
+
+func TestStorageRestoreAcceptsLegacyPairedBackup(t *testing.T) {
+	source := seedUpgradeStores(t)
+	contents := storeBytes(t, source)
+
+	var data bytes.Buffer
+
+	archive := tar.NewWriter(&data)
+	for i, name := range legacyBackupEntries {
+		if err := writeRecoveryEntry(
+			archive,
+			name,
+			int64(len(contents[i])),
+			bytes.NewReader(contents[i]),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(filepath.Dir(source.WarehousePath), "legacy.tar")
+	if err := os.WriteFile(path, data.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	target := vacantRecoveryProfile(t)
+	if _, err := Restore(t.Context(), target, path, true); err != nil {
+		t.Fatal(err)
+	}
+
+	assertRestoredPair(t, target)
 }

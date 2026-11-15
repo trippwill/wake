@@ -260,8 +260,11 @@ access state in place and requires a vacant warehouse path and sidecar paths.
 An offline storage backup captures the warehouse and encrypted access state at
 the same point. The configuration, browser and API authority, and credential
 encryption key have independent lifetimes. Reusing restored credentials requires
-the matching key. Restore validates the backup with a compatible Wake build and
-installs it into vacant storage paths. Existing SQLite sidecars count as occupied
+the matching key. New paired backups carry a checksum for each store. Restore
+verifies these checksums before installing into vacant storage paths. Earlier
+pre-upgrade archives without embedded checksums remain readable and undergo format,
+integrity, and association checks. Use a Wake build compatible with the stored
+formats. Existing SQLite sidecars count as occupied
 paths. The restored warehouse has a fresh publication identity and starts with
 upstream work paused until the operator reviews access and resumes it.
 

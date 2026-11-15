@@ -425,8 +425,9 @@ and reuses that copy before SQLite recovers the attached transaction.
 Routine warehouse snapshots use a read-only SQLite backup connection. SQLite
 coordinates committed pages with the writer while financial reads remain enabled.
 Wake verifies the self-contained snapshot before publishing the archive.
-Operator-initiated offline backups reuse the same paired archive as upgrades. Restore stages
-and validates both stores before publication and uses a durable intent to block
+Operator-initiated offline backups reuse the checksummed paired archive created
+for upgrades. Restore stages both stores, checks the digests and storage
+invariants before publication, and uses a durable intent to block
 startup during installation. An interrupted installation resumes from the
 same archive and profile. Restored warehouses receive a new publication identity
 so consumers replace their checkpoints, and upstream work awaits operator review.

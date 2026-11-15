@@ -644,8 +644,13 @@ func assertBackupPair(t *testing.T, path string, expected [2][]byte) {
 		}
 	}
 
-	if _, err = archive.Next(); err != io.EOF {
-		t.Fatal("unexpected additional backup entry", err)
+	entry, err := archive.Next()
+	if err != nil || entry.Name != backupDigestEntry {
+		t.Fatal("missing backup checksums", err)
+	}
+
+	if err := verifyRecoveryDigest(archive, digest(expected[0])+digest(expected[1])); err != nil {
+		t.Fatal(err)
 	}
 }
 

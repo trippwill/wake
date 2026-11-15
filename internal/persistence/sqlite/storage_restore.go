@@ -158,36 +158,28 @@ func prepareRestore(
 	hash := sha256.New()
 	reader := io.TeeReader(backupReader{ctx, archive}, hash)
 
-	entries := tar.NewReader(reader)
-	for i, path := range paths {
-		entry, err := entries.Next()
-		if err != nil || !isRegularRecoveryEntry(entry, backupEntries[i]) {
-			return nil, ErrBackupScope
-		}
-
-		file, err := os.CreateTemp(filepath.Dir(path), ".wake-restore-")
+	if err := consumeBackupPair(tar.NewReader(reader), func(i int, member io.Reader) error {
+		file, err := os.CreateTemp(filepath.Dir(paths[i]), ".wake-restore-")
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		staged[i] = file.Name()
-		//nolint:gosec // The checked member is non-sparse and cannot expand beyond its archive bytes.
-		_, err = io.Copy(file, entries)
-		if err = errors.Join(err, file.Sync(), file.Close()); err != nil {
-			return nil, err
-		}
+		_, err = io.Copy(file, member)
 
-		owner, err := lockStoreFile(staged[i], false)
+		return errors.Join(err, file.Sync(), file.Close())
+	}); err != nil {
+		return nil, err
+	}
+
+	for i, path := range staged {
+		owner, err := lockStoreFile(path, false)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = owner.Close() }()
 
 		owners[i] = owner
-	}
-
-	if _, err := entries.Next(); err != io.EOF {
-		return nil, ErrBackupScope
 	}
 
 	if _, err := io.Copy(io.Discard, reader); err != nil {

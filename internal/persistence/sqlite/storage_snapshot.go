@@ -170,7 +170,7 @@ func stepWarehouseBackup(ctx context.Context, backup *sqlite.Backup) error {
 
 func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 	entry, err := archive.Next()
-	if err == nil && entry.Name == backupEntries[0] {
+	if err == nil && (entry.Name == backupEntries[0] || entry.Name == legacyBackupEntries[0]) {
 		return fmt.Errorf("%w; add --with-credentials to restore the backup", ErrBackupScope)
 	}
 
@@ -189,20 +189,7 @@ func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
 		return ErrCorrupt
 	}
 
-	var checksum [sha256.Size * 2]byte
-	if _, err := io.ReadFull(archive, checksum[:]); err != nil {
-		return err
-	}
-
-	if string(checksum[:]) != hex.EncodeToString(hash.Sum(nil)) {
-		return fmt.Errorf("%w: warehouse checksum mismatch", ErrCorrupt)
-	}
-
-	if _, err := archive.Next(); err != io.EOF {
-		return ErrCorrupt
-	}
-
-	return nil
+	return verifyRecoveryDigest(archive, hex.EncodeToString(hash.Sum(nil)))
 }
 
 func restoreWarehouseSnapshot(ctx context.Context, paths [2]string, archivePath string) error {
