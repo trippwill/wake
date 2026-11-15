@@ -223,7 +223,7 @@ func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string
 		return err
 	}
 
-	if err := pauseRestoredWarehouse(ctx, file.Name(), ""); err != nil {
+	if err := renewRestoredStores(ctx, [storeCount]string{file.Name()}); err != nil {
 		return err
 	}
 

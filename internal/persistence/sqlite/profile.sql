@@ -51,10 +51,16 @@ INSERT INTO main.connections(id,provider,name) SELECT id,provider,name FROM sync
 SELECT applied,target FROM {{schema}}.history_update WHERE singleton=1;
 -- name: AdvanceFormat
 UPDATE {{schema}}.store_metadata SET version=? WHERE singleton=1 AND version=?;
--- name: RestoreWarehouse
-UPDATE store_metadata SET id=? WHERE singleton=1;
+-- name: RenewStoreID
+UPDATE {{schema}}.store_metadata SET id=? WHERE singleton=1;
 -- name: RestoreReview
 UPDATE {{schema}}.profile SET paused=1,recovery_revision=?,resumed_by='',resumed_at='' WHERE singleton=1;
+-- name: DiscardRestoredWork
+DELETE FROM sync.scheduled;
+DELETE FROM sync.work;
+DELETE FROM sync.reference_cache;
+DELETE FROM sync.reference_deadlines;
+DELETE FROM sync.reference_diagnostics;
 
 -- name: InitializeLineage
 INSERT INTO main.financial_lineage(singleton,id) VALUES(1,?);

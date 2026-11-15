@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os"
@@ -35,7 +36,7 @@ func TestStorageStartupLeavesDestinationsVacantWhenRestorePublishesIntent(t *tes
 	intentPath := target.WarehousePath + RestoreIntentSuffix
 	writer := restoreLogWriter(func(data []byte) (int, error) {
 		if strings.Contains(string(data), "event=storage_vacant store=connections") {
-			if _, err := prepareRestore(ctx, file, target.paths(), intentPath); err != nil {
+			if _, err := prepareRestore(ctx, file, target.paths(), intentPath, false); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -156,7 +157,7 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	intent, err := prepareRestore(ctx, file, target.paths(), intentPath)
+	intent, err := prepareRestore(ctx, file, target.paths(), intentPath, false)
 	_ = file.Close()
 
 	if err != nil {
@@ -243,6 +244,117 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 	}
 
 	assertRestoredPair(t, target)
+}
+
+func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
+	ctx := t.Context()
+	source, target := seedUpgradeStores(t), seedUpgradeStores(t)
+	archivePath := filepath.Join(filepath.Dir(source.WarehousePath), "installation.tar")
+	if err := Backup(ctx, source, archivePath); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := target.paths()
+
+	var originals [storeCount][]byte
+	for i, path := range paths {
+		originals[i] = readRestoreFixture(t, path)
+	}
+
+	archive, err := openBackup(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intentPath := paths[0] + RestoreIntentSuffix
+	intent, err := prepareRestore(ctx, archive, paths, intentPath, true)
+	_ = archive.Close()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two completed renames and an absent destination are both valid retry states.
+	for i, state := range intent.Stores[:2] {
+		if err := renameNewFile(state.Path, state.Original.Path); err != nil {
+			t.Fatal(err)
+		}
+
+		if i == 0 {
+			if err := renameNewFile(state.Stage, state.Path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if _, err := OpenFinancial(ctx, target, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("financial startup accepted partially replaced files", err)
+	}
+
+	if _, err := Restore(ctx, target, archivePath, true); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("retry accepted a different replacement choice", err)
+	}
+
+	stage := intent.Stores[2].Stage
+	contents := readRestoreFixture(t, stage)
+	if err := os.WriteFile(stage, []byte("changed in place"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReplaceInstallation(ctx, target, archivePath); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("retry accepted modified bytes at the same inode", err)
+	}
+
+	if !bytes.Equal(originals[2], readRestoreFixture(t, paths[2])) {
+		t.Fatal("refused retry changed the synchronization store")
+	}
+
+	if err := os.WriteFile(stage, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReplaceInstallation(ctx, target, archivePath); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, state := range intent.Stores {
+		if !bytes.Equal(originals[i], readRestoreFixture(t, state.Original.Path)) {
+			t.Fatal("replacement changed original database", state.Path)
+		}
+	}
+
+	assertRestoredPair(t, target)
+
+	store, err := Open(ctx, target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = store.Close() }()
+
+	var staleWork, previousGrants int
+	if err := store.db.QueryRow("SELECT count(*) FROM sync.work WHERE state_version<>''").
+		Scan(&staleWork); err != nil ||
+		staleWork != 0 {
+		t.Fatal("restored provider continuation", staleWork, err)
+	}
+
+	if err := store.db.QueryRow("SELECT count(*) FROM access.upstream_grant WHERE granted_revision<>''").
+		Scan(&previousGrants); err != nil ||
+		previousGrants != 0 {
+		t.Fatal("restored upstream grant", previousGrants, err)
+	}
+}
+
+func readRestoreFixture(t *testing.T, path string) []byte {
+	t.Helper()
+	//nolint:gosec // The test owns each input and destination.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return data
 }
 
 func vacantRecoveryProfile(t *testing.T) Profile {

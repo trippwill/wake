@@ -27,17 +27,25 @@ const (
 	ErrRestoreOccupied  Error = "restore destination is occupied"
 )
 
-// The intent is durable before either destination is installed. On retry only
-// the specific staged files, identified by inode, may occupy the destinations.
+// The intent is durable before any destination is replaced. The original
+// identities and prepared bytes determine where a retry can continue.
 type restoreIntent struct {
 	ArchiveDigest string                   `json:"archive_sha256"`
+	Replace       bool                     `json:"replace"`
 	Stores        [storeCount]restoreStore `json:"stores"`
 }
 
 type restoreStore struct {
-	Path  string      `json:"path"`
-	Stage string      `json:"stage"`
-	File  upgradeFile `json:"file"`
+	Path     string         `json:"path"`
+	Stage    string         `json:"stage"`
+	File     upgradeFile    `json:"file"`
+	Digest   string         `json:"sha256"`
+	Original *originalStore `json:"original,omitempty"`
+}
+
+type originalStore struct {
+	Path string      `json:"path"`
+	File upgradeFile `json:"file"`
 }
 
 // Restore installs a warehouse snapshot or an explicitly selected paired backup.
@@ -46,6 +54,21 @@ func Restore(
 	profile Profile,
 	archivePath string,
 	withCredentials bool,
+) ([]string, error) {
+	return restore(ctx, profile, archivePath, withCredentials, false)
+}
+
+// ReplaceInstallation restores an installation backup and preserves the files
+// it replaces alongside their original paths.
+func ReplaceInstallation(ctx context.Context, profile Profile, archivePath string) ([]string, error) {
+	return restore(ctx, profile, archivePath, true, true)
+}
+
+func restore(
+	ctx context.Context,
+	profile Profile,
+	archivePath string,
+	withCredentials, replace bool,
 ) ([]string, error) {
 	paths := profile.paths()
 	intentPath := paths[0] + RestoreIntentSuffix
@@ -61,12 +84,22 @@ func Restore(
 		return paths[:1], restoreWarehouseSnapshot(ctx, paths[0], archivePath)
 	}
 
+	guard, err := lockStoreDirectory(paths[0])
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = guard.Close() }()
+
+	if err := checkNoUpgrade(paths[0]); err != nil {
+		return nil, err
+	}
+
 	intent, err := readRestoreIntent(intentPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if intent == nil {
+	if intent == nil && !replace {
 		if err := checkVacantStores(paths[:]); err != nil {
 			return nil, err
 		}
@@ -79,11 +112,11 @@ func Restore(
 	defer func() { _ = archive.Close() }()
 
 	if intent != nil {
-		if err := matchRestore(ctx, intent, archive, paths); err != nil {
+		if err := matchRestore(ctx, intent, archive, paths, replace); err != nil {
 			return nil, err
 		}
 	} else {
-		prepared, err := prepareRestore(ctx, archive, paths, intentPath)
+		prepared, err := prepareRestore(ctx, archive, paths, intentPath, replace)
 		if err != nil {
 			return nil, err
 		}
@@ -139,6 +172,7 @@ func prepareRestore(
 	archive *os.File,
 	paths [storeCount]string,
 	intentPath string,
+	replace bool,
 ) (*restoreIntent, error) {
 	var (
 		intent restoreIntent
@@ -187,12 +221,17 @@ func prepareRestore(
 	}
 
 	intent.ArchiveDigest = hex.EncodeToString(hash.Sum(nil))
+	intent.Replace = replace
 
 	if _, err := validateStorageCopy(ctx, staged[:], owners[:]); err != nil {
 		return nil, err
 	}
 
-	if err := pauseRestoredWarehouse(ctx, staged[0], staged[2]); err != nil {
+	if err := renewRestoredStores(ctx, staged); err != nil {
+		return nil, err
+	}
+
+	if _, err := validateStorageCopy(ctx, staged[:], owners[:]); err != nil {
 		return nil, err
 	}
 
@@ -202,23 +241,46 @@ func prepareRestore(
 			return nil, err
 		}
 
-		intent.Stores[i] = restoreStore{Path: paths[i], Stage: path, File: fileIdentity(info)}
+		digest, err := restoreDigest(ctx, owners[i])
+		if err != nil {
+			return nil, err
+		}
+
+		store := restoreStore{Path: paths[i], Stage: path, File: fileIdentity(info), Digest: digest}
+		if err := checkVacantStore(store.Path, true); err != nil {
+			return nil, err
+		}
+
+		if replace {
+			if _, err := os.Lstat(store.Path); !os.IsNotExist(err) {
+				owner, err := lockStoreFile(store.Path, false)
+				if err != nil {
+					return nil, err
+				}
+				defer func() { _ = owner.Close() }()
+
+				info, err := owner.Stat()
+				if err != nil {
+					return nil, err
+				}
+
+				store.Original = &originalStore{
+					Path: filepath.Join(filepath.Dir(store.Path), ".wake-original-"+rand.Text()),
+					File: fileIdentity(info),
+				}
+			}
+		} else if err := checkVacantStore(store.Path, false); err != nil {
+			return nil, err
+		}
+
+		intent.Stores[i] = store
+
 		if err := syncUpgradeDir(path); err != nil {
 			return nil, err
 		}
 	}
 
-	guard, err := lockStoreDirectory(paths[0])
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = guard.Close() }()
-
 	if err := rejectPendingRestore(paths[0]); err != nil {
-		return nil, err
-	}
-
-	if err := checkVacantStores(paths[:]); err != nil {
 		return nil, err
 	}
 
@@ -226,7 +288,7 @@ func prepareRestore(
 		return nil, err
 	}
 
-	published, err = publishRestoreIntent(intentPath, intent)
+	published, err := publishRestoreIntent(intentPath, intent)
 	if err != nil {
 		return nil, err
 	}
@@ -234,8 +296,8 @@ func prepareRestore(
 	return &intent, nil
 }
 
-func pauseRestoredWarehouse(ctx context.Context, path, syncPath string) (result error) {
-	uri := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=rw&_pragma=synchronous(EXTRA)"}).String()
+func renewRestoredStores(ctx context.Context, paths [storeCount]string) (result error) {
+	uri := (&url.URL{Scheme: "file", Path: paths[0], RawQuery: "mode=rw&_pragma=synchronous(EXTRA)"}).String()
 
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
@@ -246,8 +308,17 @@ func pauseRestoredWarehouse(ctx context.Context, path, syncPath string) (result 
 
 	db.SetMaxOpenConns(1)
 
-	if syncPath != "" {
-		if _, err := db.ExecContext(ctx, profileStatement("Attach", "sync"), syncPath); err != nil {
+	for i, path := range paths[1:] {
+		if path == "" {
+			continue
+		}
+
+		schema := storeSchemas[i+1]
+		if _, err := db.ExecContext(ctx, profileStatement("Attach", schema), path); err != nil {
+			return err
+		}
+
+		if _, err := db.ExecContext(ctx, profileStatement("Sync", schema)); err != nil {
 			return err
 		}
 	}
@@ -258,11 +329,11 @@ func pauseRestoredWarehouse(ctx context.Context, path, syncPath string) (result 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, profileStatement("RestoreWarehouse", ""), rand.Text()); err != nil {
+	if _, err := tx.ExecContext(ctx, profileStatement("RenewStoreID", "main"), rand.Text()); err != nil {
 		return err
 	}
 
-	if syncPath != "" {
+	if paths[2] != "" {
 		var nonce [8]byte
 		rand.Read(nonce[:])
 		revision := int64(binary.LittleEndian.Uint64(nonce[:])&(1<<61-1)) + 1<<61
@@ -271,7 +342,24 @@ func pauseRestoredWarehouse(ctx context.Context, path, syncPath string) (result 
 			return err
 		}
 
-		if _, err := tx.ExecContext(ctx, profileStatement("MarkRestoreAssociation", "")); err != nil {
+		if _, err := tx.ExecContext(ctx, profileStatement("RenewStoreID", "sync"), rand.Text()); err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, profileStatement("DiscardRestoredWork", "")); err != nil {
+			return err
+		}
+
+		var metadata [storeCount]storeMetadata
+		for i, schema := range storeSchemas {
+			m := &metadata[i]
+			if err := tx.QueryRowContext(ctx, profileStatement("Metadata", schema)).
+				Scan(&m.kind, &m.version, &m.id); err != nil {
+				return err
+			}
+		}
+
+		if err := bindUpstream(ctx, tx, metadata, false, true); err != nil {
 			return err
 		}
 	}
@@ -333,11 +421,20 @@ func matchRestore(
 	intent *restoreIntent,
 	archive *os.File,
 	paths [storeCount]string,
+	replace bool,
 ) error {
+	if intent.Replace != replace {
+		return ErrRestorePending
+	}
+
 	for i, store := range intent.Stores {
-		if store.Path != paths[i] || filepath.Clean(store.Stage) != store.Stage ||
-			filepath.Dir(store.Stage) != filepath.Dir(store.Path) ||
-			!strings.HasPrefix(filepath.Base(store.Stage), ".wake-restore-") {
+		if store.Path != paths[i] || !restorePathMatches(store.Path, store.Stage, ".wake-restore-") ||
+			len(store.Digest) != sha256.Size*2 {
+			return ErrRestorePending
+		}
+
+		if store.Original != nil && (!replace ||
+			!restorePathMatches(store.Path, store.Original.Path, ".wake-original-")) {
 			return ErrRestorePending
 		}
 	}
@@ -354,8 +451,31 @@ func matchRestore(
 	return nil
 }
 
+func restorePathMatches(destination, path, prefix string) bool {
+	return filepath.Clean(path) == path && filepath.Dir(path) == filepath.Dir(destination) &&
+		strings.HasPrefix(filepath.Base(path), prefix) && path != destination
+}
+
+func restoreDigest(ctx context.Context, file *os.File) (string, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+
+	hash := sha256.New()
+	if _, err = io.CopyN(
+		hash,
+		backupReader{ctx, io.NewSectionReader(file, 0, info.Size())},
+		info.Size(),
+	); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 func installRestore(ctx context.Context, intentPath string, intent *restoreIntent) error {
-	var installed [storeCount]bool
+	var installed, preserve [storeCount]bool
 	for i, store := range intent.Stores {
 		_, err := os.Lstat(store.Stage)
 		if err != nil && !os.IsNotExist(err) {
@@ -381,8 +501,13 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 			return ErrRestorePending
 		}
 
-		if err := checkVacantStore(store.Path, installed[i]); err != nil {
+		digest, err := restoreDigest(ctx, owner)
+		if err != nil {
 			return err
+		}
+
+		if digest != store.Digest {
+			return ErrRestorePending
 		}
 
 		if !installed[i] {
@@ -390,6 +515,33 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 				return err
 			}
 		}
+
+		if store.Original != nil {
+			originalPath := store.Original.Path
+			if _, err := os.Lstat(originalPath); os.IsNotExist(err) && !installed[i] {
+				originalPath = store.Path
+				preserve[i] = true
+			}
+
+			original, err := lockStoreFile(originalPath, false)
+			if err != nil {
+				return fmt.Errorf("%w: %s: %w", ErrRestorePending, originalPath, err)
+			}
+			defer func() { _ = original.Close() }()
+
+			info, err := original.Stat()
+			if err != nil || fileIdentity(info) != store.Original.File {
+				return ErrRestorePending
+			}
+		}
+
+		if err := checkVacantStore(store.Path, installed[i] || preserve[i]); err != nil {
+			return err
+		}
+	}
+
+	if err := syncUpgradeDir(intentPath); err != nil {
+		return err
 	}
 
 	for i, store := range intent.Stores {
@@ -398,6 +550,16 @@ func installRestore(ctx context.Context, intentPath string, intent *restoreInten
 		}
 
 		if !installed[i] {
+			if preserve[i] {
+				if err := renameNewFile(store.Path, store.Original.Path); err != nil {
+					return err
+				}
+
+				if err := syncUpgradeDir(store.Path); err != nil {
+					return err
+				}
+			}
+
 			if err := renameNewFile(store.Stage, store.Path); err != nil {
 				return err
 			}
