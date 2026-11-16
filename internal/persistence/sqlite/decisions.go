@@ -368,7 +368,12 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 func referenceJobMatches(i source.Instrument, j reference.Job) bool { return reference.Matches(i, j) }
 
-func applyRootConflict(ctx context.Context, q *sqlc.Queries, id string, change application.SourceConflictChange) error {
+func applyRootConflict(
+	ctx context.Context,
+	q *sqlc.Queries,
+	id string,
+	change application.SourceConflictChange,
+) error {
 	if change == application.RecordSourceConflict {
 		if err := q.EnsureInstrumentSelection(ctx, id); err != nil {
 			return err

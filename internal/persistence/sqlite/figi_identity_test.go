@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -532,5 +533,68 @@ func TestSourceIdentityDisagreementSurvivesReferenceRefresh(t *testing.T) {
 		detail.Instrument.ReferenceMetadata().Reason != string(reference.SourceConflict) ||
 		detail.Instrument.FIGI() != "shared" {
 		t.Fatal("old identifier lookup erased source disagreement", detail, err)
+	}
+}
+
+func TestFIGISuccessiveMergesPreserveListingFIGIAndFlattenAliases(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+	ctx := t.Context()
+
+	for i, event := range []string{"oldest", "middle", "youngest"} {
+		processConfirmationReport(t, s, event, strings.Replace(
+			equityRow("U1", event, "100"), `conid="100"`, fmt.Sprintf(`conid="%d"`, 100+i), 1,
+		))
+	}
+
+	view, err := s.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activities := map[string]application.Execution{}
+	for _, activity := range view.Executions {
+		activities[activity.Terms().Fields().Event.Value()] = activity
+	}
+
+	oldest, middle, youngest := activities["oldest"], activities["middle"], activities["youngest"]
+	if _, err = s.db.ExecContext(
+		ctx,
+		`UPDATE listings SET figi='venue-proof' WHERE id=?`,
+		youngest.Listing(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	applyEquityIdentity(t, s, middle.Instrument())
+	applyEquityIdentity(t, s, youngest.Instrument())
+
+	mid, err := s.queries.Listing(ctx, middle.Listing())
+	if err != nil || mid.Figi != "venue-proof" {
+		t.Fatal("first merge did not copy the incoming FIGI", mid, err)
+	}
+
+	applyEquityIdentity(t, s, oldest.Instrument())
+
+	for _, activity := range []application.Execution{oldest, middle, youngest} {
+		listing, err := s.Resource(ctx, "listings", activity.Listing())
+		if err != nil || listing.ID != oldest.Listing() || listing.Listing.InstrumentID != oldest.Instrument() ||
+			listing.Listing.FIGI == nil || *listing.Listing.FIGI != "venue-proof" {
+			t.Fatal("listing alias did not resolve to the surviving listing", listing, err)
+		}
+
+		root, err := s.Resource(ctx, "instruments", activity.Instrument())
+		if err != nil || root.ID != oldest.Instrument() {
+			t.Fatal("instrument alias did not resolve directly to the surviving root", root, err)
+		}
+
+		accepted, err := s.queries.Execution(ctx, activity.ID())
+		if err != nil || accepted.ListingID.String != oldest.Listing() {
+			t.Fatal("accepted activity did not follow the listing", accepted, err)
+		}
+
+		base, err := s.queries.ActivityBase(ctx, activity.ID())
+		if err != nil || base.ListingID.String != oldest.Listing() {
+			t.Fatal("durable activity base did not follow the listing", base, err)
+		}
 	}
 }

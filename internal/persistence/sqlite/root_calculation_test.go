@@ -1131,6 +1131,7 @@ func TestRootEnrichmentRollsBackOnAutomaticUnderlierWrite(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	normalizeConfirmationReport(t, s, "root-effects", syntheticOption)
+
 	before, err := snapshotState(ctx, s)
 	if err != nil {
 		t.Fatal(err)
@@ -1173,6 +1174,7 @@ BEGIN SELECT RAISE(ABORT,'synthetic underlier failure'); END`); err != nil {
 	if len(events) != 1 {
 		t.Fatal("retry failed to publish")
 	}
+
 	<-events
 
 	if err = s.Process(ctx, "root-effects", ibkrflex.Version); err != nil || len(events) != 0 {

@@ -34,14 +34,49 @@ func TestRootEnrichmentPreservesAuthorityAndLinkEffects(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := PlanRootEnrichment(tc.root, tc.result, tc.link)
-			if plan.Conflict != tc.conflict || plan.Family != tc.family || (plan.Reported == nil) != tc.result.Conflict ||
-				(plan.Underlier != nil) != tc.changeLink || tc.changeLink && *plan.Underlier != tc.link.ID {
+			if plan.Conflict != tc.conflict || plan.Family != tc.family ||
+				(plan.Reported == nil) != tc.result.Conflict ||
+				(plan.Underlier != nil) != tc.changeLink ||
+				tc.changeLink && *plan.Underlier != tc.link.ID {
 				t.Fatalf("unexpected effects: %+v", plan)
 			}
 		})
 	}
 
-	if ClearSourceConflict.Status("") != "provisional" || ClearSourceConflict.Status("automatic") != "resolved" {
+	if ClearSourceConflict.Status("") != "provisional" ||
+		ClearSourceConflict.Status("automatic") != "resolved" {
 		t.Fatal("conflict recovery did not use the automatic FIGI")
+	}
+}
+
+func TestCalculateRootClaimsPreservesBaselineAuthority(t *testing.T) {
+	instrument := func(name string) source.Instrument {
+		t.Helper()
+
+		value, err := source.NewInstrument(source.InstrumentInput{Kind: source.Equity, Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return value
+	}
+	stored := instrument("Stored")
+	claims := []RootClaim{{Reported: instrument("First claim")}, {Reported: instrument("Later claim")}}
+	for _, tc := range []struct {
+		name     string
+		verified bool
+		claims   []RootClaim
+		want     string
+	}{
+		{"verified root", true, claims, "Stored"},
+		{"provisional root", false, claims, "First claim"},
+		{"no claims", false, nil, "Stored"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := CalculateRootClaims(stored, tc.verified, tc.claims, nil)
+			if err != nil || got.Reported.Name() != tc.want {
+				t.Fatalf("reported name = %q, want %q: %v", got.Reported.Name(), tc.want, err)
+			}
+		})
 	}
 }

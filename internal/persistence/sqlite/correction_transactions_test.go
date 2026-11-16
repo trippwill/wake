@@ -260,6 +260,7 @@ func assertCorrectionInputsMatchGraph(t *testing.T, s *Store) {
 	t.Helper()
 
 	ctx := t.Context()
+
 	states, err := readCorrectionStates(ctx, s.queries)
 	if err != nil {
 		t.Fatal(err)
@@ -271,6 +272,7 @@ func assertCorrectionInputsMatchGraph(t *testing.T, s *Store) {
 	}
 
 	counter := &endpointCountingDB{DBTX: s.db}
+
 	reader := correctionReader{q: sqlc.New(counter)}
 	for _, row := range rows {
 		in, err := reader.ActivityInputs(ctx, row.ID, nil)
@@ -292,6 +294,10 @@ func assertCorrectionInputsMatchGraph(t *testing.T, s *Store) {
 	}
 
 	if counter.fullScans != 0 || counter.endpoints != 0 {
-		t.Fatalf("correction input loaded the graph: %d scans, %d endpoint lookups", counter.fullScans, counter.endpoints)
+		t.Fatalf(
+			"correction input loaded the graph: %d scans, %d endpoint lookups",
+			counter.fullScans,
+			counter.endpoints,
+		)
 	}
 }

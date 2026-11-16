@@ -105,7 +105,12 @@ func (p *rootPhase) LoadRoot(ctx context.Context, id string) (application.Retain
 		return application.RetainedRoot{}, err
 	}
 
-	root.Calculation, err = application.CalculateRootClaims(root.Reported, row.ReferenceFigi != "", root.Claims, bindings)
+	root.Calculation, err = application.CalculateRootClaims(
+		root.Reported,
+		row.ReferenceFigi != "",
+		root.Claims,
+		bindings,
+	)
 	if err != nil {
 		return application.RetainedRoot{}, err
 	}

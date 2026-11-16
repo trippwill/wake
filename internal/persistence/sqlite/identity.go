@@ -210,7 +210,10 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 		}
 
 		if plan.FIGIToCopy != "" {
-			if e = q.SetListingFIGI(ctx, sqlc.SetListingFIGIParams{ID: plan.TargetID, Figi: plan.FIGIToCopy}); e != nil {
+			if e = q.SetListingFIGI(
+				ctx,
+				sqlc.SetListingFIGIParams{ID: plan.TargetID, Figi: plan.FIGIToCopy},
+			); e != nil {
 				return e
 			}
 		}
