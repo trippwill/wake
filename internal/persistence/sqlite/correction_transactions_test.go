@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
 func correctionFixture(t *testing.T) (*Store, application.Decision) {
@@ -252,5 +253,45 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 				t.Fatal("failure retained derived state", form, err)
 			}
 		})
+	}
+}
+
+func assertCorrectionInputsMatchGraph(t *testing.T, s *Store) {
+	t.Helper()
+
+	ctx := t.Context()
+	states, err := readCorrectionStates(ctx, s.queries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.queries.Executions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	counter := &endpointCountingDB{DBTX: s.db}
+	reader := correctionReader{q: sqlc.New(counter)}
+	for _, row := range rows {
+		in, err := reader.ActivityInputs(ctx, row.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		want, ok := states[row.ID]
+		if !ok {
+			want, err = application.NewActivityState(application.Accepted, 0, application.AutomaticSelection)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if in.SourceState != want {
+			t.Fatalf("correction input for %s = %+v, graph = %+v", row.ID, in.SourceState, want)
+		}
+	}
+
+	if counter.fullScans != 0 || counter.endpoints != 0 {
+		t.Fatalf("correction input loaded the graph: %d scans, %d endpoint lookups", counter.fullScans, counter.endpoints)
 	}
 }

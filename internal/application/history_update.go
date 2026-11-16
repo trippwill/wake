@@ -70,17 +70,7 @@ func rebuildHistoryBatch(ctx context.Context) func(HistoryWriter, HistoryProgres
 			}
 
 			for _, row := range rows {
-				// Keep admitted source-correction state. Claim conflicts are recalculated.
-				state, err := NewActivityState(
-					row.State.Lifecycle(),
-					row.State.ReviewReasons()&AmbiguousCorrection,
-					AutomaticSelection,
-				)
-				if err != nil {
-					return progress, err
-				}
-
-				if err := writer.RebuildActivity(ctx, row.ID, state); err != nil {
+				if err := writer.RebuildActivity(ctx, row.ID, row.State.SourceCorrectionState()); err != nil {
 					return progress, err
 				}
 

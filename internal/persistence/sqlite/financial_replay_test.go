@@ -238,6 +238,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 			s := newStoreWithSyntheticAccount(t)
 			instruction := correctionRow("replacement", marker, "Toriginal")
 			processConfirmationReport(t, s, "early", instruction)
+			assertCorrectionInputsMatchGraph(t, s)
 
 			v, err := s.Dashboard(ctx)
 			if err != nil || len(v.Corrections) != 1 || !v.Corrections[0].Status.NeedsReview() {
@@ -256,6 +257,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 			}
 
 			processConfirmationReport(t, s, "original", equityRow("U1", "original", "100"))
+			assertCorrectionInputsMatchGraph(t, s)
 
 			v, err = s.Dashboard(ctx)
 			if err != nil || v.Corrections[0].Status != "applied" {
@@ -295,6 +297,7 @@ func TestEarlyCancellationAndReplacementKeepOriginalIdentities(t *testing.T) {
 
 			if marker == "Co" {
 				processConfirmationReport(t, s, "competitor", correctionRow("competitor", "Co", "Toriginal"))
+				assertCorrectionInputsMatchGraph(t, s)
 
 				v, err = s.Dashboard(ctx)
 				if err != nil {

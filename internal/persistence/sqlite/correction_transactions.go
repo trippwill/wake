@@ -184,12 +184,12 @@ func (r correctionReader) ActivityInputs(
 		return application.ActivityCalculationInput{}, err
 	}
 
-	states, err := readCorrectionStates(ctx, r.q)
+	state, err := activityState(row)
 	if err != nil {
 		return application.ActivityCalculationInput{}, err
 	}
 
-	return loadActivityCalculation(ctx, r.q, row, states[id], selections)
+	return loadActivityCalculation(ctx, r.q, row, state.SourceCorrectionState(), selections)
 }
 
 func (w *correctionWriter) Submission(

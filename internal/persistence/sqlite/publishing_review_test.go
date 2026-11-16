@@ -84,6 +84,7 @@ func TestPublishedExplanationsExcludeReleasedOverrides(t *testing.T) {
 type endpointCountingDB struct {
 	sqlc.DBTX
 	endpoints int
+	fullScans int
 	related   string
 }
 
@@ -92,6 +93,10 @@ func (db *endpointCountingDB) QueryContext(
 	query string,
 	args ...any,
 ) (*sql.Rows, error) {
+	if strings.Contains(query, "-- name: SourceCorrections ") {
+		db.fullScans++
+	}
+
 	if strings.Contains(query, "-- name: EventLinks ") {
 		db.endpoints++
 	}

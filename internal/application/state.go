@@ -51,6 +51,12 @@ func (s ActivityState) ReviewReasons() ReviewReasons  { return s.review }
 func (s ActivityState) NeedsReview() bool             { return s.review != 0 }
 func (s ActivityState) Authority() SelectionAuthority { return s.authority }
 
+// SourceCorrectionState retains the bits set by source instructions. Calculation
+// derives claim conflict and operator authority again from its current inputs.
+func (s ActivityState) SourceCorrectionState() ActivityState {
+	return ActivityState{s.lifecycle, s.review & AmbiguousCorrection, AutomaticSelection}
+}
+
 type CorrectionStatus string
 
 const (
