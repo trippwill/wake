@@ -29,6 +29,7 @@ func TestFinancialCalculationImports(t *testing.T) {
 		"movement.go",
 		"observations.go",
 		"position_selection.go",
+		"root_enrichment.go",
 		"rules.go",
 		"selection.go",
 	} {
@@ -46,6 +47,10 @@ func TestFinancialCalculationImports(t *testing.T) {
 			path, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if name == "root_enrichment.go" && path == "go.trippwill.dev/wake/internal/reference" {
+				continue // Root policy uses the retained reference reason.
 			}
 
 			switch path {

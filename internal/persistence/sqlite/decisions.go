@@ -368,36 +368,34 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 func referenceJobMatches(i source.Instrument, j reference.Job) bool { return reference.Matches(i, j) }
 
-func resolveAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.ResolveInstrumentParams) error {
-	if err := q.EnsureInstrumentSelection(ctx, p.ID); err != nil {
-		return err
+func applyRootConflict(ctx context.Context, q *sqlc.Queries, id string, change application.SourceConflictChange) error {
+	if change == application.RecordSourceConflict {
+		if err := q.EnsureInstrumentSelection(ctx, id); err != nil {
+			return err
+		}
 	}
 
-	base, err := q.InstrumentSelection(ctx, p.ID)
+	base, err := q.InstrumentSelection(ctx, id)
 	if err != nil {
 		return err
-	}
-
-	if p.ReferenceStatus != "conflict" {
-		base.Name, base.Ticker, base.Figi, base.Evidence = p.Name, p.Ticker, p.ReferenceFigi, p.EvidenceID
 	}
 
 	if err = q.SaveInstrumentSelection(
 		ctx,
 		sqlc.SaveInstrumentSelectionParams{
-			InstrumentID: p.ID,
+			InstrumentID: id,
 			Name:         base.Name,
 			Ticker:       base.Ticker,
 			Figi:         base.Figi,
 			Evidence:     base.Evidence,
-			Status:       p.ReferenceStatus,
+			Status:       string(change.Status(base.Figi)),
 			UnderlierID:  base.UnderlierID,
 		},
 	); err != nil {
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
+	return projectInstrument(ctx, q, id, application.RetainedClaimsRule)
 }
 
 func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnderlierParams) error {

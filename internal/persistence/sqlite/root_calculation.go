@@ -100,22 +100,12 @@ func (p *rootPhase) LoadRoot(ctx context.Context, id string) (application.Retain
 		func(a, b application.RootClaim) int { return cmp.Compare(a.Sequence, b.Sequence) },
 	)
 
-	claims := make([]source.Instrument, 0, len(root.Claims))
-	for _, claim := range root.Claims {
-		claims = append(claims, claim.Reported)
-	}
-
 	bindings, err := p.sourceBindings(ctx, row, root.Reported, root.References)
 	if err != nil {
 		return application.RetainedRoot{}, err
 	}
 
-	baseline := root.Reported
-	if row.ReferenceFigi == "" && len(claims) > 0 {
-		baseline = claims[0]
-	}
-
-	root.Calculation, err = application.CalculateBoundRoot(baseline, claims, bindings)
+	root.Calculation, err = application.CalculateRootClaims(root.Reported, row.ReferenceFigi != "", root.Claims, bindings)
 	if err != nil {
 		return application.RetainedRoot{}, err
 	}

@@ -10,7 +10,6 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -115,107 +114,39 @@ func persistRootEnrichment(
 		return err
 	}
 
-	if result.Conflict {
-		if err = q.IdentityMetadata(
-			ctx,
-			sqlc.IdentityMetadataParams{
-				ID:         root.ID,
-				Allocation: root.ReferenceAllocation,
-				Reason:     string(reference.SourceConflict),
-				Family:     root.Kind,
-			},
-		); err != nil {
+	plan := application.PlanRootEnrichment(identityRoot(root), result, underlier)
+	if plan.Conflict != application.KeepSourceConflict {
+		if err = q.IdentityMetadata(ctx, sqlc.IdentityMetadataParams{
+			ID: root.ID, Allocation: root.ReferenceAllocation, Reason: string(plan.Conflict.Reason()), Family: root.Kind,
+		}); err != nil {
 			return err
 		}
 
-		if err = resolveAutomaticInstrument(
-			ctx,
-			q,
-			sqlc.ResolveInstrumentParams{
-				ID:              root.ID,
-				ReferenceStatus: "conflict",
-			},
-		); err != nil {
+		if err = applyRootConflict(ctx, q, id, plan.Conflict); err != nil {
 			return err
 		}
-	} else {
-		if root.ReferenceReason == string(reference.SourceConflict) {
-			if err = q.IdentityMetadata(
-				ctx,
-				sqlc.IdentityMetadataParams{
-					ID:         id,
-					Allocation: root.ReferenceAllocation,
-					Reason:     "",
-					Family:     root.Kind,
-				},
-			); err != nil {
-				return err
-			}
+	}
 
-			base, e := q.InstrumentSelection(ctx, id)
-			if e != nil {
-				return e
-			}
-
-			status := "provisional"
-			if base.Figi != "" {
-				status = "resolved"
-			}
-
-			if err = q.SaveInstrumentSelection(
-				ctx,
-				sqlc.SaveInstrumentSelectionParams{
-					InstrumentID: id,
-					Name:         base.Name,
-					Ticker:       base.Ticker,
-					Figi:         base.Figi,
-					Evidence:     base.Evidence,
-					Status:       status,
-					UnderlierID:  base.UnderlierID,
-				},
-			); err != nil {
-				return err
-			}
-
-			if err = projectInstrument(ctx, q, id, application.RetainedClaimsRule); err != nil {
-				return err
-			}
-		}
-
-		data, err := json.Marshal(instrumentWire(result.Reported))
+	if plan.Reported != nil {
+		data, err := json.Marshal(instrumentWire(*plan.Reported))
 		if err != nil {
 			return err
 		}
 
 		if !bytes.Equal(data, root.Reported) {
-			family := root.Kind
-			if root.ReferenceFigi == "" {
-				family = string(result.Reported.Kind())
-			}
-
-			if err = enrichAutomaticInstrument(ctx, q,
-				sqlc.EnrichInstrumentParams{
-					ID:       root.ID,
-					Reported: data,
-					Kind:     family,
-					Name:     result.Reported.Name(),
-					Ticker:   result.Reported.Ticker(),
-				},
-			); err != nil {
+			if err = enrichAutomaticInstrument(ctx, q, sqlc.EnrichInstrumentParams{
+				ID: root.ID, Reported: data, Kind: string(plan.Family),
+				Name: plan.Reported.Name(), Ticker: plan.Reported.Ticker(),
+			}); err != nil {
 				return err
 			}
 		}
 	}
 
-	if underlier.ID != "" || underlier.Invalid || !result.Conflict && result.Underlier.Kind() == "" {
-		return setAutomaticUnderlier(
-			ctx,
-			q,
-			sqlc.SetUnderlierParams{
-				ID:          root.ID,
-				UnderlierID: sql.NullString{String: underlier.ID, Valid: underlier.ID != ""},
-			},
-		)
+	if plan.Underlier != nil {
+		return setAutomaticUnderlier(ctx, q, sqlc.SetUnderlierParams{
+			ID: root.ID, UnderlierID: sql.NullString{String: *plan.Underlier, Valid: *plan.Underlier != ""},
+		})
 	}
 
 	return nil

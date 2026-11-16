@@ -12,6 +12,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
+	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -1123,5 +1124,58 @@ func TestLaterUnderlierConflictReprojectsRetainedParents(t *testing.T) {
 	after, err := s.InstrumentDetail(t.Context(), p.ID)
 	if err != nil || !after.Instrument.Status().NeedsReview() || after.Underlier != before.Underlier {
 		t.Fatal("retained dependent parent was not reprojected", after, err)
+	}
+}
+
+func TestRootEnrichmentRollsBackOnAutomaticUnderlierWrite(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+	ctx := t.Context()
+	normalizeConfirmationReport(t, s, "root-effects", syntheticOption)
+	before, err := snapshotState(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, unsubscribe := s.SubscribePublications()
+	defer unsubscribe()
+
+	if _, err = s.db.ExecContext(ctx, `CREATE TRIGGER fail_underlier_effect
+BEFORE UPDATE OF underlier_id ON instrument_selections
+WHEN NEW.underlier_id IS NOT OLD.underlier_id
+BEGIN SELECT RAISE(ABORT,'synthetic underlier failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Process(ctx, "root-effects", ibkrflex.Version); err == nil ||
+		!strings.Contains(err.Error(), "synthetic underlier failure") {
+		t.Fatal("expected a late underlier write failure", err)
+	}
+
+	after, err := snapshotState(ctx, s)
+	if err != nil || after.Version != before.Version || len(events) != 0 {
+		t.Fatal("failed root effects changed publication", err)
+	}
+
+	for _, table := range []string{"instruments", "instrument_selections", "instrument_claims", "processing_receipts"} {
+		if count := tableCount(t, s, table); count != 0 {
+			t.Fatalf("failed root effects committed %d rows in %s", count, table)
+		}
+	}
+
+	if _, err = s.db.ExecContext(ctx, `DROP TRIGGER fail_underlier_effect`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.Process(ctx, "root-effects", ibkrflex.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) != 1 {
+		t.Fatal("retry failed to publish")
+	}
+	<-events
+
+	if err = s.Process(ctx, "root-effects", ibkrflex.Version); err != nil || len(events) != 0 {
+		t.Fatal("completed retry published again", err)
 	}
 }
