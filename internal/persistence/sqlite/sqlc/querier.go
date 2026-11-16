@@ -99,8 +99,8 @@ type Querier interface {
 	FinishAttempt(ctx context.Context, arg FinishAttemptParams) error
 	FinishHistoryUpdate(ctx context.Context) error
 	FlattenAliases(ctx context.Context, arg FlattenAliasesParams) error
-	HistoryActivities(ctx context.Context, cursor string) ([]Execution, error)
-	HistoryInstruments(ctx context.Context, cursor string) ([]string, error)
+	HistoryActivities(ctx context.Context, arg HistoryActivitiesParams) ([]Execution, error)
+	HistoryInstruments(ctx context.Context, arg HistoryInstrumentsParams) ([]string, error)
 	HistoryUpdate(ctx context.Context) (HistoryUpdate, error)
 	IdentityDependents(ctx context.Context, id string) ([]string, error)
 	IdentityMetadata(ctx context.Context, arg IdentityMetadataParams) error

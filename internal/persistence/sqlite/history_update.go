@@ -5,16 +5,14 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
-const (
-	historyBatchSize        = 50
-	ErrHistoryVersion Error = "unsupported history rule version; resume with the matching Wake build or restore a compatible backup"
-)
+const ErrHistoryVersion Error = "unsupported history rule version; resume with the matching Wake build or restore a compatible backup"
 
 func (s *Store) HistoryUpdating() bool { return s.historyUpdating.Load() }
 
@@ -52,35 +50,29 @@ func (s *Store) prepareHistoryUpdate(ctx context.Context, q *sqlc.Queries, fresh
 	return nil
 }
 
-func (s *Store) RunHistoryUpdate(ctx context.Context, now time.Time) (bool, error) {
-	if err := ctx.Err(); err != nil {
-		return false, err
+func (s *Store) HistoryRetryAt() time.Time {
+	if retry := s.historyRetry.Load(); retry != nil {
+		return *retry
 	}
 
-	if retry := s.historyRetry.Load(); retry != nil && now.Before(*retry) {
-		return false, nil
-	}
-
-	changed, err := s.historyBatch(ctx)
-	if err == nil {
-		s.historyRetry.Store(nil)
-		return changed, nil
-	}
-
-	if ctx.Err() != nil {
-		return changed, err
-	}
-
-	retry := now.Add(time.Minute).UTC()
-	s.historyRetry.Store(&retry)
-
-	s.logger.WarnContext(ctx, "retained history update will retry", "event", "history_update_retry",
-		"code", storageCode(err), "next_eligible_at", retry)
-
-	return true, nil
+	return time.Time{}
 }
 
-func (s *Store) historyBatch(ctx context.Context) (bool, error) {
+func (s *Store) SetHistoryRetry(ctx context.Context, retry time.Time, cause error) {
+	if cause == nil {
+		s.historyRetry.Store(nil)
+		return
+	}
+
+	s.historyRetry.Store(&retry)
+	s.logger.WarnContext(ctx, "retained history update will retry", "event", "history_update_retry",
+		"code", storageCode(cause), "next_eligible_at", retry)
+}
+
+func (s *Store) UpdateHistory(
+	ctx context.Context,
+	fn func(application.HistoryWriter, application.HistoryProgress) (application.HistoryProgress, error),
+) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -94,76 +86,18 @@ func (s *Store) historyBatch(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	phase, cursor := state.Phase, state.Cursor
+	writer := &historyWriter{tx: tx, q: q, rule: s.historyRule}
 
-	var processed int
-	switch phase {
-	case "activity":
-		rows, e := q.HistoryActivities(ctx, cursor)
-		if e != nil {
-			return false, e
-		}
-
-		for _, row := range rows {
-			// Claim conflicts are recalculated. The admitted source-correction state remains authoritative.
-			prior, e := activityState(row)
-			if e != nil {
-				return false, e
-			}
-
-			sourceState, e := application.NewActivityState(
-				prior.Lifecycle(),
-				prior.ReviewReasons()&application.AmbiguousCorrection,
-				application.AutomaticSelection,
-			)
-			if e != nil {
-				return false, e
-			}
-
-			if e = projectActivity(ctx, q, row, sourceState, s.historyRule); e != nil {
-				return false, e
-			}
-
-			cursor = row.ID
-		}
-
-		processed = len(rows)
-		if processed < historyBatchSize {
-			phase, cursor = "instruments", ""
-		}
-	case "instruments":
-		ids, e := q.HistoryInstruments(ctx, cursor)
-		if e != nil {
-			return false, e
-		}
-
-		for _, id := range ids {
-			if e = projectInstrument(ctx, q, id, s.historyRule); e != nil {
-				return false, e
-			}
-
-			cursor = id
-		}
-
-		processed = len(ids)
-		if processed < historyBatchSize {
-			phase, cursor = "positions", ""
-		}
-	case "positions":
-		processed, _, err = refreshPositions(ctx, tx, q, historyBatchSize)
-		if err != nil {
-			return false, err
-		}
-	default:
-		return false, ErrCorrupt
+	progress, err := fn(writer, application.HistoryProgress{Phase: state.Phase, Cursor: state.Cursor})
+	if err != nil {
+		return false, err
 	}
 
-	finished := state.Phase == "positions" && processed == 0
-	if finished {
+	if progress.Finished {
 		err = q.FinishHistoryUpdate(ctx)
 	} else {
 		err = q.AdvanceHistoryUpdate(ctx, sqlc.AdvanceHistoryUpdateParams{
-			Phase: phase, Cursor: cursor, Processed: int64(processed),
+			Phase: progress.Phase, Cursor: progress.Cursor, Processed: int64(progress.Processed),
 		})
 	}
 
@@ -171,13 +105,69 @@ func (s *Store) historyBatch(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if err = s.commit(ctx, tx); err != nil {
+	if err := s.commit(ctx, tx); err != nil {
 		return false, err
 	}
 
-	if finished {
+	if progress.Finished {
 		s.historyUpdating.Store(false)
 	}
 
 	return true, nil
+}
+
+type historyWriter struct {
+	tx         *sql.Tx
+	q          *sqlc.Queries
+	rule       application.FinancialRule
+	activities map[string]sqlc.Execution
+}
+
+func (w *historyWriter) HistoryActivities(
+	ctx context.Context,
+	cursor string,
+	size int,
+) ([]application.HistoryActivity, error) {
+	rows, err := w.q.HistoryActivities(
+		ctx,
+		sqlc.HistoryActivitiesParams{Cursor: cursor, BatchSize: int64(size)},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	w.activities = make(map[string]sqlc.Execution, len(rows))
+	activities := make([]application.HistoryActivity, 0, len(rows))
+	for _, row := range rows {
+		state, err := activityState(row)
+		if err != nil {
+			return nil, err
+		}
+
+		activities = append(activities, application.HistoryActivity{ID: row.ID, State: state})
+		w.activities[row.ID] = row
+	}
+
+	return activities, nil
+}
+
+func (w *historyWriter) HistoryInstruments(ctx context.Context, cursor string, size int) ([]string, error) {
+	return w.q.HistoryInstruments(ctx, sqlc.HistoryInstrumentsParams{Cursor: cursor, BatchSize: int64(size)})
+}
+
+func (w *historyWriter) RebuildActivity(
+	ctx context.Context,
+	id string,
+	state application.ActivityState,
+) error {
+	return projectActivity(ctx, w.q, w.activities[id], state, w.rule)
+}
+
+func (w *historyWriter) RebuildInstrument(ctx context.Context, id string) error {
+	return projectInstrument(ctx, w.q, id, w.rule)
+}
+
+func (w *historyWriter) RebuildPositions(ctx context.Context, size int) (int, error) {
+	n, _, err := refreshPositions(ctx, w.tx, w.q, size)
+	return n, err
 }

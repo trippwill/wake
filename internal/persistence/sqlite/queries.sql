@@ -583,11 +583,11 @@ UPDATE history_update SET phase=?,cursor=?,completed=completed+sqlc.arg(processe
 -- name: FinishHistoryUpdate :exec
 UPDATE history_update SET applied=target,target=0,phase='',cursor='' WHERE singleton=1;
 -- name: HistoryActivities :many
-SELECT * FROM executions WHERE id>sqlc.arg(cursor) ORDER BY id LIMIT 50;
+SELECT * FROM executions WHERE id>sqlc.arg(cursor) ORDER BY id LIMIT sqlc.arg(batch_size);
 -- name: HistoryInstruments :many
 SELECT i.id FROM instruments i WHERE i.id>sqlc.arg(cursor)
  AND NOT EXISTS(SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
- ORDER BY i.id LIMIT 50;
+ ORDER BY i.id LIMIT sqlc.arg(batch_size);
 
 -- name: SavedCredentials :many
 SELECT c.connection_id, a.provider, c.key, c.encrypted

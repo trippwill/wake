@@ -1665,11 +1665,16 @@ func (q *Queries) FlattenAliases(ctx context.Context, arg FlattenAliasesParams) 
 }
 
 const historyActivities = `-- name: HistoryActivities :many
-SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule, calculation_rule FROM executions WHERE id>?1 ORDER BY id LIMIT 50
+SELECT revision, kind, id, account_id, instrument_id, listing_id, accepted, status, review_reasons, selection_authority, rule, calculation_rule FROM executions WHERE id>?1 ORDER BY id LIMIT ?2
 `
 
-func (q *Queries) HistoryActivities(ctx context.Context, cursor string) ([]Execution, error) {
-	rows, err := q.db.QueryContext(ctx, historyActivities, cursor)
+type HistoryActivitiesParams struct {
+	Cursor    string
+	BatchSize int64
+}
+
+func (q *Queries) HistoryActivities(ctx context.Context, arg HistoryActivitiesParams) ([]Execution, error) {
+	rows, err := q.db.QueryContext(ctx, historyActivities, arg.Cursor, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1707,11 +1712,16 @@ func (q *Queries) HistoryActivities(ctx context.Context, cursor string) ([]Execu
 const historyInstruments = `-- name: HistoryInstruments :many
 SELECT i.id FROM instruments i WHERE i.id>?1
  AND NOT EXISTS(SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
- ORDER BY i.id LIMIT 50
+ ORDER BY i.id LIMIT ?2
 `
 
-func (q *Queries) HistoryInstruments(ctx context.Context, cursor string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, historyInstruments, cursor)
+type HistoryInstrumentsParams struct {
+	Cursor    string
+	BatchSize int64
+}
+
+func (q *Queries) HistoryInstruments(ctx context.Context, arg HistoryInstrumentsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, historyInstruments, arg.Cursor, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}

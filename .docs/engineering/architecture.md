@@ -103,9 +103,14 @@ OpenFIGI key also requires fresh approval after recovery.
 
 Retained-data processing discovers unfinished work from acquisition evidence,
 confirmed source authority, and receipts for the installed interpretation.
-Local retry delays and failure messages live in runtime state. Restarting can
-retry pending reports without replaying completed interpretations or changing
-their committed receipts.
+The application checks source authority, admits and associates claims, and
+calculates affected projections through a transaction that also records processing
+completion. Normalization commits separately so a failed projection can retry
+from retained claims. Local retry delays and failure messages live in runtime
+state. The application advances history rebuild phases in bounded batches.
+SQLite commits each financial batch with its checkpoint and gates affected reads
+until the rebuild completes. Local processing and rebuilds use the financial
+store independently of synchronization.
 
 ## Evidence before conclusions
 

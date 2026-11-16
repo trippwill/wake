@@ -31,14 +31,14 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	var rows strings.Builder
 	rows.WriteString(syntheticOption)
 
-	for i := range historyBatchSize + 1 {
+	for i := range application.HistoryBatchSize + 1 {
 		rows.WriteString(equityRow("U1", fmt.Sprintf("history-%d", i), "2.34000000000000100"))
 	}
 
 	processConfirmationReport(t, store, "history", rows.String())
 
 	view, err := store.Dashboard(ctx)
-	if err != nil || len(view.Executions) != historyBatchSize+2 {
+	if err != nil || len(view.Executions) != application.HistoryBatchSize+2 {
 		t.Fatal(len(view.Executions), err)
 	}
 
@@ -223,18 +223,18 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	run(store, now)
 
-	if count, _ := state(store); count != historyBatchSize {
+	if count, _ := state(store); count != application.HistoryBatchSize {
 		t.Fatal("unexpected first batch", count)
 	}
 
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, err = store.RunHistoryUpdate(cancelled, now); !errors.Is(err, context.Canceled) {
+	if _, err = application.RunHistoryUpdate(cancelled, store, now); !errors.Is(err, context.Canceled) {
 		t.Fatal("cancelled batch", err)
 	}
 
-	if count, retry := state(store); count != historyBatchSize || retry != "" {
+	if count, retry := state(store); count != application.HistoryBatchSize || retry != "" {
 		t.Fatal("cancellation advanced checkpoint or set failure", count, retry)
 	}
 
@@ -250,7 +250,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	if count, retry := state(
 		store,
-	); count != historyBatchSize ||
+	); count != application.HistoryBatchSize ||
 		retry != now.Add(time.Minute).Format(time.RFC3339Nano) {
 		t.Fatal("publication failure advanced checkpoint or lost retry", count, retry)
 	}
@@ -258,7 +258,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	var rebuilt int
 	if err = store.db.QueryRowContext(ctx, `SELECT count(*) FROM executions WHERE calculation_rule=?`, futureRule).
 		Scan(&rebuilt); err != nil ||
-		rebuilt != historyBatchSize {
+		rebuilt != application.HistoryBatchSize {
 		t.Fatal("publication failure leaked derived writes", rebuilt, err)
 	}
 
@@ -268,12 +268,12 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 
 	run(store, now)
 
-	if count, _ := state(store); count != historyBatchSize {
+	if count, _ := state(store); count != application.HistoryBatchSize {
 		t.Fatal("retry ran before deadline", count)
 	}
 
 	overview, err := store.Overview(ctx)
-	if err != nil || overview.Status.HistoryUpdate.Completed != historyBatchSize ||
+	if err != nil || overview.Status.HistoryUpdate.Completed != application.HistoryBatchSize ||
 		overview.Status.HistoryUpdate.Rule != string(futureRule) ||
 		!overview.Status.HistoryUpdate.RetryAt.Equal(now.Add(time.Minute)) {
 		t.Fatal("overview lost progress or retry", overview.Status.HistoryUpdate, err)
@@ -282,7 +282,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	store = reopen(store)
 	checkGated(store)
 
-	if count, retry := state(store); count != historyBatchSize || retry != "" {
+	if count, retry := state(store); count != application.HistoryBatchSize || retry != "" {
 		t.Fatal("restart lost durable progress or carried runtime retry", count, retry)
 	}
 

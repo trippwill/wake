@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.trippwill.dev/wake/internal/application"
 )
 
 //go:embed testdata/warehouse-v1-to-v2.sql
@@ -248,7 +250,7 @@ func TestUpgradePreviewApprovalAndResume(t *testing.T) {
 					break
 				}
 
-				if _, err = s.RunHistoryUpdate(t.Context(), time.Now()); err != nil {
+				if _, err = application.RunHistoryUpdate(t.Context(), s, time.Now()); err != nil {
 					t.Fatal(err)
 				}
 			}

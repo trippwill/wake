@@ -62,7 +62,7 @@ type (
 	}
 	Store interface {
 		HistoryUpdating() bool
-		RunHistoryUpdate(context.Context, time.Time) (bool, error)
+		HistoryStore
 		ResumeStorage(context.Context, int64, string, time.Time) error
 		Schedule(context.Context, host.WorkKey, bool) error
 		Confirm(
@@ -654,7 +654,7 @@ func (w *Workflow) HistoryUpdating() bool {
 
 func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 	if w.HistoryUpdating() {
-		changed, err := w.store.RunHistoryUpdate(ctx, now)
+		changed, err := RunHistoryUpdate(ctx, w.store, now)
 		if err != nil {
 			return err
 		}
