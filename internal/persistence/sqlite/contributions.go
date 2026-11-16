@@ -82,8 +82,8 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 		return err
 	}
 
-	references := map[string]source.Reference{}
-	claims := make([]rootClaim, 0, len(inputs))
+	references := map[source.Reference]struct{}{}
+	claims := make([]application.RootClaim, 0, len(inputs))
 	for _, input := range inputs {
 		reported, e := reportedRootClaim(input.Kind, input.Data, input.Location, input.Role)
 		if e != nil {
@@ -92,12 +92,12 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 
 		claims = append(
 			claims,
-			rootClaim{id: input.ClaimID, ordinal: input.Ordinal, role: input.Role, reported: reported},
+			application.RootClaim{ID: input.ClaimID, Ordinal: input.Ordinal, Role: input.Role, Reported: reported},
 		)
 
 		ref := reported.Option().Fields().Underlier.Reference()
 		if !ref.IsZero() {
-			references[referenceKey(ref)] = ref
+			references[ref] = struct{}{}
 		}
 	}
 
@@ -108,7 +108,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 
 	prior := []source.Instrument{}
 	for _, row := range claims {
-		value := row.reported
+		value := row.Reported
 
 		outcome, e := application.InstrumentContribution(prior, value, bindings)
 		if e != nil {
@@ -117,7 +117,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 
 		if outcome == "" {
 			if e = q.DeleteInstrumentClaim(ctx, sqlc.DeleteInstrumentClaimParams{
-				InstrumentID: id, ClaimID: row.id, Ordinal: row.ordinal, Role: row.role,
+				InstrumentID: id, ClaimID: row.ID, Ordinal: row.Ordinal, Role: row.Role,
 			}); e != nil {
 				return e
 			}
@@ -128,7 +128,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 		prior = append(prior, value)
 
 		if e = q.SetInstrumentClaimOutcome(ctx, sqlc.SetInstrumentClaimOutcomeParams{
-			InstrumentID: id, ClaimID: row.id, Ordinal: row.ordinal, Role: row.role, Outcome: string(outcome),
+			InstrumentID: id, ClaimID: row.ID, Ordinal: row.Ordinal, Role: row.Role, Outcome: string(outcome),
 		}); e != nil {
 			return e
 		}

@@ -39,249 +39,108 @@ func aliasResource(ctx context.Context, q *sqlc.Queries, kind, previous, target 
 	return q.PutResourceAlias(ctx, sqlc.PutResourceAliasParams{Kind: kind, ID: previous, TargetID: target})
 }
 
-func decisionIdentity(
-	ctx context.Context,
-	q *sqlc.Queries,
-	id string,
-	d sqlc.OperatorDecision,
-) (string, error) {
-	switch d.Scope {
-	case "reference":
-		r, _, err := referenceCandidate(ctx, q, id, d.Text)
-		if err != nil {
-			return "", err
-		}
-
-		root, err := q.Instrument(ctx, id)
-		if err != nil {
-			return "", err
-		}
-
-		selected := reference.SelectIdentity(source.InstrumentKind(root.Kind), []reference.Record{r})
-
-		return selected.FIGI, nil
-	case "underlier":
-		return canonicalID(ctx, q, "instruments", d.Text)
-	default:
-		return d.Text + "\x00" + d.Currency, nil
+func identityRoot(row sqlc.Instrument) application.IdentityRoot {
+	return application.IdentityRoot{
+		ID:         row.ID,
+		Name:       row.Name,
+		Ticker:     row.Ticker,
+		FIGI:       row.ReferenceFigi,
+		Evidence:   row.EvidenceID,
+		Allocation: row.ReferenceAllocation,
+		Family:     source.InstrumentKind(row.Kind),
+		Reason:     reference.Reason(row.ReferenceReason),
 	}
 }
 
-// Resolve duplicates only after comparing active choices for every current root.
-// No raw source record or operator event is rewritten or deleted.
+func (r correctionReader) IdentityRoot(ctx context.Context, id string) (application.IdentityRoot, error) {
+	row, err := r.q.Instrument(ctx, id)
+	return identityRoot(row), err
+}
+
+func (r correctionReader) IdentityRoots(
+	ctx context.Context,
+	figi string,
+) ([]application.IdentityRoot, error) {
+	rows, err := r.q.IdentityRoots(ctx, figi)
+	if err != nil {
+		return nil, err
+	}
+
+	roots := make([]application.IdentityRoot, 0, len(rows))
+	for _, row := range rows {
+		roots = append(roots, identityRoot(row))
+	}
+
+	return roots, nil
+}
+
+func (r correctionReader) AutomaticInstrument(
+	ctx context.Context,
+	id string,
+) (application.InstrumentSelection, error) {
+	row, err := r.q.InstrumentSelection(ctx, id)
+	return instrumentSelection(row), err
+}
+
 func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
-	root, err := q.Instrument(ctx, id)
+	plan, err := application.PlanIdentityConvergence(ctx, correctionReader{q}, id)
 	if err != nil {
 		return err
 	}
 
-	base, err := q.InstrumentSelection(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	figi := root.ReferenceFigi
-	if figi == "" {
-		figi = base.Figi
-	}
-
-	if figi == "" {
-		return nil
-	}
-
-	roots, err := q.IdentityRoots(ctx, figi)
-	if err != nil || len(roots) < 2 {
-		return err
-	}
-
-	family := source.InstrumentKind(root.Kind)
-
-	choices := map[string]string{}
-	blocked := false
-	blockReason := reference.OperatorConflict
-	for _, r := range roots {
-		if !application.CompatibleInstrumentKind(
-			family,
-			source.InstrumentKind(r.Kind),
-		) {
-			blocked = true
-			blockReason = reference.IncompatibleSubject
+	for _, conflict := range plan.Conflicts {
+		r := conflict.Root
+		if err := q.IdentityMetadata(ctx, sqlc.IdentityMetadataParams{
+			ID: r.ID, Allocation: r.Allocation, Reason: string(conflict.Reason), Family: string(r.Family),
+		}); err != nil {
+			return err
 		}
 
-		if family == source.UnknownInstrument {
-			family = source.InstrumentKind(r.Kind)
-		}
-
-		automatic, e := q.InstrumentSelection(ctx, r.ID)
-		if e != nil {
-			return e
-		}
-
-		if automatic.Figi != "" && automatic.Figi != figi {
-			blocked = true
-			blockReason = reference.CompetingIdentity
-		}
-
-		if base.Figi == "" && automatic.Figi == figi {
-			base = automatic
-		}
-
-		rows, e := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "instrument", TargetID: r.ID})
-		if e != nil {
-			return e
-		}
-
-		active := activeDecisions(rows)
-		if r.ReferenceReason == string(reference.CompetingIdentity) ||
-			r.ReferenceReason == string(reference.ConflictingParents) ||
-			r.ReferenceReason == string(
-				reference.IncompatibleSubject,
-			) || r.ReferenceReason == string(reference.SourceConflict) {
-			if _, chosen := active["reference"]; !chosen {
-				blocked = true
-				blockReason = reference.Reason(r.ReferenceReason)
-			}
-		}
-
-		for scope, d := range active {
-			value, e := decisionIdentity(ctx, q, r.ID, d)
-			if e != nil {
-				return e
-			}
-
-			if scope == "reference" && value != figi {
-				blocked = true
-			}
-
-			if previous, ok := choices[scope]; ok && previous != value {
-				blocked = true
-			}
-
-			choices[scope] = value
-		}
-	}
-
-	if blocked {
-		for _, r := range roots {
-			reason := reference.Reason(r.ReferenceReason)
-			switch reason {
-			case reference.SourceConflict,
-				reference.CompetingIdentity,
-				reference.ConflictingParents,
-				reference.IncompatibleSubject:
-			default:
-				reason = blockReason
-				if blockReason != reference.OperatorConflict {
-					reason = reference.ConvergenceBlocked
-				}
-			}
-
-			if err = q.IdentityMetadata(
-				ctx,
-				sqlc.IdentityMetadataParams{
-					ID:         r.ID,
-					Allocation: r.ReferenceAllocation,
-					Reason:     string(reason),
-					Family:     r.Kind,
-				},
-			); err != nil {
-				return err
-			}
-
-			if err = q.ResolveInstrument(
-				ctx,
-				sqlc.ResolveInstrumentParams{
-					ID:              r.ID,
-					Name:            r.Name,
-					Ticker:          r.Ticker,
-					ReferenceFigi:   r.ReferenceFigi,
-					EvidenceID:      r.EvidenceID,
-					ReferenceStatus: "conflict",
-				},
-			); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	target := roots[0].ID
-
-	owner, err := q.InstrumentSelection(ctx, target)
-	if err != nil {
-		return err
-	}
-
-	if owner.Name != "" {
-		base.Name = owner.Name
-	}
-
-	if owner.Ticker != "" {
-		base.Ticker = owner.Ticker
-	}
-
-	if owner.UnderlierID.Valid {
-		base.UnderlierID = owner.UnderlierID
-	}
-
-	if base.UnderlierID.Valid {
-		canonical, e := canonicalID(ctx, q, "instruments", base.UnderlierID.String)
-		if e != nil {
-			return e
-		}
-
-		base.UnderlierID.String = canonical
-	}
-
-	for _, r := range roots[1:] {
-		if err = mergeInstrument(ctx, q, r.ID, target); err != nil {
+		if err := q.ResolveInstrument(ctx, sqlc.ResolveInstrumentParams{
+			ID: r.ID, Name: r.Name, Ticker: r.Ticker, ReferenceFigi: r.FIGI,
+			EvidenceID: r.Evidence, ReferenceStatus: "conflict",
+		}); err != nil {
 			return err
 		}
 	}
-	// Prefer the latest verified automatic selection; manual choices are projected
-	// from their immutable events after the aliases have joined their histories.
-	if err = q.SaveInstrumentSelection(
-		ctx,
-		sqlc.SaveInstrumentSelectionParams{
-			InstrumentID: target,
-			Name:         base.Name,
-			Ticker:       base.Ticker,
-			Figi:         base.Figi,
-			Evidence:     base.Evidence,
-			Status:       base.Status,
-			UnderlierID:  base.UnderlierID,
-		},
-	); err != nil {
+
+	if plan.Target.ID == "" {
+		return nil
+	}
+
+	target, base := plan.Target, plan.Selection
+	for _, alias := range plan.Aliases {
+		if err := mergeInstrument(ctx, q, alias, target.ID); err != nil {
+			return err
+		}
+	}
+
+	if err := q.SaveInstrumentSelection(ctx, sqlc.SaveInstrumentSelectionParams{
+		InstrumentID: target.ID, Name: base.Name, Ticker: base.Ticker, Figi: base.FIGI,
+		Evidence: base.Evidence, Status: string(base.Status),
+		UnderlierID: sql.NullString{String: base.Underlier, Valid: base.Underlier != ""},
+	}); err != nil {
 		return err
 	}
 
-	reason := root.ReferenceReason
-	if reason == string(reference.OperatorConflict) || reason == string(reference.ConvergenceBlocked) {
-		reason = ""
-	}
-
-	if err = q.IdentityMetadata(
-		ctx,
-		sqlc.IdentityMetadataParams{
-			ID:         target,
-			Allocation: root.ReferenceAllocation,
-			Reason:     reason,
-			Family:     string(family),
-		},
-	); err != nil {
+	if err := q.IdentityMetadata(ctx, sqlc.IdentityMetadataParams{
+		ID:         target.ID,
+		Allocation: target.Allocation,
+		Reason:     string(target.Reason),
+		Family:     string(target.Family),
+	}); err != nil {
 		return err
 	}
 
-	if err = q.AdvanceInstrumentRevision(ctx, target); err != nil {
+	if err := q.AdvanceInstrumentRevision(ctx, target.ID); err != nil {
 		return err
 	}
 
-	if err = projectInstrument(ctx, q, target, application.RetainedClaimsRule); err != nil {
+	if err := projectInstrument(ctx, q, target.ID, application.RetainedClaimsRule); err != nil {
 		return err
 	}
 
-	affected, err := q.IdentityDependents(ctx, target)
+	affected, err := q.IdentityDependents(ctx, target.ID)
 	if err != nil {
 		return err
 	}

@@ -75,13 +75,16 @@ enrichment. Local corrections and rebuilds continue with the financial file
 and local client authority. Source commands report that upstream work is
 unavailable. Shutdown cancels and joins local work before releasing the store.
 
-Activity correction policy and orchestration belong to the financial application.
+Activity and instrument correction policy and orchestration belong to the financial application.
 A consistent read callback prepares previews without writes; a write callback
 checks submission idempotency before revalidating the revision, expands prospective
 decisions, and calculates their result. SQLite supplies typed transaction-bound
 inputs and persists explicit decisions and results. It finalizes publication in
 the same transaction and notifies subscribers only after successful commit.
-Instrument correction and identity orchestration remain in persistence.
+Instrument identity policy compares eligible claims and active operator choices in
+the application. SQLite applies the resulting convergence, alias and relinking
+writes within the same transaction. Underlier binding and root projection read
+separate read phases within the transaction so shared roots see the current bindings.
 
 The upstream coordinator checks the financial lineage and publication epoch,
 synchronization store, configuration revision, and access grant before admitting

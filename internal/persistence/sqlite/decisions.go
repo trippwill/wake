@@ -3,15 +3,10 @@
 package persistence
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"slices"
 	"strings"
-	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -29,125 +24,6 @@ func activeDecisions(rows []sqlc.DecisionsRow) map[string]sqlc.OperatorDecision 
 	}
 
 	return active
-}
-
-func (s *Store) SaveInstrumentDecision(
-	ctx context.Context,
-	d application.Decision,
-	actor string,
-	at time.Time,
-) error {
-	if s.HistoryUpdating() {
-		return application.ErrHistoryUpdating
-	}
-
-	f := d.Fields()
-	if f.TargetKind != "instrument" {
-		return application.ErrInvalid
-	}
-
-	if _, err := application.NewDecision(f); err != nil {
-		return err
-	}
-
-	if actor == "" || len(actor) > 256 || at.IsZero() {
-		return application.ErrInvalid
-	}
-
-	request, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-
-	defer func() { _ = tx.Rollback() }()
-
-	q := s.queries.WithTx(tx)
-
-	prior, err := q.DecisionSubmission(ctx, f.Submission)
-	if err == nil {
-		if bytes.Equal(prior.Request, request) && prior.Actor == actor {
-			return nil
-		}
-
-		return application.ErrStale
-	}
-
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-
-	prepared, err := prepareInstrumentCorrection(ctx, q, f)
-	if err != nil {
-		return err
-	}
-
-	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: f.TargetKind, TargetID: f.TargetID})
-	if err != nil {
-		return err
-	}
-
-	active := activeDecisions(rows)
-
-	field := f
-	old := active[field.Scope]
-	if field.Action == "release" && old.ID == "" {
-		return application.ErrInvalid
-	}
-
-	decisionID := rand.Text()
-	submission := f.Submission
-
-	if err = q.PutDecision(
-		ctx,
-		sqlc.PutDecisionParams{
-			ID:         decisionID,
-			TargetKind: f.TargetKind,
-			TargetID:   f.TargetID,
-			Scope:      field.Scope,
-			Text:       field.Text,
-			Currency:   field.Currency,
-			Action:     field.Action,
-			Actor:      actor,
-			At:         at.UTC().Format(time.RFC3339Nano),
-			Rationale:  f.Rationale,
-			Supersedes: old.ID,
-			Submission: submission,
-			Request:    request,
-		},
-	); err != nil {
-		return err
-	}
-
-	if err = q.SupersedeDecisions(
-		ctx,
-		sqlc.SupersedeDecisionsParams{
-			DecisionID: decisionID,
-			TargetKind: f.TargetKind,
-			TargetID:   f.TargetID,
-			Scope:      field.Scope,
-		},
-	); err != nil {
-		return err
-	}
-
-	if err = persistInstrumentCalculation(ctx, q, f.TargetID, prepared.instrument); err != nil {
-		return err
-	}
-
-	if err = q.AdvanceInstrumentRevision(ctx, f.TargetID); err != nil {
-		return err
-	}
-
-	if err = combineIdentity(ctx, q, f.TargetID); err != nil {
-		return err
-	}
-
-	return s.commit(ctx, tx)
 }
 
 func observationKey(r sqlc.RecordValue) string {

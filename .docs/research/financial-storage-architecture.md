@@ -94,11 +94,8 @@ introducing a new domain hierarchy or splitting the daemon.
 Several current functions mix both columns, so this should be a **function-level extraction**, not
 wholesale file movement.
 
-For example, `prepareCorrection` in
-[correction_check.go](../../internal/persistence/sqlite/correction_check.go) combines SQL reads
-with revision checks and calculation selection. Its SQL reads should remain in SQLite; the
-decision about whether a request is stale and which prospective calculation to perform belongs in
-application.
+The instrument correction boundary separates [SQLite inputs](../../internal/persistence/sqlite/instrument_correction.go)
+from [revision checks and prospective calculation](../../internal/application/instrument_correction.go).
 
 Likewise, `combineIdentity` in [identity.go](../../internal/persistence/sqlite/identity.go)
 compares instrument families, reference choices, and active operator decisions before modifying

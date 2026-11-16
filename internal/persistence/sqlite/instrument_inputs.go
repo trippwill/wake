@@ -8,18 +8,19 @@ import (
 	"database/sql"
 	"errors"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/source"
 )
 
 // Current child assertions follow the automatic source relationship. Their
 // eligibility does not depend on which historical appearance retained support.
-func (p *rootPhase) positionUnderlierClaims(ctx context.Context, id string) ([]rootClaim, error) {
+func (p *rootPhase) positionUnderlierClaims(ctx context.Context, id string) ([]application.RootClaim, error) {
 	rows, err := p.q.PositionUnderlierInputs(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	claims := []rootClaim{}
+	claims := []application.RootClaim{}
 	references := map[string]map[string]source.Reference{}
 	for _, row := range rows {
 		reported, e := reportedRootClaim(row.Kind, row.Data, row.Location, "underlier")
@@ -93,12 +94,12 @@ func (p *rootPhase) positionUnderlierClaims(ctx context.Context, id string) ([]r
 		if matches {
 			claims = append(
 				claims,
-				rootClaim{
-					id:       row.ClaimID,
-					ordinal:  row.Ordinal,
-					role:     "underlier",
-					sequence: row.Sequence,
-					reported: reported,
+				application.RootClaim{
+					ID:       row.ClaimID,
+					Ordinal:  row.Ordinal,
+					Role:     "underlier",
+					Sequence: row.Sequence,
+					Reported: reported,
 				},
 			)
 		}

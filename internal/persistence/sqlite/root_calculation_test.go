@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -1008,7 +1009,7 @@ func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
 	q := sqlc.New(recorded)
 
 	phase := newRootPhase(q)
-	if _, err = phase.targets(t.Context(), parents); err != nil {
+	if err = application.BindUnderliers(t.Context(), phase, parents); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1020,7 +1021,7 @@ func TestSharedUnderlierHistoryIsReadOncePerStablePhase(t *testing.T) {
 
 	phase = newRootPhase(q)
 	for _, instrument := range view.Instruments {
-		if _, err = phase.calculate(t.Context(), instrument.ID()); err != nil {
+		if _, err = application.CalculateRetainedRoot(t.Context(), phase, instrument.ID()); err != nil {
 			t.Fatal(err)
 		}
 	}

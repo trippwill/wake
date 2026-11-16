@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -380,140 +379,13 @@ func selectedCashInstrument(
 	return "", nil
 }
 
-func loadInstrumentCalculation(
-	ctx context.Context,
-	q *sqlc.Queries,
-	id string,
-	proposed *application.DecisionInput,
-) (application.InstrumentCalculationInput, error) {
-	in := application.InstrumentCalculationInput{
-		Rule:           application.RetainedClaimsRule,
-		ID:             id,
-		References:     map[string]application.ReferenceSelection{},
-		CompetingFIGIs: map[string]bool{},
-		Underliers:     map[string]source.InstrumentKind{},
-	}
-
-	root, err := q.Instrument(ctx, id)
-	if err != nil {
-		return in, err
-	}
-
-	in.Family = source.InstrumentKind(root.Kind)
-	base, err := q.InstrumentSelection(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		base = sqlc.InstrumentSelection{
-			Name:        root.Name,
-			Ticker:      root.Ticker,
-			Figi:        root.ReferenceFigi,
-			Evidence:    root.EvidenceID,
-			Status:      root.ReferenceStatus,
-			UnderlierID: root.UnderlierID,
-		}
-	} else if err != nil {
-		return in, err
-	}
-
-	in.Baseline = application.InstrumentSelection{
-		Name:      base.Name,
-		Ticker:    base.Ticker,
-		FIGI:      base.Figi,
-		Evidence:  base.Evidence,
-		Status:    application.ReferenceStatus(base.Status),
-		Underlier: base.UnderlierID.String,
-	}
-
-	rows, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "instrument", TargetID: id})
-	if err != nil {
-		return in, err
-	}
-
-	active := activeDecisions(rows)
-	if proposed != nil {
-		if proposed.Action == "release" {
-			if _, ok := active[proposed.Scope]; !ok {
-				return in, application.ErrInvalid
-			}
-
-			delete(active, proposed.Scope)
-		} else {
-			active[proposed.Scope] = sqlc.OperatorDecision{
-				Scope:    proposed.Scope,
-				Text:     proposed.Text,
-				Currency: proposed.Currency,
-			}
-		}
-	}
-
-	for scope, d := range active {
-		if scope == "underlier" && d.Text != "" {
-			value, e := canonicalID(ctx, q, "instruments", d.Text)
-			if e != nil {
-				return in, e
-			}
-
-			d.Text = value
-		}
-
-		in.Decisions = append(
-			in.Decisions,
-			application.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
-		)
-		switch scope {
-		case "reference":
-			record, evidence, e := referenceCandidate(ctx, q, id, d.Text)
-			if e != nil {
-				return in, e
-			}
-
-			selected, figi, compatible := reference.Select(in.Family, []reference.Record{record})
-			in.References[d.Text] = application.ReferenceSelection{
-				InstrumentSelection: application.InstrumentSelection{
-					Name:     selected.Name,
-					Ticker:   selected.Ticker,
-					FIGI:     figi,
-					Evidence: evidence,
-				},
-				Eligible: compatible,
-			}
-
-			others, e := q.CompetingFIGI(ctx, sqlc.CompetingFIGIParams{CurrentID: id, Figi: figi})
-			if e != nil {
-				return in, e
-			}
-
-			for _, other := range others {
-				if !application.CompatibleInstrumentKind(in.Family, source.InstrumentKind(other.Kind)) {
-					in.CompetingFIGIs[figi] = true
-				}
-			}
-		case "underlier":
-			if d.Text != "" {
-				underlier, e := q.Instrument(ctx, d.Text)
-				if e != nil {
-					return in, application.ErrInvalid
-				}
-
-				in.Underliers[underlier.ID] = source.InstrumentKind(underlier.Kind)
-			}
-		}
-	}
-
-	return in, nil
-}
-
 func projectInstrument(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
 	rule application.FinancialRule,
 ) error {
-	in, err := loadInstrumentCalculation(ctx, q, id, nil)
-	if err != nil {
-		return err
-	}
-
-	result, err := application.CalculateInstrument(in)
+	result, err := application.ProjectInstrument(ctx, correctionReader{q}, id)
 	if err != nil {
 		return err
 	}

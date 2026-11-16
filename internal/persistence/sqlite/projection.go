@@ -108,7 +108,7 @@ func persistRootEnrichment(
 	q *sqlc.Queries,
 	id string,
 	result application.RootCalculation,
-	underlier underlierLink,
+	underlier application.UnderlierLink,
 ) error {
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
@@ -207,13 +207,13 @@ func persistRootEnrichment(
 		}
 	}
 
-	if underlier.id != "" || underlier.invalid || !result.Conflict && result.Underlier.Kind() == "" {
+	if underlier.ID != "" || underlier.Invalid || !result.Conflict && result.Underlier.Kind() == "" {
 		return setAutomaticUnderlier(
 			ctx,
 			q,
 			sqlc.SetUnderlierParams{
 				ID:          root.ID,
-				UnderlierID: sql.NullString{String: underlier.id, Valid: underlier.id != ""},
+				UnderlierID: sql.NullString{String: underlier.ID, Valid: underlier.ID != ""},
 			},
 		)
 	}

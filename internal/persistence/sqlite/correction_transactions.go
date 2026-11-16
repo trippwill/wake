@@ -17,9 +17,9 @@ import (
 )
 
 type (
-	activityCorrectionReader struct{ q *sqlc.Queries }
-	activityCorrectionWriter struct {
-		activityCorrectionReader
+	correctionReader struct{ q *sqlc.Queries }
+	correctionWriter struct {
+		correctionReader
 		changed bool
 	}
 )
@@ -28,6 +28,17 @@ func (s *Store) ViewActivityCorrection(
 	ctx context.Context,
 	fn func(application.ActivityCorrectionReader) error,
 ) error {
+	return s.viewCorrection(ctx, func(reader correctionReader) error { return fn(reader) })
+}
+
+func (s *Store) ViewInstrumentCorrection(
+	ctx context.Context,
+	fn func(application.InstrumentCorrectionReader) error,
+) error {
+	return s.viewCorrection(ctx, func(reader correctionReader) error { return fn(reader) })
+}
+
+func (s *Store) viewCorrection(ctx context.Context, fn func(correctionReader) error) error {
 	if s.HistoryUpdating() {
 		return application.ErrHistoryUpdating
 	}
@@ -39,13 +50,24 @@ func (s *Store) ViewActivityCorrection(
 
 	defer func() { _ = tx.Rollback() }()
 
-	return fn(activityCorrectionReader{s.queries.WithTx(tx)})
+	return fn(correctionReader{s.queries.WithTx(tx)})
 }
 
 func (s *Store) UpdateActivityCorrection(
 	ctx context.Context,
 	fn func(application.ActivityCorrectionWriter) error,
 ) error {
+	return s.updateCorrection(ctx, func(writer *correctionWriter) error { return fn(writer) })
+}
+
+func (s *Store) UpdateInstrumentCorrection(
+	ctx context.Context,
+	fn func(application.InstrumentCorrectionWriter) error,
+) error {
+	return s.updateCorrection(ctx, func(writer *correctionWriter) error { return fn(writer) })
+}
+
+func (s *Store) updateCorrection(ctx context.Context, fn func(*correctionWriter) error) error {
 	if s.HistoryUpdating() {
 		return application.ErrHistoryUpdating
 	}
@@ -57,8 +79,8 @@ func (s *Store) UpdateActivityCorrection(
 
 	defer func() { _ = tx.Rollback() }()
 
-	writer := &activityCorrectionWriter{
-		activityCorrectionReader: activityCorrectionReader{s.queries.WithTx(tx)},
+	writer := &correctionWriter{
+		correctionReader: correctionReader{s.queries.WithTx(tx)},
 	}
 	if err = fn(writer); err != nil {
 		return err
@@ -71,16 +93,30 @@ func (s *Store) UpdateActivityCorrection(
 	return s.commit(ctx, tx)
 }
 
-func (r activityCorrectionReader) ActivityRevision(ctx context.Context, id string) (int64, error) {
+func (r correctionReader) ActivityRevision(ctx context.Context, id string) (int64, error) {
 	row, err := r.q.Execution(ctx, id)
 	return row.Revision, err
 }
 
-func (r activityCorrectionReader) ActivityDecisions(
+func (r correctionReader) ActivityDecisions(
 	ctx context.Context,
 	id string,
 ) ([]application.DecisionRecord, error) {
-	rows, err := r.q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: id})
+	return r.decisions(ctx, "activity", id)
+}
+
+func (r correctionReader) InstrumentDecisions(
+	ctx context.Context,
+	id string,
+) ([]application.DecisionRecord, error) {
+	return r.decisions(ctx, "instrument", id)
+}
+
+func (r correctionReader) decisions(
+	ctx context.Context,
+	kind, id string,
+) ([]application.DecisionRecord, error) {
+	rows, err := r.q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: kind, TargetID: id})
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +144,7 @@ func (r activityCorrectionReader) ActivityDecisions(
 	return out, nil
 }
 
-func (r activityCorrectionReader) ActivityObservation(
+func (r correctionReader) ActivityObservation(
 	ctx context.Context,
 	id, value string,
 ) (source.ActivityObservation, error) {
@@ -138,7 +174,7 @@ func (r activityCorrectionReader) ActivityObservation(
 	return decodeObservation(data)
 }
 
-func (r activityCorrectionReader) ActivityInputs(
+func (r correctionReader) ActivityInputs(
 	ctx context.Context,
 	id string,
 	selections []application.FieldSelection,
@@ -156,7 +192,7 @@ func (r activityCorrectionReader) ActivityInputs(
 	return loadActivityCalculation(ctx, r.q, row, states[id], selections)
 }
 
-func (w *activityCorrectionWriter) Submission(
+func (w *correctionWriter) Submission(
 	ctx context.Context,
 	id string,
 ) (application.DecisionInput, string, bool, error) {
@@ -177,7 +213,7 @@ func (w *activityCorrectionWriter) Submission(
 	return input, row.Actor, true, nil
 }
 
-func (w *activityCorrectionWriter) InsertDecision(
+func (w *correctionWriter) InsertDecision(
 	ctx context.Context,
 	field, request application.DecisionInput,
 	actor string,
@@ -195,7 +231,7 @@ func (w *activityCorrectionWriter) InsertDecision(
 		ctx,
 		sqlc.PutDecisionParams{
 			ID:         id,
-			TargetKind: "activity",
+			TargetKind: field.TargetKind,
 			TargetID:   field.TargetID,
 			Scope:      field.Scope,
 			Text:       field.Text,
@@ -216,14 +252,14 @@ func (w *activityCorrectionWriter) InsertDecision(
 		ctx,
 		sqlc.SupersedeDecisionsParams{
 			DecisionID: id,
-			TargetKind: "activity",
+			TargetKind: field.TargetKind,
 			TargetID:   field.TargetID,
 			Scope:      field.Scope,
 		},
 	)
 }
 
-func (w *activityCorrectionWriter) SaveActivity(
+func (w *correctionWriter) SaveActivity(
 	ctx context.Context,
 	id string,
 	calculation application.ActivityCalculation,

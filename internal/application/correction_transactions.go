@@ -18,8 +18,8 @@ import (
 type CorrectionStore interface {
 	ViewActivityCorrection(context.Context, func(ActivityCorrectionReader) error) error
 	UpdateActivityCorrection(context.Context, func(ActivityCorrectionWriter) error) error
-	CheckInstrumentCorrection(context.Context, Decision) error
-	SaveInstrumentDecision(context.Context, Decision, string, time.Time) error
+	ViewInstrumentCorrection(context.Context, func(InstrumentCorrectionReader) error) error
+	UpdateInstrumentCorrection(context.Context, func(InstrumentCorrectionWriter) error) error
 }
 
 type ActivityCorrectionReader interface {
@@ -29,10 +29,14 @@ type ActivityCorrectionReader interface {
 	ActivityInputs(context.Context, string, []FieldSelection) (ActivityCalculationInput, error)
 }
 
-type ActivityCorrectionWriter interface {
-	ActivityCorrectionReader
+type DecisionWriter interface {
 	Submission(context.Context, string) (DecisionInput, string, bool, error)
 	InsertDecision(context.Context, DecisionInput, DecisionInput, string, time.Time, string) error
+}
+
+type ActivityCorrectionWriter interface {
+	ActivityCorrectionReader
+	DecisionWriter
 	SaveActivity(context.Context, string, ActivityCalculation) error
 }
 
@@ -43,7 +47,10 @@ func CheckCorrection(ctx context.Context, store CorrectionStore, decision Decisi
 	}
 
 	if f.TargetKind == "instrument" {
-		return store.CheckInstrumentCorrection(ctx, decision)
+		return store.ViewInstrumentCorrection(ctx, func(reader InstrumentCorrectionReader) error {
+			_, _, err := prepareInstrumentCorrection(ctx, reader, f)
+			return err
+		})
 	}
 
 	return store.ViewActivityCorrection(ctx, func(reader ActivityCorrectionReader) error {
@@ -69,7 +76,7 @@ func SaveDecision(
 	}
 
 	if f.TargetKind == "instrument" {
-		return store.SaveInstrumentDecision(ctx, decision, actor, at)
+		return saveInstrumentDecision(ctx, store, f, actor, at)
 	}
 
 	return store.UpdateActivityCorrection(ctx, func(writer ActivityCorrectionWriter) error {
