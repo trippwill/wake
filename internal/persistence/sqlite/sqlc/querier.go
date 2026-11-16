@@ -45,6 +45,9 @@ type Querier interface {
 	AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error
 	AdvanceInstrumentRevision(ctx context.Context, id string) error
 	AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64, error)
+	// Only a correction occurrence can connect its resolved activities. A reference
+	// used to discover incident corrections cannot itself connect activities.
+	AffectedSourceCorrections(ctx context.Context, arg AffectedSourceCorrectionsParams) ([]AffectedSourceCorrectionsRow, error)
 	ApprovedRestartStreams(ctx context.Context, connectionID string) ([]string, error)
 	ArtifactInstrumentClaims(ctx context.Context, artifactID string) ([]ArtifactInstrumentClaimsRow, error)
 	ArtifactProvider(ctx context.Context, id string) (string, error)

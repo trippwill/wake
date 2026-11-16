@@ -448,6 +448,91 @@ func (q *Queries) AdvanceWork(ctx context.Context, arg AdvanceWorkParams) (int64
 	return result.RowsAffected()
 }
 
+const affectedSourceCorrections = `-- name: AffectedSourceCorrections :many
+WITH RECURSIVE reached(kind, account, key, occurrence) AS (
+ SELECT 'activity', '', CAST(value AS TEXT), 0 FROM json_each(CAST(?1 AS TEXT))
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM source_corrections c
+ WHERE c.artifact_id=?2 AND c.version=?3
+ UNION
+ SELECT 'incident', e.account_id, e.reference, 0 FROM reached r
+ JOIN event_links e ON e.execution_id=r.key WHERE r.kind='activity'
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM reached r
+ JOIN source_corrections c ON c.account_id=r.account AND c.target=r.key WHERE r.kind='incident'
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM reached r
+ JOIN source_corrections c ON c.account_id=r.account AND c.replacement=r.key WHERE r.kind='incident'
+ UNION
+ SELECT 'resolve', c.account_id, c.target, 0 FROM reached r
+ JOIN source_corrections c ON c.rowid=r.occurrence WHERE r.kind='correction'
+ UNION
+ SELECT 'resolve', c.account_id, c.replacement, 0 FROM reached r
+ JOIN source_corrections c ON c.rowid=r.occurrence WHERE r.kind='correction'
+ UNION
+ SELECT 'activity', '', e.execution_id, 0 FROM reached r
+ JOIN event_links e ON e.account_id=r.account AND e.reference=r.key WHERE r.kind='resolve'
+),
+roles(role) AS (VALUES ('target'), ('replacement'))
+SELECT c.artifact_id, c.version, c.location, c.kind, c.status,
+ CAST(roles.role AS TEXT) AS role, CAST(coalesce(e.execution_id, '') AS TEXT) AS activity_id
+FROM reached r JOIN source_corrections c ON c.rowid=r.occurrence
+CROSS JOIN roles
+LEFT JOIN event_links e ON e.account_id=c.account_id
+ AND e.reference=CASE roles.role WHEN 'target' THEN c.target ELSE c.replacement END
+WHERE r.kind='correction'
+ORDER BY c.artifact_id,c.version,c.location,roles.role,e.execution_id
+`
+
+type AffectedSourceCorrectionsParams struct {
+	ActivityIds string
+	ArtifactID  string
+	Version     string
+}
+
+type AffectedSourceCorrectionsRow struct {
+	ArtifactID string
+	Version    string
+	Location   string
+	Kind       string
+	Status     string
+	Role       string
+	ActivityID string
+}
+
+// Only a correction occurrence can connect its resolved activities. A reference
+// used to discover incident corrections cannot itself connect activities.
+func (q *Queries) AffectedSourceCorrections(ctx context.Context, arg AffectedSourceCorrectionsParams) ([]AffectedSourceCorrectionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, affectedSourceCorrections, arg.ActivityIds, arg.ArtifactID, arg.Version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AffectedSourceCorrectionsRow
+	for rows.Next() {
+		var i AffectedSourceCorrectionsRow
+		if err := rows.Scan(
+			&i.ArtifactID,
+			&i.Version,
+			&i.Location,
+			&i.Kind,
+			&i.Status,
+			&i.Role,
+			&i.ActivityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const approvedRestartStreams = `-- name: ApprovedRestartStreams :many
 SELECT r.stream FROM sync.restart_scopes r
 JOIN sync.configurations c ON c.id=r.connection_id AND c.settings=r.settings

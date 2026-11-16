@@ -648,8 +648,11 @@ Editable forms preserve drafts, selection and focus while work runs.
 Activity identity allocations and baseline selections remain retained independently
 of accepted-value projection updates. The projector applies the same typed
 compatibility and enrichment rules to retained observations during processing and
-recovery. Source corrections are evaluated across connected relationship groups;
-ambiguous endpoints, competing replacements and cycles prevent partial application.
+recovery. Retained processing evaluates the complete groups reached by newly
+processed instructions and affected activities. Resolved activity identities
+connect instructions within a group. Ambiguous endpoints, competing replacements
+and cycles prevent partial application. Operator corrections reuse the committed
+source lifecycle and ambiguity and recalculate accepted values from retained inputs.
 Accepted value, link and conflict-status changes advance entity revisions; an
 unchanged replay does not. Cancellation and supersession retain original activity
 and its evidence, while replacement activity retains its own identity.

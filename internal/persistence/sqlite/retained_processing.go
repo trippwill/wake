@@ -243,12 +243,6 @@ func (p retainedProcessing) SeedActivityBases(ctx context.Context) error {
 	return p.q.SeedArtifactBases(ctx, p.id)
 }
 
-func (p retainedProcessing) SourceCorrectionStates(
-	ctx context.Context,
-) (map[string]application.ActivityState, error) {
-	return correctionStates(ctx, p.q)
-}
-
 func (p retainedProcessing) ClaimActivityIDs(ctx context.Context) ([]string, error) {
 	rows, err := p.q.NewClaimActivityIDs(ctx, p.id)
 	if err != nil {

@@ -296,6 +296,43 @@ UPDATE executions SET accepted=sqlc.arg(accepted),status=sqlc.arg(status),review
 INSERT INTO source_corrections(artifact_id,version,location,account_id,kind,target,replacement) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING;
 -- name: SourceCorrections :many
 SELECT * FROM source_corrections ORDER BY artifact_id,version,location;
+-- name: AffectedSourceCorrections :many
+-- Only a correction occurrence can connect its resolved activities. A reference
+-- used to discover incident corrections cannot itself connect activities.
+WITH RECURSIVE reached(kind, account, key, occurrence) AS (
+ SELECT 'activity', '', CAST(value AS TEXT), 0 FROM json_each(CAST(sqlc.arg(activity_ids) AS TEXT))
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM source_corrections c
+ WHERE c.artifact_id=sqlc.arg(artifact_id) AND c.version=sqlc.arg(version)
+ UNION
+ SELECT 'incident', e.account_id, e.reference, 0 FROM reached r
+ JOIN event_links e ON e.execution_id=r.key WHERE r.kind='activity'
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM reached r
+ JOIN source_corrections c ON c.account_id=r.account AND c.target=r.key WHERE r.kind='incident'
+ UNION
+ SELECT 'correction', '', '', c.rowid FROM reached r
+ JOIN source_corrections c ON c.account_id=r.account AND c.replacement=r.key WHERE r.kind='incident'
+ UNION
+ SELECT 'resolve', c.account_id, c.target, 0 FROM reached r
+ JOIN source_corrections c ON c.rowid=r.occurrence WHERE r.kind='correction'
+ UNION
+ SELECT 'resolve', c.account_id, c.replacement, 0 FROM reached r
+ JOIN source_corrections c ON c.rowid=r.occurrence WHERE r.kind='correction'
+ UNION
+ SELECT 'activity', '', e.execution_id, 0 FROM reached r
+ JOIN event_links e ON e.account_id=r.account AND e.reference=r.key WHERE r.kind='resolve'
+),
+roles(role) AS (VALUES ('target'), ('replacement'))
+SELECT c.artifact_id, c.version, c.location, c.kind, c.status,
+ CAST(roles.role AS TEXT) AS role, CAST(coalesce(e.execution_id, '') AS TEXT) AS activity_id
+FROM reached r JOIN source_corrections c ON c.rowid=r.occurrence
+CROSS JOIN roles
+LEFT JOIN event_links e ON e.account_id=c.account_id
+ AND e.reference=CASE roles.role WHEN 'target' THEN c.target ELSE c.replacement END
+WHERE r.kind='correction'
+ORDER BY c.artifact_id,c.version,c.location,roles.role,e.execution_id;
+
 -- name: CorrectionStatus :exec
 UPDATE source_corrections SET status=? WHERE artifact_id=? AND version=? AND location=?;
 -- name: SetObservationOutcome :exec

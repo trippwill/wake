@@ -36,7 +36,7 @@ type RetainedProcessingWriter interface {
 	BindPositionUnderliers(context.Context, []string) error
 	SeedActivityBases(context.Context) error
 	ActivityLinks
-	SourceCorrectionStates(context.Context) (map[string]ActivityState, error)
+	ReconcileSourceCorrections(context.Context, []string) (map[string]ActivityState, error)
 	ClaimActivityIDs(context.Context) ([]string, error)
 	ActivityState(context.Context, string) (ActivityState, error)
 	BindActivityInstrument(context.Context, string) error
@@ -162,18 +162,20 @@ func projectRetainedArtifact(ctx context.Context, writer RetainedProcessingWrite
 		return err
 	}
 
-	states, err := writer.SourceCorrectionStates(ctx)
-	if err != nil {
-		return err
-	}
-
 	admitted, err := writer.ClaimActivityIDs(ctx)
 	if err != nil {
 		return err
 	}
 
-	affected := make(map[string]bool, len(linked)+len(admitted))
-	for _, id := range append(admitted, linked...) {
+	admitted = append(admitted, linked...)
+
+	states, err := writer.ReconcileSourceCorrections(ctx, admitted)
+	if err != nil {
+		return err
+	}
+
+	affected := make(map[string]bool, len(admitted))
+	for _, id := range admitted {
 		affected[id] = true
 	}
 
