@@ -41,14 +41,14 @@ type resource struct {
 	Revision int64  `json:"revision"`
 }
 type snapshot struct {
-	WarehouseID string            `json:"warehouse_id"`
-	Version     string            `json:"version"`
-	Resources   []json.RawMessage `json:"resources"`
+	BaselineID string            `json:"baseline_id"`
+	Version    string            `json:"version"`
+	Resources  []json.RawMessage `json:"resources"`
 }
 type state struct {
-	WarehouseID string                     `json:"warehouse_id"`
-	Version     string                     `json:"version"`
-	Resources   map[string]json.RawMessage `json:"resources"`
+	BaselineID string                     `json:"baseline_id"`
+	Version    string                     `json:"version"`
+	Resources  map[string]json.RawMessage `json:"resources"`
 }
 type unavailableError struct{ error }
 
@@ -285,8 +285,8 @@ func validateSnapshot(input snapshot) (state, error) {
 	if err = validateContract("FinancialSnapshot", data); err != nil {
 		return state{}, err
 	}
-	out := state{WarehouseID: input.WarehouseID, Version: input.Version, Resources: map[string]json.RawMessage{}}
-	if input.WarehouseID == "" || input.Version == "" || len(input.Version) > 256 || strings.ContainsAny(input.Version, "\"\r\n") || input.Resources == nil {
+	out := state{BaselineID: input.BaselineID, Version: input.Version, Resources: map[string]json.RawMessage{}}
+	if input.BaselineID == "" || input.Version == "" || len(input.Version) > 256 || strings.ContainsAny(input.Version, "\"\r\n") || input.Resources == nil {
 		return out, errors.New("protocol: incomplete snapshot envelope")
 	}
 	for _, raw := range input.Resources {
@@ -407,7 +407,7 @@ func readState(db *sql.DB) (state, error) {
 		}
 		resources = append(resources, raw)
 	}
-	return validateSnapshot(snapshot{stored.WarehouseID, stored.Version, resources})
+	return validateSnapshot(snapshot{stored.BaselineID, stored.Version, resources})
 }
 func save(ctx context.Context, db *sql.DB, next state) error {
 	data, err := json.Marshal(next)
@@ -447,7 +447,7 @@ func (c *client) sync(ctx context.Context, current *state, db *sql.DB) (bool, er
 	if etag != `"`+next.Version+`"` {
 		return false, errors.New("protocol: snapshot version and ETag differ")
 	}
-	replaced := current.WarehouseID != "" && current.WarehouseID != next.WarehouseID
+	replaced := current.BaselineID != "" && current.BaselineID != next.BaselineID
 	if !replaced && current.Version != "" {
 		for key, raw := range next.Resources {
 			if old, ok := current.Resources[key]; ok {
@@ -677,7 +677,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		}{"synchronized", len(current.Resources), replaced, current.Version}); e != nil {
 			return e
 		}
-		completed = publication{current.WarehouseID, current.Version}
+		completed = publication{current.BaselineID, current.Version}
 		return nil
 	}
 	var unavailable unavailableError

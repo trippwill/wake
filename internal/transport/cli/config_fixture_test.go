@@ -64,7 +64,7 @@ func setupDaemonFixture(t *testing.T) (config.Config, string, []byte) {
 	path := filepath.Join(cfg.Paths.ConfigDir, "config.toml")
 	content := fmt.Appendf(
 		nil,
-		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n",
+		"[storage]\nfinancial_path=%q\ncredentials_path=%q\n[paths]\nruntime_dir=%q\n",
 		cfg.Storage.WarehousePath, cfg.Storage.ConnectionsPath,
 		cfg.Paths.RuntimeDir,
 	)

@@ -15,8 +15,8 @@ import (
 )
 
 type publication struct {
-	WarehouseID string `json:"warehouse_id"`
-	Version     string `json:"version"`
+	BaselineID string `json:"baseline_id"`
+	Version    string `json:"version"`
 }
 
 type positionsUpdateError struct{ error }

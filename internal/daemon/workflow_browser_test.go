@@ -1484,7 +1484,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := ResetStorage(t.Context(), cfg, "", ResetWarehouse, true, nil)
+	result, err := ResetStorage(t.Context(), cfg, "", ResetFinancial, true, nil)
 	if err != nil || result.DryRun {
 		t.Fatal("warehouse reset failed", result, err)
 	}

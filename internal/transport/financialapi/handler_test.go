@@ -154,9 +154,9 @@ func (s reads) Snapshot(
 
 	return application.SnapshotRead{
 		Snapshot: application.FinancialSnapshot{
-			WarehouseID: "warehouse",
-			Version:     "opaque-version",
-			Resources:   []application.CanonicalResource{s.item},
+			BaselineID: "warehouse",
+			Version:    "opaque-version",
+			Resources:  []application.CanonicalResource{s.item},
 		},
 		Unchanged: unchanged,
 	}, s.err
@@ -252,11 +252,11 @@ func (s reads) Positions(
 	c application.SnapshotCondition,
 ) (application.PositionsRead, error) {
 	v := application.PositionsView{
-		WarehouseID: "warehouse",
-		AccountID:   id,
-		Version:     "positions-version",
-		Status:      "unavailable",
-		Reason:      new("not_reported"),
+		BaselineID: "warehouse",
+		AccountID:  id,
+		Version:    "positions-version",
+		Status:     "unavailable",
+		Reason:     new("not_reported"),
 	}
 
 	return application.PositionsRead{View: v, Unchanged: c.Matches(v.Version)}, s.err

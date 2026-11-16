@@ -1120,12 +1120,13 @@ type FieldDetailReason string
 
 // FinancialSnapshot defines model for FinancialSnapshot.
 type FinancialSnapshot struct {
+	BaselineId string `json:"baseline_id"`
+
 	// Resources Complete accepted set, including cancelled or superseded activities. Each kind/id occurs once.
 	Resources []Resource `json:"resources"`
 
 	// Version Opaque publication version; compare for equality only.
-	Version     string `json:"version"`
-	WarehouseId string `json:"warehouse_id"`
+	Version string `json:"version"`
 }
 
 // FundTerms defines model for FundTerms.
@@ -1325,9 +1326,9 @@ type PositionSide string
 
 // PositionsPublication defines model for PositionsPublication.
 type PositionsPublication struct {
-	AccountId   string `json:"account_id"`
-	Version     string `json:"version"`
-	WarehouseId string `json:"warehouse_id"`
+	AccountId  string `json:"account_id"`
+	BaselineId string `json:"baseline_id"`
+	Version    string `json:"version"`
 }
 
 // PositionsView Available requires as_of, null reason and an array (possibly empty). Unavailable requires a reason and null positions. The as-of time may be unknown when unavailable.
@@ -1340,12 +1341,12 @@ type PositionsView struct {
 		Basis PositionsViewAsOfBasis `json:"basis"`
 		Date  openapi_types.Date     `json:"date"`
 	} `json:"as_of"`
-	Positions   *[]Position          `json:"positions"`
-	Reason      *PositionsViewReason `json:"reason"`
-	Status      PositionsViewStatus  `json:"status"`
-	Version     string               `json:"version"`
-	WarehouseId string               `json:"warehouse_id"`
-	union       json.RawMessage
+	BaselineId string               `json:"baseline_id"`
+	Positions  *[]Position          `json:"positions"`
+	Reason     *PositionsViewReason `json:"reason"`
+	Status     PositionsViewStatus  `json:"status"`
+	Version    string               `json:"version"`
+	union      json.RawMessage
 }
 
 // PositionsViewAsOfBasis Broker-effective time or the time the source fetched holdings.
@@ -1383,8 +1384,8 @@ type PositionsView1Status string
 
 // Publication defines model for Publication.
 type Publication struct {
-	Version     string `json:"version"`
-	WarehouseId string `json:"warehouse_id"`
+	BaselineId string `json:"baseline_id"`
+	Version    string `json:"version"`
 }
 
 // Quantity defines model for Quantity.
@@ -2072,6 +2073,11 @@ func (t PositionsView) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'as_of': %w", err)
 	}
 
+	object["baseline_id"], err = json.Marshal(t.BaselineId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'baseline_id': %w", err)
+	}
+
 	object["positions"], err = json.Marshal(t.Positions)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'positions': %w", err)
@@ -2090,11 +2096,6 @@ func (t PositionsView) MarshalJSON() ([]byte, error) {
 	object["version"], err = json.Marshal(t.Version)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'version': %w", err)
-	}
-
-	object["warehouse_id"], err = json.Marshal(t.WarehouseId)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'warehouse_id': %w", err)
 	}
 
 	b, err = json.Marshal(object)
@@ -2126,6 +2127,13 @@ func (t *PositionsView) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if raw, found := object["baseline_id"]; found {
+		err = json.Unmarshal(raw, &t.BaselineId)
+		if err != nil {
+			return fmt.Errorf("error reading 'baseline_id': %w", err)
+		}
+	}
+
 	if raw, found := object["positions"]; found {
 		err = json.Unmarshal(raw, &t.Positions)
 		if err != nil {
@@ -2151,13 +2159,6 @@ func (t *PositionsView) UnmarshalJSON(b []byte) error {
 		err = json.Unmarshal(raw, &t.Version)
 		if err != nil {
 			return fmt.Errorf("error reading 'version': %w", err)
-		}
-	}
-
-	if raw, found := object["warehouse_id"]; found {
-		err = json.Unmarshal(raw, &t.WarehouseId)
-		if err != nil {
-			return fmt.Errorf("error reading 'warehouse_id': %w", err)
 		}
 	}
 

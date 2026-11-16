@@ -17,7 +17,7 @@ description: Read accounts, financial activity, and reported positions from a ru
    to the warehouse.
 3. Query activity with a narrow date range and family when possible. Activity
    defaults to accepted records. Follow `next_offset` if needed and compare
-   `warehouse_id` and `version` between pages. Restart the query if they change
+   `baseline_id` and `version` between pages. Restart the query if they change
    and the task needs consistent results. Each page reads a complete snapshot.
 4. Read the reported position view for the chosen account. Check `status`,
    `as_of` and `reason` before using the rows. An unavailable view is distinct

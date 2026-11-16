@@ -69,11 +69,11 @@ func TestAPIPublicationStreamSurvivesReadAndWriteLimitsAndJoinsShutdown(t *testi
 	line, err = reader.ReadString('\n')
 
 	var publication struct {
-		WarehouseID string `json:"warehouse_id"`
-		Version     string `json:"version"`
+		BaselineID string `json:"baseline_id"`
+		Version    string `json:"version"`
 	}
 	if err != nil || json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &publication) != nil ||
-		publication.WarehouseID == "" ||
+		publication.BaselineID == "" ||
 		publication.Version == "" {
 		t.Fatal("missing initial publication", line, err)
 	}

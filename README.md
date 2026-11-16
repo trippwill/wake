@@ -49,8 +49,8 @@ Omitted settings use the following defaults:
 
 ```toml
 [storage]
-warehouse_path = "wake.db"
-connections_path = "connections.db"
+financial_path = "wake.db"
+credentials_path = "connections.db"
 sync_path = "sync.db"
 unattended_upgrade = false
 
@@ -135,26 +135,28 @@ The daemon writes structured operational logs to stderr, including completed wor
 failures and recovery actions. Startup reports both listeners. Set `[log] level = "debug"`
 in the TOML for stage, validation, pacing, and cache detail.
 
-For a routine backup, run `wake storage snapshot warehouse history.tar` while
-Wake runs. To restore, stop Wake, select a configuration with a vacant warehouse
-and sidecar path, then run `wake storage restore history.tar`. Start Wake with
+Run `wake storage snapshot history.tar` to save the financial database while
+Wake runs. To restore, stop Wake, select a configuration with a vacant financial
+database path, then run `wake storage restore financial history.tar`. Start Wake with
 local access set up to read the retained history. Restore preserves resource IDs
 and gives API consumers a fresh publication baseline.
 
 With Wake stopped, `wake storage backup installation.tar` saves a complete
-installation. Keep the credential key separately. See [backup and recovery](.docs/product/coverage.md#backup-and-recovery)
-for installation restore and source review. `wake storage upgrade` checks the
+installation. Keep the credential key separately and use
+`wake storage restore installation installation.tar` to restore the backup.
+See [backup and recovery](.docs/product/coverage.md#backup-and-recovery) for
+replacement and source review. `wake storage upgrade` checks the
 financial format.
 
 To clear financial history or encrypted source access, stop Wake and preview
 the files selected by the reset:
 
 ```sh
-wake storage reset warehouse
-wake storage reset warehouse --confirm
+wake storage reset financial
+wake storage reset financial --confirm
 ```
 
-Choose `credentials` or `warehouse`. Reset is a dry run unless `--confirm` is present
+Choose `credentials` or `financial`. Reset is a dry run unless `--confirm` is present
 and works with corrupt or unsupported databases. Reset refuses unresolved SQLite
 journals. Preserve any files you need before confirming.
 
@@ -200,13 +202,13 @@ is `http://127.0.0.1:8788`. Client reads use those settings independently of dae
 configuration. Tokens grant financial reads and do not grant browser administration.
 Revoke a lost or retired token in **System → API clients**.
 
-Account lists return `warehouse_id`, `version`, and `resources`. Activity
+Account lists return `baseline_id`, `version`, and `resources`. Activity
 queries read a complete snapshot for each page and filter it locally. Dates are
 inclusive. Results default to accepted activity, newest civil date first, with
 up to 100 results per page. For example, a page can return
-`{"warehouse_id":"warehouse","version":"version","resources":[],"next_offset":null}`.
+`{"baseline_id":"baseline","version":"version","resources":[],"next_offset":null}`.
 When `next_offset` is an integer, pass it as `--offset` with the same filters.
-Compare `warehouse_id` and `version` across pages when consistency matters.
+Compare `baseline_id` and `version` across pages when consistency matters.
 Run `wake activity query --help` for the state, family, and limit options.
 
 Exact account and positions reads and raw GETs return the

@@ -15,19 +15,19 @@ import (
 )
 
 type positionsPublication struct {
-	WarehouseID string `json:"warehouse_id"`
-	AccountID   string `json:"account_id"`
-	Version     string `json:"version"`
+	BaselineID string `json:"baseline_id"`
+	AccountID  string `json:"account_id"`
+	Version    string `json:"version"`
 }
 
 type positionsView struct {
-	WarehouseID string            `json:"warehouse_id"`
-	AccountID   string            `json:"account_id"`
-	Version     string            `json:"version"`
-	Status      string            `json:"status"`
-	AsOf        json.RawMessage   `json:"as_of"`
-	Reason      *string           `json:"reason"`
-	Positions   []json.RawMessage `json:"positions"`
+	BaselineID string            `json:"baseline_id"`
+	AccountID  string            `json:"account_id"`
+	Version    string            `json:"version"`
+	Status     string            `json:"status"`
+	AsOf       json.RawMessage   `json:"as_of"`
+	Reason     *string           `json:"reason"`
+	Positions  []json.RawMessage `json:"positions"`
 }
 
 func (c *client) readPositions(ctx context.Context, account string, previous positionsView) (positionsView, error) {
@@ -122,7 +122,7 @@ func (c *client) positionsMode(ctx context.Context, account string, follow bool,
 	}
 	announced := false
 	c.positionUpdate = func(p positionsPublication) error {
-		if p.AccountID != account || announced && p.WarehouseID == current.WarehouseID && p.Version == current.Version {
+		if p.AccountID != account || announced && p.BaselineID == current.BaselineID && p.Version == current.Version {
 			return nil
 		}
 		err := synchronize()

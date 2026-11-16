@@ -26,7 +26,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	processConfirmationReport(t, s, "snapshot", row)
 
 	first, err := s.Snapshot(ctx, application.SnapshotCondition{})
-	if err != nil || first.Unchanged || first.Snapshot.WarehouseID == "" || first.Snapshot.Version == "" ||
+	if err != nil || first.Unchanged || first.Snapshot.BaselineID == "" || first.Snapshot.Version == "" ||
 		len(first.Snapshot.Resources) != 4 {
 		t.Fatal(first, err)
 	}
@@ -57,7 +57,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 
 	changed, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
 	if err != nil || changed.Unchanged || changed.Snapshot.Version == first.Snapshot.Version ||
-		changed.Snapshot.WarehouseID != first.Snapshot.WarehouseID {
+		changed.Snapshot.BaselineID != first.Snapshot.BaselineID {
 		t.Fatal("accepted change did not replace snapshot version", changed, err)
 	}
 
@@ -75,7 +75,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	processConfirmationReport(t, replacement, "new-warehouse", row)
 
 	baseline, err := replacement.Snapshot(ctx, application.MatchingSnapshotVersions(changed.Snapshot.Version))
-	if err != nil || baseline.Unchanged || baseline.Snapshot.WarehouseID == changed.Snapshot.WarehouseID ||
+	if err != nil || baseline.Unchanged || baseline.Snapshot.BaselineID == changed.Snapshot.BaselineID ||
 		baseline.Snapshot.Version == changed.Snapshot.Version {
 		t.Fatal("warehouse identity did not establish a new baseline", baseline, err)
 	}
@@ -84,7 +84,7 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 func TestEmptyWarehouseSnapshotIsComplete(t *testing.T) {
 	s, _ := testStore(t)
 	snapshot, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
-	if err != nil || snapshot.Snapshot.WarehouseID == "" || snapshot.Snapshot.Version == "" ||
+	if err != nil || snapshot.Snapshot.BaselineID == "" || snapshot.Snapshot.Version == "" ||
 		snapshot.Snapshot.Resources == nil ||
 		len(snapshot.Snapshot.Resources) != 0 {
 		t.Fatal(snapshot, err)
@@ -316,7 +316,7 @@ func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
 		}
 
 		if response.Header().Get("ETag") == "" ||
-			(test.status == http.StatusOK && !bytes.Contains(response.Body.Bytes(), []byte(`"warehouse_id"`))) ||
+			(test.status == http.StatusOK && !bytes.Contains(response.Body.Bytes(), []byte(`"baseline_id"`))) ||
 			test.status == http.StatusNotModified && response.Body.Len() != 0 {
 			t.Fatal("incorrect conditional snapshot body", test.condition, response.Body.String())
 		}

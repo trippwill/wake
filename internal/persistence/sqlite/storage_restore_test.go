@@ -78,7 +78,7 @@ func TestStorageBackupRestoresEvidenceAndAccess(t *testing.T) {
 
 	target := vacantRecoveryProfile(t)
 	if _, err := Restore(ctx, target, archive, false); !errors.Is(err, ErrBackupScope) ||
-		!strings.Contains(err.Error(), "--with-credentials") {
+		!strings.Contains(err.Error(), "wake storage restore installation") {
 		t.Fatalf("paired backup should require explicit credential restore: %v", err)
 	}
 

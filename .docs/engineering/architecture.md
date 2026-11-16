@@ -13,8 +13,8 @@ retained evidence and decisions as well as actively maintained accepted views.
 Financial, synchronization, and encrypted upstream access data have independent
 SQLite formats. The daemon can open the financial database and existing local
 authority on their own. It attaches optional stores when their formats and
-association validate. Public configuration and API names retain their warehouse
-spelling. The [financial storage research](../research/financial-storage-architecture.md)
+association validate. The API identifies each publication baseline separately
+from the financial store's lineage. The [financial storage research](../research/financial-storage-architecture.md)
 explains the design and its rollback limits.
 
 ## One local application
@@ -351,7 +351,7 @@ retry maintenance responses with backoff. The financial API adapter owns its nar
 financial-read interface. Wire and admin
 adapters consume application read values without exposing database transactions.
 
-`GET /v1/snapshot` returns warehouse identity, an opaque publication version and
+`GET /v1/snapshot` returns a baseline ID, an opaque publication version and
 the complete accepted resource set. One consistent read materializes the response
 and releases its transaction before client I/O. Its ETag supports conditional GET;
 an unchanged poll avoids loading resource bodies and returns no payload. Individual
@@ -363,7 +363,7 @@ consistency or mirror ownership. Subscription precedes the initial metadata read
 only successful commits that advance a financial view signal subscribers.
 Signals coalesce without waiting for clients. Each stream reads current publication
 metadata in a bounded transaction, releases it before I/O, and announces the opaque
-version and warehouse identity. Comment heartbeats do not read storage. Streams
+version and baseline ID. Comment heartbeats do not read storage. Streams
 have bounded writes and join shutdown; ordinary reads keep their finite lifetimes.
 Reconnect announces current state without replaying intermediate transitions.
 Notifications never acknowledge a client's mirror: clients advance their saved
@@ -380,8 +380,8 @@ Its follow mode uses SSE, detects idle streams, and reconnects with bounded back
 Stream reconnect preserves the mirror; snapshot validation or persistence errors
 fail visibly with the last successful mirror intact.
 
-Daemon restarts and access-store recovery preserve warehouse identity and accepted
-publication state. A different warehouse installs a clearly reported new baseline.
+Daemon restarts and access-store recovery preserve the baseline ID and accepted
+publication state. A changed baseline ID tells consumers to replace their mirrors.
 Synchronization delivers current accepted state; it does not deliver every
 intermediate committed transition that occurred while a client was disconnected.
 Immutable evidence and operator decision history remain retained inside Wake.
@@ -474,7 +474,7 @@ the self-contained committed copy before publishing the archive. Restore validat
 the archive and stages its warehouse beside the vacant destination. Activation
 holds the directory lock, rechecks intent and sidecar paths and uses a no-replace
 rename. Restore preserves lineage and financial resource IDs and renews the
-publication epoch that consumers receive as `warehouse_id`. Operational files and
+publication epoch that consumers receive as `baseline_id`. Operational files and
 existing local authority are independent of that archive. Output to a vacant path
 and startup can proceed beside missing, damaged, or older optional files.
 

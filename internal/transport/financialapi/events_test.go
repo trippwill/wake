@@ -93,7 +93,7 @@ func TestPublicationStreamSubscribesBeforeInitialReadAndCleansUp(t *testing.T) {
 				}
 
 				return application.SnapshotRead{
-					Snapshot: application.FinancialSnapshot{WarehouseID: "warehouse", Version: version},
+					Snapshot: application.FinancialSnapshot{BaselineID: "warehouse", Version: version},
 				}, nil
 			}
 			stopping := make(chan struct{})
@@ -118,7 +118,7 @@ func TestPublicationStreamSubscribesBeforeInitialReadAndCleansUp(t *testing.T) {
 			reader := bufio.NewReader(response.Body)
 			for _, version := range []string{"initial", "new"} {
 				event, e := publicationFrame(reader)
-				if e != nil || event.Version != version || event.WarehouseId != "warehouse" {
+				if e != nil || event.Version != version || event.BaselineId != "warehouse" {
 					t.Fatal("lost setup transition", event, e)
 				}
 			}
@@ -194,7 +194,7 @@ func TestPublicationStreamCancellationStopsBufferedPositions(t *testing.T) {
 		positions: []application.PositionsPublication{{AccountID: "account", Version: "positions"}},
 		snapshot: func(context.Context, application.SnapshotCondition) (application.SnapshotRead, error) {
 			return application.SnapshotRead{
-				Snapshot: application.FinancialSnapshot{WarehouseID: "warehouse", Version: "initial"},
+				Snapshot: application.FinancialSnapshot{BaselineID: "warehouse", Version: "initial"},
 			}, nil
 		},
 	}

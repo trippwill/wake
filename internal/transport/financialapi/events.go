@@ -43,7 +43,7 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 
 		read, err := h.reads.Snapshot(ctx, application.AnySnapshotVersion())
 
-		return Publication{WarehouseId: read.Snapshot.WarehouseID, Version: read.Snapshot.Version}, err
+		return Publication{BaselineId: read.Snapshot.BaselineID, Version: read.Snapshot.Version}, err
 	}
 
 	positionMetadata := func() ([]application.PositionsPublication, error) {

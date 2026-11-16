@@ -526,9 +526,9 @@ type PublishedDecision struct {
 // FinancialSnapshot is one complete, consistent accepted warehouse view. Version
 // is opaque and changes only when accepted resources or explanations change.
 type FinancialSnapshot struct {
-	WarehouseID string              `json:"warehouse_id"`
-	Version     string              `json:"version"`
-	Resources   []CanonicalResource `json:"resources"`
+	BaselineID string              `json:"baseline_id"`
+	Version    string              `json:"version"`
+	Resources  []CanonicalResource `json:"resources"`
 }
 type SnapshotRead struct {
 	Snapshot  FinancialSnapshot

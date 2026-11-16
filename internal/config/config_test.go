@@ -81,7 +81,7 @@ func TestLoadRelativeAndAbsolutePaths(t *testing.T) {
 	fileRuntime := "file-runtime"
 
 	configPath := filepath.Join(roots.base, "custom.toml")
-	contents := "[storage]\nwarehouse_path = \"" + fileData + "\"\n[paths]\n" +
+	contents := "[storage]\nfinancial_path = \"" + fileData + "\"\n[paths]\n" +
 		"runtime_dir = \"" + fileRuntime + "\"\n" +
 		"[log]\nlevel = \"debug\"\n" +
 		"[credentials]\nkey_path = \"" + filepath.Join(roots.base, "master.key") + "\"\n" +
@@ -343,7 +343,7 @@ func loadWarehouseForTest(t *testing.T, roots environmentRoots, path string) (Co
 	configPath := filepath.Join(roots.config, "wake", "config.toml")
 	if err := os.WriteFile(
 		configPath,
-		fmt.Appendf(nil, "[storage]\nwarehouse_path=%q\n", path),
+		fmt.Appendf(nil, "[storage]\nfinancial_path=%q\n", path),
 		0o600,
 	); err != nil {
 		t.Fatal(err)

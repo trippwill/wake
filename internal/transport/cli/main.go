@@ -139,16 +139,14 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			Flags:  serveFlags,
 			Action: performServe,
 		},
-		commandGroup("storage", "Maintain the warehouse and credentials stores",
-			commandGroup("snapshot", "Take a consistent snapshot while Wake runs",
-				&cli.Command{
-					Name:      "warehouse",
-					Usage:     "Save a consistent snapshot of the warehouse while Wake runs",
-					ArgsUsage: "<file>",
-					Flags:     common(),
-					Action:    performSnapshotWarehouse,
-				},
-			),
+		commandGroup("storage", "Maintain financial, synchronization, and credential storage",
+			&cli.Command{
+				Name:      "snapshot",
+				Usage:     "Save a consistent snapshot of the financial database while Wake runs",
+				ArgsUsage: "<file>",
+				Flags:     common(),
+				Action:    performSnapshot,
+			},
 			&cli.Command{
 				Name:      "backup",
 				Usage:     "Capture a verified installation backup with Wake stopped",
@@ -156,23 +154,26 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 				Flags:     common(),
 				Action:    performBackup,
 			},
-			&cli.Command{
-				Name:      "restore",
-				Usage:     "Restore a warehouse snapshot or installation backup with Wake stopped",
-				ArgsUsage: "<file>",
-				Flags: append(
-					common(),
-					&cli.BoolFlag{
-						Name:  "with-credentials",
-						Usage: "Restore an installation backup with its matching credential key",
-					},
-					&cli.BoolFlag{
+			commandGroup("restore", "Restore financial history or an installation with Wake stopped",
+				&cli.Command{
+					Name:      financialScope,
+					Usage:     "Restore a financial snapshot into a vacant database path",
+					ArgsUsage: "<file>",
+					Flags:     common(),
+					Action:    performRestoreFinancial,
+				},
+				&cli.Command{
+					Name:        installationScope,
+					Usage:       "Restore financial, synchronization, and credential databases from a verified installation backup",
+					ArgsUsage:   "<file>",
+					Description: "Use the matching credential key when the backup contains encrypted credentials.",
+					Flags: append(common(), &cli.BoolFlag{
 						Name:  "replace",
-						Usage: "Replace installed history with the backup and preserve the original databases",
-					},
-				),
-				Action: performRestore,
-			},
+						Usage: "Replace installed databases and preserve the originals alongside them",
+					}),
+					Action: performRestoreInstallation,
+				},
+			),
 			&cli.Command{
 				Name:      "recover-sync",
 				Usage:     "Preview or rebuild synchronization with Wake stopped",
@@ -193,7 +194,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			&cli.Command{
 				Name:        "reset",
 				Usage:       "Preview or reset the selected store",
-				ArgsUsage:   "credentials|warehouse",
+				ArgsUsage:   "credentials|financial",
 				Description: "Stop Wake before reset. The selected database and its SQLite sidecars are removed without opening SQLite or reading credentials.",
 				Flags: append(
 					common(),

@@ -68,7 +68,7 @@ func TestConfigInitGeneratesKeyAndRefusesExistingTOML(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"config", "init", "--generate-key", "--set", "storage.connections_path=optional/connections.db"},
+		[]string{"config", "init", "--generate-key", "--set", "storage.credentials_path=optional/connections.db"},
 		&stdout,
 		&stderr,
 	); code != exitOK {

@@ -176,7 +176,7 @@ func DashboardOverview(csrf string, view overviewView, refresh string) templ.Com
 			return templ_7745c5c3_Err
 		}
 		if view.Storage.Paused {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<section class=\"wake-card wake-priority\"><h2>Review recovered access</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class=\"btn btn-primary\" href=\"/connections/recovery\">Review recovery steps</a></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<section class=\"wake-card wake-priority\"><h2>Review synchronization recovery</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class=\"btn btn-primary\" href=\"/connections/recovery\">Review recovery steps</a></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2031,7 +2031,7 @@ func ConnectionAccess(csrf string, c application.ConnectionView) templ.Component
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "\" type=\"password\" autocomplete=\"new-password\" required maxlength=\"4096\"></p><button class=\"btn\" type=\"submit\">Replace credential and retry</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "\" type=\"password\" autocomplete=\"new-password\" required maxlength=\"4096\"></p><button class=\"btn\" type=\"submit\">Replace credential</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2781,7 +2781,7 @@ func RecoveryPage(csrf string, view sourceView) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = PageHeader("Review recovered access", "Retained financial history stays inspectable while upstream work is paused.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = PageHeader("Review synchronization recovery", "Retained financial history stays inspectable while upstream work is paused.").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

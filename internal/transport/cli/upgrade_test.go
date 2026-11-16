@@ -25,7 +25,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 	configPath := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(
 		configPath,
-		fmt.Appendf(nil, "[storage]\nwarehouse_path=%q\nconnections_path=%q\n", warehouse, access),
+		fmt.Appendf(nil, "[storage]\nfinancial_path=%q\ncredentials_path=%q\n", warehouse, access),
 		0o600,
 	); err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestUpgradeConfirmationCommandQuotesExplicitProfile(t *testing.T) {
 		ConfigPath:   "/tmp/Wake's config.toml",
 		ConfigSource: "flag",
 		Values: []config.Value{
-			{Key: "storage.warehouse_path", Value: "/tmp/wake store.db", Source: "flag"},
+			{Key: "storage.financial_path", Value: "/tmp/wake store.db", Source: "flag"},
 		},
 	}
 

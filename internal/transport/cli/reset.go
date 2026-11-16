@@ -14,7 +14,7 @@ import (
 
 func performReset(ctx context.Context, c *cli.Command) error {
 	if c.NArg() != 1 {
-		return usageError("storage reset requires one target: credentials or warehouse")
+		return usageError("storage reset requires one target: credentials or financial")
 	}
 
 	target, err := daemon.ParseResetTarget(c.Args().First())
@@ -73,10 +73,10 @@ func performReset(ctx context.Context, c *cli.Command) error {
 				writef(c.Writer, "Removed %d of %d selected files.\n", len(result.Removed), len(result.Files))
 			}
 
-			if target == daemon.ResetWarehouse {
+			if target == daemon.ResetFinancial {
 				writeString(
 					c.Writer,
-					"Warehouse reset clears financial history.\n",
+					"Financial reset clears financial history.\n",
 				)
 			}
 

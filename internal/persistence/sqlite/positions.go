@@ -291,9 +291,9 @@ func (s *Store) Positions(
 	}
 
 	out.View = application.PositionsView{
-		WarehouseID: state.Warehouse,
-		AccountID:   id,
-		Version:     positionsVersion(state.Warehouse, id, revision),
+		BaselineID: state.Warehouse,
+		AccountID:  id,
+		Version:    positionsVersion(state.Warehouse, id, revision),
 	}
 	out.Unchanged = condition.Matches(out.View.Version)
 	if !out.Unchanged {
@@ -302,12 +302,12 @@ func (s *Store) Positions(
 			return out, err
 		}
 
-		warehouse, version := out.View.WarehouseID, out.View.Version
+		warehouse, version := out.View.BaselineID, out.View.Version
 		if json.Unmarshal(data, &out.View) != nil || out.View.AccountID != id {
 			return out, ErrCorrupt
 		}
 
-		out.View.WarehouseID, out.View.Version = warehouse, version
+		out.View.BaselineID, out.View.Version = warehouse, version
 	}
 
 	err = tx.Commit()
@@ -336,9 +336,9 @@ func (s *Store) PositionsPublications(ctx context.Context) ([]application.Positi
 		out = append(
 			out,
 			application.PositionsPublication{
-				WarehouseID: warehouse,
-				AccountID:   account,
-				Version:     positionsVersion(warehouse, account, revision),
+				BaselineID: warehouse,
+				AccountID:  account,
+				Version:    positionsVersion(warehouse, account, revision),
 			},
 		)
 	}

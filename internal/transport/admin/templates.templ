@@ -104,7 +104,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 						None · No TOML file loaded at startup.
 					}
 				</dd>
-				<dt>Warehouse database</dt>
+				<dt>Financial database</dt>
 				<dd>{ cfg.Storage.WarehousePath }</dd>
 				<dt>Connections database</dt>
 				<dd>{ cfg.Storage.ConnectionsPath }</dd>
@@ -147,7 +147,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 				<dt>Financial database size</dt>
 				<dd>{ warehouseSizeText(status.WarehouseBytes) }</dd>
 			</dl>
-			<p class="wake-help">Warehouse file, including retained reports. Excludes encrypted access storage and temporary journals.</p>
+			<p class="wake-help">Financial database, including retained reports. Excludes encrypted access storage and temporary journals.</p>
 			<p class="wake-help">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p>
 		</section>
 	}

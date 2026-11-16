@@ -3,12 +3,12 @@ info:
   title: Wake accepted financial model
   version: 1.0.0
   description: GET-only HTTP over TCP, authenticated by an independently revocable client token. GET
-    /v1/snapshot returns the complete accepted resource set, warehouse identity and an opaque publication
+    /v1/snapshot returns the complete accepted resource set, baseline ID and an opaque publication
     version. GET /v1/events streams coalesced publication notifications; reconnect announces current state.
     Compare versions for equality only. ETag and If-None-Match support unchanged conditional
     reads. Each finite response is materialized from one consistent read, released before client I/O. Validate
     the complete response before atomically replacing a mirror and its version. Failed downloads or writes
-    preserve the previous mirror. A different warehouse installs a clearly reported new baseline. Individual
+    preserve the previous mirror. A changed baseline ID requires a new mirror. Individual
     resource lookups and revision-bound explanations remain available; a changed explanation revision
     returns stale_revision. Current-state synchronization does not retain intermediate delivery transitions.
     Retired instrument/listing lookups redirect to their current IDs; explanations for retired IDs
@@ -31,7 +31,7 @@ paths:
       description: |
         Long-lived SSE notifications of independently versioned financial views. The server subscribes before
         its initial metadata read. A publication event is sent immediately and after accepted changes;
-        bursts may coalesce. JSON data contains warehouse_id and the opaque snapshot version.
+        bursts may coalesce. JSON data contains baseline_id and the opaque snapshot version.
         Compare versions for equality only. An event is a refresh hint, never an acknowledgement
         that the client has synchronized. Fetch and validate a snapshot before committing a mirror
         and its version. A fetched snapshot may already be newer than the notification.
@@ -60,7 +60,7 @@ paths:
             text/event-stream:
               schema:
                 type: string
-              example: "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"opaque-version\"}\n\n"
+              example: "event: publication\ndata: {\"baseline_id\":\"baseline\",\"version\":\"opaque-version\"}\n\n"
         '400':
           $ref: '#/components/responses/Error'
         '405':
@@ -81,7 +81,7 @@ paths:
         unusable evidence withholds the set without falling back to older positions. Acquisition
         failures alone do not erase established state. Source generation/retrieval times do not
         establish revision authority. Resolve instrument IDs through the existing resource lookups.
-        The opaque version is scoped to this warehouse and account. Compare for equality only;
+        The opaque version is scoped to this baseline and account. Compare for equality only;
         ETag/If-None-Match apply to available and unavailable views. Unknown/duplicate parameters,
         request bodies and mutation methods are rejected. Reads are materialized before client I/O.
       parameters:
@@ -349,7 +349,7 @@ paths:
     get:
       operationId: snapshot
       description: One consistent complete accepted resource set. Transactions are released before client
-        I/O. Version is opaque and scoped to the warehouse identity.
+        I/O. Version is opaque and scoped to the baseline ID.
       parameters:
       - in: header
         name: If-None-Match
@@ -446,9 +446,9 @@ components:
     PositionsPublication:
       type: object
       additionalProperties: false
-      required: [warehouse_id, account_id, version]
+      required: [baseline_id, account_id, version]
       properties:
-        warehouse_id:
+        baseline_id:
           type: string
           minLength: 1
         account_id:
@@ -503,7 +503,7 @@ components:
     PositionsView:
       type: object
       additionalProperties: false
-      required: [warehouse_id, account_id, version, status, as_of, reason, positions]
+      required: [baseline_id, account_id, version, status, as_of, reason, positions]
       oneOf:
       - type: object
         properties:
@@ -534,7 +534,7 @@ components:
             items:
               $ref: '#/components/schemas/Position'
       properties:
-        warehouse_id:
+        baseline_id:
           type: string
           minLength: 1
         account_id:
@@ -578,9 +578,9 @@ components:
     Publication:
       type: object
       additionalProperties: false
-      required: [warehouse_id, version]
+      required: [baseline_id, version]
       properties:
-        warehouse_id:
+        baseline_id:
           type: string
           minLength: 1
           maxLength: 256
@@ -1587,7 +1587,7 @@ components:
       type: object
       additionalProperties: false
       properties:
-        warehouse_id:
+        baseline_id:
           type: string
           minLength: 1
           maxLength: 256
@@ -1603,7 +1603,7 @@ components:
           description: Complete accepted set, including cancelled or superseded activities. Each kind/id
             occurs once.
       required:
-      - warehouse_id
+      - baseline_id
       - version
       - resources
     NullableRealizedPnL:

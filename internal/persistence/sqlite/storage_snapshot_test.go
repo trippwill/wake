@@ -89,7 +89,7 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 	defer func() { _ = restored.Close() }()
 
 	after, err := snapshotState(ctx, restored)
-	if err != nil || after.WarehouseID == before.WarehouseID ||
+	if err != nil || after.BaselineID == before.BaselineID ||
 		!reflect.DeepEqual(after.Resources, before.Resources) {
 		t.Fatal("restored history or publication identity differs", err)
 	}
@@ -115,7 +115,7 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 
 	positionsAfter, err := restored.PositionsPublications(ctx)
 	if err != nil || len(positionsAfter) != 1 || positionsAfter[0].AccountID != positionsBefore[0].AccountID ||
-		positionsAfter[0].WarehouseID != after.WarehouseID || positionsAfter[0].Version == positionsBefore[0].Version {
+		positionsAfter[0].BaselineID != after.BaselineID || positionsAfter[0].Version == positionsBefore[0].Version {
 		t.Fatal("unexpected restored positions baseline", positionsAfter, err)
 	}
 

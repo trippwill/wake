@@ -35,16 +35,16 @@ type Setting struct {
 func Settings() []Setting {
 	settings := []Setting{
 		{
-			Key:         "storage.warehouse_path",
+			Key:         "storage.financial_path",
 			Type:        "string",
 			Default:     "wake.db",
-			Description: "Path to the financial warehouse database",
+			Description: "Path to the financial database",
 		},
 		{
-			Key:         "storage.connections_path",
+			Key:         "storage.credentials_path",
 			Type:        "string",
 			Default:     "connections.db",
-			Description: "Path to the source connection and encrypted credential database",
+			Description: "Path to the encrypted upstream credential database",
 		},
 		{
 			Key:         "storage.sync_path",
@@ -293,8 +293,8 @@ func fileSettingValues(file fileConfig) map[string]any {
 	}
 
 	return map[string]any{
-		"storage.warehouse_path":     file.Storage.WarehousePath,
-		"storage.connections_path":   file.Storage.ConnectionsPath,
+		"storage.financial_path":     file.Storage.WarehousePath,
+		"storage.credentials_path":   file.Storage.ConnectionsPath,
 		"storage.sync_path":          file.Storage.SyncPath,
 		"storage.unattended_upgrade": file.Storage.UnattendedUpgrade,
 		"paths.runtime_dir":          file.Paths.RuntimeDir,
@@ -311,7 +311,7 @@ func fileSettingValues(file fileConfig) map[string]any {
 func checkFileSetting(setting Setting, value any) error {
 	text := fmt.Sprint(value)
 	switch setting.Key {
-	case "storage.warehouse_path", "storage.connections_path", "storage.sync_path":
+	case "storage.financial_path", "storage.credentials_path", "storage.sync_path":
 		if text == "" {
 			return fmt.Errorf("%w: %s requires a file path", ErrInvalid, setting.Key)
 		}

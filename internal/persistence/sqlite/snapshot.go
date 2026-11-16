@@ -37,9 +37,9 @@ func (s *Store) Snapshot(
 	digest := sha256.Sum256(token)
 
 	out.Snapshot = application.FinancialSnapshot{
-		WarehouseID: state.Warehouse,
-		Version:     hex.EncodeToString(digest[:]),
-		Resources:   []application.CanonicalResource{},
+		BaselineID: state.Warehouse,
+		Version:    hex.EncodeToString(digest[:]),
+		Resources:  []application.CanonicalResource{},
 	}
 	if condition.Matches(out.Snapshot.Version) {
 		out.Unchanged = true

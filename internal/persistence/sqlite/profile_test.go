@@ -702,7 +702,7 @@ func TestFreshFinancialDoesNotReuseOptionalExecution(t *testing.T) {
 	defer func() { _ = fresh.Close() }()
 
 	after, err := snapshotState(ctx, fresh)
-	if err != nil || before.WarehouseID == after.WarehouseID || len(after.Resources) != 0 {
+	if err != nil || before.BaselineID == after.BaselineID || len(after.Resources) != 0 {
 		t.Fatal("fresh financial store reused an old identity or history", after, err)
 	}
 

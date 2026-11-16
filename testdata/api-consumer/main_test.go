@@ -115,7 +115,7 @@ func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 				switch failure {
 				case "truncated":
 					w.Header().Set("Content-Length", "100000")
-					data = []byte(`{"warehouse_id":`)
+					data = []byte(`{"baseline_id":`)
 				case "trailing":
 					data = append(data, []byte(` {}`)...)
 				case "duplicate-key":
@@ -169,7 +169,7 @@ func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 }
 func TestPersistedMirrorRequiresCompleteValidEnvelope(t *testing.T) {
 	db := mirrorDB(t)
-	for _, payload := range []string{`{}`, `{"warehouse_id":"w","version":"v","resources":null}`, `{"warehouse_id":"w","version":"v","resources":{"wrong":{}}}`} {
+	for _, payload := range []string{`{}`, `{"baseline_id":"w","version":"v","resources":null}`, `{"baseline_id":"w","version":"v","resources":{"wrong":{}}}`} {
 		if _, err := db.Exec(statement("Replace"), []byte(payload)); err != nil {
 			t.Fatal(err)
 		}
@@ -352,7 +352,7 @@ func TestFollowRetriesVerificationAfterMirrorCommit(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"two\"}\n\n")
+			_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"two\"}\n\n")
 			return
 		}
 		version, revision, price := "one", 1, "1.0000"

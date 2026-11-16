@@ -93,7 +93,7 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 
 	var result storageResult
 	if err := json.Unmarshal([]byte(run(exitOK, "backup", archive)), &result); err != nil ||
-		result.Event != "backup" || result.Archive != archive || !result.WithCredentials {
+		result.Event != "backup" || result.Archive != archive || result.Scope != installationScope {
 		t.Fatal(result, err)
 	}
 
@@ -101,7 +101,7 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if out := run(exitFailure, "restore", "--with-credentials", archive); !strings.Contains(out, "occupied") {
+	if out := run(exitFailure, "restore", "installation", archive); !strings.Contains(out, "occupied") {
 		t.Fatal(out)
 	}
 
@@ -117,7 +117,7 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 	if out := run(
 		exitFailure,
 		"restore",
-		"--with-credentials",
+		"installation",
 		"--replace",
 		archive,
 	); !strings.Contains(
@@ -140,14 +140,22 @@ func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 
-	run(exitFailure, "restore", "--with-credentials", "--replace", archive)
+	run(exitFailure, "restore", "installation", "--replace", archive)
 
 	if err := os.Chmod(key, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	run(exitUsage, "restore", "--replace", archive)
-	run(exitOK, "restore", "--with-credentials", "--replace", archive)
+	run(exitUsage, "restore", "financial", "--replace", archive)
+
+	if err := json.Unmarshal(
+		[]byte(run(exitOK, "restore", "installation", "--replace", archive)),
+		&result,
+	); err != nil ||
+		result.Event != "restore" || result.Scope != installationScope ||
+		len(result.Destinations) != 3 {
+		t.Fatal(result, err)
+	}
 
 	clients, err := auth.Clients(ctx)
 	if err != nil || len(clients) != 0 {
@@ -238,7 +246,7 @@ func seedRecoveryCredential(t *testing.T, path string, store *persistence.Store)
 	}
 }
 
-func TestStorageSnapshotWarehouseCLI(t *testing.T) {
+func TestStorageFinancialSnapshotCLI(t *testing.T) {
 	cfg, configPath, _ := setupDaemonFixture(t)
 	if err := config.Prepare(cfg); err != nil {
 		t.Fatal(err)
@@ -256,7 +264,7 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	status := Run(
-		[]string{"--json", "storage", "snapshot", "warehouse", "--config", configPath, archive},
+		[]string{"--json", "storage", "snapshot", "--config", configPath, archive},
 		&stdout,
 		&stderr,
 	)
@@ -271,7 +279,7 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 
 	var result storageResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Event != "snapshot" ||
-		result.Archive != archive || result.WithCredentials {
+		result.Archive != archive || result.Scope != financialScope {
 		t.Fatal(stdout.String(), err)
 	}
 
@@ -279,11 +287,11 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 	stderr.Reset()
 
 	if status := Run(
-		[]string{"storage", "snapshot", "warehouse", "--config", configPath, archive + ".other"},
+		[]string{"storage", "snapshot", "--config", configPath, archive + ".other"},
 		&stdout,
 		&stderr,
 	); status != exitOK ||
-		!strings.Contains(stdout.String(), "Saved a warehouse snapshot") {
+		!strings.Contains(stdout.String(), "Saved a financial snapshot") {
 		t.Fatal(status, stdout.String(), stderr.String())
 	}
 
@@ -294,7 +302,7 @@ func TestStorageSnapshotWarehouseCLI(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 
-	restore := []string{"storage", "restore", "--config", configPath, archive}
+	restore := []string{"storage", "restore", "financial", "--config", configPath, archive}
 	if status := Run(restore, &stdout, &stderr); status != exitOK ||
 		!strings.Contains(stdout.String(), "Start Wake to read retained history") {
 		t.Fatal(status, stdout.String(), stderr.String())
@@ -377,16 +385,16 @@ func TestStorageRecoveryProtectsInstancePaths(t *testing.T) {
 		code int
 		want string
 	}{
-		{"configuration", []string{"snapshot", "warehouse", configPath}, exitFailure, "unsafe"},
+		{"configuration", []string{"snapshot", configPath}, exitFailure, "unsafe"},
 		{"backup configuration", []string{"backup", configPath}, exitFailure, "unsafe"},
-		{"key", []string{"snapshot", "warehouse", cfg.Credentials.KeyPath}, exitFailure, "unsafe"},
-		{"sync sidecar", []string{"snapshot", "warehouse", cfg.Storage.SyncPath + "-journal"}, exitFailure, "unsafe"},
-		{"sidecar", []string{"snapshot", "warehouse", cfg.Storage.WarehousePath + "-wal"}, exitFailure, "unsafe"},
-		{"existing archive", []string{"snapshot", "warehouse", existing}, exitFailure, "output already exists"},
-		{"missing output directory", []string{"snapshot", "warehouse", filepath.Join(cfg.Paths.ConfigDir, "missing", "archive")}, exitFailure, "no such file"},
-		{"protected restore source", []string{"restore", configPath}, exitFailure, "unsafe"},
-		{"missing restore archive", []string{"restore", filepath.Join(cfg.Paths.ConfigDir, "absent.tar")}, exitFailure, "no such file"},
-		{"missing snapshot output", []string{"snapshot", "warehouse"}, exitUsage, "requires one archive file path"},
+		{"key", []string{"snapshot", cfg.Credentials.KeyPath}, exitFailure, "unsafe"},
+		{"sync sidecar", []string{"snapshot", cfg.Storage.SyncPath + "-journal"}, exitFailure, "unsafe"},
+		{"sidecar", []string{"snapshot", cfg.Storage.WarehousePath + "-wal"}, exitFailure, "unsafe"},
+		{"existing archive", []string{"snapshot", existing}, exitFailure, "output already exists"},
+		{"missing output directory", []string{"snapshot", filepath.Join(cfg.Paths.ConfigDir, "missing", "archive")}, exitFailure, "no such file"},
+		{"protected restore source", []string{"restore", "financial", configPath}, exitFailure, "unsafe"},
+		{"missing restore archive", []string{"restore", "financial", filepath.Join(cfg.Paths.ConfigDir, "absent.tar")}, exitFailure, "no such file"},
+		{"missing snapshot output", []string{"snapshot"}, exitUsage, "requires one archive file path"},
 		{"protected synchronization archive", []string{"recover-sync", configPath}, exitFailure, "unsafe"},
 		{"multiple synchronization archives", []string{"recover-sync", "first.tar", "second.tar"}, exitUsage, "at most one installation backup path"},
 	} {

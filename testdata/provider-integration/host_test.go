@@ -928,7 +928,7 @@ func TestEncryptedAccessSeedStaysSeparateFromLocalWarehouses(t *testing.T) {
 		t.Cleanup(func() { _ = store.Close() })
 
 		snapshot, err := store.Snapshot(ctx, application.SnapshotCondition{})
-		id := snapshot.Snapshot.WarehouseID
+		id := snapshot.Snapshot.BaselineID
 		if err != nil || id == "" || warehouseIDs[id] || len(snapshot.Snapshot.Resources) != 0 {
 			t.Fatal("local warehouse reused copied identity or configuration", id, err)
 		}

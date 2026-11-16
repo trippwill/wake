@@ -566,16 +566,16 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		return result
 	}
 	mirror := func() struct {
-		WarehouseID string `json:"warehouse_id"`
-		Version     string `json:"version"`
-		Resources   map[string]application.CanonicalResource
+		BaselineID string `json:"baseline_id"`
+		Version    string `json:"version"`
+		Resources  map[string]application.CanonicalResource
 	} {
 		t.Helper()
 
 		var current struct {
-			WarehouseID string `json:"warehouse_id"`
-			Version     string `json:"version"`
-			Resources   map[string]application.CanonicalResource
+			BaselineID string `json:"baseline_id"`
+			Version    string `json:"version"`
+			Resources  map[string]application.CanonicalResource
 		}
 
 		db, e := sql.Open("sqlite", "file:"+statePath+"?mode=ro&_pragma=busy_timeout(5000)")
@@ -1282,12 +1282,12 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	result = consume(false)
 	restored := mirror()
-	if string(result["new_baseline"]) != "true" || restored.WarehouseID == after.WarehouseID ||
+	if string(result["new_baseline"]) != "true" || restored.BaselineID == after.BaselineID ||
 		restored.Version == after.Version || len(restored.Resources) != len(after.Resources) ||
 		restored.Resources["activity/"+id].Activity.Trade.Price.Amount != "402.0000" {
 		t.Fatal(
 			"restored publication lost history or kept its old baseline",
-			restored.WarehouseID,
+			restored.BaselineID,
 			restored.Version,
 		)
 	}
@@ -1312,14 +1312,14 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		defer func() { _ = response.Body.Close() }()
 
 		var body struct {
-			WarehouseID string          `json:"warehouse_id"`
-			Positions   json.RawMessage `json:"positions"`
+			BaselineID string          `json:"baseline_id"`
+			Positions  json.RawMessage `json:"positions"`
 		}
 		if e := json.NewDecoder(response.Body).Decode(&body); e != nil || response.StatusCode != http.StatusOK {
 			t.Fatal("positions response", response.StatusCode, e)
 		}
 
-		return response.Header.Get("ETag"), body.WarehouseID, body.Positions
+		return response.Header.Get("ETag"), body.BaselineID, body.Positions
 	}
 
 	previousTag, previousWarehouse, previousPositions := readPositions("")
@@ -1334,14 +1334,14 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	result = consume(false)
 	installedPublication := mirror()
-	if string(result["new_baseline"]) != "true" || installedPublication.WarehouseID == restored.WarehouseID ||
+	if string(result["new_baseline"]) != "true" || installedPublication.BaselineID == restored.BaselineID ||
 		installedPublication.Version == restored.Version || !reflect.DeepEqual(installedPublication.Resources, restored.Resources) {
 		t.Fatal("installation restore did not replace the independent consumer baseline")
 	}
 
 	tag, warehouse, installedPositions := readPositions(previousTag)
 	if tag == "" || tag == previousTag || warehouse == previousWarehouse ||
-		warehouse != installedPublication.WarehouseID ||
+		warehouse != installedPublication.BaselineID ||
 		!bytes.Equal(previousPositions, installedPositions) {
 		t.Fatal("installation restore did not renew positions identity while preserving holdings", tag, warehouse)
 	}
@@ -1356,7 +1356,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	result = consume(false)
 	fresh := mirror()
-	if string(result["new_baseline"]) != "true" || fresh.WarehouseID == installedPublication.WarehouseID ||
+	if string(result["new_baseline"]) != "true" || fresh.BaselineID == installedPublication.BaselineID ||
 		fresh.Version == installedPublication.Version ||
 		len(fresh.Resources) != 0 {
 		t.Fatal("new warehouse did not atomically replace baseline", fresh)

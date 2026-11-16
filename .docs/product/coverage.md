@@ -175,7 +175,7 @@ debt, equity, fund and unclassified instruments. Null denotes a field without an
 Explanations distinguish an omitted source assertion, an explicit unavailable assertion,
 unresolved selection and established reporting expectations. Zero remains a reported value.
 
-Each snapshot has warehouse identity and an opaque publication version. Conditional
+Each snapshot has a publication baseline ID and an opaque version. Conditional
 GET avoids unchanged downloads. Accepted source/operator corrections, conflicts and
 relevant reference/link changes advance publication; repeated known claims do not.
 SSE announces current publication on connection and after accepted changes. Bursts
@@ -223,29 +223,31 @@ open its databases.
 
 Patch releases preserve usability of supported stores. An incompatible minor release
 documents its supported upgrade or explicit recreation procedure. This pre-release
-storage format assigns separate files to financial data (`storage.warehouse_path`),
+storage format assigns separate files to financial data (`storage.financial_path`),
 execution state (`storage.sync_path`), and encrypted upstream access
-(`storage.connections_path`). Use a compatible build for earlier formats or preserve
+(`storage.credentials_path`). Use a compatible build for earlier formats or preserve
 the existing files and sidecars before explicitly recreating the warehouse. Wake
 refuses unsupported formats without rewriting them.
 
 ### Backup and recovery
 
-Use a warehouse snapshot to capture committed financial history, evidence,
-decisions, and publication while Wake runs. To restore, stop Wake and choose a
-vacant warehouse and sidecar path. The restored warehouse retains financial IDs
-and gets a fresh publication epoch, so consumers retrieve fresh snapshots and
-positions baselines. A new installation supplies its own local authority.
+Use `wake storage snapshot <file>` to capture committed financial history,
+evidence, decisions, and publication while Wake runs. To restore, stop Wake and
+use `wake storage restore financial <file>` with a vacant financial database
+path. The restored database retains financial IDs and gets a fresh publication
+epoch, so consumers retrieve fresh snapshots and positions baselines. A new
+installation supplies its own local authority.
 Existing sessions, client grants, and optional databases belong to the installation
 and remain outside the archive.
 
 `wake storage backup <file>` captures a stopped installation with a verified
 financial, synchronization, and encrypted access set. Keep the credential key
 separately and protect the archive, which also contains configuration and local
-authentication evidence. `wake storage restore --with-credentials <file>`
+authentication evidence. `wake storage restore installation <file>`
 requires the matching key when the backup contains encrypted credentials.
-An explicit `--replace` replaces active history and preserves the original stores
-alongside their installed paths. Restore preserves current local authentication.
+With `--replace`, installation restore replaces the financial, synchronization,
+and credential databases and preserves the originals alongside their installed
+paths. Restore preserves current local authentication.
 A new installation sets up browser access and enrolls clients separately.
 The restored synchronization association starts paused with new identities and
 without saved continuations or grants. See [architecture](../engineering/architecture.md#persistence-and-work-boundaries)

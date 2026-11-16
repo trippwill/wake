@@ -92,9 +92,9 @@ func financialResourceIDs(t *testing.T, body []byte, want ...string) {
 	t.Helper()
 
 	var result struct {
-		WarehouseID string                `json:"warehouse_id"`
-		Version     string                `json:"version"`
-		Resources   []struct{ ID string } `json:"resources"`
+		BaselineID string                `json:"baseline_id"`
+		Version    string                `json:"version"`
+		Resources  []struct{ ID string } `json:"resources"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func financialResourceIDs(t *testing.T, body []byte, want ...string) {
 		ids = append(ids, resource.ID)
 	}
 
-	if result.WarehouseID != "warehouse" || result.Version != "version" ||
+	if result.BaselineID != "warehouse" || result.Version != "version" ||
 		result.Resources == nil || !slices.Equal(ids, want) {
 		t.Fatalf("unexpected result: %s; want IDs %v", body, want)
 	}
@@ -120,7 +120,7 @@ func TestFinancialCLIReads(t *testing.T) {
 			id, account, date, family, state,
 		)
 	}
-	snapshot := `{"warehouse_id":"warehouse","version":"version","resources":[` + strings.Join([]string{
+	snapshot := `{"baseline_id":"warehouse","version":"version","resources":[` + strings.Join([]string{
 		`{"id":"other","kind":"accounts","revision":1,"account":{"name":"Other","currency":"GBP"}}`,
 		activity("b", "acct", "2026-10-03", "trade", "accepted"),
 		activity("c", "acct", "2026-10-02", "trade", "accepted"),
@@ -246,7 +246,7 @@ func TestFinancialCLIPositions(t *testing.T) {
 	responses := make(map[string]string, len(views))
 	for id, view := range views {
 		responses["/v1/accounts/"+id+"/positions"] = fmt.Sprintf(
-			`{"warehouse_id":"warehouse","account_id":%q,"version":"positions-version",%s}`,
+			`{"baseline_id":"warehouse","account_id":%q,"version":"positions-version",%s}`,
 			id,
 			view,
 		)
@@ -300,7 +300,7 @@ func TestFinancialCLIRejectsInvalidRequestsAndResponses(t *testing.T) {
 	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case snapshotRoute:
-			_, _ = fmt.Fprint(w, `{"warehouse_id":"warehouse","version":"version","resources":[]}`)
+			_, _ = fmt.Fprint(w, `{"baseline_id":"warehouse","version":"version","resources":[]}`)
 		case "/v1/accounts/bad":
 			_, _ = fmt.Fprint(w, `{"private":"private diagnostic text"}{`)
 		case "/v1/accounts/redirect":

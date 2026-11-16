@@ -21,7 +21,7 @@ func TestConfigSelectionAndRuntimeIdentity(t *testing.T) {
 	dir := filepath.Join(roots.base, "alternate")
 
 	other := filepath.Join(dir, "config.toml")
-	writeTestConfig(t, other, []byte("[storage]\nwarehouse_path='data/history.sqlite'\n"))
+	writeTestConfig(t, other, []byte("[storage]\nfinancial_path='data/history.sqlite'\n"))
 
 	t.Setenv("WAKE_CONFIG", other)
 
@@ -76,11 +76,11 @@ func TestConfigRejectsFormerOverridesAndUnsafeFileAliases(t *testing.T) {
 
 	for _, body := range []string{
 		"[credentials]\nmaster_key_path='x'\n",
-		"[storage]\nwarehouse_path='auth.json'\n",
-		"[storage]\nconnections_path='wake.db-journal'\n",
+		"[storage]\nfinancial_path='auth.json'\n",
+		"[storage]\ncredentials_path='wake.db-journal'\n",
 		"[storage]\nsync_path='connections.db-journal'\n",
 		"[storage]\nsync_path='auth.json'\n",
-		"[Storage]\nwarehouse_path='elsewhere'\n",
+		"[Storage]\nfinancial_path='elsewhere'\n",
 		"[admin]\ncurrency_refresh='invalid'\n",
 	} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

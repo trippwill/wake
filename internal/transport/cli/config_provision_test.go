@@ -19,7 +19,7 @@ func TestProvisionCredentialKeyPreservesExistingTOML(t *testing.T) {
 	path := filepath.Join(dir, "existing.toml")
 	keyPath := filepath.Join(dir, "operator.key")
 	content := []byte(
-		"# keep this comment and formatting\n[credentials]\nkey_path='operator.key'\n[storage]\nconnections_path='optional/connections.db'\n",
+		"# keep this comment and formatting\n[credentials]\nkey_path='operator.key'\n[storage]\ncredentials_path='optional/connections.db'\n",
 	)
 	writeTestConfig(t, path, content)
 

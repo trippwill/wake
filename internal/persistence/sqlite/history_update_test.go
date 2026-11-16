@@ -349,7 +349,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 
 	final, err := store.Snapshot(ctx, application.AnySnapshotVersion())
-	if err != nil || final.Snapshot.WarehouseID != baseline.Snapshot.WarehouseID ||
+	if err != nil || final.Snapshot.BaselineID != baseline.Snapshot.BaselineID ||
 		final.Snapshot.Version == baseline.Snapshot.Version ||
 		len(final.Snapshot.Resources) != len(baseline.Snapshot.Resources) {
 		t.Fatal("publication lost identity or resources", err)

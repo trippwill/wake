@@ -27,13 +27,13 @@ type PublishedUnitCostBasis struct {
 // PositionsView replaces one account's complete current reported position set.
 // Unavailable rows are null; an available empty set contains an empty array.
 type PositionsView struct {
-	WarehouseID string              `json:"warehouse_id"`
-	AccountID   string              `json:"account_id"`
-	Version     string              `json:"version"`
-	Status      string              `json:"status"`
-	AsOf        *PositionTime       `json:"as_of"`
-	Reason      *string             `json:"reason"`
-	Positions   []PublishedPosition `json:"positions"`
+	BaselineID string              `json:"baseline_id"`
+	AccountID  string              `json:"account_id"`
+	Version    string              `json:"version"`
+	Status     string              `json:"status"`
+	AsOf       *PositionTime       `json:"as_of"`
+	Reason     *string             `json:"reason"`
+	Positions  []PublishedPosition `json:"positions"`
 }
 
 type PositionsRead struct {
@@ -42,9 +42,9 @@ type PositionsRead struct {
 }
 
 type PositionsPublication struct {
-	WarehouseID string `json:"warehouse_id"`
-	AccountID   string `json:"account_id"`
-	Version     string `json:"version"`
+	BaselineID string `json:"baseline_id"`
+	AccountID  string `json:"account_id"`
+	Version    string `json:"version"`
 }
 
 type PositionListItem struct {

@@ -15,21 +15,26 @@ import (
 	"go.trippwill.dev/wake/internal/daemon"
 )
 
+const (
+	financialScope    = "financial"
+	installationScope = "installation"
+)
+
 type storageResult struct {
-	Event           string   `json:"event"`
-	Archive         string   `json:"archive"`
-	WithCredentials bool     `json:"with_credentials"`
-	Destinations    []string `json:"destinations,omitempty"`
+	Event        string   `json:"event"`
+	Archive      string   `json:"archive"`
+	Scope        string   `json:"scope"`
+	Destinations []string `json:"destinations,omitempty"`
 }
 
-func performSnapshotWarehouse(ctx context.Context, c *cli.Command) error {
+func performSnapshot(ctx context.Context, c *cli.Command) error {
 	return runStorageRecovery(
 		c,
 		"snapshot",
-		"copying and verifying the warehouse snapshot",
+		"copying and verifying the financial snapshot",
 		func(resolved config.Resolution, artifact string) (storageResult, error) {
 			archive, err := daemon.SnapshotWarehouse(ctx, resolved.Config, resolved.ConfigPath, artifact)
-			return storageResult{Event: "snapshot", Archive: archive}, err
+			return storageResult{Event: "snapshot", Archive: archive, Scope: financialScope}, err
 		},
 	)
 }
@@ -41,18 +46,20 @@ func performBackup(ctx context.Context, c *cli.Command) error {
 		"verifying and copying the stopped installation",
 		func(resolved config.Resolution, artifact string) (storageResult, error) {
 			archive, err := daemon.BackupStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
-			return storageResult{Event: "backup", Archive: archive, WithCredentials: true}, err
+			return storageResult{Event: "backup", Archive: archive, Scope: installationScope}, err
 		},
 	)
 }
 
-func performRestore(ctx context.Context, c *cli.Command) error {
-	withCredentials := c.Bool("with-credentials")
-	replace := c.Bool("replace")
-	if replace && !withCredentials {
-		return usageError("--replace requires --with-credentials")
-	}
+func performRestoreFinancial(ctx context.Context, c *cli.Command) error {
+	return performRestore(ctx, c, financialScope)
+}
 
+func performRestoreInstallation(ctx context.Context, c *cli.Command) error {
+	return performRestore(ctx, c, installationScope)
+}
+
+func performRestore(ctx context.Context, c *cli.Command, scope string) error {
 	return runStorageRecovery(
 		c,
 		"restore",
@@ -62,7 +69,7 @@ func performRestore(ctx context.Context, c *cli.Command) error {
 				paths []string
 				err   error
 			)
-			if replace {
+			if c.Bool("replace") {
 				paths, err = daemon.ReplaceStorage(ctx, resolved.Config, resolved.ConfigPath, artifact)
 			} else {
 				paths, err = daemon.RestoreStorage(
@@ -70,15 +77,15 @@ func performRestore(ctx context.Context, c *cli.Command) error {
 					resolved.Config,
 					resolved.ConfigPath,
 					artifact,
-					withCredentials,
+					scope == installationScope,
 				)
 			}
 
 			return storageResult{
-				Event:           "restore",
-				Archive:         artifact,
-				WithCredentials: withCredentials,
-				Destinations:    paths,
+				Event:        "restore",
+				Archive:      artifact,
+				Scope:        scope,
+				Destinations: paths,
 			}, err
 		},
 	)
@@ -163,7 +170,7 @@ func writeStorageResult(w io.Writer, asJSON bool, result storageResult) error {
 
 		return err
 	case "snapshot":
-		_, err := fmt.Fprintf(w, "Saved a warehouse snapshot to %s.\n", result.Archive)
+		_, err := fmt.Fprintf(w, "Saved a financial snapshot to %s.\n", result.Archive)
 		return err
 	case "backup":
 		_, err := fmt.Fprintf(

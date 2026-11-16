@@ -25,11 +25,11 @@ func TestPublicationFramesValidateBeforeDelivery(t *testing.T) {
 		count        int
 		valid        bool
 	}{
-		{"complete", ": heartbeat\r\n\r\nevent: publication\r\ndata: {\"warehouse_id\":\"w\",\r\ndata: \"version\":\"v\"}\r\n\r\n", 1, true},
-		{"partial", "event: publication\ndata: {\"warehouse_id\":\"w\",\"version\":\"v\"}\n", 0, true},
+		{"complete", ": heartbeat\r\n\r\nevent: publication\r\ndata: {\"baseline_id\":\"w\",\r\ndata: \"version\":\"v\"}\r\n\r\n", 1, true},
+		{"partial", "event: publication\ndata: {\"baseline_id\":\"w\",\"version\":\"v\"}\n", 0, true},
 		{"unknown-event", "event: future\ndata: {}\n\n", 0, true},
-		{"invalid", "event: publication\ndata: {\"warehouse_id\":\"w\"}\n\n", 0, false},
-		{"duplicate", "event: publication\ndata: {\"warehouse_id\":\"w\",\"version\":\"v\",\"version\":\"x\"}\n\n", 0, false},
+		{"invalid", "event: publication\ndata: {\"baseline_id\":\"w\"}\n\n", 0, false},
+		{"duplicate", "event: publication\ndata: {\"baseline_id\":\"w\",\"version\":\"v\",\"version\":\"x\"}\n\n", 0, false},
 		{"large-line", "data: " + strings.Repeat("x", 8192) + "\n\n", 0, false},
 		{"large-frame", strings.Repeat(": comment\n", 1000) + "\n", 0, false},
 	} {
@@ -43,7 +43,7 @@ func TestPublicationFramesValidateBeforeDelivery(t *testing.T) {
 			count := 0
 			err := c.events(t.Context(), func(p publication) error {
 				count++
-				if p.WarehouseID != "w" || p.Version != "v" {
+				if p.BaselineID != "w" || p.Version != "v" {
 					t.Error(p)
 				}
 				return nil
@@ -68,14 +68,14 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 			connection := connections.Add(1)
 			w.Header().Set("Content-Type", "text/event-stream")
 			if connection == 1 {
-				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"one\"}\n\n")
+				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"one\"}\n\n")
 				w.(http.Flusher).Flush()
 				<-snapshotStarted
 				// These arrive while the first complete snapshot is downloading.
-				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"two\"}\n\nevent: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"three\"}\n\n")
+				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"two\"}\n\nevent: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"three\"}\n\n")
 				close(changesSent)
 			} else {
-				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"replacement\",\"version\":\"new\"}\n\n")
+				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"replacement\",\"version\":\"new\"}\n\n")
 			}
 			return
 		}
@@ -110,7 +110,7 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 		t.Fatal("lost pending changes or reconnect", snapshots.Load(), connections.Load(), err)
 	}
 	stored, err := readState(db)
-	if err != nil || stored.Version != "new" || current.Version != "new" || stored.WarehouseID != "replacement" || len(stored.Resources) != 0 {
+	if err != nil || stored.Version != "new" || current.Version != "new" || stored.BaselineID != "replacement" || len(stored.Resources) != 0 {
 		t.Fatal("replacement baseline not committed", stored, err)
 	}
 }
@@ -133,7 +133,7 @@ func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
 				if r.URL.Path == "/v1/events" {
 					connections.Add(1)
 					w.Header().Set("Content-Type", "text/event-stream")
-					_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"ready\"}\n\n")
+					_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"ready\"}\n\n")
 					return
 				}
 				if snapshots.Add(1) == 1 {
@@ -154,7 +154,7 @@ func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
 					} else {
 						w.Header().Set("Content-Type", "application/json")
 						w.Header().Set("Content-Length", "100")
-						_, _ = io.WriteString(w, `{"warehouse_id":`)
+						_, _ = io.WriteString(w, `{"baseline_id":`)
 					}
 					return
 				}
@@ -214,7 +214,7 @@ func TestPublicationFollowStopsOnSynchronizationFailure(t *testing.T) {
 		t.Run(failure.Error(), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
-				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n")
+				_, _ = fmt.Fprint(w, "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"v\"}\n\n")
 			}))
 			defer server.Close()
 			c := client{http: server.Client(), base: server.URL, stderr: io.Discard}
@@ -236,7 +236,7 @@ func TestPublicationBackoffRequiresSuccessfulSynchronization(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n")), Request: r}, nil
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"v\"}\n\n")), Request: r}, nil
 		})}, base: "http://wake", stderr: io.Discard}
 		start := time.Now()
 		times := []time.Duration{}
@@ -263,7 +263,7 @@ func TestPositionsBackoffRequiresSuccessfulRefreshAfterPublication(t *testing.T)
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		stream := "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\nevent: positions\ndata: {\"warehouse_id\":\"warehouse\",\"account_id\":\"account\",\"version\":\"p\"}\n\n"
+		stream := "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"v\"}\n\nevent: positions\ndata: {\"baseline_id\":\"warehouse\",\"account_id\":\"account\",\"version\":\"p\"}\n\n"
 		c := client{http: &http.Client{Transport: eventTransportFunc(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), Request: r}, nil
 		})}, base: "http://wake", stderr: io.Discard}
@@ -300,7 +300,7 @@ func TestPositionsBackoffDoesNotResetBeforePositionsAnnouncement(t *testing.T) {
 			if len(times) == 6 {
 				cancel()
 			}
-			stream := "event: publication\ndata: {\"warehouse_id\":\"warehouse\",\"version\":\"v\"}\n\n"
+			stream := "event: publication\ndata: {\"baseline_id\":\"warehouse\",\"version\":\"v\"}\n\n"
 			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), Request: r}, nil
 		})}, base: "http://wake", stderr: io.Discard, positionUpdate: func(positionsPublication) error {
 			t.Fatal("unexpected positions announcement")

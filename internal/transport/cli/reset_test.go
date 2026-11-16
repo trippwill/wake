@@ -29,7 +29,7 @@ func resetFixture(t *testing.T) (config.Config, string, map[string][]byte) {
 
 	original := fmt.Appendf(
 		nil,
-		"[storage]\nwarehouse_path=%q\nconnections_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nkey_path=%q\n",
+		"[storage]\nfinancial_path=%q\ncredentials_path=%q\n[paths]\nruntime_dir=%q\n[credentials]\nkey_path=%q\n",
 		cfg.Storage.WarehousePath,
 		cfg.Storage.ConnectionsPath,
 		cfg.Paths.RuntimeDir,
@@ -74,7 +74,7 @@ func TestResetRefusesJournalOfMissingSynchronizationStore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, target := range []string{"warehouse", "credentials"} {
+	for _, target := range []string{"financial", "credentials"} {
 		var stdout, stderr bytes.Buffer
 		if code := run(
 			[]string{"storage", "reset", target, "--config", path, "--confirm"},
@@ -110,7 +110,7 @@ func assertResetFiles(t *testing.T, files map[string][]byte, removed map[string]
 }
 
 func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
-	for _, target := range []string{"warehouse", "credentials"} {
+	for _, target := range []string{"financial", "credentials"} {
 		t.Run(target, func(t *testing.T) {
 			cfg, path, files := resetFixture(t)
 
@@ -161,9 +161,9 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 			}
 
 			removed := map[string]bool{}
-			for _, db := range []struct{ name, path string }{{"warehouse", cfg.Storage.WarehousePath}, {"credentials", cfg.Storage.ConnectionsPath}} {
+			for _, db := range []struct{ name, path string }{{"financial", cfg.Storage.WarehousePath}, {"credentials", cfg.Storage.ConnectionsPath}} {
 				if (target == "credentials" && db.name != "credentials") ||
-					(target == "warehouse" && db.name == "credentials") {
+					(target == "financial" && db.name == "credentials") {
 					continue
 				}
 
@@ -190,10 +190,10 @@ func TestResetDryRunAndConfirmedTargetsIgnoreDatabaseValidity(t *testing.T) {
 }
 
 func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
-	for _, locked := range []string{"warehouse", "connections"} {
+	for _, locked := range []string{"financial", "connections"} {
 		t.Run(locked, func(t *testing.T) {
 			cfg, path, files := resetFixture(t)
-			database := map[string]string{"warehouse": cfg.Storage.WarehousePath, "connections": cfg.Storage.ConnectionsPath}[locked]
+			database := map[string]string{"financial": cfg.Storage.WarehousePath, "connections": cfg.Storage.ConnectionsPath}[locked]
 			//nolint:gosec // Synthetic database selected from the fixture above.
 			owner, err := os.OpenFile(database, os.O_RDWR, 0)
 			if err != nil {
@@ -206,7 +206,7 @@ func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for _, target := range []string{"warehouse", "credentials"} {
+			for _, target := range []string{"financial", "credentials"} {
 				var stdout, stderr bytes.Buffer
 				if code := run(
 					[]string{"storage", "reset", target, "--confirm", "--config", path},
@@ -230,7 +230,7 @@ func TestResetRefusesAnyOwnedStoreBeforeDeletingAnything(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 			if code := run(
-				[]string{"storage", "reset", "warehouse", "--config", path},
+				[]string{"storage", "reset", "financial", "--config", path},
 				&stdout,
 				&stderr,
 			); code != exitOK {
@@ -244,7 +244,7 @@ func TestResetRefusesLinksAndProtectedFilesBeforeDeletion(t *testing.T) {
 	for _, kind := range []string{"symlink", "hardlink", "sidecar", "superjournal", "configuration", "master-key", "browser-key"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg, path, files := resetFixture(t)
-			resetTarget := "warehouse"
+			resetTarget := "financial"
 			switch kind {
 			case "symlink", "hardlink":
 				alias := filepath.Join(cfg.Paths.ConfigDir, "alias")
@@ -307,14 +307,14 @@ func TestResetMissingPathsNeedsNoRuntimeOrKeysAndCreatesNothing(t *testing.T) {
 
 	files := map[string][]byte{
 		path: []byte(
-			"[storage]\nwarehouse_path='missing/history.sqlite'\nconnections_path='missing/credentials.sqlite'\n",
+			"[storage]\nfinancial_path='missing/history.sqlite'\ncredentials_path='missing/credentials.sqlite'\n",
 		),
 	}
 	if err := os.WriteFile(path, files[path], 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	args := []string{"--json", "storage", "reset", "warehouse", "--config", path}
+	args := []string{"--json", "storage", "reset", "financial", "--config", path}
 
 	for _, confirm := range []bool{false, true} {
 		current := append([]string{}, args...)
@@ -353,7 +353,7 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 		{"storage", "reset", "all"},
 		{"storage", "reset", "connections"},
 		{"storage", "reset", "operational"},
-		{"storage", "reset", "warehouse", "warehouse"},
+		{"storage", "reset", "financial", "financial"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := run(args, &stdout, &stderr); code != exitUsage {
@@ -365,7 +365,7 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"storage", "reset", "warehouse", "--config", path},
+		[]string{"storage", "reset", "financial", "--config", path},
 		&stdout,
 		&stderr,
 	); code != exitOK {
@@ -373,7 +373,7 @@ func TestResetUsageAndHumanPreview(t *testing.T) {
 	}
 
 	if !strings.Contains(stdout.String(), "Dry run") || !strings.Contains(stdout.String(), "--confirm") ||
-		!strings.Contains(stdout.String(), "Warehouse reset clears financial history") {
+		!strings.Contains(stdout.String(), "Financial reset clears financial history") {
 		t.Fatal(stdout.String())
 	}
 
@@ -393,7 +393,7 @@ func TestResetRefusesRunningDaemon(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"storage", "reset", "warehouse", "--confirm", "--config", path},
+		[]string{"storage", "reset", "financial", "--confirm", "--config", path},
 		&stdout,
 		&stderr,
 	); code != exitFailure ||
@@ -467,7 +467,7 @@ func TestResetPreservesAccessNeededByAnInterruptedUpgrade(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"storage", "reset", "warehouse", "--config", path, "--confirm"},
+		[]string{"storage", "reset", "financial", "--config", path, "--confirm"},
 		&stdout,
 		&stderr,
 	); code != exitOK {
@@ -494,7 +494,7 @@ func TestWarehouseResetRefusesAnAccessStoreAtTheUpgradeIntentPath(t *testing.T) 
 
 	var stdout, stderr bytes.Buffer
 	if code := run(
-		[]string{"storage", "reset", "warehouse", "--config", path, "--confirm"},
+		[]string{"storage", "reset", "financial", "--config", path, "--confirm"},
 		&stdout,
 		&stderr,
 	); code != exitFailure || !strings.Contains(stderr.String(), "reset refuses unsafe") {
@@ -510,7 +510,7 @@ func TestResetReportsPartialRemovalAndRefusesChangedFile(t *testing.T) {
 	backup := journal + ".saved"
 	replacement := []byte("replacement file must survive")
 
-	result, err := daemon.ResetStorage(t.Context(), cfg, path, daemon.ResetWarehouse, true, func(phase string) {
+	result, err := daemon.ResetStorage(t.Context(), cfg, path, daemon.ResetFinancial, true, func(phase string) {
 		if phase != "removing selected databases and sidecars" {
 			return
 		}

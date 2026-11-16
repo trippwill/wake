@@ -22,7 +22,7 @@ type positionReads struct {
 
 func TestGeneratedPositionsModelPreservesReportedTimestampText(t *testing.T) {
 	for _, at := range []string{"2026-11-04T12:00:00.1200Z", "2026-11-04T12:00:00.000000000+01:00"} {
-		body := `{"warehouse_id":"warehouse","account_id":"account","version":"v","status":"available","as_of":{"date":"2026-11-04","at":"` + at + `"},"reason":null,"positions":[]}`
+		body := `{"baseline_id":"warehouse","account_id":"account","version":"v","status":"available","as_of":{"date":"2026-11-04","at":"` + at + `"},"reason":null,"positions":[]}`
 
 		var model PositionsView
 		if err := json.Unmarshal([]byte(body), &model); err != nil {
@@ -42,8 +42,8 @@ func TestGeneratedUnavailablePositionsAlwaysReplaceRowsWithNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, initial := range []string{"", `{"warehouse_id":"w","account_id":"a","version":"v","status":"available","as_of":{"date":"2026-11-04","at":null,"basis":"broker_effective"},"reason":null,"positions":[{"instrument_id":"old"}]}`} {
-		model := PositionsView{WarehouseId: "w", AccountId: "a", Version: "v"}
+	for _, initial := range []string{"", `{"baseline_id":"w","account_id":"a","version":"v","status":"available","as_of":{"date":"2026-11-04","at":null,"basis":"broker_effective"},"reason":null,"positions":[{"instrument_id":"old"}]}`} {
+		model := PositionsView{BaselineId: "w", AccountId: "a", Version: "v"}
 		if initial != "" {
 			if err := json.Unmarshal([]byte(initial), &model); err != nil {
 				t.Fatal(err)
@@ -95,10 +95,10 @@ func TestPositionRouteConditionalReadsSchemaAndUnavailableSets(t *testing.T) {
 
 	for _, status := range []string{"available", "unavailable"} {
 		v := application.PositionsView{
-			WarehouseID: "warehouse",
-			AccountID:   "account",
-			Version:     "positions-version",
-			Status:      status,
+			BaselineID: "warehouse",
+			AccountID:  "account",
+			Version:    "positions-version",
+			Status:     status,
 		}
 		if status == "available" {
 			v.AsOf = &application.PositionTime{Date: "2026-11-04", Basis: "broker_effective"}

@@ -424,7 +424,7 @@ func OverviewBody(path string, status Status, cfg config.Config) templ.Component
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</dd><dt>Warehouse database</dt><dd>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</dd><dt>Financial database</dt><dd>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -572,7 +572,7 @@ func OverviewBody(path string, status Status, cfg config.Config) templ.Component
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dd></dl><p class=\"wake-help\">Warehouse file, including retained reports. Excludes encrypted access storage and temporary journals.</p><p class=\"wake-help\">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dd></dl><p class=\"wake-help\">Financial database, including retained reports. Excludes encrypted access storage and temporary journals.</p><p class=\"wake-help\">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

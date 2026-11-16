@@ -286,9 +286,9 @@ func financialRead(ctx context.Context, c *cli.Command, route string) (financial
 }
 
 type financialCollection struct {
-	WarehouseID string            `json:"warehouse_id"`
-	Version     string            `json:"version"`
-	Resources   []json.RawMessage `json:"resources"`
+	BaselineID string            `json:"baseline_id"`
+	Version    string            `json:"version"`
+	Resources  []json.RawMessage `json:"resources"`
 }
 
 type activityFields struct {
@@ -317,7 +317,7 @@ func readFinancialCollection(
 		return collection, nil, err
 	}
 
-	if json.Unmarshal(response.body, &collection) != nil || collection.WarehouseID == "" ||
+	if json.Unmarshal(response.body, &collection) != nil || collection.BaselineID == "" ||
 		collection.Version == "" || collection.Resources == nil {
 		return collection, nil, failure("invalid Wake financial snapshot")
 	}
@@ -408,7 +408,7 @@ func getPositions(ctx context.Context, c *cli.Command) error {
 
 	var view financialapi.PositionsView
 	if json.Unmarshal(response.body, &view) != nil || view.AccountId != id ||
-		view.WarehouseId == "" || view.Version == "" || !view.Status.Valid() {
+		view.BaselineId == "" || view.Version == "" || !view.Status.Valid() {
 		return failure("invalid positions response from Wake")
 	}
 

@@ -19,9 +19,9 @@ import (
 type ResetTarget string
 
 const (
-	ResetWarehouse   ResetTarget    = "warehouse"
+	ResetFinancial   ResetTarget    = "financial"
 	ResetCredentials ResetTarget    = "credentials"
-	ErrResetTarget   OwnershipError = "reset requires a target: credentials or warehouse"
+	ErrResetTarget   OwnershipError = "reset requires a target: credentials or financial"
 	ErrUnsafeReset   OwnershipError = "reset refuses unsafe, linked or protected paths"
 	ErrResetChanged  OwnershipError = "storage paths changed during reset; inspect remaining files and preview again"
 	ErrResetUpgrade  OwnershipError = "credentials reset refused while a storage upgrade is pending; resume with the matching Wake build or restore the paired backup first"
@@ -30,7 +30,7 @@ const (
 func ParseResetTarget(value string) (ResetTarget, error) {
 	target := ResetTarget(value)
 	switch target {
-	case ResetWarehouse, ResetCredentials:
+	case ResetFinancial, ResetCredentials:
 		return target, nil
 	default:
 		return "", ErrResetTarget
@@ -73,7 +73,7 @@ func ResetStorage(
 	phase("checking storage paths and ownership")
 
 	all := []ResetDatabase{
-		{Name: ResetWarehouse, Path: cfg.Storage.WarehousePath},
+		{Name: ResetFinancial, Path: cfg.Storage.WarehousePath},
 		{Name: ResetCredentials, Path: cfg.Storage.ConnectionsPath},
 	}
 	if cfg.Storage.SyncPath != "" {
@@ -146,7 +146,7 @@ func ResetStorage(
 			return ResetResult{}, err
 		}
 
-		if db.Name == ResetWarehouse {
+		if db.Name == ResetFinancial {
 			sidecars = append(sidecars, db.Path+persistence.UpgradeIntentSuffix)
 		}
 
