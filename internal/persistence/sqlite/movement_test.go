@@ -436,7 +436,8 @@ func TestMovementSearchMatchesRenderedLabels(t *testing.T) {
 	}{
 		{"Transfer out", 1},
 		{"Transfer out · TEST", 1},
-		{"Transfer in", 0},
+		// Search also includes the activity family followed by its generated ID.
+		{"Transfer in · TEST", 0},
 		{"Payment in lieu · Synthetic distribution", 1},
 		{"payment in lieu", 1},
 		{"Synthetic distribution", 1},
