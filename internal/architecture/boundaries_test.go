@@ -25,6 +25,7 @@ func TestFinancialCalculationImports(t *testing.T) {
 		"corrections.go",
 		"decision.go",
 		"instrument_calculation.go",
+		"listing_merge.go",
 		"movement.go",
 		"observations.go",
 		"position_selection.go",

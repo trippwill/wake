@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -196,26 +195,13 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			return e
 		}
 
-		index := slices.IndexFunc(
-			candidates,
-			func(candidate sqlc.Listing) bool { return candidate.Figi == l.Figi },
-		)
-		if index < 0 {
-			for i, candidate := range candidates {
-				if candidate.Figi != "" && l.Figi != "" {
-					continue
-				}
-
-				if index >= 0 {
-					index = -1
-					break
-				}
-
-				index = i
-			}
+		identities := make([]application.ListingIdentity, 0, len(candidates))
+		for _, candidate := range candidates {
+			identities = append(identities, application.ListingIdentity{ID: candidate.ID, FIGI: candidate.Figi})
 		}
 
-		if index < 0 {
+		plan := application.PlanListingMerge(l.Figi, identities)
+		if plan.TargetID == "" {
 			if e = q.MoveListing(ctx, sqlc.MoveListingParams{InstrumentID: target, ID: l.ID}); e != nil {
 				return e
 			}
@@ -223,15 +209,13 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			continue
 		}
 
-		other := candidates[index]
-
-		if other.Figi == "" && l.Figi != "" {
-			if e = q.SetListingFIGI(ctx, sqlc.SetListingFIGIParams{ID: other.ID, Figi: l.Figi}); e != nil {
+		if plan.FIGIToCopy != "" {
+			if e = q.SetListingFIGI(ctx, sqlc.SetListingFIGIParams{ID: plan.TargetID, Figi: plan.FIGIToCopy}); e != nil {
 				return e
 			}
 		}
 
-		from, to := sql.NullString{String: l.ID, Valid: true}, sql.NullString{String: other.ID, Valid: true}
+		from, to := sql.NullString{String: l.ID, Valid: true}, sql.NullString{String: plan.TargetID, Valid: true}
 		if e = q.MoveActivityListing(ctx, sqlc.MoveActivityListingParams{Target: to, Previous: from}); e != nil {
 			return e
 		}
@@ -240,7 +224,7 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			return e
 		}
 
-		if e = aliasResource(ctx, q, "listings", l.ID, other.ID); e != nil {
+		if e = aliasResource(ctx, q, "listings", l.ID, plan.TargetID); e != nil {
 			return e
 		}
 
