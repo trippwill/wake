@@ -15,6 +15,50 @@ import (
 	"testing"
 )
 
+func TestFinancialCalculationImports(t *testing.T) {
+	application := filepath.Join("..", "..", "internal", "application")
+	for _, name := range []string{
+		"activity_subject_index.go",
+		"calculation.go",
+		"contributions.go",
+		"correction_policy.go",
+		"corrections.go",
+		"decision.go",
+		"instrument_calculation.go",
+		"movement.go",
+		"observations.go",
+		"position_selection.go",
+		"rules.go",
+		"selection.go",
+	} {
+		file, err := parser.ParseFile(
+			token.NewFileSet(),
+			filepath.Join(application, name),
+			nil,
+			parser.ImportsOnly,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			switch path {
+			// Position selection checks cancellation. Observation selection parses URLs.
+			case "context", "net/url":
+			case "cmp", "maps", "reflect", "slices", "sort", "strconv", "strings", "unicode", "unicode/utf8":
+			case "go.trippwill.dev/wake/financial", "go.trippwill.dev/wake/source":
+			default:
+				t.Errorf("%s depends on %s; prepare calculation inputs in the caller", name, path)
+			}
+		}
+	}
+}
+
 func TestProviderAndApplicationBoundaries(t *testing.T) {
 	root := filepath.Join("..", "..")
 	sql := regexp.MustCompile(`(?i)^\s*(select|insert\s+into|update|delete\s+from|create\s+table|pragma)\s`)

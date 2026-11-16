@@ -73,6 +73,11 @@ Stage finished changes and run `mise run source:check` before code delivery.
 Use `mise run docs:check` for Markdown and links. Report checks actually run
 and material gaps.
 
+When adding or moving a pure financial calculation file, update the file list in
+`TestFinancialCalculationImports`. Its allowlist checks direct imports. The
+calculation boundary also applies to same-package calls and transitive dependencies
+through review.
+
 ### Browser and frontend verification
 
 Use `mise run test:browser` for isolated synthetic Chromium workflows and

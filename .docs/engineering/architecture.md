@@ -70,12 +70,16 @@ structure. Compact explanations expose applicable absence reasons and versioned 
 expectations alongside the existing selection and conflict facts.
 
 Local financial handlers and retained-data processing use the compiled provider
-interpretations. The daemon starts without upstream provider work and reference
-enrichment. Local corrections and rebuilds continue with the financial file
-and local client authority. Source commands report that upstream work is
-unavailable. Shutdown cancels and joins local work before releasing the store.
+interpretations. The daemon initializes provider and reference services when the
+optional stores attach. The upstream coordinator admits work under the grant and
+pacing rules. If the stores cannot attach or service initialization fails, the
+daemon serves local financial handlers and processes retained evidence with the
+financial file and local authority. Source commands that require those services
+report upstream unavailability.
 
 Activity and instrument correction policy and orchestration belong to the financial application.
+Financial calculations take prepared inputs. The surrounding orchestration owns
+storage access, clocks, credentials and calls to provider or reference services.
 A consistent read callback prepares previews without writes; a write callback
 checks submission idempotency before revalidating the revision, expands prospective
 decisions, and calculates their result. SQLite supplies typed transaction-bound

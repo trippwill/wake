@@ -1,10 +1,9 @@
 # Current coverage
 
-Wake serves retained IBKR Flex and SnapTrade Personal financial history, with one
-confirmed account per source. The current pre-release build runs local financial
-work only. The provider descriptions below cover the retained evidence and tested
-provider capabilities. See the [README](../../README.md) for usage and the
-[domain vocabulary](domain.md) for financial policy.
+Wake acquires and serves IBKR Flex and SnapTrade Personal financial history, with
+one confirmed account per source. The provider descriptions below cover the
+retained evidence and tested provider capabilities. See the [README](../../README.md)
+for usage and the [domain vocabulary](domain.md) for financial policy.
 
 ## Network access
 
