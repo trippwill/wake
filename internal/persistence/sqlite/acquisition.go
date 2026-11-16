@@ -707,7 +707,11 @@ func nonNil(data []byte) []byte {
 }
 
 func (s *Store) Retained(ctx context.Context, id string) (host.Retained, error) {
-	row, err := s.queries.Retained(ctx, id)
+	return retainedArtifact(ctx, s.queries, id)
+}
+
+func retainedArtifact(ctx context.Context, q *sqlc.Queries, id string) (host.Retained, error) {
+	row, err := q.Retained(ctx, id)
 	if err != nil {
 		return host.Retained{}, err
 	}
@@ -722,7 +726,7 @@ func (s *Store) Retained(ctx context.Context, id string) (host.Retained, error) 
 		return host.Retained{}, ErrCorrupt
 	}
 
-	ref, err := sourceAccount(ctx, s.queries, row.ConnectionID)
+	ref, err := sourceAccount(ctx, q, row.ConnectionID)
 	if err != nil {
 		return host.Retained{}, err
 	}

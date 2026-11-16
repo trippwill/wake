@@ -76,7 +76,7 @@ type (
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
 		RefreshPolls(context.Context, time.Time) (int64, error)
 		PendingArtifacts(context.Context, time.Time, map[string]string) ([]PendingArtifact, error)
-		Process(context.Context, string, string) error
+		RetainedProcessingStore
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
 		ProcessingFailure(context.Context, string, time.Time) error
 		ExecutionDetail(context.Context, string) (ExecutionDetail, error)
@@ -720,7 +720,7 @@ func (w *Workflow) RunOnce(ctx context.Context, now time.Time) error {
 		default:
 			if _, err = w.normalize(work, id, registration); err == nil {
 				processContext, finish := logging.Start(work, w.logger, "process", "artifact_id", id)
-				err = w.store.Process(processContext, id, registration.Version())
+				err = ProcessRetained(processContext, w.store, id, registration.Version())
 				finish(err)
 			}
 		}

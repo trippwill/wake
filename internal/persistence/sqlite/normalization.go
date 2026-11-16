@@ -314,7 +314,11 @@ type Record struct {
 }
 
 func (s *Store) Records(ctx context.Context, id, version string) ([]Record, error) {
-	rows, err := recordValues(ctx, s.queries, id, version)
+	return records(ctx, s.queries, id, version)
+}
+
+func records(ctx context.Context, q *sqlc.Queries, id, version string) ([]Record, error) {
+	rows, err := recordValues(ctx, q, id, version)
 	if err != nil {
 		return nil, err
 	}
