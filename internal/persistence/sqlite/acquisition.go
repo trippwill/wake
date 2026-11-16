@@ -287,7 +287,7 @@ func (s *Store) Reconfigure(ctx context.Context, c host.Connection) error {
 			}
 		}
 	} else {
-		if accountErr != nil && !errors.Is(accountErr, sql.ErrNoRows) {
+		if !errors.Is(accountErr, sql.ErrNoRows) {
 			return accountErr
 		}
 
