@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -76,8 +76,8 @@ func TestCorrectionComponentsMatchFullGraphWithoutReadingDisjointHistory(t *test
 
 	edges, occurrences := correctionEdges(after)
 
-	states, statuses := application.CorrectionStates(edges)
-	if len(states) != 3 || states[ids["c"]].Lifecycle() != application.Accepted {
+	states, statuses := calculation.CorrectionStates(edges)
+	if len(states) != 3 || states[ids["c"]].Lifecycle() != calculation.Accepted {
 		t.Fatal("did not reach the replacement leaf", states)
 	}
 
@@ -86,7 +86,7 @@ func TestCorrectionComponentsMatchFullGraphWithoutReadingDisjointHistory(t *test
 		t.Fatal(err)
 	}
 
-	fullStates, fullStatuses := application.CorrectionStates(fullEdges)
+	fullStates, fullStatuses := calculation.CorrectionStates(fullEdges)
 	for id, state := range states {
 		if state != fullStates[id] {
 			t.Fatal("scoped and full activity states differ", id)

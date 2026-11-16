@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/logging"
@@ -19,7 +20,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-const ErrHistoryUpdating Error = "Wake is updating retained financial history"
+const ErrHistoryUpdating calculation.Error = "Wake is updating retained financial history"
 
 type (
 	StorageStatus struct {
@@ -790,7 +791,7 @@ func (w *Workflow) CorrectionForm(ctx context.Context, kind, id string) (Correct
 	return w.store.CorrectionForm(ctx, kind, id)
 }
 
-func (w *Workflow) SaveDecision(ctx context.Context, d Decision, actor string) (resultErr error) {
+func (w *Workflow) SaveDecision(ctx context.Context, d calculation.Decision, actor string) (resultErr error) {
 	ctx, finishLog := logging.Start(ctx, w.logger, "decision_save")
 	defer func() { finishLog(resultErr) }()
 
@@ -909,7 +910,7 @@ type (
 )
 
 // CheckCorrection checks an edit without retaining a decision or scheduling work.
-func (w *Workflow) CheckCorrection(ctx context.Context, d Decision) error {
+func (w *Workflow) CheckCorrection(ctx context.Context, d calculation.Decision) error {
 	return CheckCorrection(ctx, w.store, d)
 }
 

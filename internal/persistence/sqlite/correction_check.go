@@ -8,7 +8,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
@@ -31,10 +31,10 @@ func (r correctionReader) InstrumentKind(ctx context.Context, id string) (source
 func (r correctionReader) InstrumentBaseline(
 	ctx context.Context,
 	id string,
-) (application.InstrumentSelection, source.InstrumentKind, error) {
+) (calculation.InstrumentSelection, source.InstrumentKind, error) {
 	root, err := r.q.Instrument(ctx, id)
 	if err != nil {
-		return application.InstrumentSelection{}, "", err
+		return calculation.InstrumentSelection{}, "", err
 	}
 
 	base, err := r.q.InstrumentSelection(ctx, id)
@@ -44,19 +44,19 @@ func (r correctionReader) InstrumentBaseline(
 			Evidence: root.EvidenceID, Status: root.ReferenceStatus, UnderlierID: root.UnderlierID,
 		}
 	} else if err != nil {
-		return application.InstrumentSelection{}, "", err
+		return calculation.InstrumentSelection{}, "", err
 	}
 
 	return instrumentSelection(base), source.InstrumentKind(root.Kind), nil
 }
 
-func instrumentSelection(base sqlc.InstrumentSelection) application.InstrumentSelection {
-	return application.InstrumentSelection{
+func instrumentSelection(base sqlc.InstrumentSelection) calculation.InstrumentSelection {
+	return calculation.InstrumentSelection{
 		Name:      base.Name,
 		Ticker:    base.Ticker,
 		FIGI:      base.Figi,
 		Evidence:  base.Evidence,
-		Status:    application.ReferenceStatus(base.Status),
+		Status:    calculation.ReferenceStatus(base.Status),
 		Underlier: base.UnderlierID.String,
 	}
 }
@@ -88,7 +88,7 @@ func (r correctionReader) CompetingInstrumentKinds(
 func (w *correctionWriter) SaveInstrument(
 	ctx context.Context,
 	id string,
-	result application.InstrumentCalculation,
+	result calculation.InstrumentCalculation,
 ) error {
 	w.changed = true
 	if err := persistInstrumentCalculation(ctx, w.q, id, result); err != nil {

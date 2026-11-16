@@ -15,6 +15,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -218,15 +219,15 @@ func (correctionCheckReader) ActivityDecisions(
 func (correctionCheckReader) ActivityInputs(
 	_ context.Context,
 	_ string,
-	selections []application.FieldSelection,
-) (application.ActivityCalculationInput, error) {
+	selections []calculation.FieldSelection,
+) (calculation.ActivityCalculationInput, error) {
 	usd, _ := financial.ParseCurrency("USD")
 	account, _ := source.NewReference("synthetic", "account", "", "one")
 	ref, _ := source.NewReference("synthetic", "instrument", "", "one")
 
 	instrument, err := source.NewInstrument(source.InstrumentInput{Reference: ref, Kind: source.Equity})
 	if err != nil {
-		return application.ActivityCalculationInput{}, err
+		return calculation.ActivityCalculationInput{}, err
 	}
 
 	quantity, _ := financial.ParseQuantity("1")
@@ -245,13 +246,13 @@ func (correctionCheckReader) ActivityInputs(
 		},
 	)
 	if err != nil {
-		return application.ActivityCalculationInput{}, err
+		return calculation.ActivityCalculationInput{}, err
 	}
 
-	terms, err := application.TradeTerms(trade)
+	terms, err := calculation.TradeTerms(trade)
 
-	return application.ActivityCalculationInput{
-		Rule:      application.RetainedClaimsRule,
+	return calculation.ActivityCalculationInput{
+		Rule:      calculation.RetainedClaimsRule,
 		Baseline:  terms,
 		Decisions: selections,
 	}, err

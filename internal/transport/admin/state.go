@@ -7,53 +7,54 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
-func activityStatus(state application.ActivityState) string {
+func activityStatus(state calculation.ActivityState) string {
 	parts := []string{string(state.Lifecycle())}
 	if state.NeedsReview() {
 		parts = append(parts, "needs review")
 	}
 
-	if state.Authority() == application.OperatorSelection {
+	if state.Authority() == calculation.OperatorSelection {
 		parts = append(parts, "operator decision")
 	}
 
 	return strings.Join(parts, "; ")
 }
 
-func correctionStatus(status application.CorrectionStatus) string {
+func correctionStatus(status calculation.CorrectionStatus) string {
 	switch status {
-	case application.CorrectionNeedsReview:
+	case calculation.CorrectionNeedsReview:
 		return "needs review"
-	case application.CorrectionUnresolved:
+	case calculation.CorrectionUnresolved:
 		return "endpoint unresolved; needs review"
 	default:
 		return string(status)
 	}
 }
 
-func observationStatus(outcome application.ObservationOutcome) string {
+func observationStatus(outcome calculation.ObservationOutcome) string {
 	switch outcome {
-	case application.ObservationUnselected:
+	case calculation.ObservationUnselected:
 		return "unselected account or source"
-	case application.ObservationIncompleteConflict:
+	case calculation.ObservationIncompleteConflict:
 		return "incomplete activity terms conflict"
-	case application.ObservationIncomplete:
+	case calculation.ObservationIncomplete:
 		return "waiting for activity terms"
-	case application.ObservationIdentityReview:
+	case calculation.ObservationIdentityReview:
 		return "identity needs review"
-	case application.ObservationNativeReview:
+	case calculation.ObservationNativeReview:
 		return "native identity needs review"
-	case application.ObservationKindConflict:
+	case calculation.ObservationKindConflict:
 		return "conflicting activity kind; needs review"
-	case application.ObservationTermsConflict:
+	case calculation.ObservationTermsConflict:
 		return "conflicting terms; needs review"
-	case application.ObservationNoContribution:
+	case calculation.ObservationNoContribution:
 		return "no additional contribution"
-	case application.ObservationEnriched:
+	case calculation.ObservationEnriched:
 		return "adds source information"
-	case application.ObservationAccepted:
+	case calculation.ObservationAccepted:
 		return "accepted"
 	default:
 		return string(outcome)
@@ -62,14 +63,14 @@ func observationStatus(outcome application.ObservationOutcome) string {
 
 func instrumentStatus(instrument application.Instrument) string {
 	label := string(instrument.Status())
-	if instrument.Authority() == application.OperatorSelection {
+	if instrument.Authority() == calculation.OperatorSelection {
 		label += "; operator decision"
 	}
 
 	return label
 }
 
-func referenceTone(status application.ReferenceStatus) string {
+func referenceTone(status calculation.ReferenceStatus) string {
 	if status.NeedsReview() {
 		return "error"
 	}

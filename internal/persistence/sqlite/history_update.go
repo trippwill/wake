@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
@@ -119,7 +120,7 @@ func (s *Store) UpdateHistory(
 type historyWriter struct {
 	tx         *sql.Tx
 	q          *sqlc.Queries
-	rule       application.FinancialRule
+	rule       calculation.FinancialRule
 	activities map[string]sqlc.Execution
 }
 
@@ -158,7 +159,7 @@ func (w *historyWriter) HistoryInstruments(ctx context.Context, cursor string, s
 func (w *historyWriter) RebuildActivity(
 	ctx context.Context,
 	id string,
-	state application.ActivityState,
+	state calculation.ActivityState,
 ) error {
 	return projectActivity(ctx, w.q, w.activities[id], state, w.rule)
 }

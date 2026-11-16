@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 const (
@@ -35,7 +35,7 @@ type migration struct{ from, to, sql string }
 type upgradeBaseline struct {
 	formats, schemas [storeCount]string
 	migrations       [storeCount][]migration
-	rule             application.FinancialRule
+	rule             calculation.FinancialRule
 	// Each entry describes the change introduced at that rule version.
 	notes map[int64]string
 }
@@ -44,7 +44,7 @@ func releaseBaseline() upgradeBaseline {
 	return upgradeBaseline{
 		formats: storeVersions,
 		schemas: [storeCount]string{schemaSQL, connectionsSQL, syncSQL},
-		rule:    application.RetainedClaimsRule,
+		rule:    calculation.RetainedClaimsRule,
 	}
 }
 
@@ -115,7 +115,7 @@ func Upgrade(ctx context.Context, profile Profile, logger *slog.Logger, confirm 
 	return plan, err
 }
 
-func ruleVersion(rule application.FinancialRule) (int64, error) {
+func ruleVersion(rule calculation.FinancialRule) (int64, error) {
 	_, suffix, _ := strings.Cut(string(rule), "/")
 
 	version, err := strconv.ParseInt(suffix, 10, 64)

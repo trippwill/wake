@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/currencycatalog"
 	"go.trippwill.dev/wake/provider"
 	"net/url"
@@ -61,22 +62,22 @@ templ InstrumentBadge(instrument application.Instrument) {
 	<span class="wake-state" data-state={ stateKind(string(instrument.Status())) }>{ instrumentStatus(instrument) }</span>
 }
 
-templ ActivityBadge(state application.ActivityState) {
+templ ActivityBadge(state calculation.ActivityState) {
 	<span class="wake-state" data-state={ activityBadgeKind(state) }>{ activityStatus(state) }</span>
 }
 
-func activityBadgeKind(state application.ActivityState) string {
+func activityBadgeKind(state calculation.ActivityState) string {
 	if state.NeedsReview() {
 		return "warning"
 	}
 	return "neutral"
 }
 
-templ ObservationBadge(outcome application.ObservationOutcome) {
+templ ObservationBadge(outcome calculation.ObservationOutcome) {
 	<span class="wake-state" data-state={ observationBadgeKind(outcome) }>{ observationStatus(outcome) }</span>
 }
 
-func observationBadgeKind(outcome application.ObservationOutcome) string {
+func observationBadgeKind(outcome calculation.ObservationOutcome) string {
 	if outcome.NeedsReview() {
 		return "warning"
 	}

@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -18,7 +19,7 @@ import (
 // source. Missing fields on their own do not establish a reporting expectation.
 func reportingPolicy(
 	ctx context.Context, q *sqlc.Queries, registrations []provider.Registration,
-	accountID string, selection application.ActivitySelection,
+	accountID string, selection calculation.ActivitySelection,
 ) (provider.ActivityReportingPolicy, string, error) {
 	support := selection.Sources[string(source.FieldFamily)]
 	if len(support) == 0 || len(registrations) == 0 {
@@ -50,7 +51,7 @@ func reportingPolicy(
 }
 
 func explainActivityFields(
-	a *application.PublishedActivity, selection application.ActivitySelection,
+	a *application.PublishedActivity, selection calculation.ActivitySelection,
 	policy provider.ActivityReportingPolicy, version string,
 ) []application.PublishedFieldDetail {
 	out := []application.PublishedFieldDetail{}

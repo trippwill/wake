@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -46,7 +46,7 @@ func recalculateFixture(t *testing.T, s *Store) {
 	}
 
 	for _, id := range ids {
-		if err = projectInstrument(ctx, q, id, application.RetainedClaimsRule); err != nil {
+		if err = projectInstrument(ctx, q, id, calculation.RetainedClaimsRule); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,7 +57,7 @@ func recalculateFixture(t *testing.T, s *Store) {
 	}
 
 	for _, row := range activities {
-		if err = projectActivity(ctx, q, row, states[row.ID], application.RetainedClaimsRule); err != nil {
+		if err = projectActivity(ctx, q, row, states[row.ID], calculation.RetainedClaimsRule); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,13 +70,13 @@ func recalculateFixture(t *testing.T, s *Store) {
 func correctionInputs(
 	ctx context.Context,
 	q *sqlc.Queries,
-) ([]sqlc.SourceCorrection, []application.CorrectionEdge, error) {
+) ([]sqlc.SourceCorrection, []calculation.CorrectionEdge, error) {
 	rows, err := q.SourceCorrections(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	edges := make([]application.CorrectionEdge, len(rows))
+	edges := make([]calculation.CorrectionEdge, len(rows))
 	for i, r := range rows {
 		targets, e := q.EventLinks(ctx, sqlc.EventLinksParams{AccountID: r.AccountID, Reference: r.Target})
 		if e != nil {
@@ -91,7 +91,7 @@ func correctionInputs(
 			return nil, nil, e
 		}
 
-		edges[i] = application.CorrectionEdge{
+		edges[i] = calculation.CorrectionEdge{
 			Kind:         source.CorrectionKind(r.Kind),
 			Targets:      targets,
 			Replacements: replacements,
@@ -104,24 +104,24 @@ func correctionInputs(
 func readCorrectionStates(
 	ctx context.Context,
 	q *sqlc.Queries,
-) (map[string]application.ActivityState, error) {
+) (map[string]calculation.ActivityState, error) {
 	_, edges, err := correctionInputs(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 
-	states, _ := application.CorrectionStates(edges)
+	states, _ := calculation.CorrectionStates(edges)
 
 	return states, nil
 }
 
-func correctionStates(ctx context.Context, q *sqlc.Queries) (map[string]application.ActivityState, error) {
+func correctionStates(ctx context.Context, q *sqlc.Queries) (map[string]calculation.ActivityState, error) {
 	rows, edges, err := correctionInputs(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 
-	states, statuses := application.CorrectionStates(edges)
+	states, statuses := calculation.CorrectionStates(edges)
 	for i, r := range rows {
 		if r.Status == string(statuses[i]) {
 			continue

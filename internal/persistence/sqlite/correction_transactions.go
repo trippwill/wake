@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -150,7 +151,7 @@ func (r correctionReader) ActivityObservation(
 ) (source.ActivityObservation, error) {
 	var key [3]string
 	if json.Unmarshal([]byte(value), &key) != nil {
-		return source.ActivityObservation{}, application.ErrInvalid
+		return source.ActivityObservation{}, calculation.ErrInvalid
 	}
 
 	row, err := r.q.SelectedObservation(
@@ -163,7 +164,7 @@ func (r correctionReader) ActivityObservation(
 		},
 	)
 	if err != nil {
-		return source.ActivityObservation{}, application.ErrInvalid
+		return source.ActivityObservation{}, calculation.ErrInvalid
 	}
 
 	data, err := claimData(row.Kind, row.Data, row.Location)
@@ -177,16 +178,16 @@ func (r correctionReader) ActivityObservation(
 func (r correctionReader) ActivityInputs(
 	ctx context.Context,
 	id string,
-	selections []application.FieldSelection,
-) (application.ActivityCalculationInput, error) {
+	selections []calculation.FieldSelection,
+) (calculation.ActivityCalculationInput, error) {
 	row, err := r.q.Execution(ctx, id)
 	if err != nil {
-		return application.ActivityCalculationInput{}, err
+		return calculation.ActivityCalculationInput{}, err
 	}
 
 	state, err := activityState(row)
 	if err != nil {
-		return application.ActivityCalculationInput{}, err
+		return calculation.ActivityCalculationInput{}, err
 	}
 
 	return loadActivityCalculation(ctx, r.q, row, state.SourceCorrectionState(), selections)
@@ -195,17 +196,17 @@ func (r correctionReader) ActivityInputs(
 func (w *correctionWriter) Submission(
 	ctx context.Context,
 	id string,
-) (application.DecisionInput, string, bool, error) {
+) (calculation.DecisionInput, string, bool, error) {
 	row, err := w.q.DecisionSubmission(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return application.DecisionInput{}, "", false, nil
+		return calculation.DecisionInput{}, "", false, nil
 	}
 
 	if err != nil {
-		return application.DecisionInput{}, "", false, err
+		return calculation.DecisionInput{}, "", false, err
 	}
 
-	var input application.DecisionInput
+	var input calculation.DecisionInput
 	if json.Unmarshal(row.Request, &input) != nil {
 		return input, "", false, ErrCorrupt
 	}
@@ -215,7 +216,7 @@ func (w *correctionWriter) Submission(
 
 func (w *correctionWriter) InsertDecision(
 	ctx context.Context,
-	field, request application.DecisionInput,
+	field, request calculation.DecisionInput,
 	actor string,
 	at time.Time,
 	supersedes string,
@@ -262,7 +263,7 @@ func (w *correctionWriter) InsertDecision(
 func (w *correctionWriter) SaveActivity(
 	ctx context.Context,
 	id string,
-	calculation application.ActivityCalculation,
+	calculation calculation.ActivityCalculation,
 ) error {
 	w.changed = true
 

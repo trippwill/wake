@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -73,7 +74,7 @@ func (p *rootPhase) LoadRoot(ctx context.Context, id string) (application.Retain
 
 		root.Claims = append(
 			root.Claims,
-			application.RootClaim{
+			calculation.RootClaim{
 				ID:       input.ClaimID,
 				Ordinal:  input.Ordinal,
 				Role:     input.Role,
@@ -97,7 +98,7 @@ func (p *rootPhase) LoadRoot(ctx context.Context, id string) (application.Retain
 	root.Claims = append(root.Claims, children...)
 	slices.SortStableFunc(
 		root.Claims,
-		func(a, b application.RootClaim) int { return cmp.Compare(a.Sequence, b.Sequence) },
+		func(a, b calculation.RootClaim) int { return cmp.Compare(a.Sequence, b.Sequence) },
 	)
 
 	bindings, err := p.sourceBindings(ctx, row, root.Reported, root.References)
@@ -105,7 +106,7 @@ func (p *rootPhase) LoadRoot(ctx context.Context, id string) (application.Retain
 		return application.RetainedRoot{}, err
 	}
 
-	root.Calculation, err = application.CalculateRootClaims(
+	root.Calculation, err = calculation.CalculateRootClaims(
 		root.Reported,
 		row.ReferenceFigi != "",
 		root.Claims,
@@ -147,8 +148,8 @@ func (p *rootPhase) sourceBindings(
 	row sqlc.Instrument,
 	reported source.Instrument,
 	references map[source.Reference]struct{},
-) (map[source.Reference]application.RootBinding, error) {
-	bindings := map[source.Reference]application.RootBinding{}
+) (map[source.Reference]calculation.RootBinding, error) {
+	bindings := map[source.Reference]calculation.RootBinding{}
 	if row.ReferenceFigi != "" {
 		rows, e := p.bindingRows(ctx, row.ID)
 		if e != nil {
@@ -161,7 +162,7 @@ func (p *rootPhase) sourceBindings(
 				return nil, e
 			}
 
-			bindings[value.Reported().Reference()] = application.RootBinding{
+			bindings[value.Reported().Reference()] = calculation.RootBinding{
 				Reported:  value.Reported(),
 				Canonical: reported,
 			}
@@ -199,7 +200,7 @@ func (p *rootPhase) sourceBindings(
 				return nil, e
 			}
 
-			bindings[original.Reported().Reference()] = application.RootBinding{
+			bindings[original.Reported().Reference()] = calculation.RootBinding{
 				Reported:  original.Reported(),
 				Canonical: value.Reported(),
 			}
@@ -294,7 +295,7 @@ func projectRoots(ctx context.Context, q *sqlc.Queries, ids []string) error {
 	return application.ProjectRoots(ctx, newRootPhase(q), ids)
 }
 
-func calculateRoot(ctx context.Context, q *sqlc.Queries, id string) (application.RootCalculation, error) {
+func calculateRoot(ctx context.Context, q *sqlc.Queries, id string) (calculation.RootCalculation, error) {
 	return application.CalculateRetainedRoot(ctx, newRootPhase(q), id)
 }
 
@@ -335,7 +336,7 @@ func (p *rootPhase) CreateUnderlier(ctx context.Context, parent string, i source
 func (p *rootPhase) BindUnderlierClaim(
 	ctx context.Context,
 	parent, id string,
-	claim application.RootClaim,
+	claim calculation.RootClaim,
 ) error {
 	if id != parent {
 		if err := p.q.PutInstrumentUnderlier(
@@ -358,8 +359,8 @@ func (p *rootPhase) RetainRootContributions(ctx context.Context, id string) erro
 func (p *rootPhase) SaveRoot(
 	ctx context.Context,
 	id string,
-	result application.RootCalculation,
-	link application.UnderlierLink,
+	result calculation.RootCalculation,
+	link calculation.UnderlierLink,
 ) error {
 	return persistRootEnrichment(ctx, p.q, id, result, link)
 }

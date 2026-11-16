@@ -16,6 +16,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/provider"
@@ -443,7 +444,7 @@ func canonicalSnapshot(
 
 		why.Selection = i.Rule + "; " + i.ReferenceStatus
 		why.CalculationRule = i.CalculationRule
-		why.Conflict = application.ReferenceStatus(i.ReferenceStatus).NeedsReview()
+		why.Conflict = calculation.ReferenceStatus(i.ReferenceStatus).NeedsReview()
 		why.Identity = &application.PublishedIdentity{
 			FIGI:       known(i.ReferenceFigi),
 			Allocation: known(i.ReferenceAllocation),
@@ -475,7 +476,7 @@ func canonicalSnapshot(
 			ListingID:    known(row.ListingID.String),
 		}
 
-		if state.Lifecycle() == application.Superseded {
+		if state.Lifecycle() == calculation.Superseded {
 			a.State = "replaced"
 		}
 
@@ -896,7 +897,7 @@ func (s *Store) Explanation(
 	}
 
 	if revision < 1 {
-		return application.Explanation{}, application.ErrInvalid
+		return application.Explanation{}, calculation.ErrInvalid
 	}
 
 	if why.Revision != revision {

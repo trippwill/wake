@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -185,8 +186,8 @@ func TestCashInstrumentEvidenceChoiceBindsAndReleasesAtomically(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				d, err := application.NewDecision(
-					application.DecisionInput{
+				d, err := calculation.NewDecision(
+					calculation.DecisionInput{
 						TargetKind:       "activity",
 						TargetID:         id,
 						Scope:            scope,
@@ -361,8 +362,8 @@ func TestCashInstrumentEvidenceChoiceRetainsOptionUnderlierClaims(t *testing.T) 
 		t.Fatal("form", err)
 	}
 
-	decision, err := application.NewDecision(
-		application.DecisionInput{
+	decision, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         id,
 			Scope:            "evidence/instrument",
@@ -688,7 +689,7 @@ func TestUnclassifiedCashInstrumentReconcilesWithReportedFamily(t *testing.T) {
 						t.Fatal("bound instrument family missing from correction choices", form.Links)
 					}
 
-					decision, err := application.NewDecision(application.DecisionInput{
+					decision, err := calculation.NewDecision(calculation.DecisionInput{
 						TargetKind: "activity", TargetID: cashID, Scope: "instrument", Text: root.ID,
 						Action: "set", Submission: "unclassified-link", ExpectedRevision: form.Revision,
 					})

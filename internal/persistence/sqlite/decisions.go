@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
@@ -41,7 +42,7 @@ func referenceCandidate(
 		Job, Record int
 	}
 	if json.Unmarshal([]byte(value), &selected) != nil {
-		return reference.Record{}, "", application.ErrInvalid
+		return reference.Record{}, "", calculation.ErrInvalid
 	}
 
 	rows, err := q.RetainedReferenceCandidates(ctx, id)
@@ -68,7 +69,7 @@ func referenceCandidate(
 		if json.Unmarshal(row.Request, &jobs) != nil || selected.Job < 0 || selected.Job >= len(jobs) ||
 			!referenceJobMatches(instrument.Reported(), jobs[selected.Job]) &&
 				!boundJobMatches(ctx, q, id, jobs[selected.Job]) {
-			return reference.Record{}, "", application.ErrInvalid
+			return reference.Record{}, "", calculation.ErrInvalid
 		}
 
 		var decoded []struct {
@@ -77,19 +78,19 @@ func referenceCandidate(
 		if json.Unmarshal(row.Response, &decoded) != nil || selected.Job < 0 || selected.Job >= len(decoded) ||
 			selected.Record < 0 ||
 			selected.Record >= len(decoded[selected.Job].Data) {
-			return reference.Record{}, "", application.ErrInvalid
+			return reference.Record{}, "", calculation.ErrInvalid
 		}
 
 		record := decoded[selected.Job].Data[selected.Record]
 		if jobs[selected.Job].IDType == "COMPOSITE_ID_BB_GLOBAL" &&
 			record.Composite != jobs[selected.Job].IDValue {
-			return reference.Record{}, "", application.ErrInvalid
+			return reference.Record{}, "", calculation.ErrInvalid
 		}
 
 		return record, row.ID, nil
 	}
 
-	return reference.Record{}, "", application.ErrInvalid
+	return reference.Record{}, "", calculation.ErrInvalid
 }
 
 func referenceCandidateKey(id string, job, record int) string {
@@ -172,7 +173,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			family = source.InstrumentKind(root.Kind)
 		}
 
-		for _, policy := range application.EditableActivityFields(application.ActivityKind(row.Kind), family) {
+		for _, policy := range calculation.EditableActivityFields(calculation.ActivityKind(row.Kind), family) {
 			out.Fields = append(out.Fields, policy.Scope())
 		}
 
@@ -214,7 +215,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			"underlier":          {Value: row.UnderlierID.String},
 		}
 		out.Revision = row.Revision
-		for _, policy := range application.EditableInstrumentFields(source.InstrumentKind(row.Kind)) {
+		for _, policy := range calculation.EditableInstrumentFields(source.InstrumentKind(row.Kind)) {
 			out.Fields = append(out.Fields, policy.Scope())
 		}
 
@@ -270,7 +271,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 			}
 		}
 	default:
-		return out, application.ErrInvalid
+		return out, calculation.ErrInvalid
 	}
 
 	roots, err := s.queries.Instruments(ctx)
@@ -372,9 +373,9 @@ func applyRootConflict(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-	change application.SourceConflictChange,
+	change calculation.SourceConflictChange,
 ) error {
-	if change == application.RecordSourceConflict {
+	if change == calculation.RecordSourceConflict {
 		if err := q.EnsureInstrumentSelection(ctx, id); err != nil {
 			return err
 		}
@@ -400,7 +401,7 @@ func applyRootConflict(
 		return err
 	}
 
-	return projectInstrument(ctx, q, id, application.RetainedClaimsRule)
+	return projectInstrument(ctx, q, id, calculation.RetainedClaimsRule)
 }
 
 func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnderlierParams) error {
@@ -432,7 +433,7 @@ func setAutomaticUnderlier(ctx context.Context, q *sqlc.Queries, p sqlc.SetUnder
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
+	return projectInstrument(ctx, q, p.ID, calculation.RetainedClaimsRule)
 }
 
 func instrumentLabel(name, ticker string) string {
@@ -470,7 +471,7 @@ func observationLabel(r sqlc.RecordValue) string {
 
 	case "activity":
 		if o, err := decodeObservation(r.Data); err == nil {
-			if terms, e := application.CompleteActivityTerms(o.Fields(), o.Fields().Fields); e == nil {
+			if terms, e := calculation.CompleteActivityTerms(o.Fields(), o.Fields().Fields); e == nil {
 				if data, e := encodeActivityTerms(terms); e == nil {
 					return observationLabel(
 						sqlc.RecordValue{Kind: string(terms.Kind()), Data: data, ArtifactID: r.ArtifactID},
@@ -585,7 +586,7 @@ func enrichAutomaticInstrument(ctx context.Context, q *sqlc.Queries, p sqlc.Enri
 		return err
 	}
 
-	return projectInstrument(ctx, q, p.ID, application.RetainedClaimsRule)
+	return projectInstrument(ctx, q, p.ID, calculation.RetainedClaimsRule)
 }
 
 // A supporting composite job is eligible only through a retained response to

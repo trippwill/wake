@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
@@ -103,7 +104,7 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 	matched, _ := application.NewListQuery(
 		application.ListOptions{
 			Search:             "accepted",
-			ObservationMatches: []application.ObservationOutcome{application.ObservationAccepted},
+			ObservationMatches: []calculation.ObservationOutcome{calculation.ObservationAccepted},
 		},
 		application.ObservationScope,
 	)
@@ -117,7 +118,7 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 		application.ListOptions{
 			Search:             "conflicting terms",
 			PageSize:           2,
-			ObservationMatches: []application.ObservationOutcome{application.ObservationTermsConflict},
+			ObservationMatches: []calculation.ObservationOutcome{calculation.ObservationTermsConflict},
 		},
 		application.ObservationScope,
 	)
@@ -146,7 +147,7 @@ func TestObservationPagesRetainContributionsAndFilterBeforePaging(t *testing.T) 
 		first,
 	); !errors.Is(
 		err,
-		application.ErrInvalid,
+		calculation.ErrInvalid,
 	) {
 		t.Fatal("invalid observation subject", err)
 	}
@@ -286,22 +287,22 @@ func TestObservationOutcomeOrderingUsesPresentationLabels(t *testing.T) {
 		t.Fatal(view, err)
 	}
 
-	labels := map[application.ObservationOutcome]string{
-		application.ObservationAccepted:      "accepted",
-		application.ObservationEnriched:      "adds source information",
-		application.ObservationTermsConflict: "conflicting terms; needs review",
+	labels := map[calculation.ObservationOutcome]string{
+		calculation.ObservationAccepted:      "accepted",
+		calculation.ObservationEnriched:      "adds source information",
+		calculation.ObservationTermsConflict: "conflicting terms; needs review",
 	}
 	for _, direction := range []string{"asc", "desc"} {
-		expected := []application.ObservationOutcome{
-			application.ObservationAccepted,
-			application.ObservationEnriched,
-			application.ObservationTermsConflict,
+		expected := []calculation.ObservationOutcome{
+			calculation.ObservationAccepted,
+			calculation.ObservationEnriched,
+			calculation.ObservationTermsConflict,
 		}
 		if direction == "desc" {
-			expected = []application.ObservationOutcome{
-				application.ObservationTermsConflict,
-				application.ObservationEnriched,
-				application.ObservationAccepted,
+			expected = []calculation.ObservationOutcome{
+				calculation.ObservationTermsConflict,
+				calculation.ObservationEnriched,
+				calculation.ObservationAccepted,
 			}
 		}
 

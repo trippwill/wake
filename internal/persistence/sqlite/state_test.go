@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/provider"
 )
@@ -65,8 +65,8 @@ func TestProjectionKeepsLifecycleReviewAndDecisionIndependent(t *testing.T) {
 	}
 
 	state := d.Execution.State()
-	if state.Lifecycle() != application.Cancelled || !state.NeedsReview() ||
-		state.Authority() != application.OperatorSelection ||
+	if state.Lifecycle() != calculation.Cancelled || !state.NeedsReview() ||
+		state.Authority() != calculation.OperatorSelection ||
 		d.Execution.Terms().Fields().Quantity.Value() != "12" {
 		t.Fatal("independent facts lost", state, d.Execution.Terms())
 	}

@@ -6,6 +6,7 @@ package application
 import (
 	"context"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
 )
@@ -19,7 +20,7 @@ type IdentityRoot struct {
 type IdentityReader interface {
 	IdentityRoot(context.Context, string) (IdentityRoot, error)
 	IdentityRoots(context.Context, string) ([]IdentityRoot, error)
-	AutomaticInstrument(context.Context, string) (InstrumentSelection, error)
+	AutomaticInstrument(context.Context, string) (calculation.InstrumentSelection, error)
 	InstrumentDecisions(context.Context, string) ([]DecisionRecord, error)
 	InstrumentReference(context.Context, string, string) (reference.Record, string, error)
 	CanonicalInstrument(context.Context, string) (string, error)
@@ -32,7 +33,7 @@ type IdentityConflict struct {
 
 type IdentityConvergence struct {
 	Target    IdentityRoot
-	Selection InstrumentSelection
+	Selection calculation.InstrumentSelection
 	Aliases   []string
 	Conflicts []IdentityConflict
 }
@@ -72,7 +73,7 @@ func PlanIdentityConvergence(
 	blocked := false
 	blockReason := reference.OperatorConflict
 	for _, candidate := range roots {
-		if !CompatibleInstrumentKind(family, candidate.Family) {
+		if !calculation.CompatibleInstrumentKind(family, candidate.Family) {
 			blocked = true
 			blockReason = reference.IncompatibleSubject
 		}

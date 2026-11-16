@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
@@ -46,14 +47,14 @@ func pageInfo(query application.ListQuery, total, matched int64) application.Pag
 
 func searchMatches(options application.ListOptions) (string, string, string) {
 	type stateMatch struct {
-		Lifecycle application.LifecycleState     `json:"lifecycle"`
-		Review    application.ReviewReasons      `json:"review"`
-		Authority application.SelectionAuthority `json:"authority"`
+		Lifecycle calculation.LifecycleState     `json:"lifecycle"`
+		Review    calculation.ReviewReasons      `json:"review"`
+		Authority calculation.SelectionAuthority `json:"authority"`
 	}
 
 	type referenceMatch struct {
-		Status    application.ReferenceStatus    `json:"status"`
-		Authority application.SelectionAuthority `json:"authority"`
+		Status    calculation.ReferenceStatus    `json:"status"`
+		Authority calculation.SelectionAuthority `json:"authority"`
 	}
 
 	states := make([]stateMatch, 0, len(options.StateMatches))
@@ -142,7 +143,7 @@ func (s *Store) ActivityList(
 ) (application.ActivityList, error) {
 	options := query.Options()
 	if query.Scope() != application.ActivityScope || options.Page < 1 || options.PageSize < 1 {
-		return application.ActivityList{}, application.ErrInvalid
+		return application.ActivityList{}, calculation.ErrInvalid
 	}
 
 	if options.Sort == "date" && options.Search == "" && options.AccountID == "" && options.State == "" {
@@ -240,7 +241,7 @@ func (s *Store) InstrumentList(
 ) (application.InstrumentList, error) {
 	options := query.Options()
 	if query.Scope() != application.InstrumentScope || options.Page < 1 || options.PageSize < 1 {
-		return application.InstrumentList{}, application.ErrInvalid
+		return application.InstrumentList{}, calculation.ErrInvalid
 	}
 
 	_, references, _ := searchMatches(options)
@@ -293,7 +294,7 @@ func (s *Store) InstrumentList(
 				out.Items,
 				application.InstrumentListItem{
 					Resource:  resource,
-					Authority: application.SelectionAuthority(row.SelectionAuthority),
+					Authority: calculation.SelectionAuthority(row.SelectionAuthority),
 				},
 			)
 		}

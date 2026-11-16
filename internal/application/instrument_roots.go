@@ -8,22 +8,16 @@ import (
 	"encoding/json"
 	"slices"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
-type RootClaim struct {
-	ID                string
-	Ordinal, Sequence int64
-	Role              string
-	Reported          source.Instrument
-}
-
 type RetainedRoot struct {
 	Reported    source.Instrument
-	Claims      []RootClaim
+	Claims      []calculation.RootClaim
 	Underlier   string
 	References  map[source.Reference]struct{}
-	Calculation RootCalculation
+	Calculation calculation.RootCalculation
 }
 
 // RootStore reads a stable phase of bindings. After writes establish a new set
@@ -34,9 +28,9 @@ type RootStore interface {
 	AutomaticUnderlier(context.Context, string) (string, error)
 	QualifyRoot(context.Context, string, source.Reference) error
 	CreateUnderlier(context.Context, string, source.Instrument) (string, error)
-	BindUnderlierClaim(context.Context, string, string, RootClaim) error
+	BindUnderlierClaim(context.Context, string, string, calculation.RootClaim) error
 	RetainRootContributions(context.Context, string) error
-	SaveRoot(context.Context, string, RootCalculation, UnderlierLink) error
+	SaveRoot(context.Context, string, calculation.RootCalculation, calculation.UnderlierLink) error
 }
 
 func rootReferenceKey(ref source.Reference) string {
@@ -145,7 +139,7 @@ func underlierTargets(
 			}
 		}
 
-		reported, conflict, err := ReconcileInstrument(target.reported, group.claims)
+		reported, conflict, err := calculation.ReconcileInstrument(target.reported, group.claims)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +173,7 @@ func underlierTargets(
 					}
 
 					if previous.Reported.Reference().IsZero() &&
-						CompatibleInstrument(previous.Reported, reported) {
+						calculation.CompatibleInstrument(previous.Reported, reported) {
 						anonymous[selected] = true
 					}
 				}
@@ -215,25 +209,19 @@ func underlierTargets(
 	return targets, nil
 }
 
-type UnderlierLink struct {
-	ID string
-	// Invalid targets clear a previous automatic choice even during conflict.
-	Invalid bool
-}
-
 func resolveUnderlier(
 	ctx context.Context, p RootStore,
 	parent string,
 	u source.Instrument,
 	targets map[string]underlierTarget,
-) (UnderlierLink, error) {
+) (calculation.UnderlierLink, error) {
 	if u.Kind() == "" {
-		return UnderlierLink{}, nil
+		return calculation.UnderlierLink{}, nil
 	}
 
 	selected, err := p.AutomaticUnderlier(ctx, parent)
 	if err != nil {
-		return UnderlierLink{}, err
+		return calculation.UnderlierLink{}, err
 	}
 
 	var target underlierTarget
@@ -244,16 +232,16 @@ func resolveUnderlier(
 		if !ok {
 			candidate, e := p.FindRoot(ctx, u.Reference())
 			if e != nil {
-				return UnderlierLink{}, e
+				return calculation.UnderlierLink{}, e
 			}
 
 			if candidate == "" {
-				return UnderlierLink{}, ErrNotFound
+				return calculation.UnderlierLink{}, ErrNotFound
 			}
 
 			root, e := p.LoadRoot(ctx, candidate)
 			if e != nil {
-				return UnderlierLink{}, e
+				return calculation.UnderlierLink{}, e
 			}
 
 			target = underlierTarget{
@@ -265,42 +253,42 @@ func resolveUnderlier(
 	}
 
 	if target.id == parent || selected == parent {
-		return UnderlierLink{Invalid: true}, nil
+		return calculation.UnderlierLink{Invalid: true}, nil
 	}
 
 	if target.id != "" &&
-		!CompatibleInstrumentKind(source.UnknownInstrument, target.reported.Kind()) {
-		return UnderlierLink{Invalid: true}, nil
+		!calculation.CompatibleInstrumentKind(source.UnknownInstrument, target.reported.Kind()) {
+		return calculation.UnderlierLink{Invalid: true}, nil
 	}
 
 	if selected != "" {
 		previous, e := p.LoadRoot(ctx, selected)
 		if e != nil {
-			return UnderlierLink{}, e
+			return calculation.UnderlierLink{}, e
 		}
 
-		if !CompatibleInstrumentKind(source.UnknownInstrument, previous.Calculation.Reported.Kind()) {
-			return UnderlierLink{Invalid: true}, nil
+		if !calculation.CompatibleInstrumentKind(source.UnknownInstrument, previous.Calculation.Reported.Kind()) {
+			return calculation.UnderlierLink{Invalid: true}, nil
 		}
 
 		if previous.Calculation.Conflict || target.conflict ||
-			!CompatibleInstrument(previous.Reported, u) ||
-			target.id != "" && !CompatibleInstrument(previous.Reported, target.reported) {
-			return UnderlierLink{ID: selected}, nil
+			!calculation.CompatibleInstrument(previous.Reported, u) ||
+			target.id != "" && !calculation.CompatibleInstrument(previous.Reported, target.reported) {
+			return calculation.UnderlierLink{ID: selected}, nil
 		}
 
 		if target.id == "" {
-			return UnderlierLink{ID: selected}, nil
+			return calculation.UnderlierLink{ID: selected}, nil
 		}
 	}
 
 	if target.id != "" {
-		return UnderlierLink{ID: target.id}, nil
+		return calculation.UnderlierLink{ID: target.id}, nil
 	}
 
 	id, err := p.CreateUnderlier(ctx, parent, u)
 
-	return UnderlierLink{ID: id}, err
+	return calculation.UnderlierLink{ID: id}, err
 }
 
 // Bind source occurrences independently of operator choices. Qualified subject
@@ -386,8 +374,8 @@ func ProjectRoots(ctx context.Context, phase RootStore, ids []string) error {
 		}
 	}
 
-	results := make(map[string]RootCalculation, len(ids))
-	links := make(map[string]UnderlierLink, len(ids))
+	results := make(map[string]calculation.RootCalculation, len(ids))
+	links := make(map[string]calculation.UnderlierLink, len(ids))
 	for _, id := range ids {
 		result, err := CalculateRetainedRoot(ctx, phase, id)
 		if err != nil {
@@ -413,10 +401,10 @@ func ProjectRoots(ctx context.Context, phase RootStore, ids []string) error {
 	return nil
 }
 
-func CalculateRetainedRoot(ctx context.Context, p RootStore, id string) (RootCalculation, error) {
+func CalculateRetainedRoot(ctx context.Context, p RootStore, id string) (calculation.RootCalculation, error) {
 	root, err := p.LoadRoot(ctx, id)
 	if err != nil {
-		return RootCalculation{}, err
+		return calculation.RootCalculation{}, err
 	}
 
 	result := root.Calculation
@@ -427,7 +415,7 @@ func CalculateRetainedRoot(ctx context.Context, p RootStore, id string) (RootCal
 
 		candidate, e := p.FindRoot(ctx, reported.Reference())
 		if e != nil {
-			return RootCalculation{}, e
+			return calculation.RootCalculation{}, e
 		}
 
 		if candidate == "" {
@@ -441,16 +429,16 @@ func CalculateRetainedRoot(ctx context.Context, p RootStore, id string) (RootCal
 
 		value, e := p.LoadRoot(ctx, candidate)
 		if e != nil {
-			return RootCalculation{}, e
+			return calculation.RootCalculation{}, e
 		}
 
 		result.Conflict = result.Conflict || value.Calculation.Conflict ||
-			!CompatibleInstrument(reported, value.Calculation.Reported)
+			!calculation.CompatibleInstrument(reported, value.Calculation.Reported)
 
 		if reported.Reference() == result.Underlier.Reference() {
 			result, e = EnrichRootUnderlier(result, value.Calculation)
 			if e != nil {
-				return RootCalculation{}, e
+				return calculation.RootCalculation{}, e
 			}
 		}
 	}
@@ -460,21 +448,21 @@ func CalculateRetainedRoot(ctx context.Context, p RootStore, id string) (RootCal
 
 // Follow the automatic source relationship, independently of operator overrides
 // and of whether the parent retained this child's latest observation.
-func EnrichRootUnderlier(result, child RootCalculation) (RootCalculation, error) {
+func EnrichRootUnderlier(result, child calculation.RootCalculation) (calculation.RootCalculation, error) {
 	if result.Reported.Kind() != source.Option {
 		return result, nil
 	}
 
-	compatible := CompatibleInstrumentKind(source.UnknownInstrument, child.Reported.Kind()) &&
-		CompatibleInstrument(result.Underlier, child.Reported)
+	compatible := calculation.CompatibleInstrumentKind(source.UnknownInstrument, child.Reported.Kind()) &&
+		calculation.CompatibleInstrument(result.Underlier, child.Reported)
 	result.Conflict = result.Conflict || child.Conflict || !compatible
 	if child.Conflict || !compatible {
 		return result, nil
 	}
 
-	underlier, err := EnrichInstrument(result.Underlier, child.Reported)
+	underlier, err := calculation.EnrichInstrument(result.Underlier, child.Reported)
 	if err != nil {
-		return RootCalculation{}, err
+		return calculation.RootCalculation{}, err
 	}
 
 	f := result.Reported.Fields()
@@ -483,7 +471,7 @@ func EnrichRootUnderlier(result, child RootCalculation) (RootCalculation, error)
 
 	f.Option, err = source.NewOptionTerms(option)
 	if err != nil {
-		return RootCalculation{}, err
+		return calculation.RootCalculation{}, err
 	}
 
 	result.Reported, err = source.NewInstrument(f)

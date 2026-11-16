@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -58,8 +59,8 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 		{"instrument", form.Values["instrument"].Value, "", true},
 		{"listing", "", "", true},
 	} {
-		command, e := application.NewDecision(
-			application.DecisionInput{
+		command, e := calculation.NewDecision(
+			calculation.DecisionInput{
 				TargetKind:       "activity",
 				TargetID:         id,
 				Scope:            test.scope,
@@ -79,7 +80,7 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 			t.Errorf("%s=%s: %v", test.scope, test.value, e)
 		}
 
-		if !test.valid && !errors.Is(e, application.ErrInvalid) {
+		if !test.valid && !errors.Is(e, calculation.ErrInvalid) {
 			t.Errorf("invalid input lacks typed validation outcome: %s=%s: %v", test.scope, test.value, e)
 		}
 	}
@@ -95,8 +96,8 @@ func TestCorrectionChecksUseFinancialRulesWithoutWriting(t *testing.T) {
 		t.Fatal("validation wrote state", current, err)
 	}
 
-	stale, _ := application.NewDecision(
-		application.DecisionInput{
+	stale, _ := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         id,
 			Scope:            "price",

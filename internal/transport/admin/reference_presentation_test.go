@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -125,7 +126,7 @@ func presentationInstrumentReference(
 		reported,
 		"rule",
 		1,
-		application.AutomaticSelection,
+		calculation.AutomaticSelection,
 		application.ReferenceMetadata{Allocation: allocation},
 	)
 	if err != nil {

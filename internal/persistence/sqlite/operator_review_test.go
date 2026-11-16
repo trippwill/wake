@@ -12,6 +12,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/source"
 )
@@ -39,8 +40,8 @@ func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		decision, e := application.NewDecision(
-			application.DecisionInput{
+		decision, e := calculation.NewDecision(
+			calculation.DecisionInput{
 				TargetKind:       "activity",
 				TargetID:         a.ID(),
 				Scope:            "instrument",
@@ -55,7 +56,7 @@ func TestInstrumentPreflightRespectsActiveListingDecision(t *testing.T) {
 		}
 
 		e = application.CheckCorrection(t.Context(), s, decision)
-		if (e == nil) != wantValid || (!wantValid && !errors.Is(e, application.ErrInvalid)) {
+		if (e == nil) != wantValid || (!wantValid && !errors.Is(e, calculation.ErrInvalid)) {
 			t.Fatal("preflight disagrees with dependent listing constraint", e)
 		}
 	}

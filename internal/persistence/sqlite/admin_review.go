@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -77,7 +78,7 @@ func reviewList(
 				Ticker:   row.Ticker,
 				Artifact: row.Artifact,
 				Location: row.Location,
-				Status:   application.CorrectionStatus(row.Status),
+				Status:   calculation.CorrectionStatus(row.Status),
 				Count:    row.ClaimCount,
 			},
 		)
@@ -88,7 +89,7 @@ func reviewList(
 
 func (s *Store) ReviewList(ctx context.Context, query application.ListQuery) (application.ReviewList, error) {
 	if query.Scope() != application.ReviewScope || query.Options().Page < 1 || query.Options().PageSize < 1 {
-		return application.ReviewList{}, application.ErrInvalid
+		return application.ReviewList{}, calculation.ErrInvalid
 	}
 
 	return readModel(

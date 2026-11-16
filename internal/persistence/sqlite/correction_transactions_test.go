@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
-func correctionFixture(t *testing.T) (*Store, application.Decision) {
+func correctionFixture(t *testing.T) (*Store, calculation.Decision) {
 	t.Helper()
 	s := newStoreWithSyntheticAccount(t)
 	processConfirmationReport(t, s, "correction-capability", syntheticDebt)
@@ -30,8 +31,8 @@ func correctionFixture(t *testing.T) (*Store, application.Decision) {
 		t.Fatal(err)
 	}
 
-	d, err := application.NewDecision(
-		application.DecisionInput{
+	d, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         form.ID,
 			Scope:            "quantity",
@@ -166,7 +167,7 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 	f := d.Fields()
 	f.Submission = rand.Text()
 
-	stale, err := application.NewDecision(f)
+	stale, err := calculation.NewDecision(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +283,7 @@ func assertCorrectionInputsMatchGraph(t *testing.T, s *Store) {
 
 		want, ok := states[row.ID]
 		if !ok {
-			want, err = application.NewActivityState(application.Accepted, 0, application.AutomaticSelection)
+			want, err = calculation.NewActivityState(calculation.Accepted, 0, calculation.AutomaticSelection)
 			if err != nil {
 				t.Fatal(err)
 			}

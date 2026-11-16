@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -149,7 +150,7 @@ func TestCompoundInstrumentAssertionsDoNotAccumulateActivitySupport(t *testing.T
 		}
 
 		if rows := observationRowsForTest(t, s, "artifact", report); len(rows) != 1 ||
-			rows[0].ActivityID == "" || rows[0].Outcome != application.ObservationNoContribution {
+			rows[0].ActivityID == "" || rows[0].Outcome != calculation.ObservationNoContribution {
 			t.Fatal("recombined source appearance was lost", rows)
 		}
 	}
@@ -183,7 +184,7 @@ func checkActivityContributionVolume(t *testing.T, count int) {
 
 	observations := observationRowsForTest(t, s, "instrument", instrument)
 	if len(observations) != 1 || observations[0].Artifact != "many-activities" ||
-		observations[0].Outcome != application.ObservationAccepted {
+		observations[0].Outcome != calculation.ObservationAccepted {
 		t.Fatal("instrument support grew with activities", observations)
 	}
 
@@ -366,7 +367,7 @@ func TestSubjectContributionsKeepConflictsAndEnrichmentIndependently(t *testing.
 		"instrument",
 		instrument,
 	); len(got) != 1 ||
-		got[0].Outcome != application.ObservationAccepted {
+		got[0].Outcome != calculation.ObservationAccepted {
 		t.Fatal("activity disagreements became instrument contributions", got)
 	}
 

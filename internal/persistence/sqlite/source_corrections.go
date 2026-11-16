@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -15,7 +15,7 @@ import (
 func (p retainedProcessing) ReconcileSourceCorrections(
 	ctx context.Context,
 	activityIDs []string,
-) (map[string]application.ActivityState, error) {
+) (map[string]calculation.ActivityState, error) {
 	seeds, err := json.Marshal(activityIDs)
 	if err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func (p retainedProcessing) ReconcileSourceCorrections(
 	}
 
 	edges, updates := correctionEdges(rows)
-	states, statuses := application.CorrectionStates(edges)
+	states, statuses := calculation.CorrectionStates(edges)
 	for i, status := range statuses {
 		update := updates[i]
 		if update.Status == string(status) {
@@ -49,9 +49,9 @@ func (p retainedProcessing) ReconcileSourceCorrections(
 // represents an unresolved endpoint and still contributes an occurrence.
 func correctionEdges(
 	rows []sqlc.AffectedSourceCorrectionsRow,
-) ([]application.CorrectionEdge, []sqlc.CorrectionStatusParams) {
+) ([]calculation.CorrectionEdge, []sqlc.CorrectionStatusParams) {
 	var (
-		edges       []application.CorrectionEdge
+		edges       []calculation.CorrectionEdge
 		occurrences []sqlc.CorrectionStatusParams
 	)
 
@@ -61,7 +61,7 @@ func correctionEdges(
 		}
 		if len(occurrences) == 0 || occurrences[len(occurrences)-1] != occurrence {
 			occurrences = append(occurrences, occurrence)
-			edges = append(edges, application.CorrectionEdge{Kind: source.CorrectionKind(row.Kind)})
+			edges = append(edges, calculation.CorrectionEdge{Kind: source.CorrectionKind(row.Kind)})
 		}
 
 		if row.ActivityID == "" {

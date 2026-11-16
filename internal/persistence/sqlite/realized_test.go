@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -167,8 +168,8 @@ func TestRealizedRestatementsUseSharedDecisionPreflightSaveAndRelease(t *testing
 		t.Fatal("restatement unavailable for selection")
 	}
 
-	decision, err := application.NewDecision(
-		application.DecisionInput{
+	decision, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         id,
 			Scope:            "observation",

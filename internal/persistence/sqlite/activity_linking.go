@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -63,8 +64,8 @@ func (p retainedProcessing) CreateActivity(
 	ctx context.Context,
 	account string,
 	item application.ActivityToMatch,
-	terms application.ActivityTerms,
-	selection application.ActivitySelection,
+	terms calculation.ActivityTerms,
+	selection calculation.ActivitySelection,
 ) (string, error) {
 	return createActivity(ctx, p.q, account, item.Artifact, item.Location, terms, selection)
 }
@@ -72,15 +73,15 @@ func (p retainedProcessing) CreateActivity(
 func (p retainedProcessing) ActivityBaseline(
 	ctx context.Context,
 	id string,
-) (application.ActivityTerms, error) {
+) (calculation.ActivityTerms, error) {
 	row, err := p.q.Execution(ctx, id)
 	if err != nil {
-		return application.ActivityTerms{}, err
+		return calculation.ActivityTerms{}, err
 	}
 
 	base, err := p.q.ActivityBase(ctx, id)
 	if err != nil {
-		return application.ActivityTerms{}, err
+		return calculation.ActivityTerms{}, err
 	}
 
 	return decodeActivityTerms(row.Kind, base.Data)
@@ -89,7 +90,7 @@ func (p retainedProcessing) ActivityBaseline(
 func (p retainedProcessing) RetainedActivityClaims(
 	ctx context.Context,
 	id string,
-) ([]application.ActivityClaim, error) {
+) ([]calculation.ActivityClaim, error) {
 	return retainedActivityClaims(ctx, p.q, id)
 }
 

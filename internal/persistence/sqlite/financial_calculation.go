@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
@@ -23,13 +24,13 @@ func loadActivityCalculation(
 	ctx context.Context,
 	q *sqlc.Queries,
 	row sqlc.Execution,
-	state application.ActivityState,
-	selections []application.FieldSelection,
-) (application.ActivityCalculationInput, error) {
-	in := application.ActivityCalculationInput{
-		Rule:        application.RetainedClaimsRule,
+	state calculation.ActivityState,
+	selections []calculation.FieldSelection,
+) (calculation.ActivityCalculationInput, error) {
+	in := calculation.ActivityCalculationInput{
+		Rule:        calculation.RetainedClaimsRule,
 		SourceState: state,
-		Links: application.CalculationLinks{
+		Links: calculation.CalculationLinks{
 			Instruments: map[string]source.InstrumentKind{},
 			Listings:    map[string]string{},
 		},
@@ -45,7 +46,7 @@ func loadActivityCalculation(
 		return in, err
 	}
 
-	in.Binding = application.ActivityBinding{
+	in.Binding = calculation.ActivityBinding{
 		Instrument: base.InstrumentID.String,
 		Listing:    base.ListingID.String,
 	}
@@ -98,7 +99,7 @@ func loadActivityCalculation(
 
 		in.Decisions = append(
 			in.Decisions,
-			application.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
+			calculation.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
 		)
 		selectionScope := scope
 		if strings.HasPrefix(scope, "evidence/") {
@@ -109,7 +110,7 @@ func loadActivityCalculation(
 		case "observation":
 			var key [3]string
 			if json.Unmarshal([]byte(d.Text), &key) != nil {
-				return in, application.ErrInvalid
+				return in, calculation.ErrInvalid
 			}
 
 			selected, e := q.SelectedObservation(
@@ -122,7 +123,7 @@ func loadActivityCalculation(
 				},
 			)
 			if e != nil {
-				return in, application.ErrInvalid
+				return in, calculation.ErrInvalid
 			}
 
 			data, e := claimData(selected.Kind, selected.Data, selected.Location)
@@ -143,7 +144,7 @@ func loadActivityCalculation(
 		case "instrument":
 			root, e := q.Instrument(ctx, d.Text)
 			if e != nil {
-				return in, application.ErrInvalid
+				return in, calculation.ErrInvalid
 			}
 
 			in.Links.Instruments[root.ID] = source.InstrumentKind(root.Kind)
@@ -151,7 +152,7 @@ func loadActivityCalculation(
 			if d.Text != "" {
 				listing, e := q.Listing(ctx, d.Text)
 				if e != nil {
-					return in, application.ErrInvalid
+					return in, calculation.ErrInvalid
 				}
 
 				in.Links.Listings[listing.ID] = listing.InstrumentID
@@ -166,19 +167,19 @@ func projectActivity(
 	ctx context.Context,
 	q *sqlc.Queries,
 	row sqlc.Execution,
-	state application.ActivityState,
-	rule application.FinancialRule,
+	state calculation.ActivityState,
+	rule calculation.FinancialRule,
 ) error {
 	records, err := q.Decisions(ctx, sqlc.DecisionsParams{TargetKind: "activity", TargetID: row.ID})
 	if err != nil {
 		return err
 	}
 
-	selections := []application.FieldSelection{}
+	selections := []calculation.FieldSelection{}
 	for scope, record := range activeDecisions(records) {
 		selections = append(
 			selections,
-			application.FieldSelection{Scope: scope, Text: record.Text, Currency: record.Currency},
+			calculation.FieldSelection{Scope: scope, Text: record.Text, Currency: record.Currency},
 		)
 	}
 
@@ -187,7 +188,7 @@ func projectActivity(
 		return err
 	}
 
-	result, err := application.CalculateActivity(in)
+	result, err := calculation.CalculateActivity(in)
 	if err != nil {
 		return err
 	}
@@ -198,7 +199,7 @@ func projectActivity(
 }
 
 func persistActivityCalculation(
-	ctx context.Context, q *sqlc.Queries, row sqlc.Execution, result application.ActivityCalculation,
+	ctx context.Context, q *sqlc.Queries, row sqlc.Execution, result calculation.ActivityCalculation,
 ) error {
 	if err := persistActivitySelection(ctx, q, row.ID, result.Fields); err != nil {
 		return err
@@ -255,7 +256,7 @@ func selectedCashInstrument(
 	ctx context.Context,
 	q *sqlc.Queries,
 	activity string,
-	result application.ActivityCalculation,
+	result calculation.ActivityCalculation,
 ) (string, error) {
 	if !slices.Contains(result.Fields.OperatorFields, "instrument") ||
 		slices.Contains(result.Explanation.AppliedScopes, "instrument") {
@@ -383,7 +384,7 @@ func projectInstrument(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-	rule application.FinancialRule,
+	rule calculation.FinancialRule,
 ) error {
 	result, err := application.ProjectInstrument(ctx, correctionReader{q}, id)
 	if err != nil {
@@ -399,7 +400,7 @@ func persistInstrumentCalculation(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-	result application.InstrumentCalculation,
+	result calculation.InstrumentCalculation,
 ) error {
 	if err := q.EnsureInstrumentSelection(ctx, id); err != nil {
 		return err
@@ -488,7 +489,7 @@ func bindCashInstrument(ctx context.Context, q *sqlc.Queries, row sqlc.Execution
 		return row, err
 	}
 
-	selected, err := application.SelectActivityFields(previous.Baseline, claims, nil)
+	selected, err := calculation.SelectActivityFields(previous.Baseline, claims, nil)
 	if err != nil {
 		return row, err
 	}
@@ -536,13 +537,13 @@ func retainedActivityClaims(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-) ([]application.ActivityClaim, error) {
+) ([]calculation.ActivityClaim, error) {
 	inputs, err := q.CalculationInputs(ctx, sql.NullString{String: id, Valid: true})
 	if err != nil {
 		return nil, err
 	}
 
-	claims := make([]application.ActivityClaim, 0, len(inputs))
+	claims := make([]calculation.ActivityClaim, 0, len(inputs))
 	for _, input := range inputs {
 		data, e := claimData(input.Kind, input.Data, input.Location)
 		if e != nil {
@@ -556,7 +557,7 @@ func retainedActivityClaims(
 
 		claims = append(
 			claims,
-			application.ActivityClaim{
+			calculation.ActivityClaim{
 				Key: observationKey(
 					sqlc.RecordValue{ArtifactID: input.ArtifactID, Version: input.Version, Location: input.Location},
 				),

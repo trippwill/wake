@@ -73,10 +73,10 @@ Stage finished changes and run `mise run source:check` before code delivery.
 Use `mise run docs:check` for Markdown and links. Report checks actually run
 and material gaps.
 
-When adding or moving a pure financial calculation file, update the file list in
-`TestFinancialCalculationImports`. Its allowlist checks direct imports. The
-calculation boundary also applies to same-package calls and transitive dependencies
-through review.
+Put pure financial calculation code in the calculation subpackage.
+`TestFinancialCalculationImports` checks direct imports in every production Go
+file in that package, including files with build tags. Review changes to
+allowed dependencies for transitive I/O and runtime access.
 
 ### Browser and frontend verification
 

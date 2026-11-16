@@ -17,6 +17,7 @@ import (
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -355,7 +356,7 @@ type activityItem struct {
 	ID, Href, Label, Date, Kind, Instrument, Description, InstrumentID, Reference, Quantity, Amount, Price, Basis, State, Realized string
 	AccountName                                                                                                                    string
 	RealizedConflict                                                                                                               bool
-	FinancialState                                                                                                                 application.ActivityState
+	FinancialState                                                                                                                 calculation.ActivityState
 }
 
 func connectionByID(v sourceView, id string) (application.ConnectionView, bool) {

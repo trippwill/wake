@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
 )
@@ -15,7 +16,7 @@ import (
 type InstrumentCorrectionReader interface {
 	InstrumentRevision(context.Context, string) (int64, error)
 	InstrumentDecisions(context.Context, string) ([]DecisionRecord, error)
-	InstrumentBaseline(context.Context, string) (InstrumentSelection, source.InstrumentKind, error)
+	InstrumentBaseline(context.Context, string) (calculation.InstrumentSelection, source.InstrumentKind, error)
 	CanonicalInstrument(context.Context, string) (string, error)
 	InstrumentKind(context.Context, string) (source.InstrumentKind, error)
 	InstrumentReference(context.Context, string, string) (reference.Record, string, error)
@@ -25,13 +26,13 @@ type InstrumentCorrectionReader interface {
 type InstrumentCorrectionWriter interface {
 	InstrumentCorrectionReader
 	DecisionWriter
-	SaveInstrument(context.Context, string, InstrumentCalculation) error
+	SaveInstrument(context.Context, string, calculation.InstrumentCalculation) error
 }
 
 func saveInstrumentDecision(
 	ctx context.Context,
 	store CorrectionStore,
-	f DecisionInput,
+	f calculation.DecisionInput,
 	actor string,
 	at time.Time,
 ) error {
@@ -65,24 +66,24 @@ func saveInstrumentDecision(
 func prepareInstrumentCorrection(
 	ctx context.Context,
 	reader InstrumentCorrectionReader,
-	f DecisionInput,
-) (InstrumentCalculation, string, error) {
+	f calculation.DecisionInput,
+) (calculation.InstrumentCalculation, string, error) {
 	target, err := reader.CanonicalInstrument(ctx, f.TargetID)
 	if err != nil {
-		return InstrumentCalculation{}, "", err
+		return calculation.InstrumentCalculation{}, "", err
 	}
 
 	if target != f.TargetID {
-		return InstrumentCalculation{}, "", ErrStale
+		return calculation.InstrumentCalculation{}, "", ErrStale
 	}
 
 	revision, err := reader.InstrumentRevision(ctx, target)
 	if err != nil {
-		return InstrumentCalculation{}, "", err
+		return calculation.InstrumentCalculation{}, "", err
 	}
 
 	if revision != f.ExpectedRevision {
-		return InstrumentCalculation{}, "", ErrStale
+		return calculation.InstrumentCalculation{}, "", ErrStale
 	}
 
 	return calculateInstrumentSelection(ctx, reader, target, &f)
@@ -92,22 +93,22 @@ func ProjectInstrument(
 	ctx context.Context,
 	reader InstrumentCorrectionReader,
 	id string,
-) (InstrumentCalculation, error) {
+) (calculation.InstrumentCalculation, error) {
 	result, _, err := calculateInstrumentSelection(ctx, reader, id, nil)
 	return result, err
 }
 
 func calculateInstrumentSelection(
-	ctx context.Context, reader InstrumentCorrectionReader, id string, proposed *DecisionInput,
-) (InstrumentCalculation, string, error) {
+	ctx context.Context, reader InstrumentCorrectionReader, id string, proposed *calculation.DecisionInput,
+) (calculation.InstrumentCalculation, string, error) {
 	base, family, err := reader.InstrumentBaseline(ctx, id)
 	if err != nil {
-		return InstrumentCalculation{}, "", err
+		return calculation.InstrumentCalculation{}, "", err
 	}
 
 	rows, err := reader.InstrumentDecisions(ctx, id)
 	if err != nil {
-		return InstrumentCalculation{}, "", err
+		return calculation.InstrumentCalculation{}, "", err
 	}
 
 	active := make(map[string]DecisionRecord)
@@ -122,7 +123,7 @@ func calculateInstrumentSelection(
 		supersedes = active[proposed.Scope].ID
 		if proposed.Action == "release" {
 			if supersedes == "" {
-				return InstrumentCalculation{}, "", ErrInvalid
+				return calculation.InstrumentCalculation{}, "", calculation.ErrInvalid
 			}
 
 			delete(active, proposed.Scope)
@@ -131,9 +132,9 @@ func calculateInstrumentSelection(
 		}
 	}
 
-	input := InstrumentCalculationInput{
-		Rule: RetainedClaimsRule, ID: id, Family: family, Baseline: base,
-		References: map[string]ReferenceSelection{}, CompetingFIGIs: map[string]bool{},
+	input := calculation.InstrumentCalculationInput{
+		Rule: calculation.RetainedClaimsRule, ID: id, Family: family, Baseline: base,
+		References: map[string]calculation.ReferenceSelection{}, CompetingFIGIs: map[string]bool{},
 		Underliers: map[string]source.InstrumentKind{},
 	}
 
@@ -150,12 +151,12 @@ func calculateInstrumentSelection(
 		case "reference":
 			record, evidence, err := reader.InstrumentReference(ctx, id, d.Text)
 			if err != nil {
-				return InstrumentCalculation{}, "", err
+				return calculation.InstrumentCalculation{}, "", err
 			}
 
 			selected, figi, compatible := reference.Select(family, []reference.Record{record})
-			input.References[d.Text] = ReferenceSelection{
-				InstrumentSelection: InstrumentSelection{
+			input.References[d.Text] = calculation.ReferenceSelection{
+				InstrumentSelection: calculation.InstrumentSelection{
 					Name:     selected.Name,
 					Ticker:   selected.Ticker,
 					FIGI:     figi,
@@ -166,11 +167,11 @@ func calculateInstrumentSelection(
 
 			kinds, err := reader.CompetingInstrumentKinds(ctx, id, figi)
 			if err != nil {
-				return InstrumentCalculation{}, "", err
+				return calculation.InstrumentCalculation{}, "", err
 			}
 
 			for _, kind := range kinds {
-				if !CompatibleInstrumentKind(family, kind) {
+				if !calculation.CompatibleInstrumentKind(family, kind) {
 					input.CompetingFIGIs[figi] = true
 				}
 			}
@@ -178,12 +179,12 @@ func calculateInstrumentSelection(
 			if d.Text != "" {
 				d.Text, err = reader.CanonicalInstrument(ctx, d.Text)
 				if err != nil {
-					return InstrumentCalculation{}, "", err
+					return calculation.InstrumentCalculation{}, "", err
 				}
 
 				kind, err := reader.InstrumentKind(ctx, d.Text)
 				if err != nil {
-					return InstrumentCalculation{}, "", ErrInvalid
+					return calculation.InstrumentCalculation{}, "", calculation.ErrInvalid
 				}
 
 				input.Underliers[d.Text] = kind
@@ -192,11 +193,11 @@ func calculateInstrumentSelection(
 
 		input.Decisions = append(
 			input.Decisions,
-			FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
+			calculation.FieldSelection{Scope: scope, Text: d.Text, Currency: d.Currency},
 		)
 	}
 
-	result, err := CalculateInstrument(input)
+	result, err := calculation.CalculateInstrument(input)
 
 	return result, supersedes, err
 }

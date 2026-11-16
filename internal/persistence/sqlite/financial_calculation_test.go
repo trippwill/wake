@@ -15,6 +15,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -43,8 +44,8 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			decision, e := application.NewDecision(
-				application.DecisionInput{
+			decision, e := calculation.NewDecision(
+				calculation.DecisionInput{
 					TargetKind:       "activity",
 					TargetID:         row.ID,
 					Scope:            scope,
@@ -89,8 +90,8 @@ func TestCorrectionCheckSaveAndReleaseShareRetainedCalculation(t *testing.T) {
 				t.Fatal("exact correction lost", current, e)
 			}
 
-			release, e := application.NewDecision(
-				application.DecisionInput{
+			release, e := calculation.NewDecision(
+				calculation.DecisionInput{
 					TargetKind:       "activity",
 					TargetID:         row.ID,
 					Scope:            scope,
@@ -135,8 +136,8 @@ func TestSharedCalculationWriteFailureRollsBackDecisionAndPublication(t *testing
 		t.Fatal(err)
 	}
 
-	decision, err := application.NewDecision(
-		application.DecisionInput{
+	decision, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         form.ID,
 			Scope:            "quantity",
@@ -207,8 +208,8 @@ func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testin
 
 	choice := form.Candidates[len(form.Candidates)-1].Value
 
-	decision, err := application.NewDecision(
-		application.DecisionInput{
+	decision, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         id,
 			Scope:            "observation",
@@ -244,7 +245,7 @@ func TestCalculationUsesOnlyContributingObservationsForEvidenceChoices(t *testin
 
 	detail, err := s.ExecutionDetail(ctx, id)
 	if err != nil || !detail.Execution.State().NeedsReview() ||
-		detail.Execution.State().Authority() != application.OperatorSelection {
+		detail.Execution.State().Authority() != calculation.OperatorSelection {
 		t.Fatal("selection erased dispute or authority", detail, err)
 	}
 }
@@ -394,7 +395,7 @@ func TestNewCompatibleClaimAddsSourceInformationBeforeOperatorChoices(t *testing
 		if observation.Artifact == "new-compatible-source" {
 			found = true
 
-			if observation.Outcome != application.ObservationEnriched {
+			if observation.Outcome != calculation.ObservationEnriched {
 				t.Fatal("source compared against operator terms", observation)
 			}
 		}
@@ -464,7 +465,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 		if observation.Artifact == "conflicting-net" {
 			found = true
 
-			if observation.Outcome != application.ObservationTermsConflict {
+			if observation.Outcome != calculation.ObservationTermsConflict {
 				t.Fatal("competing enrichment classified as corroboration", observation)
 			}
 		}
@@ -512,7 +513,7 @@ func TestSourceAdmissionComparesPreClaimAutomaticEnrichment(t *testing.T) {
 
 	for _, observation := range observationRowsForTest(t, s, "activity", detail.Execution.ID()) {
 		if observation.Artifact == "later-conflicting-net" &&
-			observation.Outcome != application.ObservationTermsConflict {
+			observation.Outcome != calculation.ObservationTermsConflict {
 			t.Error("prior disagreement hid a distinct conflicting claim", observation)
 		}
 	}

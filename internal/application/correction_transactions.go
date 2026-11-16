@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
+
+const ErrStale calculation.Error = "the entity changed; reload and review before submitting"
 
 // CorrectionStore owns transaction lifetime, including publication before commit.
 // Capabilities are valid only in their callback. They cannot commit or nest work.
@@ -26,23 +29,34 @@ type ActivityCorrectionReader interface {
 	ActivityRevision(context.Context, string) (int64, error)
 	ActivityDecisions(context.Context, string) ([]DecisionRecord, error)
 	ActivityObservation(context.Context, string, string) (source.ActivityObservation, error)
-	ActivityInputs(context.Context, string, []FieldSelection) (ActivityCalculationInput, error)
+	ActivityInputs(
+		context.Context,
+		string,
+		[]calculation.FieldSelection,
+	) (calculation.ActivityCalculationInput, error)
 }
 
 type DecisionWriter interface {
-	Submission(context.Context, string) (DecisionInput, string, bool, error)
-	InsertDecision(context.Context, DecisionInput, DecisionInput, string, time.Time, string) error
+	Submission(context.Context, string) (calculation.DecisionInput, string, bool, error)
+	InsertDecision(
+		context.Context,
+		calculation.DecisionInput,
+		calculation.DecisionInput,
+		string,
+		time.Time,
+		string,
+	) error
 }
 
 type ActivityCorrectionWriter interface {
 	ActivityCorrectionReader
 	DecisionWriter
-	SaveActivity(context.Context, string, ActivityCalculation) error
+	SaveActivity(context.Context, string, calculation.ActivityCalculation) error
 }
 
-func CheckCorrection(ctx context.Context, store CorrectionStore, decision Decision) error {
+func CheckCorrection(ctx context.Context, store CorrectionStore, decision calculation.Decision) error {
 	f := decision.Fields()
-	if _, err := NewDecision(f); err != nil {
+	if _, err := calculation.NewDecision(f); err != nil {
 		return err
 	}
 
@@ -62,17 +76,17 @@ func CheckCorrection(ctx context.Context, store CorrectionStore, decision Decisi
 func SaveDecision(
 	ctx context.Context,
 	store CorrectionStore,
-	decision Decision,
+	decision calculation.Decision,
 	actor string,
 	at time.Time,
 ) error {
 	f := decision.Fields()
-	if _, err := NewDecision(f); err != nil {
+	if _, err := calculation.NewDecision(f); err != nil {
 		return err
 	}
 
 	if actor == "" || len(actor) > 256 || at.IsZero() {
-		return ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	if f.TargetKind == "instrument" {
@@ -115,20 +129,20 @@ func SaveDecision(
 func prepareActivityCorrection(
 	ctx context.Context,
 	reader ActivityCorrectionReader,
-	f DecisionInput,
-) (ActivityCalculation, []DecisionInput, map[string]DecisionRecord, error) {
+	f calculation.DecisionInput,
+) (calculation.ActivityCalculation, []calculation.DecisionInput, map[string]DecisionRecord, error) {
 	revision, err := reader.ActivityRevision(ctx, f.TargetID)
 	if err != nil {
-		return ActivityCalculation{}, nil, nil, err
+		return calculation.ActivityCalculation{}, nil, nil, err
 	}
 
 	if revision != f.ExpectedRevision {
-		return ActivityCalculation{}, nil, nil, ErrStale
+		return calculation.ActivityCalculation{}, nil, nil, ErrStale
 	}
 
 	records, err := reader.ActivityDecisions(ctx, f.TargetID)
 	if err != nil {
-		return ActivityCalculation{}, nil, nil, err
+		return calculation.ActivityCalculation{}, nil, nil, err
 	}
 
 	active := map[string]DecisionRecord{}
@@ -140,23 +154,27 @@ func prepareActivityCorrection(
 
 	fields, err := activityCorrectionFields(ctx, reader, f, active)
 	if err != nil {
-		return ActivityCalculation{}, nil, nil, err
+		return calculation.ActivityCalculation{}, nil, nil, err
 	}
 
-	prospective := map[string]FieldSelection{}
+	prospective := map[string]calculation.FieldSelection{}
 	for scope, record := range active {
-		prospective[scope] = FieldSelection{Scope: scope, Text: record.Text, Currency: record.Currency}
+		prospective[scope] = calculation.FieldSelection{
+			Scope:    scope,
+			Text:     record.Text,
+			Currency: record.Currency,
+		}
 	}
 
 	for _, field := range fields {
 		if field.Action == "release" {
 			if _, ok := active[field.Scope]; !ok {
-				return ActivityCalculation{}, nil, nil, ErrInvalid
+				return calculation.ActivityCalculation{}, nil, nil, calculation.ErrInvalid
 			}
 
 			delete(prospective, field.Scope)
 		} else {
-			prospective[field.Scope] = FieldSelection{
+			prospective[field.Scope] = calculation.FieldSelection{
 				Scope:    field.Scope,
 				Text:     field.Text,
 				Currency: field.Currency,
@@ -164,7 +182,7 @@ func prepareActivityCorrection(
 		}
 	}
 
-	selections := make([]FieldSelection, 0, len(prospective))
+	selections := make([]calculation.FieldSelection, 0, len(prospective))
 	for _, selection := range prospective {
 		selections = append(selections, selection)
 	}
@@ -173,10 +191,10 @@ func prepareActivityCorrection(
 
 	in, err := reader.ActivityInputs(ctx, f.TargetID, selections)
 	if err != nil {
-		return ActivityCalculation{}, nil, nil, err
+		return calculation.ActivityCalculation{}, nil, nil, err
 	}
 
-	calculation, err := CalculateActivity(in)
+	calculation, err := calculation.CalculateActivity(in)
 
 	return calculation, fields, active, err
 }
@@ -186,11 +204,11 @@ func prepareActivityCorrection(
 func activityCorrectionFields(
 	ctx context.Context,
 	reader ActivityCorrectionReader,
-	f DecisionInput,
+	f calculation.DecisionInput,
 	active map[string]DecisionRecord,
-) ([]DecisionInput, error) {
+) ([]calculation.DecisionInput, error) {
 	if f.Scope != "observation" {
-		return []DecisionInput{f}, nil
+		return []calculation.DecisionInput{f}, nil
 	}
 
 	scopes := []string{}
@@ -212,12 +230,12 @@ func activityCorrectionFields(
 	}
 
 	if len(scopes) == 0 {
-		return nil, ErrInvalid
+		return nil, calculation.ErrInvalid
 	}
 
 	sort.Strings(scopes)
 
-	fields := make([]DecisionInput, 0, len(scopes))
+	fields := make([]calculation.DecisionInput, 0, len(scopes))
 	for _, scope := range scopes {
 		field := f
 		field.Scope = scope

@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/source"
@@ -385,7 +386,7 @@ func TestTradeIdentityDisagreementAlwaysHasComparisonContext(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			if application.Compatible(base, changed) {
+			if calculation.Compatible(base, changed) {
 				t.Fatal("fixture is not a known financial disagreement")
 			}
 

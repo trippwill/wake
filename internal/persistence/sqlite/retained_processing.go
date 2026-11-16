@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -213,7 +214,7 @@ func (p retainedProcessing) SaveActivityObservation(
 		Version:    p.version,
 		Location:   claim.Location,
 		Outcome:    outcome,
-		Rule:       application.RepeatRule,
+		Rule:       calculation.RepeatRule,
 	})
 }
 
@@ -257,10 +258,10 @@ func (p retainedProcessing) ClaimActivityIDs(ctx context.Context) ([]string, err
 	return ids, nil
 }
 
-func (p retainedProcessing) ActivityState(ctx context.Context, id string) (application.ActivityState, error) {
+func (p retainedProcessing) ActivityState(ctx context.Context, id string) (calculation.ActivityState, error) {
 	row, err := p.activityRow(ctx, id)
 	if err != nil {
-		return application.ActivityState{}, err
+		return calculation.ActivityState{}, err
 	}
 
 	return activityState(row)
@@ -287,7 +288,7 @@ func (p retainedProcessing) ProjectArtifactRoots(ctx context.Context) error {
 func (p retainedProcessing) ProjectRetainedActivity(
 	ctx context.Context,
 	id string,
-	state application.ActivityState,
+	state calculation.ActivityState,
 ) error {
 	if err := retainActivityContributions(ctx, p.q, id); err != nil {
 		return err
@@ -298,7 +299,7 @@ func (p retainedProcessing) ProjectRetainedActivity(
 		return err
 	}
 
-	return projectActivity(ctx, p.q, row, state, application.RetainedClaimsRule)
+	return projectActivity(ctx, p.q, row, state, calculation.RetainedClaimsRule)
 }
 
 func (p retainedProcessing) activityRow(ctx context.Context, id string) (sqlc.Execution, error) {

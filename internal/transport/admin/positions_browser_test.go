@@ -24,6 +24,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/source"
 )
@@ -50,7 +51,7 @@ func (s positionsReadStore) InstrumentDetail(
 		reported,
 		"fixture",
 		1,
-		application.AutomaticSelection,
+		calculation.AutomaticSelection,
 		application.ReferenceMetadata{},
 	)
 

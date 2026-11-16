@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 const (
@@ -60,8 +61,8 @@ type (
 	}
 	instrumentItem struct {
 		ID, Name, Ticker, Kind string
-		Status                 application.ReferenceStatus
-		Authority              application.SelectionAuthority
+		Status                 calculation.ReferenceStatus
+		Authority              calculation.SelectionAuthority
 	}
 	activityView struct {
 		application.PageInfo
@@ -134,9 +135,9 @@ func describe(description, context string) string {
 	return description + " · " + context
 }
 
-func referenceLabel(status application.ReferenceStatus, authority application.SelectionAuthority) string {
+func referenceLabel(status calculation.ReferenceStatus, authority calculation.SelectionAuthority) string {
 	label := string(status)
-	if authority == application.OperatorSelection {
+	if authority == calculation.OperatorSelection {
 		label += "; operator decision"
 	}
 
@@ -259,7 +260,7 @@ func instrumentList(v application.InstrumentList) activityView {
 				Name:   text(i.Name),
 				Ticker: text(i.Ticker),
 				Kind:   i.Family,
-				Status: application.ReferenceStatus(i.ReferenceStatus), Authority: item.Authority,
+				Status: calculation.ReferenceStatus(i.ReferenceStatus), Authority: item.Authority,
 			},
 		)
 	}
@@ -309,7 +310,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	if value := params.Get("page"); value != "" {
 		n, err := strconv.Atoi(value)
 		if err != nil {
-			return application.ListQuery{}, application.ErrInvalid
+			return application.ListQuery{}, calculation.ErrInvalid
 		}
 
 		options.Page = n
@@ -318,7 +319,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	if value := params.Get("size"); value != "" {
 		size, err := strconv.Atoi(value)
 		if err != nil {
-			return application.ListQuery{}, application.ErrInvalid
+			return application.ListQuery{}, calculation.ErrInvalid
 		}
 
 		options.PageSize = size
@@ -342,8 +343,8 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 	if scope == application.ObservationScope {
 		options.Kind = ""
 		options.State = ""
-		options.ObservationLabels = map[application.ObservationOutcome]string{}
-		for _, outcome := range []application.ObservationOutcome{application.ObservationUnselected, application.ObservationIncomplete, application.ObservationIncompleteConflict, application.ObservationIdentityReview, application.ObservationNativeReview, application.ObservationKindConflict, application.ObservationTermsConflict, application.ObservationEnriched, application.ObservationNoContribution, application.ObservationAccepted} {
+		options.ObservationLabels = map[calculation.ObservationOutcome]string{}
+		for _, outcome := range []calculation.ObservationOutcome{calculation.ObservationUnselected, calculation.ObservationIncomplete, calculation.ObservationIncompleteConflict, calculation.ObservationIdentityReview, calculation.ObservationNativeReview, calculation.ObservationKindConflict, calculation.ObservationTermsConflict, calculation.ObservationEnriched, calculation.ObservationNoContribution, calculation.ObservationAccepted} {
 			options.ObservationLabels[outcome] = observationStatus(outcome)
 			if strings.Contains(strings.ToLower(observationStatus(outcome)), strings.ToLower(options.Search)) {
 				options.ObservationMatches = append(options.ObservationMatches, outcome)
@@ -372,7 +373,7 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		if scope == application.ActivityScope || scope == application.ReviewScope {
 			options.ActivityText = activitySearchText()
 
-			for kind, label := range map[application.ActivityKind]string{application.CashActivity: "Cash", application.SecurityTransferActivity: "Security transfer", application.TradeActivity: "Trade", application.LifecycleActivity: "Option outcome", application.ConversionActivity: "Convert"} {
+			for kind, label := range map[calculation.ActivityKind]string{calculation.CashActivity: "Cash", calculation.SecurityTransferActivity: "Security transfer", calculation.TradeActivity: "Trade", calculation.LifecycleActivity: "Option outcome", calculation.ConversionActivity: "Convert"} {
 				if strings.Contains(strings.ToLower(label), search) ||
 					strings.Contains(strings.ToLower(activityKindLabel(string(kind))), search) {
 					options.KindMatches = append(options.KindMatches, kind)
@@ -380,10 +381,10 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 			}
 		}
 
-		for _, lifecycle := range []application.LifecycleState{application.Accepted, application.Cancelled, application.Superseded} {
-			for reasons := application.ReviewReasons(0); reasons <= application.ConflictingClaims|application.AmbiguousCorrection; reasons++ {
-				for _, authority := range []application.SelectionAuthority{application.AutomaticSelection, application.OperatorSelection} {
-					state, err := application.NewActivityState(lifecycle, reasons, authority)
+		for _, lifecycle := range []calculation.LifecycleState{calculation.Accepted, calculation.Cancelled, calculation.Superseded} {
+			for reasons := calculation.ReviewReasons(0); reasons <= calculation.ConflictingClaims|calculation.AmbiguousCorrection; reasons++ {
+				for _, authority := range []calculation.SelectionAuthority{calculation.AutomaticSelection, calculation.OperatorSelection} {
+					state, err := calculation.NewActivityState(lifecycle, reasons, authority)
 					if err == nil && strings.Contains(activityStatus(state), search) {
 						options.StateMatches = append(options.StateMatches, state)
 					}
@@ -391,8 +392,8 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 			}
 		}
 
-		for _, status := range []application.ReferenceStatus{"resolved", "provisional", "no-match", "temporary-failure", "throttled", "ambiguous", "conflict"} {
-			for _, authority := range []application.SelectionAuthority{application.AutomaticSelection, application.OperatorSelection} {
+		for _, status := range []calculation.ReferenceStatus{"resolved", "provisional", "no-match", "temporary-failure", "throttled", "ambiguous", "conflict"} {
+			for _, authority := range []calculation.SelectionAuthority{calculation.AutomaticSelection, calculation.OperatorSelection} {
 				if strings.Contains(referenceLabel(status, authority), search) {
 					options.ReferenceMatches = append(
 						options.ReferenceMatches,
@@ -485,11 +486,11 @@ func reviewText(r application.ReviewEntry) (string, string) {
 func reviewSearchMatches(search string) []application.ReviewMatch {
 	var matches []application.ReviewMatch
 	for _, kind := range []application.ReviewKind{application.ReviewActivity, application.ReviewInstrument, application.ReviewIdentity, application.ReviewInstruction} {
-		statuses := []application.CorrectionStatus{""}
+		statuses := []calculation.CorrectionStatus{""}
 		if kind == application.ReviewInstruction {
-			statuses = []application.CorrectionStatus{
-				application.CorrectionUnresolved,
-				application.CorrectionNeedsReview,
+			statuses = []calculation.CorrectionStatus{
+				calculation.CorrectionUnresolved,
+				calculation.CorrectionNeedsReview,
 			}
 		}
 

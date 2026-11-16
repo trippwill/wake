@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -37,14 +37,14 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 	}
 
 	if got := observationRowsForTest(t, s, "artifact", "unprocessed"); len(got) != 1 ||
-		got[0].ActivityID != id || got[0].Outcome != application.ObservationNoContribution {
+		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution {
 		t.Fatal("discarded partial lost report context", got)
 	}
 
 	processPartial(t, s, "partial-repeat", partial)
 
 	if got := observationRowsForTest(t, s, "artifact", "partial-repeat"); len(got) != 1 ||
-		got[0].ActivityID != id || got[0].Outcome != application.ObservationNoContribution {
+		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution {
 		t.Fatal("known discarded claim lost report context", got)
 	}
 
@@ -60,7 +60,7 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 	processPartial(t, s, "conflict-repeat", conflict.Observation())
 
 	if got := observationRowsForTest(t, s, "artifact", "conflict-repeat"); len(got) != 1 ||
-		got[0].ActivityID != id || got[0].Outcome != application.ObservationNoContribution {
+		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution {
 		t.Fatal("repeated conflict added support or lost report context", got)
 	}
 
@@ -173,7 +173,7 @@ func TestReportPendingObservationsRemainVisible(t *testing.T) {
 
 	for _, id := range []string{"pending", "pending-repeat"} {
 		got := observationRowsForTest(t, s, "artifact", id)
-		if len(got) != 1 || got[0].ActivityID != "" || got[0].Outcome != application.ObservationIncomplete {
+		if len(got) != 1 || got[0].ActivityID != "" || got[0].Outcome != calculation.ObservationIncomplete {
 			t.Fatal("pending source meaning lost", id, got)
 		}
 	}
@@ -181,7 +181,7 @@ func TestReportPendingObservationsRemainVisible(t *testing.T) {
 	processPartial(t, s, "completion", full)
 
 	got := observationRowsForTest(t, s, "artifact", "pending-repeat")
-	if len(got) != 1 || got[0].ActivityID == "" || got[0].Outcome != application.ObservationNoContribution {
+	if len(got) != 1 || got[0].ActivityID == "" || got[0].Outcome != calculation.ObservationNoContribution {
 		t.Fatal("completion did not update derived report context", got)
 	}
 }
@@ -220,7 +220,7 @@ func TestReportRepeatedLinkedIdentityReviewRemainsVisible(t *testing.T) {
 
 	for _, id := range []string{"alias-meaning", "alias-repeat"} {
 		got := observationRowsForTest(t, s, "artifact", id)
-		if len(got) != 1 || got[0].ActivityID == "" || got[0].Outcome != application.ObservationNativeReview {
+		if len(got) != 1 || got[0].ActivityID == "" || got[0].Outcome != calculation.ObservationNativeReview {
 			t.Fatal("repeat hid unresolved identity on an established association", got)
 		}
 	}

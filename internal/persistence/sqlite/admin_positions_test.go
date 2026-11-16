@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 func positionsQuery(t *testing.T, options application.ListOptions) application.ListQuery {
@@ -230,12 +231,12 @@ func TestPositionsListNoAccountAndScopeValidation(t *testing.T) {
 	}
 
 	q, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
-	if _, err = s.PositionsList(t.Context(), q); err != application.ErrInvalid {
+	if _, err = s.PositionsList(t.Context(), q); err != calculation.ErrInvalid {
 		t.Fatal(err)
 	}
 
 	for _, opt := range []application.ListOptions{{Sort: "terms"}, {State: "accepted"}, {Kind: "cash"}, {Page: -1}, {PageSize: 201}} {
-		if _, err = application.NewListQuery(opt, application.PositionsScope); err != application.ErrInvalid {
+		if _, err = application.NewListQuery(opt, application.PositionsScope); err != calculation.ErrInvalid {
 			t.Fatal(opt, err)
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"context"
 	"database/sql"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -32,7 +32,7 @@ func retainActivityContributions(ctx context.Context, q *sqlc.Queries, id string
 			return e
 		}
 
-		outcome := application.ObservationContribution(prior, value)
+		outcome := calculation.ObservationContribution(prior, value)
 		if outcome == "" {
 			if e = q.DiscardActivitySupport(ctx, sqlc.DiscardActivitySupportParams{
 				ClaimID: row.ClaimID, Ordinal: row.Ordinal,
@@ -51,9 +51,9 @@ func retainActivityContributions(ctx context.Context, q *sqlc.Queries, id string
 
 		prior = append(prior, value)
 
-		if row.LinkOutcome != string(application.ObservationTermsConflict) &&
-			application.ObservationOutcome(row.LinkOutcome).NeedsReview() {
-			outcome = application.ObservationOutcome(row.LinkOutcome)
+		if row.LinkOutcome != string(calculation.ObservationTermsConflict) &&
+			calculation.ObservationOutcome(row.LinkOutcome).NeedsReview() {
+			outcome = calculation.ObservationOutcome(row.LinkOutcome)
 		}
 
 		if e = q.SetObservationOutcome(ctx, sqlc.SetObservationOutcomeParams{
@@ -83,7 +83,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 	}
 
 	references := map[source.Reference]struct{}{}
-	claims := make([]application.RootClaim, 0, len(inputs))
+	claims := make([]calculation.RootClaim, 0, len(inputs))
 	for _, input := range inputs {
 		reported, e := reportedRootClaim(input.Kind, input.Data, input.Location, input.Role)
 		if e != nil {
@@ -92,7 +92,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 
 		claims = append(
 			claims,
-			application.RootClaim{ID: input.ClaimID, Ordinal: input.Ordinal, Role: input.Role, Reported: reported},
+			calculation.RootClaim{ID: input.ClaimID, Ordinal: input.Ordinal, Role: input.Role, Reported: reported},
 		)
 
 		ref := reported.Option().Fields().Underlier.Reference()
@@ -110,7 +110,7 @@ func retainInstrumentContributions(ctx context.Context, q *sqlc.Queries, id stri
 	for _, row := range claims {
 		value := row.Reported
 
-		outcome, e := application.InstrumentContribution(prior, value, bindings)
+		outcome, e := calculation.InstrumentContribution(prior, value, bindings)
 		if e != nil {
 			return e
 		}

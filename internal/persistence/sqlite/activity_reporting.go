@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -23,7 +24,7 @@ func reportedRealizedFields(
 		}
 
 		if out == nil {
-			out = &application.PublishedRealizedPnL{Selection: string(application.AutomaticSelection)}
+			out = &application.PublishedRealizedPnL{Selection: string(calculation.AutomaticSelection)}
 		}
 
 		if slices.Contains(conflicts, "identity") || slices.Contains(conflicts, field.Key()) {
@@ -31,7 +32,7 @@ func reportedRealizedFields(
 		}
 
 		if slices.Contains(operators, field.Key()) {
-			out.Selection = string(application.OperatorSelection)
+			out.Selection = string(calculation.OperatorSelection)
 		}
 
 		f := field.Fields()

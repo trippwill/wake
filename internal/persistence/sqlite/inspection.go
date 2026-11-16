@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
@@ -47,7 +48,7 @@ func sourceInstructions(
 				Kind:           r.Kind,
 				Target:         r.Target,
 				Replacement:    r.Replacement,
-				Status:         application.CorrectionStatus(r.Status),
+				Status:         calculation.CorrectionStatus(r.Status),
 				TargetIDs:      targets,
 				ReplacementIDs: replacements,
 			},

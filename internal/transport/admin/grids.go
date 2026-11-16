@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 type gridCell struct {
@@ -73,7 +74,7 @@ func gridJSON(w http.ResponseWriter, data any, err error) {
 			message = "Wake is updating retained financial history. Retry when the update shown on Overview is complete."
 		}
 
-		if errors.Is(err, application.ErrInvalid) {
+		if errors.Is(err, calculation.ErrInvalid) {
 			status = http.StatusBadRequest
 			message = "Invalid table query."
 		}

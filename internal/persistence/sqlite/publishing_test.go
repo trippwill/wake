@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 )
 
@@ -128,8 +129,8 @@ func TestPublishingAtomicCommitAndLatestDisconnectedState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	command, err := application.NewDecision(
-		application.DecisionInput{
+	command, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         id,
 			Scope:            "price",

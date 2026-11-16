@@ -11,6 +11,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -368,7 +369,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		money("net_cash_with_billable", f.NetCashWithBillable)
 		activity(c.Observation())
 	default:
-		return nil, application.ErrInvalid
+		return nil, calculation.ErrInvalid
 	}
 
 	return values, nil

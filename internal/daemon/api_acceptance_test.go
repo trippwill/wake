@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
@@ -1066,8 +1067,8 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 			t.Fatal(e)
 		}
 
-		decision, e := application.NewDecision(
-			application.DecisionInput{
+		decision, e := calculation.NewDecision(
+			calculation.DecisionInput{
 				TargetKind:       "activity",
 				TargetID:         id,
 				Scope:            "price",

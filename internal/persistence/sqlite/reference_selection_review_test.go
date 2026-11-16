@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 )
 
@@ -100,8 +101,8 @@ func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 		t.Fatal(otherForm, err)
 	}
 
-	duplicate, err := application.NewDecision(
-		application.DecisionInput{
+	duplicate, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "instrument",
 			TargetID:         b,
 			Scope:            "reference",

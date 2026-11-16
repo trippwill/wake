@@ -22,7 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/logging"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -103,7 +103,7 @@ func profileStatement(name, schema string) string {
 }
 
 type Store struct {
-	historyRule              application.FinancialRule
+	historyRule              calculation.FinancialRule
 	historyUpdating          atomic.Bool
 	historyRetry             atomic.Pointer[time.Time]
 	credentialKeyUnavailable atomic.Bool

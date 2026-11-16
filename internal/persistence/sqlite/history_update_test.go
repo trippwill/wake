@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/source"
 )
 
 func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
-	const futureRule application.FinancialRule = "retained-claims-and-decisions/2"
+	const futureRule calculation.FinancialRule = "retained-claims-and-decisions/2"
 
 	ctx := t.Context()
 	now := time.Now().UTC()
@@ -81,7 +82,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	}
 
 	originalExplanation, err := store.Explanation(ctx, "activity", timestamped, before.Revision)
-	if err != nil || originalExplanation.CalculationRule != string(application.RetainedClaimsRule) {
+	if err != nil || originalExplanation.CalculationRule != string(calculation.RetainedClaimsRule) {
 		t.Fatal(originalExplanation, err)
 	}
 

@@ -1,0 +1,254 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package calculation
+
+import (
+	"maps"
+
+	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/source"
+)
+
+const (
+	AuthorityRule  = "account-authority/1"
+	RepeatRule     = "qualified-activity-observations/1"
+	InstrumentRule = "qualified-instrument-reference/1"
+)
+
+// Compatible leaves absent optional facts unknown. It never reconciles a changed
+// monetary term, native identity, civil date or incompatible time bucket.
+func Compatible(a, b source.Trade) bool {
+	x, y := a.Fields(), b.Fields()
+	if x.Kind != y.Kind ||
+		x.Account != y.Account ||
+		x.Side != y.Side ||
+		!x.Quantity.Equal(y.Quantity) ||
+		!x.Price.Equal(y.Price) ||
+		x.Date != y.Date ||
+		x.Instrument.Kind() != y.Instrument.Kind() ||
+		!CompatibleInstrument(x.Instrument, y.Instrument) {
+		return false
+	}
+
+	if !x.Instrument.Reference().IsZero() && !y.Instrument.Reference().IsZero() &&
+		x.Instrument.Reference() != y.Instrument.Reference() {
+		return false
+	}
+
+	if !x.At.IsZero() && !y.At.IsZero() && !x.At.Contains(y.At) &&
+		!y.At.Contains(x.At) {
+		return false
+	}
+
+	if !x.SettlementDate.IsZero() && !y.SettlementDate.IsZero() && x.SettlementDate != y.SettlementDate {
+		return false
+	}
+
+	if !x.Order.IsZero() && !y.Order.IsZero() && x.Order != y.Order {
+		return false
+	}
+
+	if x.PositionEffect != "" && y.PositionEffect != "" && x.PositionEffect != y.PositionEffect {
+		return false
+	}
+
+	for _, pair := range [][2]financial.Money{{x.GrossAmount, y.GrossAmount}, {x.NetCash, y.NetCash}, {x.Proceeds, y.Proceeds}, {x.AccruedInterest, y.AccruedInterest}, {x.NetCashWithBillable, y.NetCashWithBillable}} {
+		if pair[0].Amount() != "" && pair[1].Amount() != "" && !pair[0].Equal(pair[1]) {
+			return false
+		}
+	}
+
+	return compatibleCharges(x.Charges, y.Charges)
+}
+
+func CompatibleOption(a, b source.OptionTerms) bool {
+	x, y := a.Fields(), b.Fields()
+	if !x.EffectiveFrom.IsZero() && !y.EffectiveFrom.IsZero() && x.EffectiveFrom != y.EffectiveFrom {
+		return false
+	}
+
+	if x.Right != "" && y.Right != "" && x.Right != y.Right {
+		return false
+	}
+
+	if !x.Expiry.IsZero() && !y.Expiry.IsZero() && x.Expiry != y.Expiry {
+		return false
+	}
+
+	if x.Strike.Amount() != "" && y.Strike.Amount() != "" && !x.Strike.Equal(y.Strike) {
+		return false
+	}
+
+	if x.Multiplier.Value() != "" && y.Multiplier.Value() != "" && !x.Multiplier.Equal(y.Multiplier) {
+		return false
+	}
+
+	if !x.Underlier.Reference().IsZero() && !y.Underlier.Reference().IsZero() &&
+		x.Underlier.Reference() != y.Underlier.Reference() {
+		return false
+	}
+
+	if x.Underlier.Kind() != "" && y.Underlier.Kind() != "" && !CompatibleInstrument(x.Underlier, y.Underlier) {
+		return false
+	}
+
+	return compatibleDeliverables(x.Deliverables, y.Deliverables)
+}
+
+func CompatibleLifecycle(a, b source.Lifecycle) bool {
+	x, y := a.Fields(), b.Fields()
+
+	return x.Account == y.Account && x.Kind == y.Kind && x.Quantity.Equal(y.Quantity) && x.Date == y.Date &&
+		CompatibleInstrument(
+			x.Instrument,
+			y.Instrument,
+		) && (x.Order.IsZero() || y.Order.IsZero() || x.Order == y.Order) &&
+		(x.At.IsZero() || y.At.IsZero() || x.At.Contains(y.At) || y.At.Contains(x.At))
+}
+
+func CompatibleDebt(a, b source.DebtTerms) bool {
+	x, y := a.Fields(), b.Fields()
+
+	compatible := (x.Type == "" || y.Type == "" || x.Type == y.Type) &&
+		(x.Currency == (financial.Currency{}) || y.Currency == (financial.Currency{}) || x.Currency == y.Currency) &&
+		(x.CouponRate.Value() == "" || y.CouponRate.Value() == "" || x.CouponRate.Equal(y.CouponRate)) &&
+		(x.Maturity.IsZero() || y.Maturity.IsZero() || x.Maturity == y.Maturity) &&
+		(x.IssueDate.IsZero() || y.IssueDate.IsZero() || x.IssueDate == y.IssueDate) &&
+		(x.DatedDate.IsZero() || y.DatedDate.IsZero() || x.DatedDate == y.DatedDate) &&
+		(x.PaymentsPerYear == 0 || y.PaymentsPerYear == 0 || x.PaymentsPerYear == y.PaymentsPerYear)
+	if !compatible {
+		return false
+	}
+
+	_, err := enrichDebt(a, b)
+
+	return err == nil
+}
+
+func CompatibleConversion(a, b source.Conversion) bool {
+	x, y := a.Fields(), b.Fields()
+	if (!x.Order.IsZero() && !y.Order.IsZero() && x.Order != y.Order) || x.Account != y.Account ||
+		x.Date != y.Date ||
+		x.Sent.Currency() != y.Sent.Currency() ||
+		x.Received.Currency() != y.Received.Currency() {
+		return false
+	}
+
+	if x.Sent.Amount() != "" && y.Sent.Amount() != "" && !equalAmount(x.Sent, y.Sent) {
+		return false
+	}
+
+	if x.Received.Amount() != "" && y.Received.Amount() != "" && !equalAmount(x.Received, y.Received) {
+		return false
+	}
+
+	if x.Rate.Amount() != "" && y.Rate.Amount() != "" && (!x.Rate.Equal(y.Rate) || x.RateBase != y.RateBase) {
+		return false
+	}
+
+	if !x.At.IsZero() && !y.At.IsZero() && !x.At.Contains(y.At) && !y.At.Contains(x.At) {
+		return false
+	}
+
+	for _, p := range [][2]financial.Money{{x.GrossAmount, y.GrossAmount}, {x.Proceeds, y.Proceeds}, {x.NetCash, y.NetCash}, {x.NetCashWithBillable, y.NetCashWithBillable}} {
+		if p[0].Amount() != "" && p[1].Amount() != "" && !p[0].Equal(p[1]) {
+			return false
+		}
+	}
+
+	return compatibleCharges(x.Charges, y.Charges)
+}
+
+func CompatibleInstrument(a, b source.Instrument) bool {
+	kindCompatible := CompatibleInstrumentKind(a.Kind(), b.Kind())
+	// A shared qualified identity can classify an otherwise unclassified claim.
+	if !a.Reference().IsZero() && a.Reference() == b.Reference() &&
+		(a.Kind() == source.UnknownInstrument || b.Kind() == source.UnknownInstrument) {
+		kindCompatible = true
+	}
+
+	if !kindCompatible ||
+		(!a.Reference().IsZero() && !b.Reference().IsZero() && a.Reference() != b.Reference()) {
+		return false
+	}
+
+	ids := func(i source.Instrument) map[source.IdentifierKind]map[string]bool {
+		out := map[source.IdentifierKind]map[string]bool{}
+		for _, id := range i.Identifiers() {
+			if out[id.Kind()] == nil {
+				out[id.Kind()] = map[string]bool{}
+			}
+
+			out[id.Kind()][id.Value()] = true
+		}
+
+		return out
+	}
+
+	x, y := ids(a), ids(b)
+	for kind, values := range x {
+		if other, reported := y[kind]; reported && !maps.Equal(values, other) {
+			return false
+		}
+	}
+
+	return CompatibleOption(a.Option(), b.Option()) && CompatibleDebt(a.Debt(), b.Debt())
+}
+
+func CompatibleInstrumentKind(a, b source.InstrumentKind) bool {
+	if a == b {
+		return true
+	}
+
+	return (a == source.UnknownInstrument && (b == source.Equity || b == source.Fund)) ||
+		(b == source.UnknownInstrument && (a == source.Equity || a == source.Fund))
+}
+
+func equalAmount(a, b source.CurrencyAmount) bool {
+	x, _ := financial.ParseQuantity(a.Amount())
+	y, _ := financial.ParseQuantity(b.Amount())
+
+	return a.Currency() == b.Currency() && x.Equal(y)
+}
+
+func equalCharge(a, b source.Charge) bool {
+	return a.Role() == b.Role() && a.Total().Equal(b.Total())
+}
+
+func equalDeliverable(a, b source.Deliverable) bool {
+	return a.Security() == b.Security() && a.Quantity().Equal(b.Quantity()) && a.Cash().Equal(b.Cash())
+}
+
+func compatibleCharges(a, b []source.Charge) bool {
+	return compatibleChargeAssertions(source.ChargeFields(a), source.ChargeFields(b))
+}
+
+func compatibleDeliverables(a, b []source.Deliverable) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	used := make([]bool, len(b))
+	for _, left := range a {
+		matched := false
+		for j, right := range b {
+			if !used[j] && equalDeliverable(left, right) {
+				used[j] = true
+				matched = true
+
+				break
+			}
+		}
+
+		if !matched {
+			return false
+		}
+	}
+
+	return true
+}

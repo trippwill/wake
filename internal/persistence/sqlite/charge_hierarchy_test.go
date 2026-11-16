@@ -11,6 +11,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
@@ -55,7 +56,7 @@ func TestConflictingChargeAncestorsDoNotAdmitSourceLinks(t *testing.T) {
 
 	appearances := observationRowsForTest(t, s, "artifact", "charge-conflict")
 	if !slices.ContainsFunc(appearances, func(row application.Observation) bool {
-		return row.Outcome == application.ObservationTermsConflict
+		return row.Outcome == calculation.ObservationTermsConflict
 	}) {
 		t.Fatal("ancestor category disagreement was not retained as a conflict", appearances)
 	}
@@ -225,7 +226,7 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 
 		appearances := observationRowsForTest(t, s, "artifact", record.id)
 		if !slices.ContainsFunc(appearances, func(row application.Observation) bool {
-			return row.ActivityID == id && row.Outcome == application.ObservationNoContribution
+			return row.ActivityID == id && row.Outcome == calculation.ObservationNoContribution
 		}) {
 			t.Fatal("discarded support erased report appearance", appearances)
 		}

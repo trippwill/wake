@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"slices"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/provider"
 )
 
-const ErrNotFound Error = "financial resource not found"
+const ErrNotFound calculation.Error = "financial resource not found"
 
 type CanonicalResource struct {
 	ID         string               `json:"id"`
@@ -115,7 +116,7 @@ func (t PublishedInstrumentTerms) MarshalJSON() ([]byte, error) {
 	switch t.Family {
 	case "option":
 		if t.Option == nil || t.Debt != nil {
-			return nil, ErrInvalid
+			return nil, calculation.ErrInvalid
 		}
 
 		return json.Marshal(struct {
@@ -124,7 +125,7 @@ func (t PublishedInstrumentTerms) MarshalJSON() ([]byte, error) {
 		}{family{t.Family}, t.Option})
 	case "debt":
 		if t.Debt == nil || t.Option != nil {
-			return nil, ErrInvalid
+			return nil, calculation.ErrInvalid
 		}
 
 		return json.Marshal(struct {
@@ -133,12 +134,12 @@ func (t PublishedInstrumentTerms) MarshalJSON() ([]byte, error) {
 		}{family{t.Family}, t.Debt})
 	case "equity", "fund", "unclassified":
 		if t.Option != nil || t.Debt != nil {
-			return nil, ErrInvalid
+			return nil, calculation.ErrInvalid
 		}
 
 		return json.Marshal(family{t.Family})
 	default:
-		return nil, ErrInvalid
+		return nil, calculation.ErrInvalid
 	}
 }
 
@@ -182,7 +183,7 @@ func (t *PublishedInstrumentTerms) UnmarshalJSON(data []byte) error {
 		}
 	case "equity", "fund", "unclassified":
 	default:
-		return ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	*t = out
@@ -332,7 +333,7 @@ func (a PublishedActivity) Charges() []PublishedCharge {
 
 func (a PublishedActivity) MarshalJSON() ([]byte, error) {
 	if a.variantCount() != 1 || !a.matchesFamily() {
-		return nil, ErrInvalid
+		return nil, calculation.ErrInvalid
 	}
 
 	switch a.Family {
@@ -363,7 +364,7 @@ func (a PublishedActivity) MarshalJSON() ([]byte, error) {
 		}{a.PublishedActivityHeader, a.Cash})
 	}
 
-	return nil, ErrInvalid
+	return nil, calculation.ErrInvalid
 }
 
 func (a *PublishedActivity) UnmarshalJSON(data []byte) error {
@@ -416,11 +417,11 @@ func (a *PublishedActivity) UnmarshalJSON(data []byte) error {
 			return err
 		}
 	default:
-		return ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	if out.Family != family {
-		return ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	*a = out

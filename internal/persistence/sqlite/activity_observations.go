@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -19,8 +19,8 @@ func createActivity(
 	ctx context.Context,
 	q *sqlc.Queries,
 	account, artifact, location string,
-	terms application.ActivityTerms,
-	selection application.ActivitySelection,
+	terms calculation.ActivityTerms,
+	selection calculation.ActivitySelection,
 ) (string, error) {
 	id := rand.Text()
 	instrument, listing := "", ""
@@ -28,7 +28,7 @@ func createActivity(
 	var err error
 
 	currency := ""
-	if terms.Kind() == application.TradeActivity {
+	if terms.Kind() == calculation.TradeActivity {
 		currency = terms.Trade().Fields().Price.Currency().String()
 	}
 
@@ -45,7 +45,7 @@ func createActivity(
 	}
 
 	switch terms.Kind() {
-	case application.SecurityTransferActivity, application.CashActivity:
+	case calculation.SecurityTransferActivity, calculation.CashActivity:
 		err = q.PutMovementActivity(
 			ctx,
 			sqlc.PutMovementActivityParams{
@@ -54,10 +54,10 @@ func createActivity(
 				AccountID:    account,
 				InstrumentID: sql.NullString{String: instrument, Valid: instrument != ""},
 				Accepted:     data,
-				Rule:         application.RepeatRule,
+				Rule:         calculation.RepeatRule,
 			},
 		)
-	case application.TradeActivity:
+	case calculation.TradeActivity:
 		err = q.PutExecution(
 			ctx,
 			sqlc.PutExecutionParams{
@@ -66,10 +66,10 @@ func createActivity(
 				InstrumentID: sql.NullString{String: instrument, Valid: instrument != ""},
 				ListingID:    sql.NullString{String: listing, Valid: listing != ""},
 				Accepted:     data,
-				Rule:         application.RepeatRule,
+				Rule:         calculation.RepeatRule,
 			},
 		)
-	case application.LifecycleActivity:
+	case calculation.LifecycleActivity:
 		err = q.PutLifecycleActivity(
 			ctx,
 			sqlc.PutLifecycleActivityParams{
@@ -77,17 +77,17 @@ func createActivity(
 				AccountID:    account,
 				InstrumentID: sql.NullString{String: instrument, Valid: instrument != ""},
 				Accepted:     data,
-				Rule:         application.RepeatRule,
+				Rule:         calculation.RepeatRule,
 			},
 		)
-	case application.ConversionActivity:
+	case calculation.ConversionActivity:
 		err = q.PutConversionActivity(
 			ctx,
 			sqlc.PutConversionActivityParams{
 				ID:        id,
 				AccountID: account,
 				Accepted:  data,
-				Rule:      application.RepeatRule,
+				Rule:      calculation.RepeatRule,
 			},
 		)
 	}
@@ -153,7 +153,7 @@ func persistActivitySelection(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-	value application.ActivitySelection,
+	value calculation.ActivitySelection,
 ) error {
 	base, err := encodeActivityFields(value.Baseline)
 	if err != nil {
@@ -184,22 +184,22 @@ func loadActivitySelection(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-) (application.ActivitySelection, error) {
+) (calculation.ActivitySelection, error) {
 	row, err := q.ActivitySelection(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return application.ActivitySelection{}, nil
+		return calculation.ActivitySelection{}, nil
 	}
 
 	if err != nil {
-		return application.ActivitySelection{}, err
+		return calculation.ActivitySelection{}, err
 	}
 
 	var d activitySelectionData
 	if json.Unmarshal(row.Selected, &d) != nil {
-		return application.ActivitySelection{}, ErrCorrupt
+		return calculation.ActivitySelection{}, ErrCorrupt
 	}
 
-	out := application.ActivitySelection{
+	out := calculation.ActivitySelection{
 		Sources:        d.Sources,
 		Conflicts:      d.Conflicts,
 		OperatorFields: d.OperatorFields,

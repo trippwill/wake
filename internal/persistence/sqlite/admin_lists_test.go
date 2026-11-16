@@ -14,6 +14,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -78,13 +79,13 @@ func TestActivityListOrdersExactDecimalsAndPagesOnServer(t *testing.T) {
 	operatorID := first.Items[0].Resource.ID
 	retainDecision(t, s, "activity", operatorID, "price", "1.0000000000001", "USD", "set")
 
-	state, err := application.NewActivityState(application.Accepted, 0, application.OperatorSelection)
+	state, err := calculation.NewActivityState(calculation.Accepted, 0, calculation.OperatorSelection)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	query, err = application.NewListQuery(
-		application.ListOptions{Search: "operator", StateMatches: []application.ActivityState{state}},
+		application.ListOptions{Search: "operator", StateMatches: []calculation.ActivityState{state}},
 		application.ActivityScope,
 	)
 	if err != nil {
@@ -518,8 +519,8 @@ func TestReviewListRetainsFinancialQuestionsWithoutRepeatedAppearances(t *testin
 		want    int64
 	}{
 		{"identity", []application.ReviewMatch{{Kind: application.ReviewInstrument}, {Kind: application.ReviewIdentity}}, 2},
-		{"unresolved", []application.ReviewMatch{{Kind: application.ReviewInstruction, Status: application.CorrectionUnresolved}, {Kind: application.ReviewIdentity}}, 2},
-		{"needs review", []application.ReviewMatch{{Kind: application.ReviewInstrument}, {Kind: application.ReviewInstruction, Status: application.CorrectionUnresolved}, {Kind: application.ReviewInstruction, Status: application.CorrectionNeedsReview}}, 2},
+		{"unresolved", []application.ReviewMatch{{Kind: application.ReviewInstruction, Status: calculation.CorrectionUnresolved}, {Kind: application.ReviewIdentity}}, 2},
+		{"needs review", []application.ReviewMatch{{Kind: application.ReviewInstrument}, {Kind: application.ReviewInstruction, Status: calculation.CorrectionUnresolved}, {Kind: application.ReviewInstruction, Status: calculation.CorrectionNeedsReview}}, 2},
 		{"1 source claims", []application.ReviewMatch{{Kind: application.ReviewIdentity, CountKnown: true, Count: 1}}, 1},
 	} {
 		query, _ := application.NewListQuery(
@@ -1024,9 +1025,9 @@ func TestReferenceOrderingIncludesSelectionAuthority(t *testing.T) {
 			t.Fatal(page, err)
 		}
 
-		expected := application.AutomaticSelection
+		expected := calculation.AutomaticSelection
 		if direction == "desc" {
-			expected = application.OperatorSelection
+			expected = calculation.OperatorSelection
 		}
 
 		if page.Items[0].Reference.Authority != expected {

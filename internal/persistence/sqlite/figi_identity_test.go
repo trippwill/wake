@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 )
 
@@ -257,8 +258,8 @@ func TestFIGICombinationRollsBackAndRetainsIndependentReleases(t *testing.T) {
 
 	applyEquityIdentity(t, s, b)
 
-	stale, err := application.NewDecision(
-		application.DecisionInput{
+	stale, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "instrument",
 			TargetID:         b,
 			Scope:            "name",

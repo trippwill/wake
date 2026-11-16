@@ -6,6 +6,8 @@ package application
 import (
 	"context"
 	"time"
+
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 const HistoryBatchSize = 50
@@ -18,7 +20,7 @@ type HistoryProgress struct {
 
 type HistoryActivity struct {
 	ID    string
-	State ActivityState
+	State calculation.ActivityState
 }
 
 type HistoryStore interface {
@@ -30,7 +32,7 @@ type HistoryStore interface {
 type HistoryWriter interface {
 	HistoryActivities(context.Context, string, int) ([]HistoryActivity, error)
 	HistoryInstruments(context.Context, string, int) ([]string, error)
-	RebuildActivity(context.Context, string, ActivityState) error
+	RebuildActivity(context.Context, string, calculation.ActivityState) error
 	RebuildInstrument(context.Context, string) error
 	RebuildPositions(context.Context, int) (int, error)
 }
@@ -115,4 +117,4 @@ func rebuildHistoryBatch(ctx context.Context) func(HistoryWriter, HistoryProgres
 	}
 }
 
-const ErrInvalidHistoryPhase Error = "invalid retained history update phase"
+const ErrInvalidHistoryPhase calculation.Error = "invalid retained history update phase"

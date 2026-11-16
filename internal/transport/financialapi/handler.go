@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/logging"
 )
 
@@ -177,7 +178,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, application.ErrInvalid):
+		case errors.Is(err, calculation.ErrInvalid):
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 		case errors.Is(err, application.ErrStale):
 			h.failure(w, StaleRevision, http.StatusConflict)
@@ -232,7 +233,7 @@ func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
 func snapshotConditions(headers []string) (application.SnapshotCondition, error) {
 	value := strings.Trim(strings.Join(headers, ","), " \t")
 	if len(value) > 8192 || strings.ContainsAny(value, "\r\n") {
-		return application.SnapshotCondition{}, application.ErrInvalid
+		return application.SnapshotCondition{}, calculation.ErrInvalid
 	}
 
 	if value == "" {
@@ -247,18 +248,18 @@ func snapshotConditions(headers []string) (application.SnapshotCondition, error)
 	for {
 		value = strings.TrimPrefix(value, "W/")
 		if len(value) < 2 || value[0] != '"' {
-			return application.SnapshotCondition{}, application.ErrInvalid
+			return application.SnapshotCondition{}, calculation.ErrInvalid
 		}
 
 		end := strings.IndexByte(value[1:], '"')
 		if end < 0 {
-			return application.SnapshotCondition{}, application.ErrInvalid
+			return application.SnapshotCondition{}, calculation.ErrInvalid
 		}
 
 		end++
 		for _, c := range []byte(value[1:end]) {
 			if c < 0x21 || c == 0x7f {
-				return application.SnapshotCondition{}, application.ErrInvalid
+				return application.SnapshotCondition{}, calculation.ErrInvalid
 			}
 		}
 
@@ -269,12 +270,12 @@ func snapshotConditions(headers []string) (application.SnapshotCondition, error)
 		}
 
 		if value[0] != ',' {
-			return application.SnapshotCondition{}, application.ErrInvalid
+			return application.SnapshotCondition{}, calculation.ErrInvalid
 		}
 
 		value = strings.Trim(value[1:], " \t")
 		if value == "" {
-			return application.SnapshotCondition{}, application.ErrInvalid
+			return application.SnapshotCondition{}, calculation.ErrInvalid
 		}
 	}
 }

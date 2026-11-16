@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -115,7 +116,7 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				t.Fatal("obsolete correction offered", form, err)
 			}
 
-			command, err := application.NewDecision(application.DecisionInput{
+			command, err := calculation.NewDecision(calculation.DecisionInput{
 				TargetKind:       "activity",
 				TargetID:         execution.ID(),
 				Scope:            "net_cash",

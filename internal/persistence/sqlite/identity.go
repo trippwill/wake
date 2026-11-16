@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
@@ -25,7 +26,7 @@ func canonicalID(ctx context.Context, q *sqlc.Queries, kind, id string) (string,
 
 func aliasResource(ctx context.Context, q *sqlc.Queries, kind, previous, target string) error {
 	if previous == target {
-		return application.ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	if err := q.FlattenAliases(
@@ -76,7 +77,7 @@ func (r correctionReader) IdentityRoots(
 func (r correctionReader) AutomaticInstrument(
 	ctx context.Context,
 	id string,
-) (application.InstrumentSelection, error) {
+) (calculation.InstrumentSelection, error) {
 	row, err := r.q.InstrumentSelection(ctx, id)
 	return instrumentSelection(row), err
 }
@@ -135,7 +136,7 @@ func combineIdentity(ctx context.Context, q *sqlc.Queries, id string) error {
 		return err
 	}
 
-	if err := projectInstrument(ctx, q, target.ID, application.RetainedClaimsRule); err != nil {
+	if err := projectInstrument(ctx, q, target.ID, calculation.RetainedClaimsRule); err != nil {
 		return err
 	}
 
@@ -195,12 +196,12 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			return e
 		}
 
-		identities := make([]application.ListingIdentity, 0, len(candidates))
+		identities := make([]calculation.ListingIdentity, 0, len(candidates))
 		for _, candidate := range candidates {
-			identities = append(identities, application.ListingIdentity{ID: candidate.ID, FIGI: candidate.Figi})
+			identities = append(identities, calculation.ListingIdentity{ID: candidate.ID, FIGI: candidate.Figi})
 		}
 
-		plan := application.PlanListingMerge(l.Figi, identities)
+		plan := calculation.PlanListingMerge(l.Figi, identities)
 		if plan.TargetID == "" {
 			if e = q.MoveListing(ctx, sqlc.MoveListingParams{InstrumentID: target, ID: l.ID}); e != nil {
 				return e

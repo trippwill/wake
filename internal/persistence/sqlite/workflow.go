@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
@@ -142,7 +143,7 @@ func (s *Store) Confirm(
 	}
 
 	if details.Name() == "" || ref.IsZero() {
-		return application.Account{}, application.ErrInvalid
+		return application.Account{}, calculation.ErrInvalid
 	}
 
 	tx, err := beginUpstream(ctx, s.db)
@@ -219,7 +220,7 @@ func (s *Store) Confirm(
 		c.Provider,
 		ref,
 		details,
-		application.AuthorityRule,
+		calculation.AuthorityRule,
 	)
 	if err != nil {
 		return application.Account{}, err
@@ -228,7 +229,7 @@ func (s *Store) Confirm(
 	if err = q.PutAccount(
 		ctx,
 		sqlc.PutAccountParams{
-			Rule:         application.AuthorityRule,
+			Rule:         calculation.AuthorityRule,
 			ID:           a.ID(),
 			Name:         details.Name(),
 			Currency:     details.Currency(),
@@ -357,7 +358,7 @@ func (s *Store) ResumeStorage(ctx context.Context, revision int64, actor string,
 	}
 
 	if actor == "" {
-		return application.ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	tx, err := beginUpstream(ctx, s.db)
@@ -464,7 +465,7 @@ func (s *Store) RetryProcessing(ctx context.Context, id string) error {
 	}
 
 	if !eligible {
-		return application.ErrInvalid
+		return calculation.ErrInvalid
 	}
 
 	s.clearProcessingFailure(id)

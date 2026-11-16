@@ -14,17 +14,18 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
 func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
-	for _, state := range []application.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
+	for _, state := range []calculation.ReferenceStatus{"provisional", "no-match", "resolved", ""} {
 		if state.NeedsReview() {
 			t.Fatal(state)
 		}
 	}
 
-	for _, state := range []application.ReferenceStatus{"conflict", "ambiguous"} {
+	for _, state := range []calculation.ReferenceStatus{"conflict", "ambiguous"} {
 		if !state.NeedsReview() {
 			t.Fatal(state)
 		}
@@ -38,7 +39,7 @@ func TestReviewClassificationDoesNotTreatHistoryOrGapsAsTasks(t *testing.T) {
 					Artifact: "unresolved",
 					Location: "row-one",
 					Name:     "replacement",
-					Status:   application.CorrectionUnresolved,
+					Status:   calculation.CorrectionUnresolved,
 				},
 			},
 		},
@@ -119,10 +120,10 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 }
 
 func TestActivitySearchMatchesRenderedFinancialState(t *testing.T) {
-	state, _ := application.NewActivityState(
-		application.Accepted,
-		application.ConflictingClaims,
-		application.OperatorSelection,
+	state, _ := calculation.NewActivityState(
+		calculation.Accepted,
+		calculation.ConflictingClaims,
+		calculation.OperatorSelection,
 	)
 	for _, search := range []string{"needs review", "operator decision"} {
 		request := pageRequest(httptest.NewRequest(http.MethodGet, "/activity?q="+url.QueryEscape(search), nil))
@@ -151,7 +152,7 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 		reported,
 		"rule",
 		1,
-		application.OperatorSelection,
+		calculation.OperatorSelection,
 		application.ReferenceMetadata{},
 	)
 	if err != nil {
@@ -173,7 +174,7 @@ func TestInstrumentPresentationPreservesOperatorAuthority(t *testing.T) {
 	if queryErr != nil ||
 		!slices.Contains(
 			query.Options().ReferenceMatches,
-			application.ReferenceMatch{Status: "resolved", Authority: application.OperatorSelection},
+			application.ReferenceMatch{Status: "resolved", Authority: calculation.OperatorSelection},
 		) {
 		t.Fatal(query, queryErr)
 	}
@@ -273,13 +274,13 @@ func TestReviewSearchUsesRenderedCategoriesReasonsAndCounts(t *testing.T) {
 	for _, test := range []struct {
 		search     string
 		kind       application.ReviewKind
-		status     application.CorrectionStatus
+		status     calculation.CorrectionStatus
 		countKnown bool
 		count      int64
 	}{
 		{"Identity", application.ReviewInstrument, "", false, 0},
-		{"unresolved", application.ReviewInstruction, application.CorrectionUnresolved, false, 0},
-		{"needs review", application.ReviewInstruction, application.CorrectionNeedsReview, false, 0},
+		{"unresolved", application.ReviewInstruction, calculation.CorrectionUnresolved, false, 0},
+		{"needs review", application.ReviewInstruction, calculation.CorrectionNeedsReview, false, 0},
 		{"Source claims", application.ReviewIdentity, "", false, 0},
 		{"3 source claims", application.ReviewIdentity, "", true, 3},
 		{"Reported values", application.ReviewActivity, "", false, 0},
@@ -323,8 +324,8 @@ func TestObservationQueriesKeepTypedOutcomeLabels(t *testing.T) {
 		}
 	}
 
-	if !slices.Contains(query.Options().ObservationMatches, application.ObservationNoContribution) ||
-		observationStatus(application.ObservationNoContribution) != "no additional contribution" {
+	if !slices.Contains(query.Options().ObservationMatches, calculation.ObservationNoContribution) ||
+		observationStatus(calculation.ObservationNoContribution) != "no additional contribution" {
 		t.Fatal("report contribution label was not searchable", query.Options())
 	}
 
@@ -342,7 +343,7 @@ func (historyWorkspaceStore) HistoryUpdating() bool { return true }
 func (historyWorkspaceStore) Overview(context.Context) (application.OverviewView, error) {
 	return application.OverviewView{Status: application.SystemStatus{
 		HistoryUpdate: application.HistoryUpdateStatus{
-			Rule: string(application.RetainedClaimsRule), Phase: "activity", Completed: 50,
+			Rule: string(calculation.RetainedClaimsRule), Phase: "activity", Completed: 50,
 			RetryAt: time.Date(2026, 11, 12, 12, 1, 0, 0, time.UTC),
 		},
 	}}, nil
@@ -354,13 +355,13 @@ func (historyWorkspaceStore) ObservationList(
 	_ application.ListQuery,
 ) (application.ObservationList, error) {
 	if kind != "artifact" || id != "example" {
-		return application.ObservationList{}, application.ErrInvalid
+		return application.ObservationList{}, calculation.ErrInvalid
 	}
 
 	return application.ObservationList{
 		PageInfo: application.PageInfo{Page: 1, PageSize: 50, Total: 1, Matched: 1},
 		Items: []application.Observation{
-			{Artifact: id, Location: "synthetic report row", Outcome: application.ObservationAccepted},
+			{Artifact: id, Location: "synthetic report row", Outcome: calculation.ObservationAccepted},
 		},
 	}, nil
 }

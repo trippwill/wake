@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
@@ -39,7 +39,7 @@ func insertReferenceInstrument(t *testing.T, s *Store, id, identifier string) {
 			Ticker:    "SYN",
 			Kind:      "equity",
 			Reported:  reported,
-			Rule:      application.InstrumentRule,
+			Rule:      calculation.InstrumentRule,
 		},
 	); err != nil {
 		t.Fatal(err)

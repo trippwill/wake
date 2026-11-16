@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 //go:embed admin_positions.sql
@@ -24,7 +25,7 @@ func (s *Store) PositionsList(
 	out := application.PositionsList{PageInfo: pageInfo(query, 0, 0)}
 	options := query.Options()
 	if query.Scope() != application.PositionsScope || options.Page < 1 || options.PageSize < 1 {
-		return out, application.ErrInvalid
+		return out, calculation.ErrInvalid
 	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})

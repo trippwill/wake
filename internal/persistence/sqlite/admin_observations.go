@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 )
 
@@ -22,7 +23,7 @@ func (s *Store) ObservationList(
 	if query.Scope() != application.ObservationScope || options.Page < 1 || options.PageSize < 1 || id == "" ||
 		len(id) > 256 ||
 		kind != "activity" && kind != "instrument" && kind != "artifact" {
-		return application.ObservationList{}, application.ErrInvalid
+		return application.ObservationList{}, calculation.ErrInvalid
 	}
 
 	matches, _ := json.Marshal(options.ObservationMatches)
@@ -91,7 +92,7 @@ func (s *Store) ObservationList(
 					Location:   row.Location,
 					Rule:       row.Rule,
 					Retrieved:  row.Retrieved,
-					Outcome:    application.ObservationOutcome(row.Outcome),
+					Outcome:    calculation.ObservationOutcome(row.Outcome),
 					ActivityID: row.ExecutionID.String,
 				},
 			)

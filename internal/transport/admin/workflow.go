@@ -17,6 +17,7 @@ import (
 
 	"github.com/a-h/templ"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/provider"
@@ -78,7 +79,7 @@ func registerWorkflowRoutes(
 			message = "Enter an interval within the displayed range, or leave it empty to inherit the default."
 		case host.ErrBusy:
 			message = "Connection work is finishing. Wait for its progress to update, then retry."
-		case application.ErrInvalid:
+		case calculation.ErrInvalid:
 			message = "Enter an account display name and a valid currency, or leave currency unknown."
 
 		case application.ErrAccountLimit:
@@ -727,7 +728,7 @@ func registerWorkflowRoutes(
 					message = "Accepted values changed. Review the updated record before saving."
 				}
 
-				if !stale && !errors.Is(err, application.ErrInvalid) {
+				if !stale && !errors.Is(err, calculation.ErrInvalid) {
 					w.WriteHeader(http.StatusServiceUnavailable)
 
 					message = "Validation is unavailable. Retry before saving."

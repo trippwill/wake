@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -18,21 +19,21 @@ type ListOptions struct {
 	Search, Kind, State, Sort, Direction string
 	Page, PageSize                       int
 	AccountID                            string
-	KindMatches                          []ActivityKind
-	StateMatches                         []ActivityState
+	KindMatches                          []calculation.ActivityKind
+	StateMatches                         []calculation.ActivityState
 	ReferenceMatches                     []ReferenceMatch
 	ActivityText                         ActivityText
 	DisplayMatches                       DisplayMatches
 	ReviewMatches                        []ReviewMatch
-	ObservationMatches                   []ObservationOutcome
-	ObservationLabels                    map[ObservationOutcome]string
+	ObservationMatches                   []calculation.ObservationOutcome
+	ObservationLabels                    map[calculation.ObservationOutcome]string
 }
 type (
 	ReviewMatch struct {
-		Kind       ReviewKind       `json:"kind"`
-		Status     CorrectionStatus `json:"status"`
-		CountKnown bool             `json:"count_known"`
-		Count      int64            `json:"count"`
+		Kind       ReviewKind                   `json:"kind"`
+		Status     calculation.CorrectionStatus `json:"status"`
+		CountKnown bool                         `json:"count_known"`
+		Count      int64                        `json:"count"`
 	}
 	DisplayMatches struct {
 		MissingValues      bool
@@ -52,8 +53,8 @@ type (
 		Received           string `json:"received"`
 	}
 	ReferenceMatch struct {
-		Status    ReferenceStatus
-		Authority SelectionAuthority
+		Status    calculation.ReferenceStatus
+		Authority calculation.SelectionAuthority
 	}
 	ListScope uint8
 )
@@ -84,7 +85,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	if options.Page < 1 || options.PageSize < 1 || options.PageSize > 200 ||
 		options.Page > math.MaxInt/options.PageSize ||
 		len(options.Search) > 256 || len(options.AccountID) > 256 {
-		return ListQuery{}, ErrInvalid
+		return ListQuery{}, calculation.ErrInvalid
 	}
 
 	if options.Direction == "" {
@@ -95,7 +96,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	if options.Direction != "asc" && options.Direction != "desc" {
-		return ListQuery{}, ErrInvalid
+		return ListQuery{}, calculation.ErrInvalid
 	}
 
 	sorts := []string{"date", "label", "quantity", "price", "amount", "realized", "state", "reference"}
@@ -137,7 +138,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	if scope > PositionsScope {
-		return ListQuery{}, ErrInvalid
+		return ListQuery{}, calculation.ErrInvalid
 	}
 
 	if options.Sort == "" {
@@ -146,28 +147,28 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if !slices.Contains(sorts, options.Sort) || !slices.Contains(states, options.State) ||
 		!slices.Contains(kinds, options.Kind) {
-		return ListQuery{}, ErrInvalid
+		return ListQuery{}, calculation.ErrInvalid
 	}
 
 	for _, kind := range options.KindMatches {
 		if scope != ActivityScope && scope != ReviewScope ||
 			!slices.Contains(
-				[]ActivityKind{
-					TradeActivity,
-					LifecycleActivity,
-					ConversionActivity,
-					SecurityTransferActivity,
-					CashActivity,
+				[]calculation.ActivityKind{
+					calculation.TradeActivity,
+					calculation.LifecycleActivity,
+					calculation.ConversionActivity,
+					calculation.SecurityTransferActivity,
+					calculation.CashActivity,
 				},
 				kind,
 			) {
-			return ListQuery{}, ErrInvalid
+			return ListQuery{}, calculation.ErrInvalid
 		}
 	}
 
 	for _, text := range []string{options.ActivityText.LifecycleSeparator, options.ActivityText.ConversionPrefix, options.ActivityText.Unknown, options.ActivityText.PairSeparator, options.ActivityText.AmountSeparator, options.ActivityText.Sent, options.ActivityText.Received} {
 		if len(text) > 64 {
-			return ListQuery{}, ErrInvalid
+			return ListQuery{}, calculation.ErrInvalid
 		}
 	}
 
@@ -178,22 +179,22 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 				match.Kind,
 			) ||
 			match.Status != "" &&
-				(match.Kind != ReviewInstruction || match.Status != CorrectionUnresolved && match.Status != CorrectionNeedsReview) ||
+				(match.Kind != ReviewInstruction || match.Status != calculation.CorrectionUnresolved && match.Status != calculation.CorrectionNeedsReview) ||
 			match.CountKnown && (match.Kind != ReviewIdentity || match.Count < 0) {
-			return ListQuery{}, ErrInvalid
+			return ListQuery{}, calculation.ErrInvalid
 		}
 	}
 
 	for _, outcome := range options.ObservationMatches {
 		if scope != ObservationScope || !knownObservationOutcome(outcome) {
-			return ListQuery{}, ErrInvalid
+			return ListQuery{}, calculation.ErrInvalid
 		}
 	}
 
 	for outcome, label := range options.ObservationLabels {
 		if scope != ObservationScope || !knownObservationOutcome(outcome) || strings.TrimSpace(label) == "" ||
 			len(label) > 256 {
-			return ListQuery{}, ErrInvalid
+			return ListQuery{}, calculation.ErrInvalid
 		}
 	}
 
@@ -262,7 +263,7 @@ type (
 	}
 	ActivityListItem struct {
 		Resource                         CanonicalResource
-		State                            ActivityState
+		State                            calculation.ActivityState
 		InstrumentName, InstrumentTicker string
 		AccountName                      string
 		Reference                        ReferenceMatch
@@ -273,7 +274,7 @@ type (
 	}
 	InstrumentListItem struct {
 		Resource  CanonicalResource
-		Authority SelectionAuthority
+		Authority calculation.SelectionAuthority
 	}
 	InstrumentList struct {
 		PageInfo
@@ -294,7 +295,7 @@ type (
 		Kind                                 ReviewKind
 		ID, Name, Ticker, Artifact, Location string
 		Activity                             *PublishedActivity
-		Status                               CorrectionStatus
+		Status                               calculation.CorrectionStatus
 		Count                                int64
 	}
 	ObservationList struct {
@@ -329,20 +330,47 @@ type (
 	}
 )
 
-func knownObservationOutcome(outcome ObservationOutcome) bool {
+func knownObservationOutcome(outcome calculation.ObservationOutcome) bool {
 	switch outcome {
-	case ObservationUnselected,
-		ObservationIncomplete,
-		ObservationIncompleteConflict,
-		ObservationIdentityReview,
-		ObservationNativeReview,
-		ObservationKindConflict,
-		ObservationTermsConflict,
-		ObservationEnriched,
-		ObservationNoContribution,
-		ObservationAccepted:
+	case calculation.ObservationUnselected,
+		calculation.ObservationIncomplete,
+		calculation.ObservationIncompleteConflict,
+		calculation.ObservationIdentityReview,
+		calculation.ObservationNativeReview,
+		calculation.ObservationKindConflict,
+		calculation.ObservationTermsConflict,
+		calculation.ObservationEnriched,
+		calculation.ObservationNoContribution,
+		calculation.ObservationAccepted:
 		return true
 	default:
 		return false
 	}
 }
+
+type (
+	DecisionRecord struct {
+		ID, Scope, Text, Currency, Action, Actor, At, Rationale, Supersedes string
+		Active                                                              bool
+	}
+	CorrectionValue     struct{ Value, Currency, Unit, Label string }
+	CorrectionCandidate struct {
+		Value, Label, Scope string
+		Fields              map[string]CorrectionValue
+	}
+	CorrectionDraft struct{ Scope, Value, Currency, Rationale, Action string }
+
+	CorrectionForm struct {
+		Links           []CorrectionCandidate
+		Kind, ID, Label string
+		Revision        int64
+		Values          map[string]CorrectionValue
+		AccountName     string
+		Draft           CorrectionDraft
+		Message         string
+		Stale           bool
+		Fields          []string
+		Candidates      []CorrectionCandidate
+		Decisions       []DecisionRecord
+	}
+)

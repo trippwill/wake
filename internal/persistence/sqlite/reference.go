@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/source"
@@ -497,7 +498,7 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	if err = projectInstrument(ctx, q, id, application.RetainedClaimsRule); err != nil {
+	if err = projectInstrument(ctx, q, id, calculation.RetainedClaimsRule); err != nil {
 		return err
 	}
 

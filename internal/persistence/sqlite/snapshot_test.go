@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
@@ -144,8 +145,8 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decision, err := application.NewDecision(
-		application.DecisionInput{
+	decision, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         activity.ID,
 			Scope:            "price",

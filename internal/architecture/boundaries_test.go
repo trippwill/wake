@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -16,26 +17,22 @@ import (
 )
 
 func TestFinancialCalculationImports(t *testing.T) {
-	application := filepath.Join("..", "..", "internal", "application")
-	for _, name := range []string{
-		"activity_subject_index.go",
-		"calculation.go",
-		"contributions.go",
-		"correction_policy.go",
-		"corrections.go",
-		"decision.go",
-		"instrument_calculation.go",
-		"listing_merge.go",
-		"movement.go",
-		"observations.go",
-		"position_selection.go",
-		"root_enrichment.go",
-		"rules.go",
-		"selection.go",
-	} {
+	dir := filepath.Join("..", "..", "internal", "application", "calculation")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
 		file, err := parser.ParseFile(
 			token.NewFileSet(),
-			filepath.Join(application, name),
+			filepath.Join(dir, name),
 			nil,
 			parser.ImportsOnly,
 		)
@@ -47,10 +44,6 @@ func TestFinancialCalculationImports(t *testing.T) {
 			path, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
 				t.Fatal(err)
-			}
-
-			if name == "root_enrichment.go" && path == "go.trippwill.dev/wake/internal/reference" {
-				continue // Root policy uses the retained reference reason.
 			}
 
 			switch path {

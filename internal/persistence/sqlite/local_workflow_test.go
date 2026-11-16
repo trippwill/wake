@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/transport/financialapi"
 	"go.trippwill.dev/wake/provider"
@@ -294,11 +295,11 @@ BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;`); err != nil {
 		t.Fatal("could not retain evidence after retry", id, err)
 	}
 
-	if err = store.RetryProcessing(ctx, id); !errors.Is(err, application.ErrInvalid) {
+	if err = store.RetryProcessing(ctx, id); !errors.Is(err, calculation.ErrInvalid) {
 		t.Fatal("supplied evidence received account authority", err)
 	}
 
-	if err = store.RetryProcessing(ctx, "missing"); !errors.Is(err, application.ErrInvalid) {
+	if err = store.RetryProcessing(ctx, "missing"); !errors.Is(err, calculation.ErrInvalid) {
 		t.Fatal("unknown report was eligible for retry", err)
 	}
 }

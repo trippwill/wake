@@ -8,28 +8,36 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/source"
 )
 
 func persistRootEnrichment(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
-	result application.RootCalculation,
-	underlier application.UnderlierLink,
+	result calculation.RootCalculation,
+	underlier calculation.UnderlierLink,
 ) error {
 	root, err := q.Instrument(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	plan := application.PlanRootEnrichment(identityRoot(root), result, underlier)
-	if plan.Conflict != application.KeepSourceConflict {
+	plan := calculation.PlanRootEnrichment(source.InstrumentKind(root.Kind), root.ReferenceFigi != "",
+		root.ReferenceReason == string(reference.SourceConflict), result, underlier)
+	if plan.Conflict != calculation.KeepSourceConflict {
+		reason := ""
+		if plan.Conflict == calculation.RecordSourceConflict {
+			reason = string(reference.SourceConflict)
+		}
+
 		if err = q.IdentityMetadata(ctx, sqlc.IdentityMetadataParams{
 			ID:         root.ID,
 			Allocation: root.ReferenceAllocation,
-			Reason:     string(plan.Conflict.Reason()),
+			Reason:     reason,
 			Family:     root.Kind,
 		}); err != nil {
 			return err

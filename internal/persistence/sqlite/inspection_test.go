@@ -9,6 +9,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -181,7 +182,7 @@ func (s *Store) Dashboard(ctx context.Context) (inspectionView, error) {
 				Kind:           r.Kind,
 				Target:         r.Target,
 				Replacement:    r.Replacement,
-				Status:         application.CorrectionStatus(r.Status),
+				Status:         calculation.CorrectionStatus(r.Status),
 				TargetIDs:      targets,
 				ReplacementIDs: replacements,
 			},

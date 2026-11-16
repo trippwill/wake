@@ -7,6 +7,7 @@ import (
 	"context"
 	"slices"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -36,12 +37,12 @@ type RetainedProcessingWriter interface {
 	BindPositionUnderliers(context.Context, []string) error
 	SeedActivityBases(context.Context) error
 	ActivityLinks
-	ReconcileSourceCorrections(context.Context, []string) (map[string]ActivityState, error)
+	ReconcileSourceCorrections(context.Context, []string) (map[string]calculation.ActivityState, error)
 	ClaimActivityIDs(context.Context) ([]string, error)
-	ActivityState(context.Context, string) (ActivityState, error)
+	ActivityState(context.Context, string) (calculation.ActivityState, error)
 	BindActivityInstrument(context.Context, string) error
 	ProjectArtifactRoots(context.Context) error
-	ProjectRetainedActivity(context.Context, string, ActivityState) error
+	ProjectRetainedActivity(context.Context, string, calculation.ActivityState) error
 	RetirePositionInterpretations(context.Context) error
 }
 
@@ -110,7 +111,7 @@ func ProcessRetained(ctx context.Context, store RetainedProcessingStore, id, ver
 						outcome = "incomplete"
 					}
 
-					refs = activityReferences(record.Observation)
+					refs = calculation.ActivityReferences(record.Observation)
 				}
 
 				if err := writer.SaveActivityObservation(ctx, account.ID(), record, outcome, refs); err != nil {
@@ -190,7 +191,7 @@ func projectRetainedArtifact(ctx context.Context, writer RetainedProcessingWrite
 		}
 
 		if current.Lifecycle() != state.Lifecycle() ||
-			current.ReviewReasons()&AmbiguousCorrection != state.ReviewReasons()&AmbiguousCorrection {
+			current.ReviewReasons()&calculation.AmbiguousCorrection != state.ReviewReasons()&calculation.AmbiguousCorrection {
 			affected[id] = true
 		}
 	}

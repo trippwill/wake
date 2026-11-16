@@ -3,71 +3,71 @@
 
 package persistence
 
-import "go.trippwill.dev/wake/internal/application"
+import "go.trippwill.dev/wake/internal/application/calculation"
 
-func decodeActivityTerms(kind string, data []byte) (application.ActivityTerms, error) {
-	switch application.ActivityKind(kind) {
-	case application.CashActivity:
+func decodeActivityTerms(kind string, data []byte) (calculation.ActivityTerms, error) {
+	switch calculation.ActivityKind(kind) {
+	case calculation.CashActivity:
 		o, err := decodeObservation(data)
 		if err != nil {
-			return application.ActivityTerms{}, err
+			return calculation.ActivityTerms{}, err
 		}
 
 		v, err := o.CashActivity()
 		if err != nil {
-			return application.ActivityTerms{}, ErrCorrupt
+			return calculation.ActivityTerms{}, ErrCorrupt
 		}
 
-		return application.CashTerms(v)
-	case application.SecurityTransferActivity:
+		return calculation.CashTerms(v)
+	case calculation.SecurityTransferActivity:
 		o, err := decodeObservation(data)
 		if err != nil {
-			return application.ActivityTerms{}, err
+			return calculation.ActivityTerms{}, err
 		}
 
 		v, err := o.SecurityTransfer()
 		if err != nil {
-			return application.ActivityTerms{}, ErrCorrupt
+			return calculation.ActivityTerms{}, ErrCorrupt
 		}
 
-		return application.SecurityTransferTerms(v)
-	case application.TradeActivity:
+		return calculation.SecurityTransferTerms(v)
+	case calculation.TradeActivity:
 		v, err := decodeTrade(data)
 		if err != nil {
-			return application.ActivityTerms{}, err
+			return calculation.ActivityTerms{}, err
 		}
 
-		return application.TradeTerms(v)
-	case application.LifecycleActivity:
+		return calculation.TradeTerms(v)
+	case calculation.LifecycleActivity:
 		v, err := decodeLifecycle(data)
 		if err != nil {
-			return application.ActivityTerms{}, err
+			return calculation.ActivityTerms{}, err
 		}
 
-		return application.LifecycleTerms(v)
-	case application.ConversionActivity:
+		return calculation.LifecycleTerms(v)
+	case calculation.ConversionActivity:
 		v, err := decodeConversion(data)
 		if err != nil {
-			return application.ActivityTerms{}, err
+			return calculation.ActivityTerms{}, err
 		}
 
-		return application.ConversionTerms(v)
+		return calculation.ConversionTerms(v)
 	}
 
-	return application.ActivityTerms{}, ErrCorrupt
+	return calculation.ActivityTerms{}, ErrCorrupt
 }
 
-func encodeActivityTerms(value application.ActivityTerms) ([]byte, error) {
+func encodeActivityTerms(value calculation.ActivityTerms) ([]byte, error) {
 	switch value.Kind() {
-	case application.CashActivity:
+	case calculation.CashActivity:
 		return encodeObservation(value.Observation())
-	case application.SecurityTransferActivity:
+	case calculation.SecurityTransferActivity:
 		return encodeObservation(value.Observation())
-	case application.TradeActivity:
+	case calculation.TradeActivity:
 		return encodeTrade(value.Trade())
-	case application.LifecycleActivity:
+	case calculation.LifecycleActivity:
 		return encodeLifecycle(value.Lifecycle())
-	case application.ConversionActivity:
+	case calculation.ConversionActivity:
 		return encodeConversion(value.Conversion())
 	}
 

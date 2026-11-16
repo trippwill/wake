@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
 
@@ -50,7 +51,7 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 			unlinked++
 		}
 
-		if row.Outcome == application.ObservationNoContribution {
+		if row.Outcome == calculation.ObservationNoContribution {
 			noContribution++
 		}
 	}
@@ -84,7 +85,7 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 
 	neutral, _ := application.NewListQuery(application.ListOptions{
 		Page: 2, PageSize: 50, Search: "no additional contribution",
-		ObservationMatches: []application.ObservationOutcome{application.ObservationNoContribution},
+		ObservationMatches: []calculation.ObservationOutcome{calculation.ObservationNoContribution},
 	}, application.ObservationScope)
 
 	matched, err := s.ObservationList(t.Context(), "artifact", "report", neutral)

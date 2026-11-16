@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -66,7 +67,7 @@ func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
 		i,
 		r.Rule,
 		r.Revision,
-		application.SelectionAuthority(r.SelectionAuthority),
+		calculation.SelectionAuthority(r.SelectionAuthority),
 		application.ReferenceMetadata{Allocation: r.ReferenceAllocation, Reason: r.ReferenceReason},
 	)
 }
@@ -99,8 +100,8 @@ func acceptInstrument(
 				Name:      i.Name(),
 				Ticker:    i.Ticker(),
 				Kind:      string(i.Kind()),
-				Reported:  reported, Rule: application.InstrumentRule,
-				CalculationRule: string(application.RetainedClaimsRule),
+				Reported:  reported, Rule: calculation.InstrumentRule,
+				CalculationRule: string(calculation.RetainedClaimsRule),
 			},
 		)
 	}
@@ -335,7 +336,7 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 	}
 
 	if r.Kind != "lifecycle" {
-		return out, application.ErrInvalid
+		return out, calculation.ErrInvalid
 	}
 
 	out.Lifecycle, err = lifecycleValue(r)
@@ -389,7 +390,7 @@ func (s *Store) ConversionDetail(ctx context.Context, id string) (application.Co
 	}
 
 	if r.Kind != "conversion" {
-		return out, application.ErrInvalid
+		return out, calculation.ErrInvalid
 	}
 
 	out.Conversion, err = conversionValue(r)

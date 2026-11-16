@@ -12,6 +12,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 type (
@@ -49,7 +50,7 @@ func correctionEditValue(f application.CorrectionForm, field string) application
 }
 
 func correctionSpec(f application.CorrectionForm, field string) correctionControl {
-	policy, ok := application.CorrectionFieldPolicy(field)
+	policy, ok := calculation.CorrectionFieldPolicy(field)
 	c := correctionControl{
 		Kind:     "text",
 		Pattern:  ".*",
@@ -66,14 +67,14 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 	c.Required = !policy.Optional()
 	c.Limit = policy.Limit()
 	switch policy.ValueKind() {
-	case application.LinkCorrection:
+	case calculation.LinkCorrection:
 		c.Kind, c.Hint = "link", "Search by name, symbol or reference. Choose a retained record from the list."
 		for _, link := range f.Links {
 			if link.Scope == field {
 				c.Choices = append(c.Choices, correctionChoice{link.Value, link.Label})
 			}
 		}
-	case application.ChoiceCorrection:
+	case calculation.ChoiceCorrection:
 		c.Kind, c.Hint = "choice", "Choose the intended financial meaning."
 		switch field {
 		case "cash_category":
@@ -95,26 +96,26 @@ func correctionSpec(f application.CorrectionForm, field string) correctionContro
 		case "position_effect":
 			c.Choices = []correctionChoice{{"opening", "Opening"}, {"closing", "Closing"}, {"mixed", "Mixed"}}
 		}
-	case application.DateCorrection:
+	case calculation.DateCorrection:
 		c.Kind, c.Hint = "date", "Choose a valid calendar date."
 		if field == "debt.maturity" {
 			c.Hint = "Choose a maturity date consistent with the issue and dated dates."
 		}
-	case application.TimestampCorrection:
+	case calculation.TimestampCorrection:
 		c.Kind, c.Hint = "timestamp", "Keep the reported time, fractional seconds and UTC offset. Leave all three parts blank for Unknown."
-	case application.TextCorrection:
+	case calculation.TextCorrection:
 		if field == "name" {
 			c.Hint = "Enter the instrument description."
 		} else {
 			c.Hint = "Enter the reported symbol, or leave blank for Unknown."
 		}
-	case application.DecimalCorrection, application.MoneyCorrection:
+	case calculation.DecimalCorrection, calculation.MoneyCorrection:
 		c.Kind, c.Pattern = "decimal", decimalPattern
-		c.Monetary = policy.ValueKind() == application.MoneyCorrection
+		c.Monetary = policy.ValueKind() == calculation.MoneyCorrection
 		switch policy.DecimalBound() {
-		case application.PositiveDecimal:
+		case calculation.PositiveDecimal:
 			c.Hint = "Enter a decimal greater than zero."
-		case application.NonnegativeDecimal:
+		case calculation.NonnegativeDecimal:
 			c.Hint = "Enter a decimal of zero or more."
 		default:
 			c.Hint = "Enter an exact decimal value."
@@ -150,13 +151,13 @@ func correctionHasChoice(c correctionControl, value string) bool {
 	return slices.ContainsFunc(c.Choices, func(choice correctionChoice) bool { return choice.Value == value })
 }
 
-func postedCorrection(r *http.Request, kind string) (application.Decision, error) {
+func postedCorrection(r *http.Request, kind string) (calculation.Decision, error) {
 	revision, err := strconv.ParseInt(r.PostForm.Get("revision"), 10, 64)
 	if err != nil {
-		return application.Decision{}, application.ErrInvalid
+		return calculation.Decision{}, calculation.ErrInvalid
 	}
 
-	return application.NewDecision(application.DecisionInput{
+	return calculation.NewDecision(calculation.DecisionInput{
 		TargetKind:       kind,
 		TargetID:         r.PathValue("id"),
 		Scope:            r.PostForm.Get("scope"),

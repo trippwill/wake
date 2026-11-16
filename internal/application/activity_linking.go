@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -26,22 +27,18 @@ type ActivityLinks interface {
 	ActivityReferenceReader
 	ActivitiesToMatch(context.Context) ([]ActivityToMatch, error)
 	ActivityLink(context.Context, ActivityToMatch) (id, outcome string, err error)
-	CreateActivity(context.Context, string, ActivityToMatch, ActivityTerms, ActivitySelection) (string, error)
-	ActivityBaseline(context.Context, string) (ActivityTerms, error)
-	RetainedActivityClaims(context.Context, string) ([]ActivityClaim, error)
+	CreateActivity(
+		context.Context,
+		string,
+		ActivityToMatch,
+		calculation.ActivityTerms,
+		calculation.ActivitySelection,
+	) (string, error)
+	ActivityBaseline(context.Context, string) (calculation.ActivityTerms, error)
+	RetainedActivityClaims(context.Context, string) ([]calculation.ActivityClaim, error)
 	SaveEventLink(context.Context, string, string, source.Reference, bool) error
 	SaveActivityRelationship(context.Context, string, source.Relationship) error
 	RelinkActivity(context.Context, ActivityToMatch, string, string) error
-}
-
-func activityReferences(value source.ActivityObservation) []source.Reference {
-	f := value.Fields()
-	out := []source.Reference{}
-	if !f.Event.IsZero() {
-		out = append(out, f.Event)
-	}
-
-	return append(out, f.EventAliases...)
 }
 
 type pendingActivity struct {
@@ -49,6 +46,17 @@ type pendingActivity struct {
 	value     source.ActivityObservation
 	complete  bool
 	ambiguous bool
+}
+
+func indexPendingSubjects(pending []pendingActivity) calculation.ActivitySubjectIndex {
+	var index calculation.ActivitySubjectIndex
+	for i, item := range pending {
+		if !item.ambiguous {
+			index.Add(i, item.value)
+		}
+	}
+
+	return index
 }
 
 func compatibleSubjects(a, b source.ActivityObservation) bool {
@@ -64,8 +72,8 @@ func compatibleSubjects(a, b source.ActivityObservation) bool {
 		return false
 	}
 
-	for _, r := range activityReferences(a) {
-		if slices.Contains(activityReferences(b), r) {
+	for _, r := range calculation.ActivityReferences(a) {
+		if slices.Contains(calculation.ActivityReferences(b), r) {
 			return true
 		}
 	}
@@ -91,7 +99,7 @@ func markAmbiguousSubjects(pending []pendingActivity) {
 		}
 
 		space := namespace{f.Event.Authority(), f.Event.Kind(), f.Event.Scope()}
-		for _, ref := range activityReferences(item.value) {
+		for _, ref := range calculation.ActivityReferences(item.value) {
 			if byReference[ref] == nil {
 				byReference[ref] = map[namespace]identity{}
 			}
@@ -113,7 +121,7 @@ func markAmbiguousSubjects(pending []pendingActivity) {
 		}
 
 		seen := map[namespace]source.Reference{}
-		for _, ref := range activityReferences(pending[i].value) {
+		for _, ref := range calculation.ActivityReferences(pending[i].value) {
 			for space, known := range byReference[ref] {
 				if known.competing || !seen[space].IsZero() && seen[space] != known.first {
 					pending[i].ambiguous = true
@@ -141,7 +149,7 @@ func LinkActivityObservations(
 	for _, row := range rows {
 		value := row.Value
 
-		_, completeErr := CompleteActivityTerms(value.Fields(), value.Fields().Fields)
+		_, completeErr := calculation.CompleteActivityTerms(value.Fields(), value.Fields().Fields)
 		pending = append(pending, pendingActivity{row: row, value: value, complete: completeErr == nil})
 	}
 
@@ -151,7 +159,7 @@ func LinkActivityObservations(
 	// observations are considered. This does not require a complete row to exist.
 	sort.SliceStable(pending, func(i, j int) bool { return pending[i].complete && !pending[j].complete })
 
-	subjects := newActivitySubjectIndex(pending)
+	subjects := indexPendingSubjects(pending)
 
 	affected := map[string]bool{}
 	for _, item := range pending {
@@ -195,15 +203,15 @@ func LinkActivityObservations(
 		}
 
 		if target == "" && !ambiguous && !f.Event.IsZero() {
-			claims := []ActivityClaim{}
+			claims := []calculation.ActivityClaim{}
 			subject := f
 
-			for _, position := range subjects.candidates(item.value) {
+			for _, position := range subjects.Candidates(item.value) {
 				candidate := pending[position]
 				if !candidate.ambiguous && compatibleSubjects(item.value, candidate.value) {
 					claims = append(
 						claims,
-						ActivityClaim{
+						calculation.ActivityClaim{
 							Key:   candidate.row.Key,
 							Value: candidate.value,
 						},
@@ -217,12 +225,12 @@ func LinkActivityObservations(
 				base = f.Fields
 			}
 
-			selection, e := SelectActivityFields(base, claims, nil)
+			selection, e := calculation.SelectActivityFields(base, claims, nil)
 			if e != nil {
 				return nil, e
 			}
 
-			terms, completeErr := CompleteActivityTerms(subject, selection.Fields)
+			terms, completeErr := calculation.CompleteActivityTerms(subject, selection.Fields)
 			if completeErr != nil && len(selection.Conflicts) > 0 {
 				outcome = "incomplete-conflict"
 			}
@@ -255,9 +263,9 @@ func LinkActivityObservations(
 				return nil, e
 			}
 
-			compatible := CompatibleObservations(terms.Observation(), item.value)
+			compatible := calculation.CompatibleObservations(terms.Observation(), item.value)
 			for _, claim := range claims {
-				compatible = compatible && CompatibleObservations(claim.Value, item.value)
+				compatible = compatible && calculation.CompatibleObservations(claim.Value, item.value)
 			}
 
 			if !compatible {
@@ -269,7 +277,7 @@ func LinkActivityObservations(
 			}
 
 			if compatible {
-				for _, ref := range activityReferences(item.value) {
+				for _, ref := range calculation.ActivityReferences(item.value) {
 					if e = links.SaveEventLink(
 						ctx,
 						accountID,

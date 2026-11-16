@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -64,7 +65,7 @@ func calculatePositions(
 		key := positionInstrumentIdentity(d.Instrument)
 		id := b.InstrumentID
 		if b.ReferenceStatus == "conflict" ||
-			!application.CompatibleInstrumentKind(
+			!calculation.CompatibleInstrumentKind(
 				d.Instrument.Kind,
 				source.InstrumentKind(b.Kind),
 			) {
@@ -84,7 +85,7 @@ func calculatePositions(
 	}
 	defer func() { _ = rows.Close() }()
 
-	candidates := []application.PositionCandidate{}
+	candidates := []calculation.PositionCandidate{}
 	for rows.Next() {
 		var (
 			raw      []byte
@@ -105,7 +106,7 @@ func calculatePositions(
 			return out, ErrCorrupt
 		}
 
-		c := application.PositionCandidate{Observation: o}
+		c := calculation.PositionCandidate{Observation: o}
 		for _, p := range o.Fields().Positions {
 			c.InstrumentIDs = append(
 				c.InstrumentIDs,
@@ -123,7 +124,7 @@ func calculatePositions(
 		return out, err
 	}
 
-	selection, err := application.SelectPositions(ctx, candidates)
+	selection, err := calculation.SelectPositions(ctx, candidates)
 	if err != nil {
 		return out, err
 	}

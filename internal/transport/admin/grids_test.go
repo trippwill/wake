@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 type gridReadStore struct {
@@ -49,7 +50,7 @@ func (s gridReadStore) ObservationList(
 				Location:   location,
 				Rule:       "synthetic-rule",
 				Retrieved:  "2026-10-31T10:00:00.120Z",
-				Outcome:    application.ObservationAccepted,
+				Outcome:    calculation.ObservationAccepted,
 			},
 			{
 				Artifact:  "synthetic-report",
@@ -57,7 +58,7 @@ func (s gridReadStore) ObservationList(
 				Location:  "row[3]",
 				Rule:      "synthetic-rule",
 				Retrieved: "2026-10-31T10:00:00.120Z",
-				Outcome:   application.ObservationEnriched,
+				Outcome:   calculation.ObservationEnriched,
 			},
 		},
 	}, s.failure

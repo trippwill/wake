@@ -30,6 +30,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/provider"
@@ -225,9 +226,9 @@ func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bo
 	}
 
 	for i := range count {
-		outcome := application.ObservationAccepted
+		outcome := calculation.ObservationAccepted
 		if i == 1 && changed {
-			outcome = application.ObservationTermsConflict
+			outcome = calculation.ObservationTermsConflict
 		}
 
 		rows = append(
@@ -254,7 +255,7 @@ func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bo
 			rows[i].Artifact = "synthetic-report"
 			if i%3 != 0 {
 				rows[i].ActivityID = "synthetic-activity"
-				rows[i].Outcome = application.ObservationNoContribution
+				rows[i].Outcome = calculation.ObservationNoContribution
 			}
 		}
 

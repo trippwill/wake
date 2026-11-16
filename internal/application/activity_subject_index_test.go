@@ -43,10 +43,10 @@ func TestPendingSubjectMatchingSkipsUnrelatedExecutions(t *testing.T) {
 				pending[i].value = observation
 			}
 
-			index := newActivitySubjectIndex(pending)
+			index := indexPendingSubjects(pending)
 			comparisons := 0
 			for i, item := range pending {
-				candidates := index.candidates(item.value)
+				candidates := index.Candidates(item.value)
 				comparisons += len(candidates)
 				if len(candidates) != 1 || candidates[0] != i {
 					t.Fatalf(
@@ -113,7 +113,7 @@ func TestPendingSubjectIndexPreservesQualifiedIdentityRules(t *testing.T) {
 		t.Fatal("broad alias must remain ambiguous")
 	}
 
-	index := newActivitySubjectIndex(pending)
+	index := indexPendingSubjects(pending)
 	for i, item := range pending {
 		want := []int{}
 		for j, candidate := range pending {
@@ -122,7 +122,7 @@ func TestPendingSubjectIndexPreservesQualifiedIdentityRules(t *testing.T) {
 			}
 		}
 
-		got := index.candidates(item.value)
+		got := index.Candidates(item.value)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("subject %d: indexed candidates %v differ from qualified identity matches %v", i, got, want)
 		}

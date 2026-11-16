@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
 func (s reads) SubscribePublications() (<-chan struct{}, func()) {
@@ -129,7 +130,7 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		code   ErrorCode
 		status int
 	}{
-		{application.ErrStale, StaleRevision, 409}, {application.ErrNotFound, NotFound, 404}, {application.ErrInvalid, InvalidRequest, 400},
+		{application.ErrStale, StaleRevision, 409}, {application.ErrNotFound, NotFound, 404}, {calculation.ErrInvalid, InvalidRequest, 400},
 	} {
 		w := httptest.NewRecorder()
 		NewHandler(

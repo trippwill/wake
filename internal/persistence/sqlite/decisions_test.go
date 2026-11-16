@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
 )
 
@@ -19,7 +20,7 @@ func retainDecision(
 	t *testing.T,
 	s *Store,
 	kind, id, scope, text, currency, action string,
-) application.Decision {
+) calculation.Decision {
 	t.Helper()
 
 	form, err := s.CorrectionForm(context.Background(), kind, id)
@@ -27,8 +28,8 @@ func retainDecision(
 		t.Fatal(err)
 	}
 
-	d, err := application.NewDecision(
-		application.DecisionInput{
+	d, err := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       kind,
 			TargetID:         id,
 			Scope:            scope,
@@ -83,7 +84,7 @@ func TestRetainedTypedDecisionReplayStalenessSupersessionAndRelease(t *testing.T
 	stale.Submission = rand.Text()
 	stale.Text = "3"
 
-	command, err := application.NewDecision(stale)
+	command, err := calculation.NewDecision(stale)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,8 +226,8 @@ func TestLinkDecisionPreservesIdentitiesAndRejectsWrongListing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	invalid, _ := application.NewDecision(
-		application.DecisionInput{
+	invalid, _ := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         original.ID(),
 			Scope:            "listing",
@@ -313,8 +314,8 @@ func TestReferenceCandidateSelectionStaysWithinItsMappingJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bad, _ := application.NewDecision(
-		application.DecisionInput{
+	bad, _ := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "instrument",
 			TargetID:         id,
 			Scope:            "reference",
@@ -384,8 +385,8 @@ func TestUnderlierDecisionAndDecisionRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	command, _ := application.NewDecision(
-		application.DecisionInput{
+	command, _ := calculation.NewDecision(
+		calculation.DecisionInput{
 			TargetKind:       "activity",
 			TargetID:         activity,
 			Scope:            "quantity",

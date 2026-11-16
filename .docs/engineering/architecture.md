@@ -78,8 +78,9 @@ financial file and local authority. Source commands that require those services
 report upstream unavailability.
 
 Activity and instrument correction policy and orchestration belong to the financial application.
-Financial calculations take prepared inputs. The surrounding orchestration owns
-storage access, clocks, credentials and calls to provider or reference services.
+Financial calculations live in a separate package and take prepared inputs.
+The surrounding orchestration owns storage access, clocks, credentials and calls
+to provider or reference services.
 A consistent read callback prepares previews without writes; a write callback
 checks submission idempotency before revalidating the revision, expands prospective
 decisions, and calculates their result. SQLite supplies typed transaction-bound
