@@ -672,8 +672,13 @@ func assertBackupPair(t *testing.T, path string, expected [storeCount][]byte) {
 		t.Fatal("missing backup checksums", err)
 	}
 
-	if err := verifyRecoveryDigest(archive, digest(expected[0])+digest(expected[1])+digest(expected[2])); err != nil {
-		t.Fatal(err)
+	checksums, err := io.ReadAll(archive)
+	if err != nil || string(checksums) != digest(expected[0])+digest(expected[1])+digest(expected[2]) {
+		t.Fatal("backup checksums differ from original", err)
+	}
+
+	if entry, err := archive.Next(); err != io.EOF {
+		t.Fatal("unexpected trailing backup member", entry, err)
 	}
 }
 

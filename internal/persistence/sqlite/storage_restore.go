@@ -4,7 +4,6 @@
 package persistence
 
 import (
-	"archive/tar"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
 )
 
 const (
@@ -275,11 +275,11 @@ func prepareRestore(
 func copyRestoreArchive(
 	ctx context.Context, archive *os.File, destinations [storeCount]string,
 	staged *[storeCount]string, owners *[storeCount]*os.File,
-) (*installationManifest, string, error) {
+) (*recoveryarchive.Manifest, string, error) {
 	hash := sha256.New()
 	reader := io.TeeReader(backupReader{ctx, archive}, hash)
 
-	manifest, err := consumeRestoreArchive(tar.NewReader(reader), func(i int, member io.Reader) error {
+	manifest, err := consumeRestoreArchive(reader, func(i int, member io.Reader) error {
 		file, err := os.CreateTemp(filepath.Dir(destinations[i]), ".wake-restore-")
 		if err != nil {
 			return err

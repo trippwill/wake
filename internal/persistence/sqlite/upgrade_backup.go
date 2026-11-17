@@ -4,7 +4,6 @@
 package persistence
 
 import (
-	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -14,26 +13,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
 )
 
 const (
 	upgradeBackupSuffix       = ".upgrade-backup.tar"
-	backupDigestEntry         = "wake-backup/v1/sha256"
 	ErrUpgradeBackup    Error = "pre-upgrade backup unavailable; check the backup path and free space or restore a verified pair"
-)
-
-var (
-	backupEntries = [storeCount]string{
-		"wake-backup/v2/warehouse.db",
-		"wake-backup/v2/access.db",
-		"wake-backup/v2/sync.db",
-	}
-	legacyBackupEntries = [storeCount]string{
-		"wake-upgrade/warehouse.db",
-		"wake-upgrade/access.db",
-		"wake-upgrade/sync.db",
-	}
 )
 
 type backupReader struct {
@@ -93,53 +79,51 @@ func writeBackupPair(
 	owners [storeCount]*os.File,
 	replace bool,
 ) (string, error) {
-	return writeRecoveryArchive(ctx, path, replace, func(archive *tar.Writer) error {
-		var digests strings.Builder
-		for i, owner := range owners {
-			info, err := owner.Stat()
-			if err != nil {
-				return err
-			}
+	inputs, err := backupInputs(ctx, owners)
+	if err != nil {
+		return "", err
+	}
 
-			hash := sha256.New()
-			reader := backupReader{ctx, io.NewSectionReader(owner, 0, info.Size())}
-			if err := writeRecoveryEntry(
-				archive,
-				backupEntries[i],
-				info.Size(),
-				io.TeeReader(reader, hash),
-			); err != nil {
-				return err
-			}
-
-			digests.WriteString(hex.EncodeToString(hash.Sum(nil)))
-		}
-
-		return writeRecoveryEntry(
-			archive,
-			backupDigestEntry,
-			int64(digests.Len()),
-			strings.NewReader(digests.String()),
-		)
+	return writeRecoveryArchive(ctx, path, replace, func(output io.Writer) error {
+		return recoveryarchive.WriteUpgrade(output, inputs)
 	}, readBackupPair)
 }
 
-func writeRecoveryEntry(archive *tar.Writer, name string, size int64, reader io.Reader) error {
-	if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: size}); err != nil {
-		return err
+func backupInputs(
+	ctx context.Context,
+	owners [storeCount]*os.File,
+) ([storeCount]recoveryarchive.SizedReader, error) {
+	var inputs [storeCount]recoveryarchive.SizedReader
+	for i, owner := range owners {
+		input, err := backupInput(ctx, owner)
+		if err != nil {
+			return inputs, err
+		}
+
+		inputs[i] = input
 	}
 
-	_, err := io.Copy(archive, reader)
+	return inputs, nil
+}
 
-	return err
+func backupInput(ctx context.Context, owner *os.File) (recoveryarchive.SizedReader, error) {
+	info, err := owner.Stat()
+	if err != nil {
+		return recoveryarchive.SizedReader{}, err
+	}
+
+	return recoveryarchive.SizedReader{
+		Reader: backupReader{ctx, io.NewSectionReader(owner, 0, info.Size())},
+		Size:   info.Size(),
+	}, nil
 }
 
 func writeRecoveryArchive(
 	ctx context.Context,
 	path string,
 	replace bool,
-	write func(*tar.Writer) error,
-	check func(*tar.Reader) error,
+	write func(io.Writer) error,
+	check func(io.Reader) error,
 ) (string, error) {
 	temp, err := os.CreateTemp(filepath.Dir(path), ".wake-backup-")
 	if err != nil {
@@ -151,12 +135,7 @@ func writeRecoveryArchive(
 
 	hash := sha256.New()
 
-	archive := tar.NewWriter(io.MultiWriter(temp, hash))
-	if err := write(archive); err != nil {
-		return "", err
-	}
-
-	if err = archive.Close(); err != nil {
+	if err := write(io.MultiWriter(temp, hash)); err != nil {
 		return "", err
 	}
 
@@ -202,7 +181,7 @@ func checkBackupDestination(path string) error {
 
 	defer func() { _ = file.Close() }()
 
-	return readBackupPair(tar.NewReader(file))
+	return readBackupPair(file)
 }
 
 func openBackup(path string) (*os.File, error) {
@@ -218,111 +197,37 @@ func openBackup(path string) (*os.File, error) {
 	return openUpgradeIntent(path, info)
 }
 
-func isRegularRecoveryEntry(entry *tar.Header, name string) bool {
-	return entry.Size > 0 && isRecoveryEntry(entry, name)
-}
-
-func isRecoveryEntry(entry *tar.Header, name string) bool {
-	if entry.Name != name || entry.Typeflag != tar.TypeReg || entry.Size < 0 {
-		return false
-	}
-
-	// Go's tar reader can expand GNU sparse PAX members with type TypeReg.
-	for key := range entry.PAXRecords {
-		if strings.HasPrefix(key, "GNU.sparse.") {
-			return false
-		}
-	}
-
-	return true
-}
-
-func readBackupPair(archive *tar.Reader) error {
-	err := consumeBackupPair(archive, func(_ int, member io.Reader) error {
-		_, err := io.Copy(io.Discard, member)
-
-		return err
-	})
-	if errors.Is(err, ErrBackupScope) {
+func readBackupPair(archive io.Reader) error {
+	err := recoveryarchive.VerifyUpgrade(archive)
+	if errors.Is(err, recoveryarchive.ErrScope) {
 		return ErrCorrupt
+	}
+
+	return archiveReadError(err)
+}
+
+func archiveReadError(err error) error {
+	switch {
+	case errors.Is(err, recoveryarchive.ErrScope):
+		return ErrBackupScope
+	case errors.Is(err, recoveryarchive.ErrPairedBackup):
+		return fmt.Errorf("%w; use wake storage restore installation to restore the backup", ErrBackupScope)
+	case errors.Is(err, recoveryarchive.ErrCorrupt):
+		return ErrCorrupt
+	}
+
+	if checksum, ok := errors.AsType[recoveryarchive.ChecksumError](err); ok {
+		return fmt.Errorf("%w: %s", ErrCorrupt, checksum.Error())
 	}
 
 	return err
-}
-
-// Versioned member names require a digest record. Only the original member
-// names can use the legacy format, which has no embedded checksums.
-func consumeBackupPair(archive *tar.Reader, consume func(int, io.Reader) error) error {
-	entry, err := archive.Next()
-	if err != nil {
-		return ErrBackupScope
-	}
-
-	return consumeBackupStores(archive, entry, consume)
-}
-
-func consumeBackupStores(archive *tar.Reader, entry *tar.Header, consume func(int, io.Reader) error) error {
-	var err error
-
-	legacy := entry.Name == legacyBackupEntries[0]
-	names := backupEntries
-	if legacy {
-		names = legacyBackupEntries
-	}
-
-	var digests strings.Builder
-	for i, name := range names {
-		if err != nil || !isRegularRecoveryEntry(entry, name) {
-			return ErrBackupScope
-		}
-
-		hash := sha256.New()
-		if err := consume(i, io.TeeReader(archive, hash)); err != nil {
-			return err
-		}
-
-		digests.WriteString(hex.EncodeToString(hash.Sum(nil)))
-
-		entry, err = archive.Next()
-	}
-
-	if legacy {
-		if err != io.EOF {
-			return ErrBackupScope
-		}
-
-		return nil
-	}
-
-	if err != nil || !isRegularRecoveryEntry(entry, backupDigestEntry) || entry.Size != int64(digests.Len()) {
-		return ErrCorrupt
-	}
-
-	return verifyRecoveryDigest(archive, digests.String())
-}
-
-func verifyRecoveryDigest(archive *tar.Reader, expected string) error {
-	actual := make([]byte, len(expected))
-	if _, err := io.ReadFull(archive, actual); err != nil {
-		return err
-	}
-
-	if string(actual) != expected {
-		return fmt.Errorf("%w: archive checksum mismatch", ErrCorrupt)
-	}
-
-	if _, err := archive.Next(); err != io.EOF {
-		return ErrCorrupt
-	}
-
-	return nil
 }
 
 func verifyUpgradeBackup(ctx context.Context, path, expected string) error {
 	return verifyRecoveryArchive(ctx, path, expected, readBackupPair)
 }
 
-func verifyRecoveryArchive(ctx context.Context, path, expected string, check func(*tar.Reader) error) error {
+func verifyRecoveryArchive(ctx context.Context, path, expected string, check func(io.Reader) error) error {
 	file, err := openBackup(path)
 	if err != nil {
 		return err
@@ -332,7 +237,7 @@ func verifyRecoveryArchive(ctx context.Context, path, expected string, check fun
 	hash := sha256.New()
 
 	reader := io.TeeReader(backupReader{ctx, file}, hash)
-	if err = check(tar.NewReader(reader)); err != nil {
+	if err = check(reader); err != nil {
 		return err
 	}
 

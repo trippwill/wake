@@ -131,6 +131,22 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					}
 				}
 
+				if strings.HasPrefix(rel, "internal/persistence/sqlite/recoveryarchive/") {
+					switch value {
+					case "archive/tar",
+						"bytes",
+						"crypto/sha256",
+						"encoding/hex",
+						"encoding/json",
+						"fmt",
+						"io",
+						"strings",
+						"time":
+					default:
+						t.Errorf("%s imports %s; recovery archives only frame and verify prepared streams", rel, value)
+					}
+				}
+
 				if strings.HasPrefix(rel, "internal/transport/") &&
 					(value == "database/sql" || strings.Contains(value, "/internal/persistence/")) {
 					t.Errorf("presentation bypasses application boundary: %s", rel)

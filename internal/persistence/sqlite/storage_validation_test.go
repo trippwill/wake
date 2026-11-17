@@ -16,6 +16,43 @@ import (
 	"testing"
 )
 
+const (
+	snapshotWarehouseEntry    = "wake-snapshot/v1/warehouse.db"
+	snapshotDigestEntry       = "wake-snapshot/v1/warehouse.sha256"
+	backupDigestEntry         = "wake-backup/v1/sha256"
+	installationManifestEntry = "wake-installation/v1/manifest.json"
+)
+
+var (
+	backupEntries = [...]string{
+		"wake-backup/v2/warehouse.db",
+		"wake-backup/v2/access.db",
+		"wake-backup/v2/sync.db",
+	}
+	legacyBackupEntries = [...]string{
+		"wake-upgrade/warehouse.db",
+		"wake-upgrade/access.db",
+		"wake-upgrade/sync.db",
+	}
+	installationEntries = [...]string{
+		"wake-installation/v1/warehouse.db",
+		"wake-installation/v1/access.db",
+		"wake-installation/v1/sync.db",
+		"wake-installation/v1/config.toml",
+		"wake-installation/v1/auth.json",
+	}
+)
+
+func writeRecoveryEntry(archive *tar.Writer, name string, size int64, reader io.Reader) error {
+	if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: size}); err != nil {
+		return err
+	}
+
+	_, err := io.Copy(archive, reader)
+
+	return err
+}
+
 func TestStorageBackupRejectsInvalidSourceState(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -173,7 +210,7 @@ func TestStorageSnapshotRejectsIncompleteAndUnexpectedRecords(t *testing.T) {
 				data.Truncate(test.cut)
 			}
 
-			if err := readWarehouseSnapshot(tar.NewReader(&data), io.Discard); !errors.Is(err, test.want) {
+			if err := readWarehouseSnapshot(&data, io.Discard); !errors.Is(err, test.want) {
 				t.Fatalf("snapshot error = %v, want %v", err, test.want)
 			}
 		})
@@ -338,7 +375,7 @@ func TestStorageSnapshotRejectsSparseMemberBeforeCopying(t *testing.T) {
 
 	var output bytes.Buffer
 
-	err := readWarehouseSnapshot(tar.NewReader(bytes.NewReader(archive)), &output)
+	err := readWarehouseSnapshot(bytes.NewReader(archive), &output)
 	if !errors.Is(err, ErrBackupScope) || output.Len() != 0 {
 		t.Fatalf("sparse snapshot: got error %v after writing %d bytes", err, output.Len())
 	}
@@ -348,16 +385,16 @@ func TestRestoreRejectsNonregularArchiveMembers(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		member string
-		read   func(*testing.T, *tar.Reader) error
+		read   func(*testing.T, io.Reader) error
 		want   error
 	}{
-		{"snapshot", snapshotWarehouseEntry, func(_ *testing.T, archive *tar.Reader) error {
+		{"snapshot", snapshotWarehouseEntry, func(_ *testing.T, archive io.Reader) error {
 			return readWarehouseSnapshot(archive, io.Discard)
 		}, ErrBackupScope},
-		{"upgrade", backupEntries[0], func(_ *testing.T, archive *tar.Reader) error {
+		{"upgrade", backupEntries[0], func(_ *testing.T, archive io.Reader) error {
 			return readBackupPair(archive)
 		}, ErrCorrupt},
-		{"installation", installationEntries[0], func(t *testing.T, archive *tar.Reader) error {
+		{"installation", installationEntries[0], func(t *testing.T, archive io.Reader) error {
 			_, err := consumeRestoreArchive(archive, func(int, io.Reader) error {
 				t.Fatal("nonregular member was supplied to staging")
 
@@ -371,7 +408,9 @@ func TestRestoreRejectsNonregularArchiveMembers(t *testing.T) {
 			var data bytes.Buffer
 
 			writer := tar.NewWriter(&data)
-			if err := writer.WriteHeader(&tar.Header{Name: tc.member, Typeflag: tar.TypeSymlink, Linkname: "other"}); err != nil {
+			if err := writer.WriteHeader(
+				&tar.Header{Name: tc.member, Typeflag: tar.TypeSymlink, Linkname: "other"},
+			); err != nil {
 				t.Fatal(err)
 			}
 
@@ -379,7 +418,7 @@ func TestRestoreRejectsNonregularArchiveMembers(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := tc.read(t, tar.NewReader(&data)); !errors.Is(err, tc.want) {
+			if err := tc.read(t, &data); !errors.Is(err, tc.want) {
 				t.Fatalf("nonregular member error = %v, want %v", err, tc.want)
 			}
 		})
@@ -400,7 +439,7 @@ func TestStoragePairedRestoreRejectsSparseMembers(t *testing.T) {
 				t.Fatalf("sparse paired restore: %v", err)
 			}
 
-			if err := readBackupPair(tar.NewReader(bytes.NewReader(archive))); !errors.Is(err, ErrCorrupt) {
+			if err := readBackupPair(bytes.NewReader(archive)); !errors.Is(err, ErrCorrupt) {
 				t.Fatalf("sparse upgrade archive: %v", err)
 			}
 
@@ -515,7 +554,7 @@ func TestInstallationManifestBindsDatabaseMetadata(t *testing.T) {
 	data := readRestoreFixture(t, archive)
 	copied := 0
 	manifest, err := consumeRestoreArchive(
-		tar.NewReader(bytes.NewReader(data)),
+		bytes.NewReader(data),
 		func(_ int, member io.Reader) error {
 			copied++
 			_, err := io.Copy(io.Discard, member)
@@ -585,7 +624,7 @@ func TestInstallationArchiveRejectsInvalidMembers(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err := consumeRestoreArchive(tar.NewReader(&data), func(_ int, member io.Reader) error {
+			_, err := consumeRestoreArchive(&data, func(_ int, member io.Reader) error {
 				_, err := io.Copy(io.Discard, member)
 				return err
 			})
@@ -613,7 +652,7 @@ func TestInstallationArchiveRejectsOversizedManifest(t *testing.T) {
 
 	var staged int
 
-	manifest, err := consumeRestoreArchive(tar.NewReader(&data), func(_ int, member io.Reader) error {
+	manifest, err := consumeRestoreArchive(&data, func(_ int, member io.Reader) error {
 		staged++
 		_, err := io.Copy(io.Discard, member)
 
@@ -624,31 +663,44 @@ func TestInstallationArchiveRejectsOversizedManifest(t *testing.T) {
 	}
 }
 
-func TestInstallationBackupKeepsEmptyConfiguration(t *testing.T) {
+func TestInstallationBackupVerifiesEvidenceWithoutStagingIt(t *testing.T) {
 	ctx := t.Context()
 	profile := seedUpgradeStores(t)
-	path := filepath.Join(filepath.Dir(profile.WarehousePath), "empty-config.tar")
+	path := filepath.Join(filepath.Dir(profile.WarehousePath), "installation-evidence.tar")
+	auth := []byte(`{"fixture":true}`)
+
 	if err := BackupInstallation(
 		ctx,
 		profile,
 		path,
-		InstallationEvidence{Configuration: []byte{}},
+		InstallationEvidence{Configuration: []byte{}, LocalAuth: auth},
 	); err != nil {
 		t.Fatal(err)
 	}
 
 	data := readRestoreFixture(t, path)
+
+	var staged int
+
 	manifest, err := consumeRestoreArchive(
-		tar.NewReader(bytes.NewReader(data)),
-		func(_ int, member io.Reader) error {
+		bytes.NewReader(data),
+		func(index int, member io.Reader) error {
+			if index != staged || index >= storeCount {
+				t.Fatalf("unexpected staging callback for member %d after %d stores", index, staged)
+			}
+
+			staged++
 			_, err := io.Copy(io.Discard, member)
+
 			return err
 		},
 	)
-	if err != nil || len(manifest.Members) != storeCount+1 ||
+	if err != nil || staged != storeCount || manifest == nil || len(manifest.Members) != storeCount+2 ||
 		manifest.Members[storeCount].Name != installationEntries[storeCount] ||
-		manifest.Members[storeCount].Size != 0 {
-		t.Fatal("empty configuration was not captured", manifest, err)
+		manifest.Members[storeCount].Size != 0 ||
+		manifest.Members[storeCount+1].Name != installationEntries[storeCount+1] ||
+		manifest.Members[storeCount+1].Size != int64(len(auth)) {
+		t.Fatalf("manifest = %v, staged %d stores, error = %v", manifest, staged, err)
 	}
 }
 

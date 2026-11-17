@@ -480,6 +480,10 @@ use SQLite foreign keys and uses DELETE rollback journals and EXTRA synchronizat
 for its attached transactions. An unresolved journal can require the original
 participants. Local startup refuses the journal and preserves the files.
 
+Recovery archive codecs verify archive structure and member integrity on streams.
+The storage layer owns file access, SQLite validation, and activation of staged
+databases after verification.
+
 A routine warehouse snapshot uses a read-only SQLite backup connection and verifies
 the self-contained committed copy before publishing the archive. Restore validates
 the archive and stages its warehouse beside the vacant destination. Activation

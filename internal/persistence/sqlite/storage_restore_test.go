@@ -128,6 +128,7 @@ func TestStorageRestoreRefusesBothOccupiedDestinations(t *testing.T) {
 
 func TestStorageReplacementCleansUpAfterStagingFailure(t *testing.T) {
 	ctx := t.Context()
+
 	source := seedUpgradeStores(t)
 	target := seedUpgradeStores(t)
 	archive := filepath.Join(filepath.Dir(source.WarehousePath), "replacement.tar")
@@ -143,7 +144,8 @@ func TestStorageReplacementCleansUpAfterStagingFailure(t *testing.T) {
 	}
 
 	check := func(path string) error {
-		if path == paths[1] || !bytes.Equal(readRestoreFixture(t, path), readRestoreFixture(t, source.paths()[1])) {
+		if path == paths[1] ||
+			!bytes.Equal(readRestoreFixture(t, path), readRestoreFixture(t, source.paths()[1])) {
 			t.Fatal("access check did not receive the staged backup")
 		}
 

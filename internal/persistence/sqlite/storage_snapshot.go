@@ -4,27 +4,19 @@
 package persistence
 
 import (
-	"archive/tar"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
-)
-
-const (
-	snapshotWarehouseEntry = "wake-snapshot/v1/warehouse.db"
-	snapshotDigestEntry    = "wake-snapshot/v1/warehouse.sha256"
 )
 
 // SnapshotWarehouse copies committed pages through SQLite's online backup API.
@@ -64,29 +56,15 @@ func SnapshotWarehouse(ctx context.Context, profile Profile, output string) erro
 		return err
 	}
 
-	info, err := staged.Stat()
+	input, err := backupInput(ctx, staged)
 	if err != nil {
 		return err
 	}
 
-	_, err = writeRecoveryArchive(ctx, output, false, func(archive *tar.Writer) error {
-		hash := sha256.New()
-		reader := backupReader{ctx, io.NewSectionReader(staged, 0, info.Size())}
-
-		if err := writeRecoveryEntry(
-			archive,
-			snapshotWarehouseEntry,
-			info.Size(),
-			io.TeeReader(reader, hash),
-		); err != nil {
-			return err
-		}
-
-		digest := hex.EncodeToString(hash.Sum(nil))
-
-		return writeRecoveryEntry(archive, snapshotDigestEntry, int64(len(digest)), strings.NewReader(digest))
-	}, func(archive *tar.Reader) error {
-		return readWarehouseSnapshot(archive, io.Discard)
+	_, err = writeRecoveryArchive(ctx, output, false, func(output io.Writer) error {
+		return recoveryarchive.WriteSnapshot(output, input)
+	}, func(input io.Reader) error {
+		return readWarehouseSnapshot(input, io.Discard)
 	})
 
 	return err
@@ -166,29 +144,8 @@ func stepWarehouseBackup(ctx context.Context, backup *sqlite.Backup) error {
 	}
 }
 
-func readWarehouseSnapshot(archive *tar.Reader, destination io.Writer) error {
-	entry, err := archive.Next()
-	if err == nil && (entry.Name == backupEntries[0] || entry.Name == legacyBackupEntries[0] ||
-		entry.Name == installationEntries[0]) {
-		return fmt.Errorf("%w; use wake storage restore installation to restore the backup", ErrBackupScope)
-	}
-
-	if err != nil || !isRegularRecoveryEntry(entry, snapshotWarehouseEntry) {
-		return ErrBackupScope
-	}
-
-	hash := sha256.New()
-	//nolint:gosec // The checked member is non-sparse and cannot expand beyond its archive bytes.
-	if _, err := io.Copy(io.MultiWriter(destination, hash), archive); err != nil {
-		return err
-	}
-
-	entry, err = archive.Next()
-	if err != nil || !isRegularRecoveryEntry(entry, snapshotDigestEntry) || entry.Size != sha256.Size*2 {
-		return ErrCorrupt
-	}
-
-	return verifyRecoveryDigest(archive, hex.EncodeToString(hash.Sum(nil)))
+func readWarehouseSnapshot(input io.Reader, destination io.Writer) error {
+	return archiveReadError(recoveryarchive.ReadSnapshot(input, destination))
 }
 
 func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string) error {
@@ -208,7 +165,7 @@ func restoreWarehouseSnapshot(ctx context.Context, warehouse, archivePath string
 	}
 	defer func() { _ = os.Remove(file.Name()) }()
 
-	err = readWarehouseSnapshot(tar.NewReader(backupReader{ctx, archive}), file)
+	err = readWarehouseSnapshot(backupReader{ctx, archive}, file)
 
 	if err = errors.Join(err, file.Sync(), file.Close()); err != nil {
 		return err
