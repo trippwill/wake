@@ -5,8 +5,6 @@ package persistence
 
 import (
 	"bytes"
-	"encoding/json"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -291,92 +289,6 @@ func TestDiscoveryBodyCanLaterBeAcquiredAndAcknowledgementIsAtomic(t *testing.T)
 
 	if tableCount(t, s, "acquisition_receipts") != 2 {
 		t.Fatal("stale acknowledgement leaked receipt")
-	}
-}
-
-func TestSourceClaimKeysPreservePrecisionUnknownsAndQualifiedIdentity(t *testing.T) {
-	s := newStoreWithSyntheticAccount(t)
-	processConfirmationReport(t, s, "meaning", equityRow("U1", "fill", "100"))
-
-	raw, err := s.queries.Records(
-		t.Context(),
-		sqlc.RecordsParams{ArtifactID: "meaning", Version: ibkrflex.Version},
-	)
-	if err != nil || len(raw) == 0 {
-		t.Fatal(err)
-	}
-
-	var original observationData
-	if err = json.Unmarshal(raw[0].Data, &original); err != nil {
-		t.Fatal(err)
-	}
-
-	original.EventAliases = []refData{{"source", "event", "scope", "one"}, {"source", "event", "scope", "two"}}
-	original.Fields = append(
-		original.Fields,
-		activityFieldData{
-			Name: source.FieldCharge,
-			Charge: &chargeData{
-				Field:    "b",
-				Category: source.Fee,
-				Total:    moneyData{Amount: "1.00", Currency: "USD"},
-			},
-		},
-		activityFieldData{
-			Name:   source.FieldCharge,
-			Charge: &chargeData{Field: "a", Category: source.Fee, Total: moneyData{Amount: "2", Currency: "USD"}},
-		},
-	)
-	baseline, _ := json.Marshal(original)
-
-	canonical, err := claimKeyData("activity", baseline)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	reordered := original
-	reordered.EventAliases = slices.Clone(original.EventAliases)
-	slices.Reverse(reordered.EventAliases)
-	reordered.Fields = slices.Clone(original.Fields)
-	slices.Reverse(reordered.Fields)
-	reordered.Location = "different/path"
-	encoded, _ := json.Marshal(reordered)
-
-	same, err := claimKeyData("activity", encoded)
-	if err != nil || !bytes.Equal(same, canonical) {
-		t.Fatal("structural order or locator changed source meaning", err)
-	}
-
-	for _, mutate := range []func(*observationData){
-		func(d *observationData) {
-			for i := range d.Fields {
-				if d.Fields[i].Name == source.FieldPrice {
-					d.Fields[i].Price.Amount = "100.0"
-				}
-			}
-		},
-		func(d *observationData) {
-			for i := range d.Fields {
-				if d.Fields[i].Name == source.FieldAt {
-					d.Fields[i].Timestamp = strings.Replace(d.Fields[i].Timestamp, ".120", ".12", 1)
-				}
-			}
-		},
-		func(d *observationData) { d.Event[2] = "other-scope" },
-		func(d *observationData) {
-			d.Fields = slices.DeleteFunc(d.Fields, func(f activityFieldData) bool { return f.Name == source.FieldNetCash })
-		},
-		func(d *observationData) { d.Fields = append(d.Fields, d.Fields[len(d.Fields)-1]) },
-	} {
-		changed := original
-		changed.Fields = slices.Clone(original.Fields)
-		mutate(&changed)
-
-		encoded, _ = json.Marshal(changed)
-		next, e := claimKeyData("activity", encoded)
-		if e != nil || bytes.Equal(next, canonical) {
-			t.Fatal("meaning or multiplicity lost", changed, e)
-		}
 	}
 }
 

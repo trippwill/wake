@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -53,7 +54,7 @@ func (p *rootPhase) positionUnderlierClaims(ctx context.Context, id string) ([]c
 
 				ref := value.Option().Fields().Underlier.Reference()
 				if !ref.IsZero() {
-					refs[referenceKey(ref)] = ref
+					refs[recordcodec.ReferenceKey(ref)] = ref
 				}
 			}
 
@@ -71,7 +72,7 @@ func (p *rootPhase) positionUnderlierClaims(ctx context.Context, id string) ([]c
 		matches := false
 		ref := reported.Reference()
 		if !ref.IsZero() {
-			child, e := p.q.InstrumentBySource(ctx, referenceKey(ref))
+			child, e := p.q.InstrumentBySource(ctx, recordcodec.ReferenceKey(ref))
 			if e != nil && !errors.Is(e, sql.ErrNoRows) {
 				return nil, e
 			}

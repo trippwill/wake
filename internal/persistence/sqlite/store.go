@@ -24,6 +24,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/logging"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 )
@@ -37,7 +38,7 @@ const storeCount = 3
 const (
 	ErrUnsupportedSchema Error = "unsupported store format; use a compatible Wake build or restore a matching backup; for an unsupported development store, stop Wake and preview wake storage reset financial or wake storage reset credentials"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
-	ErrCorrupt           Error = "invalid retained store data"
+	ErrCorrupt                 = recordcodec.ErrCorrupt
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
 	schemaVersion              = "wake-warehouse/3"
 	accessSchemaVersion        = "wake-access/3"

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-package persistence
+package recordcodec
 
 import (
 	"encoding/json"
@@ -214,7 +214,7 @@ func (d activityFieldData) field() (source.ActivityField, error) {
 	return source.NewActivityField(f)
 }
 
-func encodeObservation(o source.ActivityObservation) ([]byte, error) {
+func EncodeObservation(o source.ActivityObservation) ([]byte, error) {
 	f := o.Fields()
 	d := observationData{
 		Location:      f.Location,
@@ -233,7 +233,7 @@ func encodeObservation(o source.ActivityObservation) ([]byte, error) {
 	return json.Marshal(d)
 }
 
-func decodeObservation(data []byte) (source.ActivityObservation, error) {
+func DecodeObservation(data []byte) (source.ActivityObservation, error) {
 	var d observationData
 	if json.Unmarshal(data, &d) != nil {
 		return source.ActivityObservation{}, ErrCorrupt

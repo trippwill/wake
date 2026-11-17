@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -518,7 +519,7 @@ func TestSelfReferentialUnderlierRetainsConflictWithoutBlockingReports(t *testin
 					)
 				}
 
-				root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(child.Reference))
+				root, err := s.queries.InstrumentBySource(t.Context(), recordcodec.ReferenceKey(child.Reference))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -621,7 +622,7 @@ func TestInadmissibleUnderlierFamilyRetainsConflictWithoutBlockingReports(t *tes
 						retainParent()
 					}
 
-					root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(parent.Reference))
+					root, err := s.queries.InstrumentBySource(t.Context(), recordcodec.ReferenceKey(parent.Reference))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -745,7 +746,7 @@ func TestConflictingQualifiedUnderlierKeepsEstablishedLink(t *testing.T) {
 
 			root, err := s.queries.InstrumentBySource(
 				t.Context(),
-				referenceKey(base.Fields().Instrument.Reference()),
+				recordcodec.ReferenceKey(base.Fields().Instrument.Reference()),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -816,7 +817,7 @@ func TestMixedUnderlierBatchEnrichesSelectedQualifiedRoot(t *testing.T) {
 
 			root, err := s.queries.InstrumentBySource(
 				t.Context(),
-				referenceKey(base.Fields().Instrument.Reference()),
+				recordcodec.ReferenceKey(base.Fields().Instrument.Reference()),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -891,7 +892,7 @@ func TestProspectiveUnderlierClaimsAcrossParentsAgreeOnReview(t *testing.T) {
 
 				p, err := s.queries.InstrumentBySource(
 					t.Context(),
-					referenceKey(base.Fields().Instrument.Reference()),
+					recordcodec.ReferenceKey(base.Fields().Instrument.Reference()),
 				)
 				if err != nil {
 					t.Fatal(err)
@@ -937,7 +938,7 @@ func TestProspectiveUnderlierClaimsAcrossParentsAgreeOnReview(t *testing.T) {
 
 				target, err := s.queries.InstrumentBySource(
 					t.Context(),
-					referenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
+					recordcodec.ReferenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
 				)
 				if err != nil {
 					t.Fatal(err)
@@ -1053,7 +1054,10 @@ func TestAnonymousIdentifierDisputeReachesItsQualifiedGroup(t *testing.T) {
 
 		retainUnderlierTrades(t, s, "anonymous-a", underlierTrade(t, base, "anonymous-a", "US0000000002", false))
 
-		root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
+		root, err := s.queries.InstrumentBySource(
+			t.Context(),
+			recordcodec.ReferenceKey(base.Fields().Instrument.Reference()),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1072,7 +1076,7 @@ func TestAnonymousIdentifierDisputeReachesItsQualifiedGroup(t *testing.T) {
 
 		target, err := s.queries.InstrumentBySource(
 			t.Context(),
-			referenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
+			recordcodec.ReferenceKey(base.Fields().Instrument.Option().Fields().Underlier.Reference()),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -1091,7 +1095,10 @@ func TestLaterUnderlierConflictReprojectsRetainedParents(t *testing.T) {
 	base := underlierTemplate(t)
 	retainUnderlierTrades(t, s, "parent-p", underlierTrade(t, base, "p-qualified", "US0000000002", true))
 
-	p, err := s.queries.InstrumentBySource(t.Context(), referenceKey(base.Fields().Instrument.Reference()))
+	p, err := s.queries.InstrumentBySource(
+		t.Context(),
+		recordcodec.ReferenceKey(base.Fields().Instrument.Reference()),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
@@ -89,7 +90,7 @@ func TestConvergencePreservesConcreteFamily(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				data, err := json.Marshal(instrumentWire(instrument))
+				data, err := recordcodec.EncodeInstrument(instrument)
 				if err != nil {
 					t.Fatal(err)
 				}

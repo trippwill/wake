@@ -17,6 +17,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -35,13 +36,6 @@ func positionsStatement(name string) string {
 	return statement
 }
 
-func positionInstrumentIdentity(d instrumentData) string {
-	canonicalInstrument(&d)
-	b, _ := json.Marshal(d)
-
-	return string(b)
-}
-
 func calculatePositions(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -57,16 +51,15 @@ func calculatePositions(
 
 	ids := map[string]string{}
 	for _, b := range bindings {
-		var d positionInstrumentData
-		if json.Unmarshal(b.Data, &d) != nil {
+		key, kind, err := recordcodec.PositionBindingKey(b.Data)
+		if err != nil {
 			return out, ErrCorrupt
 		}
 
-		key := positionInstrumentIdentity(d.Instrument)
 		id := b.InstrumentID
 		if b.ReferenceStatus == "conflict" ||
 			!calculation.CompatibleInstrumentKind(
-				d.Instrument.Kind,
+				kind,
 				source.InstrumentKind(b.Kind),
 			) {
 			id = ""
@@ -96,12 +89,12 @@ func calculatePositions(
 			return out, err
 		}
 
-		data, e := claimData("positions", raw, location)
+		data, e := recordcodec.WithLocation("positions", raw, location)
 		if e != nil {
 			return out, e
 		}
 
-		o, e := decodePositionSet(data)
+		o, e := recordcodec.DecodePositionSet(data)
 		if e != nil {
 			return out, ErrCorrupt
 		}
@@ -110,7 +103,7 @@ func calculatePositions(
 		for _, p := range o.Fields().Positions {
 			c.InstrumentIDs = append(
 				c.InstrumentIDs,
-				ids[positionInstrumentIdentity(instrumentWire(p.Instrument()))],
+				ids[recordcodec.PositionInstrumentKey(p.Instrument())],
 			)
 		}
 

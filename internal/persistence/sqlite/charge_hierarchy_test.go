@@ -12,6 +12,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
@@ -232,12 +233,12 @@ func TestChargeHierarchyPublishesWithoutRedundantSupport(t *testing.T) {
 		}
 	}
 
-	encoded, err := encodeTrade(view.Executions[0].Terms())
+	encoded, err := recordcodec.EncodeTrade(view.Executions[0].Terms())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	decoded, err := decodeTrade(encoded)
+	decoded, err := recordcodec.DecodeTrade(encoded)
 	if err != nil || !reflect.DeepEqual(decoded.Fields().Charges, view.Executions[0].Terms().Fields().Charges) {
 		t.Fatal(decoded, err)
 	}

@@ -14,6 +14,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/internal/transport/admin"
@@ -88,7 +89,7 @@ func TestComparisonPreservesQualifiedOrdersForEveryActivityKind(t *testing.T) {
 						t.Fatal(x)
 					}
 
-					data, e = encodeTrade(v)
+					data, e = recordcodec.EncodeTrade(v)
 				case "lifecycle":
 					f := view.Lifecycles[0].Terms().Fields()
 					f.Order = order
@@ -98,7 +99,7 @@ func TestComparisonPreservesQualifiedOrdersForEveryActivityKind(t *testing.T) {
 						t.Fatal(x)
 					}
 
-					data, e = encodeLifecycle(v)
+					data, e = recordcodec.EncodeLifecycle(v)
 				case "conversion":
 					f := view.Conversions[0].Terms().Fields()
 					f.Order = order
@@ -108,7 +109,7 @@ func TestComparisonPreservesQualifiedOrdersForEveryActivityKind(t *testing.T) {
 						t.Fatal(x)
 					}
 
-					data, e = encodeConversion(v)
+					data, e = recordcodec.EncodeConversion(v)
 				}
 
 				if e != nil {
@@ -190,7 +191,7 @@ func TestComparisonPreservesReportedUnderlierIdentity(t *testing.T) {
 							t.Fatal(x)
 						}
 
-						data, e = encodeTrade(v)
+						data, e = recordcodec.EncodeTrade(v)
 					} else {
 						l := view.Lifecycles[0].Terms().Fields()
 						l.Instrument = root
@@ -200,7 +201,7 @@ func TestComparisonPreservesReportedUnderlierIdentity(t *testing.T) {
 							t.Fatal(x)
 						}
 
-						data, e = encodeLifecycle(v)
+						data, e = recordcodec.EncodeLifecycle(v)
 					}
 
 					if e != nil {
@@ -323,7 +324,7 @@ func TestUnknownDebtCurrencyComparisonRendersUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := encodeTrade(trade)
+	data, err := recordcodec.EncodeTrade(trade)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,12 +392,12 @@ func TestTradeIdentityDisagreementAlwaysHasComparisonContext(t *testing.T) {
 				t.Fatal("fixture is not a known financial disagreement")
 			}
 
-			a, e := encodeTrade(base)
+			a, e := recordcodec.EncodeTrade(base)
 			if e != nil {
 				t.Fatal(e)
 			}
 
-			b, e := encodeTrade(changed)
+			b, e := recordcodec.EncodeTrade(changed)
 			if e != nil {
 				t.Fatal(e)
 			}

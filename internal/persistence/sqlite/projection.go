@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
@@ -49,7 +49,7 @@ func persistRootEnrichment(
 	}
 
 	if plan.Reported != nil {
-		data, err := json.Marshal(instrumentWire(*plan.Reported))
+		data, err := recordcodec.EncodeInstrument(*plan.Reported)
 		if err != nil {
 			return err
 		}

@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -167,12 +168,12 @@ func (r correctionReader) ActivityObservation(
 		return source.ActivityObservation{}, calculation.ErrInvalid
 	}
 
-	data, err := claimData(row.Kind, row.Data, row.Location)
+	data, err := recordcodec.WithLocation(row.Kind, row.Data, row.Location)
 	if err != nil {
 		return source.ActivityObservation{}, err
 	}
 
-	return decodeObservation(data)
+	return recordcodec.DecodeObservation(data)
 }
 
 func (r correctionReader) ActivityInputs(

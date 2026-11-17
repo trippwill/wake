@@ -13,6 +13,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/source"
 )
@@ -151,7 +152,7 @@ func TestCandidateComparisonIncludesAncestorChargeCategories(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		data, err := encodeObservation(observation)
+		data, err := recordcodec.EncodeObservation(observation)
 		if err != nil {
 			t.Fatal(err)
 		}

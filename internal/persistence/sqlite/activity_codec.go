@@ -3,12 +3,15 @@
 
 package persistence
 
-import "go.trippwill.dev/wake/internal/application/calculation"
+import (
+	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
+)
 
 func decodeActivityTerms(kind string, data []byte) (calculation.ActivityTerms, error) {
 	switch calculation.ActivityKind(kind) {
 	case calculation.CashActivity:
-		o, err := decodeObservation(data)
+		o, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return calculation.ActivityTerms{}, err
 		}
@@ -20,7 +23,7 @@ func decodeActivityTerms(kind string, data []byte) (calculation.ActivityTerms, e
 
 		return calculation.CashTerms(v)
 	case calculation.SecurityTransferActivity:
-		o, err := decodeObservation(data)
+		o, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return calculation.ActivityTerms{}, err
 		}
@@ -32,21 +35,21 @@ func decodeActivityTerms(kind string, data []byte) (calculation.ActivityTerms, e
 
 		return calculation.SecurityTransferTerms(v)
 	case calculation.TradeActivity:
-		v, err := decodeTrade(data)
+		v, err := recordcodec.DecodeTrade(data)
 		if err != nil {
 			return calculation.ActivityTerms{}, err
 		}
 
 		return calculation.TradeTerms(v)
 	case calculation.LifecycleActivity:
-		v, err := decodeLifecycle(data)
+		v, err := recordcodec.DecodeLifecycle(data)
 		if err != nil {
 			return calculation.ActivityTerms{}, err
 		}
 
 		return calculation.LifecycleTerms(v)
 	case calculation.ConversionActivity:
-		v, err := decodeConversion(data)
+		v, err := recordcodec.DecodeConversion(data)
 		if err != nil {
 			return calculation.ActivityTerms{}, err
 		}
@@ -60,15 +63,15 @@ func decodeActivityTerms(kind string, data []byte) (calculation.ActivityTerms, e
 func encodeActivityTerms(value calculation.ActivityTerms) ([]byte, error) {
 	switch value.Kind() {
 	case calculation.CashActivity:
-		return encodeObservation(value.Observation())
+		return recordcodec.EncodeObservation(value.Observation())
 	case calculation.SecurityTransferActivity:
-		return encodeObservation(value.Observation())
+		return recordcodec.EncodeObservation(value.Observation())
 	case calculation.TradeActivity:
-		return encodeTrade(value.Trade())
+		return recordcodec.EncodeTrade(value.Trade())
 	case calculation.LifecycleActivity:
-		return encodeLifecycle(value.Lifecycle())
+		return recordcodec.EncodeLifecycle(value.Lifecycle())
 	case calculation.ConversionActivity:
-		return encodeConversion(value.Conversion())
+		return recordcodec.EncodeConversion(value.Conversion())
 	}
 
 	return nil, ErrCorrupt

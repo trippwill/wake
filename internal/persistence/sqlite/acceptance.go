@@ -12,11 +12,10 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
-
-func referenceKey(ref source.Reference) string { b, _ := json.Marshal(refWire(ref)); return string(b) }
 
 func anonymousInstrumentKey(artifact, location string) string {
 	b, _ := json.Marshal([]string{artifact, location})
@@ -24,7 +23,7 @@ func anonymousInstrumentKey(artifact, location string) string {
 }
 
 func executionValue(r sqlc.Execution) (application.Execution, error) {
-	t, err := decodeTrade(r.Accepted)
+	t, err := recordcodec.DecodeTrade(r.Accepted)
 	if err != nil {
 		return application.Execution{}, ErrCorrupt
 	}
@@ -46,12 +45,7 @@ func executionValue(r sqlc.Execution) (application.Execution, error) {
 }
 
 func instrumentValue(r sqlc.Instrument) (application.Instrument, error) {
-	var wire instrumentData
-	if json.Unmarshal(r.Reported, &wire) != nil {
-		return application.Instrument{}, ErrCorrupt
-	}
-
-	i, err := wire.instrument()
+	i, err := recordcodec.DecodeInstrument(r.Reported)
 	if err != nil {
 		return application.Instrument{}, ErrCorrupt
 	}
@@ -79,14 +73,14 @@ func acceptInstrument(
 	i source.Instrument,
 	currency string,
 ) (string, string, error) {
-	key := referenceKey(i.Reference())
+	key := recordcodec.ReferenceKey(i.Reference())
 	if i.Reference().IsZero() {
 		key = anonymousInstrumentKey(artifact, location)
 	}
 
 	root, err := q.InstrumentBySource(ctx, key)
 	if errors.Is(err, sql.ErrNoRows) {
-		reported, e := json.Marshal(instrumentWire(i))
+		reported, e := recordcodec.EncodeInstrument(i)
 		if e != nil {
 			return "", "", e
 		}
@@ -269,7 +263,11 @@ func putRelationships(ctx context.Context, q *sqlc.Queries, id string, links []s
 	for _, r := range links {
 		if err := q.PutRelationship(
 			ctx,
-			sqlc.PutRelationshipParams{ActivityID: id, Kind: string(r.Kind()), Target: referenceKey(r.Target())},
+			sqlc.PutRelationshipParams{
+				ActivityID: id,
+				Kind:       string(r.Kind()),
+				Target:     recordcodec.ReferenceKey(r.Target()),
+			},
 		); err != nil {
 			return err
 		}
@@ -293,7 +291,7 @@ func relationships(ctx context.Context, q *sqlc.Queries, id string) ([]applicati
 }
 
 func lifecycleValue(r sqlc.Execution) (application.Lifecycle, error) {
-	l, err := decodeLifecycle(r.Accepted)
+	l, err := recordcodec.DecodeLifecycle(r.Accepted)
 	if err != nil {
 		return application.Lifecycle{}, ErrCorrupt
 	}
@@ -347,7 +345,7 @@ func (s *Store) LifecycleDetail(ctx context.Context, id string) (application.Lif
 }
 
 func conversionValue(r sqlc.Execution) (application.Conversion, error) {
-	v, err := decodeConversion(r.Accepted)
+	v, err := recordcodec.DecodeConversion(r.Accepted)
 	if err != nil {
 		return application.Conversion{}, ErrCorrupt
 	}

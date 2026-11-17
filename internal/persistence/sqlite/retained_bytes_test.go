@@ -5,7 +5,6 @@ package persistence
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -190,12 +190,10 @@ func TestPositionBindingCanonicalKeyUsesRetainedShape(t *testing.T) {
 		`{"Account":["synthetic","account","","A1"],"Instrument":{"Kind":"option","AsOf":"as-reported","Option":{"Underlier":{"Kind":"equity","Identifiers":[{"Kind":"isin","Value":"Z","Field":"second"},{"Kind":"isin","Value":"A","Field":"first"},{"Kind":"isin","Value":"A","Field":"first"}]}}}}`,
 	)
 
-	var d positionInstrumentData
-	if err := json.Unmarshal(raw, &d); err != nil {
+	key, kind, err := recordcodec.PositionBindingKey(raw)
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	key, kind := positionInstrumentIdentity(d.Instrument), d.Instrument.Kind
 
 	want := `{"Reference":["","","",""],"Kind":"option","Ticker":"","Name":"","Venue":"","AsOf":"as-reported","Identifiers":null,"Option":{"Underlier":{"Reference":["","","",""],"Kind":"equity","Ticker":"","Name":"","Venue":"","AsOf":"","Identifiers":[{"Kind":"isin","Value":"A","Field":"first"},{"Kind":"isin","Value":"A","Field":"first"},{"Kind":"isin","Value":"Z","Field":"second"}],"Option":null,"Debt":null},"Right":"","Expiry":"","EffectiveFrom":"","Multiplier":"","Strike":{"Amount":"","Currency":""},"Deliverables":null},"Debt":null}`
 	if key != want || kind != source.Option {

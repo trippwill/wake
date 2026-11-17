@@ -561,7 +561,10 @@ outcome while rolling back every record. Row rejection is an explicit retained
 record; a failed host write aborts the attempt even if a normalizer swallows the
 sink error. Replaying a successful artifact/version returns its retained outcome.
 Records retain artifact locations and interpretation versions without producing
-financial authority by themselves.
+financial authority by themselves. The record codec owns persisted financial
+representations and the bytes used to compare claim meaning. The SQLite adapter
+owns connection, stream and version scoping, appearance locations, occurrence
+tracking and transactional writes.
 
 Operator confirmation commits a Wake account, its qualified source binding and the intent to
 synchronize together. Discovery stops after its bounded attempt; authorized acquisition starts

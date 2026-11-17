@@ -12,6 +12,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -157,11 +158,11 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 			}
 
 			if f.Name == source.FieldRealizedPnL {
-				text("realized_report_date", optionalSourceDate(f.ReportedOn))
+				text("realized_report_date", comparisonDate(f.ReportedOn))
 			}
 
 			if f.Name == source.FieldReportedCostBasis {
-				text("cost_basis_report_date", optionalSourceDate(f.ReportedOn))
+				text("cost_basis_report_date", comparisonDate(f.ReportedOn))
 			}
 
 			if !field.Known() {
@@ -262,21 +263,21 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 	}
 	switch kind {
 	case "security-transfer", "cash":
-		o, err := decodeObservation(data)
+		o, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return nil, err
 		}
 
 		activity(o)
 	case "activity":
-		o, err := decodeObservation(data)
+		o, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return nil, err
 		}
 
 		activity(o)
 	case "trade":
-		t, err := decodeTrade(data)
+		t, err := recordcodec.DecodeTrade(data)
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +321,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 
 		activity(t.Observation())
 	case "lifecycle":
-		l, err := decodeLifecycle(data)
+		l, err := recordcodec.DecodeLifecycle(data)
 		if err != nil {
 			return nil, err
 		}
@@ -336,7 +337,7 @@ func comparisonValues(kind string, data []byte) (map[string]application.Correcti
 		option(f.Instrument.Option())
 		activity(l.Observation())
 	case "conversion":
-		c, err := decodeConversion(data)
+		c, err := recordcodec.DecodeConversion(data)
 		if err != nil {
 			return nil, err
 		}

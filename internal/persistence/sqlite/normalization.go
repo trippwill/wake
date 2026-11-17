@@ -11,9 +11,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -202,13 +204,13 @@ func (c *claims) put(ctx context.Context, location, kind string, data []byte) er
 		return c.failed
 	}
 
-	canonical, err := claimData(kind, data, "")
+	canonical, err := recordcodec.WithLocation(kind, data, "")
 	if err != nil {
 		c.failed = err
 		return err
 	}
 
-	keyData, err := claimKeyData(kind, canonical)
+	keyData, err := recordcodec.ClaimKeyData(kind, canonical)
 	if err != nil {
 		c.failed = err
 		return err
@@ -259,12 +261,7 @@ func (c *claims) PutInstrument(ctx context.Context, o source.InstrumentObservati
 		return c.failed
 	}
 
-	wire := instrumentWire(o.Instrument())
-	if !o.AsOf().IsZero() {
-		wire.AsOf = o.AsOf().String()
-	}
-
-	data, err := json.Marshal(wire)
+	data, err := recordcodec.EncodeInstrumentObservation(o)
 	if err != nil {
 		c.failed = err
 		return err
@@ -285,7 +282,7 @@ func (c *claims) Reject(ctx context.Context, location, reason string) error {
 		return c.failed
 	}
 
-	data, err := json.Marshal(reason)
+	data, err := recordcodec.EncodeRejection(reason)
 	if err != nil {
 		c.failed = err
 		return err
@@ -310,7 +307,7 @@ type Record struct {
 	Instrument             source.InstrumentObservation
 	Observation            source.ActivityObservation
 	PositionSet            source.PositionSetObservation
-	PositionInstrument     positionInstrumentData
+	PositionInstrument     recordcodec.PositionBinding
 }
 
 func (s *Store) Records(ctx context.Context, id, version string) ([]Record, error) {
@@ -328,38 +325,23 @@ func records(ctx context.Context, q *sqlc.Queries, id, version string) ([]Record
 		record := Record{Location: row.Location, Kind: row.Kind, ClaimID: row.ClaimID, Ordinal: row.Ordinal}
 		switch row.Kind {
 		case "positions":
-			record.PositionSet, err = decodePositionSet(row.Data)
+			record.PositionSet, err = recordcodec.DecodePositionSet(row.Data)
 		case "position-instrument":
-			err = json.Unmarshal(row.Data, &record.PositionInstrument)
+			record.PositionInstrument, err = recordcodec.DecodePositionBinding(row.Data)
 		case "activity":
-			record.Observation, err = decodeObservation(row.Data)
+			record.Observation, err = recordcodec.DecodeObservation(row.Data)
 			if err == nil && record.Observation.Fields().Location != row.Location {
 				err = ErrCorrupt
 			}
 		case "correction":
-			record.Correction, err = decodeCorrection(row.Data)
+			record.Correction, err = recordcodec.DecodeCorrection(row.Data)
 			if err == nil && record.Correction.Fields().Location != row.Location {
 				err = ErrCorrupt
 			}
 		case "instrument":
-			var data instrumentData
-
-			err = json.Unmarshal(row.Data, &data)
-			if err == nil {
-				var i source.Instrument
-
-				i, err = data.instrument()
-				if err == nil {
-					date := sourceDate(data.AsOf)
-					if data.AsOf != "" && date.IsZero() {
-						err = ErrCorrupt
-					} else {
-						record.Instrument, err = source.NewInstrumentObservation(row.Location, i, date)
-					}
-				}
-			}
+			record.Instrument, err = recordcodec.DecodeInstrumentObservation(row.Data, row.Location)
 		case "rejected":
-			err = json.Unmarshal(row.Data, &record.Reason)
+			record.Reason, err = recordcodec.DecodeRejection(row.Data)
 		default:
 			err = ErrCorrupt
 		}
@@ -380,7 +362,7 @@ func (c *claims) PutCorrection(ctx context.Context, v source.Correction) error {
 		return c.failed
 	}
 
-	data, err := encodeCorrection(v)
+	data, err := recordcodec.EncodeCorrection(v)
 	if err != nil {
 		c.failed = err
 		return err
@@ -401,7 +383,7 @@ func (c *claims) PutActivity(ctx context.Context, value source.ActivityObservati
 		return c.failed
 	}
 
-	data, err := encodeObservation(value)
+	data, err := recordcodec.EncodeObservation(value)
 	if err != nil {
 		c.failed = err
 		return err
@@ -412,6 +394,45 @@ func (c *claims) PutActivity(ctx context.Context, value source.ActivityObservati
 	}
 
 	c.counts.Activities++
+
+	return nil
+}
+
+func (c *claims) PutPositionSet(ctx context.Context, o source.PositionSetObservation) error {
+	if o.IsZero() {
+		c.failed = source.ErrInvalidPositions
+		return c.failed
+	}
+
+	f := o.Fields()
+
+	data, err := recordcodec.EncodePositionSet(o)
+	if err != nil {
+		return err
+	}
+
+	if err = c.put(ctx, f.Location, "positions", data); err != nil {
+		return err
+	}
+
+	c.counts.PositionSets++
+	for i, p := range f.Positions {
+		data, err = recordcodec.EncodePositionBinding(f.Account, p.Instrument())
+		if err != nil {
+			return err
+		}
+
+		if err = c.put(
+			ctx,
+			fmt.Sprintf("%s/instruments[%d]", f.Location, i+1),
+			"position-instrument",
+			data,
+		); err != nil {
+			return err
+		}
+
+		c.counts.Instruments++
+	}
 
 	return nil
 }

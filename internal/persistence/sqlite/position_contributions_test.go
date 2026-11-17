@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -479,7 +480,7 @@ func TestPositionFamilyConflictDoesNotProjectAnEquityUnderlier(t *testing.T) {
 	)
 	processSyntheticClaims(t, s, "disputed-option", positionSetNormalizer(positionInput(t, option)))
 
-	root, err := s.queries.InstrumentBySource(t.Context(), referenceKey(ref))
+	root, err := s.queries.InstrumentBySource(t.Context(), recordcodec.ReferenceKey(ref))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -88,12 +89,12 @@ func (p retainedProcessing) RetainedClaims(ctx context.Context) ([]application.R
 			Observation: row.Observation, Correction: row.Correction, Positions: row.PositionSet,
 		}
 		if row.Kind == "position-instrument" {
-			claim.PositionAccount, err = row.PositionInstrument.Account.reference()
+			claim.PositionAccount, err = row.PositionInstrument.Account()
 			if err != nil {
 				return nil, err
 			}
 
-			claim.PositionInstrument, err = row.PositionInstrument.Instrument.instrument()
+			claim.PositionInstrument, err = row.PositionInstrument.Instrument()
 			if err != nil {
 				return nil, err
 			}
@@ -138,12 +139,12 @@ func (p retainedProcessing) SavePositionSet(
 	}
 
 	if !f.Reference.IsZero() {
-		ref = referenceKey(f.Reference)
+		ref = recordcodec.ReferenceKey(f.Reference)
 	}
 
 	supersedes := make([]string, 0, len(f.Supersedes))
 	for _, ref := range f.Supersedes {
-		supersedes = append(supersedes, referenceKey(ref))
+		supersedes = append(supersedes, recordcodec.ReferenceKey(ref))
 	}
 
 	revisions, err := json.Marshal(supersedes)
@@ -189,8 +190,15 @@ func (p retainedProcessing) SaveSourceCorrection(
 	f := correction.Fields()
 
 	return p.q.PutSourceCorrection(ctx, sqlc.PutSourceCorrectionParams{
-		ArtifactID: p.id, Version: p.version, Location: f.Location, AccountID: account,
-		Kind: string(f.Kind), Target: referenceKey(f.Target), Replacement: referenceKey(f.Replacement),
+		ArtifactID: p.id,
+		Version:    p.version,
+		Location:   f.Location,
+		AccountID:  account,
+		Kind: string(
+			f.Kind,
+		),
+		Target:      recordcodec.ReferenceKey(f.Target),
+		Replacement: recordcodec.ReferenceKey(f.Replacement),
 	})
 }
 
@@ -203,7 +211,10 @@ func (p retainedProcessing) SaveActivityObservation(
 ) error {
 	for _, reference := range refs {
 		if err := p.q.PutActivityReference(ctx, sqlc.PutActivityReferenceParams{
-			ClaimID: claim.ID, Ordinal: claim.Ordinal, AccountID: account, Reference: referenceKey(reference),
+			ClaimID:   claim.ID,
+			Ordinal:   claim.Ordinal,
+			AccountID: account,
+			Reference: recordcodec.ReferenceKey(reference),
 		}); err != nil {
 			return err
 		}

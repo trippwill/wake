@@ -5,7 +5,6 @@ package persistence
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
@@ -649,12 +649,7 @@ func TestPositionsConflictsRollbackIdentityChangesAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var d instrumentData
-	if err = json.Unmarshal(root.Reported, &d); err != nil {
-		t.Fatal(err)
-	}
-
-	original, err := d.instrument()
+	original, err := recordcodec.DecodeInstrument(root.Reported)
 	if err != nil {
 		t.Fatal(err)
 	}

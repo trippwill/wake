@@ -6,12 +6,12 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -171,7 +171,7 @@ func (p *rootPhase) sourceBindings(
 	// Verified aliases of nested underliers use the same identity comparison.
 	// Raw claims remain unchanged, including their original qualified references.
 	for ref := range references {
-		underlier, e := p.q.InstrumentBySource(ctx, referenceKey(ref))
+		underlier, e := p.q.InstrumentBySource(ctx, recordcodec.ReferenceKey(ref))
 		if errors.Is(e, sql.ErrNoRows) {
 			continue
 		}
@@ -223,7 +223,7 @@ func bindArtifactInstrumentClaims(ctx context.Context, q *sqlc.Queries, artifact
 			continue
 		}
 
-		data, e := claimData(row.Kind, row.Data, row.Location)
+		data, e := recordcodec.WithLocation(row.Kind, row.Data, row.Location)
 		if e != nil {
 			return e
 		}
@@ -300,7 +300,7 @@ func calculateRoot(ctx context.Context, q *sqlc.Queries, id string) (calculation
 }
 
 func (p *rootPhase) FindRoot(ctx context.Context, ref source.Reference) (string, error) {
-	row, err := p.q.InstrumentBySource(ctx, referenceKey(ref))
+	row, err := p.q.InstrumentBySource(ctx, recordcodec.ReferenceKey(ref))
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -319,7 +319,10 @@ func (p *rootPhase) AutomaticUnderlier(ctx context.Context, parent string) (stri
 }
 
 func (p *rootPhase) QualifyRoot(ctx context.Context, id string, ref source.Reference) error {
-	return p.q.QualifyInstrument(ctx, sqlc.QualifyInstrumentParams{ID: id, SourceKey: referenceKey(ref)})
+	return p.q.QualifyInstrument(
+		ctx,
+		sqlc.QualifyInstrumentParams{ID: id, SourceKey: recordcodec.ReferenceKey(ref)},
+	)
 }
 
 func (p *rootPhase) CreateUnderlier(ctx context.Context, parent string, i source.Instrument) (string, error) {
@@ -366,7 +369,7 @@ func (p *rootPhase) SaveRoot(
 }
 
 func reportedRootClaim(kind string, raw []byte, location, role string) (source.Instrument, error) {
-	data, err := claimData(kind, raw, location)
+	data, err := recordcodec.WithLocation(kind, raw, location)
 	if err != nil {
 		return source.Instrument{}, err
 	}
@@ -385,16 +388,16 @@ func reportedRootClaim(kind string, raw []byte, location, role string) (source.I
 
 func reportedActivityInstrument(kind string, data []byte) (source.Instrument, error) {
 	if kind == "position-instrument" {
-		var d positionInstrumentData
-		if err := json.Unmarshal(data, &d); err != nil {
+		d, err := recordcodec.DecodePositionBinding(data)
+		if err != nil {
 			return source.Instrument{}, err
 		}
 
-		return d.Instrument.instrument()
+		return d.Instrument()
 	}
 
 	if kind == "activity" {
-		o, err := decodeObservation(data)
+		o, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return source.Instrument{}, err
 		}

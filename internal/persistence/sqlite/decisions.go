@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
@@ -154,7 +155,7 @@ func (s *Store) CorrectionForm(ctx context.Context, kind, id string) (applicatio
 
 			family = terms.Instrument().Kind()
 		case "trade":
-			t, e := decodeTrade(row.Accepted)
+			t, e := recordcodec.DecodeTrade(row.Accepted)
 			if e != nil {
 				return out, e
 			}
@@ -453,14 +454,14 @@ func observationLabel(r sqlc.RecordValue) string {
 	label := r.Kind
 	switch r.Kind {
 	case "security-transfer":
-		if o, err := decodeObservation(r.Data); err == nil {
+		if o, err := recordcodec.DecodeObservation(r.Data); err == nil {
 			if v, e := o.SecurityTransfer(); e == nil {
 				f := v.Fields()
 				label = f.Date.String() + " · Transfer " + string(f.Direction) + " · " + f.Quantity.Value()
 			}
 		}
 	case "cash":
-		if o, err := decodeObservation(r.Data); err == nil {
+		if o, err := recordcodec.DecodeObservation(r.Data); err == nil {
 			if v, e := o.CashActivity(); e == nil {
 				f := v.Fields()
 				label = f.Date.String() + " · " + string(
@@ -471,7 +472,7 @@ func observationLabel(r sqlc.RecordValue) string {
 		}
 
 	case "activity":
-		if o, err := decodeObservation(r.Data); err == nil {
+		if o, err := recordcodec.DecodeObservation(r.Data); err == nil {
 			if terms, e := calculation.CompleteActivityTerms(o.Fields(), o.Fields().Fields); e == nil {
 				if data, e := encodeActivityTerms(terms); e == nil {
 					return observationLabel(
@@ -519,7 +520,7 @@ func observationLabel(r sqlc.RecordValue) string {
 		}
 
 	case "trade":
-		if t, err := decodeTrade(r.Data); err == nil {
+		if t, err := recordcodec.DecodeTrade(r.Data); err == nil {
 			f := t.Fields()
 			label = f.Date.String() + " · " + string(
 				f.Side,
@@ -527,13 +528,13 @@ func observationLabel(r sqlc.RecordValue) string {
 				String()
 		}
 	case "lifecycle":
-		if l, err := decodeLifecycle(r.Data); err == nil {
+		if l, err := recordcodec.DecodeLifecycle(r.Data); err == nil {
 			label = l.Fields().Date.String() + " · " + string(
 				l.Fields().Kind,
 			) + " · " + l.Fields().Quantity.Value() + " contracts"
 		}
 	case "conversion":
-		if c, err := decodeConversion(r.Data); err == nil {
+		if c, err := recordcodec.DecodeConversion(r.Data); err == nil {
 			f := c.Fields()
 			label = f.Date.String() + " · " + f.Sent.Amount() + " " + f.Sent.Currency().
 				String() +

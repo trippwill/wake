@@ -4,7 +4,6 @@
 package persistence
 
 import (
-	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/reference/figi"
@@ -158,7 +158,7 @@ func referenceRefreshFixture(t *testing.T) (*Store, reference.Result) {
 		t.Fatal(err)
 	}
 
-	wire, err := json.Marshal(instrumentWire(instrument))
+	wire, err := recordcodec.EncodeInstrument(instrument)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,12 +7,11 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/source"
 )
 
 func createActivity(
@@ -115,61 +114,19 @@ func createActivity(
 	return id, nil
 }
 
-type activitySelectionData struct {
-	Fields                    []activityFieldData
-	Sources                   map[string][]string
-	Conflicts, OperatorFields []string
-}
-
-func encodeActivityFields(fields []source.ActivityField) ([]byte, error) {
-	out := make([]activityFieldData, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, activityFieldWire(f))
-	}
-
-	return json.Marshal(out)
-}
-
-func decodeActivityFields(data []byte) ([]source.ActivityField, error) {
-	var values []activityFieldData
-	if json.Unmarshal(data, &values) != nil {
-		return nil, ErrCorrupt
-	}
-
-	out := make([]source.ActivityField, 0, len(values))
-	for _, v := range values {
-		f, e := v.field()
-		if e != nil {
-			return nil, ErrCorrupt
-		}
-
-		out = append(out, f)
-	}
-
-	return out, nil
-}
-
 func persistActivitySelection(
 	ctx context.Context,
 	q *sqlc.Queries,
 	id string,
 	value calculation.ActivitySelection,
 ) error {
-	base, err := encodeActivityFields(value.Baseline)
-	if err != nil {
-		return err
-	}
-
-	d := activitySelectionData{
+	base, data, err := recordcodec.EncodeActivitySelection(recordcodec.ActivitySelection{
+		Baseline:       value.Baseline,
+		Fields:         value.Fields,
 		Sources:        value.Sources,
 		Conflicts:      value.Conflicts,
 		OperatorFields: value.OperatorFields,
-	}
-	for _, f := range value.Fields {
-		d.Fields = append(d.Fields, activityFieldWire(f))
-	}
-
-	data, err := json.Marshal(d)
+	})
 	if err != nil {
 		return err
 	}
@@ -194,30 +151,13 @@ func loadActivitySelection(
 		return calculation.ActivitySelection{}, err
 	}
 
-	var d activitySelectionData
-	if json.Unmarshal(row.Selected, &d) != nil {
-		return calculation.ActivitySelection{}, ErrCorrupt
-	}
+	value, err := recordcodec.DecodeActivitySelection(row.Baseline, row.Selected)
 
-	out := calculation.ActivitySelection{
-		Sources:        d.Sources,
-		Conflicts:      d.Conflicts,
-		OperatorFields: d.OperatorFields,
-	}
-
-	out.Baseline, err = decodeActivityFields(row.Baseline)
-	if err != nil {
-		return out, err
-	}
-
-	for _, v := range d.Fields {
-		f, e := v.field()
-		if e != nil {
-			return out, ErrCorrupt
-		}
-
-		out.Fields = append(out.Fields, f)
-	}
-
-	return out, nil
+	return calculation.ActivitySelection{
+		Baseline:       value.Baseline,
+		Fields:         value.Fields,
+		Sources:        value.Sources,
+		Conflicts:      value.Conflicts,
+		OperatorFields: value.OperatorFields,
+	}, err
 }

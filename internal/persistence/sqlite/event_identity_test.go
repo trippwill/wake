@@ -6,6 +6,7 @@ package persistence
 import (
 	"testing"
 
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -32,7 +33,7 @@ func TestEventMatchingUsesExplicitQualificationWithOpaqueNativeKinds(t *testing.
 			t.Context(),
 			sqlc.PutEventLinkParams{
 				AccountID:     "account",
-				Reference:     referenceKey(ref),
+				Reference:     recordcodec.ReferenceKey(ref),
 				ExecutionID:   id,
 				DistinctEvent: boolInt(distinct),
 			},

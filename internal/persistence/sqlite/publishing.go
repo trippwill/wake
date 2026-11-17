@@ -17,6 +17,7 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/provider"
@@ -557,7 +558,7 @@ func canonicalSnapshot(
 				ReportedPnL:         publicMoney(f.ReportedPnL),
 			}
 		case "trade":
-			t, err := decodeTrade(row.Accepted)
+			t, err := recordcodec.DecodeTrade(row.Accepted)
 			if err != nil {
 				return out, why, err
 			}
@@ -597,7 +598,7 @@ func canonicalSnapshot(
 			)
 			a.Trade.Charges = publicCharges(f.Charges)
 		case "lifecycle":
-			l, err := decodeLifecycle(row.Accepted)
+			l, err := recordcodec.DecodeLifecycle(row.Accepted)
 			if err != nil {
 				return out, why, err
 			}
@@ -612,7 +613,7 @@ func canonicalSnapshot(
 			a.Lifecycle.LifecycleKind = known(string(f.Kind))
 			a.Lifecycle.Quantity = &application.PublishedQuantity{Value: f.Quantity.Value(), Unit: "contracts"}
 		case "conversion":
-			c, err := decodeConversion(row.Accepted)
+			c, err := recordcodec.DecodeConversion(row.Accepted)
 			if err != nil {
 				return out, why, err
 			}
@@ -655,15 +656,7 @@ func canonicalSnapshot(
 		}
 
 		for _, link := range links {
-			var (
-				ref  source.Reference
-				data refData
-			)
-			if json.Unmarshal([]byte(link.Target), &data) != nil {
-				return out, why, ErrCorrupt
-			}
-
-			ref, err = data.reference()
+			ref, err := recordcodec.DecodeReference([]byte(link.Target))
 			if err != nil {
 				return out, why, err
 			}

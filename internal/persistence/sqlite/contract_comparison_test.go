@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/source"
 )
@@ -29,7 +30,7 @@ func TestCompleteAndPartialComparisonUseTheSameFinancialVocabulary(t *testing.T)
 			t.Fatal(err)
 		}
 
-		data, err := encodeObservation(terms.Observation())
+		data, err := recordcodec.EncodeObservation(terms.Observation())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,14 +139,14 @@ func TestCandidateComparisonRetainsNoneditableContractTerms(t *testing.T) {
 				t.Fatal(e)
 			}
 
-			data, e := encodeTrade(trade)
+			data, e := recordcodec.EncodeTrade(trade)
 			if e != nil {
 				t.Fatal(e)
 			}
 
 			kind := "trade"
 			if changed {
-				data, e = encodeObservation(trade.Observation())
+				data, e = recordcodec.EncodeObservation(trade.Observation())
 				if e != nil {
 					t.Fatal(e)
 				}

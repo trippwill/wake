@@ -14,6 +14,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -76,17 +77,17 @@ func TestDebtReportedValuesSurviveCorrectionAndReplay(t *testing.T) {
 				}
 			}
 
-			encoded, err := encodeTrade(terms)
+			encoded, err := recordcodec.EncodeTrade(terms)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			decoded, err := decodeTrade(encoded)
+			decoded, err := recordcodec.DecodeTrade(encoded)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			roundtrip, err := encodeTrade(decoded)
+			roundtrip, err := recordcodec.EncodeTrade(decoded)
 			if err != nil || !bytes.Equal(encoded, roundtrip) || bytes.Contains(encoded, []byte("QuotationBasis")) {
 				t.Fatal("claim codec changed reported values", err)
 			}

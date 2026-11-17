@@ -1,12 +1,10 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-package persistence
+package recordcodec
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
@@ -72,7 +70,7 @@ func positionSetWire(o source.PositionSetObservation) positionSetData {
 	return d
 }
 
-func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
+func DecodePositionSet(data []byte) (source.PositionSetObservation, error) {
 	var d positionSetData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return source.PositionSetObservation{}, err
@@ -164,41 +162,48 @@ func decodePositionSet(data []byte) (source.PositionSetObservation, error) {
 	return source.NewPositionSetObservation(f)
 }
 
-func (c *claims) PutPositionSet(ctx context.Context, o source.PositionSetObservation) error {
-	if o.IsZero() {
-		c.failed = source.ErrInvalidPositions
-		return c.failed
+func EncodePositionSet(o source.PositionSetObservation) ([]byte, error) {
+	return json.Marshal(positionSetWire(o))
+}
+
+// PositionBinding retains a position row's wire values until a caller needs source validation.
+type PositionBinding struct{ data positionInstrumentData }
+
+func EncodePositionBinding(account source.Reference, instrument source.Instrument) ([]byte, error) {
+	return json.Marshal(positionInstrumentData{refWire(account), instrumentWire(instrument)})
+}
+
+func DecodePositionBinding(data []byte) (PositionBinding, error) {
+	var d positionInstrumentData
+	if err := json.Unmarshal(data, &d); err != nil {
+		return PositionBinding{}, err
 	}
 
-	f := o.Fields()
+	return PositionBinding{data: d}, nil
+}
 
-	data, err := json.Marshal(positionSetWire(o))
+func (b PositionBinding) Account() (source.Reference, error) { return b.data.Account.reference() }
+func (b PositionBinding) Instrument() (source.Instrument, error) {
+	return b.data.Instrument.instrument()
+}
+
+// PositionBindingKey uses the persisted instrument representation before domain validation.
+func PositionBindingKey(data []byte) (string, source.InstrumentKind, error) {
+	b, err := DecodePositionBinding(data)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	if err = c.put(ctx, f.Location, "positions", data); err != nil {
-		return err
-	}
+	return positionInstrumentKey(b.data.Instrument), b.data.Instrument.Kind, nil
+}
 
-	c.counts.PositionSets++
-	for i, p := range f.Positions {
-		data, err = json.Marshal(positionInstrumentData{refWire(f.Account), instrumentWire(p.Instrument())})
-		if err != nil {
-			return err
-		}
+func PositionInstrumentKey(i source.Instrument) string {
+	return positionInstrumentKey(instrumentWire(i))
+}
 
-		if err = c.put(
-			ctx,
-			fmt.Sprintf("%s/instruments[%d]", f.Location, i+1),
-			"position-instrument",
-			data,
-		); err != nil {
-			return err
-		}
+func positionInstrumentKey(d instrumentData) string {
+	canonicalInstrument(&d)
+	b, _ := json.Marshal(d)
 
-		c.counts.Instruments++
-	}
-
-	return nil
+	return string(b)
 }

@@ -119,6 +119,18 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					t.Errorf("independent consumer imports Wake packages instead of using its wire contract: %s", value)
 				}
 
+				if strings.HasPrefix(rel, "internal/persistence/sqlite/recordcodec/") {
+					switch value {
+					case "bytes",
+						"encoding/json",
+						"slices",
+						"go.trippwill.dev/wake/financial",
+						"go.trippwill.dev/wake/source":
+					default:
+						t.Errorf("retained record codec depends on %s: %s", value, rel)
+					}
+				}
+
 				if strings.HasPrefix(rel, "internal/transport/") &&
 					(value == "database/sql" || strings.Contains(value, "/internal/persistence/")) {
 					t.Errorf("presentation bypasses application boundary: %s", rel)

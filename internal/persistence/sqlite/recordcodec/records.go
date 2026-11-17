@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-package persistence
+package recordcodec
 
 import (
 	"encoding/json"
@@ -9,6 +9,67 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/source"
 )
+
+type codecError string
+
+func (e codecError) Error() string { return string(e) }
+
+const ErrCorrupt codecError = "invalid retained store data"
+
+func ReferenceKey(ref source.Reference) string {
+	data, _ := json.Marshal(refWire(ref))
+	return string(data)
+}
+
+func DecodeReference(data []byte) (source.Reference, error) {
+	var wire refData
+	if json.Unmarshal(data, &wire) != nil {
+		return source.Reference{}, ErrCorrupt
+	}
+
+	return wire.reference()
+}
+
+func EncodeInstrument(i source.Instrument) ([]byte, error) {
+	return json.Marshal(instrumentWire(i))
+}
+
+func DecodeInstrument(data []byte) (source.Instrument, error) {
+	var d instrumentData
+	if err := json.Unmarshal(data, &d); err != nil {
+		return source.Instrument{}, err
+	}
+
+	return d.instrument()
+}
+
+func EncodeInstrumentObservation(o source.InstrumentObservation) ([]byte, error) {
+	d := instrumentWire(o.Instrument())
+	if !o.AsOf().IsZero() {
+		d.AsOf = o.AsOf().String()
+	}
+
+	return json.Marshal(d)
+}
+
+func DecodeInstrumentObservation(data []byte, location string) (source.InstrumentObservation, error) {
+	var d instrumentData
+	if err := json.Unmarshal(data, &d); err != nil {
+		return source.InstrumentObservation{}, err
+	}
+
+	i, err := d.instrument()
+	if err != nil {
+		return source.InstrumentObservation{}, err
+	}
+
+	date := sourceDate(d.AsOf)
+	if d.AsOf != "" && date.IsZero() {
+		return source.InstrumentObservation{}, ErrCorrupt
+	}
+
+	return source.NewInstrumentObservation(location, i, date)
+}
 
 type refData [4]string
 
@@ -186,7 +247,7 @@ func decodeCharge(d chargeData, depth int) (source.Charge, error) {
 	return source.NewCharge(f)
 }
 
-func encodeTrade(t source.Trade) ([]byte, error) {
+func EncodeTrade(t source.Trade) ([]byte, error) {
 	f := t.Fields()
 	data := tradeData{
 		AccruedInterest:     moneyWire(f.AccruedInterest),
@@ -225,7 +286,7 @@ func encodeTrade(t source.Trade) ([]byte, error) {
 	return json.Marshal(data)
 }
 
-func decodeTrade(data []byte) (source.Trade, error) {
+func DecodeTrade(data []byte) (source.Trade, error) {
 	var wire tradeData
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return source.Trade{}, err
@@ -525,7 +586,7 @@ type lifecycleData struct {
 	Kind  source.LifecycleKind
 }
 
-func encodeLifecycle(l source.Lifecycle) ([]byte, error) {
+func EncodeLifecycle(l source.Lifecycle) ([]byte, error) {
 	f := l.Fields()
 	d := tradeData{
 		Location:      f.Location,
@@ -546,7 +607,7 @@ func encodeLifecycle(l source.Lifecycle) ([]byte, error) {
 	return json.Marshal(lifecycleData{d, f.Kind})
 }
 
-func decodeLifecycle(data []byte) (source.Lifecycle, error) {
+func DecodeLifecycle(data []byte) (source.Lifecycle, error) {
 	var d lifecycleData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return source.Lifecycle{}, err
@@ -690,7 +751,7 @@ type (
 	}
 )
 
-func encodeConversion(c source.Conversion) ([]byte, error) {
+func EncodeConversion(c source.Conversion) ([]byte, error) {
 	f := c.Fields()
 	d := conversionData{
 		Location:            f.Location,
@@ -723,7 +784,7 @@ func encodeConversion(c source.Conversion) ([]byte, error) {
 	return json.Marshal(d)
 }
 
-func decodeConversion(data []byte) (source.Conversion, error) {
+func DecodeConversion(data []byte) (source.Conversion, error) {
 	var d conversionData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return source.Conversion{}, err
@@ -823,7 +884,7 @@ type correctionData struct {
 	Kind                         source.CorrectionKind
 }
 
-func encodeCorrection(c source.Correction) ([]byte, error) {
+func EncodeCorrection(c source.Correction) ([]byte, error) {
 	f := c.Fields()
 
 	return json.Marshal(
@@ -831,7 +892,7 @@ func encodeCorrection(c source.Correction) ([]byte, error) {
 	)
 }
 
-func decodeCorrection(data []byte) (source.Correction, error) {
+func DecodeCorrection(data []byte) (source.Correction, error) {
 	var d correctionData
 	if err := json.Unmarshal(data, &d); err != nil {
 		return source.Correction{}, err

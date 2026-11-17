@@ -14,6 +14,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
@@ -126,12 +127,12 @@ func loadActivityCalculation(
 				return in, calculation.ErrInvalid
 			}
 
-			data, e := claimData(selected.Kind, selected.Data, selected.Location)
+			data, e := recordcodec.WithLocation(selected.Kind, selected.Data, selected.Location)
 			if e != nil {
 				return in, e
 			}
 
-			value, e := decodeObservation(data)
+			value, e := recordcodec.DecodeObservation(data)
 			if e != nil {
 				return in, e
 			}
@@ -545,12 +546,12 @@ func retainedActivityClaims(
 
 	claims := make([]calculation.ActivityClaim, 0, len(inputs))
 	for _, input := range inputs {
-		data, e := claimData(input.Kind, input.Data, input.Location)
+		data, e := recordcodec.WithLocation(input.Kind, input.Data, input.Location)
 		if e != nil {
 			return nil, e
 		}
 
-		value, e := decodeObservation(data)
+		value, e := recordcodec.DecodeObservation(data)
 		if e != nil {
 			return nil, e
 		}

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -22,12 +23,12 @@ func retainActivityContributions(ctx context.Context, q *sqlc.Queries, id string
 
 	prior := []source.ActivityObservation{}
 	for _, row := range rows {
-		data, e := claimData(row.Kind, row.Data, row.Location)
+		data, e := recordcodec.WithLocation(row.Kind, row.Data, row.Location)
 		if e != nil {
 			return e
 		}
 
-		value, e := decodeObservation(data)
+		value, e := recordcodec.DecodeObservation(data)
 		if e != nil {
 			return e
 		}

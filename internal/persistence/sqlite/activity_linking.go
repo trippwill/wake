@@ -6,10 +6,10 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/source"
 )
@@ -22,12 +22,12 @@ func (p retainedProcessing) ActivitiesToMatch(ctx context.Context) ([]applicatio
 
 	out := make([]application.ActivityToMatch, 0, len(rows))
 	for _, row := range rows {
-		data, err := claimData("activity", row.Data, row.Location)
+		data, err := recordcodec.WithLocation("activity", row.Data, row.Location)
 		if err != nil {
 			return nil, err
 		}
 
-		value, err := decodeObservation(data)
+		value, err := recordcodec.DecodeObservation(data)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,10 @@ func (p retainedProcessing) SaveEventLink(
 	distinct bool,
 ) error {
 	return p.q.PutEventLink(ctx, sqlc.PutEventLinkParams{
-		AccountID: account, Reference: referenceKey(ref), ExecutionID: target, DistinctEvent: boolInt(distinct),
+		AccountID:     account,
+		Reference:     recordcodec.ReferenceKey(ref),
+		ExecutionID:   target,
+		DistinctEvent: boolInt(distinct),
 	})
 }
 
@@ -134,7 +137,10 @@ func (p retainedProcessing) EventActivities(
 	account string,
 	ref source.Reference,
 ) ([]string, error) {
-	return p.q.EventLinks(ctx, sqlc.EventLinksParams{AccountID: account, Reference: referenceKey(ref)})
+	return p.q.EventLinks(
+		ctx,
+		sqlc.EventLinksParams{AccountID: account, Reference: recordcodec.ReferenceKey(ref)},
+	)
 }
 
 func (p retainedProcessing) DistinctActivityReferences(
@@ -148,12 +154,7 @@ func (p retainedProcessing) DistinctActivityReferences(
 
 	refs := make([]source.Reference, 0, len(rows))
 	for _, row := range rows {
-		var wire refData
-		if json.Unmarshal([]byte(row), &wire) != nil {
-			return nil, ErrCorrupt
-		}
-
-		ref, err := wire.reference()
+		ref, err := recordcodec.DecodeReference([]byte(row))
 		if err != nil {
 			return nil, err
 		}

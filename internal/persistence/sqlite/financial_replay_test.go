@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
@@ -184,12 +185,12 @@ func TestDebtNominalMissingTermsAndReferenceSubject(t *testing.T) {
 		t.Fatal("invented debt terms or listing", f)
 	}
 
-	data, err := encodeTrade(e.Terms())
+	data, err := recordcodec.EncodeTrade(e.Terms())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	roundtrip, err := decodeTrade(data)
+	roundtrip, err := recordcodec.DecodeTrade(data)
 	if err != nil || roundtrip.Fields().AccruedInterest != f.AccruedInterest {
 		t.Fatal("debt roundtrip", err)
 	}
