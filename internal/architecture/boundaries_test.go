@@ -50,7 +50,9 @@ func TestFinancialCalculationImports(t *testing.T) {
 			// Position selection checks cancellation. Observation selection parses URLs.
 			case "context", "net/url":
 			case "cmp", "maps", "reflect", "slices", "sort", "strconv", "strings", "unicode", "unicode/utf8":
-			case "go.trippwill.dev/wake/financial", "go.trippwill.dev/wake/source":
+			case "go.trippwill.dev/wake/financial",
+				"go.trippwill.dev/wake/source",
+				"go.trippwill.dev/wake/internal/reference/figi":
 			default:
 				t.Errorf("%s depends on %s; prepare calculation inputs in the caller", name, path)
 			}

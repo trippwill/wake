@@ -90,6 +90,9 @@ Instrument identity policy compares eligible claims and active operator choices 
 the application. SQLite supplies active roots with matching projected or retained
 automatic FIGI claims. Financial calculation determines listing admission and
 convergence from ordered candidates and enriches roots from retained claims.
+Automatic reference refresh calculates the next retained selection, identity
+metadata and ordered venue corroboration. SQLite checks freshness and persists
+attempts, the retry deadline and financial changes together.
 SQLite applies the resulting convergence, alias and relinking
 writes within the same transaction. Underlier binding and root projection read
 separate read phases within the transaction so shared roots see the current bindings.

@@ -20,7 +20,7 @@ func PlanListingAdmission(identifiers []source.Identifier, candidates []ListingI
 
 	hasVenueFIGI := false
 	for _, identifier := range identifiers {
-		if identifier.Kind() != source.VenueFIGI && identifier.Kind() != source.UnclassifiedFIGI {
+		if !canIdentifyListing(identifier.Kind()) {
 			continue
 		}
 
@@ -38,4 +38,8 @@ func PlanListingAdmission(identifiers []source.Identifier, candidates []ListingI
 	}
 
 	return ListingAdmission{}
+}
+
+func canIdentifyListing(kind source.IdentifierKind) bool {
+	return kind == source.VenueFIGI || kind == source.UnclassifiedFIGI
 }

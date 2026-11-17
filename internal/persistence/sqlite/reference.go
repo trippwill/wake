@@ -407,50 +407,14 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		return err
 	}
 
-	status := base.Status
-	allocation, reason, family := root.ReferenceAllocation, root.ReferenceReason, root.Kind
-	if result.Status == "resolved" {
-		selected := figi.SelectIdentity(source.InstrumentKind(root.Kind), result.Records)
-		if selected.FIGI != "" {
-			if base.Figi != "" && base.Figi != selected.FIGI {
-				status = "conflict"
-				reason = string(figi.CompetingIdentity)
-			} else {
-				base.Figi = selected.FIGI
-				base.Evidence = result.Evidence
-				status = "resolved"
-
-				if selected.Name != "" {
-					base.Name = selected.Name
-				}
-
-				if selected.Ticker != "" {
-					base.Ticker = selected.Ticker
-				}
-
-				allocation, reason, family = string(
-					selected.Allocation,
-				), string(
-					selected.Reason,
-				), string(
-					selected.Family,
-				)
-			}
-		} else if base.Figi == "" || selected.Reason == figi.ConflictingParents || selected.Reason == figi.CompetingIdentity || selected.Reason == figi.IncompatibleSubject {
-			status = "ambiguous"
-			reason = string(selected.Reason)
-		}
-	} else if base.Figi == "" {
-		status = result.Status
-		if status == "provisional" {
-			reason = string(figi.MissingIdentifier)
-		}
-	}
-
-	if root.ReferenceReason == string(figi.SourceConflict) {
-		status = "conflict"
-		reason = root.ReferenceReason
-	}
+	plan := calculation.PlanReferenceRefresh(calculation.ReferenceRefreshInput{
+		Baseline: instrumentSelection(base),
+		Metadata: calculation.ReferenceIdentityMetadata{
+			Family: source.InstrumentKind(root.Kind), Allocation: figi.Allocation(root.ReferenceAllocation),
+			Reason: figi.Reason(root.ReferenceReason),
+		},
+		Status: calculation.ReferenceStatus(result.Status), Evidence: result.Evidence, Records: result.Records,
+	})
 
 	evidence := append(
 		[]reference.Attempt{{Evidence: result.Evidence, Status: result.Status}},
@@ -477,11 +441,11 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 		ctx,
 		sqlc.SaveInstrumentSelectionParams{
 			InstrumentID: id,
-			Name:         base.Name,
-			Ticker:       base.Ticker,
-			Figi:         base.Figi,
-			Evidence:     base.Evidence,
-			Status:       status,
+			Name:         plan.Selection.Name,
+			Ticker:       plan.Selection.Ticker,
+			Figi:         plan.Selection.FIGI,
+			Evidence:     plan.Selection.Evidence,
+			Status:       string(plan.Selection.Status),
 			UnderlierID:  base.UnderlierID,
 		},
 	); err != nil {
@@ -505,13 +469,15 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 
 	if err = q.IdentityMetadata(
 		ctx,
-		sqlc.IdentityMetadataParams{ID: id, Allocation: allocation, Reason: reason, Family: family},
+		sqlc.IdentityMetadataParams{
+			ID: id, Family: string(plan.Metadata.Family),
+			Allocation: string(plan.Metadata.Allocation), Reason: string(plan.Metadata.Reason),
+		},
 	); err != nil {
 		return err
 	}
 
-	if status == "resolved" {
-		// Only a directly corroborated reported venue FIGI may identify a listing.
+	if plan.Selection.Status == "resolved" {
 		value, e := instrumentValue(root)
 		if e != nil {
 			return e
@@ -522,22 +488,15 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 			return e
 		}
 
-		if len(listings) == 1 {
-			for _, reported := range value.Reported().Identifiers() {
-				if reported.Kind() != source.VenueFIGI && reported.Kind() != source.UnclassifiedFIGI {
-					continue
-				}
-
-				for _, r := range result.Records {
-					if r.FIGI == reported.Value() && r.FIGI != r.Composite {
-						if e = q.SetListingFIGI(
-							ctx,
-							sqlc.SetListingFIGIParams{ID: listings[0].ID, Figi: r.FIGI},
-						); e != nil {
-							return e
-						}
-					}
-				}
+		corroboration := calculation.PlanListingCorroboration(
+			value.Reported().Identifiers(), result.Records, listingIdentities(listings),
+		)
+		for _, listingFIGI := range corroboration.FIGIs {
+			if e = q.SetListingFIGI(
+				ctx,
+				sqlc.SetListingFIGIParams{ID: corroboration.ListingID, Figi: listingFIGI},
+			); e != nil {
+				return e
 			}
 		}
 	}
