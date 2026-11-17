@@ -1037,11 +1037,13 @@ func (q *Queries) ClaimRootIDs(ctx context.Context, arg ClaimRootIDsParams) ([]s
 const competingFIGI = `-- name: CompetingFIGI :many
 SELECT instruments.revision, instruments.id, instruments.source_key, instruments.name, instruments.ticker, instruments.kind, instruments.reported, instruments.reference_input_revision, instruments.reference_status, instruments.reference_allocation, instruments.reference_reason, instruments.selection_authority, instruments.reference_figi, instruments.evidence_id, instruments.rule, instruments.calculation_rule, instruments.underlier_id FROM instruments
 JOIN (
- SELECT projected.id FROM instruments projected WHERE projected.reference_figi=?1
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi<>'' AND projected.reference_figi=?1
  UNION
- SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=?1
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=?1 AND retained.figi<>''
 ) claims ON claims.id=instruments.id
-WHERE instruments.id<>?2 AND instruments.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY instruments.id
+WHERE instruments.id<>?2
+ AND NOT EXISTS (SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=instruments.id)
+ORDER BY instruments.id
 `
 
 type CompetingFIGIParams struct {
@@ -1898,7 +1900,14 @@ func (q *Queries) IdentityMetadata(ctx context.Context, arg IdentityMetadataPara
 }
 
 const identityRoots = `-- name: IdentityRoots :many
-SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_input_revision, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=?1 UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=?1) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid
+SELECT i.revision, i.id, i.source_key, i.name, i.ticker, i.kind, i.reported, i.reference_input_revision, i.reference_status, i.reference_allocation, i.reference_reason, i.selection_authority, i.reference_figi, i.evidence_id, i.rule, i.calculation_rule, i.underlier_id FROM instruments i
+JOIN (
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi<>'' AND projected.reference_figi=?1
+ UNION
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=?1 AND retained.figi<>''
+) roots ON roots.id=i.id
+WHERE NOT EXISTS (SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
+ORDER BY i.rowid
 `
 
 func (q *Queries) IdentityRoots(ctx context.Context, figi string) ([]Instrument, error) {

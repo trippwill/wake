@@ -199,11 +199,13 @@ UPDATE instruments SET source_key=sqlc.arg(source_key) WHERE id=sqlc.arg(id);
 -- name: CompetingFIGI :many
 SELECT instruments.* FROM instruments
 JOIN (
- SELECT projected.id FROM instruments projected WHERE projected.reference_figi=sqlc.arg(figi)
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi<>'' AND projected.reference_figi=sqlc.arg(figi)
  UNION
- SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=sqlc.arg(figi)
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=sqlc.arg(figi) AND retained.figi<>''
 ) claims ON claims.id=instruments.id
-WHERE instruments.id<>sqlc.arg(current_id) AND instruments.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY instruments.id;
+WHERE instruments.id<>sqlc.arg(current_id)
+ AND NOT EXISTS (SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=instruments.id)
+ORDER BY instruments.id;
 -- name: PutInstrumentRoot :exec
 INSERT INTO instruments(id,source_key,name,ticker,kind,reported,rule,reference_status,calculation_rule) VALUES(?,?,?,?,?,?,?,'provisional',?);
 -- name: Instruments :many
@@ -495,7 +497,14 @@ UPDATE resource_aliases SET target_id=sqlc.arg(target) WHERE kind=sqlc.arg(kind)
 -- name: IdentityMetadata :exec
 UPDATE instruments SET reference_allocation=sqlc.arg(allocation),reference_reason=sqlc.arg(reason),kind=sqlc.arg(family) WHERE id=sqlc.arg(id) AND (reference_allocation<>sqlc.arg(allocation) OR reference_reason<>sqlc.arg(reason) OR kind<>sqlc.arg(family));
 -- name: IdentityRoots :many
-SELECT i.* FROM instruments i JOIN (SELECT original.id FROM instruments original WHERE original.reference_figi=sqlc.arg(figi) UNION SELECT selected.instrument_id AS id FROM instrument_selections selected WHERE selected.figi=sqlc.arg(figi)) roots ON roots.id=i.id WHERE i.id NOT IN (SELECT id FROM resource_aliases WHERE kind='instruments') ORDER BY i.rowid;
+SELECT i.* FROM instruments i
+JOIN (
+ SELECT projected.id FROM instruments projected WHERE projected.reference_figi<>'' AND projected.reference_figi=sqlc.arg(figi)
+ UNION
+ SELECT retained.instrument_id FROM instrument_selections retained WHERE retained.figi=sqlc.arg(figi) AND retained.figi<>''
+) roots ON roots.id=i.id
+WHERE NOT EXISTS (SELECT 1 FROM resource_aliases a WHERE a.kind='instruments' AND a.id=i.id)
+ORDER BY i.rowid;
 -- name: MoveInstrumentClaims :exec
 INSERT INTO instrument_claims(instrument_id,claim_id,ordinal,role,outcome,rule) SELECT sqlc.arg(target),c.claim_id,c.ordinal,c.role,c.outcome,c.rule FROM instrument_claims c WHERE c.instrument_id=sqlc.arg(previous) ON CONFLICT DO NOTHING;
 -- name: MoveReferenceAttempts :exec

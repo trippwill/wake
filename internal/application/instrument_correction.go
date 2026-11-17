@@ -165,14 +165,16 @@ func calculateInstrumentSelection(
 				Eligible: compatible,
 			}
 
-			kinds, err := reader.CompetingInstrumentKinds(ctx, id, figi)
-			if err != nil {
-				return calculation.InstrumentCalculation{}, "", err
-			}
+			if compatible {
+				kinds, err := reader.CompetingInstrumentKinds(ctx, id, figi)
+				if err != nil {
+					return calculation.InstrumentCalculation{}, "", err
+				}
 
-			for _, kind := range kinds {
-				if !calculation.CompatibleInstrumentKind(family, kind) {
-					input.CompetingFIGIs[figi] = true
+				for _, kind := range kinds {
+					if !calculation.CompatibleInstrumentKind(family, kind) {
+						input.CompetingFIGIs[figi] = true
+					}
 				}
 			}
 		case "underlier":
