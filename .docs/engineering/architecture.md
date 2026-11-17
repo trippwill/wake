@@ -506,10 +506,11 @@ moves original databases to recovery names before installing the staged set.
 Synchronization-only recovery uses the same durable intent for the optional
 replacements and pins the unchanged warehouse by identity and digest. It rejects
 outstanding journals, retains surviving encrypted access under its original
-bindings, and starts a fresh paused association. A stopped-instance preview binds
-the selected files and any reviewed configuration archive. The archive can supply
-settings for matching retained source identities. Runtime state and grants from
-that archive stay outside the recovered association.
+bindings, and starts a fresh paused association. Wake's recovery plan binds the
+selected files and any reviewed configuration archive. SQLite gathers those facts
+under store ownership and checks confirmation before staging replacements. The
+archive can supply settings for matching retained source identities. Runtime state
+and grants from that archive stay outside the recovered association.
 
 Unsupported pre-release formats require a compatible build or explicit recreation.
 The offline warehouse and credential resets preview the selected file and its

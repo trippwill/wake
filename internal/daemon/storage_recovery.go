@@ -13,6 +13,7 @@ import (
 	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
+	"go.trippwill.dev/wake/internal/recovery"
 )
 
 func SnapshotWarehouse(ctx context.Context, cfg config.Config, configPath, artifact string) (string, error) {
@@ -108,19 +109,19 @@ func BackupStorage(ctx context.Context, cfg config.Config, configPath, artifact 
 
 func RecoverSynchronization(
 	ctx context.Context, cfg config.Config, configPath, artifact, confirm string,
-) (persistence.SyncRecoveryPlan, error) {
+) (recovery.SyncPlan, error) {
 	if err := config.PrepareInstallationRestore(cfg); err != nil {
-		return persistence.SyncRecoveryPlan{}, err
+		return recovery.SyncPlan{}, err
 	}
 
 	profile, archive, err := recoveryPaths(cfg, configPath, artifact, false)
 	if err != nil {
-		return persistence.SyncRecoveryPlan{}, err
+		return recovery.SyncPlan{}, err
 	}
 
 	owner, err := acquireProcessOwnership(cfg.Paths.RuntimeDir)
 	if err != nil {
-		return persistence.SyncRecoveryPlan{}, err
+		return recovery.SyncPlan{}, err
 	}
 	defer owner.close()
 

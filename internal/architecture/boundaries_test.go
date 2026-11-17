@@ -157,6 +157,14 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					t.Errorf("application depends on implementation adapter: %s imports %s", rel, value)
 				}
 
+				if strings.HasPrefix(rel, "internal/recovery/") {
+					switch value {
+					case "crypto/sha256", "encoding/hex", "encoding/json":
+					default:
+						t.Errorf("%s imports %s; recovery plans depend only on prepared facts", rel, value)
+					}
+				}
+
 				if strings.HasPrefix(rel, "internal/reference/figi/") {
 					switch value {
 					case "encoding/json", "slices", "go.trippwill.dev/wake/source":

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.trippwill.dev/wake/internal/recovery"
 	"go.trippwill.dev/wake/provider"
 )
 
@@ -53,7 +54,15 @@ func TestRecoverSynchronization(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := RecoverSynchronization(ctx, profile, "", preview.ID); !errors.Is(err, ErrSyncRecoveryPlan) {
+	if _, err := RecoverSynchronization(
+		ctx,
+		profile,
+		"",
+		preview.ID,
+	); !errors.Is(
+		err,
+		recovery.ErrSyncPlanChanged,
+	) {
 		t.Fatal("stale preview authorized replacement", err)
 	}
 
@@ -158,7 +167,7 @@ func TestSynchronizationRecoveryResumesAfterProcessExit(t *testing.T) {
 		"another-plan",
 	); !errors.Is(
 		err,
-		ErrSyncRecoveryPlan,
+		recovery.ErrSyncPlanChanged,
 	) {
 		t.Fatal("pending plan accepted a different confirmation", err)
 	}
@@ -271,7 +280,7 @@ func TestRecoverSynchronizationImportsOnlyReviewedConfiguration(t *testing.T) {
 		t.Fatal("missing configuration differences", p, err)
 	}
 
-	if _, err := RecoverSynchronization(ctx, profile, "", p.ID); !errors.Is(err, ErrSyncRecoveryPlan) {
+	if _, err := RecoverSynchronization(ctx, profile, "", p.ID); !errors.Is(err, recovery.ErrSyncPlanChanged) {
 		t.Fatal("confirmation reused after dropping the import", err)
 	}
 

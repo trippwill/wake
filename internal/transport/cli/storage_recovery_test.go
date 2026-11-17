@@ -15,6 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
+	"go.trippwill.dev/wake/internal/recovery"
 )
 
 func TestInstallationBackupAndRestorePreserveCurrentLocalAuthority(t *testing.T) {
@@ -343,7 +344,7 @@ func TestRecoverSyncCLIRequiresReviewedPlan(t *testing.T) {
 		t.Fatal(status, stdout.String(), stderr.String())
 	}
 
-	var plan persistence.SyncRecoveryPlan
+	var plan recovery.SyncPlan
 	if err := json.Unmarshal(
 		stdout.Bytes(),
 		&plan,

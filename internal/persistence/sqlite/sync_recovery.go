@@ -7,34 +7,15 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"time"
+
+	"go.trippwill.dev/wake/internal/recovery"
 )
-
-const ErrSyncRecoveryPlan Error = "synchronization recovery plan changed; preview recovery again"
-
-type SyncRecoveryPlan struct {
-	ID           string              `json:"plan_id"`
-	Stores       [storeCount]string  `json:"stores"`
-	RetainAccess bool                `json:"retain_access"`
-	Pending      bool                `json:"pending"`
-	Applied      bool                `json:"applied"`
-	Current      []SyncConfiguration `json:"current_configuration,omitempty"`
-	Proposed     []SyncConfiguration `json:"proposed_configuration,omitempty"`
-	pacing       recoveryPacing
-}
-
-type SyncConfiguration struct {
-	ID       string          `json:"connection_id"`
-	Provider string          `json:"provider"`
-	Name     string          `json:"name"`
-	Settings json.RawMessage `json:"settings"`
-}
 
 // RecoverSynchronization rebuilds optional state from a clean warehouse. The
 // confirmation binds the bytes of the selected stores and the exact paths.
@@ -42,9 +23,9 @@ func RecoverSynchronization(
 	ctx context.Context,
 	profile Profile,
 	archivePath, confirm string,
-) (SyncRecoveryPlan, error) {
+) (recovery.SyncPlan, error) {
 	paths := profile.paths()
-	plan := SyncRecoveryPlan{Stores: paths}
+	plan := recovery.SyncPlan{Stores: paths}
 
 	if err := profile.CheckArtifactPath(archivePath, false); err != nil {
 		return plan, err
@@ -78,19 +59,13 @@ func RecoverSynchronization(
 
 		plan.ID, plan.Pending = intent.ArchiveDigest, true
 		plan.RetainAccess = intent.Stores[1].Original != nil
+		err = plan.CheckConfirmation(confirm)
 	} else {
 		plan, err = planSyncRecovery(ctx, paths, intentPath, archivePath, confirm)
-		if err != nil {
-			return plan, err
-		}
 	}
 
-	if confirm == "" {
-		return plan, nil
-	}
-
-	if plan.ID != confirm {
-		return plan, ErrSyncRecoveryPlan
+	if err != nil || confirm == "" {
+		return plan, err
 	}
 
 	intent, err = readRestoreIntent(intentPath)
@@ -109,8 +84,8 @@ func RecoverSynchronization(
 
 func planSyncRecovery(
 	ctx context.Context, paths [storeCount]string, intentPath, archivePath, confirm string,
-) (SyncRecoveryPlan, error) {
-	plan := SyncRecoveryPlan{Stores: paths}
+) (recovery.SyncPlan, error) {
+	plan := recovery.SyncPlan{Stores: paths}
 
 	var (
 		originals [storeCount]*os.File
@@ -143,7 +118,10 @@ func planSyncRecovery(
 		return plan, err
 	}
 
-	var access storeMetadata
+	var (
+		access storeMetadata
+		pacing recoveryPacing
+	)
 	if originals[1] != nil {
 		db, metadata, err := inspectStorageMember(ctx, paths[1], originals[1], 1)
 		if err != nil {
@@ -158,7 +136,7 @@ func planSyncRecovery(
 		db, err := inspectRecoverableSync(ctx, paths[2], originals[2])
 		if err == nil {
 			plan.Current, _ = readSyncConfigurations(ctx, db)
-			plan.pacing, err = readRecoveryPacing(ctx, db)
+			pacing, err = readRecoveryPacing(ctx, db)
 			if err := errors.Join(err, db.Close()); err != nil {
 				return plan, err
 			}
@@ -182,35 +160,27 @@ func planSyncRecovery(
 			return plan, err
 		}
 
-		plan.pacing.deadlines = append(plan.pacing.deadlines, archived.deadlines...)
-		if archived.reference.After(plan.pacing.reference) {
-			plan.pacing.reference = archived.reference
+		pacing.deadlines = append(pacing.deadlines, archived.deadlines...)
+		if archived.reference.After(pacing.reference) {
+			pacing.reference = archived.reference
 		}
 	}
 
-	binding, err := json.Marshal(struct {
-		Paths, Inputs [storeCount]string
-		Archive       string
-	}{paths, inputs, archiveDigest})
+	plan.ID, err = recovery.SyncPlanID(paths, inputs, archiveDigest)
 	if err != nil {
 		return plan, err
 	}
 
-	plan.ID = digest(binding)
-	if confirm == "" {
-		return plan, nil
+	if err = plan.CheckConfirmation(confirm); err != nil || confirm == "" {
+		return plan, err
 	}
 
-	if plan.ID != confirm {
-		return plan, ErrSyncRecoveryPlan
-	}
-
-	return plan, prepareSyncRecovery(ctx, paths, intentPath, plan, originals, access)
+	return plan, prepareSyncRecovery(ctx, paths, intentPath, plan, pacing, originals, access)
 }
 
 func readSyncRecoveryArchive(
 	ctx context.Context, archivePath, warehouse string, financialOwner *os.File,
-) ([]SyncConfiguration, recoveryPacing, string, error) {
+) ([]recovery.SyncConfiguration, recoveryPacing, string, error) {
 	archive, err := openBackup(archivePath)
 	if err != nil {
 		return nil, recoveryPacing{}, "", err
@@ -288,16 +258,16 @@ func readSyncRecoveryArchive(
 	return configs, pacing, archiveDigest, err
 }
 
-func readSyncConfigurations(ctx context.Context, db *sql.DB) ([]SyncConfiguration, error) {
+func readSyncConfigurations(ctx context.Context, db *sql.DB) ([]recovery.SyncConfiguration, error) {
 	rows, err := db.QueryContext(ctx, profileStatement("SyncRecoveryConfigurations", "main"))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var result []SyncConfiguration
+	var result []recovery.SyncConfiguration
 	for rows.Next() {
-		var config SyncConfiguration
+		var config recovery.SyncConfiguration
 		if err := rows.Scan(&config.ID, &config.Provider, &config.Name, &config.Settings); err != nil {
 			return nil, err
 		}
@@ -313,8 +283,8 @@ func readSyncConfigurations(ctx context.Context, db *sql.DB) ([]SyncConfiguratio
 }
 
 func prepareSyncRecovery(
-	ctx context.Context, paths [storeCount]string, intentPath string, plan SyncRecoveryPlan,
-	originals [storeCount]*os.File, access storeMetadata,
+	ctx context.Context, paths [storeCount]string, intentPath string, plan recovery.SyncPlan,
+	pacing recoveryPacing, originals [storeCount]*os.File, access storeMetadata,
 ) error {
 	intent := restoreIntent{ArchiveDigest: plan.ID, SyncOnly: true, Replace: true}
 
@@ -348,7 +318,7 @@ func prepareSyncRecovery(
 		defer func() { _ = owners[i].Close() }()
 	}
 
-	if err := buildSyncRecovery(ctx, staged, owners, access, plan); err != nil {
+	if err := buildSyncRecovery(ctx, staged, owners, access, plan.Proposed, pacing); err != nil {
 		return err
 	}
 
@@ -390,7 +360,8 @@ func buildSyncRecovery(
 	paths [storeCount]string,
 	owners [storeCount]*os.File,
 	access storeMetadata,
-	plan SyncRecoveryPlan,
+	proposed []recovery.SyncConfiguration,
+	pacing recoveryPacing,
 ) error {
 	db := sql.OpenDB(
 		&connector{paths: [storeCount]string{paths[0]}, owners: [storeCount]*os.File{owners[0]}, probe: true},
@@ -458,14 +429,14 @@ func buildSyncRecovery(
 		return err
 	}
 
-	for _, config := range plan.Proposed {
+	for _, config := range proposed {
 		if _, err := tx.ExecContext(ctx, profileStatement("ImportSyncConfiguration", ""),
 			config.ID, config.Provider, config.Name, []byte(config.Settings)); err != nil {
 			return err
 		}
 	}
 
-	if err := preserveRecoveryPacing(ctx, tx, plan.pacing); err != nil {
+	if err := preserveRecoveryPacing(ctx, tx, pacing); err != nil {
 		return err
 	}
 
