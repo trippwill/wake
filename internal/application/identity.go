@@ -7,14 +7,14 @@ import (
 	"context"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
 type IdentityRoot struct {
 	ID, Name, Ticker, FIGI, Evidence, Allocation string
 	Family                                       source.InstrumentKind
-	Reason                                       reference.Reason
+	Reason                                       figi.Reason
 }
 
 type IdentityReader interface {
@@ -22,13 +22,13 @@ type IdentityReader interface {
 	IdentityRoots(context.Context, string) ([]IdentityRoot, error)
 	AutomaticInstrument(context.Context, string) (calculation.InstrumentSelection, error)
 	InstrumentDecisions(context.Context, string) ([]DecisionRecord, error)
-	InstrumentReference(context.Context, string, string) (reference.Record, string, error)
+	InstrumentReference(context.Context, string, string) (figi.Record, string, error)
 	CanonicalInstrument(context.Context, string) (string, error)
 }
 
 type IdentityConflict struct {
 	Root   IdentityRoot
-	Reason reference.Reason
+	Reason figi.Reason
 }
 
 type IdentityConvergence struct {
@@ -53,16 +53,16 @@ func PlanIdentityConvergence(
 		return IdentityConvergence{}, err
 	}
 
-	figi := root.FIGI
-	if figi == "" {
-		figi = base.FIGI
+	rootFIGI := root.FIGI
+	if rootFIGI == "" {
+		rootFIGI = base.FIGI
 	}
 
-	if figi == "" {
+	if rootFIGI == "" {
 		return IdentityConvergence{}, nil
 	}
 
-	roots, err := reader.IdentityRoots(ctx, figi)
+	roots, err := reader.IdentityRoots(ctx, rootFIGI)
 	if err != nil || len(roots) < 2 {
 		return IdentityConvergence{}, err
 	}
@@ -71,11 +71,11 @@ func PlanIdentityConvergence(
 
 	choices := map[string]string{}
 	blocked := false
-	blockReason := reference.OperatorConflict
+	blockReason := figi.OperatorConflict
 	for _, candidate := range roots {
 		if !calculation.CompatibleInstrumentKind(family, candidate.Family) {
 			blocked = true
-			blockReason = reference.IncompatibleSubject
+			blockReason = figi.IncompatibleSubject
 		}
 
 		if family == source.UnknownInstrument {
@@ -87,12 +87,12 @@ func PlanIdentityConvergence(
 			return IdentityConvergence{}, err
 		}
 
-		if automatic.FIGI != "" && automatic.FIGI != figi {
+		if automatic.FIGI != "" && automatic.FIGI != rootFIGI {
 			blocked = true
-			blockReason = reference.CompetingIdentity
+			blockReason = figi.CompetingIdentity
 		}
 
-		if base.FIGI == "" && automatic.FIGI == figi {
+		if base.FIGI == "" && automatic.FIGI == rootFIGI {
 			base = automatic
 		}
 
@@ -121,7 +121,7 @@ func PlanIdentityConvergence(
 				return IdentityConvergence{}, err
 			}
 
-			if scope == "reference" && value != figi {
+			if scope == "reference" && value != rootFIGI {
 				blocked = true
 			}
 
@@ -164,7 +164,7 @@ func PlanIdentityConvergence(
 	}
 
 	target.Allocation, target.Family, target.Reason = root.Allocation, family, root.Reason
-	if target.Reason == reference.OperatorConflict || target.Reason == reference.ConvergenceBlocked {
+	if target.Reason == figi.OperatorConflict || target.Reason == figi.ConvergenceBlocked {
 		target.Reason = ""
 	}
 
@@ -176,21 +176,21 @@ func PlanIdentityConvergence(
 	return IdentityConvergence{Target: target, Selection: base, Aliases: aliases}, nil
 }
 
-func retainedIdentityConflict(reason reference.Reason) bool {
+func retainedIdentityConflict(reason figi.Reason) bool {
 	switch reason {
-	case reference.SourceConflict,
-		reference.CompetingIdentity,
-		reference.ConflictingParents,
-		reference.IncompatibleSubject:
+	case figi.SourceConflict,
+		figi.CompetingIdentity,
+		figi.ConflictingParents,
+		figi.IncompatibleSubject:
 		return true
 	default:
 		return false
 	}
 }
 
-func identityConflicts(roots []IdentityRoot, reason reference.Reason) []IdentityConflict {
-	if reason != reference.OperatorConflict {
-		reason = reference.ConvergenceBlocked
+func identityConflicts(roots []IdentityRoot, reason figi.Reason) []IdentityConflict {
+	if reason != figi.OperatorConflict {
+		reason = figi.ConvergenceBlocked
 	}
 
 	conflicts := make([]IdentityConflict, 0, len(roots))
@@ -219,7 +219,7 @@ func identityChoice(
 			return "", err
 		}
 
-		return reference.SelectIdentity(root.Family, []reference.Record{record}).FIGI, nil
+		return figi.SelectIdentity(root.Family, []figi.Record{record}).FIGI, nil
 	case "underlier":
 		return reader.CanonicalInstrument(ctx, d.Text)
 	default:

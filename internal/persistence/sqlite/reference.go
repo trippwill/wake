@@ -15,6 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -283,7 +284,7 @@ func (s *Store) ReferenceCached(
 func (s *Store) SaveReference(
 	ctx context.Context,
 	evidence reference.Evidence,
-	jobs []reference.Job,
+	jobs []figi.Job,
 	results []reference.Result,
 ) ([]reference.Result, error) {
 	if len(jobs) != len(results) {
@@ -409,11 +410,11 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 	status := base.Status
 	allocation, reason, family := root.ReferenceAllocation, root.ReferenceReason, root.Kind
 	if result.Status == "resolved" {
-		selected := reference.SelectIdentity(source.InstrumentKind(root.Kind), result.Records)
+		selected := figi.SelectIdentity(source.InstrumentKind(root.Kind), result.Records)
 		if selected.FIGI != "" {
 			if base.Figi != "" && base.Figi != selected.FIGI {
 				status = "conflict"
-				reason = string(reference.CompetingIdentity)
+				reason = string(figi.CompetingIdentity)
 			} else {
 				base.Figi = selected.FIGI
 				base.Evidence = result.Evidence
@@ -435,18 +436,18 @@ func (s *Store) ApplyReference(ctx context.Context, id string, result reference.
 					selected.Family,
 				)
 			}
-		} else if base.Figi == "" || selected.Reason == reference.ConflictingParents || selected.Reason == reference.CompetingIdentity || selected.Reason == reference.IncompatibleSubject {
+		} else if base.Figi == "" || selected.Reason == figi.ConflictingParents || selected.Reason == figi.CompetingIdentity || selected.Reason == figi.IncompatibleSubject {
 			status = "ambiguous"
 			reason = string(selected.Reason)
 		}
 	} else if base.Figi == "" {
 		status = result.Status
 		if status == "provisional" {
-			reason = string(reference.MissingIdentifier)
+			reason = string(figi.MissingIdentifier)
 		}
 	}
 
-	if root.ReferenceReason == string(reference.SourceConflict) {
+	if root.ReferenceReason == string(figi.SourceConflict) {
 		status = "conflict"
 		reason = root.ReferenceReason
 	}

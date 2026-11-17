@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
-package reference
+package figi
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 
 func TestOptionReferenceSubject(t *testing.T) {
 	equity := Record{FIGI: "listing", ShareClass: "root", Name: "Underlier", Market: "Equity"}
-	if _, _, ok := Select(source.Option, []Record{equity}); ok {
+	if selected := SelectIdentity(source.Option, []Record{equity}); selected.FIGI != "" {
 		t.Fatal("underlier identified option")
 	}
 
@@ -21,26 +21,26 @@ func TestOptionReferenceSubject(t *testing.T) {
 		Market:        "Equity",
 		SecurityType2: "Option",
 	}
-	if _, id, ok := Select(source.Option, []Record{option}); !ok || id != "contract" {
+	if selected := SelectIdentity(source.Option, []Record{option}); selected.FIGI != "contract" {
 		t.Fatal("option rejected")
 	}
 
-	if _, _, ok := Select(source.Equity, []Record{option}); ok {
+	if selected := SelectIdentity(source.Equity, []Record{option}); selected.FIGI != "" {
 		t.Fatal("option identified equity")
 	}
 
-	if _, id, ok := Select(source.Option, []Record{option, option}); !ok || id != "contract" {
+	if selected := SelectIdentity(source.Option, []Record{option, option}); selected.FIGI != "contract" {
 		t.Fatal("duplicate representations did not agree")
 	}
 }
 
 func TestDebtReferenceNeedsNoShareClass(t *testing.T) {
 	r := Record{FIGI: "issue", Name: "Treasury", Market: "Govt"}
-	if _, id, ok := Select(source.Debt, []Record{r}); !ok || id != "issue" {
+	if selected := SelectIdentity(source.Debt, []Record{r}); selected.FIGI != "issue" {
 		t.Fatal("debt required share class")
 	}
 
-	if _, _, ok := Select(source.Equity, []Record{r}); ok {
+	if selected := SelectIdentity(source.Equity, []Record{r}); selected.FIGI != "" {
 		t.Fatal("debt identified equity")
 	}
 }

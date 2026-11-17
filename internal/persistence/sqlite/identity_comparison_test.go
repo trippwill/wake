@@ -15,6 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/internal/transport/admin"
 	"go.trippwill.dev/wake/source"
 )
@@ -239,7 +240,7 @@ func TestReferenceComparisonUsesSelectedShareClassIdentity(t *testing.T) {
 	}
 
 	id := view.Instruments[0].ID()
-	jobs := []reference.Job{{IDType: "ID_ISIN", IDValue: "US0000000001"}}
+	jobs := []figi.Job{{IDType: "ID_ISIN", IDValue: "US0000000001"}}
 	request, _ := json.Marshal(jobs)
 	response := []byte(
 		`[{"data":[{"figi":"listing-a","shareClassFIGI":"root-a","name":"Same name","ticker":"SYN","marketSector":"Equity"},{"figi":"listing-b","shareClassFIGI":"root-b","name":"Same name","ticker":"SYN","marketSector":"Equity"}]}]`,

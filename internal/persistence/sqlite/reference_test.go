@@ -19,6 +19,7 @@ import (
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 )
 
 func insertReferenceInstrument(t *testing.T, s *Store, id, identifier string) {
@@ -155,7 +156,7 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 					t.Error("wrong reference credential profile")
 				}
 
-				var jobs []reference.Job
+				var jobs []figi.Job
 				if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil {
 					t.Error(err)
 				}
@@ -180,7 +181,7 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 						continue
 					}
 
-					records := []reference.Record{
+					records := []figi.Record{
 						{
 							FIGI:       "listing-" + j.IDValue,
 							ShareClass: "root-" + j.IDValue,
@@ -191,7 +192,7 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 					if ambiguous {
 						records = append(
 							records,
-							reference.Record{FIGI: "another", ShareClass: "another-root", Name: "Other", Market: "Equity"},
+							figi.Record{FIGI: "another", ShareClass: "another-root", Name: "Other", Market: "Equity"},
 						)
 					}
 
@@ -325,7 +326,7 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 				// Transient failures never become successful negative cache entries.
 				cache, found, e := s.ReferenceCached(
 					ctx,
-					reference.Job{IDType: "ID_ISIN", IDValue: "identifier-0"}.Key(),
+					figi.Job{IDType: "ID_ISIN", IDValue: "identifier-0"}.Key(),
 					now,
 				)
 				if e != nil || found && cache.Status == "temporary-failure" {
@@ -347,7 +348,7 @@ func TestReferenceDuplicateJobsAndRetainedEvidence(t *testing.T) {
 	jobs := 0
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var input []reference.Job
+		var input []figi.Job
 
 		_ = json.NewDecoder(r.Body).Decode(&input)
 		jobs += len(input)
@@ -380,7 +381,7 @@ func TestReferenceDuplicateJobsAndRetainedEvidence(t *testing.T) {
 
 	cache, found, err := s.ReferenceCached(
 		ctx,
-		reference.Job{IDType: "ID_ISIN", IDValue: "same-identifier"}.Key(),
+		figi.Job{IDType: "ID_ISIN", IDValue: "same-identifier"}.Key(),
 		now.Add(8*24*time.Hour),
 	)
 	if err != nil || found || cache.Evidence != "" {

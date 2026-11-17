@@ -19,6 +19,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/logging"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/internal/upstream"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
@@ -26,29 +27,12 @@ import (
 
 const Rule = "openfigi-authority/1"
 
-type Job struct {
-	IDType  string `json:"idType"`
-	IDValue string `json:"idValue"`
-}
-
-func (j Job) Key() string { b, _ := json.Marshal(j); return string(b) }
-
 type (
 	Attempt struct{ Evidence, Status string }
-	Record  struct {
-		FIGI          string `json:"figi"`
-		Name          string `json:"name"`
-		Ticker        string `json:"ticker"`
-		ShareClass    string `json:"shareClassFIGI"`
-		Composite     string `json:"compositeFIGI"`
-		Exchange      string `json:"exchCode"`
-		Market        string `json:"marketSector"`
-		SecurityType  string `json:"securityType"`
-		SecurityType2 string `json:"securityType2"`
-	}
+
 	Result struct {
 		Status, Evidence string
-		Records          []Record
+		Records          []figi.Record
 		Next             time.Time
 		Supporting       []Attempt
 		InputRevision    int64
@@ -73,7 +57,7 @@ type (
 		ReferenceCooldown(context.Context, time.Time) error
 		ReferenceAllowance(context.Context, int, time.Time) error
 		ReferenceCached(context.Context, string, time.Time) (Result, bool, error)
-		SaveReference(context.Context, Evidence, []Job, []Result) ([]Result, error)
+		SaveReference(context.Context, Evidence, []figi.Job, []Result) ([]Result, error)
 		PendingReference(context.Context, time.Time) ([]Pending, error)
 		ApplyReference(context.Context, string, Result) error
 	}
@@ -162,18 +146,6 @@ func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 	}
 
 	return s.store.SetReferenceKey(ctx, payload)
-}
-
-func job(p Pending) (Job, bool) {
-	for _, kind := range []source.IdentifierKind{source.VenueFIGI, source.InstrumentFIGI, source.CompositeFIGI, source.ShareClassFIGI, source.UnclassifiedFIGI, source.ISIN, source.CUSIP, source.SEDOL, source.OCC} {
-		for _, id := range p.Instrument.Identifiers() {
-			if id.Kind() == kind {
-				return LookupJob(id)
-			}
-		}
-	}
-
-	return Job{}, false
 }
 
 // RunOnce serializes shared admission and suppresses duplicate jobs before HTTP.
@@ -282,11 +254,11 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 		limit, batch = 250, 100
 	}
 
-	jobs := []Job{}
+	jobs := []figi.Job{}
 	owners := map[string][]Pending{}
 	changed := false
 	for _, p := range pending {
-		j, ok := job(p)
+		j, ok := figi.InstrumentJob(p.Instrument)
 		if !ok {
 			if err = s.store.ApplyReference(
 				ctx,
@@ -397,18 +369,6 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 	return changed, nil
 }
 
-// Select identifies the reference subject before accepting a name or identity.
-// An equity root result cannot identify an option on that equity.
-func Select(kind source.InstrumentKind, records []Record) (Record, string, bool) {
-	selected := SelectIdentity(kind, records)
-
-	return Record{
-		FIGI:   selected.FIGI,
-		Name:   selected.Name,
-		Ticker: selected.Ticker,
-	}, selected.FIGI, selected.FIGI != ""
-}
-
 // CheckAccess verifies configured protection without making a reference request.
 func (s *Service) CheckAccess(ctx context.Context) error {
 	payload, failure, err := s.store.ReferenceKey(ctx)
@@ -445,7 +405,7 @@ func (s *Service) CheckAccess(ctx context.Context) error {
 
 func (s *Service) fetch(
 	ctx context.Context,
-	jobs []Job,
+	jobs []figi.Job,
 	now time.Time,
 	limit int,
 	secret []byte,
@@ -510,9 +470,9 @@ func (s *Service) fetch(
 				body = []byte(`{"error":"response contained credential material"}`)
 			} else if response.StatusCode == http.StatusOK {
 				var decoded []struct {
-					Data    []Record `json:"data"`
-					Error   string   `json:"error"`
-					Warning string   `json:"warning"`
+					Data    []figi.Record `json:"data"`
+					Error   string        `json:"error"`
+					Warning string        `json:"warning"`
 				}
 				if json.Unmarshal(body, &decoded) == nil && len(decoded) == len(jobs) {
 					for i, r := range decoded {
@@ -612,7 +572,7 @@ func (s *Service) parents(
 ) (Result, error) {
 	// Missing equity parents require only the known composite's children. There is
 	// no search by labels or recursive graph walk; admission bounds outgoing work.
-	jobs := MissingComposites(kind, result.Records)
+	jobs := figi.MissingComposites(kind, result.Records)
 	seen := map[string]bool{}
 	for _, r := range result.Records {
 		if r.FIGI != "" {
@@ -631,7 +591,7 @@ func (s *Service) parents(
 			}
 
 			if !found {
-				fetched, e := s.fetch(ctx, []Job{parent}, now, limit, secret)
+				fetched, e := s.fetch(ctx, []figi.Job{parent}, now, limit, secret)
 				if e != nil {
 					return result, e
 				}

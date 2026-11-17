@@ -10,7 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -27,11 +27,11 @@ func persistRootEnrichment(
 	}
 
 	plan := calculation.PlanRootEnrichment(source.InstrumentKind(root.Kind), root.ReferenceFigi != "",
-		root.ReferenceReason == string(reference.SourceConflict), result, underlier)
+		root.ReferenceReason == string(figi.SourceConflict), result, underlier)
 	if plan.Conflict != calculation.KeepSourceConflict {
 		reason := ""
 		if plan.Conflict == calculation.RecordSourceConflict {
-			reason = string(reference.SourceConflict)
+			reason = string(figi.SourceConflict)
 		}
 
 		if err = q.IdentityMetadata(ctx, sqlc.IdentityMetadataParams{

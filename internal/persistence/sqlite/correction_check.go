@@ -10,7 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -64,7 +64,7 @@ func instrumentSelection(base sqlc.InstrumentSelection) calculation.InstrumentSe
 func (r correctionReader) InstrumentReference(
 	ctx context.Context,
 	id, value string,
-) (reference.Record, string, error) {
+) (figi.Record, string, error) {
 	return referenceCandidate(ctx, r.q, id, value)
 }
 

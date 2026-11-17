@@ -14,6 +14,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 )
 
 func retainDecision(
@@ -152,7 +153,7 @@ func TestObservationSelectionAndInstrumentNamingSurviveReplayAndReference(t *tes
 		instrument,
 		reference.Result{
 			Status: "resolved",
-			Records: []reference.Record{
+			Records: []figi.Record{
 				{
 					FIGI:          "option-venue",
 					Composite:     "option-reference",
@@ -265,7 +266,7 @@ func TestReferenceCandidateSelectionStaysWithinItsMappingJob(t *testing.T) {
 	body := []byte(
 		`[{"data":[{"figi":"candidate-a","shareClassFIGI":"root-a","name":"Candidate A","marketSector":"Equity"},{"figi":"candidate-b","shareClassFIGI":"root-b","name":"Candidate B","marketSector":"Equity"}]},{"data":[{"figi":"unrelated","shareClassFIGI":"unrelated-root","name":"Unrelated","marketSector":"Equity"}]}]`,
 	)
-	jobs := []reference.Job{
+	jobs := []figi.Job{
 		{IDType: "ID_ISIN", IDValue: "US0000000001"},
 		{IDType: "ID_ISIN", IDValue: "UNRELATED"},
 	}

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -32,8 +32,8 @@ func (ineligibleReferenceReader) InstrumentReference(
 	context.Context,
 	string,
 	string,
-) (reference.Record, string, error) {
-	return reference.Record{FIGI: "equity", ShareClass: "share-class", Market: "Equity"}, "evidence", nil
+) (figi.Record, string, error) {
+	return figi.Record{FIGI: "equity", ShareClass: "share-class", Market: "Equity"}, "evidence", nil
 }
 
 func TestProjectInstrumentRejectsIneligibleReferenceWithoutLookingUpCompetitors(t *testing.T) {

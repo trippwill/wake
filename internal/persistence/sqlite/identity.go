@@ -11,7 +11,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -48,7 +48,7 @@ func identityRoot(row sqlc.Instrument) application.IdentityRoot {
 		Evidence:   row.EvidenceID,
 		Allocation: row.ReferenceAllocation,
 		Family:     source.InstrumentKind(row.Kind),
-		Reason:     reference.Reason(row.ReferenceReason),
+		Reason:     figi.Reason(row.ReferenceReason),
 	}
 }
 

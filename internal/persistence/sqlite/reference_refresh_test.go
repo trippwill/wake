@@ -14,6 +14,7 @@ import (
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -198,7 +199,7 @@ func referenceRefreshFixture(t *testing.T) (*Store, reference.Result) {
 
 	return s, reference.Result{
 		Status: "resolved", Evidence: "reference-evidence", Next: next.Add(time.Hour),
-		Records: []reference.Record{
+		Records: []figi.Record{
 			{FIGI: "venue-b", ShareClass: "share", Market: "Equity", Name: "Verified issuer"},
 			{FIGI: "composite", Composite: "composite", ShareClass: "share", Market: "Equity"},
 			{FIGI: "venue-a", Composite: "composite", ShareClass: "share", Market: "Equity"},

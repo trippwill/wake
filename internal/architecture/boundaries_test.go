@@ -127,6 +127,14 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					t.Errorf("application depends on implementation adapter: %s imports %s", rel, value)
 				}
 
+				if strings.HasPrefix(rel, "internal/reference/figi/") {
+					switch value {
+					case "encoding/json", "slices", "go.trippwill.dev/wake/source":
+					default:
+						t.Errorf("%s depends on %s; FIGI classification must remain pure", rel, value)
+					}
+				}
+
 				if strings.HasPrefix(rel, "internal/host/") &&
 					(value == "database/sql" || strings.Contains(value, "/internal/persistence/") || strings.Contains(value, "/internal/transport/")) {
 					t.Errorf("host depends on implementation adapter: %s", value)

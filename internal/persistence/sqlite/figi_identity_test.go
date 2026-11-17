@@ -13,6 +13,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 )
 
 func applyEquityIdentity(t *testing.T, s *Store, id string) {
@@ -23,7 +24,7 @@ func applyEquityIdentity(t *testing.T, s *Store, id string) {
 		id,
 		reference.Result{
 			Status: "resolved",
-			Records: []reference.Record{
+			Records: []figi.Record{
 				{
 					FIGI:         "venue",
 					ShareClass:   "shared",
@@ -143,7 +144,7 @@ func TestFIGIConflictingChoicesWaitForReview(t *testing.T) {
 	}
 
 	for _, i := range view.Instruments {
-		if i.ReferenceMetadata().Reason != string(reference.OperatorConflict) {
+		if i.ReferenceMetadata().Reason != string(figi.OperatorConflict) {
 			t.Fatal(i)
 		}
 	}
@@ -235,7 +236,7 @@ func TestFIGICombinationRollsBackAndRetainsIndependentReleases(t *testing.T) {
 
 	result := reference.Result{
 		Status:  "resolved",
-		Records: []reference.Record{{FIGI: "other-venue", ShareClass: "shared", Market: "Equity"}},
+		Records: []figi.Record{{FIGI: "other-venue", ShareClass: "shared", Market: "Equity"}},
 		Next:    time.Now().Add(time.Hour),
 	}
 	if err = s.ApplyReference(t.Context(), b, result); err == nil {
@@ -394,7 +395,7 @@ func TestFIGIContradictionCannotBeOutvotedByAnotherRoot(t *testing.T) {
 		a,
 		reference.Result{
 			Status:  "resolved",
-			Records: []reference.Record{{FIGI: "venue", ShareClass: "different", Market: "Equity"}},
+			Records: []figi.Record{{FIGI: "venue", ShareClass: "different", Market: "Equity"}},
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -408,9 +409,9 @@ func TestFIGIContradictionCannotBeOutvotedByAnotherRoot(t *testing.T) {
 	}
 
 	for _, i := range view.Instruments {
-		reason := reference.ConvergenceBlocked
+		reason := figi.ConvergenceBlocked
 		if i.ID() == a {
-			reason = reference.CompetingIdentity
+			reason = figi.CompetingIdentity
 		}
 
 		if !i.Status().NeedsReview() || i.ReferenceMetadata().Reason != string(reason) {
@@ -461,7 +462,7 @@ func TestFIGIOptionAndUnderlierBindingsRemainCombinedAfterRecalculation(t *testi
 
 				result := reference.Result{
 					Status: "resolved",
-					Records: []reference.Record{
+					Records: []figi.Record{
 						{FIGI: "option-venue", Composite: "contract", Market: "Equity", SecurityType: "Equity Option"},
 					},
 					Next: time.Now().Add(time.Hour),
@@ -531,7 +532,7 @@ func TestSourceIdentityDisagreementSurvivesReferenceRefresh(t *testing.T) {
 
 	detail, err := s.InstrumentDetail(t.Context(), id)
 	if err != nil || !detail.Instrument.Status().NeedsReview() ||
-		detail.Instrument.ReferenceMetadata().Reason != string(reference.SourceConflict) ||
+		detail.Instrument.ReferenceMetadata().Reason != string(figi.SourceConflict) ||
 		detail.Instrument.FIGI() != "shared" {
 		t.Fatal("old identifier lookup erased source disagreement", detail, err)
 	}

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-package reference
+package figi
 
 import (
 	"slices"
@@ -38,39 +38,6 @@ type Selection struct {
 	Family       source.InstrumentKind
 	Name, Ticker string
 	Reason       Reason
-}
-
-// LookupJob is shared by acquisition and retained correction-candidate checks.
-// Allocation comes from the identifier's scheme, never its characters or labels.
-func LookupJob(id source.Identifier) (Job, bool) {
-	kind := ""
-	switch id.Kind() {
-	case source.VenueFIGI, source.InstrumentFIGI, source.UnclassifiedFIGI:
-		kind = "ID_BB_GLOBAL"
-	case source.CompositeFIGI:
-		kind = "COMPOSITE_ID_BB_GLOBAL"
-	case source.ShareClassFIGI:
-		kind = "ID_BB_GLOBAL_SHARE_CLASS_LEVEL"
-	case source.ISIN:
-		kind = "ID_ISIN"
-	case source.CUSIP:
-		kind = "ID_CUSIP"
-	case source.SEDOL:
-		kind = "ID_SEDOL"
-	case source.OCC:
-		kind = "OCC_SYMBOL"
-	default:
-		return Job{}, false
-	}
-
-	return Job{IDType: kind, IDValue: id.Value()}, true
-}
-
-func Matches(instrument source.Instrument, j Job) bool {
-	return slices.ContainsFunc(
-		instrument.Identifiers(),
-		func(id source.Identifier) bool { candidate, ok := LookupJob(id); return ok && candidate == j },
-	)
 }
 
 func optionRecord(r Record) bool {

@@ -40,6 +40,7 @@ import (
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 )
@@ -1123,7 +1124,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 	identity := reference.Result{
 		Status: "resolved",
-		Records: []reference.Record{
+		Records: []figi.Record{
 			{
 				FIGI:         "BBG000BPHFS9",
 				Composite:    "BBG000BPH459",

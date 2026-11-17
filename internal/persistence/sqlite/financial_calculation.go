@@ -15,7 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -414,8 +414,8 @@ func persistInstrumentCalculation(
 	}
 
 	if !slices.Contains(result.Explanation.AppliedScopes, "reference") {
-		switch reference.Reason(root.ReferenceReason) {
-		case reference.OperatorConflict, reference.SourceConflict, reference.ConvergenceBlocked:
+		switch figi.Reason(root.ReferenceReason) {
+		case figi.OperatorConflict, figi.SourceConflict, figi.ConvergenceBlocked:
 			selected.Status = "conflict"
 		}
 	}
@@ -435,12 +435,12 @@ func persistInstrumentCalculation(
 			return e
 		}
 
-		allocation := reference.ShareClassAllocation
+		allocation := figi.ShareClassAllocation
 		switch source.InstrumentKind(root.Kind) {
 		case source.Option:
-			allocation = reference.CompositeAllocation
+			allocation = figi.CompositeAllocation
 		case source.Debt:
-			allocation = reference.InstrumentAllocation
+			allocation = figi.InstrumentAllocation
 		}
 
 		if e = q.IdentityMetadata(

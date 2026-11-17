@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 )
 
 func TestFIGIParentLookupUsesDurableBudgetEvidenceAndCache(t *testing.T) {
@@ -23,7 +24,7 @@ func TestFIGIParentLookupUsesDurableBudgetEvidenceAndCache(t *testing.T) {
 	primary, parent := 0, 0
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var jobs []reference.Job
+		var jobs []figi.Job
 		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil || len(jobs) != 1 {
 			t.Error(jobs, err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -32,12 +33,12 @@ func TestFIGIParentLookupUsesDurableBudgetEvidenceAndCache(t *testing.T) {
 		}
 
 		switch jobs[0] {
-		case (reference.Job{IDType: "ID_ISIN", IDValue: "synthetic-isin"}):
+		case (figi.Job{IDType: "ID_ISIN", IDValue: "synthetic-isin"}):
 			primary++
 			_, _ = w.Write(
 				[]byte(`[{"data":[{"figi":"orphan-venue","compositeFIGI":"composite","marketSector":"Equity"}]}]`),
 			)
-		case (reference.Job{IDType: "COMPOSITE_ID_BB_GLOBAL", IDValue: "composite"}):
+		case (figi.Job{IDType: "COMPOSITE_ID_BB_GLOBAL", IDValue: "composite"}):
 			parent++
 			if parent == 1 {
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -66,7 +67,7 @@ func TestFIGIParentLookupUsesDurableBudgetEvidenceAndCache(t *testing.T) {
 	}
 
 	row, err := s.queries.Instrument(t.Context(), "root")
-	if err != nil || row.ReferenceReason != string(reference.MissingParent) {
+	if err != nil || row.ReferenceReason != string(figi.MissingParent) {
 		t.Fatal(row, err)
 	}
 
@@ -179,20 +180,20 @@ func TestMatchingOperatorReferenceChoicesCombineAndReleaseTogether(t *testing.T)
 		insertReferenceInstrument(t, s, id, "synthetic-isin")
 	}
 
-	jobs := []reference.Job{{IDType: "ID_ISIN", IDValue: "synthetic-isin"}}
+	jobs := []figi.Job{{IDType: "ID_ISIN", IDValue: "synthetic-isin"}}
 
 	request, err := json.Marshal(jobs)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	records := []reference.Record{
+	records := []figi.Record{
 		{FIGI: "venue-x", ShareClass: "X", Market: "Equity"},
 		{FIGI: "venue-y", ShareClass: "Y", Market: "Equity"},
 	}
 
 	response, err := json.Marshal([]struct {
-		Data []reference.Record `json:"data"`
+		Data []figi.Record `json:"data"`
 	}{{Data: records}})
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +245,7 @@ func TestFailedFIGIParentIsAttemptedOncePerRun(t *testing.T) {
 	primary, parent := 0, 0
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var jobs []reference.Job
+		var jobs []figi.Job
 		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil || len(jobs) != 1 {
 			t.Error(jobs, err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -288,7 +289,7 @@ func TestParentLookupPreservesContradictoryKnownFIGI(t *testing.T) {
 	insertReferenceInstrument(t, s, "root", "synthetic-isin")
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var jobs []reference.Job
+		var jobs []figi.Job
 		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil || len(jobs) != 1 {
 			t.Error(jobs, err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -318,7 +319,7 @@ func TestParentLookupPreservesContradictoryKnownFIGI(t *testing.T) {
 	}
 
 	row, err := s.queries.Instrument(t.Context(), "root")
-	if err != nil || row.ReferenceFigi != "" || row.ReferenceReason != string(reference.ConflictingParents) {
+	if err != nil || row.ReferenceFigi != "" || row.ReferenceReason != string(figi.ConflictingParents) {
 		t.Fatal("contradictory parent was filtered out", row, err)
 	}
 }

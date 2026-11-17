@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application/calculation"
-	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -19,7 +19,7 @@ type InstrumentCorrectionReader interface {
 	InstrumentBaseline(context.Context, string) (calculation.InstrumentSelection, source.InstrumentKind, error)
 	CanonicalInstrument(context.Context, string) (string, error)
 	InstrumentKind(context.Context, string) (source.InstrumentKind, error)
-	InstrumentReference(context.Context, string, string) (reference.Record, string, error)
+	InstrumentReference(context.Context, string, string) (figi.Record, string, error)
 	CompetingInstrumentKinds(context.Context, string, string) ([]source.InstrumentKind, error)
 }
 
@@ -154,26 +154,27 @@ func calculateInstrumentSelection(
 				return calculation.InstrumentCalculation{}, "", err
 			}
 
-			selected, figi, compatible := reference.Select(family, []reference.Record{record})
+			selected := figi.SelectIdentity(family, []figi.Record{record})
+			compatible := selected.FIGI != ""
 			input.References[d.Text] = calculation.ReferenceSelection{
 				InstrumentSelection: calculation.InstrumentSelection{
 					Name:     selected.Name,
 					Ticker:   selected.Ticker,
-					FIGI:     figi,
+					FIGI:     selected.FIGI,
 					Evidence: evidence,
 				},
 				Eligible: compatible,
 			}
 
 			if compatible {
-				kinds, err := reader.CompetingInstrumentKinds(ctx, id, figi)
+				kinds, err := reader.CompetingInstrumentKinds(ctx, id, selected.FIGI)
 				if err != nil {
 					return calculation.InstrumentCalculation{}, "", err
 				}
 
 				for _, kind := range kinds {
 					if !calculation.CompatibleInstrumentKind(family, kind) {
-						input.CompetingFIGIs[figi] = true
+						input.CompetingFIGIs[selected.FIGI] = true
 					}
 				}
 			}

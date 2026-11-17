@@ -609,6 +609,8 @@ Selection follows explicit parent relationships; it does not count rows or requi
 uniform names/classification spelling. A missing share-class edge can trigger one
 bounded lookup of its known composite through the same durable admission, cache
 and evidence path. No label search or unrestricted recursive traversal is used.
+Pure FIGI lookup and selection rules serve both reference acquisition and retained
+financial decisions. The reference service owns requests, pacing and caching.
 Accepted identity and refresh health have independent lifetimes. Missing usable
 identifiers wait for new source enrichment. Instruments carry identity metadata;
 financial terms remain on dated observations and activity, including same-activity

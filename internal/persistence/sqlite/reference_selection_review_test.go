@@ -13,6 +13,7 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 )
 
 func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
@@ -37,27 +38,27 @@ func TestRetainedAutomaticFIGIPreventsCompetingAssignment(t *testing.T) {
 		}
 	}
 
-	apply := func(id, isin, figi string) {
+	apply := func(id, isin, identity string) {
 		t.Helper()
 
-		record := reference.Record{
-			FIGI:       "listing-" + figi,
-			ShareClass: figi,
-			Name:       "Synthetic " + figi,
+		record := figi.Record{
+			FIGI:       "listing-" + identity,
+			ShareClass: identity,
+			Name:       "Synthetic " + identity,
 			Market:     "Equity",
 		}
-		jobs := []reference.Job{{IDType: "ID_ISIN", IDValue: isin}}
+		jobs := []figi.Job{{IDType: "ID_ISIN", IDValue: isin}}
 		request, _ := json.Marshal(jobs)
 		response, _ := json.Marshal([]struct {
-			Data []reference.Record `json:"data"`
-		}{{Data: []reference.Record{record}}})
+			Data []figi.Record `json:"data"`
+		}{{Data: []figi.Record{record}}})
 
 		results, e := s.SaveReference(
 			ctx,
 			reference.Evidence{At: time.Now(), Request: request, Response: response, Status: 200},
 			jobs,
 			[]reference.Result{
-				{Status: "resolved", Records: []reference.Record{record}, Next: time.Now().Add(time.Hour)},
+				{Status: "resolved", Records: []figi.Record{record}, Next: time.Now().Add(time.Hour)},
 			},
 		)
 		if e != nil {

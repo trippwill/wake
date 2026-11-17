@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-package reference
+package figi
 
 import (
 	"testing"
@@ -33,7 +33,7 @@ func TestFIGILookupUsesOnlyIdentifier(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			lookup, ok := job(Pending{Instrument: instrument})
+			lookup, ok := InstrumentJob(instrument)
 			if !ok || lookup.Key() != `{"idType":"ID_BB_GLOBAL","idValue":"BBG000BPH459"}` {
 				t.Fatalf("FIGI lookup contains additional filters: %s", lookup.Key())
 			}

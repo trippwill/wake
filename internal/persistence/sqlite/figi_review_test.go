@@ -13,6 +13,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/reference"
+	"go.trippwill.dev/wake/internal/reference/figi"
 	"go.trippwill.dev/wake/source"
 )
 
@@ -109,7 +110,7 @@ func TestConvergencePreservesConcreteFamily(t *testing.T) {
 					id,
 					reference.Result{
 						Status:  "resolved",
-						Records: []reference.Record{{FIGI: "venue", ShareClass: "share", Name: "Source label"}},
+						Records: []figi.Record{{FIGI: "venue", ShareClass: "share", Name: "Source label"}},
 						Next:    time.Now().Add(time.Hour),
 					},
 				); err != nil {
@@ -215,14 +216,14 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 
 	a := view.Instruments[0].ID()
 	now := time.Now()
-	jobs := []reference.Job{{IDType: "ID_ISIN", IDValue: "US0000000001"}}
+	jobs := []figi.Job{{IDType: "ID_ISIN", IDValue: "US0000000001"}}
 
 	request, err := json.Marshal(jobs)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	records := []reference.Record{
+	records := []figi.Record{
 		{
 			FIGI:         "venue",
 			ShareClass:   "shared",
@@ -233,7 +234,7 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 	}
 
 	response, err := json.Marshal([]struct {
-		Data []reference.Record `json:"data"`
+		Data []figi.Record `json:"data"`
 	}{{records}})
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +286,7 @@ func TestSourceDiagnosisDoesNotSpreadToCompatibleRoot(t *testing.T) {
 	)
 
 	blocked, err := s.InstrumentDetail(t.Context(), b)
-	if err != nil || blocked.Instrument.ReferenceMetadata().Reason != string(reference.ConvergenceBlocked) ||
+	if err != nil || blocked.Instrument.ReferenceMetadata().Reason != string(figi.ConvergenceBlocked) ||
 		!blocked.Instrument.Status().NeedsReview() {
 		t.Fatal("compatible enrichment cleared blocked convergence review", blocked, err)
 	}
