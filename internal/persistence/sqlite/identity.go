@@ -196,12 +196,7 @@ func mergeInstrument(ctx context.Context, q *sqlc.Queries, previous, target stri
 			return e
 		}
 
-		identities := make([]calculation.ListingIdentity, 0, len(candidates))
-		for _, candidate := range candidates {
-			identities = append(identities, calculation.ListingIdentity{ID: candidate.ID, FIGI: candidate.Figi})
-		}
-
-		plan := calculation.PlanListingMerge(l.Figi, identities)
+		plan := calculation.PlanListingMerge(l.Figi, listingIdentities(candidates))
 		if plan.TargetID == "" {
 			if e = q.MoveListing(ctx, sqlc.MoveListingParams{InstrumentID: target, ID: l.ID}); e != nil {
 				return e

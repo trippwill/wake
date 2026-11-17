@@ -141,33 +141,11 @@ func acceptListing(
 	if err != nil {
 		return "", err
 	}
-	// A reported venue identifier can select an already verified representation.
-	hasVenueFIGI := false
-	for _, identifier := range i.Identifiers() {
-		if identifier.Kind() != source.VenueFIGI && identifier.Kind() != source.UnclassifiedFIGI {
-			continue
-		}
 
-		hasVenueFIGI = true
-
-		for _, listing := range listings {
-			if listing.Figi == identifier.Value() {
-				return listing.ID, nil
-			}
-		}
+	plan := calculation.PlanListingAdmission(i.Identifiers(), listingIdentities(listings))
+	if !plan.Create {
+		return plan.ExistingID, nil
 	}
-
-	if len(listings) == 1 {
-		if hasVenueFIGI && listings[0].Figi != "" {
-			return "", nil
-		}
-
-		return listings[0].ID, nil
-	}
-
-	if len(listings) > 1 {
-		return "", nil
-	} // labels alone cannot choose a venue identity
 
 	id := rand.Text()
 	if err = q.PutListing(
@@ -184,6 +162,15 @@ func acceptListing(
 	}
 
 	return id, nil
+}
+
+func listingIdentities(rows []sqlc.Listing) []calculation.ListingIdentity {
+	identities := make([]calculation.ListingIdentity, 0, len(rows))
+	for _, row := range rows {
+		identities = append(identities, calculation.ListingIdentity{ID: row.ID, FIGI: row.Figi})
+	}
+
+	return identities
 }
 
 func (s *Store) ExecutionDetail(ctx context.Context, id string) (application.ExecutionDetail, error) {

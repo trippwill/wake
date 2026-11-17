@@ -87,7 +87,9 @@ decisions, and calculates their result. SQLite supplies typed transaction-bound
 inputs and persists explicit decisions and results. It finalizes publication in
 the same transaction and notifies subscribers only after successful commit.
 Instrument identity policy compares eligible claims and active operator choices in
-the application, which also determines listing convergence and root enrichment.
+the application. SQLite supplies active roots with matching projected or retained
+automatic FIGI claims. Financial calculation determines listing admission and
+convergence from ordered candidates and enriches roots from retained claims.
 SQLite applies the resulting convergence, alias and relinking
 writes within the same transaction. Underlier binding and root projection read
 separate read phases within the transaction so shared roots see the current bindings.
