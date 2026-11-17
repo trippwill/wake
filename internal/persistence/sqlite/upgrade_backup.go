@@ -14,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
+	"go.trippwill.dev/wake/internal/recoveryarchive"
 )
 
 const (

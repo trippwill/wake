@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
+	"go.trippwill.dev/wake/internal/recoveryarchive"
 )
 
 func readInstallationMetadata(

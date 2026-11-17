@@ -131,7 +131,7 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					}
 				}
 
-				if strings.HasPrefix(rel, "internal/persistence/sqlite/recoveryarchive/") {
+				if strings.HasPrefix(rel, "internal/recoveryarchive/") {
 					switch value {
 					case "archive/tar",
 						"bytes",

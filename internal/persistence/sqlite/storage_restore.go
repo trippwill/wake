@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/credential"
-	"go.trippwill.dev/wake/internal/persistence/sqlite/recoveryarchive"
+	"go.trippwill.dev/wake/internal/recoveryarchive"
 )
 
 const (
