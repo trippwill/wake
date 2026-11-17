@@ -126,6 +126,46 @@ func TestStorageRestoreRefusesBothOccupiedDestinations(t *testing.T) {
 	}
 }
 
+func TestStorageReplacementCleansUpAfterStagingFailure(t *testing.T) {
+	ctx := t.Context()
+	source := seedUpgradeStores(t)
+	target := seedUpgradeStores(t)
+	archive := filepath.Join(filepath.Dir(source.WarehousePath), "replacement.tar")
+	if err := Backup(ctx, source, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := target.paths()
+
+	var originals [storeCount][]byte
+	for i, path := range paths {
+		originals[i] = readRestoreFixture(t, path)
+	}
+
+	check := func(path string) error {
+		if path == paths[1] || !bytes.Equal(readRestoreFixture(t, path), readRestoreFixture(t, source.paths()[1])) {
+			t.Fatal("access check did not receive the staged backup")
+		}
+
+		return ErrCorrupt
+	}
+	if _, err := restore(ctx, target, archive, true, true, check); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("restore proceeded after the access check failed: %v", err)
+	}
+
+	for i, path := range paths {
+		if !bytes.Equal(originals[i], readRestoreFixture(t, path)) {
+			t.Fatalf("original store changed: %s", path)
+		}
+
+		for _, pattern := range []string{filepath.Join(filepath.Dir(path), ".wake-restore-*"), path + ".restore-*"} {
+			if matches, err := filepath.Glob(pattern); len(matches) != 0 || err != nil {
+				t.Fatalf("failed restore left files matching %s: %v, %v", pattern, matches, err)
+			}
+		}
+	}
+}
+
 func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 	ctx := t.Context()
 

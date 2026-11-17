@@ -672,7 +672,7 @@ func assertBackupPair(t *testing.T, path string, expected [storeCount][]byte) {
 		t.Fatal("missing backup checksums", err)
 	}
 
-	if err := verifyRecoveryDigest(archive, digest(expected[0])+digest(expected[1])); err != nil {
+	if err := verifyRecoveryDigest(archive, digest(expected[0])+digest(expected[1])+digest(expected[2])); err != nil {
 		t.Fatal(err)
 	}
 }

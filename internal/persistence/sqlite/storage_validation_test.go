@@ -129,6 +129,7 @@ func TestStorageSnapshotRejectsIncompleteAndUnexpectedRecords(t *testing.T) {
 		{"missing checksum", snapshotWarehouseEntry, nil, false, 0, ErrCorrupt},
 		{"short checksum", snapshotWarehouseEntry, []byte("short"), false, 0, ErrCorrupt},
 		{"extra member", snapshotWarehouseEntry, digest, true, 0, ErrCorrupt},
+		{"wrong digest", snapshotWarehouseEntry, bytes.Repeat([]byte{'0'}, len(digest)), false, 0, ErrCorrupt},
 		{"truncated warehouse", snapshotWarehouseEntry, digest, false, 512 + 1, io.ErrUnexpectedEOF},
 		{"truncated checksum", snapshotWarehouseEntry, digest, false, 3*512 + 1, io.ErrUnexpectedEOF},
 		{"complete archive", snapshotWarehouseEntry, digest, false, 0, nil},
@@ -343,6 +344,48 @@ func TestStorageSnapshotRejectsSparseMemberBeforeCopying(t *testing.T) {
 	}
 }
 
+func TestRestoreRejectsNonregularArchiveMembers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		member string
+		read   func(*testing.T, *tar.Reader) error
+		want   error
+	}{
+		{"snapshot", snapshotWarehouseEntry, func(_ *testing.T, archive *tar.Reader) error {
+			return readWarehouseSnapshot(archive, io.Discard)
+		}, ErrBackupScope},
+		{"upgrade", backupEntries[0], func(_ *testing.T, archive *tar.Reader) error {
+			return readBackupPair(archive)
+		}, ErrCorrupt},
+		{"installation", installationEntries[0], func(t *testing.T, archive *tar.Reader) error {
+			_, err := consumeRestoreArchive(archive, func(int, io.Reader) error {
+				t.Fatal("nonregular member was supplied to staging")
+
+				return nil
+			})
+
+			return err
+		}, ErrCorrupt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var data bytes.Buffer
+
+			writer := tar.NewWriter(&data)
+			if err := writer.WriteHeader(&tar.Header{Name: tc.member, Typeflag: tar.TypeSymlink, Linkname: "other"}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := tc.read(t, tar.NewReader(&data)); !errors.Is(err, tc.want) {
+				t.Fatalf("nonregular member error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestStoragePairedRestoreRejectsSparseMembers(t *testing.T) {
 	for i, kind := range storeKinds {
 		t.Run(kind, func(t *testing.T) {
@@ -523,6 +566,10 @@ func TestInstallationArchiveRejectsInvalidMembers(t *testing.T) {
 		{"missing database", installationEntries[:1], ErrCorrupt},
 		{"wrong database", []string{installationEntries[0], installationEntries[2]}, ErrCorrupt},
 		{"missing manifest", installationEntries[:storeCount], ErrCorrupt},
+		{"out of order evidence", []string{
+			installationEntries[0], installationEntries[1], installationEntries[2],
+			installationEntries[4], installationEntries[3], installationManifestEntry,
+		}, ErrCorrupt},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var data bytes.Buffer
@@ -546,6 +593,34 @@ func TestInstallationArchiveRejectsInvalidMembers(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestInstallationArchiveRejectsOversizedManifest(t *testing.T) {
+	var data bytes.Buffer
+
+	writer := tar.NewWriter(&data)
+	for _, name := range installationEntries[:storeCount] {
+		if err := writeRecoveryEntry(writer, name, 1, strings.NewReader("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The manifest declares an oversized body, which must be rejected before reading.
+	if err := writer.WriteHeader(&tar.Header{Name: installationManifestEntry, Size: 16<<10 + 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	var staged int
+
+	manifest, err := consumeRestoreArchive(tar.NewReader(&data), func(_ int, member io.Reader) error {
+		staged++
+		_, err := io.Copy(io.Discard, member)
+
+		return err
+	})
+	if !errors.Is(err, ErrCorrupt) || manifest != nil || staged != storeCount {
+		t.Fatalf("oversized manifest = %v, staged %d stores, error = %v", manifest, staged, err)
 	}
 }
 
