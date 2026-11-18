@@ -34,6 +34,8 @@ type marker struct {
 	Digest   string `json:"fixture_digest"`
 }
 
+const childWorkspaceLockFD = 3
+
 func identity() (marker, error) {
 	m := marker{Magic: "wake-dev/1"}
 	info, ok := debug.ReadBuildInfo()
@@ -75,12 +77,7 @@ func Run(ctx context.Context, args []string) error {
 	}
 
 	if args[0] == "child" && len(args) == 3 {
-		// Child configuration arrives only through the owning supervisor.
-		if os.Getenv("WAKE_DEV_CHILD") != "1" {
-			return errors.New("child requires supervisor")
-		}
-
-		return devenv.Session(ctx, args[1], args[2] == "new", args[2] == "local", json.NewEncoder(os.Stdout))
+		return runChild(ctx, args[1], args[2])
 	}
 
 	op := args[0]
@@ -277,7 +274,7 @@ func Run(ctx context.Context, args []string) error {
 			}
 		}
 
-		if e = runStage(ctx, op, consumer, profiles, dir, real, mode, stage, m, suite); e != nil {
+		if e = runStage(ctx, op, consumer, profiles, dir, real, mode, stage, m, suite, root); e != nil {
 			return e
 		}
 
@@ -292,23 +289,65 @@ func Run(ctx context.Context, args []string) error {
 	return json.NewEncoder(os.Stdout).Encode(map[string]string{"event": "complete"})
 }
 
-func runStage(
-	ctx context.Context,
-	op, consumer, profiles, dir, real, mode, stage string,
-	m marker,
-	suite *acceptanceState,
-) (result error) {
-	exe, e := os.Executable()
-	if e != nil {
-		return e
+func runChild(ctx context.Context, dir, mode string) error {
+	if os.Getenv("WAKE_DEV_CHILD") != "1" {
+		return errors.New("child requires supervisor")
 	}
 
+	lock := os.NewFile(childWorkspaceLockFD, "workspace lock")
+	if lock == nil {
+		return errors.New("child requires inherited workspace lock")
+	}
+	defer func() { _ = lock.Close() }()
+
+	info, err := lock.Stat()
+	if err != nil || !info.IsDir() {
+		return errors.New("invalid inherited workspace lock")
+	}
+
+	parent, err := os.Lstat(filepath.Dir(dir))
+	if err != nil || !os.SameFile(info, parent) {
+		return errors.New("inherited lock does not match workspace")
+	}
+
+	if err = syscall.Flock(childWorkspaceLockFD, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return errors.New("workspace busy")
+	}
+
+	syscall.CloseOnExec(childWorkspaceLockFD)
+
+	return devenv.Session(ctx, dir, mode == "new", mode == "local", json.NewEncoder(os.Stdout))
+}
+
+func daemonCommand(exe, dir, mode string, lock *os.File) *exec.Cmd {
 	// #nosec G204 G702 -- Re-execute the current binary with an explicit argument vector.
 	cmd := exec.Command(exe, "child", dir, mode)
 	cmd.Env = []string{"WAKE_DEV_CHILD=1"}
 	if coverDir := os.Getenv("GOCOVERDIR"); coverDir != "" {
 		cmd.Env = append(cmd.Env, "GOCOVERDIR="+coverDir)
 	}
+
+	// Share the locked open file description with the daemon until it finishes shutdown.
+	cmd.ExtraFiles = []*os.File{lock}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	cmd.WaitDelay = 10 * time.Second
+
+	return cmd
+}
+
+func runStage(
+	ctx context.Context,
+	op, consumer, profiles, dir, real, mode, stage string,
+	m marker,
+	suite *acceptanceState,
+	lock *os.File,
+) (result error) {
+	exe, e := os.Executable()
+	if e != nil {
+		return e
+	}
+
+	cmd := daemonCommand(exe, dir, mode, lock)
 
 	// #nosec G304 G703 -- Use the fixed log name in the locked private workspace and refuse symlinks.
 	logFile, e := os.OpenFile(
@@ -323,9 +362,6 @@ func runStage(
 	defer func() { _ = logFile.Close() }()
 
 	cmd.Stderr = io.MultiWriter(logFile, os.Stderr)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
-
-	cmd.WaitDelay = 10 * time.Second
 
 	proc, e := startProcess(ctx, cmd, 10*time.Second)
 	if e != nil {

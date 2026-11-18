@@ -44,16 +44,19 @@ func TestFollowerRejectsBadStartup(t *testing.T) {
 			target := &url.URL{Scheme: "http", Host: "127.0.0.1:1"}
 			view := publishedView{publication: publication{BaselineID: "baseline", Version: "expected"}}
 
-			follow, err := startFollower(
+			suite := &acceptanceState{followers: make(map[string]*follower)}
+			defer suite.close()
+
+			err := suite.startFollower(
 				ctx, adapterClient{consumer: consumer, stateDir: dir, profile: "history"},
 				target, nil, view,
 			)
-			if follow != nil {
-				follow.close()
-			}
-
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("startFollower returned %v, want %q", err, test.want)
+			}
+
+			if len(suite.followers) != 0 {
+				t.Fatal("failed follower startup left an entry in the suite")
 			}
 		})
 	}

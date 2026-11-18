@@ -24,7 +24,7 @@ const positionAccount = `{"id":"account","kind":"accounts","revision":1,"account
 const positionInstrument = `{"id":"instrument","kind":"instruments","revision":1,"instrument":{"name":"Synthetic","ticker":null,"figi":null,"underlier_id":null,"family":"debt","reference_status":"provisional","identifiers":[],"figi_allocation":null,"reference_reason":null}}`
 
 func TestPositionsAdapterReusesSavedPublication(t *testing.T) {
-	var unchanged, interrupted atomic.Bool
+	var unchanged, interrupted, empty atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -32,6 +32,10 @@ func TestPositionsAdapterReusesSavedPublication(t *testing.T) {
 			condition := r.Header.Get("If-None-Match")
 			if (unchanged.Load() || interrupted.Load()) && condition != `"positions-version"` {
 				t.Errorf("expected saved positions condition, got %q", condition)
+			}
+			if empty.Load() {
+				w.WriteHeader(http.StatusOK)
+				return
 			}
 			if interrupted.Load() {
 				w.Header().Set("ETag", `"new-version"`)
@@ -76,6 +80,16 @@ func TestPositionsAdapterReusesSavedPublication(t *testing.T) {
 	if err = adapter(t.Context(), bytes.NewReader(request), io.Discard); err != nil {
 		t.Fatalf("unchanged synchronization failed: %v", err)
 	}
+
+	empty.Store(true)
+	var output bytes.Buffer
+	if err = adapter(t.Context(), bytes.NewReader(request), &output); !errors.Is(err, io.EOF) {
+		t.Fatalf("empty positions response returned %v, want EOF", err)
+	}
+	if bytes.Contains(output.Bytes(), []byte(`"event":"complete"`)) {
+		t.Fatalf("adapter reported completion after an empty positions response: %s", &output)
+	}
+	empty.Store(false)
 
 	interrupted.Store(true)
 	if err = adapter(t.Context(), bytes.NewReader(request), io.Discard); err == nil {

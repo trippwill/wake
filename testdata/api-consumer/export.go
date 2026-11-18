@@ -72,14 +72,13 @@ func adapter(ctx context.Context, input io.Reader, output io.Writer) error {
 			return err
 		}
 		reader, writer := io.Pipe()
-		defer reader.Close()
 		child, cancel := context.WithCancel(ctx)
-		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			e := runWithPositions(child, args, writer, os.Stderr, prior, func(phase string) { _ = emit(map[string]any{"protocol": 1, "event": "progress", "phase": phase}) })
-			_ = writer.CloseWithError(e)
-			done <- e
+			defer close(done)
+			defer writer.Close()
+			// Keep worker errors separate from the end of the output stream.
+			done <- runWithPositions(child, args, writer, os.Stderr, prior, func(phase string) { _ = emit(map[string]any{"protocol": 1, "event": "progress", "phase": phase}) })
 		}()
 		defer func() { cancel(); _ = reader.Close(); <-done }()
 		dec := json.NewDecoder(reader)
@@ -110,6 +109,9 @@ func adapter(ctx context.Context, input io.Reader, output io.Writer) error {
 			if err = emit(map[string]any{"protocol": 1, "event": "committed", "baseline_id": identity.BaselineID, "version": identity.Version}); err != nil {
 				return err
 			}
+		}
+		if err := <-done; err != nil {
+			return err
 		}
 		return emit(map[string]any{"protocol": 1, "event": "complete"})
 	}

@@ -212,8 +212,7 @@ func acceptance(
 				return err
 			}
 
-			suite.followers[profile], err = startFollower(ctx, adapter, target, client.Transport, view)
-			if err != nil {
+			if err = suite.startFollower(ctx, adapter, target, client.Transport, view); err != nil {
 				return err
 			}
 		case faultStage:

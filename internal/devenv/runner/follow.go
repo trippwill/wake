@@ -29,6 +29,23 @@ type follower struct {
 	subscribed chan struct{}
 }
 
+func (s *acceptanceState) startFollower(
+	ctx context.Context,
+	adapter adapterClient,
+	target *url.URL,
+	transport http.RoundTripper,
+	view publishedView,
+) error {
+	follow, err := startFollower(ctx, adapter, target, transport, view)
+	if err != nil {
+		return err
+	}
+
+	s.followers[adapter.profile] = follow
+
+	return nil
+}
+
 func eventRelay(target *url.URL, transport http.RoundTripper, subscribed chan struct{}) http.Handler {
 	var once sync.Once
 
