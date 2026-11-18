@@ -202,7 +202,9 @@ quantity, cost or date changes alone do not advance the financial snapshot.
 The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The independent
 [consumer acceptance procedure](../engineering/development.md#api-consumer-acceptance)
 uses a separate process and authenticated TCP requests without Wake store access, internal
-application calls or upstream credentials. Its own transactional mirror retains the
+application calls or upstream credentials. External adapters can export their initial history and positions
+mirrors for comparison with the published API. The reference consumer’s transactional mirror
+retains the
 last complete validated snapshot on failed transfers or writes. Checks cover exact
 values, deltas and full fallback, SSE follow and reconnect, corrections and conflicts,
 restart, access recovery and warehouse replacement. In-process tests alone do not

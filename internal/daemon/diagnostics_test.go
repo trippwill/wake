@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.trippwill.dev/wake/internal/transport/admin"
 )
@@ -28,39 +29,19 @@ func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 				}
 			}
 
-			var output bytes.Buffer
+			var output apiTestLog
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
 			if err := Run(ctx, cfg, slog.New(slog.NewJSONHandler(&output, nil)), func(phase string) {
 				if phase == "ready" {
-					cancel()
+					defer cancel()
+
+					assertAdminBinding(t, ctx, output.String())
 				}
 			}); err != nil {
 				t.Fatal(err)
-			}
-
-			decoder := json.NewDecoder(strings.NewReader(output.String()))
-
-			var startup map[string]any
-			for decoder.More() {
-				var entry map[string]any
-				if err := decoder.Decode(&entry); err != nil {
-					t.Fatal(err)
-				}
-
-				if entry["event"] == "daemon_started" {
-					startup = entry
-				}
-			}
-
-			if startup == nil || startup["admin_enabled"] != true {
-				t.Fatal(startup)
-			}
-
-			if startup["admin_bind"] != "127.0.0.1" || startup["admin_port"] == "0" || startup["admin_port"] == "" {
-				t.Fatal("did not report actual binding", startup)
 			}
 
 			closed, stopped := strings.Index(
@@ -75,6 +56,62 @@ func TestStartupReportsActualBindingAndShutdownFollowsCleanup(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assertAdminBinding(t *testing.T, ctx context.Context, output string) {
+	t.Helper()
+
+	decoder := json.NewDecoder(strings.NewReader(output))
+	for decoder.More() {
+		var entry struct {
+			Event   string `json:"event"`
+			Enabled bool   `json:"admin_enabled"`
+			Bind    string `json:"admin_bind"`
+			Port    string `json:"admin_port"`
+		}
+		if err := decoder.Decode(&entry); err != nil {
+			t.Error(err)
+			return
+		}
+
+		if entry.Event != "daemon_started" {
+			continue
+		}
+
+		if !entry.Enabled || entry.Bind != "127.0.0.1" || entry.Port == "0" || entry.Port == "" {
+			t.Error("did not report actual binding", entry)
+			return
+		}
+
+		request, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			"http://"+net.JoinHostPort(entry.Bind, entry.Port)+"/login",
+			nil,
+		)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		client := &http.Client{Timeout: time.Second}
+		defer client.CloseIdleConnections()
+
+		response, err := client.Do(request)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Error("admin rejected its bound address", response.Status)
+		}
+
+		return
+	}
+
+	t.Error("did not report startup", output)
 }
 
 func TestAdminBindFailureIsClassifiedWithoutReadiness(t *testing.T) {

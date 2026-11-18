@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"go.trippwill.dev/wake/internal/devfixture"
 	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/source"
 )
@@ -125,8 +125,7 @@ func TestConfirmationCoverageAndExactTerms(t *testing.T) {
 	}
 
 	for _, file := range []string{"initial.xml", "overlap.xml"} {
-		//nolint:gosec // Fixed repository fixture names.
-		body, e := os.ReadFile("../../testdata/ibkrflex/confirmations/" + file)
+		body, e := devfixture.ReadReport("confirmations/" + file)
 		if e != nil {
 			t.Fatal(e)
 		}

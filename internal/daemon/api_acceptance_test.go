@@ -9,11 +9,9 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -38,6 +36,8 @@ import (
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/credential"
+	"go.trippwill.dev/wake/internal/devenv/seed"
+	"go.trippwill.dev/wake/internal/devfixture"
 	"go.trippwill.dev/wake/internal/host"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
 	"go.trippwill.dev/wake/internal/reference"
@@ -138,12 +138,12 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	report, err := os.ReadFile("../../testdata/ibkrflex/confirmations/initial.xml")
+	report, err := devfixture.ReadReport("confirmations/initial.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	realizedReport, err := os.ReadFile("../../testdata/ibkrflex/activity/realized.xml")
+	realizedReport, err := devfixture.ReadReport("activity/realized.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,46 +151,9 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	var reports atomic.Value
 	reports.Store(report)
 
-	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/SendRequest":
-			if r.URL.Query().Get("q") == "456" {
-				_, _ = fmt.Fprint(
-					w,
-					`<FlexStatementResponse><Status>Success</Status><ReferenceCode>api-result-fixture</ReferenceCode></FlexStatementResponse>`,
-				)
-
-				return
-			}
-
-			_, _ = fmt.Fprint(
-				w,
-				`<FlexStatementResponse><Status>Success</Status><ReferenceCode>api-fixture</ReferenceCode></FlexStatementResponse>`,
-			)
-		case "/GetStatement":
-			if r.URL.Query().Get("q") == "api-result-fixture" {
-				_, _ = w.Write(realizedReport)
-				return
-			}
-
-			_, _ = w.Write(reports.Load().([]byte))
-		case "/mapping":
-			var jobs []any
-			if json.NewDecoder(r.Body).Decode(&jobs) != nil {
-				http.Error(w, "invalid", http.StatusBadRequest)
-				return
-			}
-
-			response := make([]map[string]string, len(jobs))
-			for i := range response {
-				response[i] = map[string]string{"warning": "No identifier found."}
-			}
-
-			_ = json.NewEncoder(w).Encode(response)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
+	upstream := httptest.NewTLSServer(
+		devfixture.Upstream(func() []byte { return reports.Load().([]byte) }, realizedReport),
+	)
 	defer upstream.Close()
 
 	cfg := shellConfig(t)
@@ -251,64 +214,16 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		nil,
 	)
 
-	secret := credential.NewSecret([]byte("api-synthetic-token"))
-	defer secret.Clear()
-
-	connection, err := workflow.CreateConnection(
-		ctx,
-		"API acceptance",
-		"ibkr-flex",
-		confirmationSettings("123"),
-		map[string]*credential.Secret{"token": secret},
-	)
+	connection, err := seed.SeedConfirmations(ctx, workflow, &now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	advance := func() {
-		t.Helper()
-
-		now = now.Add(15 * time.Second)
-		if e := workflow.RunOnce(ctx, now); e != nil {
-			t.Fatal(e)
-		}
-	}
-	advance()
-	advance()
-
-	query, _ := application.NewListQuery(application.ListOptions{}, application.SourceScope)
-
-	sourceDetail, err := workflow.SourceDetail(ctx, connection, query)
 	dashboard := struct {
-		Connections []application.ConnectionView
 		Executions  []application.Execution
 		Lifecycles  []application.Lifecycle
 		Conversions []application.Conversion
-	}{Connections: []application.ConnectionView{sourceDetail.Connection}}
-	if err != nil || len(dashboard.Connections[0].Candidates) != 1 {
-		t.Fatal("discovery", err)
-	}
-
-	candidate := dashboard.Connections[0].Candidates[0]
-
-	details, err := application.NewAccountDetails("API acceptance account", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = workflow.Confirm(
-		ctx,
-		connection,
-		candidate.Artifact,
-		candidate.Candidate.Reference(),
-		details,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	advance()
-	advance()
-
+	}{}
 	activityQuery, _ := application.NewListQuery(application.ListOptions{}, application.ActivityScope)
 
 	activities, err := workflow.ActivityList(ctx, activityQuery)
@@ -373,6 +288,15 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		false,
 	); err != nil {
 		t.Fatal(err)
+	}
+
+	advance := func() {
+		t.Helper()
+
+		now = now.Add(15 * time.Second)
+		if e := workflow.RunOnce(ctx, now); e != nil {
+			t.Fatal(e)
+		}
 	}
 
 	realizedSettings, _ := provider.NewSettings(
@@ -589,18 +513,50 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 			Resources  map[string]application.CanonicalResource
 		}
 
-		db, e := sql.Open("sqlite", "file:"+statePath+"?mode=ro&_pragma=busy_timeout(5000)")
+		request, e := json.Marshal(
+			map[string]any{
+				"protocol":  1,
+				"operation": "export",
+				"profile":   "history",
+				"state_dir": filepath.Dir(statePath),
+			},
+		)
 		if e != nil {
 			t.Fatal(e)
 		}
+		//nolint:gosec // The task builds the independent consumer executable.
+		command := exec.CommandContext(ctx, binary)
+		command.Env = []string{"PATH=" + os.Getenv("PATH")}
+		command.Stdin = bytes.NewReader(request)
 
-		defer func() { _ = db.Close() }()
+		data, e := command.Output()
+		if e != nil {
+			t.Fatal("offline mirror export", e)
+		}
 
-		var data []byte
-		if e = db.QueryRowContext(ctx, "SELECT payload FROM mirror WHERE singleton=1").
-			Scan(&data); e != nil ||
-			json.Unmarshal(data, &current) != nil {
-			t.Fatal("mirror", e)
+		var result struct {
+			Protocol int
+			Event    string
+			View     application.FinancialSnapshot
+		}
+		if err := json.Unmarshal(
+			data,
+			&result,
+		); err != nil || result.Protocol != 1 || result.Event != "complete" ||
+			result.View.Mode != "full" {
+			t.Fatal("invalid mirror export", err)
+		}
+
+		current.BaselineID = result.View.BaselineID
+		current.Version = result.View.Version
+		current.Resources = make(map[string]application.CanonicalResource, len(result.View.Resources))
+		for _, resource := range result.View.Resources {
+			k := resource.Kind + "/" + resource.ID
+			if _, ok := current.Resources[k]; ok {
+				t.Fatal("duplicate exported resource", k)
+			}
+
+			current.Resources[k] = resource
 		}
 
 		return current

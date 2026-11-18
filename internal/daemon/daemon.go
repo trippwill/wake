@@ -67,6 +67,7 @@ type sourceOptions struct {
 	ReferenceClient *http.Client
 	ReferenceURL    string
 	Now             func() time.Time
+	ready           func(endpoint string) error
 }
 
 func (options sourceOptions) registrations() ([]provider.Registration, error) {
@@ -154,6 +155,18 @@ func run(
 		return err
 	}
 	defer owner.close()
+
+	var adminListener net.Listener
+	if cfg.Admin.Port == 0 {
+		adminListener, err = listenAdmin(ctx, cfg.Admin.Address(), logger)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = adminListener.Close() }()
+
+		// #nosec G115 -- The kernel chose a TCP port for the bound loopback listener.
+		cfg.Admin.Port = uint16(adminListener.Addr().(*net.TCPAddr).Port)
+	}
 
 	auth, _, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.Origins()...)
 	if err != nil {
@@ -272,28 +285,15 @@ func run(
 		return e
 	}
 
-	adminListener, e := net.Listen("tcp4", cfg.Admin.Address())
-	if e != nil {
-		bind, port, _ := net.SplitHostPort(cfg.Admin.Address())
-		logger.ErrorContext(
-			ctx,
-			"admin listener failed",
-			"event",
-			"admin_bind_failed",
-			"code",
-			"listen_failed",
-			"admin_bind",
-			bind,
-			"admin_port",
-			port,
-		)
-
-		return e
+	if adminListener == nil {
+		adminListener, err = listenAdmin(ctx, cfg.Admin.Address(), logger)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = adminListener.Close() }()
 	}
 
 	adminBind, adminPort, _ := net.SplitHostPort(adminListener.Addr().String())
-
-	defer func() { _ = adminListener.Close() }()
 
 	adminServer := newHTTPServer(requests.handler(handler), logger)
 	adminServer.BaseContext = server.BaseContext
@@ -332,12 +332,16 @@ func run(
 
 	stage = "serving"
 
-	select {
-	case <-ctx.Done():
-	case err = <-failures:
-		result = err
+	if options.ready != nil {
+		result = options.ready("http://" + listener.Addr().String())
+	}
 
-		logger.ErrorContext(ctx, "HTTP server failed", "event", "server_failed", "code", "serve_failed")
+	if result == nil {
+		select {
+		case <-ctx.Done():
+		case result = <-failures:
+			logger.ErrorContext(ctx, "HTTP server failed", "event", "server_failed", "code", "serve_failed")
+		}
 	}
 
 	phase("joining shutdown")
@@ -348,6 +352,27 @@ func run(
 	serving.Wait()
 
 	return result
+}
+
+func listenAdmin(ctx context.Context, address string, logger *slog.Logger) (net.Listener, error) {
+	listener, err := net.Listen("tcp4", address)
+	if err != nil {
+		bind, port, _ := net.SplitHostPort(address)
+		logger.ErrorContext(
+			ctx,
+			"admin listener failed",
+			"event",
+			"admin_bind_failed",
+			"code",
+			"listen_failed",
+			"admin_bind",
+			bind,
+			"admin_port",
+			port,
+		)
+	}
+
+	return listener, err
 }
 
 // Keep the disposable catalog separate even when operators customize file paths.
@@ -521,4 +546,32 @@ func (u upstreamServices) close() {
 	}
 
 	u.envelope.Clear()
+}
+
+// RunSynthetic serves a developer workspace and reports its bound API endpoint.
+// Active sources use the fixture server unless the local-only profile is requested.
+func RunSynthetic(
+	ctx context.Context,
+	cfg config.Config,
+	client *http.Client,
+	base string,
+	now func() time.Time,
+	localOnly bool,
+	ready func(endpoint string) error,
+) error {
+	var options sourceOptions
+	if !localOnly {
+		options = sourceOptions{
+			openSources:     persistence.Open,
+			IBKR:            ibkrflex.Options{HTTPClient: client, BaseURL: base},
+			SnapTrade:       snaptrade.Options{HTTPClient: client, BaseURL: base},
+			ReferenceClient: client,
+			ReferenceURL:    base + "/mapping",
+			Now:             now,
+		}
+	}
+
+	options.ready = ready
+
+	return run(ctx, cfg, slog.Default(), options)
 }

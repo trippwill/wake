@@ -7,3 +7,55 @@ workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT
 (cd testdata/api-consumer && GOWORK=off go test -race -count=1 ./... && GOWORK=off go build -o "$workspace/consumer" .)
 WAKE_API_CONSUMER="$workspace/consumer" go test -race -count=1 -timeout=3m ./internal/daemon -run '^TestAPIConsumerAcceptance$'
+go test -race -count=1 -timeout=1m ./internal/devenv/...
+go build -race -buildvcs=true -o "$workspace/wake-dev" ./cmd/wake-dev
+(cd "$workspace" && ./wake-dev accept --workspace "$workspace/check" --consumer "$workspace/consumer")
+# A client checkout can share the workspace's parent with other private files.
+touch "$workspace/check/caller-file"
+"$workspace/wake-dev" reset --workspace "$workspace/check"
+test -f "$workspace/check/.wake-dev/owner.json"
+"$workspace/wake-dev" reset --workspace "$workspace/check" --confirm
+test -f "$workspace/check/caller-file"
+test ! -e "$workspace/check/.wake-dev"
+if "$workspace/wake-dev" reset --workspace "$workspace/check" --confirm; then
+  echo "reset accepted an unmarked workspace" >&2
+  exit 1
+fi
+# Both sessions must own distinct endpoints and tokens; reset must respect their locks.
+pids=()
+stop_sessions() {
+  for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
+}
+trap 'stop_sessions; rm -rf "$workspace"' EXIT
+for name in first second; do
+  "$workspace/wake-dev" serve --workspace "$workspace/$name" >"$workspace/$name.jsonl" &
+  pids+=("$!")
+done
+for name in first second; do
+  for ((attempt=0; attempt<900; attempt++)); do
+    if grep -q '"event":"ready"' "$workspace/$name.jsonl"; then break; fi
+    sleep 0.05
+  done
+  if ! grep -q '"event":"ready"' "$workspace/$name.jsonl"; then
+    echo "synthetic session $name did not report readiness" >&2
+    exit 1
+  fi
+  if "$workspace/wake-dev" reset --workspace "$workspace/$name" --confirm; then
+    echo "reset accepted an active workspace" >&2
+    exit 1
+  fi
+done
+for pid in "${pids[@]}"; do kill -TERM "$pid"; done
+for pid in "${pids[@]}"; do wait "$pid"; done
+pids=()
+# A zero exit is insufficient without a valid terminal protocol event.
+for reply in '{}' '{"protocol":2,"event":"complete"}' '{"protocol":1,"event":"progress","phase":"connecting"}' '{"protocol":1,"event":"complete","view":{}}'; do
+  printf '#!/bin/sh\ncat >/dev/null\nprintf "%%s\\n" '\''%s'\''\n' "$reply" > "$workspace/invalid-client"
+  chmod 700 "$workspace/invalid-client"
+  invalid=$(mktemp -d "$workspace/invalid.XXXXXXXX")
+  if "$workspace/wake-dev" accept --workspace "$invalid" --profile history --consumer "$workspace/invalid-client"; then
+    echo "accepted an invalid consumer export" >&2
+    exit 1
+  fi
+done

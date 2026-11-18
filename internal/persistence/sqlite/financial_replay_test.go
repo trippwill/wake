@@ -6,12 +6,12 @@ package persistence
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/devfixture"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -319,8 +319,7 @@ func TestSyntheticConfirmationSequenceAcceptsActivityByKind(t *testing.T) {
 	ctx := context.Background()
 	s := newStoreWithSyntheticAccount(t)
 	for index, name := range []string{"initial.xml", "initial.xml", "overlap.xml", "overlap.xml"} {
-		//nolint:gosec // Fixed synthetic fixture names from the literal sequence above.
-		body, err := os.ReadFile("../../../testdata/ibkrflex/confirmations/" + name)
+		body, err := devfixture.ReadReport("confirmations/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -96,6 +96,28 @@ daemon process over TCP with a dedicated client token. [Current coverage](../pro
 describes the supported behavior, and the [OpenAPI contract](../../api/openapi/v1.yaml)
 defines the wire format.
 
+Independent repositories can build the development tool at an immutable Wake revision.
+Set `WAKE_SRC` to an unused checkout path and `WAKE_REV` to the full commit ID:
+
+```sh
+git clone https://github.com/trippwill/wake.git "$WAKE_SRC"
+git -C "$WAKE_SRC" checkout --detach "$WAKE_REV"
+(cd "$WAKE_SRC" && mise install && mise run build:wake-dev)
+"$WAKE_SRC/.cache/wake-dev" serve --workspace "$PWD/wake-session"
+```
+
+Wait for the JSON readiness event with the API endpoint and dedicated token-file path.
+Interrupt the foreground process to stop it. The same revision can resume the workspace.
+Use `reset --workspace /absolute/path` to preview cleanup and add `--confirm` to remove the
+reserved `.wake-dev` directory. Keep personal files outside that directory.
+
+Run `accept --workspace /absolute/fresh/path --consumer /absolute/adapter` to verify the
+history and positions mirrors through interrupted reads, reconnect, restart, source and operator
+corrections, identity merges, access recovery and warehouse replacement.
+Select either view with `--profile history` or
+`--profile positions`. The [adapter protocol](../../cmd/wake-dev/README.md) describes the
+process interface. The full recovery and correction suite also runs through `mise run test:api`.
+
 ## Changes affecting retained data
 
 For changes to normalization, identity/link selection, reconciliation or financial

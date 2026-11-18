@@ -89,6 +89,7 @@ func (e transportError) Error() string { return e.cause.Error() }
 func (e transportError) Unwrap() error { return e.cause }
 
 type client struct {
+	progress       func(string)
 	http           *http.Client
 	base           string
 	token          string
@@ -690,7 +691,11 @@ func assertions(path string, s state) error {
 	return nil
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result error) {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	return runWithPositions(ctx, args, stdout, stderr, positionsView{}, nil)
+}
+
+func runWithPositions(ctx context.Context, args []string, stdout, stderr io.Writer, prior positionsView, progress func(string)) (result error) {
 	flags := flag.NewFlagSet("api-consumer", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	endpoint := flags.String("endpoint", "", "Wake HTTP or HTTPS origin")
@@ -723,6 +728,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 			case <-progressCtx.Done():
 				return
 			case <-ticker.C:
+				if progress != nil {
+					progress("idle")
+				}
 				fmt.Fprintln(stderr, "Still synchronizing; waiting for API work or publication events")
 			}
 		}
@@ -745,9 +753,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		}
 		return nil
 	}}
-	c := client{http: httpClient, base: *endpoint, token: strings.TrimSpace(string(token)), stderr: stderr}
+	c := client{http: httpClient, base: *endpoint, token: strings.TrimSpace(string(token)), stderr: stderr, progress: progress}
 	if *positionsAccount != "" {
-		return c.positionsMode(ctx, *positionsAccount, *follow, *interval, stdout)
+		return c.positionsMode(ctx, *positionsAccount, prior, *follow, *interval, stdout)
 	}
 	db, err := openMirror(*path)
 	if err != nil {
@@ -764,7 +772,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 		if e != nil {
 			return e
 		}
-		if *fixture != "" {
+		if *fixture != "" || progress != nil {
 			if e = c.verifyLookups(ctx, current); e != nil {
 				return e
 			}
@@ -798,11 +806,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		_ = json.NewEncoder(os.Stdout).Encode(struct {
-			Status string `json:"status"`
-			Error  string `json:"error"`
-		}{"failed", err.Error()})
+	var err error
+	if len(os.Args) == 1 {
+		err = adapter(ctx, os.Stdin, os.Stdout)
+	} else {
+		err = run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	}
+	if err != nil {
+		if len(os.Args) == 1 {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"protocol": 1, "event": "failed"})
+		} else {
+			_ = json.NewEncoder(os.Stdout).Encode(struct {
+				Status string `json:"status"`
+				Error  string `json:"error"`
+			}{"failed", err.Error()})
+		}
 		fmt.Fprintln(os.Stderr, "API consumer failed:", err)
 		os.Exit(1)
 	}

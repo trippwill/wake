@@ -94,8 +94,7 @@ func (c *client) readPositions(ctx context.Context, account string, previous pos
 	return next, nil
 }
 
-func (c *client) positionsMode(ctx context.Context, account string, follow bool, delay time.Duration, stdout io.Writer) error {
-	current := positionsView{}
+func (c *client) positionsMode(ctx context.Context, account string, current positionsView, follow bool, delay time.Duration, stdout io.Writer) error {
 	synchronize := func() error {
 		next, err := c.readPositions(ctx, account, current)
 		if err != nil {

@@ -19,4 +19,4 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 
 - [Financial API contract](../api/openapi/v1.yaml) — canonical reads and changes.
 - [API consumer acceptance](engineering/development.md#api-consumer-acceptance) — independent
-  consumer checks.
+  consumer checks and synthetic development sessions.

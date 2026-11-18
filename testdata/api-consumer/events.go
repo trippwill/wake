@@ -39,6 +39,9 @@ func (c *client) follow(ctx context.Context, delay time.Duration, synchronize fu
 		}
 		streamError := c.events(ctx, func(p publication) error {
 			if !connected {
+				if c.progress != nil {
+					c.progress("following")
+				}
 				fmt.Fprintln(c.stderr, "Following accepted publication events")
 			}
 			syncError = synchronize(p)
@@ -65,6 +68,9 @@ func (c *client) follow(ctx context.Context, delay time.Duration, synchronize fu
 		}
 		if connected {
 			backoff = min(delay, 30*time.Second)
+		}
+		if c.progress != nil {
+			c.progress("retrying")
 		}
 		fmt.Fprintln(c.stderr, "Publication stream disconnected; reconnecting")
 		timer := time.NewTimer(backoff)

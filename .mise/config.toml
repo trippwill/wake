@@ -162,3 +162,7 @@ run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.
 [tasks.'docs:check']
 description = "Check Markdown style and local links"
 depends = ["docs:lint", "docs:links", "test:docs"]
+
+[tasks.'build:wake-dev']
+description = "Build the synthetic environment and independent-client runner"
+run = "go build -buildvcs=true -o .cache/wake-dev ./cmd/wake-dev"
