@@ -193,7 +193,7 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 }
 
 func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
-	for _, failure := range []string{"callback", "finalization", "commit"} {
+	for _, failure := range []string{"callback", "finalization", "journal-base", "journal-version", "journal-changes", "commit"} {
 		t.Run(failure, func(t *testing.T) {
 			s, d := correctionFixture(t)
 			ctx := t.Context()
@@ -207,6 +207,9 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			versions := tableCount(t, s, "publication_versions")
+			journalChanges := tableCount(t, s, "publication_changes")
 
 			changes, remove := s.SubscribePublications()
 			defer remove()
@@ -231,6 +234,17 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 				}
 
 				err = application.SaveDecision(ctx, s, d, "synthetic", time.Now())
+			case "journal-base", "journal-version", "journal-changes":
+				triggers := map[string]string{
+					"journal-base":    "CREATE TRIGGER reject_journal BEFORE INSERT ON publication_versions BEGIN SELECT RAISE(ABORT,'journal base failure'); END",
+					"journal-version": "CREATE TRIGGER reject_journal BEFORE INSERT ON publication_versions WHEN NEW.change_count>0 BEGIN SELECT RAISE(ABORT,'journal version failure'); END",
+					"journal-changes": "CREATE TRIGGER reject_journal BEFORE INSERT ON publication_changes BEGIN SELECT RAISE(ABORT,'journal changes failure'); END",
+				}
+				if _, err = s.db.Exec(triggers[failure]); err != nil {
+					t.Fatal(err)
+				}
+
+				err = application.SaveDecision(ctx, s, d, "synthetic", time.Now())
 			case "commit":
 				if _, err = s.db.Exec(
 					`CREATE TABLE correction_commit_guard(account_id TEXT REFERENCES accounts(id) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER reject_correction_commit AFTER INSERT ON operator_decisions BEGIN INSERT INTO correction_commit_guard VALUES('missing-account'); END`,
@@ -247,6 +261,11 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 
 			if tableCount(t, s, "operator_decisions") != 0 || len(changes) != 0 {
 				t.Fatal("failure retained decisions or notified")
+			}
+
+			if tableCount(t, s, "publication_versions") != versions ||
+				tableCount(t, s, "publication_changes") != journalChanges {
+				t.Fatal("failure changed the publication journal")
 			}
 
 			after, err := s.Snapshot(

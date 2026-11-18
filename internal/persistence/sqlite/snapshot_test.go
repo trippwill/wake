@@ -454,3 +454,51 @@ func TestSnapshotFallsBackWhenDeltaExceedsByteBudget(t *testing.T) {
 		t.Fatal("expected full snapshot for oversized upsert", err)
 	}
 }
+
+func TestSnapshotRejectsCorruptPublishedResources(t *testing.T) {
+	for _, mode := range []string{"full", "delta"} {
+		t.Run(mode, func(t *testing.T) {
+			s := newStoreWithSyntheticAccount(t)
+			ctx := t.Context()
+
+			base, err := s.HistoryPublication(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			tx, err := s.db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback() }()
+
+			if _, err = tx.ExecContext(ctx, "UPDATE accounts SET name='changed'"); err != nil {
+				t.Fatal(err)
+			}
+
+			if err = s.commit(ctx, tx); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err = s.db.ExecContext(
+				ctx,
+				"UPDATE published_resources SET snapshot=CAST('{}' AS BLOB)",
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if mode == "full" {
+				base = application.HistoryPublication{}
+			}
+
+			read, err := s.Snapshot(ctx, base)
+			if !errors.Is(err, ErrCorrupt) || read.Delta != nil || read.Snapshot.Resources != nil {
+				t.Fatal("corrupt publication returned a usable update", read, err)
+			}
+
+			if s.db.Stats().InUse != 0 {
+				t.Fatal("failed snapshot retained its database transaction")
+			}
+		})
+	}
+}
