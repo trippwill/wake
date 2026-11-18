@@ -4,12 +4,16 @@
 package config
 
 import (
+	"encoding/binary"
+	"fmt"
 	"net/netip"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 )
+
+var browserNumericLabel = regexp.MustCompile("^(?:[0-9]+|0x[0-9a-f]*)$")
 
 var dnsLabel = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -42,11 +46,28 @@ func canonicalAuthority(u *url.URL, scheme string) (string, error) {
 		}
 
 		host = "[" + ip.String() + "]"
+		if scheme != "" && ip.Is4In6() {
+			// Browsers serialize mapped IPv6 addresses as hexadecimal pieces.
+			v4 := ip.As4()
+			host = fmt.Sprintf("[::ffff:%x:%x]", binary.BigEndian.Uint16(v4[:2]), binary.BigEndian.Uint16(v4[2:]))
+		}
 	} else {
-		for _, label := range strings.Split(strings.TrimSuffix(host, "."), ".") {
+		labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+		for _, label := range labels {
 			if !dnsLabel.MatchString(label) {
 				return "", invalid
 			}
+		}
+
+		if scheme != "" && browserNumericLabel.MatchString(labels[len(labels)-1]) {
+			// Numeric final labels trigger browser IPv4 parsing. Require dotted
+			// decimal so every accepted address has one unambiguous meaning.
+			ip, err := netip.ParseAddr(strings.TrimSuffix(host, "."))
+			if err != nil || !ip.Is4() {
+				return "", invalid
+			}
+
+			host = ip.String()
 		}
 	}
 

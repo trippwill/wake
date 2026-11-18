@@ -131,3 +131,22 @@ func TestConfiguredListenerAuthorities(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserIPOriginSerialization(t *testing.T) {
+	for raw, want := range map[string]string{
+		"http://127.0.0.1.:18787/":        "http://127.0.0.1:18787",
+		"http://[::ffff:127.0.0.1]:18787": "http://[::ffff:7f00:1]:18787",
+		"http://[::ffff:7f00:1]:18787":    "http://[::ffff:7f00:1]:18787",
+	} {
+		got, err := BrowserOrigin(raw)
+		if err != nil || got != want {
+			t.Errorf("BrowserOrigin(%q) = %q, %v; want %q", raw, got, err, want)
+		}
+	}
+
+	for _, raw := range []string{"http://127.1:18787", "http://0177.0.0.1", "http://0x7f000001", "http://host.123"} {
+		if _, err := BrowserOrigin(raw); err == nil {
+			t.Errorf("accepted ambiguous or invalid IPv4 origin %q", raw)
+		}
+	}
+}
