@@ -26,7 +26,7 @@ component_management:
       paths: ["internal/persistence/**"]
     - component_id: interfaces
       name: Interfaces
-      paths: ["cmd/wake/**", "internal/transport/**"]
+      paths: ["main.go", "internal/transport/**"]
     - component_id: runtime
       name: Runtime
       paths: ["internal/daemon/**", "internal/config/**", "internal/credential/**"]

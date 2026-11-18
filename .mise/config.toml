@@ -52,7 +52,7 @@ run = "CGO_ENABLED=0 go build ./..."
 [tasks.'build:release']
 description = "Build a stripped Wake executable at .cache/release/wake"
 wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
-run = "CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o .cache/release/wake ./cmd/wake"
+run = "CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o .cache/release/wake ."
 
 [tasks.clean]
 description = "Explicitly clean build artifacts and the test cache"
@@ -64,12 +64,12 @@ run = "go test -count=1 ./..."
 
 [tasks.serve]
 description = "Run the Wake daemon"
-run = "go run ./cmd/wake serve"
+run = "go run . serve"
 
 [tasks.bin]
 description = "Run the wake binary with arguments"
 raw_args = true
-run = "go run ./cmd/wake -- "
+run = "go run . -- "
 
 [tasks.gen]
 description = "Generate code for all tools"

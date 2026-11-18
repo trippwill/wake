@@ -21,7 +21,7 @@ runs:
         path: |
           .cache/go-build
           .cache/golangci-lint
-        key: wake-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.role }}-${{ hashFiles('.mise/config.toml', '.mise/mise.lock', 'go.mod', 'go.sum') }}-${{ hashFiles('cmd/**/*.go', 'internal/**/*.go', 'internal/**/*.sql', 'internal/**/*.templ', 'financial/**/*.go', 'source/**/*.go', 'provider/**/*.go', 'testdata/**/*.go', '.golangci.yml') }}
+        key: wake-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.role }}-${{ hashFiles('.mise/config.toml', '.mise/mise.lock', 'go.mod', 'go.sum') }}-${{ hashFiles('main.go', 'cmd/**/*.go', 'internal/**/*.go', 'internal/**/*.sql', 'internal/**/*.templ', 'financial/**/*.go', 'source/**/*.go', 'provider/**/*.go', 'testdata/**/*.go', '.golangci.yml') }}
         restore-keys: |
           wake-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.role }}-${{ hashFiles('.mise/config.toml', '.mise/mise.lock', 'go.mod', 'go.sum') }}-
     - uses: jdx/mise-action@v5
