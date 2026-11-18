@@ -74,7 +74,6 @@ jobs:
       - run: mise run source:check
       - run: "mise run check ::: build"
       - run: mise run test:provider
-      - run: mise run test:api
 
   behavior:
     needs: [changes]
@@ -88,9 +87,12 @@ jobs:
           role: coverage
           cold-cache: ${{ inputs.cold_cache || false }}
       - run: mise run test:coverage
+      - run: mise run test:api
+        env:
+          WAKE_DEV_COVERAGE: .cache/test-results/wake-dev-coverage.txt
       - uses: codecov/codecov-action@v7
         with:
-          files: coverage.txt
+          files: coverage.txt,.cache/test-results/wake-dev-coverage.txt
           token: ${{ secrets.CODECOV_TOKEN }}
       - uses: actions/upload-artifact@v7
         if: always()

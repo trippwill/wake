@@ -306,6 +306,9 @@ func runStage(
 	// #nosec G204 G702 -- Re-execute the current binary with an explicit argument vector.
 	cmd := exec.Command(exe, "child", dir, mode)
 	cmd.Env = []string{"WAKE_DEV_CHILD=1"}
+	if coverDir := os.Getenv("GOCOVERDIR"); coverDir != "" {
+		cmd.Env = append(cmd.Env, "GOCOVERDIR="+coverDir)
+	}
 
 	// #nosec G304 G703 -- Use the fixed log name in the locked private workspace and refuse symlinks.
 	logFile, e := os.OpenFile(

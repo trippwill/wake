@@ -8,10 +8,49 @@ trap 'rm -rf "$workspace"' EXIT
 (cd testdata/api-consumer && GOWORK=off go test -race -count=1 ./... && GOWORK=off go build -o "$workspace/consumer" .)
 WAKE_API_CONSUMER="$workspace/consumer" go test -race -count=1 -timeout=3m ./internal/daemon -run '^TestAPIConsumerAcceptance$'
 go test -race -count=1 -timeout=1m ./internal/devenv/...
-go build -race -buildvcs=true -o "$workspace/wake-dev" ./cmd/wake-dev
+build_flags=(-race -buildvcs=true)
+if [[ -n ${WAKE_DEV_COVERAGE:-} ]]; then
+  build_flags+=(-cover -coverpkg=go.trippwill.dev/wake/...)
+  export GOCOVERDIR="$workspace/wake-dev-covdata"
+  mkdir "$GOCOVERDIR"
+fi
+go build "${build_flags[@]}" -o "$workspace/wake-dev" ./cmd/wake-dev
 (cd "$workspace" && ./wake-dev accept --workspace "$workspace/check" --consumer "$workspace/consumer")
+(cd "$workspace" && ./wake-dev accept --workspace "$workspace/positions" --consumer "$workspace/consumer" --profile positions)
+
+reject_wake_dev() {
+  local expected=$1 output
+  shift
+  if output=$(timeout 10s "$workspace/wake-dev" "$@" 2>&1) || [[ "$output" != *"$expected"* ]]; then
+    printf 'expected wake-dev to reject %s with %s; got %s\n' "$*" "$expected" "$output" >&2
+    exit 1
+  fi
+}
+
 # A client checkout can share the workspace's parent with other private files.
 touch "$workspace/check/caller-file"
+ln -s "$workspace/check" "$workspace/linked"
+reject_wake_dev "unsafe workspace parent" serve --workspace "$workspace/linked/nested"
+reject_wake_dev "unsafe workspace" reset --workspace "$workspace/linked" --confirm
+test ! -e "$workspace/check/nested"
+
+managed="$workspace/check/.wake-dev"
+ln "$workspace/check/caller-file" "$managed/linked-file"
+reject_wake_dev "unsafe linked or foreign workspace entry" reset --workspace "$workspace/check" --confirm
+test -f "$managed/linked-file"
+rm "$managed/linked-file"
+
+mv "$managed/owner.json" "$workspace/original-marker"
+ln -s "$workspace/original-marker" "$managed/owner.json"
+reject_wake_dev "invalid workspace ownership marker" reset --workspace "$workspace/check" --confirm
+test -L "$managed/owner.json"
+rm "$managed/owner.json"
+printf '{}\n' > "$managed/owner.json"
+reject_wake_dev "invalid workspace ownership marker" reset --workspace "$workspace/check" --confirm
+printf '{"magic":"wake-dev/1","revision":"other-checkout"}\n' > "$managed/owner.json"
+reject_wake_dev "workspace requires reset" serve --workspace "$workspace/check"
+mv "$workspace/original-marker" "$managed/owner.json"
+
 "$workspace/wake-dev" reset --workspace "$workspace/check"
 test -f "$workspace/check/.wake-dev/owner.json"
 "$workspace/wake-dev" reset --workspace "$workspace/check" --confirm
@@ -59,3 +98,7 @@ for reply in '{}' '{"protocol":2,"event":"complete"}' '{"protocol":1,"event":"pr
     exit 1
   fi
 done
+if [[ -n ${WAKE_DEV_COVERAGE:-} ]]; then
+  mkdir -p "$(dirname "$WAKE_DEV_COVERAGE")"
+  go tool covdata textfmt -i="$GOCOVERDIR" -o="$WAKE_DEV_COVERAGE"
+fi

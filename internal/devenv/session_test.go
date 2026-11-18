@@ -6,10 +6,13 @@ package devenv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,5 +111,48 @@ func assertSnapshotServed(
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("snapshot from %q: %s", endpoint, response.Status)
+	}
+}
+
+type brokenReadyOutput struct {
+	endpoint string
+	err      error
+}
+
+func (w *brokenReadyOutput) Write(payload []byte) (int, error) {
+	var msg struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return 0, err
+	}
+
+	w.endpoint = msg.Endpoint
+
+	return 0, w.err
+}
+
+func TestSessionJoinsAfterReadinessWriteFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	dir := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &brokenReadyOutput{err: errors.New("readiness output closed")}
+	err := Session(ctx, dir, false, true, json.NewEncoder(out))
+	if !errors.Is(err, out.err) || ctx.Err() != nil {
+		t.Fatalf("expected immediate readiness error, got %v", err)
+	}
+
+	address := strings.TrimPrefix(out.endpoint, "http://")
+
+	conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", address)
+	if err == nil {
+		_ = conn.Close()
+
+		t.Fatalf("daemon listener still open after readiness failure: %s", address)
 	}
 }

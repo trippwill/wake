@@ -228,6 +228,9 @@ func acceptance(
 		*previous = view
 	}
 
+	// The history probe validates scenario transitions even in a positions-only run.
+	suite.history = history
+
 	return nil
 }
 

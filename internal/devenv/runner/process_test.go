@@ -20,7 +20,7 @@ import (
 )
 
 func TestAdapterShutdownKillsExitedLaunchersDescendants(t *testing.T) {
-	for _, mode := range []string{"deadline", "stop"} {
+	for _, mode := range []string{"deadline", "stop", "wait"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			if mode == "deadline" {
@@ -30,7 +30,13 @@ func TestAdapterShutdownKillsExitedLaunchersDescendants(t *testing.T) {
 				defer cancel()
 			}
 
-			cmd := exec.Command("/bin/sh", "-c", `sleep 30 & printf '%s\n' "$!"`)
+			script := `sleep 30 & printf '%s\n' "$!"`
+			if mode == "wait" {
+				script = `sleep 30 </dev/null >/dev/null 2>&1 & printf '%s\n' "$!"`
+			}
+
+			// #nosec G204 -- Both scripts are fixed cases in this test.
+			cmd := exec.Command("/bin/sh", "-c", script)
 
 			proc, err := startProcess(ctx, cmd, 0)
 			if err != nil {
@@ -53,10 +59,12 @@ func TestAdapterShutdownKillsExitedLaunchersDescendants(t *testing.T) {
 
 			launcher := processFD(t, cmd.Process.Pid)
 			descendant := processFD(t, pid)
+			t.Cleanup(func() { _ = unix.PidfdSendSignal(int(descendant), unix.SIGKILL, nil, 0) })
 
 			waitForExit(t, launcher)
 
-			if mode == "deadline" {
+			switch mode {
+			case "deadline":
 				if _, err = io.ReadAll(reader); err != nil && !errors.Is(err, os.ErrClosed) {
 					t.Fatal(err)
 				}
@@ -64,8 +72,18 @@ func TestAdapterShutdownKillsExitedLaunchersDescendants(t *testing.T) {
 				if err = proc.wait(); !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("wait returned %v, want deadline exceeded", err)
 				}
-			} else if err = proc.stop(); err != nil {
-				t.Fatal(err)
+			case "stop":
+				if err = proc.stop(); err != nil {
+					t.Fatal(err)
+				}
+			case "wait":
+				if _, err = io.ReadAll(reader); err != nil {
+					t.Fatal(err)
+				}
+
+				if err = proc.wait(); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			waitForExit(t, descendant)

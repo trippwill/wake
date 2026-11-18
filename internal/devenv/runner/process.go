@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type processError string
@@ -23,13 +25,15 @@ type supervisedProcess struct {
 	cmd    *exec.Cmd
 	stdout *os.File
 
-	cancel   context.CancelFunc
-	stopping chan struct{}
-	exited   chan struct{}
-	joined   chan struct{}
-	waitOnce sync.Once
-	waitErr  error
-	stopErr  error
+	cancel        context.CancelFunc
+	shutdownGrace time.Duration
+	exited        chan struct{}
+	joined        chan struct{}
+	waitOnce      sync.Once
+	waitErr       error
+	stopErr       error
+	groupMu       sync.Mutex
+	groupClosed   bool
 }
 
 func startProcess(
@@ -62,24 +66,45 @@ func startProcess(
 
 	stopCtx, cancel := context.WithCancel(ctx)
 	p := &supervisedProcess{
-		cmd: cmd, stdout: stdout, cancel: cancel,
-		stopping: make(chan struct{}), exited: make(chan struct{}), joined: make(chan struct{}),
+		cmd: cmd, stdout: stdout, cancel: cancel, shutdownGrace: shutdownGrace,
+		exited: make(chan struct{}), joined: make(chan struct{}),
 	}
-	go p.monitor(ctx, stopCtx, shutdownGrace)
+	go p.monitor(ctx, stopCtx)
 
 	return p, nil
 }
 
 func (p *supervisedProcess) signal(sig syscall.Signal) error {
-	select {
-	case <-p.exited:
+	p.groupMu.Lock()
+	defer p.groupMu.Unlock()
+
+	if p.shutdownGrace != 0 || p.groupClosed {
 		return os.ErrProcessDone
-	default:
-		return syscall.Kill(-p.cmd.Process.Pid, sig)
 	}
+
+	return syscall.Kill(-p.cmd.Process.Pid, sig)
 }
 
-func (p *supervisedProcess) monitor(ctx, stopCtx context.Context, grace time.Duration) {
+func (p *supervisedProcess) closeGroup(owned bool) error {
+	p.groupMu.Lock()
+	defer p.groupMu.Unlock()
+
+	if p.groupClosed {
+		return nil
+	}
+
+	p.groupClosed = true
+
+	if owned {
+		if err := syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL); !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *supervisedProcess) monitor(ctx, stopCtx context.Context) {
 	defer close(p.joined)
 
 	select {
@@ -88,16 +113,9 @@ func (p *supervisedProcess) monitor(ctx, stopCtx context.Context, grace time.Dur
 	case <-stopCtx.Done():
 	}
 
-	if grace == 0 {
-		// Kill the group while the launcher can still be holding its process group ID.
-		err := p.signal(syscall.SIGKILL)
-		if errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone) {
-			err = nil
-		}
-
-		p.stopErr = errors.Join(ctx.Err(), err)
+	if p.shutdownGrace == 0 {
+		p.stopErr = errors.Join(ctx.Err(), p.closeGroup(true))
 		_ = p.stdout.Close()
-		close(p.stopping)
 
 		return
 	}
@@ -108,9 +126,7 @@ func (p *supervisedProcess) monitor(ctx, stopCtx context.Context, grace time.Dur
 		p.stopErr = err
 	}
 
-	close(p.stopping)
-
-	timer := time.NewTimer(grace)
+	timer := time.NewTimer(p.shutdownGrace)
 	defer timer.Stop()
 
 	select {
@@ -123,14 +139,32 @@ func (p *supervisedProcess) monitor(ctx, stopCtx context.Context, grace time.Dur
 	}
 }
 
+func (p *supervisedProcess) waitForAdapterExit() error {
+	var info unix.Siginfo
+	for {
+		// Observe exit without releasing the launcher PID, which also identifies the group.
+		err := unix.Waitid(unix.P_PID, p.cmd.Process.Pid, &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+
+		return errors.Join(err, p.closeGroup(!errors.Is(err, unix.ECHILD)))
+	}
+}
+
 func (p *supervisedProcess) wait() error {
 	p.waitOnce.Do(func() {
+		var groupErr error
+		if p.shutdownGrace == 0 {
+			groupErr = p.waitForAdapterExit()
+		}
+
 		err := p.cmd.Wait()
 		close(p.exited)
 		<-p.joined
 		p.cancel()
 		_ = p.stdout.Close()
-		p.waitErr = errors.Join(p.stopErr, err)
+		p.waitErr = errors.Join(p.stopErr, groupErr, err)
 	})
 
 	return p.waitErr
@@ -138,11 +172,6 @@ func (p *supervisedProcess) wait() error {
 
 func (p *supervisedProcess) stop() error {
 	p.cancel()
-	// Signal the group before Wait can reap a launcher that has already exited.
-	select {
-	case <-p.stopping:
-	case <-p.exited:
-	}
 
 	return p.wait()
 }
