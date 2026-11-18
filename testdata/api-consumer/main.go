@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -41,9 +42,22 @@ type resource struct {
 	Revision int64  `json:"revision"`
 }
 type snapshot struct {
+	Mode       string            `json:"mode"`
 	BaselineID string            `json:"baseline_id"`
 	Version    string            `json:"version"`
 	Resources  []json.RawMessage `json:"resources"`
+}
+type resourceKey struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+type delta struct {
+	Mode       string            `json:"mode"`
+	BaselineID string            `json:"baseline_id"`
+	From       string            `json:"from"`
+	Version    string            `json:"version"`
+	Upserts    []json.RawMessage `json:"upserts"`
+	Removals   []resourceKey     `json:"removals"`
 }
 type state struct {
 	BaselineID string                     `json:"baseline_id"`
@@ -300,7 +314,11 @@ func validateSnapshot(input snapshot) (state, error) {
 		}
 		out.Resources[key] = append(json.RawMessage(nil), raw...)
 	}
-	for _, raw := range out.Resources {
+	return out, validateGraph(out.Resources)
+}
+
+func validateGraph(resources map[string]json.RawMessage) error {
+	for _, raw := range resources {
 		var r map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &r)
 		var body map[string]any
@@ -308,8 +326,8 @@ func validateSnapshot(input snapshot) (state, error) {
 		_ = json.Unmarshal(raw, &meta)
 		name := map[string]string{"accounts": "account", "instruments": "instrument", "listings": "listing", "activity": "activity"}[meta.Kind]
 		_ = json.Unmarshal(r[name], &body)
-		if err := validateLinks(body, out.Resources); err != nil {
-			return out, err
+		if err := validateLinks(body, resources); err != nil {
+			return err
 		}
 		if meta.Kind == "activity" {
 			listingID, _ := body["listing_id"].(string)
@@ -319,14 +337,14 @@ func validateSnapshot(input snapshot) (state, error) {
 						InstrumentID string `json:"instrument_id"`
 					} `json:"listing"`
 				}
-				_ = json.Unmarshal(out.Resources["listings/"+listingID], &listing)
+				_ = json.Unmarshal(resources["listings/"+listingID], &listing)
 				if body["instrument_id"] != listing.Listing.InstrumentID {
-					return out, errors.New("protocol: activity listing belongs to another instrument")
+					return errors.New("protocol: activity listing belongs to another instrument")
 				}
 			}
 		}
 	}
-	return out, nil
+	return nil
 }
 
 //go:embed mirror.sql
@@ -407,9 +425,9 @@ func readState(db *sql.DB) (state, error) {
 		}
 		resources = append(resources, raw)
 	}
-	return validateSnapshot(snapshot{stored.BaselineID, stored.Version, resources})
+	return validateSnapshot(snapshot{"full", stored.BaselineID, stored.Version, resources})
 }
-func save(ctx context.Context, db *sql.DB, next state) error {
+func save(ctx context.Context, db *sql.DB, prior, next state) error {
 	data, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -419,6 +437,14 @@ func save(ctx context.Context, db *sql.DB, next state) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var warehouse, version string
+	err = tx.QueryRowContext(ctx, statement("Publication")).Scan(&warehouse, &version)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if warehouse != prior.BaselineID || version != prior.Version {
+		return errors.New("mirror changed during synchronization; reload the saved baseline")
+	}
 	if _, err = tx.ExecContext(ctx, statement("Replace"), data); err != nil {
 		return err
 	}
@@ -431,41 +457,117 @@ func sameJSON(a, b []byte) bool {
 	right.UseNumber()
 	return left.Decode(&x) == nil && right.Decode(&y) == nil && reflect.DeepEqual(x, y)
 }
+func applyDelta(data []byte, current state) (state, error) {
+	var change delta
+	if err := decode(data, &change); err != nil {
+		return state{}, err
+	}
+	if err := validateContract("SnapshotDelta", data); err != nil {
+		return state{}, err
+	}
+	if current.Version == "" || change.BaselineID != current.BaselineID || change.From != current.Version {
+		return state{}, errors.New("protocol: delta does not match the committed baseline")
+	}
+	if change.Version == change.From {
+		if len(change.Upserts)+len(change.Removals) != 0 {
+			return state{}, errors.New("protocol: current baseline has a nonempty delta")
+		}
+		return current, nil
+	}
+	if len(change.Upserts)+len(change.Removals) == 0 {
+		return state{}, errors.New("protocol: changed version has an empty delta")
+	}
+
+	next := state{BaselineID: change.BaselineID, Version: change.Version, Resources: maps.Clone(current.Resources)}
+	seen := make(map[string]bool, len(change.Removals)+len(change.Upserts))
+	for _, removal := range change.Removals {
+		key := removal.Kind + "/" + removal.ID
+		if seen[key] {
+			return state{}, errors.New("protocol: duplicate delta key")
+		}
+		seen[key] = true
+		delete(next.Resources, key)
+	}
+	for _, raw := range change.Upserts {
+		item, err := metadata(raw)
+		if err != nil {
+			return state{}, err
+		}
+		key := item.Kind + "/" + item.ID
+		if seen[key] {
+			return state{}, errors.New("protocol: duplicate delta key")
+		}
+		seen[key] = true
+		if err := validateRevision(next.Resources[key], raw); err != nil {
+			return state{}, err
+		}
+		next.Resources[key] = raw
+	}
+	return next, validateGraph(next.Resources)
+}
+
+func validateRevision(old, raw json.RawMessage) error {
+	if old == nil || bytes.Equal(old, raw) {
+		return nil
+	}
+	var before, after resource
+	if json.Unmarshal(old, &before) != nil || json.Unmarshal(raw, &after) != nil ||
+		after.Revision < before.Revision || after.Revision == before.Revision && !sameJSON(old, raw) {
+		return errors.New("protocol: resource revision regressed or changed content")
+	}
+	return nil
+}
+
 func (c *client) sync(ctx context.Context, current *state, db *sql.DB) (bool, error) {
-	data, etag, unchanged, err := c.request(ctx, "/v1/snapshot", current.Version)
-	if err != nil || unchanged {
-		return false, err
+	path := "/v1/snapshot"
+	if current.Version != "" {
+		query := url.Values{"baseline_id": {current.BaselineID}, "from": {current.Version}}
+		path += "?" + query.Encode()
 	}
-	var input snapshot
-	if err = decode(data, &input); err != nil {
-		return false, err
-	}
-	next, err := validateSnapshot(input)
+	data, _, _, err := c.request(ctx, path, "")
 	if err != nil {
 		return false, err
 	}
-	if etag != `"`+next.Version+`"` {
-		return false, errors.New("protocol: snapshot version and ETag differ")
+
+	var envelope struct {
+		Mode string `json:"mode"`
 	}
-	replaced := current.BaselineID != "" && current.BaselineID != next.BaselineID
-	if !replaced && current.Version != "" {
-		for key, raw := range next.Resources {
-			if old, ok := current.Resources[key]; ok {
-				if bytes.Equal(old, raw) {
-					continue
-				}
-				before, _ := metadata(old)
-				after, _ := metadata(raw)
-				if after.Revision < before.Revision || after.Revision == before.Revision && !sameJSON(old, raw) {
-					return false, errors.New("protocol: resource revision regressed or changed content")
-				}
-			}
+	if err = json.Unmarshal(data, &envelope); err != nil {
+		return false, err
+	}
+
+	var next state
+	switch envelope.Mode {
+	case "full":
+		var input snapshot
+		if err = decode(data, &input); err != nil {
+			return false, err
 		}
-		if current.Version == next.Version && !reflect.DeepEqual(current.Resources, next.Resources) {
+		next, err = validateSnapshot(input)
+	case "delta":
+		next, err = applyDelta(data, *current)
+	default:
+		return false, errors.New("protocol: unsupported snapshot mode")
+	}
+	if err != nil {
+		return false, err
+	}
+
+	replaced := current.BaselineID != "" && current.BaselineID != next.BaselineID
+	if !replaced && current.Version == next.Version {
+		if !reflect.DeepEqual(current.Resources, next.Resources) {
 			return false, errors.New("protocol: unchanged version has different resources")
 		}
+		return false, nil
 	}
-	if err = save(ctx, db, next); err != nil {
+	if envelope.Mode == "full" && !replaced {
+		for key, raw := range next.Resources {
+			if err = validateRevision(current.Resources[key], raw); err != nil {
+				return false, err
+			}
+		}
+	}
+	if err = save(ctx, db, *current, next); err != nil {
 		return false, fmt.Errorf("persist mirror: %w", err)
 	}
 	*current = next
@@ -474,6 +576,7 @@ func (c *client) sync(ctx context.Context, current *state, db *sql.DB) (bool, er
 	}
 	return replaced, nil
 }
+
 func (c *client) verifyLookups(ctx context.Context, s state) error {
 	for _, raw := range s.Resources {
 		expected, err := metadata(raw)
@@ -673,8 +776,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (result e
 			Status      string `json:"status"`
 			Resources   int    `json:"resources"`
 			NewBaseline bool   `json:"new_baseline"`
+			BaselineID  string `json:"baseline_id"`
 			Version     string `json:"version"`
-		}{"synchronized", len(current.Resources), replaced, current.Version}); e != nil {
+		}{"synchronized", len(current.Resources), replaced, current.BaselineID, current.Version}); e != nil {
 			return e
 		}
 		completed = publication{current.BaselineID, current.Version}

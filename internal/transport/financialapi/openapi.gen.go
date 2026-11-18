@@ -17,13 +17,13 @@ import (
 
 // Defines values for AccountResourceKind.
 const (
-	Accounts AccountResourceKind = "accounts"
+	AccountResourceKindAccounts AccountResourceKind = "accounts"
 )
 
 // Valid indicates whether the value is a known member of the AccountResourceKind enum.
 func (e AccountResourceKind) Valid() bool {
 	switch e {
-	case Accounts:
+	case AccountResourceKindAccounts:
 		return true
 	default:
 		return false
@@ -366,6 +366,21 @@ func (e FieldDetailReason) Valid() bool {
 	}
 }
 
+// Defines values for FinancialSnapshotMode.
+const (
+	Full FinancialSnapshotMode = "full"
+)
+
+// Valid indicates whether the value is a known member of the FinancialSnapshotMode enum.
+func (e FinancialSnapshotMode) Valid() bool {
+	switch e {
+	case Full:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FundTermsFamily.
 const (
 	FundTermsFamilyFund FundTermsFamily = "fund"
@@ -434,13 +449,13 @@ func (e InstrumentFigiAllocation) Valid() bool {
 
 // Defines values for InstrumentResourceKind.
 const (
-	Instruments InstrumentResourceKind = "instruments"
+	InstrumentResourceKindInstruments InstrumentResourceKind = "instruments"
 )
 
 // Valid indicates whether the value is a known member of the InstrumentResourceKind enum.
 func (e InstrumentResourceKind) Valid() bool {
 	switch e {
-	case Instruments:
+	case InstrumentResourceKindInstruments:
 		return true
 	default:
 		return false
@@ -485,13 +500,13 @@ func (e LifecycleActivityLifecycleKind) Valid() bool {
 
 // Defines values for ListingResourceKind.
 const (
-	Listings ListingResourceKind = "listings"
+	ListingResourceKindListings ListingResourceKind = "listings"
 )
 
 // Valid indicates whether the value is a known member of the ListingResourceKind enum.
 func (e ListingResourceKind) Valid() bool {
 	switch e {
-	case Listings:
+	case ListingResourceKindListings:
 		return true
 	default:
 		return false
@@ -738,6 +753,30 @@ func (e QuotationBasis) Valid() bool {
 	}
 }
 
+// Defines values for ResourceKeyKind.
+const (
+	ResourceKeyKindAccounts    ResourceKeyKind = "accounts"
+	ResourceKeyKindActivity    ResourceKeyKind = "activity"
+	ResourceKeyKindInstruments ResourceKeyKind = "instruments"
+	ResourceKeyKindListings    ResourceKeyKind = "listings"
+)
+
+// Valid indicates whether the value is a known member of the ResourceKeyKind enum.
+func (e ResourceKeyKind) Valid() bool {
+	switch e {
+	case ResourceKeyKindAccounts:
+		return true
+	case ResourceKeyKindActivity:
+		return true
+	case ResourceKeyKindInstruments:
+		return true
+	case ResourceKeyKindListings:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecurityTransferActivityDirection.
 const (
 	In  SecurityTransferActivityDirection = "in"
@@ -765,6 +804,21 @@ const (
 func (e SecurityTransferActivityFamily) Valid() bool {
 	switch e {
 	case SecurityTransferActivityFamilySecurityTransfer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SnapshotDeltaMode.
+const (
+	Delta SnapshotDeltaMode = "delta"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotDeltaMode enum.
+func (e SnapshotDeltaMode) Valid() bool {
+	switch e {
+	case Delta:
 		return true
 	default:
 		return false
@@ -1120,7 +1174,8 @@ type FieldDetailReason string
 
 // FinancialSnapshot defines model for FinancialSnapshot.
 type FinancialSnapshot struct {
-	BaselineId string `json:"baseline_id"`
+	BaselineId string                `json:"baseline_id"`
+	Mode       FinancialSnapshotMode `json:"mode"`
 
 	// Resources Complete accepted set, including cancelled or superseded activities. Each kind/id occurs once.
 	Resources []Resource `json:"resources"`
@@ -1128,6 +1183,9 @@ type FinancialSnapshot struct {
 	// Version Opaque publication version; compare for equality only.
 	Version string `json:"version"`
 }
+
+// FinancialSnapshotMode defines model for FinancialSnapshot.Mode.
+type FinancialSnapshotMode string
 
 // FundTerms defines model for FundTerms.
 type FundTerms struct {
@@ -1422,6 +1480,15 @@ type Resource struct {
 	union json.RawMessage
 }
 
+// ResourceKey defines model for ResourceKey.
+type ResourceKey struct {
+	Id   string          `json:"id"`
+	Kind ResourceKeyKind `json:"kind"`
+}
+
+// ResourceKeyKind defines model for ResourceKey.Kind.
+type ResourceKeyKind string
+
 // SecurityTransferActivity defines model for SecurityTransferActivity.
 type SecurityTransferActivity struct {
 	AccountId           string                            `json:"account_id"`
@@ -1465,6 +1532,23 @@ type SecurityTransferActivityDirection string
 
 // SecurityTransferActivityFamily defines model for SecurityTransferActivity.Family.
 type SecurityTransferActivityFamily string
+
+// SnapshotDelta defines model for SnapshotDelta.
+type SnapshotDelta struct {
+	BaselineId string            `json:"baseline_id"`
+	From       string            `json:"from"`
+	Mode       SnapshotDeltaMode `json:"mode"`
+
+	// Removals Changed keys absent from the target publication.
+	Removals []ResourceKey `json:"removals"`
+
+	// Upserts Complete current resources for keys changed since the base.
+	Upserts []Resource `json:"upserts"`
+	Version string     `json:"version"`
+}
+
+// SnapshotDeltaMode defines model for SnapshotDelta.Mode.
+type SnapshotDeltaMode string
 
 // Timestamp defines model for Timestamp.
 type Timestamp = string
@@ -1576,8 +1660,15 @@ type ExplainListingsParams struct {
 
 // SnapshotParams defines parameters for Snapshot.
 type SnapshotParams struct {
-	// IfNoneMatch A previous ETag; weak validators and lists are supported.
-	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+	BaselineId *string `form:"baseline_id,omitempty" json:"baseline_id,omitempty"`
+
+	// From Opaque history publication version of the client's committed mirror.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+}
+
+// Snapshot200JSONResponseBody defines parameters for Snapshot.
+type Snapshot200JSONResponseBody struct {
+	union json.RawMessage
 }
 
 // AsTradeActivity returns the union data inside the Activity as a TradeActivity
@@ -2275,6 +2366,68 @@ func (t Resource) MarshalJSON() ([]byte, error) {
 }
 
 func (t *Resource) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsFinancialSnapshot returns the union data inside the Snapshot200JSONResponseBody as a FinancialSnapshot
+func (t Snapshot200JSONResponseBody) AsFinancialSnapshot() (FinancialSnapshot, error) {
+	var body FinancialSnapshot
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFinancialSnapshot overwrites any union data inside the Snapshot200JSONResponseBody as the provided FinancialSnapshot
+func (t *Snapshot200JSONResponseBody) FromFinancialSnapshot(v FinancialSnapshot) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeFinancialSnapshot performs a merge with any union data inside the Snapshot200JSONResponseBody, using the provided FinancialSnapshot
+func (t *Snapshot200JSONResponseBody) MergeFinancialSnapshot(v FinancialSnapshot) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSnapshotDelta returns the union data inside the Snapshot200JSONResponseBody as a SnapshotDelta
+func (t Snapshot200JSONResponseBody) AsSnapshotDelta() (SnapshotDelta, error) {
+	var body SnapshotDelta
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSnapshotDelta overwrites any union data inside the Snapshot200JSONResponseBody as the provided SnapshotDelta
+func (t *Snapshot200JSONResponseBody) FromSnapshotDelta(v SnapshotDelta) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSnapshotDelta performs a merge with any union data inside the Snapshot200JSONResponseBody, using the provided SnapshotDelta
+func (t *Snapshot200JSONResponseBody) MergeSnapshotDelta(v SnapshotDelta) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t Snapshot200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *Snapshot200JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

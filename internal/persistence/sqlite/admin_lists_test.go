@@ -1255,7 +1255,7 @@ func TestConnectionAccountBindingUsesLatestDiscoverySnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	snapshot, err := s.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil || len(snapshot.Snapshot.Resources) != 2 {
 		t.Fatalf("both accounts must publish: %+v %v", snapshot, err)
 	}

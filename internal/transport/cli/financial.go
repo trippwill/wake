@@ -199,8 +199,8 @@ func financialResponseError(res *http.Response) error {
 	return commandError{status: exitFailure, message: message.Error(), code: string(value.Code)}
 }
 
-// financialGET stays on the configured origin and accepts finite JSON
-// objects only. A failed read leaves stdout untouched.
+// financialGET stays on the configured origin. Probes accept SSE headers, while
+// ordinary reads require a finite JSON object before writing stdout.
 func financialGET(
 	ctx context.Context,
 	endpoint, tokenFile, target string,
@@ -240,7 +240,7 @@ func financialGET(
 	req.Header.Set("Authorization", "Bearer "+string(value))
 
 	if probe {
-		req.Header.Set("If-None-Match", "*")
+		req.Header.Set("Accept", "text/event-stream")
 	}
 
 	res, err := client.Do(req)
@@ -251,7 +251,7 @@ func financialGET(
 	}
 	defer func() { _ = res.Body.Close() }()
 
-	if probe && res.StatusCode == http.StatusNotModified {
+	if probe && res.StatusCode == http.StatusOK && res.Header.Get("Content-Type") == "text/event-stream" {
 		return financialResponse{}, nil
 	}
 
@@ -436,7 +436,7 @@ func checkFinancialAPI(ctx context.Context, c *cli.Command) error {
 		return err
 	}
 
-	if _, err := financialGET(ctx, endpoint, c.String("token-file"), snapshotRoute, true); err != nil {
+	if _, err := financialGET(ctx, endpoint, c.String("token-file"), "/v1/events", true); err != nil {
 		return err
 	}
 

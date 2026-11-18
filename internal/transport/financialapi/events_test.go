@@ -23,11 +23,11 @@ import (
 
 type eventReads struct {
 	reads
-	changes    chan struct{}
-	subscribed atomic.Bool
-	removed    chan struct{}
-	snapshot   func(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
-	positions  []application.PositionsPublication
+	changes     chan struct{}
+	subscribed  atomic.Bool
+	removed     chan struct{}
+	publication func(context.Context) (application.HistoryPublication, error)
+	positions   []application.PositionsPublication
 }
 
 func (s *eventReads) PositionsPublications(context.Context) ([]application.PositionsPublication, error) {
@@ -39,11 +39,8 @@ func (s *eventReads) SubscribePublications() (<-chan struct{}, func()) {
 	return s.changes, func() { close(s.removed) }
 }
 
-func (s *eventReads) Snapshot(
-	ctx context.Context,
-	condition application.SnapshotCondition,
-) (application.SnapshotRead, error) {
-	return s.snapshot(ctx, condition)
+func (s *eventReads) HistoryPublication(ctx context.Context) (application.HistoryPublication, error) {
+	return s.publication(ctx)
 }
 
 func publicationFrame(reader *bufio.Reader) (Publication, error) {
@@ -76,9 +73,9 @@ func TestPublicationStreamSubscribesBeforeInitialReadAndCleansUp(t *testing.T) {
 
 			var calls atomic.Int64
 
-			source.snapshot = func(ctx context.Context, condition application.SnapshotCondition) (application.SnapshotRead, error) {
-				if !source.subscribed.Load() || !condition.Matches("any-version") {
-					t.Error("metadata read before subscription or loaded full resources")
+			source.publication = func(ctx context.Context) (application.HistoryPublication, error) {
+				if !source.subscribed.Load() {
+					t.Error("metadata read before subscription")
 				}
 
 				if _, ok := ctx.Deadline(); !ok {
@@ -92,9 +89,7 @@ func TestPublicationStreamSubscribesBeforeInitialReadAndCleansUp(t *testing.T) {
 					source.changes <- struct{}{}
 				}
 
-				return application.SnapshotRead{
-					Snapshot: application.FinancialSnapshot{BaselineID: "warehouse", Version: version},
-				}, nil
+				return application.HistoryPublication{BaselineID: "warehouse", Version: version}, nil
 			}
 			stopping := make(chan struct{})
 
@@ -145,11 +140,11 @@ func TestPublicationStreamSubscribesBeforeInitialReadAndCleansUp(t *testing.T) {
 func TestPublicationStreamShutdownCancelsMetadataRead(t *testing.T) {
 	source := &eventReads{changes: make(chan struct{}, 1), removed: make(chan struct{})}
 	started := make(chan struct{})
-	source.snapshot = func(ctx context.Context, _ application.SnapshotCondition) (application.SnapshotRead, error) {
+	source.publication = func(ctx context.Context) (application.HistoryPublication, error) {
 		close(started)
 		<-ctx.Done()
 
-		return application.SnapshotRead{}, ctx.Err()
+		return application.HistoryPublication{}, ctx.Err()
 	}
 	stopping := make(chan struct{})
 
@@ -192,10 +187,8 @@ func TestPublicationStreamCancellationStopsBufferedPositions(t *testing.T) {
 	source := &eventReads{
 		changes: make(chan struct{}), removed: make(chan struct{}),
 		positions: []application.PositionsPublication{{AccountID: "account", Version: "positions"}},
-		snapshot: func(context.Context, application.SnapshotCondition) (application.SnapshotRead, error) {
-			return application.SnapshotRead{
-				Snapshot: application.FinancialSnapshot{BaselineID: "warehouse", Version: "initial"},
-			}, nil
+		publication: func(context.Context) (application.HistoryPublication, error) {
+			return application.HistoryPublication{BaselineID: "warehouse", Version: "initial"}, nil
 		},
 	}
 
@@ -269,7 +262,7 @@ func (l *eventListener) Addr() net.Addr { return &net.UnixAddr{Name: "event-test
 
 func TestPublicationStreamDisconnectsClientThatDoesNotRead(t *testing.T) {
 	source := &eventReads{changes: make(chan struct{}, 1), removed: make(chan struct{})}
-	source.snapshot = source.reads.Snapshot
+	source.publication = source.reads.HistoryPublication
 
 	serverConnection, clientConnection := net.Pipe()
 	defer func() { _ = clientConnection.Close() }()

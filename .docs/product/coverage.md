@@ -174,13 +174,15 @@ debt, equity, fund and unclassified instruments. Null denotes a field without an
 Explanations distinguish an omitted source assertion, an explicit unavailable assertion,
 unresolved selection and established reporting expectations. Zero remains a reported value.
 
-Each snapshot has a publication baseline ID and an opaque version. Conditional
-GET avoids unchanged downloads. Accepted source/operator corrections, conflicts and
-relevant reference/link changes advance publication; repeated known claims do not.
-SSE announces current publication on connection and after accepted changes. Bursts
-can coalesce; reconnects deliver current state without replay. Clients synchronize
-through complete snapshots and retain the prior mirror on failure. Notifications
-cover accepted financial state, independently of admin workflow status.
+Each snapshot has a baseline ID and an opaque publication version. Clients
+with a retained base receive changed resources and removals, or an empty delta
+when current. The same endpoint returns a full snapshot for an unavailable base or
+a delta beyond the response budget. Accepted source and operator corrections,
+conflicts and relevant reference changes advance publication. Repeated known
+claims leave the version unchanged. SSE announces current publication on
+connection and after accepted changes. Bursts can coalesce and reconnects deliver
+current state. Clients retain the prior mirror on failure. Notifications cover
+accepted financial state independently of admin workflow status.
 Restarts and access-store recovery retain publication with an intact warehouse.
 Warehouse replacement establishes a clearly reported new baseline.
 
@@ -200,7 +202,7 @@ The [wire contract](../../api/openapi/v1.yaml) owns exact semantics. The indepen
 uses a separate process and authenticated TCP requests without Wake store access, internal
 application calls or upstream credentials. Its own transactional mirror retains the
 last complete validated snapshot on failed transfers or writes. Checks cover exact
-values, conditional reads, SSE follow/reconnect, corrections/conflict raise/clear,
+values, deltas and full fallback, SSE follow and reconnect, corrections and conflicts,
 restart, access recovery and warehouse replacement. In-process tests alone do not
 establish this boundary.
 

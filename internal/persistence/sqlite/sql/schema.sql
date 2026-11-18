@@ -63,6 +63,8 @@ CREATE TABLE instrument_selections(instrument_id TEXT PRIMARY KEY REFERENCES ins
 CREATE TABLE publishing(singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0)) STRICT;
 CREATE TABLE publishing_dirty(kind TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(kind,id)) STRICT;
 CREATE TABLE published_resources(kind TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, snapshot BLOB NOT NULL, explanation BLOB NOT NULL, PRIMARY KEY(kind,id)) STRICT;
+CREATE TABLE publication_versions(sequence INTEGER PRIMARY KEY, token TEXT NOT NULL UNIQUE, change_count INTEGER NOT NULL) STRICT;
+CREATE TABLE publication_changes(sequence INTEGER NOT NULL REFERENCES publication_versions(sequence) ON DELETE CASCADE, kind TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(sequence,kind,id)) STRICT;
 CREATE TRIGGER publish_accounts_insert AFTER INSERT ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
 CREATE TRIGGER publish_accounts_update AFTER UPDATE ON accounts BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('accounts',NEW.id); END;
 CREATE TRIGGER publish_instruments_insert AFTER INSERT ON instruments BEGIN INSERT OR IGNORE INTO publishing_dirty VALUES('instruments',NEW.id); END;

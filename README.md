@@ -237,9 +237,10 @@ Start a Codex chat and invoke `$wake-read` with the Wake data you want to inspec
 ### Read from another application
 
 The token-authenticated financial API publishes accepted accounts, instruments, listings and
-activity with stable identities, exact values and complete versioned snapshots. See the
+activity with stable identities, exact values and versioned snapshots. See the
 [financial API contract](api/openapi/v1.yaml) and
 [independent consumer check](.docs/engineering/development.md#api-consumer-acceptance).
+Clients receive changes from a retained baseline or a full snapshot when needed.
 
 An optional Activity Query ID on the same IBKR connection adds security transfers,
 non-trade cash postings, and reported realized P&L and allocated cost for individual

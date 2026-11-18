@@ -71,7 +71,7 @@ func TestExternalResultsDoNotRequireSeparateQueriesOrTradeCurrency(t *testing.T)
 			if err = workflow.RunOnce(t.Context(), f.now); err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := f.store.Snapshot(t.Context(), application.SnapshotCondition{})
+			snapshot, err := f.store.Snapshot(t.Context(), application.HistoryPublication{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +97,7 @@ func TestExternalResultsDoNotRequireSeparateQueriesOrTradeCurrency(t *testing.T)
 			if _, err = f.host.Acquire(t.Context(), f.id, "results"); !errors.Is(err, provider.ErrUnavailable) {
 				t.Fatal("disabled input acquired", err)
 			}
-			retained, err := f.store.Snapshot(t.Context(), application.SnapshotCondition{})
+			retained, err := f.store.Snapshot(t.Context(), application.HistoryPublication{})
 			if err != nil || retained.Snapshot.Version != snapshot.Snapshot.Version {
 				t.Fatal("disabling access erased retained results", err)
 			}

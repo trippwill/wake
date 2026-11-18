@@ -391,6 +391,18 @@ type ProcessingReceipt struct {
 	Version    string
 }
 
+type PublicationChange struct {
+	Sequence int64
+	Kind     string
+	ID       string
+}
+
+type PublicationVersion struct {
+	Sequence    int64
+	Token       string
+	ChangeCount int64
+}
+
 type PublishedResource struct {
 	Kind        string
 	ID          string

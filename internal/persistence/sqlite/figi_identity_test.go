@@ -567,6 +567,11 @@ func TestFIGISuccessiveMergesPreserveListingFIGIAndFlattenAliases(t *testing.T) 
 		t.Fatal(err)
 	}
 
+	baseline, err := snapshotState(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	applyEquityIdentity(t, s, middle.Instrument())
 	applyEquityIdentity(t, s, youngest.Instrument())
 
@@ -576,6 +581,21 @@ func TestFIGISuccessiveMergesPreserveListingFIGIAndFlattenAliases(t *testing.T) 
 	}
 
 	applyEquityIdentity(t, s, oldest.Instrument())
+
+	delta, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: baseline.BaselineID, Version: baseline.Version},
+	)
+	if err != nil || delta.Delta == nil || len(delta.Delta.Removals) != 4 {
+		t.Fatal("successive merges did not retire both instrument and listing pairs", err)
+	}
+
+	current, err := snapshotState(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requireDeltaMatchesSnapshot(t, baseline, delta, current)
 
 	for _, activity := range []application.Execution{oldest, middle, youngest} {
 		listing, err := s.Resource(ctx, "listings", activity.Listing())

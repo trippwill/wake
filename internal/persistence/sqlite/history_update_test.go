@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal(originalExplanation, err)
 	}
 
-	baseline, err := store.Snapshot(ctx, application.AnySnapshotVersion())
+	baseline, err := store.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,8 +138,11 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	socketResponse := func(s *Store, path string) *httptest.ResponseRecorder {
 		t.Helper()
 
+		if path == "/v1/snapshot" {
+			path += "?" + (url.Values{"baseline_id": {baseline.Snapshot.BaselineID}, "from": {baseline.Snapshot.Version}}).Encode()
+		}
+
 		request := httptest.NewRequest(http.MethodGet, path, nil)
-		request.Header.Set("If-None-Match", `"`+baseline.Snapshot.Version+`"`)
 
 		response := httptest.NewRecorder()
 		financialapi.NewHandler(s, nil, nil).ServeHTTP(response, request)
@@ -349,12 +353,21 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	final, err := store.Snapshot(ctx, application.AnySnapshotVersion())
+	final, err := store.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil || final.Snapshot.BaselineID != baseline.Snapshot.BaselineID ||
 		final.Snapshot.Version == baseline.Snapshot.Version ||
 		len(final.Snapshot.Resources) != len(baseline.Snapshot.Resources) {
 		t.Fatal("publication lost identity or resources", err)
 	}
+
+	delta, err := store.Snapshot(ctx, application.HistoryPublication{
+		BaselineID: baseline.Snapshot.BaselineID, Version: baseline.Snapshot.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requireDeltaMatchesSnapshot(t, baseline.Snapshot, delta, final.Snapshot)
 
 	stream := httptest.NewServer(financialapi.NewHandler(store, nil, nil))
 	defer stream.Close()
@@ -393,7 +406,7 @@ func TestHistoryUpdateResumesAndPublishesRetainedClaims(t *testing.T) {
 	store = reopen(store)
 	run(store, now.Add(time.Minute))
 
-	repeated, err := store.Snapshot(ctx, application.AnySnapshotVersion())
+	repeated, err := store.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil || store.HistoryUpdating() || repeated.Snapshot.Version != final.Snapshot.Version {
 		t.Fatal("applied rule replayed", err)
 	}

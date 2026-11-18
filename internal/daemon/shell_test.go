@@ -6,6 +6,7 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/config"
 	"go.trippwill.dev/wake/internal/currencycatalog"
 	persistence "go.trippwill.dev/wake/internal/persistence/sqlite"
@@ -335,27 +337,37 @@ func assertLocalFinancialAccess(
 		t.Fatal(err)
 	}
 
+	var full application.FinancialSnapshot
+
+	err = json.NewDecoder(snapshot.Body).Decode(&full)
 	_ = snapshot.Body.Close()
-	etag := snapshot.Header.Get("ETag")
-	if snapshot.StatusCode != http.StatusOK || etag == "" {
-		t.Fatal("local snapshot unavailable", snapshot.Status, etag)
+	if err != nil || snapshot.StatusCode != http.StatusOK || full.Mode != "full" ||
+		full.BaselineID == "" || full.Version == "" {
+		t.Fatal("local snapshot unavailable", snapshot.Status, err)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
+	target := "http://wake/v1/snapshot?" + (url.Values{
+		"baseline_id": {full.BaselineID}, "from": {full.Version},
+	}).Encode()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	request.Header.Set("If-None-Match", etag)
 
 	response, err := api.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	var delta application.SnapshotDelta
+
+	err = json.NewDecoder(response.Body).Decode(&delta)
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusNotModified {
-		t.Fatal("conditional local read failed", response.Status)
+	if err != nil || response.StatusCode != http.StatusOK || delta.Mode != "delta" ||
+		delta.BaselineID != full.BaselineID || delta.From != full.Version || delta.Version != full.Version ||
+		len(delta.Upserts)+len(delta.Removals) != 0 {
+		t.Fatal("local delta read failed", response.Status, err)
 	}
 
 	stream, err := api.Get("http://wake/v1/events")

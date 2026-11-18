@@ -51,12 +51,10 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
-	type key struct{ kind, id string }
-
-	keys := []key{}
+	var keys []application.ResourceKey
 	for rows.Next() {
-		var k key
-		if err = rows.Scan(&k.kind, &k.id); err != nil {
+		var k application.ResourceKey
+		if err = rows.Scan(&k.Kind, &k.ID); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -72,10 +70,11 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 	}
 
 	q := s.queries.WithTx(tx)
-	changed := false
+
+	var changed []application.ResourceKey
 	for _, k := range keys {
-		if _, e := q.ResourceAlias(ctx, sqlc.ResourceAliasParams{Kind: k.kind, ID: k.id}); e == nil {
-			result, e := tx.ExecContext(ctx, publishingStatement("RetireResource"), k.kind, k.id)
+		if _, e := q.ResourceAlias(ctx, sqlc.ResourceAliasParams{Kind: k.Kind, ID: k.ID}); e == nil {
+			result, e := tx.ExecContext(ctx, publishingStatement("RetireResource"), k.Kind, k.ID)
 			if e != nil {
 				return e
 			}
@@ -85,14 +84,16 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 				return e
 			}
 
-			changed = changed || count > 0
+			if count > 0 {
+				changed = append(changed, k)
+			}
 
 			continue
 		} else if !errors.Is(e, sql.ErrNoRows) {
 			return e
 		}
 
-		resource, explanation, err := canonicalSnapshot(ctx, q, k.kind, k.id, s.registrations)
+		resource, explanation, err := canonicalSnapshot(ctx, q, k.Kind, k.ID, s.registrations)
 		if err != nil {
 			return err
 		}
@@ -102,7 +103,7 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 			oldData, oldExplanation []byte
 		)
 
-		err = tx.QueryRowContext(ctx, publishingStatement("Current"), k.kind, k.id).
+		err = tx.QueryRowContext(ctx, publishingStatement("Current"), k.Kind, k.ID).
 			Scan(&oldRevision, &oldData, &oldExplanation)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -138,12 +139,12 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 
-		revisionQuery := map[string]string{"accounts": "AccountRevision", "instruments": "InstrumentRevision", "listings": "ListingRevision", "activity": "ActivityRevision"}[k.kind]
+		revisionQuery := map[string]string{"accounts": "AccountRevision", "instruments": "InstrumentRevision", "listings": "ListingRevision", "activity": "ActivityRevision"}[k.Kind]
 		if _, err = tx.ExecContext(
 			ctx,
 			publishingStatement(revisionQuery),
 			resource.Revision,
-			k.id,
+			k.ID,
 			resource.Revision,
 		); err != nil {
 			return err
@@ -152,8 +153,8 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		if _, err = tx.ExecContext(
 			ctx,
 			publishingStatement("Save"),
-			k.kind,
-			k.id,
+			k.Kind,
+			k.ID,
 			resource.Revision,
 			data,
 			why,
@@ -161,11 +162,11 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 
-		changed = true
+		changed = append(changed, k)
 	}
 
-	if changed {
-		if _, err = tx.ExecContext(ctx, publishingStatement("Advance")); err != nil {
+	if len(changed) > 0 {
+		if err = advancePublication(ctx, tx, changed); err != nil {
 			return err
 		}
 	}
@@ -187,7 +188,7 @@ func (s *Store) commit(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
-	if !updating && (changed || positionsChanged) {
+	if !updating && (len(changed) > 0 || positionsChanged) {
 		s.notifyPublication()
 	}
 
@@ -809,7 +810,10 @@ type publicationState struct {
 	Version   int64
 }
 
-func publishingState(ctx context.Context, tx *sql.Tx) (publicationState, error) {
+func publishingState(ctx context.Context, tx interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+},
+) (publicationState, error) {
 	var state publicationState
 
 	err := tx.QueryRowContext(ctx, publishingStatement("State")).Scan(&state.Warehouse, &state.Version)

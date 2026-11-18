@@ -98,7 +98,7 @@ func TestFinancialOpenIgnoresOptionalAccessFile(t *testing.T) {
 		t.Fatal("local overview consulted optional access or lost retained source", e)
 	}
 
-	if _, err = store.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
+	if _, err = store.Snapshot(ctx, application.HistoryPublication{}); err != nil {
 		t.Fatal("local API snapshot", err)
 	}
 

@@ -35,7 +35,7 @@ const upgradeFixtureNote = "Retained selection changes. Activity and positions w
 func fixtureUpgrade(warehouse, access, rebuild bool) upgradeBaseline {
 	b := releaseBaseline()
 	if warehouse {
-		b.formats[0] = "wake-warehouse/4"
+		b.formats[0] = "wake-warehouse/5"
 		b.migrations[0] = []migration{{schemaVersion, b.formats[0], warehouseV2Migration}}
 		b.schemas[0] = strings.Replace(
 			b.schemas[0],
@@ -606,21 +606,21 @@ func TestMigrationProcessCrashRecovery(t *testing.T) {
 func TestUpgradePlansInterveningStepsAndNotes(t *testing.T) {
 	p := seedUpgradeStores(t)
 	b := fixtureUpgrade(true, true, true)
-	b.formats[0] = "wake-warehouse/5"
-	b.migrations[0] = append(b.migrations[0], migration{"wake-warehouse/4", "wake-warehouse/5", "SELECT 1;"})
+	b.formats[0] = "wake-warehouse/6"
+	b.migrations[0] = append(b.migrations[0], migration{"wake-warehouse/5", "wake-warehouse/6", "SELECT 1;"})
 
 	b.rule = "retained-claims-and-decisions/3"
 	b.notes[3] = "Second retained selection change."
 	plan := previewFixture(t, p, b)
-	if len(plan.Steps) != 3 || plan.Steps[0].To != "wake-warehouse/4" ||
-		plan.Steps[1].To != "wake-warehouse/5" || plan.Steps[2].To != "wake-access/4" ||
+	if len(plan.Steps) != 3 || plan.Steps[0].To != "wake-warehouse/5" ||
+		plan.Steps[1].To != "wake-warehouse/6" || plan.Steps[2].To != "wake-access/4" ||
 		!reflect.DeepEqual(plan.ReleaseNotes, []RuleReleaseNote{{2, upgradeFixtureNote}, {3, b.notes[3]}}) {
 		t.Fatal(plan)
 	}
 
 	for _, steps := range [][]migration{
 		b.migrations[0][:1],
-		{{schemaVersion, "wake-warehouse/5", "SELECT 1;"}},
+		{{schemaVersion, "wake-warehouse/6", "SELECT 1;"}},
 		{{schemaVersion, "wake-access/4", "SELECT 1;"}},
 	} {
 		before := storeBytes(t, p)

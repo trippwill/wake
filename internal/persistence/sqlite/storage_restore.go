@@ -424,6 +424,22 @@ func renewRestoredStores(
 		return err
 	}
 
+	// Restored financial state has a new consumer baseline and journal token scope.
+	if _, err := tx.ExecContext(ctx, publishingStatement("ResetJournal")); err != nil {
+		return err
+	}
+
+	publication, err := publishingState(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(
+		ctx, publishingStatement("RecordBase"), publication.Version, publication.history().Version,
+	); err != nil {
+		return err
+	}
+
 	if paths[2] != "" {
 		if err := prepareRecoveredProfile(ctx, tx, time.Now()); err != nil {
 			return err

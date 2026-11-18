@@ -95,7 +95,7 @@ func TestPositionsStreamUsesIndependentVersionsAndReconnects(t *testing.T) {
 		t.Fatal(name, positions)
 	}
 
-	snap, e := s.Snapshot(t.Context(), application.SnapshotCondition{})
+	snap, e := s.Snapshot(t.Context(), application.HistoryPublication{})
 	if e != nil || snap.Snapshot.Version != pub["version"] {
 		t.Fatal("position-only change advanced snapshot", e)
 	}

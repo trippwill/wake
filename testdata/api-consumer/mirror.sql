@@ -15,5 +15,7 @@ COMMIT;
 SELECT application_id,user_version FROM pragma_application_id(),pragma_user_version();
 -- name: Read
 SELECT payload FROM mirror WHERE singleton=1;
+-- name: Publication
+SELECT json_extract(CAST(payload AS TEXT),'$.baseline_id'),json_extract(CAST(payload AS TEXT),'$.version') FROM mirror WHERE singleton=1;
 -- name: Replace
 INSERT INTO mirror(singleton,payload) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET payload=excluded.payload;

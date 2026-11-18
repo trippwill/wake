@@ -96,7 +96,7 @@ func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.
 	full := partialTrade(t).Observation()
 	processPartial(t, s, "baseline", full)
 
-	before, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	before, err := s.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +121,15 @@ func TestFieldExplanationChangesRevisionWithoutChangingAcceptedValue(t *testing.
 		t.Fatalf("field explanation did not advance with explicit unavailability: %+v %+v %v", updated, why, err)
 	}
 
-	after, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
-	if err != nil || after.Unchanged || after.Snapshot.Version == before.Snapshot.Version {
+	after, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{
+			BaselineID: before.Snapshot.BaselineID,
+			Version:    before.Snapshot.Version,
+		},
+	)
+	if err != nil || after.Delta == nil || after.Delta.Version == before.Snapshot.Version ||
+		len(after.Delta.Upserts) != 1 || after.Delta.Upserts[0].Revision != updated.Revision {
 		t.Fatalf("explanation-only change did not publish: %+v %v", after, err)
 	}
 }

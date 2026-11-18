@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -467,7 +468,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 
 		deadline := time.Now().Add(45 * time.Second)
 		for time.Now().Before(deadline) {
-			response, e := apiClient.Get("http://wake/v1/snapshot")
+			response, e := apiClient.Get(endpoint + "/v1/snapshot")
 			if e == nil {
 				_ = response.Body.Close()
 
@@ -537,22 +538,30 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 				lines := strings.TrimSpace(eventOutput.String())
 
 				var installed struct {
-					Version string `json:"version"`
+					BaselineID string `json:"baseline_id"`
+					Version    string `json:"version"`
 				}
 
 				_ = json.Unmarshal([]byte(lines[strings.LastIndex(lines, "\n")+1:]), &installed)
 
-				request, e := http.NewRequestWithContext(ctx, http.MethodGet, "http://wake/v1/snapshot", nil)
+				target := endpoint + "/v1/snapshot"
+				if installed.BaselineID != "" && installed.Version != "" {
+					target += "?" + (url.Values{"baseline_id": {installed.BaselineID}, "from": {installed.Version}}).Encode()
+				}
+
+				request, e := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 				if e != nil {
 					t.Fatal(e)
 				}
 
-				request.Header.Set("If-None-Match", `"`+installed.Version+`"`)
-
 				response, e := apiClient.Do(request)
 				if e == nil {
+					var snapshot application.FinancialSnapshot
+
+					decodeErr := json.NewDecoder(response.Body).Decode(&snapshot)
 					_ = response.Body.Close()
-					if response.StatusCode == http.StatusNotModified {
+					if response.StatusCode == http.StatusOK && decodeErr == nil &&
+						snapshot.Version == installed.Version {
 						break
 					}
 				}
@@ -830,7 +839,7 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 	cutServer := &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			response, e := apiClient.Get("http://wake/v1/snapshot")
+			response, e := apiClient.Get(endpoint + "/v1/snapshot")
 			if e != nil {
 				http.Error(w, "upstream unavailable", http.StatusBadGateway)
 				return
@@ -844,7 +853,6 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("ETag", response.Header.Get("ETag"))
 			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 			_, _ = w.Write(data[:len(data)/2])
 		}),
@@ -1135,6 +1143,8 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		},
 		Next: now.Add(365 * 24 * time.Hour),
 	}
+	preMerge := mirror()
+
 	for _, root := range []string{survivor, retired} {
 		if err = store.ApplyReference(ctx, root, identity); err != nil {
 			t.Fatal(err)
@@ -1161,6 +1171,53 @@ func TestAPIConsumerAcceptance(t *testing.T) {
 		if resource.Activity != nil && resource.Activity.InstrumentID() != nil &&
 			*resource.Activity.InstrumentID() == retired {
 			t.Fatal("mirror contains old root link")
+		}
+	}
+
+	deltaQuery := url.Values{"baseline_id": {preMerge.BaselineID}, "from": {preMerge.Version}}
+
+	deltaResponse, err := apiClient.Get(endpoint + "/v1/snapshot?" + deltaQuery.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var delta application.SnapshotDelta
+
+	err = json.NewDecoder(deltaResponse.Body).Decode(&delta)
+	_ = deltaResponse.Body.Close()
+
+	if err != nil || deltaResponse.StatusCode != http.StatusOK || delta.Mode != "delta" ||
+		delta.From != preMerge.Version || delta.Version != after.Version || len(delta.Removals) != 2 {
+		t.Fatal("merge did not produce a delta with two retirements", delta, err)
+	}
+
+	for _, key := range delta.Removals {
+		delete(preMerge.Resources, key.Kind+"/"+key.ID)
+	}
+
+	for _, resource := range delta.Upserts {
+		preMerge.Resources[resource.Kind+"/"+resource.ID] = resource
+	}
+
+	fullResponse, err := apiClient.Get(endpoint + "/v1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var full application.FinancialSnapshot
+
+	err = json.NewDecoder(fullResponse.Body).Decode(&full)
+	_ = fullResponse.Body.Close()
+	if err != nil || fullResponse.StatusCode != http.StatusOK || full.Mode != "full" ||
+		full.Version != delta.Version || len(full.Resources) != len(preMerge.Resources) {
+		t.Fatal("merge snapshot does not match delta target", full.Version, err)
+	}
+
+	for _, resource := range full.Resources {
+		key := resource.Kind + "/" + resource.ID
+		if !reflect.DeepEqual(preMerge.Resources[key], resource) ||
+			!reflect.DeepEqual(after.Resources[key], resource) {
+			t.Fatal("merge delta and mirror differ from full snapshot", key)
 		}
 	}
 

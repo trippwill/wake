@@ -41,9 +41,9 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
-		read, err := h.reads.Snapshot(ctx, application.AnySnapshotVersion())
+		read, err := h.reads.HistoryPublication(ctx)
 
-		return Publication{BaselineId: read.Snapshot.BaselineID, Version: read.Snapshot.Version}, err
+		return Publication{BaselineId: read.BaselineID, Version: read.Version}, err
 	}
 
 	positionMetadata := func() ([]application.PositionsPublication, error) {

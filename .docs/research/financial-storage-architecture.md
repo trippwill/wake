@@ -139,7 +139,7 @@ look complete. Retry timing belongs to synchronization; financial consistency me
 financial.
 
 Access is not one file. The [upstream access
-schema](../../internal/persistence/sqlite/connections_schema.sql) currently stores configurations,
+schema](../../internal/persistence/sqlite/sql/connections_schema.sql) currently stores configurations,
 encrypted credentials and reference settings. Browser and consumer authority live in
 [auth.json](../../internal/clientaccess/store.go). Keep those distinct lifecycles. The proposed
 physical layout is financial SQLite, synchronization SQLite, upstream-access SQLite, and the
@@ -695,7 +695,7 @@ remain required.
 ### Source observations
 
 The [current writer](../../internal/persistence/sqlite/store.go) already owns attached SQLite
-connections; [profile.sql](../../internal/persistence/sqlite/profile.sql) configures DELETE journals
+connections; [profile.sql](../../internal/persistence/sqlite/sql/profile.sql) configures DELETE journals
 and EXTRA synchronization. Startup checks store identities and associations. The
 [current resume path](../../internal/persistence/sqlite/workflow.go) checks a recovery revision and
 records actor/time, but identity equality alone does not detect an older copy of the same store.

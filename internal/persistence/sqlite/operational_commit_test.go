@@ -18,7 +18,7 @@ func TestOperationalTransactionsDoNotFinalizeFinancialPublication(t *testing.T) 
 	changes, unsubscribe := s.SubscribePublications()
 	defer unsubscribe()
 
-	before, err := s.Snapshot(ctx, application.AnySnapshotVersion())
+	before, err := s.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,8 +68,11 @@ func TestOperationalTransactionsDoNotFinalizeFinancialPublication(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	after, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
-	if err != nil || !after.Unchanged || len(changes) != 0 {
+	after, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: before.Snapshot.BaselineID, Version: before.Snapshot.Version},
+	)
+	if err != nil || after.Delta == nil || after.Delta.Version != after.Delta.From || len(changes) != 0 {
 		t.Fatal("operational work changed financial publication", err)
 	}
 }

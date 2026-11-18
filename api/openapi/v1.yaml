@@ -3,11 +3,11 @@ info:
   title: Wake accepted financial model
   version: 1.0.0
   description: GET-only HTTP over TCP, authenticated by an independently revocable client token. GET
-    /v1/snapshot returns the complete accepted resource set, baseline ID and an opaque publication
-    version. GET /v1/events streams coalesced publication notifications; reconnect announces current state.
-    Compare versions for equality only. ETag and If-None-Match support unchanged conditional
-    reads. Each finite response is materialized from one consistent read, released before client I/O. Validate
-    the complete response before atomically replacing a mirror and its version. Failed downloads or writes
+    /v1/snapshot returns a full accepted resource set or changes from a retained base.
+    GET /v1/events streams coalesced publication notifications; reconnect announces current state.
+    Compare versions for equality only. Each finite response is materialized from one consistent
+    read, released before client I/O. Validate and install the complete response and its version
+    atomically. Failed downloads or writes
     preserve the previous mirror. A changed baseline ID requires a new mirror. Individual
     resource lookups and revision-bound explanations remain available; a changed explanation revision
     returns stale_revision. Current-state synchronization does not retain intermediate delivery transitions.
@@ -33,7 +33,7 @@ paths:
         its initial metadata read. A publication event is sent immediately and after accepted changes;
         bursts may coalesce. JSON data contains baseline_id and the opaque snapshot version.
         Compare versions for equality only. An event is a refresh hint, never an acknowledgement
-        that the client has synchronized. Fetch and validate a snapshot before committing a mirror
+        that the client has synchronized. Fetch and validate a full snapshot or delta before committing a mirror
         and its version. A fetched snapshot may already be newer than the notification.
         Reconnects announce current publication; intermediate transitions are not replayed.
         No SSE id fields are sent; Last-Event-ID is ignored and provides no replay semantics.
@@ -348,34 +348,41 @@ paths:
   /v1/snapshot:
     get:
       operationId: snapshot
-      description: One consistent complete accepted resource set. Transactions are released before client
-        I/O. Version is opaque and scoped to the baseline ID.
+      description: |
+        One consistent view of accepted history. Supply both baseline_id and from to synchronize
+        from the last committed mirror. A retained base produces one coalesced delta to the current
+        publication. A current base produces empty upserts and removals with version equal to from.
+        Requests without a base and requests with a different baseline ID, unknown or expired version,
+        or a delta beyond server limits receive a full snapshot in the same response.
+        Each kind/id appears at most once across the delta. A removal may name a resource created
+        and retired after the base. Apply the delta only to the named baseline and version, validate
+        the resulting graph, and commit it with the target version. It equals the full snapshot at
+        that version. Transactions are released before client I/O.
       parameters:
-      - in: header
-        name: If-None-Match
+      - in: query
+        name: baseline_id
         schema:
           type: string
-        description: A previous ETag; weak validators and lists are supported.
+          minLength: 1
+          maxLength: 256
+      - in: query
+        name: from
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description: Opaque history publication version of the client's committed mirror.
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '200':
-          description: Complete accepted state
-          headers:
-            ETag:
-              schema:
-                type: string
-              description: Quoted opaque publication version
+          description: Full snapshot or delta
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FinancialSnapshot'
-        '304':
-          description: Accepted state is unchanged
-          headers:
-            ETag:
-              schema:
-                type: string
+                oneOf:
+                - $ref: '#/components/schemas/FinancialSnapshot'
+                - $ref: '#/components/schemas/SnapshotDelta'
         '400':
           $ref: '#/components/responses/Error'
         '404':
@@ -1587,6 +1594,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        mode:
+          type: string
+          enum: [full]
         baseline_id:
           type: string
           minLength: 1
@@ -1603,9 +1613,52 @@ components:
           description: Complete accepted set, including cancelled or superseded activities. Each kind/id
             occurs once.
       required:
+      - mode
       - baseline_id
       - version
       - resources
+    SnapshotDelta:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [delta]
+        baseline_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        from:
+          type: string
+          minLength: 1
+          maxLength: 256
+        version:
+          type: string
+          minLength: 1
+          maxLength: 256
+        upserts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+          description: Complete current resources for keys changed since the base.
+        removals:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceKey'
+          description: Changed keys absent from the target publication.
+      required: [mode, baseline_id, from, version, upserts, removals]
+    ResourceKey:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [accounts, instruments, listings, activity]
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+      required: [kind, id]
     NullableRealizedPnL:
       type: object
       nullable: true

@@ -362,10 +362,13 @@ retry maintenance responses with backoff. The financial API adapter owns its nar
 financial-read interface. Wire and admin
 adapters consume application read values without exposing database transactions.
 
-`GET /v1/snapshot` returns a baseline ID, an opaque publication version and
-the complete accepted resource set. One consistent read materializes the response
-and releases its transaction before client I/O. Its ETag supports conditional GET;
-an unchanged poll avoids loading resource bodies and returns no payload. Individual
+`GET /v1/snapshot` synchronizes the accepted resource graph. A client supplies
+its committed baseline ID and opaque publication version to receive
+complete changed resources and removal keys. A bounded journal records those
+keys in the same transaction as accepted state. One consistent read coalesces
+changes to the current publication and releases its transaction before client I/O.
+A current base returns an empty delta. An absent or unavailable base or a delta
+beyond the response budget returns a full snapshot in the same request. Individual
 resource reads remain available. Explanation requests name the mirrored resource
 revision and fail visibly if it has changed.
 
@@ -378,21 +381,20 @@ version and baseline ID. Comment heartbeats do not read storage. Streams
 have bounded writes and join shutdown; ordinary reads keep their finite lifetimes.
 Reconnect announces current state without replaying intermediate transitions.
 Notifications never acknowledge a client's mirror: clients advance their saved
-version only with a complete validated snapshot, which may be newer than its hint.
+version only with a validated update, which may be newer than its hint.
 
-Consumers validate a complete snapshot before atomically replacing their mirror
-and version. They preserve the prior mirror on failed downloads, validation or
-writes. The independent acceptance consumer uses its own private SQLite transaction
-for this replacement and skips writes for unchanged conditional reads. It retains
-exact scalar text and explicit unknowns, checks unique identities and resource
-links, and validates bodies against the published contract. It bounds downloads
-to 128 MiB and reports excess size as a failure without replacing its mirror.
-Its follow mode uses SSE, detects idle streams, and reconnects with bounded backoff.
-Stream reconnect preserves the mirror; snapshot validation or persistence errors
-fail visibly with the last successful mirror intact.
+Consumers validate the resulting graph before atomically updating their mirror
+and version. A delta applies to the exact baseline ID and version it names.
+The independent acceptance consumer keeps exact scalar text and explicit unknowns,
+checks unique identities and resource links, and skips writes for empty deltas.
+It bounds downloads to 128 MiB. Its follow mode uses SSE, detects idle streams,
+and reconnects with bounded backoff. Failed downloads, validation, or writes
+preserve the previous mirror.
 
 Daemon restarts and access-store recovery preserve the baseline ID and accepted
-publication state. A changed baseline ID tells consumers to replace their mirrors.
+publication state. A changed baseline ID tells consumers to replace their mirrors. Restore reseeds
+the publication journal under the new baseline so subsequent changes can be read
+incrementally.
 Synchronization delivers current accepted state; it does not deliver every
 intermediate committed transition that occurred while a client was disconnected.
 Immutable evidence and operator decision history remain retained inside Wake.
@@ -607,7 +609,8 @@ the oldest root survives, source bindings and immutable histories remain retaine
 activity, underlier and listing links point to the survivor. Conflicting active operator choices or
 explicit reference contradictions keep roots separate for review. Alias lookups redirect to current
 resources; explanations for an old ID and new correction submissions against it fail stale. Complete
-snapshots omit retired aliases, so a consumer installs the new graph atomically. Financial
+snapshots omit retired aliases. A delta carries their removal keys together with
+updated links so a consumer can install the new graph atomically. Financial
 processing remains useful with provisional identity.
 
 Debt calculation preserves exact reported prices and separate monetary roles without

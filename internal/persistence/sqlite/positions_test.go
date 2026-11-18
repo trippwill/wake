@@ -444,7 +444,7 @@ func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *t
 	s := newStoreWithSyntheticAccount(t)
 	processConfirmationReport(t, s, "baseline", equityRow("U1", "holding", "100"))
 
-	snapshot, _ := s.Snapshot(t.Context(), application.SnapshotCondition{})
+	snapshot, _ := s.Snapshot(t.Context(), application.HistoryPublication{})
 	initial := readPositions(t, s)
 	if initial.Status != "unavailable" || initial.Positions != nil || *initial.Reason != "not_reported" {
 		t.Fatal(initial)
@@ -467,8 +467,14 @@ func TestPositionsReplaceWholeSetsWithIndependentPublicationAndAvailability(t *t
 		t.Fatal(first)
 	}
 
-	unchanged, err := s.Snapshot(t.Context(), application.MatchingSnapshotVersions(snapshot.Snapshot.Version))
-	if err != nil || !unchanged.Unchanged {
+	unchanged, err := s.Snapshot(
+		t.Context(),
+		application.HistoryPublication{
+			BaselineID: snapshot.Snapshot.BaselineID,
+			Version:    snapshot.Snapshot.Version,
+		},
+	)
+	if err != nil || unchanged.Delta == nil || unchanged.Delta.Version != snapshot.Snapshot.Version {
 		t.Fatal("positions changed activity snapshot", err)
 	}
 

@@ -102,7 +102,7 @@ func TestOperationalWitnessRejectsStaleAccess(t *testing.T) {
 		t.Fatal("stale witness allowed reference reservation", err)
 	}
 
-	if _, err = s.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
+	if _, err = s.Snapshot(ctx, application.HistoryPublication{}); err != nil {
 		t.Fatal("witness mismatch blocked local snapshot", err)
 	}
 }
@@ -284,7 +284,7 @@ func TestRestartRejectsOlderAccessCopyWithSameIdentity(t *testing.T) {
 		t.Fatal("older access copy admitted upstream work", err)
 	}
 
-	if _, err = s.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
+	if _, err = s.Snapshot(ctx, application.HistoryPublication{}); err != nil {
 		t.Fatal(err)
 	}
 }

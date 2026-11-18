@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,14 +21,14 @@ import (
 	"go.trippwill.dev/wake/internal/transport/financialapi"
 )
 
-func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
+func TestSnapshotDeltaFollowsAcceptedState(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
 	ctx := t.Context()
 	row := equityRow("U1", "snapshot-fill", "9007199254740993.0000000000001")
 	processConfirmationReport(t, s, "snapshot", row)
 
-	first, err := s.Snapshot(ctx, application.SnapshotCondition{})
-	if err != nil || first.Unchanged || first.Snapshot.BaselineID == "" || first.Snapshot.Version == "" ||
+	first, err := s.Snapshot(ctx, application.HistoryPublication{})
+	if err != nil || first.Delta != nil || first.Snapshot.BaselineID == "" || first.Snapshot.Version == "" ||
 		len(first.Snapshot.Resources) != 4 {
 		t.Fatal(first, err)
 	}
@@ -48,24 +49,30 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 
 	processConfirmationReport(t, s, "same-source-again", row)
 
-	unchanged, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
-	if err != nil || !unchanged.Unchanged || unchanged.Snapshot.Version != first.Snapshot.Version ||
-		len(unchanged.Snapshot.Resources) != 0 {
+	unchanged, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: first.Snapshot.BaselineID, Version: first.Snapshot.Version},
+	)
+	if err != nil || unchanged.Delta == nil || unchanged.Delta.Version != first.Snapshot.Version ||
+		len(unchanged.Delta.Upserts)+len(unchanged.Delta.Removals) != 0 {
 		t.Fatal("repeat claims re-published or conditional read loaded resources", unchanged, err)
 	}
 
 	retainDecision(t, s, "activity", activity, "price", "12.000000000000001", "USD", "set")
 
-	changed, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(first.Snapshot.Version))
-	if err != nil || changed.Unchanged || changed.Snapshot.Version == first.Snapshot.Version ||
-		changed.Snapshot.BaselineID != first.Snapshot.BaselineID {
-		t.Fatal("accepted change did not replace snapshot version", changed, err)
+	changed, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: first.Snapshot.BaselineID, Version: first.Snapshot.Version},
+	)
+	if err != nil || changed.Delta == nil || changed.Delta.Version == first.Snapshot.Version ||
+		changed.Delta.BaselineID != first.Snapshot.BaselineID || changed.Delta.From != first.Snapshot.Version ||
+		len(changed.Delta.Upserts) != 1 || len(changed.Delta.Removals) != 0 {
+		t.Fatal("expected a single activity update", changed, err)
 	}
 
-	for _, resource := range changed.Snapshot.Resources {
-		if resource.ID == activity && resource.Activity.Trade.Price.Amount != "12.000000000000001" {
-			t.Fatal("snapshot mixed resource state", resource)
-		}
+	resource := changed.Delta.Upserts[0]
+	if resource.ID != activity || resource.Activity.Trade.Price.Amount != "12.000000000000001" {
+		t.Fatal("delta mixed resource state", resource)
 	}
 
 	if s.db.Stats().InUse != 0 {
@@ -75,16 +82,19 @@ func TestSnapshotVersionAndConditionalReadFollowAcceptedState(t *testing.T) {
 	replacement := newStoreWithSyntheticAccount(t)
 	processConfirmationReport(t, replacement, "new-warehouse", row)
 
-	baseline, err := replacement.Snapshot(ctx, application.MatchingSnapshotVersions(changed.Snapshot.Version))
-	if err != nil || baseline.Unchanged || baseline.Snapshot.BaselineID == changed.Snapshot.BaselineID ||
-		baseline.Snapshot.Version == changed.Snapshot.Version {
+	baseline, err := replacement.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: changed.Delta.BaselineID, Version: changed.Delta.Version},
+	)
+	if err != nil || baseline.Delta != nil || baseline.Snapshot.BaselineID == changed.Delta.BaselineID ||
+		baseline.Snapshot.Version == changed.Delta.Version {
 		t.Fatal("warehouse identity did not establish a new baseline", baseline, err)
 	}
 }
 
 func TestEmptyWarehouseSnapshotIsComplete(t *testing.T) {
 	s, _ := testStore(t)
-	snapshot, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
+	snapshot, err := s.Snapshot(t.Context(), application.HistoryPublication{})
 	if err != nil || snapshot.Snapshot.BaselineID == "" || snapshot.Snapshot.Version == "" ||
 		snapshot.Snapshot.Resources == nil ||
 		len(snapshot.Snapshot.Resources) != 0 {
@@ -96,7 +106,7 @@ func TestSnapshotReleasesReadBeforeClientIOAndBindsExplanations(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
 	processConfirmationReport(t, s, "blocked-client", equityRow("U1", "fill", "10.0000"))
 
-	first, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
+	first, err := s.Snapshot(t.Context(), application.HistoryPublication{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +281,7 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 	}()
 
 	for range 40 {
-		snapshot, err := s.Snapshot(t.Context(), application.SnapshotCondition{})
+		snapshot, err := s.Snapshot(t.Context(), application.HistoryPublication{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -297,29 +307,150 @@ func TestSnapshotReadIsConsistentAcrossConcurrentAcceptedCommits(t *testing.T) {
 	}
 }
 
-func TestSnapshotLiteralStarIsNotWildcard(t *testing.T) {
-	store := newStoreWithSyntheticAccount(t)
-	handler := financialapi.NewHandler(store, nil, nil)
+func TestSnapshotFallsBackWhenBaseExpires(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+	ctx := t.Context()
+
+	base, err := s.HistoryPublication(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range retainedHistoryVersions {
+		tx, e := s.db.BeginTx(ctx, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+
+		if _, e = tx.ExecContext(ctx, "UPDATE accounts SET name=?", fmt.Sprintf("account-%d", i)); e != nil {
+			_ = tx.Rollback()
+
+			t.Fatal(e)
+		}
+
+		if e = s.commit(ctx, tx); e != nil {
+			_ = tx.Rollback()
+
+			t.Fatal(e)
+		}
+	}
+
+	fallback, err := s.Snapshot(ctx, base)
+	if err != nil || fallback.Delta != nil || fallback.Snapshot.Version == base.Version ||
+		fallback.Snapshot.Mode != "full" || len(fallback.Snapshot.Resources) != 1 {
+		t.Fatal("expired base did not receive a full snapshot", fallback, err)
+	}
+
+	var oldest application.HistoryPublication
+
+	oldest.BaselineID = base.BaselineID
+	if err = s.db.QueryRowContext(ctx, "SELECT token FROM publication_versions ORDER BY sequence LIMIT 1").
+		Scan(&oldest.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	retained, err := s.Snapshot(ctx, oldest)
+	if err != nil || retained.Delta == nil || retained.Delta.Version != fallback.Snapshot.Version ||
+		len(retained.Delta.Upserts) != 1 || len(retained.Delta.Removals) != 0 ||
+		retained.Delta.Upserts[0].Account.Name != fallback.Snapshot.Resources[0].Account.Name {
+		t.Fatal("oldest retained base did not coalesce all updates", retained, err)
+	}
+
+	unknown, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: base.BaselineID, Version: "unknown"},
+	)
+	if err != nil || unknown.Delta != nil || unknown.Snapshot.Version != fallback.Snapshot.Version {
+		t.Fatal("unknown base did not receive a full snapshot", unknown, err)
+	}
+}
+
+func TestSnapshotFallsBackWhenDeltaExceedsBudget(t *testing.T) {
 	for _, test := range []struct {
-		condition string
-		status    int
+		name string
+		keys int
 	}{
-		{`"*"`, http.StatusOK}, {`W/"*"`, http.StatusOK}, {`*`, http.StatusNotModified},
+		{"response-key-limit", maxDeltaKeys + 1},
+		{"journal-row-limit", retainedHistoryChanges + 1},
 	} {
-		request := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
-		request.Header.Set("If-None-Match", test.condition)
+		t.Run(test.name, func(t *testing.T) {
+			s := newStoreWithSyntheticAccount(t)
+			ctx := t.Context()
 
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
+			base, err := s.HistoryPublication(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		if response.Code != test.status {
-			t.Fatalf("condition %s: got%d, want%d", test.condition, response.Code, test.status)
-		}
+			keys := make([]application.ResourceKey, test.keys)
+			for i := range keys {
+				keys[i] = application.ResourceKey{Kind: "activity", ID: fmt.Sprint(i)}
+			}
 
-		if response.Header().Get("ETag") == "" ||
-			(test.status == http.StatusOK && !bytes.Contains(response.Body.Bytes(), []byte(`"baseline_id"`))) ||
-			test.status == http.StatusNotModified && response.Body.Len() != 0 {
-			t.Fatal("incorrect conditional snapshot body", test.condition, response.Body.String())
-		}
+			tx, err := s.db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer func() { _ = tx.Rollback() }()
+
+			if err = advancePublication(ctx, tx, keys); err != nil {
+				t.Fatal(err)
+			}
+
+			if err = tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+
+			read, err := s.Snapshot(ctx, base)
+			if err != nil || read.Delta != nil || read.Snapshot.Mode != "full" ||
+				read.Snapshot.Version == base.Version {
+				t.Fatal("expected full fallback", read, err)
+			}
+
+			if test.keys > retainedHistoryChanges {
+				var count int
+				if err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM publication_changes").
+					Scan(&count); err != nil ||
+					count != 0 {
+					t.Fatal("large publication retained journal rows", count, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSnapshotFallsBackWhenDeltaExceedsByteBudget(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+	ctx := t.Context()
+
+	base, err := s.HistoryPublication(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err = tx.ExecContext(
+		ctx,
+		"UPDATE accounts SET name=?",
+		strings.Repeat("x", maxDeltaBytes),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = s.commit(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := s.Snapshot(ctx, base)
+	if err != nil || read.Delta != nil || read.Snapshot.Mode != "full" ||
+		read.Snapshot.Version == base.Version || len(read.Snapshot.Resources) != 1 {
+		t.Fatal("expected full snapshot for oversized upsert", err)
 	}
 }

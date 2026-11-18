@@ -40,7 +40,7 @@ const (
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt                 = recordcodec.ErrCorrupt
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-warehouse/3"
+	schemaVersion              = "wake-warehouse/4"
 	accessSchemaVersion        = "wake-access/3"
 	syncSchemaVersion          = "wake-sync/2"
 	syncArchiveVersion         = "wake-sync/1"

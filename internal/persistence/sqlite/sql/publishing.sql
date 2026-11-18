@@ -28,5 +28,36 @@ SELECT kind,id,snapshot FROM published_resources ORDER BY kind,id;
 -- name: Advance
 UPDATE publishing SET version=version+1 WHERE singleton=1;
 
+-- name: ResetJournal
+DELETE FROM publication_changes;
+DELETE FROM publication_versions;
+-- name: RecordBase
+INSERT INTO publication_versions(sequence,token,change_count) VALUES(?,?,0) ON CONFLICT(sequence) DO NOTHING;
+-- name: RecordVersion
+INSERT INTO publication_versions(sequence,token,change_count) VALUES(?,?,?);
+-- name: RecordChanges
+INSERT INTO publication_changes(sequence,kind,id)
+SELECT ?,value->>'kind',value->>'id' FROM json_each(?);
+-- name: PruneVersions
+DELETE FROM publication_versions WHERE sequence < (
+ SELECT min(sequence) FROM (
+  SELECT sequence,coalesce(sum(change_count) OVER (
+   ORDER BY sequence DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+  ),0) AS later_changes
+  FROM publication_versions ORDER BY sequence DESC LIMIT ?
+ ) WHERE later_changes <= ?
+);
+-- name: PruneBaseChanges
+DELETE FROM publication_changes WHERE sequence <= (SELECT min(sequence) FROM publication_versions);
+-- name: SnapshotBase
+SELECT sequence FROM publication_versions WHERE token=?;
+-- name: SnapshotChanges
+WITH changed AS (
+ SELECT DISTINCT kind,id FROM publication_changes WHERE sequence>? AND sequence<=? LIMIT ?
+)
+SELECT changed.kind,changed.id,p.snapshot FROM changed
+LEFT JOIN published_resources p ON p.kind=changed.kind AND p.id=changed.id
+ORDER BY changed.kind,changed.id;
+
 -- name: RetireResource
 DELETE FROM published_resources WHERE kind=? AND id=?;

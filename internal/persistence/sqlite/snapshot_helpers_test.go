@@ -4,6 +4,7 @@ package persistence
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"go.trippwill.dev/wake/internal/application"
@@ -18,7 +19,7 @@ type (
 )
 
 func snapshotState(ctx context.Context, s *Store) (application.FinancialSnapshot, error) {
-	read, err := s.Snapshot(ctx, application.SnapshotCondition{})
+	read, err := s.Snapshot(ctx, application.HistoryPublication{})
 	return read.Snapshot, err
 }
 
@@ -79,4 +80,55 @@ func explainCurrent(ctx context.Context, s *Store, kind, id string) (application
 	}
 
 	return s.Explanation(ctx, kind, id, r.Revision)
+}
+
+// requireDeltaMatchesSnapshot checks the consumer's resulting graph at the target version.
+func requireDeltaMatchesSnapshot(
+	t *testing.T,
+	before application.FinancialSnapshot,
+	read application.SnapshotRead,
+	after application.FinancialSnapshot,
+) {
+	t.Helper()
+
+	delta := read.Delta
+	if delta == nil || delta.Mode != "delta" || delta.BaselineID != before.BaselineID ||
+		delta.From != before.Version || delta.Version != after.Version || delta.BaselineID != after.BaselineID {
+		t.Fatal("delta does not name the expected baseline and versions", delta)
+	}
+
+	graph := make(map[application.ResourceKey]application.CanonicalResource, len(before.Resources))
+	for _, resource := range before.Resources {
+		graph[application.ResourceKey{Kind: resource.Kind, ID: resource.ID}] = resource
+	}
+
+	seen := make(map[application.ResourceKey]bool)
+	for _, key := range delta.Removals {
+		if seen[key] {
+			t.Fatal("duplicate delta key", key)
+		}
+
+		seen[key] = true
+		delete(graph, key)
+	}
+
+	for _, resource := range delta.Upserts {
+		key := application.ResourceKey{Kind: resource.Kind, ID: resource.ID}
+		if seen[key] {
+			t.Fatal("duplicate delta key", key)
+		}
+
+		seen[key] = true
+		graph[key] = resource
+	}
+
+	if len(graph) != len(after.Resources) {
+		t.Fatal("delta and snapshot resource counts differ", len(graph), len(after.Resources))
+	}
+
+	for _, resource := range after.Resources {
+		if !reflect.DeepEqual(graph[application.ResourceKey{Kind: resource.Kind, ID: resource.ID}], resource) {
+			t.Fatal("delta and snapshot resources differ", resource.Kind, resource.ID)
+		}
+	}
 }

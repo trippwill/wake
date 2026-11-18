@@ -105,7 +105,7 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 	changes, remove := s.SubscribePublications()
 	defer remove()
 
-	before, err := s.Snapshot(ctx, application.AnySnapshotVersion())
+	before, err := s.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,11 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 		t.Fatal("preview retained a decision or notified")
 	}
 
-	unchanged, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
-	if err != nil || !unchanged.Unchanged {
+	unchanged, err := s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: before.Snapshot.BaselineID, Version: before.Snapshot.Version},
+	)
+	if err != nil || unchanged.Delta == nil || unchanged.Delta.Version != unchanged.Delta.From {
 		t.Fatal("preview published", err)
 	}
 
@@ -133,7 +136,7 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 
 	<-changes
 
-	after, err := s.Snapshot(ctx, application.AnySnapshotVersion())
+	after, err := s.Snapshot(ctx, application.HistoryPublication{})
 	if err != nil || after.Snapshot.Version == before.Snapshot.Version {
 		t.Fatal("notification preceded publication", err)
 	}
@@ -146,8 +149,11 @@ func TestActivityCorrectionPreviewAndIdempotentRetryDoNotWrite(t *testing.T) {
 		t.Fatal("identical retry wrote or notified")
 	}
 
-	unchanged, err = s.Snapshot(ctx, application.MatchingSnapshotVersions(after.Snapshot.Version))
-	if err != nil || !unchanged.Unchanged {
+	unchanged, err = s.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: after.Snapshot.BaselineID, Version: after.Snapshot.Version},
+	)
+	if err != nil || unchanged.Delta == nil || unchanged.Delta.Version != unchanged.Delta.From {
 		t.Fatal("identical retry published", err)
 	}
 
@@ -192,7 +198,7 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 			s, d := correctionFixture(t)
 			ctx := t.Context()
 
-			before, err := s.Snapshot(ctx, application.AnySnapshotVersion())
+			before, err := s.Snapshot(ctx, application.HistoryPublication{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -243,8 +249,14 @@ func TestActivityCorrectionFailuresRollBackWithoutNotification(t *testing.T) {
 				t.Fatal("failure retained decisions or notified")
 			}
 
-			after, err := s.Snapshot(ctx, application.MatchingSnapshotVersions(before.Snapshot.Version))
-			if err != nil || !after.Unchanged {
+			after, err := s.Snapshot(
+				ctx,
+				application.HistoryPublication{
+					BaselineID: before.Snapshot.BaselineID,
+					Version:    before.Snapshot.Version,
+				},
+			)
+			if err != nil || after.Delta == nil || after.Delta.Version != after.Delta.From {
 				t.Fatal("failure published", err)
 			}
 

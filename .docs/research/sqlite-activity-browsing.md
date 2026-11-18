@@ -14,14 +14,14 @@ templates and the search matches every activity. These timings describe the stor
 for that workload. The default page, selective searches and HTTP latency need their
 own measurements.
 
-`EXPLAIN QUERY PLAN` on the [Wake schema](../../internal/persistence/sqlite/schema.sql)
+`EXPLAIN QUERY PLAN` on the [Wake schema](../../internal/persistence/sqlite/sql/schema.sql)
 using Python's SQLite 3.51.2 and an empty in-memory database showed
 `USE TEMP B-TREE FOR ORDER BY` for the default newest-first page, an account-and-kind
 filter and a text search ordered by price. The account-and-kind plan started from the
 published Activity range and applied those filters afterward. The plans describe the
 chosen access paths under those conditions. The count and page queries each evaluate
 the search predicate, so a 50-row page can still involve substantial work across the
-history. [Activity SQL](../../internal/persistence/sqlite/admin_queries.sql) ·
+history. [Activity SQL](../../internal/persistence/sqlite/sql/admin_queries.sql) ·
 [SQLite query plan guide](https://www.sqlite.org/eqp.html)
 
 A Linux smoke test using Wake's `modernc.org/sqlite` v1.48.0 with `CGO_ENABLED=0`

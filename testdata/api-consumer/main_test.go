@@ -30,7 +30,12 @@ func sample(revision int, price string) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{"id":"a","kind":"activity","revision":%d,"activity":{"reported_realized_pnl":null,"instrument_id":"instrument","listing_id":null,"at":"2026-10-20T13:30:00.120Z","trade_kind":"execution","side":"buy","position_effect":null,"quotation_basis":"per_share","settlement_date":null,"family":"trade","account_id":"account","state":"accepted","conflict":false,"date":"2026-10-20","order":null,"relationships":[],"quantity":{"value":"1.0000","unit":"shares"},"charges":[],"price":{"amount":%q,"currency":"USD"},"gross_amount":null,"proceeds":null,"net_cash":null,"net_cash_with_billable":null,"accrued_interest":null,"instrument_terms":{"family":"equity"}}}`, revision, price))
 }
 func fixture(version string, revision int, price string) snapshot {
-	return snapshot{"warehouse", version, []json.RawMessage{account, instrument, sample(revision, price)}}
+	return snapshot{"full", "warehouse", version, []json.RawMessage{account, instrument, sample(revision, price)}}
+}
+func writeDelta(w io.Writer, from, version string, changes ...json.RawMessage) {
+	_ = json.NewEncoder(w).Encode(delta{
+		"delta", "warehouse", from, version, append([]json.RawMessage{}, changes...), []resourceKey{},
+	})
 }
 func mirrorDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -51,7 +56,7 @@ func requireState(t *testing.T, db *sql.DB, current state, version, price string
 		t.Fatal("exact price lost", stored)
 	}
 }
-func TestSnapshotReplacementConditionalReadAndRestart(t *testing.T) {
+func TestSnapshotDeltaFullFallbackAndRestart(t *testing.T) {
 	input := fixture("one", 1, "1.23000000000000000100")
 	conditional := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,10 +64,13 @@ func TestSnapshotReplacementConditionalReadAndRestart(t *testing.T) {
 			t.Error(r.URL)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"`+input.Version+`"`)
-		if r.Header.Get("If-None-Match") == `"`+input.Version+`"` {
+		if r.URL.Query().Get("from") == input.Version {
 			conditional++
-			w.WriteHeader(304)
+			writeDelta(w, input.Version, input.Version)
+			return
+		}
+		if input.Version == "three" && r.URL.Query().Get("from") == "one" {
+			writeDelta(w, "one", "three", input.Resources[2])
 			return
 		}
 		_ = json.NewEncoder(w).Encode(input)
@@ -91,27 +99,26 @@ func TestSnapshotReplacementConditionalReadAndRestart(t *testing.T) {
 	if _, err = c.sync(t.Context(), &stored, db); err != nil || conditional != 2 {
 		t.Fatal("restart baseline", err)
 	}
-	input = snapshot{"replacement", "new", []json.RawMessage{}}
+	input = snapshot{"full", "replacement", "new", []json.RawMessage{}}
 	if changed, e := c.sync(t.Context(), &current, db); e != nil || !changed || len(current.Resources) != 0 || !strings.Contains(progress.String(), "Warehouse changed") {
 		t.Fatal("new baseline not installed/reported", current, changed, e)
 	}
 }
 func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 	good, _ := json.Marshal(fixture("next", 2, "2.00000000001"))
-	for _, failure := range []string{"truncated", "trailing", "duplicate-key", "duplicate-resource", "missing-envelope", "missing-field", "unknown-field", "unknown-reference", "bad-decimal", "changed-revision", "regressed-revision", "write", "canceled-write", "conditional-without-matching-version"} {
+	for _, failure := range []string{"truncated", "trailing", "duplicate-key", "duplicate-resource", "missing-envelope", "missing-field", "unknown-field", "unknown-reference", "bad-decimal", "changed-revision", "regressed-revision", "write", "canceled-write", "delta-without-matching-version", "delta-dangling-reference", "delta-duplicate-key"} {
 		t.Run(failure, func(t *testing.T) {
 			db := mirrorDB(t)
 			current, err := validateSnapshot(fixture("prior", 1, "1.0000"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = save(t.Context(), db, current); err != nil {
+			if err = save(t.Context(), db, state{}, current); err != nil {
 				t.Fatal(err)
 			}
 			data := append([]byte(nil), good...)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("ETag", `"next"`)
 				switch failure {
 				case "truncated":
 					w.Header().Set("Content-Length", "100000")
@@ -138,9 +145,19 @@ func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 					data, _ = json.Marshal(fixture("next", 1, "2.00"))
 				case "regressed-revision":
 					data = []byte(strings.Replace(string(data), `"revision":2`, `"revision":0`, 1))
-				case "conditional-without-matching-version":
-					w.Header().Set("ETag", `"other"`)
-					w.WriteHeader(304)
+				case "delta-without-matching-version":
+					writeDelta(w, "other", "next", sample(2, "2.00"))
+					return
+				case "delta-dangling-reference":
+					_ = json.NewEncoder(w).Encode(delta{
+						"delta", "warehouse", "prior", "next", []json.RawMessage{}, []resourceKey{{"instruments", "instrument"}},
+					})
+					return
+				case "delta-duplicate-key":
+					writeDelta(w, "prior", "next", sample(2, "2.00"), sample(2, "2.00"))
+					return
+				case "write":
+					writeDelta(w, "prior", "next", sample(2, "2.00"))
 					return
 				}
 				_, _ = w.Write(data)
@@ -156,7 +173,7 @@ func TestIncompleteResponsesAndFailedWritesPreservePriorMirror(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				cancel()
 				next, _ := validateSnapshot(fixture("next", 2, "2.00"))
-				err = save(ctx, db, next)
+				err = save(ctx, db, current, next)
 			} else {
 				_, err = c.sync(t.Context(), &current, db)
 			}
@@ -361,10 +378,9 @@ func TestFollowRetriesVerificationAfterMirrorCommit(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/snapshot" {
-			w.Header().Set("ETag", `"`+version+`"`)
-			if r.Header.Get("If-None-Match") == `"`+version+`"` {
+			if r.URL.Query().Get("from") == version {
 				conditional.Add(1)
-				w.WriteHeader(304)
+				writeDelta(w, version, version)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(fixture(version, revision, price))

@@ -86,10 +86,9 @@ func TestPublicationReconnectAndChangesDuringSnapshot(t *testing.T) {
 			close(snapshotStarted)
 			<-changesSent
 		} else if connections.Load() > 1 {
-			input = snapshot{"replacement", "new", []json.RawMessage{}}
+			input = snapshot{"full", "replacement", "new", []json.RawMessage{}}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"`+input.Version+`"`)
 		_ = json.NewEncoder(w).Encode(input)
 	}))
 	defer server.Close()
@@ -123,7 +122,7 @@ func TestPublicationFollowRetriesTemporarySnapshotFailure(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = save(t.Context(), db, current); err != nil {
+			if err = save(t.Context(), db, state{}, current); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

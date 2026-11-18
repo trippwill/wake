@@ -527,13 +527,33 @@ type PublishedDecision struct {
 // FinancialSnapshot is one complete, consistent accepted warehouse view. Version
 // is opaque and changes only when accepted resources or explanations change.
 type FinancialSnapshot struct {
+	Mode       string              `json:"mode"`
 	BaselineID string              `json:"baseline_id"`
 	Version    string              `json:"version"`
 	Resources  []CanonicalResource `json:"resources"`
 }
+type HistoryPublication struct {
+	BaselineID string
+	Version    string
+}
+
+type ResourceKey struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+type SnapshotDelta struct {
+	Mode       string              `json:"mode"`
+	BaselineID string              `json:"baseline_id"`
+	From       string              `json:"from"`
+	Version    string              `json:"version"`
+	Upserts    []CanonicalResource `json:"upserts"`
+	Removals   []ResourceKey       `json:"removals"`
+}
+
 type SnapshotRead struct {
-	Snapshot  FinancialSnapshot
-	Unchanged bool
+	Snapshot FinancialSnapshot
+	Delta    *SnapshotDelta
 }
 
 // SnapshotCondition keeps an HTTP wildcard distinct from literal opaque versions.

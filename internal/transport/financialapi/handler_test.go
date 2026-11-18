@@ -106,6 +106,11 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 		{"/v1/snapshot", "HEAD", 405},
 		{"/v1/snapshot?extra=1", "GET", 400},
 		{"/v1/snapshot?x=%XX", "GET", 400},
+		{"/v1/snapshot?baseline_id=w", "GET", 400},
+		{"/v1/snapshot?from=v", "GET", 400},
+		{"/v1/snapshot?baseline_id=w&from=", "GET", 400},
+		{"/v1/snapshot?baseline_id=w&from=v&from=v", "GET", 400},
+		{"/v1/snapshot?baseline_id=w&from=%00", "GET", 400},
 		{"/v1/activity/id/explanation", "GET", 400},
 		{"/v1/activity/id/explanation?revision=0", "GET", 400},
 		{"/v1/activity/id/explanation?revision=1&revision=2", "GET", 400},
@@ -147,58 +152,52 @@ func TestFinancialContractRoutesPrecisionUnknownsAndErrors(t *testing.T) {
 	}
 }
 
-func (s reads) Snapshot(
-	_ context.Context,
-	condition application.SnapshotCondition,
-) (application.SnapshotRead, error) {
-	unchanged := condition.Matches("opaque-version")
-
-	return application.SnapshotRead{
-		Snapshot: application.FinancialSnapshot{
-			BaselineID: "warehouse",
-			Version:    "opaque-version",
-			Resources:  []application.CanonicalResource{s.item},
-		},
-		Unchanged: unchanged,
-	}, s.err
+func (s reads) HistoryPublication(context.Context) (application.HistoryPublication, error) {
+	return application.HistoryPublication{BaselineID: "warehouse", Version: "opaque-version"}, s.err
 }
 
-func TestSnapshotConditionalHTTP(t *testing.T) {
-	h := NewHandler(
-		reads{
-			item: application.CanonicalResource{
-				ID:       "one",
-				Kind:     "accounts",
-				Revision: 1,
-				Account:  &application.PublishedAccount{Name: "Synthetic"},
-			},
-		},
-		nil,
-		nil,
-	)
-	for _, condition := range []string{"", `"opaque-version"`, `W/"opaque-version"`, `"other", "opaque-version"`, "*"} {
-		r := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
-		r.Header.Set("If-None-Match", condition)
+func (s reads) Snapshot(
+	_ context.Context,
+	base application.HistoryPublication,
+) (application.SnapshotRead, error) {
+	if base.BaselineID == "warehouse" && base.Version == "opaque-version" {
+		return application.SnapshotRead{Delta: &application.SnapshotDelta{
+			Mode: "delta", BaselineID: base.BaselineID, From: base.Version, Version: base.Version,
+			Upserts: []application.CanonicalResource{}, Removals: []application.ResourceKey{},
+		}}, s.err
+	}
 
+	return application.SnapshotRead{Snapshot: application.FinancialSnapshot{
+		Mode: "full", BaselineID: "warehouse", Version: "opaque-version",
+		Resources: []application.CanonicalResource{s.item},
+	}}, s.err
+}
+
+func TestSnapshotBaselineHTTP(t *testing.T) {
+	h := NewHandler(reads{}, nil, nil)
+	for _, test := range []struct {
+		query, mode string
+	}{
+		{"", "full"},
+		{"?baseline_id=warehouse&from=opaque-version", "delta"},
+		{"?baseline_id=warehouse&from=unknown", "full"},
+		{"?baseline_id=other&from=opaque-version", "full"},
+	} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/snapshot"+test.query, nil))
 
-		want := http.StatusNotModified
-		if condition == "" {
-			want = http.StatusOK
+		var response struct {
+			Mode string `json:"mode"`
 		}
 
-		if w.Code != want || w.Header().Get("ETag") != `"opaque-version"` {
-			t.Fatal(condition, w.Code, w.Header(), w.Body.String())
-		}
-
-		if want == http.StatusNotModified && w.Body.Len() != 0 {
-			t.Fatal("conditional response had a body")
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &response) != nil ||
+			response.Mode != test.mode {
+			t.Fatal(test, w.Code, w.Body.String())
 		}
 	}
 }
 
-func TestSnapshotConditionalSyntax(t *testing.T) {
+func TestPositionsConditionalSyntax(t *testing.T) {
 	for _, test := range []struct {
 		condition string
 		status    int
@@ -206,16 +205,16 @@ func TestSnapshotConditionalSyntax(t *testing.T) {
 		{`"other,tag"`, 200},
 		{`"*"`, 200},
 		{`W/"*"`, 200},
-		{`"*", W/"opaque-version"`, 304},
-		{`W/"other,tag", W/"opaque-version"`, 304},
+		{`"*", W/"positions-version"`, 304},
+		{`W/"other,tag", W/"positions-version"`, 304},
 		{`""`, 200},
-		{`"opaque-version",`, 400},
+		{`"positions-version",`, 400},
 		{`*, "other"`, 400},
 		{`unquoted`, 400},
 		{`"space tag"`, 400},
 	} {
 		h := NewHandler(reads{}, nil, nil)
-		request := httptest.NewRequest(http.MethodGet, "/v1/snapshot", nil)
+		request := httptest.NewRequest(http.MethodGet, "/v1/accounts/account/positions", nil)
 		request.Header.Set("If-None-Match", test.condition)
 
 		response := httptest.NewRecorder()

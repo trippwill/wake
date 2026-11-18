@@ -5,8 +5,6 @@ package persistence
 
 import (
 	"testing"
-
-	"go.trippwill.dev/wake/internal/application"
 )
 
 func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
@@ -33,7 +31,7 @@ func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
 		t.Fatal("known claims emitted a notification")
 	}
 
-	baseline, err := s.Snapshot(t.Context(), application.AnySnapshotVersion())
+	baseline, err := s.HistoryPublication(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +78,8 @@ func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
 				t.Fatal("rollback or failure notified")
 			}
 
-			read, e := s.Snapshot(t.Context(), application.MatchingSnapshotVersions(baseline.Snapshot.Version))
-			if e != nil || !read.Unchanged {
+			read, e := s.Snapshot(t.Context(), baseline)
+			if e != nil || read.Delta == nil || read.Delta.Version != baseline.Version {
 				t.Fatal("failed transaction changed publication", read, e)
 			}
 		}
@@ -93,8 +91,8 @@ func TestPublicationSubscriptionsOnlySignalCommittedChanges(t *testing.T) {
 
 	<-changes
 
-	latest, err := s.Snapshot(t.Context(), application.MatchingSnapshotVersions(baseline.Snapshot.Version))
-	if err != nil || latest.Unchanged {
+	latest, err := s.Snapshot(t.Context(), baseline)
+	if err != nil || latest.Delta == nil || latest.Delta.Version == baseline.Version {
 		t.Fatal("notification preceded committed state", latest, err)
 	}
 }

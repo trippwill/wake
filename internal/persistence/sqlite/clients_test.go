@@ -330,10 +330,16 @@ func TestClientHTTPBoundary(t *testing.T) {
 	token := string(value)
 	handler := financialapi.Authenticated(manager, financialapi.NewHandler(store, nil, nil))
 
+	publication, err := store.HistoryPublication(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshotPath := "/v1/snapshot?baseline_id=" + publication.BaselineID + "&from=" + publication.Version
+
 	request := func(path string, headers []string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.Header["Authorization"] = headers
-		r.Header.Set("If-None-Match", "*")
 		r.AddCookie(
 			&http.Cookie{
 				Name:     "wake_session",
@@ -361,8 +367,9 @@ func TestClientHTTPBoundary(t *testing.T) {
 		}
 	}
 
-	if w := request("/v1/snapshot", []string{"bearer " + token}); w.Code != http.StatusNotModified {
-		t.Fatal("conditional authenticated read", w.Code)
+	if w := request(snapshotPath, []string{"bearer " + token}); w.Code != http.StatusOK ||
+		!strings.Contains(w.Body.String(), `"mode":"delta"`) {
+		t.Fatal("authenticated current-baseline read", w.Code, w.Body.String())
 	}
 
 	other := testAuthStore(t)
@@ -378,8 +385,8 @@ func TestClientHTTPBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if w := request("/v1/snapshot", []string{"Bearer " + token}); w.Code != http.StatusUnauthorized {
-		t.Fatal("validator bypassed revocation", w.Code)
+	if w := request(snapshotPath, []string{"Bearer " + token}); w.Code != http.StatusUnauthorized {
+		t.Fatal("current baseline bypassed revocation", w.Code)
 	}
 
 	// #nosec G302 -- Deliberately insecure mode exercises fail-closed reads and writes.

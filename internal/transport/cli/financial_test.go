@@ -133,7 +133,8 @@ func TestFinancialCLIReads(t *testing.T) {
 	}, ",") + `]}`
 
 	endpoint := serveFinancialFixture(t, t.TempDir(), func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.Header.Get("Accept") != "application/json" {
+		if r.Method != http.MethodGet ||
+			(r.URL.Path != "/v1/events" && r.Header.Get("Accept") != "application/json") {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 		}
 
@@ -141,12 +142,10 @@ func TestFinancialCLIReads(t *testing.T) {
 
 		switch r.URL.RequestURI() {
 		case snapshotRoute:
-			if r.Header.Get("If-None-Match") == "*" {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-
 			_, _ = fmt.Fprint(w, snapshot)
+		case "/v1/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
 		case "/v1/accounts/acct":
 			_, _ = fmt.Fprint(w, account)
 		case "/v1/accounts/acct/explanation?revision=3":
@@ -428,7 +427,14 @@ func TestFinancialCLIHelp(t *testing.T) {
 }
 
 func TestFinancialCLIEndpointResolution(t *testing.T) {
-	probe := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotModified) }
+	probe := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/events" || r.Header.Get("Accept") != "text/event-stream" {
+			t.Error("expected an SSE reachability probe")
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+	}
 	first := serveFinancialFixture(t, t.TempDir(), probe)
 	second := serveFinancialFixture(t, t.TempDir(), probe)
 	t.Setenv("WAKE_ENDPOINT", first)

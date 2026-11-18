@@ -23,7 +23,8 @@ import (
 // Every result is materialized before transport I/O begins.
 type FinancialReader interface {
 	HistoryUpdating() bool
-	Snapshot(context.Context, application.SnapshotCondition) (application.SnapshotRead, error)
+	HistoryPublication(context.Context) (application.HistoryPublication, error)
+	Snapshot(context.Context, application.HistoryPublication) (application.SnapshotRead, error)
 	Resource(context.Context, string, string) (application.CanonicalResource, error)
 	Explanation(context.Context, string, string, int64) (application.Explanation, error)
 	Positions(context.Context, string, application.SnapshotCondition) (application.PositionsRead, error)
@@ -92,7 +93,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for key, values := range query {
-		if !explanation || key != "revision" || len(values) != 1 || values[0] == "" || len(values[0]) > 32 {
+		snapshotParam := endpoint == "snapshot" && (key == "baseline_id" || key == "from") &&
+			len(values) == 1 && len(values[0]) <= 256 && strings.TrimSpace(values[0]) == values[0] &&
+			!strings.ContainsAny(values[0], "\x00\r\n")
+		revisionParam := explanation && key == "revision" && len(values) == 1 && len(values[0]) <= 32
+		if (!snapshotParam && !revisionParam) || values[0] == "" {
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
@@ -133,24 +138,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			response = read.View
 		}
 	case endpoint == "snapshot":
-		conditions, e := snapshotConditions(r.Header.Values("If-None-Match"))
-		if e != nil {
+		base := application.HistoryPublication{BaselineID: query.Get("baseline_id"), Version: query.Get("from")}
+		if (base.BaselineID == "") != (base.Version == "") {
 			h.failure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 
 		var read application.SnapshotRead
 
-		read, err = h.reads.Snapshot(r.Context(), conditions)
-		if err == nil {
-			w.Header().Set("ETag", `"`+read.Snapshot.Version+`"`)
-
-			if read.Unchanged {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-
-			response = read.Snapshot
+		read, err = h.reads.Snapshot(r.Context(), base)
+		response = read.Snapshot
+		if read.Delta != nil {
+			response = read.Delta
 		}
 	case explanation:
 		revision, e := strconv.ParseInt(query.Get("revision"), 10, 64)

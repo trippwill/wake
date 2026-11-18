@@ -182,7 +182,7 @@ func TestPerformanceWarehouse(t *testing.T) {
 	measure("snapshot", func() {
 		var e error
 
-		snap, e = s.Snapshot(ctx, application.SnapshotCondition{})
+		snap, e = s.Snapshot(ctx, application.HistoryPublication{})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -222,8 +222,11 @@ func TestPerformanceWarehouse(t *testing.T) {
 	}
 
 	measure("unchanged-snapshot", func() {
-		r, e := s.Snapshot(ctx, application.MatchingSnapshotVersions(snap.Snapshot.Version))
-		if e != nil || !r.Unchanged {
+		r, e := s.Snapshot(
+			ctx,
+			application.HistoryPublication{BaselineID: snap.Snapshot.BaselineID, Version: snap.Snapshot.Version},
+		)
+		if e != nil || r.Delta == nil || r.Delta.Version != snap.Snapshot.Version {
 			t.Fatal(r, e)
 		}
 	})
@@ -279,14 +282,17 @@ func TestPerformanceWarehouse(t *testing.T) {
 
 	changedVersion := ""
 	measure("changed-snapshot", func() {
-		r, e := s.Snapshot(ctx, application.MatchingSnapshotVersions(snap.Snapshot.Version))
-		if e != nil || r.Unchanged {
+		r, e := s.Snapshot(
+			ctx,
+			application.HistoryPublication{BaselineID: snap.Snapshot.BaselineID, Version: snap.Snapshot.Version},
+		)
+		if e != nil || r.Delta == nil || r.Delta.Version == snap.Snapshot.Version {
 			t.Fatal(r, e)
 		}
 
-		changedVersion = r.Snapshot.Version
+		changedVersion = r.Delta.Version
 		found := false
-		for _, item := range r.Snapshot.Resources {
+		for _, item := range r.Delta.Upserts {
 			if item.ID == activity && item.Activity != nil && item.Activity.Trade.Price != nil &&
 				item.Activity.Trade.Price.Amount == "12.000000000000001" {
 				found = true
@@ -487,7 +493,7 @@ func TestPerformanceRead(t *testing.T) {
 	measure("snapshot", func() {
 		var e error
 
-		snap, e = s.Snapshot(ctx, application.SnapshotCondition{})
+		snap, e = s.Snapshot(ctx, application.HistoryPublication{})
 		if e != nil || len(snap.Snapshot.Resources) != count+3 {
 			t.Fatal(len(snap.Snapshot.Resources), e)
 		}
@@ -543,20 +549,49 @@ func TestPerformanceRead(t *testing.T) {
 
 	for i := range samples {
 		// Publish one changed resource while all other resource bytes remain identical.
-		if _, err = s.db.ExecContext(
-			ctx,
-			`UPDATE published_resources SET revision=revision+1,snapshot=CAST(json_set(CAST(snapshot AS TEXT),'$.revision',revision+1,'$.activity.price.amount',?) AS BLOB) WHERE kind='activity' AND id='performance-00000000'; UPDATE publishing SET version=version+1`,
-			fmt.Sprintf("12.00000000000000%d", i),
-		); err != nil {
-			t.Fatal(err)
-		}
-
-		current, e := s.Snapshot(ctx, application.SnapshotCondition{})
+		tx, e := s.db.BeginTx(ctx, nil)
 		if e != nil {
 			t.Fatal(e)
 		}
 
-		measure(fmt.Sprintf("consumer-changed-%d", i), func() { syncConsumer(current.Snapshot.Version) })
+		defer func() { _ = tx.Rollback() }()
+
+		const changedID = "performance-00000000"
+		if _, e = tx.ExecContext(
+			ctx,
+			`UPDATE published_resources SET revision=revision+1,snapshot=CAST(json_set(CAST(snapshot AS TEXT),'$.revision',revision+1,'$.activity.price.amount',?) AS BLOB) WHERE kind='activity' AND id=?`,
+			fmt.Sprintf("12.00000000000000%d", i),
+			changedID,
+		); e != nil {
+			t.Fatal(e)
+		}
+
+		if e = advancePublication(
+			ctx,
+			tx,
+			[]application.ResourceKey{{Kind: "activity", ID: changedID}},
+		); e != nil {
+			t.Fatal(e)
+		}
+
+		if e = tx.Commit(); e != nil {
+			t.Fatal(e)
+		}
+
+		base := application.HistoryPublication{
+			BaselineID: snap.Snapshot.BaselineID,
+			Version:    snap.Snapshot.Version,
+		}
+
+		current, e := s.Snapshot(ctx, base)
+		if e != nil || current.Delta == nil || len(current.Delta.Upserts) != 1 ||
+			current.Delta.Upserts[0].ID != changedID || len(current.Delta.Removals) != 0 {
+			t.Fatal("expected one activity upsert", current.Delta, e)
+		}
+
+		snap.Snapshot.Version = current.Delta.Version
+
+		measure(fmt.Sprintf("consumer-changed-%d", i), func() { syncConsumer(current.Delta.Version) })
 	}
 
 	var (

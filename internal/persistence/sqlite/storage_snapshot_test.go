@@ -108,10 +108,56 @@ func TestStorageSnapshotCopiesOnlyCommittedWarehouse(t *testing.T) {
 		t.Fatal("snapshot lost financial lineage", restoredLineage, err)
 	}
 
-	conditional, err := restored.Snapshot(ctx, application.MatchingSnapshotVersions(before.Version))
-	if err != nil || conditional.Unchanged {
+	conditional, err := restored.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: before.BaselineID, Version: before.Version},
+	)
+	if err != nil || conditional.Delta != nil || conditional.Snapshot.Version != after.Version {
 		t.Fatal("restored snapshot reused its consumer baseline", err)
 	}
+
+	var journalRows int
+	if err = restored.db.QueryRowContext(ctx, "SELECT count(*) FROM publication_changes").
+		Scan(&journalRows); err != nil ||
+		journalRows != 0 {
+		t.Fatal("restored journal retained old baseline changes", journalRows, err)
+	}
+
+	var journalToken string
+	if err = restored.db.QueryRowContext(ctx, "SELECT token FROM publication_versions").
+		Scan(&journalToken); err != nil ||
+		journalToken != after.Version {
+		t.Fatal("restored journal did not seed the new baseline", journalToken, err)
+	}
+
+	update, err := restored.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = update.Rollback() }()
+
+	if _, err = update.ExecContext(ctx, "UPDATE accounts SET name='Updated after restore'"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = restored.commit(ctx, update); err != nil {
+		t.Fatal(err)
+	}
+
+	delta, err := restored.Snapshot(
+		ctx,
+		application.HistoryPublication{BaselineID: after.BaselineID, Version: after.Version},
+	)
+	if err != nil || delta.Delta == nil || len(delta.Delta.Upserts) != 1 {
+		t.Fatal("restored baseline cannot produce subsequent deltas", err)
+	}
+
+	latest, err := snapshotState(ctx, restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requireDeltaMatchesSnapshot(t, after, delta, latest)
 
 	positionsAfter, err := restored.PositionsPublications(ctx)
 	if err != nil || len(positionsAfter) != 1 || positionsAfter[0].AccountID != positionsBefore[0].AccountID ||
@@ -244,7 +290,7 @@ func TestStorageSnapshotLeavesNewerOptionalStoresUntouched(t *testing.T) {
 		t.Fatal("restored warehouse could not open with newer optional stores", err)
 	}
 
-	if _, err = restored.Snapshot(ctx, application.AnySnapshotVersion()); err != nil {
+	if _, err = restored.Snapshot(ctx, application.HistoryPublication{}); err != nil {
 		t.Fatal(err)
 	}
 
