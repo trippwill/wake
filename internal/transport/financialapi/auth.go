@@ -6,15 +6,21 @@ package financialapi
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"go.trippwill.dev/wake/internal/clientaccess"
 )
 
 // Authenticated gates every response, including redirects, validators and events.
-func Authenticated(clients *clientaccess.Manager, next http.Handler) http.Handler {
+func Authenticated(clients *clientaccess.Manager, next http.Handler, allowedHosts ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
+
+		if len(allowedHosts) > 0 && !slices.Contains(allowedHosts, strings.ToLower(r.Host)) {
+			http.Error(w, "invalid host", http.StatusBadRequest)
+			return
+		}
 
 		values := r.Header.Values("Authorization")
 		if len(values) != 1 || len(values[0]) < 7 || !strings.EqualFold(values[0][:7], "Bearer ") {

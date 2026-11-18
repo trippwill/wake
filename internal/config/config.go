@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -66,6 +67,7 @@ type Credentials struct {
 
 // Admin contains browser listener and origin settings. Secrets remain in private files.
 type Admin struct {
+	origins         []string
 	Port            uint16
 	CurrencyRefresh bool
 }
@@ -77,6 +79,10 @@ func loopbackAddress(port uint16) string {
 func (value Admin) Address() string { return loopbackAddress(value.Port) }
 
 func (value Admin) Origin() string {
+	if len(value.origins) > 0 {
+		return value.origins[0]
+	}
+
 	if value.Port == 80 {
 		return "http://127.0.0.1"
 	}
@@ -84,9 +90,18 @@ func (value Admin) Origin() string {
 	return "http://" + value.Address()
 }
 
+func (value Admin) Origins() []string {
+	if value.origins == nil {
+		return []string{value.Origin()}
+	}
+
+	return slices.Clone(value.origins)
+}
+
 // API contains the financial HTTP listener address.
 type API struct {
-	Port uint16 `toml:"port"`
+	AllowedHosts []string `toml:"allowed_hosts"`
+	Port         uint16   `toml:"port"`
 }
 
 func (value API) Address() string { return loopbackAddress(value.Port) }
@@ -129,8 +144,9 @@ type fileCredentials struct {
 }
 
 type fileAdmin struct {
-	Port            uint16 `toml:"port"`
-	CurrencyRefresh *bool  `toml:"currency_refresh"`
+	AllowedOrigins  []string `toml:"allowed_origins"`
+	Port            uint16   `toml:"port"`
+	CurrencyRefresh *bool    `toml:"currency_refresh"`
 }
 
 // Load resolves configuration and prepares the daemon's private directories.
@@ -332,7 +348,7 @@ func checkPrivateDir(path string, create bool) error {
 }
 
 func resolveAdmin(fromFile fileAdmin) Admin {
-	admin := Admin{Port: fromFile.Port}
+	admin := Admin{Port: fromFile.Port, origins: fromFile.AllowedOrigins}
 	if fromFile.CurrencyRefresh != nil {
 		admin.CurrencyRefresh = *fromFile.CurrencyRefresh
 	}

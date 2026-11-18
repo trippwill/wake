@@ -12,13 +12,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"go.trippwill.dev/wake/internal/clientaccess"
+	"go.trippwill.dev/wake/internal/config"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -58,7 +58,8 @@ type verifier struct {
 }
 
 type authenticator struct {
-	origin        *url.URL
+	hosts         map[string]bool
+	origins       map[string]string
 	state         clientaccess.FileStore
 	passwordSlots chan struct{}
 	attemptMu     sync.Mutex
@@ -114,14 +115,26 @@ func passwordVerifier(password []byte) (string, error) {
 }
 
 // Open validates the initial auth file and supports an unprovisioned browser listener.
-func Open(configDir, origin string) (*authenticator, bool, error) {
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" {
+func Open(configDir string, origins ...string) (*authenticator, bool, error) {
+	hosts := map[string]bool{}
+	allowed := map[string]string{}
+	for _, raw := range origins {
+		origin, err := config.BrowserOrigin(raw)
+		if err != nil {
+			return nil, false, ErrInvalidAuthConfiguration
+		}
+
+		_, host, _ := strings.Cut(origin, "://")
+		hosts[host] = true
+		allowed[origin] = host
+	}
+
+	if len(allowed) == 0 {
 		return nil, false, ErrInvalidAuthConfiguration
 	}
 
 	auth := &authenticator{
-		origin: parsed, state: clientaccess.NewFileStore(configDir),
+		hosts: hosts, origins: allowed, state: clientaccess.NewFileStore(configDir),
 		passwordSlots: make(chan struct{}, maxPasswordAttempts),
 		sessions:      make(map[string]browserSession),
 		now:           time.Now, lifetime: 8 * time.Hour,
@@ -322,9 +335,17 @@ func (a *authenticator) sessionWithKey(r *http.Request, key []byte) (string, boo
 	return parts[1], true
 }
 
-func (a *authenticator) correctHost(r *http.Request) bool { return r.Host == a.origin.Host }
+func (a *authenticator) correctHost(r *http.Request) bool { return a.hosts[strings.ToLower(r.Host)] }
+
 func (a *authenticator) sameOrigin(r *http.Request) bool {
-	return a.correctHost(r) && r.Header.Get("Origin") == a.origin.String()
+	values := r.Header.Values("Origin")
+	if len(values) != 1 {
+		return false
+	}
+
+	host, ok := a.origins[values[0]]
+
+	return ok && strings.EqualFold(host, r.Host)
 }
 
 func parseVerifier(value []byte) (verifier, error) {

@@ -51,10 +51,16 @@ func performSetPassword(ctx context.Context, c *cli.Command) error {
 
 	loginURL := resolved.Config.Admin.Origin() + "/login"
 	if commandJSON(c) {
-		return json.NewEncoder(c.Writer).Encode(map[string]any{"password_set": true, "url": loginURL})
+		return json.NewEncoder(c.Writer).
+			Encode(map[string]any{"password_set": true, "url": loginURL, "listener": resolved.Config.Admin.Address()})
 	}
 
-	writef(c.Writer, "Password set. Sign in at %s.\n", loginURL)
+	writef(
+		c.Writer,
+		"Password set. Sign in at %s.\nAdmin listener: %s\n",
+		loginURL,
+		resolved.Config.Admin.Address(),
+	)
 
 	return nil
 }

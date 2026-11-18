@@ -80,9 +80,32 @@ TOML's directory. Wake keeps private browser and client authority in `auth.json`
 that file. Keep a single TOML per instance directory. The default runtime directory is
 scoped to the resolved instance directory.
 
-Both listeners bind to `127.0.0.1` and use distinct ports. To access Wake through
-an SSH tunnel, forward the admin port to the same local port on your browser's
-machine and use the printed loopback URL.
+Both listeners bind to `127.0.0.1` and use distinct ports. By default the browser
+uses the admin listener's address. To open Wake at `http://localhost:18787` on
+your laptop while Wake listens on port 8787 on the server, configure the server:
+
+```toml
+[admin]
+port = 8787
+allowed_origins = ["http://localhost:18787"]
+```
+
+Start the tunnel on your laptop:
+
+```sh
+ssh -N -L 127.0.0.1:18787:127.0.0.1:8787 user@wake-host
+```
+
+Open `http://localhost:18787` and sign in. The list replaces the default.
+Include each browser origin you use, with its scheme and port. The first entry
+supplies the printed sign-in URL.
+
+For financial clients, an optional host list restricts the HTTP Host header.
+For example, set `allowed_hosts = ["localhost:18788"]` under `[api]` and add
+`-L 127.0.0.1:18788:127.0.0.1:8788` to the same SSH command. Set your
+client endpoint to `http://localhost:18788`. Each entry is a hostname or IP
+address with its optional port. Omitting the list accepts any Host header.
+Clients still present their own bearer token.
 
 Omit `--generate-key` to create only the TOML. To provision the key for an
 existing TOML or retry a failed key setup, stop Wake and run

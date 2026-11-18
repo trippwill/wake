@@ -76,10 +76,22 @@ func Settings() []Setting {
 			Description: "Path to the private 32-byte credential encryption key",
 		},
 		{
+			Key:         "admin.allowed_origins",
+			Type:        "array",
+			Default:     "http://127.0.0.1:<admin.port>",
+			Description: "Exact browser origins in TOML; the first supplies the sign-in URL",
+		},
+		{
 			Key:         "admin.port",
 			Type:        "integer",
 			Default:     strconv.Itoa(int(defaultAdminPort)),
 			Description: "Browser administration port on 127.0.0.1",
+		},
+		{
+			Key:         "api.allowed_hosts",
+			Type:        "array",
+			Default:     "unrestricted",
+			Description: "Optional exact HTTP Host authorities accepted by the financial API",
 		},
 		{
 			Key:         "api.port",
@@ -208,6 +220,14 @@ func resolveSnapshot(path, source string, content []byte, runtimeRequired bool) 
 		file.API.Port = defaultAPIPort
 	}
 
+	if err := normalizeList("admin.allowed_origins", file.Admin.AllowedOrigins, BrowserOrigin); err != nil {
+		return Resolution{}, err
+	}
+
+	if err := normalizeList("api.allowed_hosts", file.API.AllowedHosts, financialHost); err != nil {
+		return Resolution{}, err
+	}
+
 	cfg, err := resolvedConfig(file, dir, runtimeRequired)
 	if err != nil {
 		return Resolution{}, err
@@ -224,6 +244,7 @@ func resolveSnapshot(path, source string, content []byte, runtimeRequired bool) 
 	}
 
 	values := fileSettingValues(file)
+	values["admin.allowed_origins"] = cfg.Admin.Origins()
 	result := Resolution{Config: cfg, ConfigPath: path, ConfigSource: source}
 	for _, setting := range append(Settings(), PollingDefaults) {
 		authority := "default"
@@ -235,6 +256,23 @@ func resolveSnapshot(path, source string, content []byte, runtimeRequired bool) 
 	}
 
 	return result, nil
+}
+
+func normalizeList(key string, entries []string, parse func(string) (string, error)) error {
+	if entries != nil && len(entries) == 0 {
+		return fmt.Errorf("%w: %s must contain at least one entry", ErrInvalid, key)
+	}
+
+	for i, raw := range entries {
+		normalized, err := parse(raw)
+		if err != nil {
+			return fmt.Errorf("%w: %s entry %d: %w", ErrInvalid, key, i+1, err)
+		}
+
+		entries[i] = normalized
+	}
+
+	return nil
 }
 
 func instancePath(dir, path, fallback string) string {
@@ -302,6 +340,7 @@ func fileSettingValues(file fileConfig) map[string]any {
 		"credentials.key_path":       file.Credentials.KeyPath,
 		"admin.port":                 file.Admin.Port,
 		"api.port":                   file.API.Port,
+		"api.allowed_hosts":          file.API.AllowedHosts,
 		"admin.currency_refresh":     currencyRefresh,
 		"polling.defaults":           file.Polling.Defaults,
 	}

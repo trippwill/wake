@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -89,6 +91,43 @@ func TestConfigRejectsFormerOverridesAndUnsafeFileAliases(t *testing.T) {
 
 		if _, err := resolveForTest(Overrides{}); !errors.Is(err, ErrInvalid) {
 			t.Fatal(body, err)
+		}
+	}
+}
+
+func TestConfiguredListenerAuthorities(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+
+	const body = "[admin]\nallowed_origins=['HTTP://LOCALHOST:18787/', 'https://wake.example:443']\n[api]\nallowed_hosts=['LOCALHOST:18788','[::1]:80']"
+
+	out, err := resolveSnapshot(path, "flag", []byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Equal(out.Config.Admin.Origins(), []string{"http://localhost:18787", "https://wake.example"}) ||
+		out.Config.Admin.Origin() != "http://localhost:18787" ||
+		out.Config.Admin.Address() != "127.0.0.1:8787" {
+		t.Fatal(out.Config.Admin)
+	}
+
+	if !slices.Equal(out.Config.API.AllowedHosts, []string{"localhost:18788", "[::1]:80"}) {
+		t.Fatal(out.Config.API)
+	}
+
+	for _, body := range []string{
+		"[admin]\nallowed_origins=[]", "[api]\nallowed_hosts=[]", "[api]\nallowed_hosts=['http://localhost']",
+		"[api]\nallowed_hosts=['*:8788']", "[api]\nallowed_hosts=['localhost/path']",
+	} {
+		if _, err := resolveSnapshot(path, "flag", []byte(body), false); !errors.Is(err, ErrInvalid) {
+			t.Errorf("accepted %s: %v", body, err)
+		}
+	}
+
+	for _, raw := range []string{"http://*.example", "http://name@localhost", "http://localhost/path", "https://localhost?", "https://localhost#", "ftp://localhost", "localhost", "http://localhost:65536", "http://[localhost]"} {
+		_, err := resolveSnapshot(path, "flag", []byte("[admin]\nallowed_origins=['"+raw+"']"), false)
+		if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "admin.allowed_origins") {
+			t.Errorf("%s: %v", raw, err)
 		}
 	}
 }

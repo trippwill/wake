@@ -155,7 +155,7 @@ func run(
 	}
 	defer owner.close()
 
-	auth, _, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.Origin())
+	auth, _, err := admin.Open(cfg.Paths.ConfigDir, cfg.Admin.Origins()...)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,12 @@ func run(
 	defer func() { _ = listener.Close() }()
 
 	server := newHTTPServer(
-		requests.handler(financialapi.Authenticated(clients, financialapi.NewHandler(store, stopping, logger))),
+		requests.handler(
+			financialapi.Authenticated(
+				clients,
+				financialapi.NewHandler(store, stopping, logger),
+				cfg.API.AllowedHosts...),
+		),
 		logger,
 	)
 	server.BaseContext = func(net.Listener) context.Context { return requestsContext }

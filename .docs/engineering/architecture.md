@@ -409,9 +409,11 @@ OS user and private storage.
 
 Each instance has one operator and separately enrolled financial clients. Wake
 serves HTTP on separate IPv4 loopback listeners with configurable ports. Browser
-Host and Origin checks use the loopback origin derived from the admin port.
+Host checks admit configured browser authorities. A submitted Origin must match a configured
+origin with the request's own authority. The default origin follows the admin listener.
 Authenticated changes require the session's CSRF token.
 
+The financial listener optionally restricts HTTP Host authorities before client admission.
 Each financial client receives a random bearer token shown only at issuance. The
 private auth file retains its verifier and enrollment metadata. Every financial
 request, including conditional reads and events, checks the current grant. Browser
@@ -426,7 +428,7 @@ Bounded stream write deadlines limit blocked-client teardown. Already transmitte
 bytes and a client's retained copies cannot be recalled.
 
 The operator controls remote exposure and encryption. An SSH tunnel can forward
-the admin port while preserving the loopback URL seen by the browser. The Wake
+the admin port to a different local port when the configured origin matches the browser URL. The Wake
 account, host root, and any operator-provided transport are inside the trust
 boundary.
 

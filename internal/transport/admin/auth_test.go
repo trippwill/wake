@@ -321,3 +321,39 @@ func TestLiveUnlockPreservesConcurrentGrantChanges(t *testing.T) {
 		t.Fatal("lost a grant change", grants, err)
 	}
 }
+
+func TestConfiguredOriginMustMatchRequestAuthority(t *testing.T) {
+	auth, _, err := Open(privateAuthDir(t), "http://localhost:18787", "https://wake.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := NewHandler(auth, Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		host, origin string
+		want         int
+	}{
+		{"localhost:18787", "http://localhost:18787", http.StatusUnauthorized},
+		{"wake.example", "https://wake.example", http.StatusUnauthorized},
+		{"localhost:18787", "https://wake.example", http.StatusForbidden},
+		{"localhost:18787", "https://localhost:18787", http.StatusForbidden},
+		{"localhost:18787", "", http.StatusForbidden},
+		{"localhost:8787", "http://localhost:8787", http.StatusBadRequest},
+		{"unknown.example", "https://unknown.example", http.StatusBadRequest},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/login", nil)
+		r.Host = tc.host
+		r.Header.Set("Origin", tc.origin)
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		if w.Code != tc.want {
+			t.Errorf("host %q origin %q: got %d, want %d", tc.host, tc.origin, w.Code, tc.want)
+		}
+	}
+}

@@ -9,7 +9,9 @@ for usage and the [domain vocabulary](domain.md) for financial policy.
 
 Wake runs as a single-user Linux daemon with separate IPv4 loopback listeners for
 browser administration and the financial API. Each listener has a configurable
-port. Operators provide any remote access and transport protection.
+port. The admin listener accepts configured browser origins, including localhost on a
+different forwarded port. The financial listener can restrict accepted HTTP host authorities.
+Operators provide any remote access and transport protection.
 
 Browser administration uses a password, signed sessions, and CSRF protection.
 The host operator can set or reset the password through the CLI. Each financial
