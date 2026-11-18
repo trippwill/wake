@@ -97,5 +97,10 @@ func financialHost(raw string) (string, error) {
 		return "", invalid
 	}
 
-	return canonicalAuthority(u, "")
+	if _, err := canonicalAuthority(u, ""); err != nil {
+		return "", err
+	}
+
+	// Native clients can preserve the literal IPv6 and port spelling in Host.
+	return strings.ToLower(raw), nil
 }

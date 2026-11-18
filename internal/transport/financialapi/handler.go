@@ -48,25 +48,25 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		h.failure(w, MethodNotAllowed, http.StatusMethodNotAllowed)
+		writeFailure(w, MethodNotAllowed, http.StatusMethodNotAllowed)
 
 		return
 	}
 
 	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 || len(r.URL.RawQuery) > 8192 {
-		h.failure(w, InvalidRequest, http.StatusBadRequest)
+		writeFailure(w, InvalidRequest, http.StatusBadRequest)
 		return
 	}
 
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		h.failure(w, InvalidRequest, http.StatusBadRequest)
+		writeFailure(w, InvalidRequest, http.StatusBadRequest)
 		return
 	}
 
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	if len(parts) < 2 || parts[0] != "v1" {
-		h.failure(w, NotFound, http.StatusNotFound)
+		writeFailure(w, NotFound, http.StatusNotFound)
 		return
 	}
 
@@ -76,19 +76,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch endpoint {
 	case "snapshot", "events":
 		if len(parts) != 2 {
-			h.failure(w, NotFound, http.StatusNotFound)
+			writeFailure(w, NotFound, http.StatusNotFound)
 			return
 		}
 	case "accounts", "instruments", "listings", "activity":
 		if len(parts) != 3 && len(parts) != 4 || len(parts) > 2 && (parts[2] == "" || len(parts[2]) > 256) ||
 			len(parts) == 4 && parts[3] != "explanation" && !positions {
-			h.failure(w, NotFound, http.StatusNotFound)
+			writeFailure(w, NotFound, http.StatusNotFound)
 			return
 		}
 
 		explanation = len(parts) == 4 && !positions
 	default:
-		h.failure(w, NotFound, http.StatusNotFound)
+		writeFailure(w, NotFound, http.StatusNotFound)
 		return
 	}
 
@@ -98,14 +98,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			!strings.ContainsAny(values[0], "\x00\r\n")
 		revisionParam := explanation && key == "revision" && len(values) == 1 && len(values[0]) <= 32
 		if (!snapshotParam && !revisionParam) || values[0] == "" {
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 	}
 
 	if (endpoint != "accounts" || positions) && h.reads.HistoryUpdating() {
 		w.Header().Set("Retry-After", "5")
-		h.failure(w, HistoryUpdating, http.StatusServiceUnavailable)
+		writeFailure(w, HistoryUpdating, http.StatusServiceUnavailable)
 
 		return
 	}
@@ -120,7 +120,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case positions:
 		condition, e := snapshotConditions(r.Header.Values("If-None-Match"))
 		if e != nil {
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 
@@ -140,7 +140,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case endpoint == "snapshot":
 		base := application.HistoryPublication{BaselineID: query.Get("baseline_id"), Version: query.Get("from")}
 		if (base.BaselineID == "") != (base.Version == "") {
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 
@@ -154,7 +154,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case explanation:
 		revision, e := strconv.ParseInt(query.Get("revision"), 10, 64)
 		if e != nil || revision < 1 {
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 
@@ -178,11 +178,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, calculation.ErrInvalid):
-			h.failure(w, InvalidRequest, http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 		case errors.Is(err, application.ErrStale):
-			h.failure(w, StaleRevision, http.StatusConflict)
+			writeFailure(w, StaleRevision, http.StatusConflict)
 		case errors.Is(err, application.ErrNotFound):
-			h.failure(w, NotFound, http.StatusNotFound)
+			writeFailure(w, NotFound, http.StatusNotFound)
 		default:
 			if !errors.Is(err, context.Canceled) {
 				h.logger.ErrorContext(
@@ -197,7 +197,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				)
 			}
 
-			h.failure(w, InternalError, http.StatusInternalServerError)
+			writeFailure(w, InternalError, http.StatusInternalServerError)
 		}
 
 		return
@@ -215,7 +215,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
+func writeFailure(w http.ResponseWriter, code ErrorCode, status int) {
 	messages := map[ErrorCode]string{
 		InvalidRequest:   "Invalid or unsupported request parameters.",
 		StaleRevision:    "Resource changed; refresh the snapshot before requesting its explanation.",
@@ -225,6 +225,7 @@ func (h *handler) failure(w http.ResponseWriter, code ErrorCode, status int) {
 		HistoryUpdating:  "Wake is updating retained financial history. Retry shortly.",
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(Error{Code: code, Message: messages[code]})
 }

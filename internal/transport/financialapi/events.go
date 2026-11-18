@@ -16,7 +16,7 @@ import (
 func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 	controller := http.NewResponseController(w)
 	if controller.SetWriteDeadline(time.Now().Add(15*time.Second)) != nil {
-		h.failure(w, InternalError, http.StatusInternalServerError)
+		writeFailure(w, InternalError, http.StatusInternalServerError)
 		return
 	}
 
@@ -55,13 +55,13 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 
 	currentPositions, err := positionMetadata()
 	if err != nil {
-		h.failure(w, InternalError, http.StatusInternalServerError)
+		writeFailure(w, InternalError, http.StatusInternalServerError)
 		return
 	}
 
 	current, err := publication()
 	if err != nil {
-		h.failure(w, InternalError, http.StatusInternalServerError)
+		writeFailure(w, InternalError, http.StatusInternalServerError)
 		return
 	}
 

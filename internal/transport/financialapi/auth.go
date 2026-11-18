@@ -18,7 +18,7 @@ func Authenticated(clients *clientaccess.Manager, next http.Handler, allowedHost
 		w.Header().Set("Cache-Control", "no-store")
 
 		if len(allowedHosts) > 0 && !slices.Contains(allowedHosts, strings.ToLower(r.Host)) {
-			http.Error(w, "invalid host", http.StatusBadRequest)
+			writeFailure(w, InvalidRequest, http.StatusBadRequest)
 			return
 		}
 

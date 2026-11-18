@@ -98,7 +98,7 @@ func TestConfigRejectsFormerOverridesAndUnsafeFileAliases(t *testing.T) {
 func TestConfiguredListenerAuthorities(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 
-	const body = "[admin]\nallowed_origins=['HTTP://LOCALHOST:18787/', 'https://wake.example:443']\n[api]\nallowed_hosts=['LOCALHOST:18788','[::1]:80']"
+	const body = "[admin]\nallowed_origins=['HTTP://LOCALHOST:18787/', 'https://wake.example:443']\n[api]\nallowed_hosts=['LOCALHOST:18788','[0:0:0:0:0:0:0:1]:080']"
 
 	out, err := resolveSnapshot(path, "flag", []byte(body), false)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestConfiguredListenerAuthorities(t *testing.T) {
 		t.Fatal(out.Config.Admin)
 	}
 
-	if !slices.Equal(out.Config.API.AllowedHosts, []string{"localhost:18788", "[::1]:80"}) {
+	if !slices.Equal(out.Config.API.AllowedHosts, []string{"localhost:18788", "[0:0:0:0:0:0:0:1]:080"}) {
 		t.Fatal(out.Config.API)
 	}
 
