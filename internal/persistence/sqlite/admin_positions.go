@@ -15,7 +15,7 @@ import (
 	"go.trippwill.dev/wake/internal/application/calculation"
 )
 
-//go:embed admin_positions.sql
+//go:embed sql/admin_positions.sql
 var adminPositionsSQL string
 
 func (s *Store) PositionsList(

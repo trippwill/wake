@@ -1,8 +1,8 @@
 version: "2"
 sql:
   - engine: sqlite
-    schema: [internal/persistence/sqlite/catalog.sql, internal/persistence/sqlite/schema.sql, internal/persistence/sqlite/connections_schema.sql, internal/persistence/sqlite/sync_schema.sql, internal/persistence/sqlite/recovery_schema.sql]
-    queries: [internal/persistence/sqlite/queries.sql, internal/persistence/sqlite/admin_queries.sql]
+    schema: [internal/persistence/sqlite/sql/catalog.sql, internal/persistence/sqlite/sql/schema.sql, internal/persistence/sqlite/sql/connections_schema.sql, internal/persistence/sqlite/sql/sync_schema.sql, internal/persistence/sqlite/sql/recovery_schema.sql]
+    queries: [internal/persistence/sqlite/sql/queries.sql, internal/persistence/sqlite/sql/admin_queries.sql]
     gen:
       go:
         package: sqlc

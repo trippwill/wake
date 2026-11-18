@@ -24,7 +24,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-//go:embed publishing.sql
+//go:embed sql/publishing.sql
 var publishingSQL string
 
 func publishingStatement(name string) string {

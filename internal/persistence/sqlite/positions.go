@@ -22,7 +22,7 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
-//go:embed positions.sql
+//go:embed sql/positions.sql
 var positionsSQL string
 
 func positionsStatement(name string) string {

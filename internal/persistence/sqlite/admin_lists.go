@@ -108,13 +108,13 @@ func (s *Store) Accounts(ctx context.Context) ([]application.Account, error) {
 	return accounts, nil
 }
 
-//go:embed admin_activity.sql
+//go:embed sql/admin_activity.sql
 var adminActivityTemplateSQL string
 
-//go:embed activity_search_fields.sql
+//go:embed sql/activity_search_fields.sql
 var activitySearchFieldsSQL string
 
-//go:embed activity_search_index.sql
+//go:embed sql/activity_search_index.sql
 var activitySearchIndexTemplateSQL string
 
 var (
@@ -127,7 +127,7 @@ func withActivitySearchFields(statement string) string {
 	return strings.ReplaceAll(statement, "{{activity_search_fields}}", strings.TrimSpace(fields))
 }
 
-//go:embed admin_activity_date.sql
+//go:embed sql/admin_activity_date.sql
 var adminActivityDateSQL string
 
 const errActivityIndexIncomplete Error = "incomplete Activity index keys"

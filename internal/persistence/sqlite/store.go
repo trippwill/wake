@@ -63,30 +63,30 @@ func (p Profile) paths() [storeCount]string {
 	return [storeCount]string{p.WarehousePath, p.ConnectionsPath, syncPath}
 }
 
-//go:embed schema.sql
+//go:embed sql/schema.sql
 var schemaSQL string
 
-//go:embed activity_date_indexes.sql
+//go:embed sql/activity_date_indexes.sql
 var activityDateIndexesSQL string
 
-//go:embed connections_schema.sql
+//go:embed sql/connections_schema.sql
 var connectionsSQL string
 
-//go:embed sync_schema.sql
+//go:embed sql/sync_schema.sql
 var syncArchiveSQL string
 
-//go:embed recovery_schema.sql
+//go:embed sql/recovery_schema.sql
 var recoverySchemaSQL string
 
 var syncSQL = syncArchiveSQL + "\n" + recoverySchemaSQL
 
-//go:embed connection.sql
+//go:embed sql/connection.sql
 var connectionSQL string
 
-//go:embed activity_read_connection.sql
+//go:embed sql/activity_read_connection.sql
 var activityReadConnectionSQL string
 
-//go:embed profile.sql
+//go:embed sql/profile.sql
 var profileSQL string
 
 func profileStatement(name, schema string) string {

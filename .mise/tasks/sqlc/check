@@ -7,8 +7,8 @@
 set -euo pipefail
 snapshot=$(mktemp -d)
 trap 'rm -rf "$snapshot"' EXIT
-mkdir -p "$snapshot/internal/persistence/sqlite"
+mkdir -p "$snapshot/internal/persistence/sqlite/sql"
 cp sqlc.yaml "$snapshot/"
-cp internal/persistence/sqlite/*.sql "$snapshot/internal/persistence/sqlite/"
+cp internal/persistence/sqlite/sql/*.sql "$snapshot/internal/persistence/sqlite/sql/"
 sqlc -f "$snapshot/sqlc.yaml" generate
 diff -ru internal/persistence/sqlite/sqlc "$snapshot/internal/persistence/sqlite/sqlc"
