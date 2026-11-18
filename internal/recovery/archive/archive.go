@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 trippwill
 // SPDX-License-Identifier: MPL-2.0
 
-// Package recoveryarchive encodes and verifies Wake's recovery archive streams.
-package recoveryarchive
+// Package archive encodes and verifies Wake's recovery archive streams.
+package archive
 
 import (
 	"archive/tar"

@@ -131,7 +131,7 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					}
 				}
 
-				if strings.HasPrefix(rel, "internal/recoveryarchive/") {
+				if strings.HasPrefix(rel, "internal/recovery/archive/") {
 					switch value {
 					case "archive/tar",
 						"bytes",
@@ -157,7 +157,7 @@ func TestProviderAndApplicationBoundaries(t *testing.T) {
 					t.Errorf("application depends on implementation adapter: %s imports %s", rel, value)
 				}
 
-				if strings.HasPrefix(rel, "internal/recovery/") {
+				if filepath.Dir(rel) == "internal/recovery" {
 					switch value {
 					case "crypto/sha256", "encoding/hex", "encoding/json":
 					default:

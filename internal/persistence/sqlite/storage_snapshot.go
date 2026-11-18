@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.trippwill.dev/wake/internal/recoveryarchive"
+	recoveryarchive "go.trippwill.dev/wake/internal/recovery/archive"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )

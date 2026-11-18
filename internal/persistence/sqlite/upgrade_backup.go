@@ -14,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.trippwill.dev/wake/internal/recoveryarchive"
+	recoveryarchive "go.trippwill.dev/wake/internal/recovery/archive"
 )
 
 const (

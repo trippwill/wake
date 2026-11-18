@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"go.trippwill.dev/wake/internal/recoveryarchive"
+	recoveryarchive "go.trippwill.dev/wake/internal/recovery/archive"
 )
 
 func readInstallationMetadata(
