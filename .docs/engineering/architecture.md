@@ -465,22 +465,29 @@ that needs the original key. Startup keeps serving retained history when the key
 unavailable. Upstream work pauses before a provider can use unreadable
 credentials and requires explicit resume after repair.
 
-Wake stores the password verifier, session signing key, and financial grants in
-private auth state. The host operator provisions or resets the password through
-a CLI prompt that hides input. The password is stored as an Argon2 verifier.
+Private auth state holds the operator's enabled sign-in methods, session key and
+financial grants. Host setup provisions an Argon2 password verifier. Optional
+WebAuthn credentials store public keys under their relying party hostname and
+share one opaque user handle per installation. The authenticator holds the private key.
 
-Changing or resetting a password replaces its verifier and rotates the browser
-session key atomically while preserving financial grants. Sign-in verifies the
-password and signs the session against the same auth snapshot. Live changes
-serialize through the instance directory lock. The daemon tracks active browser
-sessions in memory. Signing out revokes that session and closes its event
+The daemon issues short-lived, single-use challenges for one operation, browser
+and exact configured origin. Credential management also binds the challenge to
+the authenticated session and requires fresh proof. WebAuthn requires user
+verification for enrollment and assertions. Password retirement requires a
+successful passkey assertion. Credential changes recheck the browser authority
+under the same directory lock as CLI recovery and preserve financial grants.
+Replacing or disabling the password rotates the session key atomically.
+A successful browser-initiated rotation issues a replacement session to that browser.
+
+Sign-in uses the verified snapshot to issue a signed session. The daemon tracks
+active sessions in memory. Signing out revokes that session and closes its event
 streams. Restarting the daemon requires a fresh browser sign-in.
 
 Supported restores preserve installed local authority. A backup's local auth
 entry is protected evidence. A new installation provisions browser access and
 enrolls clients again. After any manual replacement of local authentication state,
 run `wake access reset` with Wake stopped to revoke client grants and rotate the
-session key while retaining the password.
+session key while retaining the operator’s sign-in methods.
 
 The [release security review](https://github.com/trippwill/wake/issues/52) tracks
 verification of these boundaries for release.

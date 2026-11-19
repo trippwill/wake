@@ -24,11 +24,13 @@ Rootful Podman is an option using the same image and a system-level Quadlet, wit
 root-owned persistent files. Untagged builds can be selected by commit or built
 locally from a branch; the guide covers both paths.
 
-Browser administration uses a password, signed sessions, and CSRF protection.
-The host operator can set or reset the password through the CLI. Each financial
-client uses a separately revocable
-bearer token. Tokens grant the instance's published financial reads, including
-events and positions, without administrative authority or per-account scopes.
+Browser administration uses signed sessions and CSRF protection. The host operator
+sets the initial password through the CLI. Operators can enroll multiple user-verified
+passkeys, use them across configured ports on the same eligible hostname, and disable
+password sign-in. CLI password recovery retains enrolled passkeys and financial grants.
+Each financial client uses a separately revocable bearer token. Tokens grant the
+instance's published financial reads, including events and positions, without
+administrative authority or per-account scopes.
 They have no automatic expiry.
 
 Local pages, corrections, API reads, and retained-evidence processing run with

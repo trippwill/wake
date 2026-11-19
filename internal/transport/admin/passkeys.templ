@@ -1,0 +1,123 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+templ PasskeyBrowserHelp() {
+	<p class="wake-help" data-passkey-browser-help>Passkeys require JavaScript and a browser that supports passkeys at this address.</p>
+}
+
+templ PasskeyOriginHelp(eligible bool) {
+	if eligible {
+		<p class="wake-help">To use an enrolled passkey, open Wake at the hostname where you added it.</p>
+	} else {
+		<p class="wake-help">For passkeys, open Wake at an allowed HTTPS address or a configured localhost address. When using an SSH tunnel, use the configured localhost URL with the forwarded port.</p>
+	}
+}
+
+templ BrowserAccess(csrf string, view BrowserAccessView) {
+	<section class="wake-card" data-browser-access>
+		<h2>Browser access</h2>
+		<div class="wake-access-section">
+			<h3>Password</h3>
+			if view.Password {
+				<p>Enabled</p>
+				<div class="wake-actions">
+					<a href={ passwordPath }>Change password</a>
+					if view.CanAssert {
+						<button class="btn" id="password-passkey" type="button" data-passkey-open="set-password" data-passkey-required hidden>Change password with a passkey</button>
+						<button class="btn" id="password-disable" type="button" data-passkey-open="disable" data-passkey-required hidden>Disable password sign-in</button>
+					}
+				</div>
+			} else {
+				<p>Disabled</p>
+				if view.CanAssert {
+					<button class="btn" id="password-passkey" type="button" data-passkey-open="set-password" data-passkey-required hidden>Set password</button>
+				}
+			}
+		</div>
+		<div class="wake-access-section">
+			<h3>Passkeys</h3>
+			if len(view.Passkeys) == 0 {
+				<p class="wake-help">No passkeys added.</p>
+			} else {
+				<ul class="wake-passkey-list" aria-label="Enrolled passkeys">
+					for _, key := range view.Passkeys {
+						{{
+							name := key.Label
+							if name == "" {
+								name = "Passkey ending in " + key.ID[max(0, len(key.ID)-6):]
+							}
+						}}
+						<li>
+							<div>
+								<strong>{ name }</strong>
+								<div class="wake-help">{ key.RPID }</div>
+								if !key.CanRemove {
+									<div class="wake-help">Set a password or add another passkey before removing this passkey.</div>
+								}
+							</div>
+							if view.Password || view.CanAssert {
+								<div class="wake-actions">
+									<button class="btn" type="button" aria-label={ "Rename " + name } data-passkey-open="rename" data-passkey-target={ key.ID } data-passkey-label={ key.Label } data-passkey-required?={ !view.Password } hidden>Rename</button>
+									if key.CanRemove {
+										<button class="btn" type="button" aria-label={ "Remove " + name } data-passkey-open="remove" data-passkey-target={ key.ID } data-passkey-label={ key.Label } data-passkey-name={ name } data-passkey-required?={ !view.Password } hidden>Remove</button>
+									}
+								</div>
+							}
+						</li>
+					}
+				</ul>
+			}
+			if view.Eligible && (view.Password || view.CanAssert) {
+				<button class="btn" id="passkey-add" type="button" data-passkey-open="add" data-passkey-required hidden>Add a passkey</button>
+				@PasskeyBrowserHelp()
+			}
+			if !view.Eligible || (len(view.Passkeys) != 0 && !view.CanAssert) {
+				@PasskeyOriginHelp(view.Eligible)
+			}
+		</div>
+		<details>
+			<summary>Recover browser access</summary>
+			<p class="wake-help">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p>
+		</details>
+		@BrowserAccessDialog(csrf, view)
+	</section>
+}
+
+templ BrowserAccessDialog(csrf string, view BrowserAccessView) {
+	<dialog class="wake-access-dialog" id="browser-access-dialog" aria-labelledby="browser-access-title" aria-describedby="browser-access-description">
+		<form method="post" action="/passkeys/begin" class="wake-stack" data-passkey-csrf={ csrf } hx-boost="false">
+			<div>
+				<h2 id="browser-access-title">Confirm browser access</h2>
+				<p class="wake-help" id="browser-access-description"></p>
+			</div>
+			<fieldset class="wake-stack" data-passkey-fields>
+				<label class="wake-field" for="passkey-label" hidden>Passkey label<input class="input" id="passkey-label" name="label" type="text"/></label>
+				<div class="wake-stack" data-passkey-new-fields hidden>
+					<label class="wake-field" for="passkey-new-password">New password<input class="input" id="passkey-new-password" name="newPassword" type="password" autocomplete="new-password" aria-describedby="passkey-password-help" required/></label>
+					<p class="wake-help" id="passkey-password-help">Use at least 12 bytes.</p>
+					<label class="wake-field" for="passkey-confirm-password">Confirm new password<input class="input" id="passkey-confirm-password" name="confirm" type="password" autocomplete="new-password" required/></label>
+				</div>
+				<label class="wake-field" for="passkey-method">
+					Confirm using
+					<select class="select" id="passkey-method">
+						if view.CanAssert {
+							<option value="passkey">Passkey</option>
+						}
+						if view.Password {
+							<option value="password">Current password</option>
+						}
+					</select>
+				</label>
+				<label class="wake-field" for="passkey-current" hidden>Current password<input class="input" id="passkey-current" name="password" type="password" autocomplete="current-password" required/></label>
+			</fieldset>
+			<div class="wake-passkey-status" role="status" data-passkey-status></div>
+			<div class="wake-actions">
+				<button class="btn btn-primary" id="passkey-submit" type="submit">Continue</button>
+				<button class="btn btn-primary" id="passkey-create" type="button" hidden>Create passkey</button>
+				<button class="btn" id="passkey-cancel" type="button">Cancel</button>
+			</div>
+		</form>
+	</dialog>
+}

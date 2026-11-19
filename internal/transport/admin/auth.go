@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"go.trippwill.dev/wake/internal/clientaccess"
 	"go.trippwill.dev/wake/internal/config"
 	"golang.org/x/crypto/argon2"
@@ -58,17 +59,19 @@ type verifier struct {
 }
 
 type authenticator struct {
-	hosts         map[string]bool
-	origins       map[string]string
-	state         clientaccess.FileStore
-	passwordSlots chan struct{}
-	attemptMu     sync.Mutex
-	nextAttempt   time.Time
-	sessionMu     sync.Mutex
-	sessions      map[string]browserSession
-	nextSweep     int64
-	now           func() time.Time
-	lifetime      time.Duration
+	ceremonies     pendingCeremonies
+	relyingParties map[string]*webauthn.WebAuthn
+	hosts          map[string]bool
+	origins        map[string]string
+	state          clientaccess.FileStore
+	passwordSlots  chan struct{}
+	attemptMu      sync.Mutex
+	nextAttempt    time.Time
+	sessionMu      sync.Mutex
+	sessions       map[string]browserSession
+	nextSweep      int64
+	now            func() time.Time
+	lifetime       time.Duration
 }
 
 type browserSession struct {
@@ -118,6 +121,7 @@ func passwordVerifier(password []byte) (string, error) {
 func Open(configDir string, origins ...string) (*authenticator, bool, error) {
 	hosts := map[string]bool{}
 	allowed := map[string]string{}
+	parties := map[string]*webauthn.WebAuthn{}
 	for _, raw := range origins {
 		origin, err := config.BrowserOrigin(raw)
 		if err != nil {
@@ -126,7 +130,11 @@ func Open(configDir string, origins ...string) (*authenticator, bool, error) {
 
 		_, host, _ := strings.Cut(origin, "://")
 		hosts[host] = true
+
 		allowed[origin] = host
+		if party := passkeyParty(origin); party != nil {
+			parties[origin] = party
+		}
 	}
 
 	if len(allowed) == 0 {
@@ -134,16 +142,16 @@ func Open(configDir string, origins ...string) (*authenticator, bool, error) {
 	}
 
 	auth := &authenticator{
-		hosts: hosts, origins: allowed, state: clientaccess.NewFileStore(configDir),
+		hosts: hosts, origins: allowed, relyingParties: parties, state: clientaccess.NewFileStore(configDir),
 		passwordSlots: make(chan struct{}, maxPasswordAttempts),
 		sessions:      make(map[string]browserSession),
 		now:           time.Now, lifetime: 8 * time.Hour,
 	}
 
-	record, key, err := auth.state.Browser()
-	clear(key[:])
+	access, err := auth.state.BrowserAccess()
+	defer clear(access.Key[:])
 
-	return auth, record != "", err
+	return auth, access.Password != "" || len(access.Passkeys) != 0, err
 }
 
 func (a *authenticator) login(w http.ResponseWriter, value string) bool {
@@ -280,10 +288,10 @@ func (a *authenticator) revokeSession(id string) {
 }
 
 func (a *authenticator) session(r *http.Request) (string, bool) {
-	record, key, err := a.state.Browser()
+	_, key, err := a.state.Browser()
 	defer clear(key[:])
 
-	if err != nil || record == "" {
+	if err != nil || key == [32]byte{} {
 		return "", false
 	}
 

@@ -56,12 +56,21 @@ func TestRenderFrontend(t *testing.T) {
 		CredentialStored: true,
 	}
 	view := fixtureView{Connections: []application.ConnectionView{source}}
+	access := BrowserAccessView{
+		Password:  true,
+		Eligible:  true,
+		CanAssert: true,
+		Passkeys: []PasskeyView{
+			{ID: "synthetic", Label: "Security key", RPID: "localhost", CanRemove: true},
+			{ID: "synthetic-backup", RPID: "localhost", CanRemove: true},
+		},
+	}
 	for name, component := range map[string]templ.Component{
 		"connections":       ConnectionsPage("synthetic-csrf", sourceView{}),
 		"activity":          ActivityPage(activityView{}),
 		"positions":         PositionsPage(),
-		"settings":          SettingsBody(),
-		"sign-in-page":      LoginBody(""),
+		"settings":          SettingsBody("synthetic-csrf", access),
+		"sign-in-page":      LoginBody("", access),
 		"password-required": PasswordRequiredBody(),
 		"change-password":   ChangePasswordBody("synthetic-csrf", ""),
 		"clients":           ClientsPage("synthetic-csrf", nil, "", ""),

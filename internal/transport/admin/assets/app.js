@@ -2,6 +2,273 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 (() => {
+  const credentialAPI = window.PublicKeyCredential;
+  const supported =
+    window.isSecureContext &&
+    typeof credentialAPI?.parseCreationOptionsFromJSON === "function" &&
+    typeof credentialAPI?.parseRequestOptionsFromJSON === "function" &&
+    typeof credentialAPI?.prototype.toJSON === "function" &&
+    typeof navigator.credentials?.get === "function" &&
+    typeof navigator.credentials?.create === "function";
+  const prompts = new WeakMap();
+  const post = async (form, step, value) => {
+    const headers = { "Content-Type": "application/json" };
+    if (form.dataset.passkeyCsrf)
+      headers["X-Wake-CSRF"] = form.dataset.passkeyCsrf;
+    const response = await fetch(`/passkeys/${step}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(value),
+      redirect: "error",
+      signal: AbortSignal.timeout(8000),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result)
+      throw new Error(
+        result?.error || "Wake could not complete the request. Try again.",
+      );
+    return result;
+  };
+  const finish = async (form, next, status) => {
+    const create = next.kind === "create";
+    const controller = new AbortController();
+    const cancel = form.querySelector("#passkey-cancel");
+    prompts.set(form, controller);
+    if (cancel) cancel.disabled = false;
+    status.textContent = create
+      ? "Follow your browser’s prompt to save the passkey."
+      : "Follow your browser’s prompt to use a passkey.";
+    let credential;
+    try {
+      credential = await (create
+        ? navigator.credentials.create({
+            publicKey: credentialAPI.parseCreationOptionsFromJSON(next.options),
+            signal: controller.signal,
+          })
+        : navigator.credentials.get({
+            publicKey: credentialAPI.parseRequestOptionsFromJSON(next.options),
+            signal: controller.signal,
+          }));
+    } catch (error) {
+      if (error.name === "NotAllowedError" || error.name === "AbortError")
+        throw new Error(
+          "The passkey prompt was canceled or timed out. Try again.",
+        );
+      if (error.name === "InvalidStateError")
+        throw new Error(
+          "This passkey is already enrolled. Choose another passkey.",
+        );
+      throw new Error("Your browser could not use a passkey at this address.");
+    } finally {
+      prompts.delete(form);
+      if (cancel) cancel.disabled = true;
+    }
+    if (!credential) throw new Error("No passkey was selected. Try again.");
+    status.textContent = "Verifying with Wake…";
+    return post(form, "finish", {
+      id: next.id,
+      credential: credential.toJSON(),
+    });
+  };
+  const run = async (form, button, action) => {
+    if (form.dataset.passkeyBusy) return;
+    const status = form.querySelector("[data-passkey-status]");
+    status.textContent = "Contacting Wake…";
+    status.classList.remove("wake-error");
+    form.dataset.passkeyBusy = "true";
+    button.disabled = true;
+    const cancel = form.querySelector("#passkey-cancel");
+    if (cancel) cancel.disabled = true;
+    try {
+      await action(status);
+    } catch (error) {
+      status.textContent =
+        error.name === "TypeError" || error.name === "TimeoutError"
+          ? "Wake could not be reached. Try again."
+          : error.message;
+      status.classList.add("wake-error");
+      const retry = button.hidden
+        ? form.querySelector("#passkey-submit")
+        : button;
+      retry.disabled = false;
+      retry.focus();
+    } finally {
+      delete form.dataset.passkeyBusy;
+      button.disabled = false;
+      if (cancel) cancel.disabled = false;
+    }
+  };
+  const begin = async (form, body, status) => {
+    const next = await post(form, "begin", body);
+    return next.kind === "get" ? finish(form, next, status) : next;
+  };
+  const requireDone = (next) => {
+    if (next.kind !== "done")
+      throw new Error("Wake could not complete the request. Try again.");
+  };
+  const enhanceLogin = (form) => {
+    if (!supported) return;
+    const button = form.querySelector("#passkey-login");
+    button.hidden = false;
+    form.querySelector("[data-passkey-browser-help]").hidden = true;
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      run(form, button, async (status) => {
+        requireDone(
+          await begin(form, { operation: "login", method: "passkey" }, status),
+        );
+        location.assign("/");
+      });
+    });
+  };
+  const enhanceSettings = (section) => {
+    const dialog = section.querySelector("#browser-access-dialog");
+    const form = dialog.querySelector("form");
+    const fields = form.querySelector("[data-passkey-fields]");
+    const status = form.querySelector("[data-passkey-status]");
+    const start = form.querySelector("#passkey-submit");
+    const create = form.querySelector("#passkey-create");
+    const cancel = form.querySelector("#passkey-cancel");
+    const { label, password, newPassword, confirm } = form.elements;
+    const method = form.querySelector("#passkey-method");
+    const canAssert = supported && !!method.querySelector('[value="passkey"]');
+    if (!canAssert) method.querySelector('[value="passkey"]')?.remove();
+    for (const help of section.querySelectorAll("[data-passkey-browser-help]"))
+      help.hidden = supported;
+    const updateCurrentPassword = () => {
+      password.value = "";
+      password.disabled = password.closest("label").hidden =
+        method.value !== "password";
+    };
+    const resetSecrets = () => {
+      password.value = newPassword.value = confirm.value = "";
+    };
+    let operation, target, creation;
+    const setCreation = (next) => {
+      creation = next;
+      fields.disabled = fields.hidden = start.hidden = !!creation;
+      create.hidden = !creation;
+    };
+    for (const button of section.querySelectorAll("[data-passkey-open]")) {
+      if (!supported && button.hasAttribute("data-passkey-required")) continue;
+      button.hidden = false;
+      button.addEventListener("click", () => {
+        operation = button.dataset.passkeyOpen;
+        target = button.dataset.passkeyTarget || "";
+        const adding = operation === "add";
+        const renaming = operation === "rename";
+        const removing = operation === "remove";
+        const disabling = operation === "disable";
+        const resetting = operation === "set-password";
+        const passkeyOnly = disabling || resetting;
+        const title = {
+          add: button.textContent,
+          rename: "Rename passkey",
+          remove: "Remove passkey",
+          disable: button.textContent,
+          "set-password": button.textContent,
+        }[operation];
+        const description = {
+          add: "Give this passkey an optional label to identify it later.",
+          rename: "Leave the label blank to use the default name.",
+          remove: `You’ll no longer be able to sign in using ${button.dataset.passkeyName}.`,
+          disable:
+            "You’ll sign in with a passkey. Disabling your password signs out your other browser sessions.",
+          "set-password":
+            "Confirm with a passkey. Setting your password signs out your other browser sessions.",
+        }[operation];
+        dialog.querySelector("h2").textContent = title;
+        dialog.querySelector("#browser-access-description").textContent =
+          description;
+        start.textContent = adding
+          ? "Continue"
+          : passkeyOnly
+            ? "Confirm with a passkey"
+            : title;
+        status.textContent = "";
+        status.classList.remove("wake-error");
+        setCreation(null);
+        resetSecrets();
+        label.disabled = label.closest("label").hidden = !adding && !renaming;
+        label.value = renaming ? button.dataset.passkeyLabel : "";
+        form.querySelector("[data-passkey-new-fields]").hidden = !resetting;
+        newPassword.disabled = confirm.disabled = !resetting;
+        method.closest("label").hidden =
+          passkeyOnly || method.options.length < 2;
+        method.value = canAssert ? "passkey" : "password";
+        updateCurrentPassword();
+        dialog.showModal();
+        if (removing || disabling) cancel.focus();
+      });
+    }
+    method.addEventListener("change", updateCurrentPassword);
+    cancel.addEventListener("click", () => {
+      if (form.dataset.passkeyBusy) prompts.get(form)?.abort();
+      else dialog.close();
+    });
+    dialog.addEventListener("cancel", (event) => {
+      if (!form.dataset.passkeyBusy) return;
+      event.preventDefault();
+      prompts.get(form)?.abort();
+    });
+    dialog.addEventListener("close", () => {
+      resetSecrets();
+      setCreation(null);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (creation) return;
+      run(form, start, async (message) => {
+        let next;
+        try {
+          const body = Object.fromEntries(new FormData(form));
+          next = await begin(
+            form,
+            { ...body, operation, target, method: method.value },
+            message,
+          );
+        } finally {
+          resetSecrets();
+        }
+        if (next.kind === "create" && operation === "add") {
+          setCreation(next);
+          message.textContent =
+            "Choose where to save your new passkey in the next prompt.";
+          create.focus();
+          return;
+        }
+        requireDone(next);
+        location.reload();
+      });
+    });
+    create.addEventListener("click", () => {
+      run(form, create, async (message) => {
+        let next;
+        try {
+          next = await finish(form, creation, message);
+        } finally {
+          setCreation(null);
+        }
+        requireDone(next);
+        location.reload();
+      });
+    });
+  };
+  const enhance = () => {
+    for (const node of document.querySelectorAll(
+      "[data-passkey-login],[data-browser-access]",
+    )) {
+      if (node.dataset.passkeyReady) continue;
+      node.dataset.passkeyReady = "true";
+      if (node.hasAttribute("data-passkey-login")) enhanceLogin(node);
+      else enhanceSettings(node);
+    }
+  };
+  enhance();
+  document.addEventListener("htmx:afterSettle", enhance);
+})();
+
+(() => {
   const localAddress = (value) => {
     if (
       typeof value !== "string" ||
@@ -1243,13 +1510,18 @@
   for (const name of ["input", "change"])
     document.addEventListener(name, (event) => {
       const form = event.target.closest("form");
-      if (form?.method.toLowerCase() === "post") dirtyForms.add(form);
+      if (
+        form?.method.toLowerCase() === "post" &&
+        !form.hasAttribute("data-passkey-csrf")
+      )
+        dirtyForms.add(form);
     });
   const protectedContent = () => {
     const region = document.querySelector("#workspace-content");
     if (!region) return false;
     return (
       region.contains(document.activeElement) ||
+      !!region.querySelector("#browser-access-dialog[open]") ||
       [...region.querySelectorAll("form")].some((form) =>
         dirtyForms.has(form),
       ) ||

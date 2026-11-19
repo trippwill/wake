@@ -226,7 +226,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 			),
 			commandGroup("revoke", "Revoke browser access",
 				&cli.Command{
-					Name: "sessions", Usage: "Sign out all browsers and retain the password",
+					Name: "sessions", Usage: "Sign out all browsers and retain enrolled sign-in methods",
 					Flags: common(), Action: performRevokeSessions,
 				},
 			),

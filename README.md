@@ -202,11 +202,24 @@ wake config check
 
 Use command help for exact options.
 
-Use **System → Settings → Change password** to replace the current password.
-If you forget it, run `wake access set password` on the Wake host. The terminal
-prompt hides your input. Setting a password from the CLI signs out browser
-sessions and preserves API grants. Run `wake access revoke sessions` to sign out
-all browsers while keeping the password.
+After signing in with the initial password, open **System → Settings → Browser access**
+and choose **Add a passkey**. Confirm your password, then save the passkey with your
+browser, password manager, or security key. You can label it and enroll a backup
+using either your current password or an existing passkey.
+
+For SSH access, use a configured `http://localhost` origin as in the forwarding
+example above. A passkey registered for `localhost` works on each allowed
+`localhost` port for this installation. If your password manager declines the
+forwarded HTTP address, choose a FIDO security key in the browser prompt or enroll
+at a configured HTTPS address. An HTTPS DNS name has its own passkeys.
+At an IP address or an ordinary HTTP internal DNS name, use your password or open
+Wake at the address where you enrolled a passkey.
+
+To use passkeys exclusively, choose **Disable password sign-in** and approve a
+fresh passkey prompt. You can set a password again in Settings with a passkey,
+or run `wake access set password` on the host at any time. Host recovery signs
+out browser sessions and preserves enrolled passkeys and financial API grants.
+Run `wake access revoke sessions` to sign out all browsers.
 
 ### Read financial data from the CLI
 

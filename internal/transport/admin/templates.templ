@@ -5,22 +5,37 @@ package admin
 
 import "go.trippwill.dev/wake/internal/config"
 
-templ Login(message string) {
-	@Shell("Sign in", "", LoginBody(message))
+templ Login(message string, view BrowserAccessView) {
+	@Shell("Sign in", "", LoginBody(message, view))
 }
 
-templ LoginBody(message string) {
+templ LoginBody(message string, view BrowserAccessView) {
 	<div class="wake-login wake-stack">
 		<h1>Sign in to Wake</h1>
 		if message != "" {
 			<div class="wake-notice wake-error" role="alert">{ message }</div>
 		}
-		<form method="post" action="/login" class="wake-stack">
-			<label class="wake-field" for="password">Password<input class="input" id="password" name="password" type="password" autocomplete="current-password" required/></label>
-			<button class="btn btn-primary" type="submit">Sign in</button>
-		</form>
+		if view.Password {
+			<form method="post" action="/login" class="wake-stack">
+				<label class="wake-field" for="password">Password<input class="input" id="password" name="password" type="password" autocomplete="current-password" required/></label>
+				<button class="btn btn-primary" type="submit">Sign in</button>
+			</form>
+		}
+		if view.CanAssert {
+			<form method="post" action="/passkeys/begin" class="wake-stack" data-passkey-login hx-boost="false">
+				<button class={ "btn", templ.KV("btn-primary", !view.Password) } id="passkey-login" type="submit" hidden>Sign in with a passkey</button>
+				<div class="wake-passkey-status" role="status" data-passkey-status></div>
+				@PasskeyBrowserHelp()
+			</form>
+		} else if len(view.Passkeys) != 0 {
+			@PasskeyOriginHelp(view.Eligible)
+		}
 		<details>
-			<summary>Forgot your password?</summary>
+			if len(view.Passkeys) != 0 {
+				<summary>Lost access?</summary>
+			} else {
+				<summary>Forgot your password?</summary>
+			}
 			<p class="wake-help">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p>
 		</details>
 	</div>
@@ -71,22 +86,19 @@ templ Overview(csrf, path string, status Status, cfg config.Config) {
 	@SectionShell(pageTitle(path), csrf, "System", OverviewBody(path, status, cfg))
 }
 
-templ Settings(csrf string) {
-	@SectionShell("Settings", csrf, "System", SettingsBody())
+templ Settings(csrf string, view BrowserAccessView) {
+	@SectionShell("Settings", csrf, "System", SettingsBody(csrf, view))
 }
 
-templ SettingsBody() {
-	@PageHeader("Settings", "Manage your preferences for this browser.")
+templ SettingsBody(csrf string, view BrowserAccessView) {
+	@PageHeader("Settings", "Manage this browser’s appearance and how you sign in to Wake.")
 	@SystemNavigation("settings")
 	<section class="wake-card wake-appearance">
 		<h2>Appearance</h2>
 		<p class="wake-help">System follows your device’s appearance.</p>
 		@ThemeControl()
 	</section>
-	<section class="wake-card">
-		<h2>Browser access</h2>
-		<a href={ passwordPath }>Change password</a>
-	</section>
+	@BrowserAccess(csrf, view)
 }
 
 templ OverviewBody(path string, status Status, cfg config.Config) {
@@ -111,7 +123,7 @@ templ OverviewBody(path string, status Status, cfg config.Config) {
 				<dt>Runtime directory</dt>
 				<dd>{ cfg.Paths.RuntimeDir }</dd>
 				<dt>Admin authentication</dt>
-				<dd>Operator password</dd>
+				<dd><a href="/system/settings">Manage browser access</a></dd>
 				<dt>Admin listener</dt>
 				<dd>{ cfg.Admin.Address() }</dd>
 				<dt>Browser URL</dt>

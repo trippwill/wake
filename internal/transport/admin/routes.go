@@ -15,8 +15,8 @@ const passwordPath = "/system/settings/password"
 
 func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		record, key, err := auth.state.Browser()
-		clear(key[:])
+		access, err := auth.state.BrowserAccess()
+		defer clear(access.Key[:])
 
 		if err != nil {
 			rejection(r, "invalid_auth_state")
@@ -25,12 +25,12 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 			return
 		}
 
-		if record == "" {
+		if access.Password == "" && len(access.Passkeys) == 0 {
 			templ.Handler(PasswordRequired()).ServeHTTP(w, r)
 			return
 		}
 
-		templ.Handler(Login("")).ServeHTTP(w, r)
+		templ.Handler(Login("", auth.accessView(r, access))).ServeHTTP(w, r)
 	})
 
 	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
@@ -40,11 +40,20 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 
 		if !auth.login(w, r.PostForm.Get("password")) {
 			rejection(r, "login_rejected")
+
+			access, err := auth.state.BrowserAccess()
+			defer clear(access.Key[:])
+
+			if err != nil {
+				http.Error(w, "browser authentication unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
 			renderAuthForm(
 				w,
 				r,
 				http.StatusUnauthorized,
-				Login("Incorrect password or too many attempts. Try again."),
+				Login("Incorrect password or too many attempts. Try again.", auth.accessView(r, access)),
 			)
 
 			return

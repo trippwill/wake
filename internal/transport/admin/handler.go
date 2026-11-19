@@ -45,6 +45,7 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 
 	mux.HandleFunc("GET /assets/", serveAsset)
 	registerLoginRoutes(mux, auth)
+	registerPasskeyRoutes(mux, auth)
 	registerClientRoutes(mux, auth, deps.Clients)
 
 	if deps.Workflow != nil {
@@ -87,7 +88,16 @@ func NewHandler(auth *authenticator, deps Dependencies) (http.Handler, error) {
 			}
 
 			if r.URL.Path == "/system/settings" {
-				templ.Handler(Settings(csrf)).ServeHTTP(w, r)
+				access, err := auth.state.BrowserAccess()
+				defer clear(access.Key[:])
+
+				if err != nil {
+					http.Error(w, "browser authentication unavailable", http.StatusServiceUnavailable)
+					return
+				}
+
+				templ.Handler(Settings(csrf, auth.accessView(r, access))).ServeHTTP(w, r)
+
 				return
 			}
 

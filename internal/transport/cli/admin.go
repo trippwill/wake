@@ -84,7 +84,7 @@ func performRevokeSessions(ctx context.Context, c *cli.Command) error {
 		return json.NewEncoder(c.Writer).Encode(map[string]bool{"sessions_revoked": true})
 	}
 
-	writeString(c.Writer, "Revoked all browser sessions. The password is still valid.\n")
+	writeString(c.Writer, "Revoked all browser sessions.\n")
 
 	return nil
 }
@@ -109,7 +109,7 @@ func performResetAccess(ctx context.Context, c *cli.Command) error {
 
 	writef(
 		c.Writer,
-		"Revoked all API clients and browser sessions. The browser password is still valid.\n",
+		"Revoked all API clients and browser sessions.\n",
 	)
 
 	return nil

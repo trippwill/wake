@@ -24,6 +24,8 @@ const (
 	FileName                   = "auth.json"
 	ErrInvalidSecretFile Error = "invalid private authentication state"
 	ErrBrowserChanged    Error = "browser authentication changed; sign in again"
+	passwordAuthVersion        = 1
+	passkeyAuthVersion         = 2
 	maxAuthBytes               = 128 << 10
 	authLockTimeout            = time.Second
 	authLockRetry              = 10 * time.Millisecond
@@ -48,6 +50,8 @@ type authRecord struct {
 	Version    int           `json:"version"`
 	Unlock     string        `json:"unlock_verifier,omitempty"`
 	SessionKey []byte        `json:"session_key,omitempty"`
+	UserHandle []byte        `json:"webauthn_user_handle,omitempty"`
+	Passkeys   []Passkey     `json:"passkeys,omitempty"`
 	Grants     []grantRecord `json:"grants"`
 }
 
@@ -63,7 +67,7 @@ func (s FileStore) read() (authRecord, error) {
 
 	data, err := readPrivateFile(path, maxAuthBytes)
 	if errors.Is(err, os.ErrNotExist) {
-		return authRecord{Version: 1}, nil
+		return authRecord{Version: passwordAuthVersion}, nil
 	}
 
 	if err != nil {
@@ -81,13 +85,27 @@ func (s FileStore) read() (authRecord, error) {
 }
 
 func (r authRecord) valid() bool {
-	if r.Version != 1 || len(r.Grants) > MaxClients {
+	switch r.Version {
+	case passwordAuthVersion:
+		if len(r.UserHandle) != 0 || len(r.Passkeys) != 0 {
+			return false
+		}
+	case passkeyAuthVersion:
+		if len(r.UserHandle) != BrowserUserHandleBytes || !r.hasBrowserMethod() ||
+			validatePasskeys(r.Passkeys) != nil {
+			return false
+		}
+	default:
+		return false
+	}
+
+	if len(r.Grants) > MaxClients {
 		return false
 	}
 
 	if r.Unlock != "" {
 		// Match the v1 Argon2 verifier encoding and sizes.
-		if len(r.Unlock) != 69 || r.Unlock[:3] != "v1." || r.Unlock[25] != '.' || len(r.SessionKey) != 32 {
+		if len(r.Unlock) != 69 || r.Unlock[:3] != "v1." || r.Unlock[25] != '.' {
 			return false
 		}
 
@@ -98,7 +116,9 @@ func (r authRecord) valid() bool {
 				return false
 			}
 		}
-	} else if len(r.SessionKey) != 0 {
+	}
+
+	if r.hasBrowserMethod() && len(r.SessionKey) != 32 || !r.hasBrowserMethod() && len(r.SessionKey) != 0 {
 		return false
 	}
 
@@ -196,21 +216,9 @@ func (s FileStore) update(ctx context.Context, change func(*authRecord) error) e
 	return writePrivateFile(filepath.Join(s.dir, FileName), data)
 }
 
-func (s FileStore) Browser() (string, [32]byte, error) {
-	record, err := s.read()
-	defer record.clear()
-
-	var key [32]byte
-	copy(key[:], record.SessionKey)
-
-	return record.Unlock, key, err
-}
-
 func (s FileStore) SetBrowser(verifier string) error {
 	return s.update(context.Background(), func(record *authRecord) error {
-		record.replacePassword(verifier)
-
-		return nil
+		return record.replacePassword(verifier)
 	})
 }
 
@@ -226,7 +234,10 @@ func (s FileStore) ChangeBrowserPassword(
 			return ErrBrowserChanged
 		}
 
-		record.replacePassword(verifier)
+		if err := record.replacePassword(verifier); err != nil {
+			return err
+		}
+
 		copy(key[:], record.SessionKey)
 
 		return nil
@@ -253,16 +264,26 @@ func (s FileStore) Reset(ctx context.Context) error {
 	})
 }
 
-func (r *authRecord) replacePassword(verifier string) {
+func (r *authRecord) replacePassword(verifier string) error {
+	if verifier == "" && r.Unlock != "" && len(r.Passkeys) == 0 {
+		return ErrLastBrowserMethod
+	}
+
 	r.Unlock = verifier
 	r.rotate()
+
+	return nil
+}
+
+func (r authRecord) hasBrowserMethod() bool {
+	return r.Unlock != "" || len(r.Passkeys) != 0
 }
 
 func (r *authRecord) rotate() {
 	clear(r.SessionKey)
 
 	r.SessionKey = nil
-	if r.Unlock != "" {
+	if r.hasBrowserMethod() {
 		r.SessionKey = make([]byte, 32)
 		_, _ = rand.Read(r.SessionKey)
 	}

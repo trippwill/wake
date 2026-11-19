@@ -140,8 +140,10 @@ ssh -N wake
 Keep that SSH connection running while using Wake; Ctrl+C closes both forwards.
 Open <http://127.0.0.1:8787> for the browser and use <http://127.0.0.1:8788> as the
 financial API endpoint. Enroll an API token as described in the [CLI guide](../../README.md#read-financial-data-from-the-cli).
-If you configured different Wake ports, update both sides of each corresponding `LocalForward`
-line so the local and remote ports stay equal.
+For passkeys, configure the admin browser origin as `http://localhost` with the
+laptop-side port and open that URL. Each `LocalForward` connects its laptop-side
+port to the listener port on the Wake host. The [configuration example](../../README.md#using-wake-v010)
+shows how to use different ports.
 
 ### Start the tunnel automatically
 
