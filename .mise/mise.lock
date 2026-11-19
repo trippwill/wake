@@ -83,6 +83,7 @@ version = "1.31.1"
 backend = "aqua:sqlc-dev/sqlc"
 
 [tools."aqua:sqlc-dev/sqlc"."platforms.linux-arm64"]
+checksum = "sha256:b7cae247740d0c51a1e657479e5b2d21e6fef428f596682a01bc55bf4ab8a23d"
 url = "https://downloads.sqlc.dev/sqlc_1.31.1_linux_arm64.tar.gz"
 
 [tools."aqua:sqlc-dev/sqlc"."platforms.linux-arm64-musl"]
