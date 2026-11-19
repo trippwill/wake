@@ -471,8 +471,9 @@ WebAuthn credentials store public keys under their relying party hostname and
 share one opaque user handle per installation. The authenticator holds the private key.
 
 The daemon issues short-lived, single-use challenges for one operation, browser
-and exact configured origin. Credential management also binds the challenge to
-the authenticated session and requires fresh proof. WebAuthn requires user
+and exact configured origin. It limits anonymous sign-in starts and reserves
+challenge capacity for authenticated credential management. Management also
+binds the challenge to the authenticated session and requires fresh proof. WebAuthn requires user
 verification for enrollment and assertions. Password retirement requires a
 successful passkey assertion. Credential changes recheck the browser authority
 under the same directory lock as CLI recovery and preserve financial grants.

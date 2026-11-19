@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	ceremonyLifetime = 3 * time.Minute
-	maxCeremonies    = 64
-	ceremonyCookie   = "wake_passkey_browser"
+	ceremonyLifetime   = 3 * time.Minute
+	maxCeremonies      = 64
+	maxLoginCeremonies = 48
+	loginStartBurst    = 8
+	loginStartInterval = time.Second
+	ceremonyCookie     = "wake_passkey_browser"
 )
 
 type PasskeyView struct {
@@ -199,8 +202,9 @@ func (c *ceremony) verify(party *webauthn.WebAuthn, raw []byte) (*webauthn.Crede
 }
 
 type pendingCeremonies struct {
-	mu    sync.Mutex
-	items map[string]*ceremony
+	mu             sync.Mutex
+	items          map[string]*ceremony
+	nextLoginStart time.Time
 }
 
 func (p *pendingCeremonies) put(c *ceremony, now time.Time) (string, error) {
@@ -211,13 +215,45 @@ func (p *pendingCeremonies) put(c *ceremony, now time.Time) (string, error) {
 		p.items = make(map[string]*ceremony)
 	}
 
-	for id, v := range p.items {
-		if !now.Before(v.expires) {
+	var (
+		oldestLogin, previousLogin  string
+		loginCount, managementCount int
+	)
+
+	for id, pending := range p.items {
+		switch {
+		case !now.Before(pending.expires):
 			delete(p.items, id)
+		case pending.session != "":
+			managementCount++
+		default:
+			loginCount++
+
+			if oldestLogin == "" || pending.expires.Before(p.items[oldestLogin].expires) {
+				oldestLogin = id
+			}
+
+			if pending.browser == c.browser {
+				previousLogin = id
+			}
 		}
 	}
 
-	if len(p.items) >= maxCeremonies {
+	if c.session == "" {
+		// Keep public starts within a bounded burst and steady rate. Each
+		// browser gets one pending login, and a full login pool rolls forward.
+		delay := max(0, p.nextLoginStart.Sub(now))
+		if delay > (loginStartBurst-1)*loginStartInterval {
+			return "", errBusyPasskey
+		}
+
+		p.nextLoginStart = now.Add(delay + loginStartInterval)
+		if previousLogin != "" {
+			delete(p.items, previousLogin)
+		} else if loginCount >= maxLoginCeremonies {
+			delete(p.items, oldestLogin)
+		}
+	} else if managementCount >= maxCeremonies-maxLoginCeremonies {
 		return "", errBusyPasskey
 	}
 
