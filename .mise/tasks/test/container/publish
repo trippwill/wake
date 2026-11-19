@@ -42,10 +42,7 @@ chmod +x "$work/podman"
 check() (
   local ref_type=$1 version=$2 failure=${3:-} override=${4:-}
   local status=0
-  export PATH="$work:$PATH" GITHUB_REF_TYPE=$ref_type GITHUB_REF_NAME=feature/appliance-testing
-  if [[ $ref_type == tag ]]; then
-    GITHUB_REF_NAME=$version
-  fi
+  export PATH="$work:$PATH" GITHUB_REF_TYPE=$ref_type GITHUB_REF_NAME=$version
   export REVISION=$revision VERSION=$version GHCR_TOKEN=synthetic-registry-token GITHUB_ACTOR=fixture
   export GITHUB_STEP_SUMMARY="$work/summary.md" CALLS="$work/calls"
   unset BAD_ARCHITECTURE BAD_REVISION BAD_VERSION
@@ -57,14 +54,17 @@ check() (
 
   timeout 30s bash .mise/tasks/container/publish > "$work/output" 2>&1 || status=$?
   if [[ -n $failure ]]; then
-    if (( status != 0 && status != 124 )) &&
-      grep -Fq -- "$failure" "$work/output" &&
-      ! grep -Eq '^(login|manifest push) ' "$CALLS"; then
-      return
+    if (( status != 0 && status != 124 )) && grep -Fq -- "$failure" "$work/output"; then
+      if [[ -n $override ]] && ! grep -Eq '^(login|manifest push) ' "$CALLS"; then
+        return
+      elif [[ ! -s $CALLS ]]; then
+        return
+      fi
     fi
   elif (( status == 0 )) &&
+    grep -Fxq "manifest create localhost/wake-release:$version containers-storage:localhost/wake:ci-amd64 containers-storage:localhost/wake:ci-arm64" "$CALLS" &&
     grep -Fxq "manifest push --all localhost/wake-release:$version docker://ghcr.io/trippwill/wake:$version" "$CALLS" &&
-    grep -Fxq "Image=ghcr.io/trippwill/wake:$version" "$GITHUB_STEP_SUMMARY" &&
+    grep -Fxq "Published image: \`ghcr.io/trippwill/wake:$version\`" "$GITHUB_STEP_SUMMARY" &&
     grep -Fq "/$revision/.container/wake.container" "$GITHUB_STEP_SUMMARY"; then
     return
   fi
@@ -74,10 +74,12 @@ check() (
   return 1
 )
 
-check branch "sha-$revision"
+check branch "$release" "Publication requires a GitHub tag ref"
+check tag "" "Invalid release tag"
+check tag v1.2 "Invalid release tag"
 check tag "$release"
 check tag "$release-mismatch" "release tag must match"
 for field in BAD_ARCHITECTURE BAD_REVISION BAD_VERSION; do
-  check branch "sha-$revision" "does not match" "$field"
+  check tag "$release" "does not match" "$field"
 done
-printf 'Release and untagged publication gates passed without registry access\n'
+printf 'Tagged appliance publication gates passed without registry access\n'

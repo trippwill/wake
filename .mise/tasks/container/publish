@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 trippwill
 # SPDX-License-Identifier: MPL-2.0
-#MISE description="Publish CI-tested amd64 and arm64 archives for a release or untagged commit"
+#MISE description="Publish CI-tested amd64 and arm64 appliance images for a release tag"
 set -euo pipefail
 
+bash .mise/tasks/release/check-tag
+version=$GITHUB_REF_NAME
 revision=$(git rev-parse HEAD)
-case ${GITHUB_REF_TYPE:?GitHub ref type required} in
-  tag)
-    version=${GITHUB_REF_NAME:?release tag required}
-    [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
-    ;;
-  branch) version="sha-$revision" ;;
-  *) printf 'Publication requires a release tag or branch build.\n' >&2; exit 1 ;;
-esac
 image="ghcr.io/trippwill/wake:$version"
-if [[ $GITHUB_REF_TYPE == tag && $(sed -n 's/^Image=//p' .container/wake.container) != "$image" ]]; then
-  printf 'The release tag must match Image= in .container/wake.container.\n' >&2
-  exit 1
-fi
 
 for architecture in amd64 arm64; do
   podman load --input ".cache/container/wake-$architecture.tar"
@@ -41,7 +31,8 @@ trap cleanup EXIT
 export REGISTRY_AUTH_FILE=$auth
 printf '%s' "${GHCR_TOKEN:?registry token required}" |
   podman login --username "${GITHUB_ACTOR:?registry user required}" --password-stdin ghcr.io
-podman manifest create "$manifest" localhost/wake:ci-amd64 localhost/wake:ci-arm64
+# Older Podman versions resolve bare manifest sources as registry references.
+podman manifest create "$manifest" containers-storage:localhost/wake:ci-amd64 containers-storage:localhost/wake:ci-arm64
 podman manifest push --all "$manifest" "docker://$image"
 
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
@@ -49,12 +40,5 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
 Published image: \`$image\`
 
 Matching Quadlet: https://raw.githubusercontent.com/trippwill/wake/$revision/.container/wake.container
-
-For an untagged build, select the image in \`wake.container.d/image.conf\`:
-
-\`\`\`ini
-[Container]
-Image=$image
-\`\`\`
 EOF
 fi

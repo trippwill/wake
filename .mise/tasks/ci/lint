@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Lint GitHub workflows and repository shell scripts"
+set -euo pipefail
+
+actionlint
+git ls-files -z --cached --others --exclude-standard -- .mise/tasks .container/entrypoint .container/healthcheck |
+  xargs -0 shellcheck --

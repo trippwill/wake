@@ -173,51 +173,16 @@ To turn off automatic forwarding, run
 
 ## Use an untagged commit or branch
 
-Untagged images use `ghcr.io/trippwill/wake:sha-<commit>`, where `<commit>` is the
-full 40-character commit SHA. In `trippwill/wake`, pushes to `main` publish an image
-when they trigger the application
-checks and CI passes. Markdown-only pushes normally skip the image build.
-Pull request runs can test the image without publishing it. To install a published
-build, copy its image name and matching Quadlet URL from the successful
-`publish-appliance` job summary.
-
-For an older commit without a published image, use [Build a local image](#build-a-local-image).
-See [GitHub's manual workflow instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
-
-For a first installation, prepare the data directory using the
+Build the appliance image locally on the Wake host to try an untagged commit.
+For a first installation, prepare the data directory as in the
 [rootless quick start](#rootless-quick-start) or [custom storage](#custom-storage).
-For either image source below, create the directory for the image override.
+Create the directory for the image override.
 
 ```sh
 mkdir -p ~/.config/containers/systemd/wake.container.d
 ```
 
-### Install a published image
-
-Create
-`~/.config/containers/systemd/wake.container.d/image.conf` with the published image:
-
-```ini
-[Container]
-Image=ghcr.io/trippwill/wake:sha-<commit>
-```
-
-Replace `<commit>` with the same full SHA in the file and command:
-
-```sh
-podman quadlet install --replace "https://raw.githubusercontent.com/trippwill/wake/<commit>/.container/wake.container"
-systemctl --user restart wake
-```
-
-For a first installation, set the browser password as in the quick start.
-To advance to a newer branch build, update `image.conf` and reinstall the Quadlet
-at that build's commit. To return to a release, remove `image.conf` and use the
-release update commands below. The storage drop-in stays in place.
-
-### Build a local image
-
-For a commit or branch without a published image, build it locally on the Wake
-host. Set `wake_ref` to the branch name or full commit SHA:
+Set `wake_ref` to the branch name or full commit SHA:
 
 ```sh
 wake_ref=main
@@ -244,6 +209,7 @@ podman quadlet install --replace .container/wake.container
 systemctl --user restart wake
 ```
 
+For a first installation, set the browser password as in the quick start.
 Repeat the fetch, checkout and build steps to update the local image, then
 reinstall the Quadlet and restart the service. Use this selected image for
 maintenance commands as well.

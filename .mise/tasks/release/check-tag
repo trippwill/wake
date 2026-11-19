@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Require a release tag matching the appliance Quadlet image"
+set -euo pipefail
+
+if [[ ${GITHUB_REF_TYPE:-} != tag ]]; then
+  printf 'Publication requires a GitHub tag ref.\n' >&2
+  exit 1
+fi
+if [[ ! ${GITHUB_REF_NAME:-} =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+  printf 'Invalid release tag: %s\n' "${GITHUB_REF_NAME:-<missing>}" >&2
+  exit 1
+fi
+
+image="ghcr.io/trippwill/wake:$GITHUB_REF_NAME"
+if [[ $(sed -n 's/^Image=//p' .container/wake.container) != "$image" ]]; then
+  printf 'The release tag must match Image= in .container/wake.container (expected %s).\n' "$image" >&2
+  exit 1
+fi

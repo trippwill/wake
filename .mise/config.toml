@@ -3,7 +3,11 @@ locked = true
 idiomatic_version_file_enable_tools = ["go", "golangci-lint"]
 
 [tools]
+"aqua:rhysd/actionlint" = "1.7.12"
 biome = "2.6.6"
+gh = "2.102.0"
+jq = "1.8.2"
+shellcheck = "0.11.0"
 "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "v2.8.2"
 "aqua:sqlc-dev/sqlc" = "1.31.1"
 "aqua:a-h/templ" = "0.3.1100"
@@ -36,7 +40,7 @@ run = ["go mod download", "go mod verify"]
 
 [tasks.check]
 description = "Run static checks"
-depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "assets:check", "openapi:check", "docs:check", "test:ci", "test:container:publish"]
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "assets:check", "openapi:check", "docs:check", "ci:lint", "test:ci", "test:container:publish", "test:release:publish"]
 wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 
 [tasks.'source:check']

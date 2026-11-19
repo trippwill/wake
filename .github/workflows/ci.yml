@@ -14,14 +14,22 @@ on:
         default: false
   pull_request:
   push:
-    tags: ["*"]
     branches: ["main"]
+  workflow_call:
+    inputs:
+      release:
+        description: Run full verification and preserve the tested release images.
+        type: boolean
+        required: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ inputs.release && 'release-' || '' }}${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,7 +52,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          FORCE_FULL: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+          FORCE_FULL: ${{ github.event_name == 'workflow_dispatch' || inputs.release }}
         run: mise run --skip-tools ci:changes >> "$GITHUB_OUTPUT"
 
   markdown:
@@ -105,7 +113,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.profile == 'full' && 25 || 15 }}
+    timeout-minutes: ${{ (inputs.release || inputs.profile == 'full') && 25 || 15 }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -114,7 +122,7 @@ jobs:
           cold-cache: ${{ inputs.cold_cache || false }}
       - name: Run selected race suite
         env:
-          RACE_TASK: ${{ (github.event_name == 'workflow_dispatch' && inputs.profile == 'full') && 'test:race' || 'test:race:focused' }}
+          RACE_TASK: ${{ (inputs.release || inputs.profile == 'full') && 'test:race' || 'test:race:focused' }}
         run: mise run "$RACE_TASK"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -206,10 +214,10 @@ jobs:
           compression-level: 0
           retention-days: 3
       - run: mise run container:test
-      - if: github.event_name != 'pull_request'
+      - if: inputs.release
         run: mise run container:export
       - uses: actions/upload-artifact@v7
-        if: github.event_name != 'pull_request'
+        if: inputs.release
         with:
           name: appliance-${{ matrix.arch }}
           path: .cache/container/wake-${{ matrix.arch }}.tar
@@ -238,54 +246,25 @@ jobs:
           APPLICATION_RESULTS: ${{ format('{0},{1},{2},{3},{4}', needs.checks.result, needs.behavior.result, needs.race.result, needs.browser.result, needs.appliance.result) }}
         run: mise run --skip-tools ci:result
 
-  publish-appliance:
-    needs: [changes, ci]
-    if: >-
-      needs.changes.outputs.full == 'true' && github.repository == 'trippwill/wake' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      (github.ref_type == 'branch' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-        with:
-          install: false
-          cache: false
-        env:
-          MISE_NO_HOOKS: "1"
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: appliance-*
-          merge-multiple: true
-          path: .cache/container
-      - name: Install Podman
-        run: sudo apt-get update && sudo apt-get install -y podman
-      - name: Publish verified appliance images
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-          MISE_NO_HOOKS: "1"
-        run: mise run --skip-tools container:publish
-
   release-go-install:
     needs: [changes, ci]
     if: >-
-      needs.changes.outputs.full == 'true' && github.repository == 'trippwill/wake' && github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      inputs.release ||
+      (needs.changes.outputs.full == 'true' && github.repository == 'trippwill/wake' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: jdx/mise-action@v5
+        env:
+          MISE_NO_HOOKS: "1"
         with:
-          go-version-file: go.mod
+          install_args: go
           cache: false
       - name: Install Wake from the public commit or tag
         run: |
-          go_bin=$(command -v go)
+          go_bin=$(mise which go)
           revision=$(git rev-parse HEAD)
           ref=$revision
           if [[ $GITHUB_REF_TYPE == tag ]]; then
@@ -307,29 +286,3 @@ jobs:
           printf '%s\n' "$version"
           [[ $version == "wake version $expected "* ]]
           bin/wake serve --help
-
-  publish-release:
-    needs: [publish-appliance, release-go-install]
-    if: github.repository == 'trippwill/wake' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-        with:
-          install: false
-          cache: false
-        env:
-          MISE_NO_HOOKS: "1"
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: wake-linux-*
-          merge-multiple: true
-          path: .cache/release
-      - name: Publish the verified Linux release archives
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MISE_NO_HOOKS: "1"
-        run: mise run --skip-tools release:publish

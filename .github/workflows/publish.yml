@@ -1,0 +1,85 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-tag:
+    if: github.repository == 'trippwill/wake' && !github.event.deleted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+          cache: false
+      - run: mise run --skip-tools release:check-tag
+
+  verify:
+    needs: [check-tag]
+    uses: ./.github/workflows/ci.yml
+    with:
+      release: true
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  publish-appliance:
+    needs: [verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+          cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: appliance-*
+          merge-multiple: true
+          path: .cache/container
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Publish verified appliance images
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: mise run --skip-tools container:publish
+
+  publish-release:
+    needs: [publish-appliance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: gh jq
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wake-linux-*
+          merge-multiple: true
+          path: .cache/release
+      - name: Publish the verified Linux release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise run --skip-tools release:publish

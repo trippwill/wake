@@ -15,6 +15,12 @@ and [.mise/config.toml](../../.mise/config.toml) to discover tasks, dependencies
 and exact tool pins; [go.mod](../../go.mod) owns Go dependencies. Keep the lock file
 aligned with intentional tool updates. Avoid machine-global configuration changes.
 
+Run `mise run ci:lint` to check GitHub Actions workflows with actionlint and
+shell scripts with ShellCheck. The release job installs GitHub CLI and jq from
+the same project lockfile. The public installation check uses the Go executable
+selected by Mise and runs it outside the checkout with an empty module cache.
+Appliance and browser tests use the runner's native Podman engine and Chrome.
+
 Run `mise run build:release` to build the standalone executable at `.cache/release/wake`.
 The release task disables CGo, removes filesystem paths with `-trimpath`, and strips
 symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary size.
@@ -22,7 +28,7 @@ Use an ordinary build when debugger symbols are needed. `mise run build` continu
 to check all Go packages with the existing development build settings.
 
 Run `mise run release:package` on each supported Linux architecture to package
-the native executable. Tag CI publishes `wake-linux-amd64.tar.gz`,
+the native executable. The tag workflow publishes `wake-linux-amd64.tar.gz`,
 `wake-linux-arm64.tar.gz` and `SHA256SUMS` as GitHub Release assets. The
 [native install instructions](../../README.md#install-and-run-the-native-command)
 use those filenames.
@@ -95,23 +101,52 @@ selects a local image name, defaulting to `localhost/wake:dev`.
 `WAKE_IMAGE_VERSION` sets the release label. Keep runtime pins deliberate and
 verify both target architectures when updating them.
 
-CI builds and tests the image on native amd64 and arm64 runners. Push and manual
-builds save those tested images, wait for the complete CI gate, and publish a
-combined GHCR manifest through `container:publish`. Untagged branch builds use
-`sha-<full-commit-SHA>` image tags. The publication job summary supplies the image
-and matching Quadlet URL. PR builds do not publish images; Markdown-only pushes
-skip image builds. A maintainer can manually run `ci` on a branch to build and
-publish its current commit with the full gate, including a Markdown-only commit.
-The [appliance guide](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch)
-describes installation from those images and a local-build fallback for an arbitrary revision.
+The `ci` workflow runs on pull requests, pushes to `main`, and manual dispatches
+with read-only repository permissions. Full CI builds and tests the appliance
+on native amd64 and arm64 runners and uploads the verified native archives as
+Actions artifacts. Markdown-only changes can skip the application checks. A
+manual run forces the complete gate for the selected branch. Use the [native
+CI artifacts](../../README.md#install-and-run-the-native-command) or [build a
+local appliance image](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch)
+to try an untagged commit.
 
-Before tagging a release, update `Image=` in the Quadlet and the appliance
-guide's concrete release URLs to that version. Publication
-rejects mismatched image labels, revisions or architectures; a release tag must
-also match the Quadlet's default image. The raw GitHub URL at the same tag supplies
-the matching Quadlet. Make the GHCR package public for
-anonymous installation and verify its published URL/image flow before announcing
-the release. Updating the Quadlet leaves local `.container.d` overrides intact.
+### Publish a version
+
+The [Publish workflow](../../.github/workflows/publish.yml) runs when the
+repository admin pushes a version tag. The [release-tag ruleset](https://github.com/trippwill/wake/rules/27634497)
+targets `refs/tags/v*` and restricts tag creation, updates and deletion to the
+repository-admin bypass.
+
+1. Choose a version such as `v0.1.0` or `v0.1.0-rc.1`. Use it in the Quadlet's
+   default image and in the README and appliance guide's release examples.
+   Verify the reviewed commit has landed on `main` and its checks have passed.
+2. On GitHub, open Releases and choose **Draft a new release**. Under
+   **Choose a tag**, enter the planned version and select **Create new tag**,
+   with `main` as the target. Write the release title and notes, optionally using
+   **Generate release notes** for the initial PR list. Describe installation or
+   upgrade steps and the operator-facing effects of any [retained-claims rule increments](#forward-store-upgrades).
+   Select **This is a pre-release** for a prerelease version. Click **Save
+   draft**. [GitHub release management](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository?tool=webui)
+3. The owner creates the version tag at the exact reviewed commit and pushes
+   that tag. For example, with `revision` set to the reviewed commit SHA:
+
+   ```sh
+   version=v0.1.0
+   git tag -a "$version" "${revision:?set the reviewed commit SHA}" -m "Wake $version" &&
+     git push origin "refs/tags/$version"
+   ```
+
+4. Wait for Publish to finish. It runs the complete gate, verifies public
+   `go install` at the tag, and publishes the tested image for both architectures
+   to GHCR and the native archives with their checksums to the GitHub release.
+   It preserves the draft's title and notes when publishing it. If no draft
+   exists, it creates a release with GitHub-generated notes.
+5. Review the published title and notes. Download both archives and `SHA256SUMS`
+   and run `sha256sum --check SHA256SUMS` in the download directory. Make the GHCR
+   package public for anonymous installation and verify that the Quadlet URL at
+   the version tag selects an image available for amd64 and arm64. Follow the
+   [published install flow](../../docs/deployment/wake-appliance.md#rootless-quick-start)
+   before announcing the release.
 
 ## Select meaningful verification
 
@@ -121,9 +156,9 @@ and shared lifetimes under the race detector. Coordinate concurrent tests with
 observable events. Keep browser checks for interactions such as focus, history
 and refresh. Exercise route responses and static navigation through HTTP tests.
 
-`mise run ci` runs the routine checks locally. Code CI on PRs, main and tags
-uses `mise run test:race:focused` for shared state and lifetime proofs. Run
-`mise run test:race` or dispatch the Actions `full` profile for the broad sweep.
+`mise run ci` runs the routine checks locally. Ordinary code CI uses
+`mise run test:race:focused` for shared state and lifetime proofs. Publish and
+the manual `full` profile run the full race suite, available locally as `mise run test:race`.
 Use `mise run test:coverage` for ordinary behavior coverage, including the
 external provider and host modules. Generated sources have separate freshness
 checks and are excluded from behavior coverage reporting.
@@ -230,7 +265,7 @@ updates in the runner. Test the upgrade from the earliest supported data and com
 result with a fresh store at the target format. Keep migration SQL stable once
 released because its contents identify the approved plan.
 
-Ship a release note with every retained-claims rule increment. Key the note by
+Include an upgrade note with every retained-claims rule increment. Key the note by
 the new rule version in the upgrade baseline. Explain the change, which retained
 results can change, and which financial views will be temporarily unavailable.
 Preview and unattended startup show the same notes in version order, including

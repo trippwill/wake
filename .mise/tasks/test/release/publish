@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify GitHub Release publication with synthetic assets and a mocked gh"
+set -euo pipefail
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/.cache/release" "$work/.container" "$work/.mise/tasks/release"
+cp .mise/tasks/release/{publish,check-tag} "$work/.mise/tasks/release/"
+cd "$work"
+
+version=v1.2.3
+printf '[Container]\nImage=ghcr.io/trippwill/wake:%s\n' "$version" > .container/wake.container
+(
+  cd .cache/release
+  for archive in wake-linux-{amd64,arm64}.tar.gz; do
+    printf 'synthetic %s\n' "$archive" > "$archive"
+    sha256sum "$archive" > "$archive.sha256"
+  done
+)
+
+cat > gh <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$CALLS"
+[[ $1 == release && $3 == "$GITHUB_REF_NAME" ]]
+case $2 in
+  view)
+    case $SCENARIO in
+      new) printf 'release not found\n' >&2; exit 1 ;;
+      unreadable) printf 'connection failed\n' >&2; exit 1 ;;
+      draft | upload_failure | published | incomplete | mismatch) ;;
+      *) exit 1 ;;
+    esac
+
+    is_draft=true
+    if [[ $SCENARIO == published || $SCENARIO == incomplete ]]; then
+      is_draft=false
+    fi
+    assets=(wake-linux-arm64.tar.gz)
+    if [[ $SCENARIO == published ]]; then
+      assets+=(wake-linux-amd64.tar.gz SHA256SUMS)
+    fi
+    {
+      for asset in "${assets[@]}"; do
+        digest=$(sha256sum "$asset")
+        if [[ $SCENARIO == mismatch ]]; then
+          digest=incorrect
+        fi
+        jq -n --arg name "$asset" --arg digest "sha256:${digest%% *}" '{name: $name, digest: $digest}'
+      done
+    } | jq -s --argjson draft "$is_draft" '{isDraft: $draft, assets: .}'
+    ;;
+  upload) [[ $SCENARIO != upload_failure ]] ;;
+  edit | create) ;;
+  *) exit 1 ;;
+esac
+MOCK
+chmod +x gh
+export PATH="$work:$PATH" CALLS="$work/calls"
+export GITHUB_REF_TYPE=tag GITHUB_REF_NAME=$version
+
+check() {
+  local scenario=$1 expected_status=$2
+  shift 2
+  local status=0
+  : > "$CALLS"
+  SCENARIO=$scenario timeout 30s bash .mise/tasks/release/publish > output 2>&1 || status=$?
+  if (( status != expected_status )) || ! diff -u <(printf '%s' "$*") "$CALLS"; then
+    printf 'Release check failed for %s (exit %s, expected %s)\n' "$scenario" "$status" "$expected_status" >&2
+    cat output >&2
+    exit 1
+  fi
+}
+
+view="release view $version --json assets,isDraft"$'\n'
+upload="release upload $version wake-linux-amd64.tar.gz SHA256SUMS"$'\n'
+edit="release edit $version --draft=false"$'\n'
+create="release create $version --verify-tag --generate-notes wake-linux-amd64.tar.gz wake-linux-arm64.tar.gz SHA256SUMS"$'\n'
+
+check draft 0 "$view$upload$edit"
+check new 0 "$view$create"
+check published 0 "$view"
+check incomplete 1 "$view"
+check mismatch 1 "$view"
+check upload_failure 1 "$view$upload"
+check unreadable 1 "$view"
+GITHUB_REF_TYPE=branch check new 1
+GITHUB_REF_NAME=$version-other check new 1
+printf 'invalid checksum\n' > .cache/release/wake-linux-arm64.tar.gz.sha256
+check published 1
+printf 'Tagged release publication gates passed without GitHub access\n'
