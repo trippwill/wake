@@ -21,15 +21,41 @@ on a Linux host with systemd and Podman 5.6 or newer. Wake keeps the complete in
 in `~/.local/share/wake` by default. You can choose another host directory before the first start.
 Once Wake starts, set the browser password in the running container.
 
-### Build and run directly
+### Install and run the native command
 
-To build Wake from a Linux checkout:
+To install the current pre-release with Go, run:
 
 ```sh
-mise install
-mise run build:release
-export PATH="$PWD/.cache/release:$PATH"
+GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@main
+export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Replace `main` with a commit SHA to pin a candidate or with a published tag
+such as `v0.1.0` to install that release. The module includes the generated
+sources and browser assets.
+
+For a tagged release on Linux amd64 or arm64, run these commands in an empty
+directory to verify and install the executable:
+
+```sh
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) echo "Unsupported architecture" >&2; exit 1 ;;
+esac
+release=https://github.com/trippwill/wake/releases/download/v0.1.0
+curl -fLO "$release/wake-linux-$arch.tar.gz" &&
+  curl -fLO "$release/SHA256SUMS" &&
+  sha256sum --check --ignore-missing SHA256SUMS &&
+  tar -xzf "wake-linux-$arch.tar.gz" wake &&
+  install -Dm755 wake "$HOME/.local/bin/wake"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+For a pre-release binary, download the `wake-linux-amd64` or `wake-linux-arm64`
+artifact from the candidate's successful GitHub Actions `ci` run. Unzip it and
+run `sha256sum -c wake-linux-*.tar.gz.sha256` before extracting and installing
+the enclosed archive as above.
 
 With `wake` on `PATH`, create the configuration and set a browser password:
 

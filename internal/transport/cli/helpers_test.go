@@ -10,7 +10,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +21,19 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int { return Run(args, stdout, stderr) }
+
+func TestVersionIncludesBuildDetails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--version"}, &stdout, &stderr); code != exitOK {
+		t.Fatal(code, stderr.String())
+	}
+
+	version := stdout.String()
+	if !strings.HasPrefix(version, "wake version ") ||
+		!strings.Contains(version, "("+runtime.GOOS+"/"+runtime.GOARCH+", "+runtime.Version()) {
+		t.Fatalf("unexpected version output %q", version)
+	}
+}
 
 func startShellDaemon(t *testing.T, cfg config.Config) (func(), *http.Client) {
 	t.Helper()

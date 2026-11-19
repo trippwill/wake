@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Publish both verified Linux archives and their checksums to a GitHub Release"
+set -euo pipefail
+
+version=${GITHUB_REF_NAME:?release tag required}
+[[ ${GITHUB_REF_TYPE:?GitHub ref type required} == tag && $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+
+cd .cache/release
+archives=(wake-linux-amd64.tar.gz wake-linux-arm64.tar.gz)
+: > SHA256SUMS
+for archive in "${archives[@]}"; do
+  checksum=$(sha256sum "$archive")
+  recorded=$(cat "$archive.sha256")
+  if [[ $checksum != "$recorded" ]]; then
+    printf 'Invalid checksum for %s\n' "$archive" >&2
+    exit 1
+  fi
+  printf '%s\n' "$checksum" >> SHA256SUMS
+done
+
+assets=("${archives[@]}" SHA256SUMS)
+if release=$(gh release view "$version" --json assets,isDraft 2>&1); then
+  missing=()
+  for asset in "${assets[@]}"; do
+    digest=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | (.digest // "unavailable")' <<< "$release")
+    if [[ -z $digest ]]; then
+      missing+=("$asset")
+      continue
+    fi
+    hash=$(sha256sum "$asset")
+    if [[ $digest != "sha256:${hash%% *}" ]]; then
+      printf 'Existing release asset %s has a different or unavailable checksum.\n' "$asset" >&2
+      exit 1
+    fi
+  done
+
+  if jq -e '.isDraft' <<< "$release" >/dev/null; then
+    if (( ${#missing[@]} )); then
+      gh release upload "$version" "${missing[@]}"
+    fi
+    gh release edit "$version" --draft=false
+  elif (( ${#missing[@]} )); then
+    printf 'Published release %s is missing assets: %s\n' "$version" "${missing[*]}" >&2
+    exit 1
+  fi
+  exit 0
+elif [[ $release != 'release not found' ]]; then
+  printf 'Could not inspect release %s: %s\n' "$version" "$release" >&2
+  exit 1
+fi
+
+flags=(--verify-tag --generate-notes)
+if [[ $version == *-* ]]; then
+  flags+=(--prerelease)
+fi
+gh release create "$version" "${flags[@]}" "${assets[@]}"

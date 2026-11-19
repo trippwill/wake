@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Package the Linux Wake executable and write its SHA-256 checksum"
+#MISE depends=["build:release"]
+set -euo pipefail
+
+arch=$(go env GOARCH)
+if [[ $(go env GOOS) != linux || ( $arch != amd64 && $arch != arm64 ) ]]; then
+  printf 'Wake release packages support Linux amd64 and arm64.\n' >&2
+  exit 1
+fi
+
+cd .cache/release
+archive="wake-linux-$arch.tar.gz"
+tar --owner=0 --group=0 --mtime='@0' --mode=0755 -czf "$archive" wake
+sha256sum "$archive" > "$archive.sha256"

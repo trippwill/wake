@@ -63,7 +63,7 @@ func TestFinancialCalculationImports(t *testing.T) {
 func TestProviderAndApplicationBoundaries(t *testing.T) {
 	root := filepath.Join("..", "..")
 	sql := regexp.MustCompile(`(?i)^\s*(select|insert\s+into|update|delete\s+from|create\s+table|pragma)\s`)
-	for _, tree := range []string{"financial", "source", "provider", "cmd", "internal", "testdata/external-provider", "testdata/api-consumer", "providers"} {
+	for _, tree := range []string{"main.go", "financial", "source", "provider", "cmd", "internal", "testdata/external-provider", "testdata/api-consumer", "providers"} {
 		err := filepath.WalkDir(filepath.Join(root, tree), func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err

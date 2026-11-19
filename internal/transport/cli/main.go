@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -113,6 +115,7 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 		},
 		Name:                          "wake",
 		Usage:                         "Configure, operate and read from the Wake daemon",
+		Version:                       buildVersion(),
 		Writer:                        stdout,
 		ErrWriter:                     stderr,
 		HideHelpCommand:               true,
@@ -303,6 +306,29 @@ func commandTree(stdout, stderr io.Writer) *cli.Command {
 	}
 
 	return root
+}
+
+func buildVersion() string {
+	version := "devel"
+	details := []string{runtime.GOOS + "/" + runtime.GOARCH, runtime.Version()}
+	if build, ok := debug.ReadBuildInfo(); ok {
+		if build.Main.Version != "" && build.Main.Version != "(devel)" {
+			version = build.Main.Version
+		}
+
+		for _, setting := range build.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				details = append(details, "revision "+setting.Value)
+			case "vcs.modified":
+				if setting.Value == "true" {
+					details = append(details, "modified")
+				}
+			}
+		}
+	}
+
+	return version + " (" + strings.Join(details, ", ") + ")"
 }
 
 func commandGroup(name, usage string, children ...*cli.Command) *cli.Command {

@@ -69,7 +69,7 @@ run = "go run . serve"
 [tasks.bin]
 description = "Run the wake binary with arguments"
 raw_args = true
-run = "go run . -- "
+run = "go run ."
 
 [tasks.gen]
 description = "Generate code for all tools"

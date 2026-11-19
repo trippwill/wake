@@ -21,6 +21,21 @@ symbols and DWARF debug information with `-ldflags='-s -w'` to reduce binary siz
 Use an ordinary build when debugger symbols are needed. `mise run build` continues
 to check all Go packages with the existing development build settings.
 
+Run `mise run release:package` on each supported Linux architecture to package
+the native executable. Tag CI publishes `wake-linux-amd64.tar.gz`,
+`wake-linux-arm64.tar.gz` and `SHA256SUMS` as GitHub Release assets. The
+[native install instructions](../../README.md#install-and-run-the-native-command)
+use those filenames.
+
+Keep generated Go sources and embedded assets in the module. To verify a
+pushed candidate before tagging, run the following from an empty directory
+with Go on `PATH` and `WAKE_REVISION` set to the candidate's commit SHA:
+
+```sh
+GOBIN="$PWD" go install "go.trippwill.dev/wake@${WAKE_REVISION:?}"
+./wake --version
+```
+
 For a foreground development instance, run `mise run bin -- config init --generate-key`, then
 `mise run bin -- access set password` and `mise run serve`. Select the
 same TOML for all three commands. Sign in with the password entered at the prompt.

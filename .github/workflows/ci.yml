@@ -170,13 +170,41 @@ jobs:
       WAKE_IMAGE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
         with:
           role: appliance
           cold-cache: ${{ inputs.cold_cache || false }}
       - name: Install Podman
         run: sudo apt-get update && sudo apt-get install -y podman
-      - run: mise run container:build
+      - run: "mise run release:package ::: container:build"
+      - name: Verify packaged Wake
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          archive="wake-linux-$ARCH.tar.gz"
+          (cd .cache/release && sha256sum --strict --check "$archive.sha256")
+          destination=$(mktemp -d)
+          trap 'rm -rf "$destination"' EXIT
+          tar -xzf ".cache/release/$archive" -C "$destination"
+          test "$(stat -c %a "$destination/wake")" = 755
+          version=$("$destination/wake" --version)
+          revision=$(git rev-parse HEAD)
+          printf '%s\n' "$version"
+          [[ $version == *"(linux/$ARCH, "*", revision $revision)" ]]
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            [[ $version == "wake version $GITHUB_REF_NAME "* ]]
+          fi
+          "$destination/wake" config init --config "$destination/config.toml" --generate-key --set "paths.runtime_dir=$destination/run"
+          "$destination/wake" config check --config "$destination/config.toml" --check-key
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wake-linux-${{ matrix.arch }}
+          path: .cache/release/wake-linux-${{ matrix.arch }}.tar.gz*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
       - run: mise run container:test
       - if: github.event_name != 'pull_request'
         run: mise run container:export
@@ -241,3 +269,67 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           MISE_NO_HOOKS: "1"
         run: mise run --skip-tools container:publish
+
+  release-go-install:
+    needs: [changes, ci]
+    if: >-
+      needs.changes.outputs.full == 'true' && github.repository == 'trippwill/wake' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install Wake from the public commit or tag
+        run: |
+          go_bin=$(command -v go)
+          revision=$(git rev-parse HEAD)
+          ref=$revision
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            ref=$GITHUB_REF_NAME
+          fi
+          workspace=$(mktemp -d)
+          trap 'rm -rf "$workspace"' EXIT
+          cd "$workspace"
+          go=(env -i PATH=/usr/bin:/bin HOME="$workspace" GOBIN="$workspace/bin" CGO_ENABLED=0 GOFLAGS=-modcacherw GONOPROXY=go.trippwill.dev/wake "$go_bin")
+          module="go.trippwill.dev/wake@$ref"
+          resolved=$("${go[@]}" list -m -f '{{.Version}} {{.Origin.Hash}}' "$module")
+          read -r expected origin <<< "$resolved"
+          [[ $origin == "$revision" ]]
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            [[ $expected == "$ref" ]]
+          fi
+          "${go[@]}" install "$module"
+          version=$(bin/wake --version)
+          printf '%s\n' "$version"
+          [[ $version == "wake version $expected "* ]]
+          bin/wake serve --help
+
+  publish-release:
+    needs: [publish-appliance, release-go-install]
+    if: github.repository == 'trippwill/wake' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+          cache: false
+        env:
+          MISE_NO_HOOKS: "1"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wake-linux-*
+          merge-multiple: true
+          path: .cache/release
+      - name: Publish the verified Linux release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISE_NO_HOOKS: "1"
+        run: mise run --skip-tools release:publish
