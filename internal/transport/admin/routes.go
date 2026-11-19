@@ -97,8 +97,8 @@ func (a *authenticator) parsePublicForm(w http.ResponseWriter, r *http.Request, 
 }
 
 func (a *authenticator) changePassword(w http.ResponseWriter, r *http.Request, csrf string) {
-	current, key, err := a.state.Browser()
-	defer clear(key[:])
+	access, err := a.state.BrowserAccess()
+	defer clear(access.Key[:])
 
 	if err != nil {
 		renderAuthForm(
@@ -112,7 +112,7 @@ func (a *authenticator) changePassword(w http.ResponseWriter, r *http.Request, c
 	}
 
 	// Authorize against the same snapshot used to verify the current password.
-	if _, ok := a.sessionWithKey(r, key[:]); !ok {
+	if _, ok := a.sessionWithKey(r, access.Key[:]); !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -123,7 +123,7 @@ func (a *authenticator) changePassword(w http.ResponseWriter, r *http.Request, c
 	}
 	defer a.finishPasswordWork()
 
-	if !matchesPassword(current, r.PostForm.Get("current")) {
+	if !matchesPassword(access.Password, r.PostForm.Get("current")) {
 		renderAuthForm(w, r, http.StatusBadRequest, ChangePassword(csrf, "The current password is incorrect."))
 		return
 	}
@@ -134,10 +134,21 @@ func (a *authenticator) changePassword(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	newKey, err := a.state.ChangeBrowserPassword(r.Context(), key, verifier)
-	defer clear(newKey[:])
+	updated, err := a.commitBrowserAccess(
+		w,
+		r,
+		access,
+		csrf,
+		true,
+		func(draft *clientaccess.BrowserAccess) error {
+			draft.Password = verifier
 
-	if errors.Is(err, clientaccess.ErrBrowserChanged) {
+			return nil
+		},
+	)
+	defer clear(updated.Key[:])
+
+	if errors.Is(err, clientaccess.ErrBrowserChanged) || errors.Is(err, errPasskeySession) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -153,7 +164,6 @@ func (a *authenticator) changePassword(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	a.issue(w, newKey[:])
 	http.Redirect(w, r, "/system/settings", http.StatusSeeOther)
 }
 

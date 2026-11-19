@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -220,30 +219,6 @@ func (s FileStore) SetBrowser(verifier string) error {
 	return s.update(context.Background(), func(record *authRecord) error {
 		return record.replacePassword(verifier)
 	})
-}
-
-func (s FileStore) ChangeBrowserPassword(
-	ctx context.Context,
-	currentKey [32]byte,
-	verifier string,
-) ([32]byte, error) {
-	var key [32]byte
-
-	err := s.update(ctx, func(record *authRecord) error {
-		if subtle.ConstantTimeCompare(record.SessionKey, currentKey[:]) != 1 {
-			return ErrBrowserChanged
-		}
-
-		if err := record.replacePassword(verifier); err != nil {
-			return err
-		}
-
-		copy(key[:], record.SessionKey)
-
-		return nil
-	})
-
-	return key, err
 }
 
 func (s FileStore) RevokeBrowserSessions(ctx context.Context) error {

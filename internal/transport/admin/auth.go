@@ -223,6 +223,13 @@ func (a *authenticator) reserveAttempt() bool {
 }
 
 func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+
+	return a.issueLocked(w, key)
+}
+
+func (a *authenticator) issueLocked(w http.ResponseWriter, key []byte) string {
 	csrf := make([]byte, keySize)
 	// crypto/rand.Read fills the buffer or terminates the process.
 	_, _ = rand.Read(csrf)
@@ -231,7 +238,7 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 	now := a.now()
 	expires := now.Add(a.lifetime).Unix()
 	id := base64.RawURLEncoding.EncodeToString(csrf)
-	a.registerSession(id, expires, now.Unix())
+	a.registerSessionLocked(id, expires, now.Unix())
 
 	payload := fmt.Sprintf("%d.%s", expires, id)
 	mac := hmac.New(sha256.New, key)
@@ -252,10 +259,7 @@ func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
 	return id
 }
 
-func (a *authenticator) registerSession(id string, expires, now int64) {
-	a.sessionMu.Lock()
-	defer a.sessionMu.Unlock()
-
+func (a *authenticator) registerSessionLocked(id string, expires, now int64) {
 	if now >= a.nextSweep {
 		for id, session := range a.sessions {
 			if now >= session.expires {
@@ -268,6 +272,53 @@ func (a *authenticator) registerSession(id string, expires, now int64) {
 	}
 
 	a.sessions[id] = browserSession{expires: expires, done: make(chan struct{})}
+}
+
+func (a *authenticator) commitBrowserAccess(
+	w http.ResponseWriter,
+	r *http.Request,
+	expected clientaccess.BrowserAccess,
+	sessionID string,
+	rotate bool,
+	change func(*clientaccess.BrowserAccess) error,
+) (clientaccess.BrowserAccess, error) {
+	locked := false
+	defer func() {
+		if locked {
+			a.sessionMu.Unlock()
+		}
+	}()
+
+	updated, err := a.state.UpdateBrowserAccess(
+		r.Context(),
+		expected,
+		func(draft *clientaccess.BrowserAccess) error {
+			if sessionID != "" {
+				// Lock after the store acquires the directory lock, so logout can
+				// complete during that wait. Keep it locked through session issuance.
+				a.sessionMu.Lock()
+				locked = true
+
+				if session, ok := a.sessions[sessionID]; !ok || a.now().Unix() >= session.expires {
+					return errPasskeySession
+				}
+			}
+
+			return change(draft)
+		},
+		rotate,
+	)
+	if err != nil {
+		return clientaccess.BrowserAccess{}, err
+	}
+
+	if sessionID == "" {
+		a.issue(w, updated.Key[:])
+	} else if rotate {
+		a.issueLocked(w, updated.Key[:])
+	}
+
+	return updated, nil
 }
 
 func (a *authenticator) sessionDone(id string) <-chan struct{} {

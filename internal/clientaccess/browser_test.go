@@ -67,10 +67,12 @@ func TestBrowserAccessLegacyRecoveryAndReset(t *testing.T) {
 		t.Fatal("enrollment did not preserve and rotate current browser authority", err)
 	}
 
-	removed, err := store.UpdateBrowserAccess(t.Context(), enrolled, func(draft *BrowserAccess) error {
+	dropPassword := func(draft *BrowserAccess) error {
 		draft.Password = ""
 		return nil
-	}, true)
+	}
+
+	removed, err := store.UpdateBrowserAccess(t.Context(), enrolled, dropPassword, true)
 	if err != nil || removed.Password != "" || removed.Key == enrolled.Key || len(removed.Passkeys) != 1 {
 		t.Fatal("removing the password did not preserve passkey authority", err)
 	}
@@ -146,10 +148,9 @@ func TestBrowserAccessLegacyRecoveryAndReset(t *testing.T) {
 		t.Fatal("removing all passkeys did not preserve the install handle", err)
 	}
 
-	if key, err := store.ChangeBrowserPassword(t.Context(), passwordOnly.Key, ""); !errors.Is(
-		err,
-		ErrLastBrowserMethod,
-	) || key != ([32]byte{}) || !passwordOnly.matches(getBrowserAccess(t, store)) {
+	removedPassword, err := store.UpdateBrowserAccess(t.Context(), passwordOnly, dropPassword, true)
+	if !errors.Is(err, ErrLastBrowserMethod) || removedPassword.Key != ([32]byte{}) ||
+		!passwordOnly.matches(getBrowserAccess(t, store)) {
 		t.Fatal("a browser session removed the remaining password", err)
 	}
 

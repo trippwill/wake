@@ -315,9 +315,12 @@ func (a *authenticator) commitPasskey(
 	op := c.change.operation
 	rotate := op == "disable" || op == "set-password" || op == "remove"
 
-	updated, err := a.state.UpdateBrowserAccess(
-		r.Context(),
+	updated, err := a.commitBrowserAccess(
+		w,
+		r,
 		c.access,
+		c.session,
+		rotate,
 		func(access *clientaccess.BrowserAccess) error {
 			if c.kind == "get" {
 				i := credentialIndex(access.Passkeys, cred.ID)
@@ -365,7 +368,6 @@ func (a *authenticator) commitPasskey(
 
 			return nil
 		},
-		rotate,
 	)
 	if err != nil {
 		return passkeyReply{}, err
@@ -374,10 +376,6 @@ func (a *authenticator) commitPasskey(
 	if op == "add" && c.kind == "get" {
 		c.access = updated
 		return a.prompt(c, true)
-	}
-
-	if op == "login" || rotate {
-		a.issue(w, updated.Key[:])
 	}
 
 	return passkeyReply{Kind: "done"}, nil
