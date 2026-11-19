@@ -12,6 +12,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -302,5 +304,96 @@ func TestEnrollmentChallengeRequiresInitiatingSession(t *testing.T) {
 	w = post("/passkeys/finish", finish, csrf, cookie, flow)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("consumed challenge: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPasskeyHTTPAdmission(t *testing.T) {
+	const (
+		origin     = "http://localhost:18787"
+		other      = "http://localhost:28787"
+		ineligible = "http://127.0.0.1:8787"
+		login      = `{"operation":"login","method":"passkey"}`
+	)
+
+	dir := privateAuthDir(t)
+
+	auth, _, err := Open(dir, origin, other, ineligible)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := NewHandler(auth, Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name, destination, body string
+		origins                 []string
+		mediaType               string
+		status                  int
+		message                 Error
+	}{
+		{"no Origin", origin, login, nil, "application/json", http.StatusForbidden, errPasskeyCSRF},
+		{"other port", origin, login, []string{other}, "application/json", http.StatusForbidden, errPasskeyCSRF},
+		{"duplicate Origin", origin, login, []string{origin, origin}, "application/json", http.StatusForbidden, errPasskeyCSRF},
+		{"foreign media type", origin, login, []string{origin}, "text/plain", http.StatusBadRequest, errBadPasskeyRequest},
+		{"second JSON value", origin, login + "{}", []string{origin}, "application/json", http.StatusBadRequest, errBadPasskeyRequest},
+		{"no enrolled key", origin, login, []string{origin}, "application/json", http.StatusForbidden, errNoPasskey},
+		{"ineligible origin", ineligible, login, []string{ineligible}, "application/json", http.StatusForbidden, errNoPasskey},
+		{"no management session", origin, `{"operation":"disable","method":"passkey"}`, []string{origin}, "application/json", http.StatusUnauthorized, errPasskeySession},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, tt.destination+"/passkeys/begin", strings.NewReader(tt.body))
+			r.Header.Set("Content-Type", tt.mediaType)
+
+			for _, origin := range tt.origins {
+				r.Header.Add("Origin", origin)
+			}
+
+			assertPasskeyAdmissionError(t, handler, r, tt.status, tt.message)
+		})
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(dir, clientaccess.FileName),
+		[]byte("broken state"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodPost, origin+"/passkeys/begin", strings.NewReader(login))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Origin", origin)
+	assertPasskeyAdmissionError(
+		t, handler, r, http.StatusServiceUnavailable, "Browser access is temporarily unavailable.",
+	)
+}
+
+func assertPasskeyAdmissionError(
+	t *testing.T,
+	handler http.Handler,
+	r *http.Request,
+	status int,
+	message Error,
+) {
+	t.Helper()
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+
+	var result struct {
+		Error string `json:"error"`
+	}
+	if w.Code != status || w.Header().Get("Content-Type") != "application/json" ||
+		json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Error != message.Error() {
+		t.Fatalf("status=%d headers=%v body=%s", w.Code, w.Header(), w.Body)
+	}
+
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == sessionCookie {
+			t.Fatal("rejected passkey request issued a browser session")
+		}
 	}
 }

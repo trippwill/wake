@@ -6,6 +6,7 @@ package clientaccess
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -145,6 +146,13 @@ func TestBrowserAccessLegacyRecoveryAndReset(t *testing.T) {
 		t.Fatal("removing all passkeys did not preserve the install handle", err)
 	}
 
+	if key, err := store.ChangeBrowserPassword(t.Context(), passwordOnly.Key, ""); !errors.Is(
+		err,
+		ErrLastBrowserMethod,
+	) || key != ([32]byte{}) || !passwordOnly.matches(getBrowserAccess(t, store)) {
+		t.Fatal("a browser session removed the remaining password", err)
+	}
+
 	if err := store.SetBrowser(""); !errors.Is(err, ErrLastBrowserMethod) {
 		t.Fatal("store allowed removal of the remaining password", err)
 	}
@@ -226,6 +234,7 @@ func TestBrowserAccessRejectsInvalidEnrollment(t *testing.T) {
 		want   error
 	}{
 		{"missing handle", func(d *BrowserAccess) { d.UserHandle = nil }, ErrInvalidPasskey},
+		{"handle without a passkey", func(d *BrowserAccess) { d.Passkeys = nil }, ErrInvalidPasskey},
 		{"uncanonical label", func(d *BrowserAccess) { d.Passkeys[0].Label = " key " }, ErrInvalidPasskey},
 		{"control character", func(d *BrowserAccess) { d.Passkeys[0].Label = "key\x00" }, ErrInvalidPasskey},
 		{"overlong label", func(d *BrowserAccess) {
@@ -254,6 +263,115 @@ func TestBrowserAccessRejectsInvalidEnrollment(t *testing.T) {
 			}, true)
 			if !errors.Is(err, tc.want) || !before.matches(getBrowserAccess(t, store)) {
 				t.Fatal("invalid passkey changed stored browser authority or returned the wrong error", err)
+			}
+		})
+	}
+}
+
+func TestBrowserAccessRejectsInvalidAndStaleChanges(t *testing.T) {
+	store := privateTestStore(t)
+	passkey := testPasskey(t, "a")
+
+	enrolled, err := store.UpdateBrowserAccess(
+		t.Context(),
+		getBrowserAccess(t, store),
+		func(draft *BrowserAccess) error {
+			draft.UserHandle = bytes.Repeat([]byte{5}, BrowserUserHandleBytes)
+			draft.Passkeys = []Passkey{passkey}
+
+			return nil
+		},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.UpdateBrowserAccess(t.Context(), enrolled, func(draft *BrowserAccess) error {
+		draft.UserHandle[0]++
+		return nil
+	}, true); !errors.Is(err, ErrInvalidPasskey) || !enrolled.matches(getBrowserAccess(t, store)) {
+		t.Fatal("editing the established user handle changed persisted authority", err)
+	}
+
+	const rejected Error = "passkey is unavailable to this browser origin"
+	if _, err := store.UpdateBrowserAccess(t.Context(), enrolled, func(draft *BrowserAccess) error {
+		draft.Passkeys[0].Credential.Authenticator.SignCount++
+		return rejected
+	}, false); !errors.Is(err, rejected) || !enrolled.matches(getBrowserAccess(t, store)) {
+		t.Fatal("a rejected callback changed persisted authority", err)
+	}
+
+	// Host recovery invalidates a passkey mutation prepared by the old browser session.
+	if err := store.SetBrowser(testPassword); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.UpdateBrowserAccess(t.Context(), enrolled, func(*BrowserAccess) error {
+		t.Fatal("host recovery admitted a stale passkey update")
+		return nil
+	}, true); !errors.Is(err, ErrBrowserChanged) {
+		t.Fatal("host recovery did not invalidate the passkey snapshot", err)
+	}
+
+	recovered := getBrowserAccess(t, store)
+	if recovered.Password != testPassword || recovered.Key == enrolled.Key {
+		t.Fatal("host recovery did not restore the password and rotate sessions")
+	}
+
+	enrolled.Password, enrolled.Key = recovered.Password, recovered.Key
+	if !enrolled.matches(recovered) {
+		t.Fatal("host recovery changed the enrolled passkey or user handle")
+	}
+}
+
+func TestBrowserAccessRejectsInconsistentRecords(t *testing.T) {
+	passkey := testPasskey(t, "a")
+	for _, tc := range []struct {
+		name   string
+		change func(*authRecord)
+	}{
+		{"legacy record with a passkey", func(r *authRecord) { r.Version = passwordAuthVersion }},
+		{"passkey record without a handle", func(r *authRecord) { r.UserHandle = nil }},
+		{"passkey record without a sign-in method", func(r *authRecord) { r.Passkeys = nil }},
+		{"passkey record without a session key", func(r *authRecord) { r.SessionKey = nil }},
+		{"passkey record with duplicate credentials", func(r *authRecord) { r.Passkeys = append(r.Passkeys, passkey) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := privateTestStore(t)
+			path := filepath.Join(store.dir, FileName)
+			record := authRecord{
+				Version:    passkeyAuthVersion,
+				SessionKey: bytes.Repeat([]byte{1}, 32),
+				UserHandle: bytes.Repeat([]byte{2}, BrowserUserHandleBytes),
+				Passkeys:   []Passkey{passkey},
+			}
+			tc.change(&record)
+
+			// #nosec G117 -- The record contains a synthetic key for a disposable test store.
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if state, err := store.BrowserAccess(); !errors.Is(err, ErrInvalidSecretFile) ||
+				!state.matches(BrowserAccess{}) {
+				t.Fatal("inconsistent record returned browser authority", err)
+			}
+
+			if err := store.SetBrowser(testPassword); !errors.Is(err, ErrInvalidSecretFile) {
+				t.Fatal("host recovery accepted inconsistent persisted authority", err)
+			}
+
+			persisted, err := store.BackupEvidence()
+			defer clear(persisted)
+
+			if err != nil || !bytes.Equal(persisted, data) {
+				t.Fatal("host recovery replaced the inconsistent record", err)
 			}
 		})
 	}
