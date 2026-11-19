@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Build the Wake appliance image for the native Linux architecture"
+#MISE depends=["build:release"]
+set -euo pipefail
+
+context_dir="$PWD/.cache/container/build"
+mkdir -p "$context_dir"
+cp .cache/release/wake .container/entrypoint .container/healthcheck "$context_dir/"
+podman build --format docker --file .container/Containerfile \
+  --build-arg "VERSION=${WAKE_IMAGE_VERSION:-dev}" \
+  --build-arg "REVISION=$(git rev-parse HEAD)" \
+  --tag "${WAKE_IMAGE:-localhost/wake:dev}" "$context_dir"

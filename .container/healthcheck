@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+set -eu
+
+port=$(wake config get admin.port)
+exec curl --noproxy '*' --fail --silent --show-error --max-time 3 \
+    --output /dev/null "http://127.0.0.1:$port/login"

@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+[Unit]
+Description=Wake financial evidence appliance
+
+[Container]
+Image=ghcr.io/trippwill/wake:v0.1.0
+ContainerName=wake
+Network=host
+UserNS=host
+User=0
+Group=0
+Volume=%h/.local/share/wake:/data:Z
+ReadOnly=true
+Tmpfs=/run/wake:rw,nosuid,nodev,noexec,mode=0700
+DropCapability=all
+NoNewPrivileges=true
+Notify=healthy
+HealthCmd=healthcheck
+HealthInterval=5s
+HealthTimeout=5s
+HealthStartPeriod=30s
+HealthRetries=3
+StopTimeout=60
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=900
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

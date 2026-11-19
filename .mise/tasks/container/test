@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Exercise the appliance with synthetic state; --quadlet uses the user service manager"
+set -euo pipefail
+go test -v -count=1 ./.container -args "$@"

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+FROM docker.io/library/alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+
+RUN apk add --no-cache ca-certificates curl tzdata
+
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="Wake" \
+      org.opencontainers.image.description="Local-first financial evidence appliance" \
+      org.opencontainers.image.source="https://github.com/trippwill/wake" \
+      org.opencontainers.image.licenses="MPL-2.0" \
+      org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.revision="$REVISION"
+
+COPY wake /usr/local/bin/wake
+COPY entrypoint healthcheck /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/wake /usr/local/bin/entrypoint /usr/local/bin/healthcheck
+
+ENV WAKE_CONFIG=/data/config/config.toml
+WORKDIR /data
+USER 0:0
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["healthcheck"]
+ENTRYPOINT ["entrypoint"]
+CMD ["serve"]

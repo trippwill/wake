@@ -15,6 +15,8 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 - The [README](README.md#using-wake-v010) is a descriptive quick helper for
   v0.1.0 use, not an authoritative specification. Keep it in the present tense,
   within selected release scope, without deprecated workflows or future speculation.
+  Keep direct executable instructions in the README and link to the
+  [appliance guide](docs/deployment/wake-appliance.md) for deployment and operation.
   [IBKR setup](.docs/providers/ibkr-flex.md) provides source setup help.
   CLI help and published contracts own exact public interfaces.
 - Use [$wake-docs](.agents/skills/wake-docs/SKILL.md) for substantive documentation
@@ -59,9 +61,10 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Development and delivery
 
-- Keep visible root directories for Go code, with `api` and `testdata` as explicit
-  exceptions. Put repository support in dot directories: documentation in `.docs`
-  and Mise configuration, locks and tasks in `.mise`.
+- Keep visible root directories for Go code, with `api`, `testdata` and `docs`
+  as explicit exceptions. Use `docs/deployment/` for operator deployment guides.
+  Keep supporting documentation in `.docs` and Mise configuration, locks and
+  tasks in `.mise`.
 - Mise is the only task runner. Pins/tasks live in [.mise/config.toml](.mise/config.toml).
   Run `mise install`. Select tests and checks from the changed code, affected
   callers, and integration boundaries; include race, browser, or coverage checks

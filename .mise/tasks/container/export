@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Save the tested native appliance image for release publication"
+set -euo pipefail
+architecture=$(go env GOARCH)
+mkdir -p .cache/container
+podman save --format docker-archive --output ".cache/container/wake-$architecture.tar" \
+  "${WAKE_IMAGE:-localhost/wake:dev}"

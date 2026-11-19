@@ -14,7 +14,14 @@ This pre-release build serves and processes retained history locally.
 Inspect activity, instruments, and available reported positions in the admin
 console. Wake retains original reports, exact financial values and conflicts.
 
-### Set up and start
+### Install the appliance
+
+Follow the [rootless Podman quick start](docs/deployment/wake-appliance.md#rootless-quick-start)
+on a Linux host with systemd and Podman 5.6 or newer. Wake keeps the complete installation
+in `~/.local/share/wake` by default. You can choose another host directory before the first start.
+Once Wake starts, set the browser password in the running container.
+
+### Build and run directly
 
 To build Wake from a Linux checkout:
 

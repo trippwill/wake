@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+set -eu
+
+# Explicit CLI invocations also support maintenance on a stopped installation.
+if [ "$#" -eq 1 ] && [ "$1" = serve ]; then
+    umask 077
+    mkdir -p /data/config /data/financial /data/state /data/backups /run/wake
+
+    if [ ! -e "$WAKE_CONFIG" ]; then
+        wake config init --generate-key \
+            --set storage.financial_path=/data/financial/wake.db \
+            --set storage.credentials_path=/data/state/connections.db \
+            --set storage.sync_path=/data/state/sync.db \
+            --set credentials.key_path=/data/config/credentials.key \
+            --set paths.runtime_dir=/run/wake \
+            --set admin.port=8787 \
+            --set api.port=8788
+    fi
+fi
+
+exec wake "$@"

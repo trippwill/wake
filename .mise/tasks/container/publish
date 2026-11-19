@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Publish CI-tested amd64 and arm64 archives for a release or untagged commit"
+set -euo pipefail
+
+revision=$(git rev-parse HEAD)
+case ${GITHUB_REF_TYPE:?GitHub ref type required} in
+  tag)
+    version=${GITHUB_REF_NAME:?release tag required}
+    [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+    ;;
+  branch) version="sha-$revision" ;;
+  *) printf 'Publication requires a release tag or branch build.\n' >&2; exit 1 ;;
+esac
+image="ghcr.io/trippwill/wake:$version"
+if [[ $GITHUB_REF_TYPE == tag && $(sed -n 's/^Image=//p' .container/wake.container) != "$image" ]]; then
+  printf 'The release tag must match Image= in .container/wake.container.\n' >&2
+  exit 1
+fi
+
+for architecture in amd64 arm64; do
+  podman load --input ".cache/container/wake-$architecture.tar"
+  saved="localhost/wake:ci-$architecture"
+  if [[ $(podman image inspect --format '{{.Architecture}}' "$saved") != "$architecture" ||
+        $(podman image inspect --format '{{index .Labels "org.opencontainers.image.revision"}}' "$saved") != "$revision" ||
+        $(podman image inspect --format '{{index .Labels "org.opencontainers.image.version"}}' "$saved") != "$version" ]]; then
+    printf 'Image %s does not match %s at revision %s for %s.\n' "$saved" "$version" "$revision" "$architecture" >&2
+    exit 1
+  fi
+done
+
+auth=$(mktemp)
+printf '{"auths":{}}\n' > "$auth"
+manifest="localhost/wake-release:$version"
+cleanup() {
+  rm -f "$auth"
+  podman manifest rm "$manifest" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+export REGISTRY_AUTH_FILE=$auth
+printf '%s' "${GHCR_TOKEN:?registry token required}" |
+  podman login --username "${GITHUB_ACTOR:?registry user required}" --password-stdin ghcr.io
+podman manifest create "$manifest" localhost/wake:ci-amd64 localhost/wake:ci-arm64
+podman manifest push --all "$manifest" "docker://$image"
+
+if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+  cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+Published image: \`$image\`
+
+Matching Quadlet: https://raw.githubusercontent.com/trippwill/wake/$revision/.container/wake.container
+
+For an untagged build, select the image in \`wake.container.d/image.conf\`:
+
+\`\`\`ini
+[Container]
+Image=$image
+\`\`\`
+EOF
+fi

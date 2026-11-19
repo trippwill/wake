@@ -6,7 +6,7 @@ set -euo pipefail
 
 [[ ${CHANGES_RESULT:-} == success && ${MARKDOWN_RESULT:-} == success ]]
 case "${FULL_CI:-}" in
-  true) [[ ${APPLICATION_RESULTS:-} == success,success,success,success ]] ;;
-  false) [[ ${APPLICATION_RESULTS:-} == skipped,skipped,skipped,skipped ]] ;;
+  true) [[ ${APPLICATION_RESULTS:-} == success,success,success,success,success ]] ;;
+  false) [[ ${APPLICATION_RESULTS:-} == skipped,skipped,skipped,skipped,skipped ]] ;;
   *) exit 1 ;;
 esac

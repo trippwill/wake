@@ -13,9 +13,28 @@ for delivery checks.
 
 ## Folder purposes and rules
 
-Choose the folder by the question the material answers. Each document needs one
+Choose the documentation root by the reader's task.
+
+- `docs/` is for people who use or operate Wake. Put guides here when they help
+  someone install Wake, connect a client, inspect financial history or recover a backup.
+- `.docs/` is for people who design, build and contribute to Wake. Put product
+  decisions, financial domain concepts, engineering guidance, contributor workflows
+  and research here.
+
+For example, installing an appliance release belongs in `docs/`. Building and
+publishing that release belongs in `.docs/engineering/`.
+
+Choose the subdirectory by the question the material answers. Each document needs one
 job within that folder's purpose. Before adding a folder, establish its distinct
 purpose and content rules here; do not create another home for existing guidance.
+
+### `docs/deployment/` operator guides
+
+Help operators install, configure, access, update and recover a Wake deployment.
+Keep these guides visible at the repository root through `docs/` and link to
+them from the README. The [appliance guide](../../../docs/deployment/wake-appliance.md)
+owns Podman appliance instructions. Keep packaging and release engineering in
+`.docs/engineering/`.
 
 ### `.docs/product/`: what Wake is for and what its financial concepts mean
 
@@ -75,7 +94,9 @@ The repository `README.md` is a concise, descriptive setup and usage helper for
 selected v0.1.0 behavior. Write it in the present tense, without future speculation
 or deprecated workflows; it is not authoritative for requirements, acceptance or
 implementation status. Keep commands grounded in help/source and avoid invented
-screen labels. Source-specific setup detail may link to `.docs/providers/`.
+screen labels. Keep direct executable instructions here and link to the operator
+guides in `docs/deployment/` for deployment details. Source-specific setup detail
+may link to `.docs/providers/`.
 
 `.docs/product/coverage.md` owns supported financial coverage, compatibility limits
 and the boundaries required to verify them. Keep delivery chronology and completed

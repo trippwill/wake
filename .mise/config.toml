@@ -36,7 +36,7 @@ run = ["go mod download", "go mod verify"]
 
 [tasks.check]
 description = "Run static checks"
-depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "assets:check", "openapi:check", "docs:check", "test:ci"]
+depends = ["lint:check", "vuln:check", "sqlc:check", "templ:check", "frontend:check", "assets:check", "openapi:check", "docs:check", "test:ci", "test:container:publish"]
 wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 
 [tasks.'source:check']

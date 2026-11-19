@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+#MISE description="Verify appliance publication gates without contacting a registry"
+set -euo pipefail
+
+revision=$(git rev-parse HEAD)
+release=$(sed -n 's|^Image=ghcr.io/trippwill/wake:||p' .container/wake.container)
+work=$(mktemp -d "${TMPDIR:-/tmp}/wake-publish-test-XXXXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+
+cat > "$work/podman" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >> "$CALLS"
+case $1 in
+  image)
+    [[ $2 == inspect && $3 == --format ]]
+    architecture=${5#localhost/wake:ci-}
+    case $4 in
+      '{{.Architecture}}') value=$architecture override=BAD_ARCHITECTURE ;;
+      *revision*) value=$REVISION override=BAD_REVISION ;;
+      *version*) value=$VERSION override=BAD_VERSION ;;
+      *) exit 1 ;;
+    esac
+    if [[ $architecture == arm64 && -v $override ]]; then
+      value=${!override}
+    fi
+    printf '%s\n' "$value"
+    ;;
+  login)
+    cmp -s <(printf '%s' synthetic-registry-token) -
+    [[ $(stat -c %a "$REGISTRY_AUTH_FILE") == 600 ]]
+    ;;
+  load | manifest) ;;
+  *) exit 1 ;;
+esac
+MOCK
+chmod +x "$work/podman"
+
+check() (
+  local ref_type=$1 version=$2 failure=${3:-} override=${4:-}
+  local status=0
+  export PATH="$work:$PATH" GITHUB_REF_TYPE=$ref_type GITHUB_REF_NAME=feature/appliance-testing
+  if [[ $ref_type == tag ]]; then
+    GITHUB_REF_NAME=$version
+  fi
+  export REVISION=$revision VERSION=$version GHCR_TOKEN=synthetic-registry-token GITHUB_ACTOR=fixture
+  export GITHUB_STEP_SUMMARY="$work/summary.md" CALLS="$work/calls"
+  unset BAD_ARCHITECTURE BAD_REVISION BAD_VERSION
+  if [[ -n $override ]]; then
+    export "$override=mismatch"
+  fi
+  : > "$CALLS"
+  : > "$GITHUB_STEP_SUMMARY"
+
+  timeout 30s bash .mise/tasks/container/publish > "$work/output" 2>&1 || status=$?
+  if [[ -n $failure ]]; then
+    if (( status != 0 && status != 124 )) &&
+      grep -Fq -- "$failure" "$work/output" &&
+      ! grep -Eq '^(login|manifest push) ' "$CALLS"; then
+      return
+    fi
+  elif (( status == 0 )) &&
+    grep -Fxq "manifest push --all localhost/wake-release:$version docker://ghcr.io/trippwill/wake:$version" "$CALLS" &&
+    grep -Fxq "Image=ghcr.io/trippwill/wake:$version" "$GITHUB_STEP_SUMMARY" &&
+    grep -Fq "/$revision/.container/wake.container" "$GITHUB_STEP_SUMMARY"; then
+    return
+  fi
+
+  printf 'Publication check failed for %s %s (%s, exit %s)\n' "$ref_type" "$version" "${override:-${failure:-expected success}}" "$status" >&2
+  cat "$work/output" "$CALLS" "$GITHUB_STEP_SUMMARY" >&2
+  return 1
+)
+
+check branch "sha-$revision"
+check tag "$release"
+check tag "$release-mismatch" "release tag must match"
+for field in BAD_ARCHITECTURE BAD_REVISION BAD_VERSION; do
+  check branch "sha-$revision" "does not match" "$field"
+done
+printf 'Release and untagged publication gates passed without registry access\n'

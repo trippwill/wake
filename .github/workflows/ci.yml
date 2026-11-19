@@ -15,7 +15,7 @@ on:
   pull_request:
   push:
     tags: ["*"]
-    branches: ["main", "codex/simplification-integration"]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -152,9 +152,46 @@ jobs:
           path: .cache/test-results/
           if-no-files-found: error
 
+  appliance:
+    needs: [changes]
+    if: needs.changes.outputs.full == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      WAKE_IMAGE: localhost/wake:ci-${{ matrix.arch }}
+      WAKE_IMAGE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('sha-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          role: appliance
+          cold-cache: ${{ inputs.cold_cache || false }}
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - run: mise run container:build
+      - run: mise run container:test
+      - if: github.event_name != 'pull_request'
+        run: mise run container:export
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: appliance-${{ matrix.arch }}
+          path: .cache/container/wake-${{ matrix.arch }}.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
   ci:
     if: always()
-    needs: [changes, markdown, checks, behavior, race, browser]
+    needs: [changes, markdown, checks, behavior, race, browser, appliance]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -170,5 +207,37 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           MARKDOWN_RESULT: ${{ needs.markdown.result }}
           FULL_CI: ${{ needs.changes.outputs.full }}
-          APPLICATION_RESULTS: ${{ format('{0},{1},{2},{3}', needs.checks.result, needs.behavior.result, needs.race.result, needs.browser.result) }}
+          APPLICATION_RESULTS: ${{ format('{0},{1},{2},{3},{4}', needs.checks.result, needs.behavior.result, needs.race.result, needs.browser.result, needs.appliance.result) }}
         run: mise run --skip-tools ci:result
+
+  publish-appliance:
+    needs: [changes, ci]
+    if: >-
+      needs.changes.outputs.full == 'true' && github.repository == 'trippwill/wake' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref_type == 'branch' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+          cache: false
+        env:
+          MISE_NO_HOOKS: "1"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: appliance-*
+          merge-multiple: true
+          path: .cache/container
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: Publish verified appliance images
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          MISE_NO_HOOKS: "1"
+        run: mise run --skip-tools container:publish

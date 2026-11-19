@@ -13,6 +13,17 @@ port. The admin listener accepts configured browser origins, including localhost
 different forwarded port. The financial listener can restrict accepted HTTP host authorities.
 Operators provide any remote access and transport protection.
 
+The appliance packages the same daemon and CLI in one Linux image for amd64 and
+arm64. Its rootless Podman Quadlet uses host networking and keeps the complete
+installation in one operator-selected host directory. First launch initializes
+configuration and a credential key; the browser is available before password
+setup. CLI password creation and reset work while the daemon runs. Image
+replacement reuses the installation. See the [appliance guide](../../docs/deployment/wake-appliance.md)
+for URL installation, SSH access, snapshots and moving a stopped installation.
+Rootful Podman is an option using the same image and a system-level Quadlet, with
+root-owned persistent files. Untagged builds can be selected by commit or built
+locally from a branch; the guide covers both paths.
+
 Browser administration uses a password, signed sessions, and CSRF protection.
 The host operator can set or reset the password through the CLI. Each financial
 client uses a separately revocable

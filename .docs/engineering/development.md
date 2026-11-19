@@ -54,6 +54,50 @@ and access files. Use synthetic data, keys and credentials. Copy a closed
 encrypted access file only to verify its independent storage and original
 identity binding.
 
+## Appliance packaging and releases
+
+[.container/](../../.container/) owns the runtime image, entrypoint, health check,
+Quadlet and synthetic acceptance flow. Use the project’s Mise toolchain and
+rootless Podman on Linux to build and test the appliance.
+
+```sh
+mise run container:build
+mise run container:test
+mise run container:test -- --quadlet
+```
+
+The first test runs isolated containers. `--quadlet` additionally needs a user
+systemd manager, available ports 8787/8788 and Podman 5.6 or newer. It installs a
+uniquely named temporary unit from a local HTTP URL and removes it afterward. It checks the custom storage
+drop-in across URL replacement with a path containing spaces. Tests use only
+synthetic passwords, client grants and retained evidence. Run this flow on Fedora
+with SELinux enforcing for packaging changes; a disposable host reboot additionally
+checks boot activation with lingering enabled.
+
+The build uses the release executable and a digest-pinned runtime base containing
+CA certificates, timezone data and the HTTP health-check client. `WAKE_IMAGE`
+selects a local image name, defaulting to `localhost/wake:dev`.
+`WAKE_IMAGE_VERSION` sets the release label. Keep runtime pins deliberate and
+verify both target architectures when updating them.
+
+CI builds and tests the image on native amd64 and arm64 runners. Push and manual
+builds save those tested images, wait for the complete CI gate, and publish a
+combined GHCR manifest through `container:publish`. Untagged branch builds use
+`sha-<full-commit-SHA>` image tags. The publication job summary supplies the image
+and matching Quadlet URL. PR builds do not publish images; Markdown-only pushes
+skip image builds. A maintainer can manually run `ci` on a branch to build and
+publish its current commit with the full gate, including a Markdown-only commit.
+The [appliance guide](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch)
+describes installation from those images and a local-build fallback for an arbitrary revision.
+
+Before tagging a release, update `Image=` in the Quadlet and the appliance
+guide's concrete release URLs to that version. Publication
+rejects mismatched image labels, revisions or architectures; a release tag must
+also match the Quadlet's default image. The raw GitHub URL at the same tag supplies
+the matching Quadlet. Make the GHCR package public for
+anonymous installation and verify its published URL/image flow before announcing
+the release. Updating the Quadlet leaves local `.container.d` overrides intact.
+
 ## Select meaningful verification
 
 Choose tests at the boundary that owns the behavior. Exercise exact values and
@@ -210,20 +254,20 @@ text search remain ordinary text operations.
 ## Documentation maintenance
 
 Use the [Wake docs skill](../../.agents/skills/wake-docs/SKILL.md) for substantive
-changes. Each document has one job: product intent, financial meaning, high-level
-architecture, current coverage or descriptive usage help.
+changes. Give each document one job, such as explaining product intent, financial
+meaning, high-level architecture, current coverage or an operator workflow.
 [The index](../README.md) identifies those owners.
 
 Document decisions and rationale that source alone cannot explain. Do not maintain
 parallel catalogs of packages, schemas, CLI flags, API fields, rule implementations
 or test results. CLI help, public contracts, source and tests own those details.
 
-Keep everyday usage help in the root README. It describes selected v0.1.0 behavior
-in the present tense, without deprecated workflows or future speculation. It is
-not a specification, task list or acceptance gate. Keep commands grounded in help
-and source; avoid inventing screen labels or implementation details. Coverage and
-limitations belong in the coverage document. Remove obsolete documents and repair
-inbound links.
+Keep everyday usage help and direct executable instructions in the root README.
+Use `docs/deployment/` for operator deployment and operation instructions, with
+a short entry in the README. The README describes selected v0.1.0 behavior in the
+present tense, without deprecated workflows or future speculation. Keep commands
+grounded in help and source and use actual screen labels. Coverage and limitations
+belong in the coverage document. Remove obsolete documents and repair inbound links.
 
 Run `mise run docs:check` for Markdown style and local links, including anchors. Checks include
 Git-tracked and unignored new Markdown files, including hidden directories and fixture

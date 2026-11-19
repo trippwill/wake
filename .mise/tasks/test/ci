@@ -62,20 +62,20 @@ route true push "$(printf '%040d' 1)" "$tooling"
 route true push "$base" "$docs" true
 route true workflow_dispatch "$base" "$docs"
 
-CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,success,success,success bash "$root/.mise/tasks/ci/result"
-CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"
+CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,success,success,success,success bash "$root/.mise/tasks/ci/result"
+CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"
 for result in failure cancelled skipped; do
-  if CHANGES_RESULT=$result MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+  if CHANGES_RESULT=$result MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
     printf 'Expected routing result %s to fail the gate\n' "$result" >&2; exit 1
   fi
-  if CHANGES_RESULT=success MARKDOWN_RESULT=$result FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+  if CHANGES_RESULT=success MARKDOWN_RESULT=$result FULL_CI=false APPLICATION_RESULTS=skipped,skipped,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
     printf 'Expected Markdown result %s to fail the gate\n' "$result" >&2; exit 1
   fi
-  if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,$result,success,success bash "$root/.mise/tasks/ci/result"; then
+  if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=true APPLICATION_RESULTS=success,$result,success,success,success bash "$root/.mise/tasks/ci/result"; then
     printf 'Expected application result %s to fail the gate\n' "$result" >&2; exit 1
   fi
 done
-if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=success,cancelled,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
+if CHANGES_RESULT=success MARKDOWN_RESULT=success FULL_CI=false APPLICATION_RESULTS=success,cancelled,skipped,skipped,skipped bash "$root/.mise/tasks/ci/result"; then
   printf 'Expected unexpected application results to fail the Markdown-only gate\n' >&2; exit 1
 fi
 printf 'CI routing and result gates passed\n'

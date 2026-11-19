@@ -48,6 +48,25 @@ A per-instance runtime directory under the user's local runtime root holds proce
 ownership. The operator supplies the TOML, which may be empty to select the defaults.
 Inspection resolves paths without creating files.
 
+The container appliance wraps this same lifecycle. On a new installation its
+entrypoint invokes CLI configuration initialization and key provisioning before
+executing `wake serve` as the main process. Daemon startup itself does not generate
+keys. A saved TOML skips initialization; explicit image commands run the CLI for
+maintenance. Browser authority can be set or replaced through a second CLI process
+while the daemon runs, using the existing live authority checks.
+
+Rootless Podman maps container root to the invoking host user. A single private
+host directory supplies persistent configuration, keys, authority and stores;
+the image is read-only and runtime files use tmpfs. Host networking preserves the
+two loopback listener boundaries. Systemd owns restart and boot activation, waits
+for browser availability independently of password setup, and allows Wake to join
+shutdown before container removal. The Quadlet and its local storage override
+remain separate so release updates preserve the operator's chosen host path.
+An optional rootful deployment uses the same container lifecycle under the system
+service manager, with root-owned storage and system boot activation. Untagged
+images identify their tested source commit; an image drop-in selects that build
+independently of the storage override.
+
 ## Responsibilities
 
 | Boundary | Responsibility |
