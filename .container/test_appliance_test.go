@@ -143,14 +143,16 @@ func TestAppliance(t *testing.T) {
 
 	t.Log("Taking an online warehouse snapshot and restoring it to a separate store")
 
-	changed := bytes.ReplaceAll(originalConfig, []byte("port = 8787"), []byte("port = 9787"))
+	changed := bytes.ReplaceAll(originalConfig, []byte("port = 8787"),
+		[]byte("port = 9787\nallowed_origins = ['https://wake.example', 'http://localhost:18787']"))
 	require(t, !bytes.Equal(changed, originalConfig), "the initial configuration omitted the admin port")
 	must(t, os.WriteFile(config, changed, 0o600))
 
 	app.port = 9787
+	app.adminHost = "wake.example"
 	app.start(t)
 	response, _ = app.request(t, "/login", nil, nil)
-	require(t, response.StatusCode == http.StatusOK, "changed admin port did not serve the login page")
+	require(t, response.StatusCode == http.StatusOK, "login page rejected the configured authority")
 	command(
 		t,
 		"podman",
@@ -185,6 +187,7 @@ func TestAppliance(t *testing.T) {
 
 type appliance struct {
 	name, image, data string
+	adminHost         string
 	unit              string
 	port, stops       int
 }
@@ -323,6 +326,9 @@ func (app *appliance) request(
 	args := []string{
 		"exec", app.name, "curl", "--noproxy", "*", "--silent", "--show-error",
 		"--include", "--raw", "--max-time", "5",
+	}
+	if app.adminHost != "" {
+		args = append(args, "--header", "Host: "+app.adminHost)
 	}
 
 	if form != nil {

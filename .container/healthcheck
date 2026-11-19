@@ -4,5 +4,13 @@
 set -eu
 
 port=$(wake config get admin.port)
-exec curl --noproxy '*' --fail --silent --show-error --max-time 3 \
-    --output /dev/null "http://127.0.0.1:$port/login"
+# config get prints the normalized origin list as [origin origin ...].
+origins=$(wake config get admin.allowed_origins)
+origin=${origins#\[}
+origin=${origin%\]}
+origin=${origin%% *}
+authority=${origin#*://}
+[ -n "$authority" ]
+body=$(curl --disable --noproxy '*' --fail --silent --show-error --max-time 3 \
+    --header "Host: $authority" "http://127.0.0.1:$port/login")
+printf '%s\n' "$body" | grep -Eq '<h1>(Sign in to Wake|Set your Wake password)</h1>'
