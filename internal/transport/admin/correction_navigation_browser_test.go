@@ -483,10 +483,10 @@ func TestBrowserCorrectionAndEvidenceNavigation(t *testing.T) {
 		"long source path is missing from filtered observation",
 	)
 	check(
-		chromedp.Focus(chromedp.CSS(`.tabulator-col[tabulator-field="location"]`)),
+		chromedp.Focus(chromedp.CSS(`.tabulator-col[tabulator-field="date"]`)),
 		chromedp.KeyEvent(kb.Enter),
 		chromedp.Poll[chromedp.Void](
-			`new URL(location.href).searchParams.get('sort')==='location' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
+			`new URL(location.href).searchParams.get('sort')==='date' && document.querySelector('[data-grid]').dataset.gridReady==='true'`,
 		),
 		chromedp.Evaluate[chromedp.Void](
 			`window.previousObservationColumns=localStorage.getItem('tabulator-wake-observations-columns');window.reportTable.getColumn('location').setWidth(410)`,
