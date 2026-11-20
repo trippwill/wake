@@ -552,7 +552,10 @@ body {
   }
   .wake-nav ul {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(min(100%, max(8rem, 48%)), 1fr)
+      );
   }
   .wake-nav ul + ul {
     border: 0;
@@ -564,6 +567,10 @@ body {
     display: block;
     width: 1rem;
     height: 1rem;
+  }
+  .wake-nav .wake-nav-link {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .wake-nav [aria-current="page"] {
     background: var(--wake-masthead-hover);

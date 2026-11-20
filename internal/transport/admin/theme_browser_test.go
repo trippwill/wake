@@ -153,10 +153,6 @@ func TestBrowserThemePreference(t *testing.T) {
 	verifyAppearanceStorage(t, ctx, origin, check)
 	check(selectAppearance("theme", "system"))
 
-	var reflow struct {
-		Viewport, Content int
-		ClippedLabels     []string
-	}
 	check(
 		chromedp.Poll[chromedp.Void](`localStorage.getItem('wake.theme')==='system'`),
 		testbrowser.EmulateSystemTheme("dark"),
@@ -173,11 +169,36 @@ func TestBrowserThemePreference(t *testing.T) {
 				document.querySelector('[data-typography-preference]')?.value==='default'
 			`,
 		),
+	)
+
+	verifySettingsReflow(t, check)
+	verifyAppearanceWithoutStorage(t, check)
+}
+
+func verifySettingsReflow(t *testing.T, check func(...chromedp.Action[chromedp.Void])) {
+	t.Helper()
+
+	check(
 		chromedp.EmulateViewport(320, 800),
 		chromedp.Evaluate[chromedp.Void](`document.documentElement.style.fontSize='200%'`),
-		testbrowser.Evaluate(`(()=>{
+		chromedp.WaitVisible(chromedp.CSS(`.wake-menu-toggle[aria-expanded="false"]`)),
+	)
+
+	for _, menuOpen := range []bool{false, true} {
+		if menuOpen {
+			check(
+				chromedp.Click(chromedp.CSS(".wake-menu-toggle")),
+				chromedp.WaitVisible(chromedp.CSS("#main-navigation")),
+			)
+		}
+
+		var reflow struct {
+			Viewport, Content int
+			ClippedLabels     []string
+		}
+		check(testbrowser.Evaluate(`(()=>{
 			const range = document.createRange();
-			const labels = [...document.querySelectorAll('nav[aria-label="System views"] a,.wake-appearance h2')];
+			const labels = [...document.querySelectorAll('nav[aria-label="System views"] a,.wake-appearance h2,#main-navigation:not([hidden]) a')];
 			const clippedLabels = labels.filter(label => {
 				range.selectNodeContents(label);
 				const bounds = label.getBoundingClientRect();
@@ -185,15 +206,18 @@ func TestBrowserThemePreference(t *testing.T) {
 				return !lines.length || lines.some(line => line.left < bounds.left - 1 || line.right > bounds.right + 1);
 			}).map(label => label.textContent.trim());
 			return {viewport: innerWidth, content: document.documentElement.scrollWidth, clippedLabels};
-		})()`, &reflow),
-	)
+		})()`, &reflow))
 
-	if reflow.Content > reflow.Viewport+1 || len(reflow.ClippedLabels) != 0 {
-		t.Fatalf("Settings does not reflow at 200 percent text: content %dpx in %dpx viewport, clipped labels %v",
-			reflow.Content, reflow.Viewport, reflow.ClippedLabels)
+		if reflow.Content > reflow.Viewport+1 || len(reflow.ClippedLabels) != 0 {
+			t.Fatalf(
+				"Settings does not reflow at 200 percent text (menu open: %t): content %dpx in %dpx viewport, clipped labels %v",
+				menuOpen,
+				reflow.Content,
+				reflow.Viewport,
+				reflow.ClippedLabels,
+			)
+		}
 	}
-
-	verifyAppearanceWithoutStorage(t, check)
 }
 
 func selectAppearance(preference, value string) chromedp.Action[chromedp.Void] {
