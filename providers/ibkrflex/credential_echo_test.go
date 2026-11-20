@@ -39,9 +39,11 @@ func TestRejectDecodedCredentialEchoes(t *testing.T) {
 		{"raw report", "GetStatement", report(`acctAlias="` + secret + `"`), true},
 		{"decoded text", "GetStatement", reportText(encoded.String()), true},
 		{"decoded text split across XML tokens", "GetStatement", reportText(`synthetic<!-- note --><![CDATA[-]]><Other>nested</Other>token`), true},
+		{"decoded descendant text", "GetStatement", reportText(`<Other>syn&#116;</Other>hetic<![CDATA[-]]><More>token</More>`), true},
 		{"escaped reference", "SendRequest", `<FlexStatementResponse><Status>Success</Status><ReferenceCode>prefix` + encoded.String() + `suffix</ReferenceCode></FlexStatementResponse>`, true},
 		{"unrelated escaped report", "GetStatement", report(`acctAlias="Synthe&#116;ic"`), false},
 		{"unrelated split text", "GetStatement", reportText(`synthetic<!-- note --><![CDATA[-]]>description`), false},
+		{"unrelated descendant text", "GetStatement", reportText(`<Other>syn&#116;</Other>hetic<More>token</More><![CDATA[-]]>`), false},
 		{"unrelated escaped reference", "SendRequest", `<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref&#45;1</ReferenceCode></FlexStatementResponse>`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

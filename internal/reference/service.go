@@ -132,7 +132,7 @@ func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 		return s.store.SetReferenceKey(ctx, []byte{})
 	}
 
-	if len(b) > 4096 || bytes.ContainsAny(b, "\r\n\x00") || s.envelope == nil {
+	if !validKey(b) || s.envelope == nil {
 		return provider.ErrUnauthorized
 	}
 
@@ -147,6 +147,10 @@ func (s *Service) SetKey(ctx context.Context, key *credential.Secret) error {
 	}
 
 	return s.store.SetReferenceKey(ctx, payload)
+}
+
+func validKey(key []byte) bool {
+	return len(key) <= 4096 && len(bytes.TrimSpace(key)) > 0 && !bytes.ContainsAny(key, "\r\n\x00")
 }
 
 // RunOnce serializes shared admission and suppresses duplicate jobs before HTTP.
@@ -208,8 +212,8 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 		)
 	}()
 
-	accessFailure := func() (bool, error) {
-		err := s.store.ReferenceFailure(ctx, "configured OpenFIGI key cannot be decrypted; replace the key")
+	accessFailure := func(message string) (bool, error) {
+		err := s.store.ReferenceFailure(ctx, message)
 		if err == nil {
 			s.logger.WarnContext(
 				ctx,
@@ -223,23 +227,25 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			)
 		}
 
-		return false, err
+		return err == nil, err
 	}
 
 	var secret []byte
 	if len(payload) > 0 {
+		const decryptFailure = "configured OpenFIGI key cannot be decrypted; replace the key"
+
 		if s.envelope == nil {
-			return accessFailure()
+			return accessFailure(decryptFailure)
 		}
 
 		encrypted, e := credential.ParseEncryptedSecret(payload)
 		if e != nil {
-			return accessFailure()
+			return accessFailure(decryptFailure)
 		}
 
 		value, e := s.envelope.Decrypt(encrypted, credential.ReferenceKeyAAD())
 		if e != nil {
-			return accessFailure()
+			return accessFailure(decryptFailure)
 		}
 		defer value.Clear()
 
@@ -248,6 +254,10 @@ func (s *Service) RunOnce(ctx context.Context) (didChange bool, resultErr error)
 			return false, provider.ErrUnauthorized
 		}
 		defer clear(secret)
+
+		if !validKey(secret) {
+			return accessFailure("configured OpenFIGI key is invalid; replace it or select anonymous access")
+		}
 	}
 
 	limit, batch := 25, 10
@@ -398,8 +408,14 @@ func (s *Service) CheckAccess(ctx context.Context) error {
 	if err != nil {
 		return provider.ErrUnauthorized
 	}
+	defer key.Clear()
 
-	key.Clear()
+	secret, err := key.Copy()
+	defer clear(secret)
+
+	if err != nil || !validKey(secret) {
+		return provider.ErrUnauthorized
+	}
 
 	return nil
 }

@@ -37,7 +37,10 @@ func walkXML(ctx context.Context, body, secret []byte, visit func([]node) error)
 
 	decoder := xml.NewDecoder(bytes.NewReader(body))
 
-	var stack []node
+	var (
+		stack            []node
+		documentTextTail []byte
+	)
 
 	root := false
 	nodes := 0
@@ -127,20 +130,12 @@ func walkXML(ctx context.Context, body, secret []byte, visit func([]node) error)
 				}
 			} else if len(secret) > 0 {
 				entry := &stack[len(stack)-1]
-				// XML comments, CDATA and nested elements can split direct element text.
-				// Keep only the overlap needed to check the next decoded text token.
-				overlap := len(secret) - 1
-				entry.textTail = append(entry.textTail, token[:min(len(token), overlap)]...)
-				if bytes.Contains(token, secret) || bytes.Contains(entry.textTail, secret) {
+				// The root's descendant text includes every subtree's combined text.
+				if bytes.Contains(token, secret) ||
+					containsSplitSecret(&documentTextTail, token, secret) ||
+					containsSplitSecret(&entry.textTail, token, secret) {
 					return provider.ErrMalformed
 				}
-
-				trailing := entry.textTail
-				if len(token) > overlap {
-					trailing = token
-				}
-
-				entry.textTail = append(entry.textTail[:0], trailing[max(0, len(trailing)-overlap):]...)
 			}
 		}
 	}
@@ -150,6 +145,25 @@ func walkXML(ctx context.Context, body, secret []byte, visit func([]node) error)
 	}
 
 	return nil
+}
+
+// containsSplitSecret checks the overlap between decoded text tokens and saves the next tail.
+func containsSplitSecret(tail *[]byte, token, secret []byte) bool {
+	overlap := len(secret) - 1
+	window := append(*tail, token[:min(len(token), overlap)]...)
+	if bytes.Contains(window, secret) {
+		return true
+	}
+
+	trailing := window
+	if len(token) > overlap {
+		trailing = token
+	}
+
+	window = append(window[:0], trailing[max(0, len(trailing)-overlap):]...)
+	*tail = window
+
+	return false
 }
 
 type reportMetadata struct {

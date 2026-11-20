@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/internal/reference/figi"
+	"go.trippwill.dev/wake/provider"
 )
 
 func insertReferenceInstrument(t *testing.T, s *Store, id, identifier string) {
@@ -334,6 +336,81 @@ func TestReferenceBatchCacheAndFailureOutcomes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReferenceBlankKeyRequiresRepair(t *testing.T) {
+	ctx := t.Context()
+	store, _ := testStore(t)
+	envelope := testEnvelope(t)
+	insertReferenceInstrument(t, store, "root", "synthetic-instrument")
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("invalid saved key reached OpenFIGI")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	service, err := reference.New(store, envelope, server.Client(), server.URL, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := credential.NewSecret([]byte(" \t"))
+	defer legacy.Clear()
+
+	encrypted, err := envelope.Encrypt(legacy, credential.ReferenceKeyAAD())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	payload, err := encrypted.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = store.SetReferenceKey(ctx, payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if err = service.CheckAccess(ctx); !errors.Is(err, provider.ErrUnauthorized) {
+		t.Fatal("saved blank key passed access check", err)
+	}
+
+	if changed, err := service.RunOnce(ctx); err != nil || !changed {
+		t.Fatal("invalid saved key did not record a repair status", changed, err)
+	}
+
+	status, err := store.Prerequisites(ctx)
+	if err != nil || !status.ReferenceKey || !strings.Contains(status.ReferenceFailure, "key is invalid") {
+		t.Fatal("invalid saved key is missing a repair status", status.ReferenceFailure, err)
+	}
+
+	for _, value := range []string{" \t", "\u00a0"} {
+		blank := credential.NewSecret([]byte(value))
+		err = service.SetKey(ctx, blank)
+		blank.Clear()
+
+		if !errors.Is(err, provider.ErrUnauthorized) {
+			t.Fatal("allowed whitespace-only key", err)
+		}
+	}
+
+	saved, failure, err := store.ReferenceKey(ctx)
+	if err != nil || !bytes.Equal(saved, payload) || failure != status.ReferenceFailure {
+		t.Fatal("rejected key altered the saved setting or failure", err)
+	}
+
+	anonymous := credential.NewSecret(nil)
+	defer anonymous.Clear()
+
+	if err = service.SetKey(ctx, anonymous); err != nil {
+		t.Fatal(err)
+	}
+
+	saved, failure, err = store.ReferenceKey(ctx)
+	if err != nil || len(saved) != 0 || failure != "" {
+		t.Fatal("explicit anonymous selection did not clear the setting and failure", err)
 	}
 }
 
