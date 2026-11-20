@@ -1238,13 +1238,6 @@
               );
             if (sequence !== state.sequence)
               throw new Error("Superseded table request");
-            if (artifact)
-              emptyState.textContent =
-                result.total === 0
-                  ? region.closest("[data-report-empty]")?.dataset
-                      .reportEmpty ||
-                    "No processed activity entries in this report."
-                  : "No matching report entries.";
             if (!background) {
               state.installing = result;
               state.filterChange = null;
@@ -1448,6 +1441,9 @@
           if (state.installing?.data === rows) {
             state.displayed = state.installing;
             state.installing = null;
+            if (artifact)
+              emptyState.textContent =
+                state.displayed.report_empty ?? "No matching report entries.";
             positionSummary(region, state.displayed);
             status.textContent = `${state.displayed.last_row} of ${state.displayed.total} results`;
           }

@@ -34,14 +34,17 @@ func (s *Store) ObservationList(
 	return readModel(ctx, s, func(q *sqlc.Queries) (application.ObservationList, error) {
 		out := application.ObservationList{Items: []application.Observation{}}
 
-		var err error
+		var (
+			err      error
+			provider string
+		)
 		switch kind {
 		case "activity", "activity-appearances":
 			_, err = q.Execution(ctx, id)
 		case "instrument":
 			_, err = q.Instrument(ctx, id)
 		case "artifact":
-			_, err = q.ArtifactProvider(ctx, id)
+			provider, err = q.ArtifactProvider(ctx, id)
 		}
 
 		if errors.Is(err, sql.ErrNoRows) {
@@ -74,6 +77,13 @@ func (s *Store) ObservationList(
 			out.PageInfo = pageInfo(query, rows[0].Total, rows[0].Matched)
 		}
 
+		if kind == "artifact" && out.Total == 0 {
+			out.Processing, err = s.reportProcessing(ctx, q, id, provider)
+			if err != nil {
+				return out, err
+			}
+		}
+
 		for _, row := range rows {
 			if row.ArtifactID == "" {
 				continue
@@ -104,6 +114,32 @@ func (s *Store) ObservationList(
 
 		return out, nil
 	})
+}
+
+func (s *Store) reportProcessing(
+	ctx context.Context,
+	q *sqlc.Queries,
+	id, provider string,
+) (application.ReportProcessing, error) {
+	version := s.interpretationVersion(provider)
+	if version == "" {
+		return application.ReportProcessingUnavailable, nil
+	}
+
+	complete, err := q.ProcessingComplete(ctx, sqlc.ProcessingCompleteParams{ArtifactID: id, Version: version})
+	if err != nil {
+		return application.ReportProcessingUnavailable, err
+	}
+
+	if complete {
+		return application.ReportProcessingComplete, nil
+	}
+
+	if s.processingFailure(id) != "" {
+		return application.ReportProcessingFailed, nil
+	}
+
+	return application.ReportProcessingPending, nil
 }
 
 func (s *Store) SourceObservation(

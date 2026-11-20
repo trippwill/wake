@@ -314,6 +314,15 @@ const (
 	ReviewIdentity    ReviewKind = "identity"
 )
 
+type ReportProcessing uint8
+
+const (
+	ReportProcessingUnavailable ReportProcessing = iota
+	ReportProcessingPending
+	ReportProcessingFailed
+	ReportProcessingComplete
+)
+
 type (
 	ReviewEntry struct {
 		Kind                                 ReviewKind
@@ -324,7 +333,8 @@ type (
 	}
 	ObservationList struct {
 		PageInfo
-		Items []Observation
+		Items      []Observation
+		Processing ReportProcessing
 	}
 	ReviewList struct {
 		PageInfo

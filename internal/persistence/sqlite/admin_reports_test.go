@@ -106,11 +106,6 @@ INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,
 		}
 	}
 
-	pending, err := s.EvidenceContext(t.Context(), "pending")
-	if err != nil || !pending.CanProcess || pending.Processed || pending.ProcessingFailed {
-		t.Fatal("pending report must remain distinguishable from processed evidence", pending, err)
-	}
-
 	overview, err := s.Overview(t.Context())
 	if err != nil || len(overview.Reports) != 4 || overview.Reports[0].Receipt != "same-body" {
 		t.Fatal("overview reports do not share global receipt ordering", overview.Reports, err)
@@ -154,7 +149,7 @@ INSERT INTO acquisition_receipts(id,artifact_id,operation,retrieved,hash,policy,
 	}
 
 	evidence, err := s.EvidenceContext(t.Context(), "original")
-	if err != nil || !evidence.Processed || evidence.ReceiptCount != 55 || len(evidence.Receipts) != 50 {
+	if err != nil || evidence.ReceiptCount != 55 || len(evidence.Receipts) != 50 {
 		t.Fatal("receipt history was not bounded", evidence.ReceiptCount, len(evidence.Receipts), err)
 	}
 

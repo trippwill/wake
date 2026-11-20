@@ -50,11 +50,12 @@ type observationGridRow struct {
 	Terms    gridCell `json:"terms"`
 }
 type gridPage[T any] struct {
-	Data      []T               `json:"data"`
-	LastPage  int64             `json:"last_page"`
-	LastRow   int64             `json:"last_row"`
-	Total     int64             `json:"total"`
-	Positions *positionGridMeta `json:"positions,omitempty"`
+	Data        []T               `json:"data"`
+	LastPage    int64             `json:"last_page"`
+	LastRow     int64             `json:"last_row"`
+	Total       int64             `json:"total"`
+	Positions   *positionGridMeta `json:"positions,omitempty"`
+	ReportEmpty string            `json:"report_empty,omitempty"`
 }
 
 func gridResult[T any](rows []T, info application.PageInfo) gridPage[T] {
@@ -225,7 +226,12 @@ func observationGrid(data application.ObservationList, subject string) gridPage[
 		)
 	}
 
-	return gridResult(rows, data.PageInfo)
+	result := gridResult(rows, data.PageInfo)
+	if subject == "artifact" && data.Total == 0 {
+		result.ReportEmpty = reportEmptyMessage(data.Processing)
+	}
+
+	return result
 }
 
 func observationTerms(row application.Observation) (gridCell, gridCell) {

@@ -215,16 +215,27 @@ func syntheticObservationGrid() templ.Component {
 	})
 }
 
-func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bool) {
+func syntheticObservationData(
+	w http.ResponseWriter,
+	r *http.Request,
+	changed bool,
+	pendingReport application.ReportProcessing,
+) {
 	rows := []application.Observation{}
+
+	var processing application.ReportProcessing
 
 	count := 2
 	artifact := r.URL.Query().Get("subject") == "artifact"
 	if artifact {
 		count = 75
 		switch r.URL.Query().Get("id") {
-		case "synthetic-pending", "synthetic-positions":
+		case "synthetic-pending":
 			count = 0
+			processing = pendingReport
+		case "synthetic-positions":
+			count = 0
+			processing = application.ReportProcessingComplete
 		}
 	}
 
@@ -295,7 +306,8 @@ func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bo
 		w,
 		observationGrid(
 			application.ObservationList{
-				Items: rows[start:end],
+				Items:      rows[start:end],
+				Processing: processing,
 				PageInfo: application.PageInfo{
 					Page:     options.Page,
 					PageSize: options.PageSize,
@@ -317,6 +329,7 @@ type adminBrowserFixture struct {
 	origin string
 
 	warehouseBytes                                        atomic.Int64
+	reportProcessing                                      atomic.Pointer[application.ReportProcessing]
 	extra, offline, expired, noGrid, refreshFailed        atomic.Bool
 	holdRefresh, holdSelection, holdMovedFocus, holdAlias atomic.Bool
 	emptyGrid, failFirstPage                              atomic.Bool
@@ -340,6 +353,8 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 		aliasStarted:      make(chan struct{}, 1),
 		releaseAlias:      make(chan struct{}, 1),
 	}
+	f.reportProcessing.Store(new(application.ReportProcessingPending))
+
 	tenant, _ := provider.NewField("tenant", "Tenant identifier", provider.TextField, true)
 	secret, _ := provider.NewField("api_secret", "API secret", provider.SecretField, true)
 	stream, _ := provider.NewStream("statements", "synthetic-v1")
@@ -600,7 +615,12 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 					syntheticActivityGridData(w, r, f.extra.Load())
 				}
 			} else {
-				syntheticObservationData(w, r, !f.extra.Load())
+				syntheticObservationData(
+					w,
+					r,
+					!f.extra.Load(),
+					*f.reportProcessing.Load(),
+				)
 			}
 
 			return
@@ -653,11 +673,8 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 				switch metadata.ID {
 				case "synthetic-pending":
 					metadata.Stream = "activities"
-					metadata.CanProcess = true
 				case "synthetic-positions":
 					metadata.Stream = "positions"
-					metadata.CanProcess = true
-					metadata.Processed = true
 				}
 
 				if r.URL.Query().Get("receipt") == "repeated-receipt" {

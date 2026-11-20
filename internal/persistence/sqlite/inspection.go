@@ -85,20 +85,6 @@ func (s *Store) EvidenceContext(ctx context.Context, id string) (application.Evi
 		ReportedTo:    row.ReportedTo,
 	}
 
-	version := s.interpretationVersion(row.Provider)
-	out.CanProcess = version != ""
-	if out.CanProcess {
-		out.Processed, err = s.queries.ProcessingComplete(
-			ctx,
-			sqlc.ProcessingCompleteParams{ArtifactID: id, Version: version},
-		)
-		if err != nil {
-			return out, err
-		}
-
-		out.ProcessingFailed = !out.Processed && s.processingFailure(id) != ""
-	}
-
 	out.ReceiptCount, err = s.queries.CountAcquisitionReceipts(ctx, id)
 	if err != nil {
 		return out, err

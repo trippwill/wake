@@ -232,15 +232,15 @@ func TestReportContributionSummarizesExactCounts(t *testing.T) {
 
 func TestReportEmptyMessageDistinguishesProcessingFromMissingData(t *testing.T) {
 	for _, tc := range []struct {
-		info application.EvidenceContext
-		want string
+		processing application.ReportProcessing
+		want       string
 	}{
-		{application.EvidenceContext{Processed: true}, "No processed activity entries in this report."},
-		{application.EvidenceContext{CanProcess: true, ProcessingFailed: true}, "Processing failed. The original report is available."},
-		{application.EvidenceContext{CanProcess: true}, "Awaiting processing. The original report is available."},
-		{application.EvidenceContext{}, "The original report is available. Processing is unavailable for this source."},
+		{application.ReportProcessingComplete, "No processed activity entries in this report."},
+		{application.ReportProcessingFailed, "Processing failed. The original report is available."},
+		{application.ReportProcessingPending, "Awaiting processing. The original report is available."},
+		{application.ReportProcessingUnavailable, "The original report is available. Processing is unavailable for this source."},
 	} {
-		if got := reportEmptyMessage(tc.info); got != tc.want {
+		if got := reportEmptyMessage(tc.processing); got != tc.want {
 			t.Errorf("empty report message = %q, want %q", got, tc.want)
 		}
 	}

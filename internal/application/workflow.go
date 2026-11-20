@@ -955,7 +955,6 @@ type (
 		Receipts                                                                        []AcquisitionReceipt
 		ReceiptCount                                                                    int64
 		SelectedReceipt                                                                 *AcquisitionReceipt
-		CanProcess, Processed, ProcessingFailed                                         bool
 	}
 )
 

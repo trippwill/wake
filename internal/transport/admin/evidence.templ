@@ -23,7 +23,7 @@ templ RetainedEvidence(info application.EvidenceContext, entry *sourceEvidenceEn
 	if entry!=nil {
 		@RetainedSourceEntry(*entry)
 	}
-	<section class="wake-card" data-report-empty={ reportEmptyMessage(info) }>
+	<section class="wake-card">
 		<h2 id="report-entries" tabindex="-1">Report entries</h2>
 		@ReportObservations(info.ID)
 	</section>

@@ -9,9 +9,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/provider"
 	"go.trippwill.dev/wake/providers/ibkrflex"
 	"go.trippwill.dev/wake/source"
 )
@@ -281,11 +283,39 @@ func TestReportObservationPagesIncludeUnlinkedAndEmptyReports(t *testing.T) {
 		t.Fatal("unlinked source entry was lost", entry, err)
 	}
 
-	empty := acquireRealized(t, s, movementReport("CashTransactions", ""))
-	result, err = s.ObservationList(t.Context(), "artifact", empty, query)
-	if err != nil || result.Total != 0 || len(result.Items) != 0 {
-		t.Fatal("empty report was not readable", result, err)
+	reg, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	ctx := t.Context()
+	empty := retainRealizedReport(t, s, "synthetic", movementReport("CashTransactions", ""))
+	checkEmpty := func(want application.ReportProcessing) {
+		t.Helper()
+
+		result, err := s.ObservationList(ctx, "artifact", empty, query)
+		if err != nil || result.Total != 0 || len(result.Items) != 0 || result.Processing != want {
+			t.Fatal("unexpected empty report state", result, "want", want, err)
+		}
+	}
+
+	checkEmpty(application.ReportProcessingUnavailable)
+
+	s.registrations = []provider.Registration{reg}
+
+	checkEmpty(application.ReportProcessingPending)
+
+	if err = s.ProcessingFailure(ctx, empty, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	checkEmpty(application.ReportProcessingFailed)
+
+	if err = s.Process(ctx, empty, ibkrflex.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	checkEmpty(application.ReportProcessingComplete)
 }
 
 func TestWarehouseSizeReadsOwnedFileWithoutPublication(t *testing.T) {

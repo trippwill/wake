@@ -201,13 +201,13 @@ func reportReceiptURL(report application.ReportEntry) string {
 	return reportURL(report.Artifact) + "?receipt=" + url.QueryEscape(report.Receipt)
 }
 
-func reportEmptyMessage(info application.EvidenceContext) string {
-	switch {
-	case info.Processed:
+func reportEmptyMessage(processing application.ReportProcessing) string {
+	switch processing {
+	case application.ReportProcessingComplete:
 		return "No processed activity entries in this report."
-	case info.ProcessingFailed:
+	case application.ReportProcessingFailed:
 		return "Processing failed. The original report is available."
-	case info.CanProcess:
+	case application.ReportProcessingPending:
 		return "Awaiting processing. The original report is available."
 	default:
 		return "The original report is available. Processing is unavailable for this source."

@@ -246,12 +246,6 @@ document.querySelector('[data-return]').getAttribute('href')==='/reports'`,
 
 func TestBrowserReportGridEmptyStates(t *testing.T) {
 	f := newAdminBrowserFixture(t)
-	placeholderIs := func(message string) string {
-		return fmt.Sprintf(
-			`document.querySelector('#observations-grid .tabulator-placeholder')?.textContent.trim()===%q && document.querySelectorAll('#observations-grid .tabulator-row').length===0`,
-			message,
-		)
-	}
 
 	for _, report := range []struct{ id, message string }{
 		{"synthetic-pending", "Awaiting processing. The original report is available."},
@@ -260,7 +254,7 @@ func TestBrowserReportGridEmptyStates(t *testing.T) {
 		f.check(
 			testbrowser.NewDocument(chromedp.Navigate(f.origin+"/evidence/"+report.id)),
 			chromedp.WaitVisible(chromedp.CSS("#observations-grid .tabulator-placeholder")),
-			chromedp.Poll[chromedp.Void](placeholderIs(report.message)),
+			chromedp.Poll[chromedp.Void](reportGridPlaceholderIs(report.message)),
 		)
 	}
 
@@ -273,10 +267,60 @@ func TestBrowserReportGridEmptyStates(t *testing.T) {
 		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
 		chromedp.WaitVisible(chromedp.CSS("#observations-grid .tabulator-placeholder")),
 		chromedp.Poll[chromedp.Void](
-			placeholderIs("No matching report entries.")+
+			reportGridPlaceholderIs("No matching report entries.")+
 				` && document.querySelector('#observations-grid [data-grid-status]').textContent==='0 of 75 results'`,
 		),
 	)
+}
+
+func reportGridPlaceholderIs(message string) string {
+	return fmt.Sprintf(
+		`document.querySelector('#observations-grid .tabulator-placeholder')?.textContent.trim()===%q && document.querySelectorAll('#observations-grid .tabulator-row').length===0`,
+		message,
+	)
+}
+
+func TestBrowserReportGridRefreshesProcessingState(t *testing.T) {
+	const (
+		search     = "#observation-search"
+		refresh    = "#observations-grid [data-grid-refresh]"
+		pending    = "Awaiting processing. The original report is available."
+		draftValue = "Unsubmitted report search"
+	)
+
+	f := newAdminBrowserFixture(t)
+	for _, outcome := range []struct {
+		processing application.ReportProcessing
+		message    string
+	}{
+		{application.ReportProcessingComplete, "No processed activity entries in this report."},
+		{application.ReportProcessingFailed, "Processing failed. The original report is available."},
+	} {
+		f.reportProcessing.Store(new(application.ReportProcessingPending))
+		f.check(
+			testbrowser.NewDocument(chromedp.Navigate(f.origin+"/evidence/synthetic-pending")),
+			chromedp.Poll[chromedp.Void](reportGridPlaceholderIs(pending)),
+			chromedp.SetValue(chromedp.CSS(search), draftValue),
+			chromedp.Focus(chromedp.CSS(search)),
+		)
+
+		f.reportProcessing.Store(new(outcome.processing))
+		f.check(
+			chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new Event('sse:refresh'))`),
+			chromedp.WaitVisible(chromedp.CSS(refresh)),
+		)
+		f.assert(reportGridPlaceholderIs(pending)+
+			` && document.activeElement.id==='observation-search' && document.activeElement.value===`+strconv.Quote(draftValue),
+			"Polling replaced the displayed report state or interrupted an unsubmitted search",
+		)
+
+		f.check(
+			chromedp.Focus(chromedp.CSS(refresh)),
+			chromedp.KeyEvent(kb.Enter),
+			chromedp.Poll[chromedp.Void](reportGridPlaceholderIs(outcome.message)+
+				` && document.querySelector('[data-grid-refresh]').hidden && document.activeElement.matches('.tabulator-col')`),
+		)
+	}
 }
 
 func TestBrowserReportEntryHeaderDoesNotOfferLocatorSort(t *testing.T) {
