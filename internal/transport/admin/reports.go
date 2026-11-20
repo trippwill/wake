@@ -6,6 +6,7 @@ package admin
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -164,20 +165,20 @@ func overviewVerdict(view overviewView, issues []reviewItem) overviewPriority {
 func overviewIssues(view overviewView) []reviewItem {
 	issues := reportAndReferenceIssues(view.sourceView)
 	for _, report := range view.Reports {
-		if report.CanNormalize && !report.Complete && report.Failure != "" {
-			href := connectionURL(report.ConnectionID, "reports")
-			for _, item := range issues {
-				if item.Href == href {
-					return issues
-				}
-			}
-
-			return append(issues, reviewItem{
-				Label:  "Processing · " + report.ConnectionName,
-				Reason: "A recent report failed processing.",
-				Href:   href,
-			})
+		if !report.CanNormalize || report.Complete || report.Failure == "" {
+			continue
 		}
+
+		href := connectionURL(report.ConnectionID, "reports")
+		if slices.ContainsFunc(issues, func(item reviewItem) bool { return item.Href == href }) {
+			continue
+		}
+
+		issues = append(issues, reviewItem{
+			Label:  "Processing · " + report.ConnectionName,
+			Reason: "A recent report failed processing.",
+			Href:   href,
+		})
 	}
 
 	return issues

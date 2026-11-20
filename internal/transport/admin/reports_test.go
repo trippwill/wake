@@ -128,14 +128,20 @@ func TestOverviewPrioritizesActionAndKeepsReportContext(t *testing.T) {
 	}
 }
 
-func TestOverviewDoesNotDuplicateFailuresFromTheSameSource(t *testing.T) {
-	failed := application.ReportEntry{
-		ProcessingStatus: application.ProcessingStatus{Failure: "Synthetic failure"},
-		ConnectionID:     "source",
-		ConnectionName:   "Synthetic source",
-		CanNormalize:     true,
+func TestOverviewListsEachFailedSourceOnce(t *testing.T) {
+	failed := func(id, name string) application.ReportEntry {
+		return application.ReportEntry{
+			ProcessingStatus: application.ProcessingStatus{Failure: "Synthetic failure"},
+			ConnectionID:     id,
+			ConnectionName:   name,
+			CanNormalize:     true,
+		}
 	}
-	view := overviewView{Reports: []application.ReportEntry{failed}}
+	first := failed("source", "Synthetic source")
+	second := failed("outside-one", "First source outside Overview")
+	third := failed("outside-two", "Second source outside Overview")
+	view := overviewView{Reports: []application.ReportEntry{first, first, second, second, third}}
+	view.MoreConnections = true
 
 	for _, withSourceIssue := range []bool{false, true} {
 		if withSourceIssue {
@@ -143,15 +149,21 @@ func TestOverviewDoesNotDuplicateFailuresFromTheSameSource(t *testing.T) {
 				{
 					ID:         "source",
 					Name:       "Synthetic source",
-					Processing: []application.ProcessingStatus{failed.ProcessingStatus},
+					Processing: []application.ProcessingStatus{first.ProcessingStatus},
 				},
 			}
 		}
 
 		got := overviewIssues(view)
-		if len(got) != 1 || got[0].Href != "/connections/source?view=reports" ||
-			got[0].Reason != "A recent report failed processing." {
+		if len(got) != 3 {
 			t.Fatalf("with source issue %t, got %v", withSourceIssue, got)
+		}
+
+		for i, id := range []string{"source", "outside-one", "outside-two"} {
+			if got[i].Href != connectionURL(id, "reports") ||
+				got[i].Reason != "A recent report failed processing." {
+				t.Fatalf("with source issue %t, got %v at position %d", withSourceIssue, got[i], i)
+			}
 		}
 	}
 }
