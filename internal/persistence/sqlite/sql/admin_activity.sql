@@ -124,7 +124,7 @@ WITH selected_kind(kind) AS MATERIALIZED (VALUES (?2)), ordering AS (
 SELECT (SELECT count(*) FROM published_resources WHERE kind='activity'), (SELECT count(*) FROM matching),
        p.snapshot,coalesce(e.status,''),coalesce(e.review_reasons,0),coalesce(e.selection_authority,''),
        coalesce(nullif(i.name,''),i.ticker,''),coalesce(display.ticker,''),coalesce(i.reference_status,''),
-       coalesce(i.selection_authority,'automatic'),coalesce(account.name,'')
+       coalesce(i.selection_authority,'automatic'),coalesce(account.name,''),coalesce(account.provider,'')
 FROM (SELECT 1) counts
 LEFT JOIN page ON true
 LEFT JOIN published_resources p ON p.kind='activity' AND p.id=page.id

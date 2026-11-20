@@ -61,7 +61,7 @@ func PasskeyOriginHelp(eligible bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"wake-help\">For passkeys, open Wake at an allowed HTTPS address or a configured localhost address. When using an SSH tunnel, use the configured localhost URL with the forwarded port.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<p class=\"wake-help\">Use an allowed HTTPS address or a configured localhost address for passkeys. For an SSH tunnel, open the configured localhost URL on the forwarded port.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -87,43 +87,54 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"wake-card\" data-browser-access><h2>Browser access</h2><div class=\"wake-access-section\"><h3>Password</h3>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<section class=\"wake-card\" data-browser-access><h2>Browser access</h2><section class=\"wake-access-section\" aria-labelledby=\"access-password\"><div class=\"wake-card-heading\"><h3 id=\"access-password\">Password sign-in</h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.Password {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p>Enabled</p><div class=\"wake-actions\"><a href=\"")
+			templ_7745c5c3_Err = StateBadge("Enabled").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = StateBadge("Disabled").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if view.Password {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"wake-actions\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templruntime.NewAttributeExpression(passwordPath).ResolveURL(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 26, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 32, Col: 27}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\">Change password</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\">Change password</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if view.CanAssert {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<button class=\"btn\" id=\"password-passkey\" type=\"button\" data-passkey-open=\"set-password\" data-passkey-required hidden>Change password with a passkey</button> <button class=\"btn\" id=\"password-disable\" type=\"button\" data-passkey-open=\"disable\" data-passkey-required hidden>Disable password sign-in</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<button class=\"btn\" id=\"password-passkey\" type=\"button\" data-passkey-open=\"set-password\" data-passkey-required hidden>Change password with a passkey</button> <button class=\"btn\" id=\"password-disable\" type=\"button\" data-passkey-open=\"disable\" data-passkey-required hidden>Disable password sign-in</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<p>Disabled</p>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			if view.CanAssert {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<button class=\"btn\" id=\"password-passkey\" type=\"button\" data-passkey-open=\"set-password\" data-passkey-required hidden>Set password</button>")
 				if templ_7745c5c3_Err != nil {
@@ -131,7 +142,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"wake-access-section\"><h3>Passkeys</h3>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section class=\"wake-access-section\" aria-labelledby=\"access-passkeys\"><h3 id=\"access-passkeys\">Passkeys</h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -157,7 +168,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 54, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 59, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -170,7 +181,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(key.RPID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 55, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 60, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -198,7 +209,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templruntime.NewAttributeExpression("Rename " + name).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 62, Col: 72}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 67, Col: 72}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 					if templ_7745c5c3_Err != nil {
@@ -211,7 +222,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templruntime.NewAttributeExpression(key.ID).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 62, Col: 130}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 67, Col: 130}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 					if templ_7745c5c3_Err != nil {
@@ -224,7 +235,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templruntime.NewAttributeExpression(key.Label).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 62, Col: 163}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 67, Col: 163}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 					if templ_7745c5c3_Err != nil {
@@ -252,7 +263,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 						var templ_7745c5c3_Var10 string
 						templ_7745c5c3_Var10, templ_7745c5c3_Err = templruntime.NewAttributeExpression("Remove " + name).Resolve(ctx)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 64, Col: 73}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 69, Col: 73}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 						if templ_7745c5c3_Err != nil {
@@ -265,7 +276,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 						var templ_7745c5c3_Var11 string
 						templ_7745c5c3_Var11, templ_7745c5c3_Err = templruntime.NewAttributeExpression(key.ID).Resolve(ctx)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 64, Col: 131}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 69, Col: 131}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 						if templ_7745c5c3_Err != nil {
@@ -278,7 +289,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 						var templ_7745c5c3_Var12 string
 						templ_7745c5c3_Var12, templ_7745c5c3_Err = templruntime.NewAttributeExpression(key.Label).Resolve(ctx)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 64, Col: 164}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 69, Col: 164}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 						if templ_7745c5c3_Err != nil {
@@ -291,7 +302,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 						var templ_7745c5c3_Var13 string
 						templ_7745c5c3_Var13, templ_7745c5c3_Err = templruntime.NewAttributeExpression(name).Resolve(ctx)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 64, Col: 191}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 69, Col: 191}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 						if templ_7745c5c3_Err != nil {
@@ -343,7 +354,7 @@ func BrowserAccess(csrf string, view BrowserAccessView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div><details><summary>Recover browser access</summary><p class=\"wake-help\">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p></details>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</section><details class=\"wake-access-section\"><summary>Recover browser access</summary><p class=\"wake-help\">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p></details>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -383,7 +394,7 @@ func BrowserAccessDialog(csrf string, view BrowserAccessView) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templruntime.NewAttributeExpression(csrf).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 90, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/passkeys.templ`, Line: 95, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 		if templ_7745c5c3_Err != nil {

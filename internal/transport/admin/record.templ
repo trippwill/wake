@@ -1,0 +1,30 @@
+// SPDX-FileCopyrightText: 2026 trippwill
+// SPDX-License-Identifier: MPL-2.0
+
+package admin
+
+import "net/url"
+
+templ RecordReading(summary, terms, sources string) {
+	<div class="wake-record-reading">
+		<nav class="wake-record-index" aria-label="In this record">
+			<h2>In this record</h2>
+			<a href="#accepted-activity">{ summary }</a>
+			if terms!="" {
+				<a href="#record-terms">{ terms }</a>
+			}
+			<a href="#record-sources">{ sources }</a>
+			@AcceptedDetailScope()
+		</nav>
+		<div class="wake-record-body">
+			{ children... }
+		</div>
+	</div>
+}
+
+templ TradeReportAppearances(id string) {
+	<section class="wake-card">
+		<h2 id="record-sources" tabindex="-1">Report appearances</h2>
+		@GridView("observations", "/grids/observations?subject=activity-appearances&id="+url.QueryEscape(id), "Report appearances", "appearances")
+	</section>
+}

@@ -95,6 +95,7 @@ ON CONFLICT(connection_id,stream,operation) DO UPDATE SET revision=excluded.revi
 INSERT INTO sync.work(connection_id,stream,operation,next)
 SELECT prior.connection_id,prior.stream,prior.operation,CASE WHEN json_extract(CAST(prior.state AS TEXT), '$.not_before')>CAST(sqlc.arg(now) AS TEXT)
               THEN json_extract(CAST(prior.state AS TEXT), '$.not_before') ELSE CAST(sqlc.arg(now) AS TEXT) END FROM sync.work AS prior
+-- Keep RefreshablePollSources aligned with these deadline and scheduling conditions.
 WHERE prior.operation='acquire'
   AND (SELECT paused FROM sync.profile WHERE singleton=1)=0
   AND prior.failure='' AND prior.failure_code=''
@@ -105,6 +106,21 @@ WHERE prior.operation='acquire'
              AND scheduled.stream=prior.stream AND scheduled.operation=prior.operation AND enabled=1)
   AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=prior.connection_id)
 ON CONFLICT(connection_id,stream,operation) DO UPDATE SET next=excluded.next;
+-- name: RefreshablePollSources :many
+SELECT c.provider, CAST(json_group_array(a.key) FILTER (WHERE a.key IS NOT NULL) AS TEXT) AS credential_keys
+FROM sync.configurations c
+LEFT JOIN access.credentials a ON a.connection_id=c.id
+WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=c.id)
+  AND EXISTS(
+      SELECT 1 FROM sync.work w JOIN sync.scheduled USING(connection_id,stream,operation)
+      WHERE w.connection_id=c.id AND w.operation='acquire' AND enabled=1
+        AND w.failure='' AND w.failure_code=''
+        AND julianday(w.next)>julianday(sqlc.arg(now))
+        AND julianday(w.next)>CASE WHEN w.state_version=sqlc.arg(poll_version)
+                            THEN julianday(json_extract(CAST(w.state AS TEXT), '$.not_before')) END
+  )
+GROUP BY c.id,c.provider;
 -- name: QueuedPoll :one
 SELECT work.state FROM sync.work JOIN sync.scheduled USING(connection_id,stream,operation)
 WHERE work.connection_id=? AND work.stream=? AND work.operation='acquire' AND work.state_version=?
@@ -140,12 +156,14 @@ SELECT work.stream, work.operation, work.observed, work.observed_completed, work
  coalesce(scheduled.enabled,0)=1 AS scheduled,
  -- Match PendingWork's terminal failures.
  CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ CAST(work.failure_code='unauthorized' AS INTEGER) AS access_blocked,
  -- Find the newest receipt per retained body through receipts_body before comparing bodies.
  CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
   SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
   FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
  )), '') AS TEXT) AS last_retrieved
-FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream;
+FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation)
+WHERE work.connection_id=? ORDER BY work.operation,work.stream;
 -- name: DisableDiscovery :exec
 INSERT INTO sync.scheduled(connection_id,stream,operation,enabled)
 SELECT prior.connection_id,prior.stream,prior.operation,0 FROM sync.scheduled AS prior
@@ -436,6 +454,10 @@ SELECT EXISTS(SELECT 1 FROM processing_receipts receipt WHERE receipt.artifact_i
 
 -- name: RecentAcquisitionReceipts :many
 SELECT * FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid DESC LIMIT 50;
+-- name: AcquisitionReceiptByID :one
+SELECT sqlc.embed(acquisition_receipts),artifacts.hash AS retained_hash
+FROM acquisition_receipts JOIN artifacts ON artifacts.id=acquisition_receipts.artifact_id
+WHERE acquisition_receipts.id=sqlc.arg(id) AND acquisition_receipts.artifact_id=sqlc.arg(artifact_id);
 -- name: CountAcquisitionReceipts :one
 SELECT count(*) FROM acquisition_receipts WHERE artifact_id=?;
 

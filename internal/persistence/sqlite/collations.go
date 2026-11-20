@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/decimal"
 	modernsqlite "modernc.org/sqlite"
 )
@@ -62,6 +63,19 @@ func registerCollations() error {
 				}
 
 				return strings.ToLower(value), nil
+			})
+		if collationError != nil {
+			return
+		}
+
+		collationError = modernsqlite.RegisterDeterministicScalarFunction("wake_report_title", 1,
+			func(_ *modernsqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+				stream, ok := args[0].(string)
+				if !ok {
+					return nil, nil
+				}
+
+				return application.ReportTitle(stream), nil
 			})
 		if collationError != nil {
 			return

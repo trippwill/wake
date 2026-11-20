@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/source"
 )
 
 type gridCell struct {
@@ -44,6 +46,8 @@ type observationGridRow struct {
 	Location gridCell `json:"location"`
 	Rule     gridCell `json:"rule"`
 	Activity gridCell `json:"activity"`
+	Date     gridCell `json:"date"`
+	Terms    gridCell `json:"terms"`
 }
 type gridPage[T any] struct {
 	Data      []T               `json:"data"`
@@ -162,7 +166,7 @@ func instrumentGrid(data application.InstrumentList) gridPage[instrumentGridRow]
 	return gridResult(rows, data.PageInfo)
 }
 
-func observationGrid(data application.ObservationList) gridPage[observationGridRow] {
+func observationGrid(data application.ObservationList, subject string) gridPage[observationGridRow] {
 	rows := make([]observationGridRow, 0, len(data.Items))
 	for _, row := range data.Items {
 		activity := gridCell{Text: "Not linked"}
@@ -171,25 +175,80 @@ func observationGrid(data application.ObservationList) gridPage[observationGridR
 		}
 
 		outcome := gridCell{Text: observationStatus(row.Outcome), Tone: observationBadgeKind(row.Outcome)}
+		if row.EarlierAppearance {
+			outcome.Note = "Same entry appeared in an earlier report"
+		}
+
+		report := gridCell{Text: row.Retrieved, Href: "/evidence/" + row.Artifact}
+		location := gridCell{Text: row.Location}
+
+		var date, terms gridCell
+		if !row.Reported.IsZero() {
+			entry := sourceEntryURL(observationLocation(row), "", nil)
+			report.Href = entry
+			location = gridCell{Text: sourceObservationTitle(row.Reported), Note: row.Location}
+			date, terms = observationTerms(row.Reported)
+
+			switch subject {
+			case "artifact":
+				location.Href = entry
+				f := row.Reported.Fields()
+				location.Note = strings.Join(brokerEventLabels(f.Event, f.EventAliases), "\n")
+			case "activity-appearances":
+				if row.Stream != "" {
+					report.Text = describe(row.SourceName, application.ReportTitle(row.Stream))
+					report.Note = row.Retrieved
+				}
+			default:
+				if terms.Text != "" {
+					location.Text = describe(location.Text, terms.Text)
+				}
+			}
+		}
+
+		if subject == "artifact" && location.Href == "" {
+			location.Href = sourceEntryURL(observationLocation(row), "", nil)
+		}
 
 		rows = append(
 			rows,
 			observationGridRow{
-				ID: observationID(row),
-				Report: gridCell{
-					Text: row.Retrieved,
-					Note: row.Artifact,
-					Href: "/evidence/" + row.Artifact,
-				},
+				ID:       observationID(row),
+				Report:   report,
 				Outcome:  outcome,
-				Location: gridCell{Text: row.Location},
+				Location: location,
 				Rule:     gridCell{Text: row.Rule + " · " + row.Version},
 				Activity: activity,
+				Date:     date,
+				Terms:    terms,
 			},
 		)
 	}
 
 	return gridResult(rows, data.PageInfo)
+}
+
+func observationTerms(v source.ActivityObservation) (gridCell, gridCell) {
+	var date gridCell
+
+	var terms []string
+	for _, fact := range sourceObservationFacts(v) {
+		if fact.Value == unknownValue {
+			continue
+		}
+
+		switch fact.Key {
+		case source.FieldDate:
+			date.Text = fact.Value
+		case source.FieldQuantity, source.FieldPrice, source.FieldCashAmount, source.FieldTransferPrice,
+			source.FieldRate:
+			terms = append(terms, fact.Value)
+		case source.FieldGrossAmount:
+			terms = append(terms, fact.Label+" "+fact.Value)
+		}
+	}
+
+	return date, gridCell{Text: strings.Join(terms, " · ")}
 }
 
 func registerGridRoutes(
@@ -230,13 +289,14 @@ func registerGridRoutes(
 				data, err := workflow.InstrumentList(r.Context(), query)
 				gridJSON(w, instrumentGrid(data), err)
 			case "observations":
+				subject := r.URL.Query().Get("subject")
 				data, err := workflow.ObservationList(
 					r.Context(),
-					r.URL.Query().Get("subject"),
+					subject,
 					r.URL.Query().Get("id"),
 					query,
 				)
-				gridJSON(w, observationGrid(data), err)
+				gridJSON(w, observationGrid(data, subject), err)
 			}
 		})
 	}

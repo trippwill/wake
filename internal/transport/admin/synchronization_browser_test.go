@@ -79,11 +79,14 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			current.LastRetrieved = last.Add(time.Minute)
 		}
 
-		if r.URL.Query().Get("refresh") == "requested" {
+		requested := r.URL.Query().Get("refresh") == "requested"
+		if requested {
 			current.Next = next.Add(-time.Minute)
 		}
 
-		serve(w, r, newView(current, confirmations))
+		view := newView(current, confirmations)
+		view.CanRequestSync = !requested
+		serve(w, r, view)
 	})
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.FormValue("csrf") != "synthetic-csrf" {
@@ -105,6 +108,11 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		access := newView(activity)
 		access.Connections[0].MissingAccess = true
 		serve(w, r, access)
+	})
+	mux.HandleFunc("GET /expired", func(w http.ResponseWriter, r *http.Request) {
+		expired := blocked
+		expired.AccessBlocked = true
+		serve(w, r, newView(expired))
 	})
 	mux.HandleFunc("GET /idle", func(w http.ResponseWriter, r *http.Request) {
 		serve(w, r, newView())
@@ -176,8 +184,7 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 							const values=row.querySelectorAll('time');
 							return row.querySelector('dd').textContent.includes('Evidence retained')&&
 								row.querySelector('dd').textContent.includes('Last successful retrieval')&&
-								row.querySelector('dd').textContent.includes('Next event')&&
-								row.querySelector('dd').textContent.includes('Attempt')&&
+								row.querySelector('dd').textContent.includes('Next attempt')&&
 								values.length===2&&values[0].textContent.endsWith('UTC')&&
 								values[1].dateTime===`+strconv.Quote(next.Format(time.RFC3339Nano))+`&&label.right<=status.left&&
 								(index===0||rows[index-1].getBoundingClientRect().bottom<=row.getBoundingClientRect().top);
@@ -209,7 +216,8 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 		ctx,
 		testbrowser.NewDocument(chromedp.Click(chromedp.CSS(`form[action="/refresh"] button`))),
 		chromedp.Poll[chromedp.Void](
-			`document.querySelector('#synchronization-title').closest('section').textContent.includes('Refresh requested') &&
+			`document.querySelector('#synchronization-title').closest('section').textContent.includes('Sync requested') &&
+			!document.querySelector('form[action="/refresh"]') &&
 			document.querySelectorAll('.wake-sync-work time')[1].dateTime===`+strconv.Quote(
 				next.Add(-time.Minute).Format(time.RFC3339Nano),
 			),
@@ -239,12 +247,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 				testbrowser.Evaluate(`(()=>{
      const rows=Array.from(document.querySelectorAll('.wake-sync-work > div'));
      return document.documentElement.scrollWidth<=innerWidth+1&&rows.length===3&&
-      rows[0].querySelector('dt').textContent.trim()==='Activity'&&rows[0].querySelector('dd').textContent.includes('failed')&&
+      rows[0].querySelector('dt').textContent.trim()==='Activity'&&rows[0].querySelector('dd [data-state="error"]')&&
       rows[0].querySelector('dd').textContent.includes('Source input unavailable')&&
+      rows[0].querySelector('dd a').getAttribute('href')==='/connections/source?view=status#workflow-progress'&&
       rows[0].textContent.includes('Operator action required')&&rows[0].querySelectorAll('time').length===1&&
-      rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].textContent.includes('Retry ·')&&
+      rows[1].querySelector('dt').textContent.trim()==='Confirmations'&&rows[1].textContent.includes('Next retry')&&
       rows[1].querySelectorAll('time').length===2&&rows[2].querySelectorAll('time').length===0&&
-      rows[2].textContent.includes('No successful retrieval yet')&&rows[2].textContent.includes('Eligible now');
+      rows[2].textContent.includes('None yet')&&rows[2].textContent.includes('Eligible now')&&!document.querySelector('form[action="/refresh"]');
     })()`, &valid),
 			); err != nil ||
 				!valid {
@@ -258,12 +267,13 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		path, state string
-		times       int
+		path, state, repair string
+		times               int
 	}{
-		{"/paused", "Paused", 1},
-		{"/access", "Access review required", 1},
-		{"/idle", "No automatic work scheduled", 0},
+		{"/paused", "Paused", "/connections/recovery", 1},
+		{"/access", "Access review required", "/connections/source?view=access", 1},
+		{"/expired", "Operator action required", "/connections/source?view=access", 1},
+		{"/idle", "No automatic work scheduled", "", 0},
 	} {
 		if err = chromedp.Do(
 			ctx,
@@ -271,7 +281,9 @@ func TestBrowserSynchronizationSummary(t *testing.T) {
 			chromedp.Poll[chromedp.Void](`(()=>{
 				const card=document.querySelector('section[aria-labelledby="synchronization-title"]');
 				const last=card.querySelectorAll('time');
-				return card.textContent.includes(`+strconv.Quote(tc.state)+`) &&
+				const repair=card.querySelector('.wake-sync-blocker a, .wake-sync-work dd a');
+				return !card.querySelector('form[action="/refresh"]') && card.textContent.includes(`+strconv.Quote(tc.state)+`) &&
+					(repair?.getAttribute('href')||'')===`+strconv.Quote(tc.repair)+` &&
 					last.length===`+strconv.Itoa(tc.times)+` &&
 					(last.length===0 || last[0].dateTime===`+strconv.Quote(last.Format(time.RFC3339Nano))+`);
 			})()`),

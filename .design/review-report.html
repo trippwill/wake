@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wake admin redesign contest</title><style>
+:root{color-scheme:light;--ink:#182c27;--line:#b8c9c0;--paper:#f9faf6;--accent:#145640}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 system-ui,sans-serif}
+main{max-width:1020px;margin:auto;padding:clamp(1.1rem,5vw,4.3rem)}
+h1,h2{font-family:Georgia,serif;line-height:1.13;font-weight:normal;letter-spacing:-.025em;text-wrap:balance}
+h1{font-size:clamp(2.35rem,6vw,4.15rem);margin:0 0 .65rem}
+h2{font-size:clamp(1.8rem,4vw,2.65rem);padding-top:1.2rem;margin:2.7rem 0 1rem;border-top:1px solid var(--line)}
+.meta{font-size:.88rem;color:#51645c;margin:.1rem 0 1.6rem}
+.lead{font-size:1.22rem;line-height:1.5}
+p,li{max-width:76ch} p:has(img){max-width:none}
+nav{display:flex;gap:.45rem 1.4rem;flex-wrap:wrap;font-size:.94rem}
+a{color:var(--accent);text-underline-offset:.18em}
+a:focus-visible,div:focus-visible{outline:3px solid #9c5426;outline-offset:3px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;text-align:left;font-size:.94rem;line-height:1.45}
+th,td{padding:.72rem .6rem;vertical-align:top;border-bottom:1px solid var(--line)}
+th{color:#294b3c;background:#eaf0e9}td:first-child{font-weight:bold}
+td:nth-child(2){width:22%}td:nth-child(3){width:32%}
+li{margin:.7rem 0}code{font: .89em ui-monospace,monospace;overflow-wrap:anywhere}
+img{display:block;max-width:100%;height:auto;border:1px solid var(--line);margin:1.5rem 0}
+@media(max-width:620px){body{font-size:16px}main{padding:1.2rem}table,tbody,tr,td{display:block}thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}tr{border-top:1px solid var(--line);padding:.7rem 0}td,td:nth-child(2),td:nth-child(3){width:auto;border:0;padding:.2rem 0}td:first-child{float:left;margin-right:.45em}td:nth-child(n+3)::before{content:attr(data-label);display:block;margin:.45rem 0 .12rem;font-size:.83rem;font-weight:650;color:#405d4e}ol,ul{padding-left:1.5rem}h2{margin-top:2rem}}
+@media print{body{background:white;color:black;font-size:11pt}main{padding:0;max-width:none}nav{display:none}img{max-height:44vh;object-fit:contain;object-position:left}h2{break-after:avoid}.table-wrap{overflow:visible}table{min-width:0}}
+</style></head><body><main><h1>Wake admin redesign contest</h1>
+<p class="meta">20 November 2026 · Design decision</p>
+<p class="lead"><strong>Choose Entry 1, Source Reader, as the foundation.</strong> It gives Wake its clearest answer to
+“Where did this number come from?” A reader can follow an exact price to the broker’s entry,
+see what Wake accepted, and return to the same place. Borrow Entry 2’s compact Overview
+and trade details, then use Entry 3’s language and per-stream status for synchronization.</p><nav aria-label="Report sections"><a href="#section-1">Placements</a><a href="#section-4">Taste critique</a><a href="#section-5">Recommendations</a><a href="#section-6">Evidence</a></nav>
+<h2 id="section-1">How the entries placed</h2>
+<div aria-label="Contest placements" class="table-wrap" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Place</th>
+<th scope="col">Entry and assignment</th>
+<th scope="col">Where it leads</th>
+<th scope="col">What costs it ground</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Place">1</td>
+<td data-label="Entry and assignment"><strong>Source Reader</strong> · <code>9e09</code> · experimental redesign</td>
+<td data-label="Where it leads">Reading a report, distinguishing similar fills, and explaining a corrected price.</td>
+<td data-label="What costs it ground">Sync status sits far down Overview. Report search misses visible report names.</td>
+</tr>
+<tr>
+<td data-label="Place">2</td>
+<td data-label="Entry and assignment"><strong>Financial statement</strong> · <code>b7bb</code> · critique-led redesign</td>
+<td data-label="Where it leads">Daily Overview and trade details. Two confirmations lead to one Treasury bill, with each report’s effect visible on the trade.</td>
+<td data-label="What costs it ground">On a phone, the report table separates the trade from its terms and effect. The report row omits the bill’s price basis.</td>
+</tr>
+<tr>
+<td data-label="Place">3</td>
+<td data-label="Entry and assignment"><strong>Constrained polish</strong> · <code>f5eb</code> · refine the existing UI</td>
+<td data-label="Where it leads">Seeing which stream last succeeded, what happens next, and where to repair access. It keeps Wake’s familiar navigation and styling.</td>
+<td data-label="What costs it ground">Repeated “Open activity” links make identifying a particular fill difficult. Browser Back lost keyboard focus in the shared test.</td>
+</tr>
+</tbody>
+</table></div>
+<p>I ranked the entries for a financially fluent operator. Explaining how a synced report became a
+current record carried the most weight, followed by recognizing a problem on arrival and completing
+the investigation on a phone or keyboard. Entry 3 met its narrower assignment well. It would be my
+choice for a sync-only release.</p>
+<h2 id="section-2">The same account, three opening screens</h2>
+<p>All three builds had one MSFT disagreement, a confirmation received on 3 November, and July
+reporting dates. Source Reader immediately names the affected trade and separates the latest
+receipt from the date of the positions. Its Synchronization heading starts <strong>1,199 px</strong> down
+the desktop page. Entry 2 puts the review and latest report side by side, with Synchronization
+at <strong>471 px</strong>. Entry 3 puts Synchronization at <strong>147 px</strong> and shows the last retrieval for
+each stream. At 390 px wide, its Financial review heading begins <strong>766 px</strong> down an 844 px screen.</p>
+<p><a aria-label="Open full-size image. Three matched mobile Overviews, showing the review, latest report and sync priorities" href="evidence/matched-overviews.png"><img alt="Three matched mobile Overviews, showing the review, latest report and sync priorities" src="evidence/matched-overviews.png"/></a></p>
+<h2 id="section-3">The same fill, three ways to find it</h2>
+<p>The original confirmation contains two MSFT buys at <strong>400.123456789 USD</strong>. I opened the first,
+broker trade <strong>900000001</strong>, from the report in each build. All three records preserved the full
+price and the quantity <strong>0.125000000000 shares</strong>. The difference was what I could know <em>before</em>
+opening the record, and what happened when I went back.</p>
+<ul>
+<li><strong>Source Reader</strong> gave each fill a price and a distinct source ID. I could read the selected
+  broker row beside the neighboring rows, open the record, then follow <strong>View price source</strong>
+  back to the entry. The grid’s “Source ID” is the execution identifier. The broker trade ID
+  appears in the original XML. Naming both would help someone working from a broker statement.</li>
+<li><strong>Financial statement</strong> put the broker trade ID under <strong>Buy MSFT</strong> in the row itself. This was
+  the fastest way to choose between the two buys when I already knew the ID. On the trade,
+  <strong>Source reports</strong> explains what each appearance contributed. Back restored the record link.</li>
+<li><strong>Constrained polish</strong> showed “Open activity”, the XML location, and a rule version. To select
+  the same fill I had to know it was <code>TradeConfirm[1]</code>. Back reopened the report with focus on
+  the document body at both tested widths. Give the link a trade name and ID, and restore focus
+  to that link when the reader returns.</li>
+</ul>
+<p>The mobile captures show the point immediately before opening the record. Entry 1 has an
+intermediate reading view. Entries 2 and 3 open the record directly from the table.</p>
+<p><a aria-label="Open full-size image. Three mobile views immediately before opening the first MSFT fill" href="evidence/matched-fill.png"><img alt="Three mobile views immediately before opening the first MSFT fill" src="evidence/matched-fill.png"/></a></p>
+<h2 id="section-4">Taste visual critique</h2>
+<p><strong>Source Reader wins on visuals, followed by Financial statement and Constrained polish.</strong>
+Entry 2 has the best everyday Overview. I used
+Taste’s redesign criteria for typography, color, spacing, visual hierarchy, and continuity with the
+existing brand. For this interface the test is whether the composition helps someone read exact
+financial evidence several times a day.</p>
+<p><strong>1 · Source Reader.</strong> The evergreen masthead leaves the width of a report available for reading.
+STIX Two Text gives the two prices equal typographic weight, and the sage background and
+“Accepted price” label distinguish Wake’s decision. On a phone the prices stack in reading order
+with their full precision intact. The large tinted assessment at the top of Overview competes
+with this strength. Give a quiet account a compact status line and reserve the larger treatment
+for a decision with an immediate action. Keep the paired prices and ruled report pages.</p>
+<p><a aria-label="Open full-size image. Broker price of 450 USD beside the operator-corrected 402.0000 USD and the original entry" href="evidence/reported-and-corrected.png"><img alt="Broker price of 450 USD beside the operator-corrected 402.0000 USD and the original entry" src="evidence/reported-and-corrected.png"/></a></p>
+<p><strong>2 · Financial statement.</strong> The deep-green rail, ivory page, serif headings, and thin rules give
+the desktop trade the rhythm of a statement. Face amount, price per 100, and reported principal
+each have a clear place across a single line. The same restraint works on Overview. On the narrow
+report, however, the first columns consume the screen before the effect on the record appears.
+Use two lines per mobile entry. Put the trade and its ID first, then the exact terms and effect.
+Keep the full table on desktop.</p>
+<p><a aria-label="Open full-size image. One Treasury bill record with face amount, price per 100, principal and two source reports" href="evidence/two-confirmations.png"><img alt="One Treasury bill record with face amount, price per 100, principal and two source reports" src="evidence/two-confirmations.png"/></a></p>
+<p><strong>3 · Constrained polish.</strong> The steel surfaces, copper links, and familiar wordmark preserve the
+incumbent identity. The mixed-stream view makes good use of repeated alignment. An operator can
+compare a failed request, an ordinary retry, and a healthy stream without learning a new layout.
+Overview gives the bordered sync panel and its button most of the visual weight even when all
+streams are idle. Keep its plain labels and alignment, move each repair beside its blocker, and
+let the outstanding decision take the strongest emphasis. Move XML paths and rule versions into
+an expandable row detail.</p>
+<p><a aria-label="Open full-size image. Mixed sync states showing source access failure, scheduled retry and healthy work" href="evidence/stream-status.png"><img alt="Mixed sync states showing source access failure, scheduled retry and healthy work" src="evidence/stream-status.png"/></a></p>
+<h2 id="section-5">What to carry into the next build</h2>
+<ol>
+<li><strong>Start with Entry 1’s report reader.</strong> Keep Reports in primary navigation and preserve the
+   selected report entry, original terms, current value, and return position. Fix report search
+   first. Entering the displayed title “Trade confirmations” returned zero results in the matched
+   build. Keep the two exact-price fills and the saved <strong>450 USD → 402.0000 USD</strong> correction as
+   acceptance cases. Extend paired comparisons to other fields only where Wake can establish
+   which source or decision supplied the value.</li>
+<li><strong>Use Entry 2’s Overview composition and trade summary.</strong> Lead with the affected record and
+   the latest report, then show per-stream status. Keep the summary of both appearances of bill
+   <strong>900000017</strong>. Show <strong>10000 nominal</strong>, <strong>99.1234567 USD per 100</strong>, and <strong>9912.35 USD reported
+   principal</strong> on the report as well as the trade. The submitted report row drops “per 100”.</li>
+<li><strong>Use Entry 3’s sync language and honest source links.</strong> Show last successful retrieval,
+   next attempt or retry, and a nearby repair action. Offer <strong>Request sync</strong> when it can advance
+   work. Keep <strong>Recent reports from this source</strong> on Positions when Wake only knows the
+   connection. Give a report awaiting processing its own message. A zero-row result currently
+   produces “No activity entries in this report”, which can overstate what Wake knows.</li>
+<li><strong>Validate the combined journey before adoption.</strong> Use two like-priced fills, an overlapping
+   report, an unlinked entry, a saved correction, and a source that cannot sync. Check the
+   original terms, the accepted value, and keyboard focus on return at 390 px and 200% zoom.
+   Time report opening and reverse lookup on a large synthetic history. Entry 1 still sends the
+   whole retained report in its closed disclosure, and Entry 2’s reverse lookup scans retained
+   appearances. The small fixtures establish behavior but give no production latency estimate.</li>
+</ol>
+<p>I recommend <strong>GPT-6.2 Sol with high reasoning</strong> for the report-to-record
+integration and <strong>medium reasoning</strong> for bounded layout, wording, and browser verification.</p>
+<h2 id="section-6">Evidence and limits</h2>
+<p>The comparison used the three staged submissions on the same base, <code>37854bc</code>. I built each staged
+tree in isolation and ran the same synthetic acquisition and source-conflict sequence. I used
+Chromium through Playwright at <strong>1360 × 900 light</strong> and <strong>390 × 844 dark</strong>, with reduced motion
+enabled. In all six cases I activated the record link by keyboard, inspected the same MSFT fill,
+and used browser Back. The two comparison figures come from those runs.</p>
+<p>The correction and Treasury bill figures come from the entrants’ synthetic walkthroughs. The
+mixed-sync figure comes from a fresh Chromium fixture run. Focused Go checks passed for Entries 1
+and 2, and focused Chromium checks passed for Entry 3. Entrant logs record full Go and Chromium
+passes for Entries 1 and 2. Entry 3 completed Chromium and focused Go checks, and stopped its
+full Go run before completion. Screen-reader use, operator preference, and performance on large
+histories remain unmeasured.</p>
+<p>Useful source locations in the respective staged worktrees include Entry 1’s
+<code>internal/transport/admin/source_evidence.go</code> and
+<code>internal/persistence/sqlite/sql/admin_queries.sql</code>,
+Entry 2’s <code>internal/transport/admin/grids.go</code> and <code>readmodels.go</code> in the same directory, and
+Entry 3’s <code>internal/transport/admin/workspaces.templ</code>, <code>grids.go</code>, and <code>assets/app.js</code>.</p></main></body></html>

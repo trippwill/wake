@@ -187,6 +187,44 @@ func (q *Queries) Accounts(ctx context.Context) ([]Account, error) {
 	return items, nil
 }
 
+const acquisitionReceiptByID = `-- name: AcquisitionReceiptByID :one
+SELECT acquisition_receipts.sequence, acquisition_receipts.id, acquisition_receipts.artifact_id, acquisition_receipts.operation, acquisition_receipts.retrieved, acquisition_receipts.hash, acquisition_receipts.policy, acquisition_receipts.digest, acquisition_receipts.requested_from, acquisition_receipts.requested_to, acquisition_receipts.reported_from, acquisition_receipts.reported_to, acquisition_receipts.candidate_snapshot,artifacts.hash AS retained_hash
+FROM acquisition_receipts JOIN artifacts ON artifacts.id=acquisition_receipts.artifact_id
+WHERE acquisition_receipts.id=?1 AND acquisition_receipts.artifact_id=?2
+`
+
+type AcquisitionReceiptByIDParams struct {
+	ID         string
+	ArtifactID string
+}
+
+type AcquisitionReceiptByIDRow struct {
+	AcquisitionReceipt AcquisitionReceipt
+	RetainedHash       string
+}
+
+func (q *Queries) AcquisitionReceiptByID(ctx context.Context, arg AcquisitionReceiptByIDParams) (AcquisitionReceiptByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, acquisitionReceiptByID, arg.ID, arg.ArtifactID)
+	var i AcquisitionReceiptByIDRow
+	err := row.Scan(
+		&i.AcquisitionReceipt.Sequence,
+		&i.AcquisitionReceipt.ID,
+		&i.AcquisitionReceipt.ArtifactID,
+		&i.AcquisitionReceipt.Operation,
+		&i.AcquisitionReceipt.Retrieved,
+		&i.AcquisitionReceipt.Hash,
+		&i.AcquisitionReceipt.Policy,
+		&i.AcquisitionReceipt.Digest,
+		&i.AcquisitionReceipt.RequestedFrom,
+		&i.AcquisitionReceipt.RequestedTo,
+		&i.AcquisitionReceipt.ReportedFrom,
+		&i.AcquisitionReceipt.ReportedTo,
+		&i.AcquisitionReceipt.CandidateSnapshot,
+		&i.RetainedHash,
+	)
+	return i, err
+}
+
 const acquisitionReceipts = `-- name: AcquisitionReceipts :many
 SELECT sequence, id, artifact_id, operation, retrieved, hash, policy, digest, requested_from, requested_to, reported_from, reported_to, candidate_snapshot FROM acquisition_receipts WHERE artifact_id=? ORDER BY rowid
 `
@@ -4157,12 +4195,63 @@ type RefreshPollsParams struct {
 	PollVersion string
 }
 
+// Keep RefreshablePollSources aligned with these deadline and scheduling conditions.
 func (q *Queries) RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, refreshPolls, arg.Now, arg.PollVersion)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const refreshablePollSources = `-- name: RefreshablePollSources :many
+SELECT c.provider, CAST(json_group_array(a.key) FILTER (WHERE a.key IS NOT NULL) AS TEXT) AS credential_keys
+FROM sync.configurations c
+LEFT JOIN access.credentials a ON a.connection_id=c.id
+WHERE (SELECT paused FROM sync.profile WHERE singleton=1)=0
+  AND EXISTS(SELECT 1 FROM accounts WHERE accounts.connection_id=c.id)
+  AND EXISTS(
+      SELECT 1 FROM sync.work w JOIN sync.scheduled USING(connection_id,stream,operation)
+      WHERE w.connection_id=c.id AND w.operation='acquire' AND enabled=1
+        AND w.failure='' AND w.failure_code=''
+        AND julianday(w.next)>julianday(?1)
+        AND julianday(w.next)>CASE WHEN w.state_version=?2
+                            THEN julianday(json_extract(CAST(w.state AS TEXT), '$.not_before')) END
+  )
+GROUP BY c.id,c.provider
+`
+
+type RefreshablePollSourcesParams struct {
+	Now         interface{}
+	PollVersion string
+}
+
+type RefreshablePollSourcesRow struct {
+	Provider       string
+	CredentialKeys string
+}
+
+func (q *Queries) RefreshablePollSources(ctx context.Context, arg RefreshablePollSourcesParams) ([]RefreshablePollSourcesRow, error) {
+	rows, err := q.db.QueryContext(ctx, refreshablePollSources, arg.Now, arg.PollVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RefreshablePollSourcesRow
+	for rows.Next() {
+		var i RefreshablePollSourcesRow
+		if err := rows.Scan(&i.Provider, &i.CredentialKeys); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const relatedSourceCorrections = `-- name: RelatedSourceCorrections :many
@@ -5077,12 +5166,14 @@ SELECT work.stream, work.operation, work.observed, work.observed_completed, work
  coalesce(scheduled.enabled,0)=1 AS scheduled,
  -- Match PendingWork's terminal failures.
  CAST(work.failure_code IN ('unauthorized','invalid','unavailable','malformed','limit') AS INTEGER) AS retry_blocked,
+ CAST(work.failure_code='unauthorized' AS INTEGER) AS access_blocked,
  -- Find the newest receipt per retained body through receipts_body before comparing bodies.
  CAST(coalesce((SELECT receipt.retrieved FROM acquisition_receipts receipt WHERE receipt.sequence=(
   SELECT max((SELECT r.sequence FROM acquisition_receipts r WHERE r.artifact_id=a.id AND r.operation=work.operation ORDER BY r.sequence DESC LIMIT 1))
   FROM artifacts a WHERE a.connection_id=work.connection_id AND a.stream=work.stream
  )), '') AS TEXT) AS last_retrieved
-FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation) WHERE work.connection_id=? ORDER BY work.operation,work.stream
+FROM sync.work LEFT JOIN sync.scheduled USING(connection_id,stream,operation)
+WHERE work.connection_id=? ORDER BY work.operation,work.stream
 `
 
 type WorkStatusesRow struct {
@@ -5095,6 +5186,7 @@ type WorkStatusesRow struct {
 	Next              string
 	Scheduled         bool
 	RetryBlocked      int64
+	AccessBlocked     int64
 	LastRetrieved     string
 }
 
@@ -5117,6 +5209,7 @@ func (q *Queries) WorkStatuses(ctx context.Context, connectionID string) ([]Work
 			&i.Next,
 			&i.Scheduled,
 			&i.RetryBlocked,
+			&i.AccessBlocked,
 			&i.LastRetrieved,
 		); err != nil {
 			return nil, err

@@ -200,10 +200,20 @@ type (
 		AccountName, InstrumentName, InstrumentTicker string
 		Realized                                      *PublishedRealizedPnL
 		FieldDetails                                  []PublishedFieldDetail
+		PriceSources                                  []SourceLocation
+		PriceCorrected                                bool
 	}
-	Observation struct {
+	SourceLocation struct{ Artifact, Version, Location string }
+	Observation    struct {
 		Artifact, Version, Location, Rule, Retrieved, ActivityID string
+		SourceName, Stream                                       string
+		EarlierAppearance                                        bool
 		Outcome                                                  calculation.ObservationOutcome
+		Reported                                                 source.ActivityObservation
+	}
+	SourceObservation struct {
+		Observation
+		Previous, Next string
 	}
 	ExecutionDetail struct {
 		Context       ActivityContext

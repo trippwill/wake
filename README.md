@@ -167,12 +167,28 @@ for the scope of each file.
 
 ### Inspect retained history
 
-**Overview** shows local setup and financial review. Use **Activity**,
-**Instruments**, **Positions** and **Needs review** to inspect reports and
-unresolved questions. Activity, instrument and evidence pages retain a return
-path to the originating view within the current tab. Positions shows effective
-dates, exact quantities, contract terms and optional reported cost basis. An
-empty reported set and unavailable positions have distinct states.
+Open **Overview** to see which source or account needs attention and what Wake
+last received. The latest report shows its receipt time and reporting period.
+Check each stream’s last successful retrieval and next attempt or retry. Follow
+its repair link if access needs attention. **Request sync** brings eligible work
+forward. **Reports** opens the receipt history across sources.
+
+Open a report and select an entry to read the source values alongside its
+relationship to a current record. Follow the related activity to inspect its
+financial terms. The reader pairs comparable reported and accepted values, keeping quantity
+units and currencies with their amounts. Where Wake can identify the report behind the price, follow
+the price back to the selected entry. The source stays available after a
+correction. Use **Read the full original report** to inspect the retained content.
+A repeated entry can point to an existing trade, and some entries
+have no settled match. A trade’s source reports show the appearances behind it.
+For a Treasury bill, compare the face amount, quoted price per 100 of face value
+and principal reported by the source.
+
+Use **Activity**, **Instruments**, **Positions** and **Needs review** for direct
+financial browsing. Positions shows the account's reporting time, quantities,
+contract terms and available cost basis. An empty reported set and unavailable
+positions have distinct states. Use the source's reports when the available
+link applies to the account as a whole.
 
 Use **Correct accepted data** or **Correct instrument data** to correct a field/link,
 compare retained evidence or manage decisions. The editor shows the current value;
@@ -181,14 +197,18 @@ Search compatible retained records when correcting a link. Comparisons lead with
 differences. Decisions retain the authenticated session, time
 and optional rationale. Release a decision to return to automatic selection.
 
-A source's **Reports** view provides **Retry processing report** for retained reports.
-Each source report shows its observed financial meaning in a searchable, paginated
-table with related activity, source locations and acceptance rules.
+Use **Connections → select a source → Reports** to retry a report or inspect the
+source-specific processing details.
 
 **System → Status** shows the current financial database file size in readable
 units and exact bytes. The measurement covers the warehouse file.
 **System → Configuration** identifies the TOML file loaded at startup, when present,
 alongside the effective storage and runtime paths.
+
+In **System → Settings → Appearance**, choose **Steel & Copper** or **Source Reader**.
+**Mode** selects System, Light or Dark. **Typography** follows the theme by default
+or can keep System sans or Editorial serif across themes. Changes take effect
+immediately and are remembered in this browser, including on the sign-in page.
 
 The admin console requires JavaScript. Activity, instrument, positions and observation tables
 load authenticated JSON, with filtering, exact ordering and pagination performed on

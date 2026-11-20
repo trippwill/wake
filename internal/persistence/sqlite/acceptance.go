@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
@@ -434,6 +435,30 @@ func activityContext(
 	}
 
 	out.FieldDetails = explanation.Fields
+	if row.Kind == "trade" {
+		out.PriceCorrected = slices.ContainsFunc(
+			explanation.Decisions,
+			func(decision application.PublishedDecision) bool {
+				return decision.Scope == string(source.FieldPrice)
+			},
+		)
+
+		selection, err := loadActivitySelection(ctx, q, row.ID)
+		if err != nil {
+			return out, err
+		}
+
+		for _, key := range selection.Sources[string(source.FieldPrice)] {
+			var origin [3]string
+			if err := json.Unmarshal([]byte(key), &origin); err != nil {
+				return out, ErrCorrupt
+			}
+
+			out.PriceSources = append(out.PriceSources, application.SourceLocation{
+				Artifact: origin[0], Version: origin[1], Location: origin[2],
+			})
+		}
+	}
 
 	return out, nil
 }

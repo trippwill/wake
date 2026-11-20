@@ -56,6 +56,23 @@ func registerWorkflowRoutes(
 		})
 	}
 	registerGridRoutes(financial, workflow)
+	gate("GET /reports", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		query, err := listQuery(r.Context(), application.ReportsScope)
+		if err != nil {
+			http.Error(w, "invalid list query", http.StatusBadRequest)
+			return
+		}
+
+		view, err := workflow.ReportList(r.Context(), query)
+		if err != nil {
+			servePageError(w, r, csrf, http.StatusServiceUnavailable, "Reports temporarily unavailable",
+				"Retained reports could not be read. Retry this page.")
+
+			return
+		}
+
+		templ.Handler(SectionShell("Reports", csrf, "Reports", ReportsPage(csrf, view))).ServeHTTP(w, r)
+	})
 	financial("GET /positions", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		if _, err := listQuery(r.Context(), application.PositionsScope); err != nil {
 			http.Error(w, "invalid list query", http.StatusBadRequest)
@@ -234,8 +251,14 @@ func registerWorkflowRoutes(
 	gate("POST /refresh", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		requested, err := workflow.RefreshPolls(r.Context())
 		if err != nil {
-			servePageError(w, r, csrf, http.StatusServiceUnavailable,
-				"Refresh unavailable", "Unable to bring forward polling. Check daemon status and try again.")
+			servePageError(
+				w,
+				r,
+				csrf,
+				http.StatusServiceUnavailable,
+				"Sync request unavailable",
+				"Wake could not bring scheduled polls forward. Check daemon status and try again.",
+			)
 
 			return
 		}
@@ -579,22 +602,34 @@ func registerWorkflowRoutes(
 		templ.Handler(SectionShell(instrumentTitle(detail.Instrument.Ticker(), detail.Instrument.Name()), csrf, "Activity", InstrumentPage(detail))).
 			ServeHTTP(w, r)
 	})
-	gate("GET /evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
-		evidence, err := workflow.Evidence(r.Context(), r.PathValue("id"))
+	gate("GET /evidence/{id}/original", func(w http.ResponseWriter, r *http.Request, csrf string) {
+		retained, err := workflow.Evidence(r.Context(), r.PathValue("id"))
 		if err != nil {
 			servePageError(
 				w,
 				r,
 				csrf,
 				http.StatusNotFound,
-				"Item unavailable",
-				"This item is unavailable. Return to its workspace to inspect current records.",
+				"Report unavailable",
+				"Return to Reports to select a retained report.",
 			)
 
 			return
 		}
 
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(retained.Artifact.Content())
+	})
+	gate("GET /evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		metadata, err := workflow.EvidenceContext(r.Context(), r.PathValue("id"))
+		if errors.Is(err, application.ErrNotFound) {
+			servePageError(w, r, csrf, http.StatusNotFound, "Item unavailable",
+				"This item is unavailable. Return to its workspace to inspect current records.")
+
+			return
+		}
+
 		if err != nil {
 			servePageError(
 				w,
@@ -608,7 +643,59 @@ func registerWorkflowRoutes(
 			return
 		}
 
-		templ.Handler(SectionShell("Source report", csrf, "Activity", RetainedEvidence(evidence, metadata))).
+		if receipt := r.URL.Query().Get("receipt"); receipt != "" {
+			selected, err := workflow.SelectedReceipt(r.Context(), metadata.ID, receipt)
+			if errors.Is(err, application.ErrNotFound) {
+				servePageError(w, r, csrf, http.StatusNotFound, "Receipt unavailable",
+					"This receipt is unavailable for the selected report.")
+
+				return
+			}
+
+			if err != nil {
+				servePageError(w, r, csrf, http.StatusServiceUnavailable, "Receipt temporarily unavailable",
+					"The receipt could not be read. Retry this page.")
+
+				return
+			}
+
+			metadata.SelectedReceipt = &selected
+		}
+
+		var entry *sourceEvidenceEntry
+		if query := r.URL.Query(); query.Has("entry") || query.Has("version") {
+			observation, err := workflow.SourceObservation(r.Context(), application.SourceLocation{
+				Artifact: metadata.ID,
+				Version:  query.Get("version"),
+				Location: query.Get("entry"),
+			})
+			if errors.Is(err, application.ErrNotFound) || errors.Is(err, calculation.ErrInvalid) {
+				servePageError(w, r, csrf, http.StatusNotFound, "Source entry unavailable",
+					"Open the report again to find its retained entries.")
+
+				return
+			}
+
+			if err != nil {
+				servePageError(w, r, csrf, http.StatusServiceUnavailable, "Source entry temporarily unavailable",
+					"The retained entry could not be read. Retry this page.")
+
+				return
+			}
+
+			evidence, err := workflow.Evidence(r.Context(), metadata.ID)
+			if err != nil {
+				servePageError(w, r, csrf, http.StatusServiceUnavailable, "Original report unavailable",
+					"The retained content could not be read. Retry this page.")
+
+				return
+			}
+
+			view := sourceEvidence(r.Context(), workflow, evidence, observation, query.Get("field"))
+			entry = &view
+		}
+
+		templ.Handler(SectionShell(application.ReportTitle(metadata.Stream), csrf, "Reports", RetainedEvidence(metadata, entry))).
 			ServeHTTP(w, r)
 	})
 	gate("GET /reference-evidence/{id}", func(w http.ResponseWriter, r *http.Request, csrf string) {
@@ -637,7 +724,9 @@ func registerWorkflowRoutes(
 		}
 
 		destination := "/connections"
-		if retained, e := workflow.Evidence(r.Context(), r.PathValue("id")); e == nil {
+		if r.PostForm.Get("return") == "reports" {
+			destination = "/reports"
+		} else if retained, e := workflow.Evidence(r.Context(), r.PathValue("id")); e == nil {
 			destination = connectionURL(retained.Connection, "reports")
 		}
 

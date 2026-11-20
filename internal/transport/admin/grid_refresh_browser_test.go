@@ -492,7 +492,7 @@ func TestBrowserGridRefreshAndInteraction(t *testing.T) {
 		chromedp.Evaluate[chromedp.Void](`document.dispatchEvent(new FocusEvent('focusout'))`),
 		chromedp.Poll[chromedp.Void](
 			`(()=>{
-				const contact=document.querySelector('.wake-sidebar-footer > .wake-contact');
+				const contact=document.querySelector('.wake-session > .wake-contact');
 				const link=contact.querySelector(':scope > #status-sign-in');
 				const details=contact.querySelector('details');
 				return link && details.open && contact.querySelector('#daemon-contact').textContent==='Sign-in required' &&

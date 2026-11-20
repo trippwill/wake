@@ -76,6 +76,10 @@ func (s workspaceStore) Overview(ctx context.Context) (application.OverviewView,
 	return application.OverviewView{Status: v}, nil
 }
 
+func (s workspaceStore) ReportList(context.Context, application.ListQuery) (application.ReportList, error) {
+	return application.ReportList{}, nil
+}
+
 func (s workspaceStore) ActivityList(
 	context.Context,
 	application.ListQuery,

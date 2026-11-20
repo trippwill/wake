@@ -98,7 +98,7 @@ func stateKind(value string) string {
 }
 
 templ AcceptedDetailScope() {
-	<p class="wake-help">Accepted details reflect this page load. <a href="" data-refresh-accepted>Refresh accepted details</a>. Retained observations update independently.</p>
+	<p class="wake-help">Values reflect this page load. <a href="" data-refresh-accepted>Refresh record</a>.</p>
 }
 
 templ Grid(kind, endpoint, label string) {
@@ -112,7 +112,19 @@ templ GridView(kind, endpoint, label, variant string) {
 				@PositionsSummary()
 			}
 			if kind=="observations" {
-				<form class="wake-filters" data-observation-filters><p><label for="observation-search">Search retained observations</label><input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
+				<form class="wake-filters" data-observation-filters>
+					<p>
+						<label for="observation-search">
+							if variant=="artifact" {
+								Search report entries
+							} else {
+								Search supporting entries
+							}
+						</label>
+						<input id="observation-search" class="input" type="search" name="q" maxlength="256" value={ page(ctx).Query.Get("q") }/>
+					</p>
+					<button class="btn" type="submit">Search</button>
+				</form>
 			} else if kind=="positions" {
 				@PositionsFilters()
 			} else {
@@ -142,11 +154,36 @@ templ GridView(kind, endpoint, label, variant string) {
 }
 
 templ ObservationHistory(kind, id string) {
-	@Grid("observations", "/grids/observations?subject="+kind+"&id="+url.QueryEscape(id), "Retained observations")
+	@Grid("observations", "/grids/observations?subject="+kind+"&id="+url.QueryEscape(id), "Reports behind this record")
 }
 
 templ ReportObservations(id string) {
-	@GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id), "Observed financial meaning", "artifact")
+	@GridView("observations", "/grids/observations?subject=artifact&id="+url.QueryEscape(id), "Report entries", "artifact")
+}
+
+templ AcceptedPrice(price financial.Price, record application.ActivityContext) {
+	<dd id="activity-price" tabindex="-1">
+		{ priceText(price) }
+		if record.PriceCorrected {
+			<span class="wake-help">Operator correction</span>
+		}
+		for i, location := range record.PriceSources {
+			<a class="wake-source-origin" id={ "activity-price-source-" + strconv.Itoa(i) } data-source-return href={ templ.SafeURL(sourceEntryURL(location, "price", nil)) }>
+				if record.PriceCorrected {
+					{ sourcePriceLink("View reported price",i,len(record.PriceSources)) }
+				} else {
+					{ sourcePriceLink("View price source",i,len(record.PriceSources)) }
+				}
+			</a>
+		}
+	</dd>
+}
+
+func sourcePriceLink(label string, index, count int) string {
+	if count > 1 {
+		return label + " " + strconv.Itoa(index+1)
+	}
+	return label
 }
 
 func comparisonText(value application.CorrectionValue) string {

@@ -284,6 +284,19 @@
       return null;
     }
   };
+  const sourceFragments = [
+    "#source-entry",
+    "#report-entries",
+    "#record-sources",
+    "#activity-price",
+    "#accepted-activity",
+  ];
+  const trailAddress = (value) => {
+    const address = localAddress(value);
+    if (!address) return null;
+    const fragment = new URL(value, location.href).hash;
+    return address + (sourceFragments.includes(fragment) ? fragment : "");
+  };
   const workspaceLinks = [...document.querySelectorAll(".wake-nav-link")];
   const workspaceAddresses = workspaceLinks.map((link) =>
     localAddress(link.href),
@@ -317,7 +330,7 @@
       value.trail.length > 16
     )
       return null;
-    const trail = value.trail.map(localAddress);
+    const trail = value.trail.map(trailAddress);
     return trail.every(Boolean) ? { workspace: value.workspace, trail } : null;
   };
   let navigation = { workspace: defaultWorkspace, trail: [] };
@@ -450,7 +463,7 @@
       workspace: navigation.workspace,
       trail: [...navigation.trail],
     };
-    const previous = next.trail.indexOf(destination);
+    const previous = next.trail.indexOf(trailAddress(target));
     const canonicalBack =
       !next.trail.length &&
       resourceKey(current).endsWith("/correct") &&
@@ -467,7 +480,7 @@
       !canonicalBack &&
       resourceKey(current) !== resourceKey(destination)
     ) {
-      next.trail.push(current);
+      next.trail.push(trailAddress(location.href));
       if (next.trail.length > 16) next.trail.splice(1, 1);
     }
     try {
@@ -483,10 +496,25 @@
       // Resource links keep their canonical destinations without tab storage.
     }
   };
+  const restoreSourcePosition = () => {
+    if (!sourceFragments.includes(location.hash)) return;
+    const anchor = document.getElementById(location.hash.slice(1));
+    const remembered = document.getElementById(
+      history.state?.wakeSourceFocus || "",
+    );
+    if (location.hash === "#record-sources") {
+      const grid = document.querySelector('[data-grid="observations"]');
+      const disclosure = grid?.closest("details");
+      if (disclosure) disclosure.open = true;
+    }
+    if ([document.body, anchor].includes(document.activeElement))
+      (remembered || anchor)?.focus({ preventScroll: true });
+  };
   restoreNavigation();
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) restoreNavigation();
     else updateHistory();
+    restoreSourcePosition();
   });
   const restoreLocation = (event) => {
     const previous = new URL(navigationAddress);
@@ -535,13 +563,42 @@
       link.removeAttribute("aria-busy");
       if (intent !== navigationIntent || !link.isConnected) return;
     }
-    if (["/activity", "/positions"].includes(location.pathname)) {
-      const record = link.closest("[data-record]")?.dataset.record;
-      if (record) {
-        const current = new URL(location.href);
-        current.searchParams.set("selected", record);
-        updateHistory(current);
+    const observationGrid = link.closest('[data-grid="observations"]');
+    const record = link.closest("[data-record]")?.dataset.record;
+    if (
+      record &&
+      (observationGrid ||
+        ["/activity", "/positions"].includes(location.pathname))
+    ) {
+      const current = new URL(location.href);
+      current.searchParams.set("selected", record);
+      if (observationGrid) {
+        current.hash =
+          observationGrid.dataset.gridVariant === "artifact"
+            ? "#report-entries"
+            : "#record-sources";
       }
+      const column = link
+        .closest("[tabulator-field]")
+        ?.getAttribute("tabulator-field");
+      history.replaceState(
+        { ...navigationState(), wakeGridColumn: column },
+        "",
+        current,
+      );
+      navigationAddress = location.href;
+    }
+    if (link.hasAttribute("data-source-return")) {
+      const current = new URL(location.href);
+      current.hash = link.closest("#activity-price")
+        ? "#activity-price"
+        : "#source-entry";
+      history.replaceState(
+        { ...navigationState(), wakeSourceFocus: link.id },
+        "",
+        current,
+      );
+      navigationAddress = location.href;
     }
     rememberNavigation(link.href);
     if (deferred) location.assign(link.href);
@@ -920,13 +977,27 @@
     node.className = "wake-grid-cell";
     const text = document.createElement(value.href ? "a" : "span");
     text.textContent = value.text || "";
-    if (value.href?.startsWith("/") && !value.href.startsWith("//"))
-      text.href = value.href;
+    if (value.href?.startsWith("/") && !value.href.startsWith("//")) {
+      const target = new URL(value.href, location.href);
+      if (
+        target.pathname === location.pathname &&
+        target.searchParams.has("entry")
+      ) {
+        const current = new URL(location.href);
+        for (const name of ["q", "sort", "dir", "page", "size", "receipt"]) {
+          const value = current.searchParams.get(name);
+          if (value) target.searchParams.set(name, value);
+        }
+        target.searchParams.set("selected", cell.getRow().getData().id);
+      }
+      text.href = target.pathname + target.search + target.hash;
+    }
     if (value.tone) {
       text.classList.add("wake-state");
       text.dataset.state = value.tone;
     }
     node.append(text);
+    if (!value.text && !value.note) node.hidden = true;
     if (value.note) {
       const note = document.createElement("span");
       note.className = "wake-help wake-cell-note";
@@ -985,9 +1056,11 @@
       }
       try {
         const kind = region.dataset.grid;
-        const artifact = region.dataset.gridVariant === "artifact";
+        const variant = region.dataset.gridVariant;
+        const artifact = variant === "artifact";
+        const appearances = variant === "appearances";
         const preferenceKey = (id, type) =>
-          `${id}${artifact && type === "columns" ? "-artifact" : ""}-${type}`;
+          `${id}${variant && type === "columns" ? `-${variant}` : ""}-${type}`;
         const emptyState = document.createElement("span");
         emptyState.textContent = "No matching records.";
         const params = new URL(location.href).searchParams;
@@ -999,23 +1072,33 @@
         const createColumns = () => {
           const definitions = artifact
             ? [
-                ["outcome", "Outcome"],
+                ["location", "Reported entry"],
+                ["date", "Reported date"],
+                ["terms", "Reported terms"],
+                ["outcome", "Effect on record"],
                 ["activity", "Related activity"],
-                ["location", "Source location"],
                 ["rule", "Acceptance rule / version"],
               ]
-            : gridColumns[kind];
+            : appearances
+              ? [
+                  ["report", "Report"],
+                  ["terms", "Reported terms"],
+                  ["outcome", "Effect on record"],
+                ]
+              : gridColumns[kind];
           const columns = definitions.map(([field, title]) => ({
             field,
             title,
             minWidth: 130,
-            widthGrow: artifact && field === "location" ? 2 : 1,
+            widthGrow: ["location", "terms"].includes(field) ? 2 : 1,
+            visible: !artifact || field !== "rule",
             headerWordWrap: true,
             headerSort: field !== "terms",
             variableHeight: true,
             // Header handles avoid inserting resize handles in each row
             // between Tabulator's height reads.
-            resizable: kind === "activity" ? "header" : true,
+            resizable:
+              kind === "activity" || artifact || appearances ? "header" : true,
             formatter: gridCell,
           }));
           if (artifact)
@@ -1149,8 +1232,10 @@
             if (artifact)
               emptyState.textContent =
                 result.total === 0
-                  ? "No financial observations are attached to this report."
-                  : "No matching records.";
+                  ? region.closest("[data-report-empty]")?.dataset
+                      .reportEmpty ||
+                    "No processed activity entries in this report."
+                  : "No matching report entries.";
             if (!background) {
               state.installing = result;
               state.filterChange = null;
@@ -1374,12 +1459,33 @@
             const selected = new URL(location.href).searchParams.get(
               "selected",
             );
-            if (selected && document.activeElement === document.body)
-              element
-                .querySelector(
-                  `[data-record="${CSS.escape(selected)}"] a[href]`,
-                )
-                ?.focus({ preventScroll: true });
+            const observationAnchor =
+              kind === "observations" &&
+              ((artifact && location.hash === "#report-entries") ||
+                (!artifact && location.hash === "#record-sources"))
+                ? document.getElementById(location.hash.slice(1))
+                : null;
+            if (
+              selected &&
+              ((document.activeElement === document.body && !location.hash) ||
+                (observationAnchor &&
+                  [document.body, observationAnchor].includes(
+                    document.activeElement,
+                  )))
+            ) {
+              const row = element.querySelector(
+                `[data-record="${CSS.escape(selected)}"]`,
+              );
+              const column = history.state?.wakeGridColumn;
+              const link =
+                column &&
+                row?.querySelector(
+                  `[tabulator-field="${CSS.escape(column)}"] a[href]`,
+                );
+              (link || row?.querySelector("a[href]"))?.focus({
+                preventScroll: !observationAnchor,
+              });
+            }
           }
         });
         element.addEventListener("keydown", (event) => {

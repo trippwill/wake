@@ -204,7 +204,7 @@ func (s *Store) readActivityPage(
 		if err = rows.Scan(
 			&total, &matched, &snapshot, &stateRow.Status, &stateRow.ReviewReasons,
 			&stateRow.SelectionAuthority, &item.InstrumentName, &item.InstrumentTicker,
-			&item.Reference.Status, &item.Reference.Authority, &item.AccountName,
+			&item.Reference.Status, &item.Reference.Authority, &item.AccountName, &item.AccountProvider,
 		); err != nil {
 			return out, err
 		}

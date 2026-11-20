@@ -7,6 +7,9 @@
     <rect x="3.5" y="14" width="7" height="6.5" rx="1"/>
     <rect x="14" y="14" width="6.5" height="6.5" rx="1"/>
   </symbol>
+  <symbol id="reports" viewBox="0 0 24 24">
+    <path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h5"/>
+  </symbol>
   <symbol id="trades" viewBox="0 0 24 24">
     <path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>
   </symbol>

@@ -212,6 +212,7 @@ func connectionWork(ctx context.Context, q *sqlc.Queries, id string) ([]applicat
 			Completed: status.ObservedCompleted, Total: status.ObservedTotal,
 			Failure: status.Failure, Next: next, LastRetrieved: last,
 			Scheduled: status.Scheduled, RetryBlocked: status.RetryBlocked != 0,
+			AccessBlocked: status.AccessBlocked != 0,
 		})
 	}
 

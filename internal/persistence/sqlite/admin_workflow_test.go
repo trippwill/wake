@@ -259,8 +259,8 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	overview := request(http.MethodGet, "/", nil, http.StatusOK).Body.String()
 	for _, want := range []string{
 		"Last successful retrieval",
-		"Next event",
-		"Refresh now",
+		"Next attempt",
+		"Request sync",
 		`datetime="` + now.Add(-10*time.Second).Format(time.RFC3339Nano) + `"`,
 	} {
 		if !strings.Contains(overview, want) {
@@ -374,6 +374,13 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 		t.Fatal("refresh did not bring forward the routine poll")
 	}
 
+	requested := request(http.MethodGet, "/?refresh=requested", nil, http.StatusOK).Body.String()
+	if !strings.Contains(requested, "Sync requested") || strings.Contains(requested, `action="/refresh"`) {
+		t.Fatal(
+			"Overview must confirm the request and hide the button once the poll reaches the provider deadline",
+		)
+	}
+
 	// Saving the same effective interval keeps the explicitly advanced poll.
 	request(http.MethodPost, pollingPath, url.Values{
 		"stream": {key.Stream}, "interval": {"5m"},
@@ -432,7 +439,7 @@ func TestAuthenticatedAccountWorkflowHTTP(t *testing.T) {
 	}
 
 	failedRefresh := request(http.MethodPost, "/refresh", nil, http.StatusServiceUnavailable)
-	if !strings.Contains(failedRefresh.Body.String(), "Refresh unavailable") {
+	if !strings.Contains(failedRefresh.Body.String(), "Sync request unavailable") {
 		t.Fatal("failed refresh did not explain the outcome")
 	}
 

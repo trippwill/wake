@@ -10,6 +10,7 @@ import (
 	"errors"
 	"time"
 
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
 	"go.trippwill.dev/wake/provider"
@@ -193,4 +194,30 @@ func (s *Store) RefreshPolls(ctx context.Context, now time.Time) (int64, error) 
 	}
 
 	return n, nil
+}
+
+func (s *Store) RefreshablePollSources(
+	ctx context.Context,
+	now time.Time,
+) ([]application.PollSourceAccess, error) {
+	return readModel(ctx, s, func(q *sqlc.Queries) ([]application.PollSourceAccess, error) {
+		rows, err := q.RefreshablePollSources(ctx, sqlc.RefreshablePollSourcesParams{
+			Now: now.UTC().Format(pollDeadlineFormat), PollVersion: pollCheckpointVersion,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		sources := make([]application.PollSourceAccess, 0, len(rows))
+		for _, row := range rows {
+			source := application.PollSourceAccess{Provider: row.Provider}
+			if err = json.Unmarshal([]byte(row.CredentialKeys), &source.CredentialKeys); err != nil {
+				return nil, ErrCorrupt
+			}
+
+			sources = append(sources, source)
+		}
+
+		return sources, nil
+	})
 }

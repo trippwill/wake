@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.trippwill.dev/wake/financial"
+	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/source"
 )
@@ -46,6 +47,13 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 	if got := observationRowsForTest(t, s, "artifact", "partial-repeat"); len(got) != 1 ||
 		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution {
 		t.Fatal("known discarded claim lost report context", got)
+	} else {
+		entry, err := s.SourceObservation(t.Context(), application.SourceLocation{
+			Artifact: "partial-repeat", Version: got[0].Version, Location: got[0].Location,
+		})
+		if err != nil || entry.ActivityID != id || entry.Outcome != calculation.ObservationNoContribution {
+			t.Fatal("exact overlap lost its accepted activity context", entry, err)
+		}
 	}
 
 	conflictFields := partialTrade(t).Fields()
@@ -60,12 +68,31 @@ func TestReportAppearancesSurviveDiscardedPartialAndRepeatedConflictSupport(t *t
 	processPartial(t, s, "conflict-repeat", conflict.Observation())
 
 	if got := observationRowsForTest(t, s, "artifact", "conflict-repeat"); len(got) != 1 ||
-		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution {
+		got[0].ActivityID != id || got[0].Outcome != calculation.ObservationNoContribution || !got[0].EarlierAppearance {
 		t.Fatal("repeated conflict added support or lost report context", got)
 	}
 
 	if got := observationRowsForTest(t, s, "activity", id); len(got) != 2 {
 		t.Fatal("report appearances became supporting links", got)
+	}
+
+	appearances := observationRowsForTest(t, s, "activity-appearances", id)
+	if len(appearances) != 5 {
+		t.Fatal("reverse lookup must include all five processed report entries", appearances)
+	}
+
+	for _, row := range appearances {
+		if row.Reported.IsZero() || row.ActivityID != id ||
+			row.EarlierAppearance != strings.HasSuffix(row.Artifact, "-repeat") {
+			t.Fatal("appearance lost its original terms, activity or overlap effect", row)
+		}
+
+		entry, e := s.SourceObservation(t.Context(), application.SourceLocation{
+			Artifact: row.Artifact, Version: row.Version, Location: row.Location,
+		})
+		if e != nil || entry.EarlierAppearance != row.EarlierAppearance || entry.Outcome != row.Outcome {
+			t.Fatal("exact entry does not match its appearance", entry, e)
+		}
 	}
 
 	before, err := snapshotState(t.Context(), s)

@@ -345,7 +345,7 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		{"/executions/" + optionID, "1.234567890123456789"},
 		{"/activity/" + view.Lifecycles[0].ID(), "Assignment"},
 		{"/activity/" + view.Conversions[0].ID(), "100.123456789"},
-		{"/evidence/operator-history", "TradeConfirm"},
+		{"/evidence/operator-history", "Read the full original report"},
 		{correctionPath + "?mode=evidence", "Compare a source candidate"},
 		{correctionPath + "?field=quantity", "Enter a decimal greater than zero."},
 	} {
@@ -576,9 +576,16 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		}
 
 		page := request(http.MethodGet, "/evidence/operator-history", nil, false)
-		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Acquisition context") ||
-			!strings.Contains(page.Body.String(), "TradeConfirm") {
+		if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Report details") ||
+			strings.Contains(page.Body.String(), "&lt;TradeConfirm") {
 			t.Fatal("retained report unavailable with only the financial store", page.Code)
+		}
+
+		original := request(http.MethodGet, "/evidence/operator-history/original", nil, false)
+		if original.Code != http.StatusOK ||
+			!strings.HasPrefix(original.Header().Get("Content-Type"), "text/plain") ||
+			!strings.Contains(original.Body.String(), "<TradeConfirm") {
+			t.Fatal("full original report unavailable with only the financial store", original.Code)
 		}
 	})
 }

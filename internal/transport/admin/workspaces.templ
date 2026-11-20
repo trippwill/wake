@@ -29,123 +29,119 @@ func currentPage(active bool) string {
 }
 
 templ DashboardOverview(csrf string, view overviewView, refresh string) {
-	{{ now := time.Now() }}
-	@PageHeader("Overview", "Your accounts, current work and next useful action.")
-	if view.Storage.Paused {
-		<section class="wake-card wake-priority"><h2>Review synchronization recovery</h2><p>Your retained history remains available. Repair access before resuming upstream work.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
-	} else if view.Account.ID()=="" {
-		<section class="wake-card wake-priority">
-			<h2>Connect and confirm an account</h2>
-			<p>Configure a source, review its available account discovery, and confirm account authority before automatic synchronization.</p>
-			if len(view.Connections)==0 {
-				<a class="btn btn-primary" href="/connections/new">Add source connection</a>
-			} else {
-				<a class="btn btn-primary" href="/connections">Review account discovery</a>
-			}
-		</section>
-	}
-	if view.HistoryUpdate.Phase!="" {
-		<section class="wake-card wake-priority">
-			<h2>Updating retained history</h2>
-			<p>Wake is applying { view.HistoryUpdate.Rule }. Financial views will return when the update is complete.</p>
-			<p>Current phase { view.HistoryUpdate.Phase }. { strconv.FormatInt(view.HistoryUpdate.Completed, 10) } items processed.</p>
-			if !view.HistoryUpdate.RetryAt.IsZero() {
-				<p>The last batch failed. Wake will retry at { view.HistoryUpdate.RetryAt.UTC().Format(time.RFC3339) }.</p>
-			}
-		</section>
-	} else if view.Account.ID()!="" {
-		<section class="wake-card">
-			<div class="wake-card-heading">
-				<div>
-					<h2>
-						if view.AccountCount > 1 {
-							{ strconv.FormatInt(view.AccountCount,10) } confirmed accounts
-						} else {
-							{ view.Account.Details().Name() }
-						}
-					</h2>
-					<p class="wake-help">{ strconv.FormatInt(view.ActivityCount,10) } activity records · { strconv.FormatInt(view.InstrumentCount,10) } instruments</p>
-				</div>
-				<div class="wake-actions"><a class="btn btn-primary" href="/activity">Inspect activity</a><a class="btn" href="/positions">Inspect positions</a></div>
+	{{ issues := overviewIssues(view) }}
+	{{ verdict := overviewVerdict(view, issues) }}
+	<div class="wake-overview-opening">
+		<header class="wake-verdict" data-tone={ verdict.Tone }>
+			<div class="wake-verdict-copy">
+				<h1>{ verdict.Title }</h1>
+				if verdict.Href!="" {
+					<a href={ templ.SafeURL(verdict.Href) }>{ verdict.Action }</a>
+				}
+				if verdict.Note!="" {
+					<p>{ verdict.Note }</p>
+				}
+				if view.HistoryUpdate.Phase!="" {
+					<p>{ view.HistoryUpdate.Phase } · { strconv.FormatInt(view.HistoryUpdate.Completed, 10) } items processed</p>
+					if !view.HistoryUpdate.RetryAt.IsZero() {
+						<p>Next retry { view.HistoryUpdate.RetryAt.UTC().Format(time.RFC3339) }</p>
+					}
+				} else if view.ReviewPage.Matched>1 && verdict.Href!="/review" {
+					<a class="wake-help" href="/review">View all review items</a>
+				}
 			</div>
-		</section>
-		<div class="wake-columns">
-			<section class="wake-card">
-				<h2>Financial review</h2>
-				if len(view.Reviews)==0 {
-					<p>No activity or identity conflicts are awaiting review.</p>
+		</header>
+		@OverviewLatestReport(view.Reports)
+	</div>
+	if view.Account.ID()!="" && view.HistoryUpdate.Phase=="" {
+		<dl class="wake-overview-context">
+			<div>
+				if view.AccountCount>1 {
+					<dt>Accounts</dt>
+					<dd><a href="/connections">{ strconv.FormatInt(view.AccountCount,10) } confirmed accounts</a></dd>
 				} else {
-					<p>{ strconv.FormatInt(view.ReviewPage.Matched,10) } items need your judgment.</p>
-					<ul class="wake-task-list">
-						for _,item:=range view.Reviews {
-							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ describe(item.Description, item.Reason) }</span></li>
-						}
-					</ul>
+					<dt>Account</dt>
+					<dd><a href={ templ.SafeURL(connectionURL(view.Account.Connection(), "status")) }>{ view.Account.Details().Name() }</a></dd>
 				}
-				<a href="/review">Open Needs review</a>
-			</section>
-			<section class="wake-card">
-				<h2>Source and system work</h2>
-				if repairCount(view.sourceView)>0 {
-					<ul class="wake-task-list">
-						for _,item:=range repairs(view.sourceView) {
-							<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
-						}
-					</ul>
-				} else {
-					<p>No recorded source or system failures in the displayed connections.</p><a href="/connections">Inspect connections</a>
-				}
-				<p class="wake-help">Reachability, acquisition and processing have separate states. Report bounds do not prove complete history.</p>
-				<a href="/instruments?state=gaps">Inspect instrument reference gaps</a>
-			</section>
-		</div>
+			</div>
+			<div>
+				<dt>{ overviewPositionsLabel(view) }</dt>
+				<dd>@OverviewPositionLink(view)</dd>
+			</div>
+		</dl>
 	}
-	<section class="wake-card" aria-labelledby="synchronization-title">
+	@OverviewSynchronization(csrf, view, refresh)
+	if len(issues)>0 && view.HistoryUpdate.Phase=="" {
+		<section class="wake-card" aria-labelledby="overview-attention-title">
+			<h2 id="overview-attention-title">Processing and reference issues</h2>
+			<ul class="wake-task-list">
+				for _, item := range issues {
+					<li><a href={ templ.SafeURL(item.Href) }>{ item.Label }</a><span class="wake-help">{ item.Reason }</span></li>
+				}
+			</ul>
+		</section>
+	}
+}
+
+templ OverviewLatestReport(reports []application.ReportEntry) {
+	<section class="wake-overview-report" aria-labelledby="latest-report-title">
+		<div class="wake-report-heading">
+			<h2 id="latest-report-title">Latest report</h2>
+			<a href="/reports">View all reports</a>
+		</div>
+		if len(reports)==0 {
+			<p>No financial reports received yet.</p>
+		} else {
+			{{ latest := reports[0] }}
+			<p class="wake-overview-report-title"><a href={ templ.SafeURL(reportReceiptURL(latest)) }>{ application.ReportTitle(latest.Stream) }</a> · { latest.ConnectionName }</p>
+			<dl class="wake-overview-report-facts">
+				<div><dt>Received</dt><dd>@SyncTime(latest.Received)</dd></div>
+				<div><dt>Reported period</dt><dd>{ reportPeriod(latest.ReportedFrom, latest.ReportedTo) }</dd></div>
+			</dl>
+			<p class="wake-overview-report-result">
+				if contribution := reportContribution(latest); contribution!="" && latest.Complete {
+					{ contribution }
+				} else {
+					@StateBadge(reportState(latest))
+				}
+			</p>
+		}
+	</section>
+}
+
+templ OverviewSynchronization(csrf string, view overviewView, refresh string) {
+	{{ now := time.Now() }}
+	<section id="synchronization" class="wake-card wake-overview-sync" aria-labelledby="synchronization-title">
 		<div class="wake-card-heading">
 			<h2 id="synchronization-title">Synchronization</h2>
-			if !view.Storage.Paused && view.Account.ID()!="" {
+			if view.CanRequestSync {
 				<form method="post" action="/refresh">
 					<input type="hidden" name="csrf" value={ csrf }/>
-					<button class="btn" type="submit" aria-describedby="refresh-help">Refresh now</button>
+					<button class="btn" type="submit" data-submit-label="Requesting sync…">Request sync</button>
 				</form>
 			}
 		</div>
-		if !view.Storage.Paused && view.Account.ID()!="" {
-			<p class="wake-help" id="refresh-help">Bring forward scheduled polls for confirmed sources, subject to source pacing.</p>
-		}
 		if refresh=="requested" {
-			<p role="status">Refresh requested. Sources run when eligible.</p>
+			<p role="status">Sync requested. Sources run when eligible.</p>
 		} else if refresh=="idle" {
-			<p role="status">No scheduled polls could be brought forward.</p>
+			<p role="status">No scheduled sync could be moved earlier.</p>
 		}
 		if len(view.Connections)==0 {
 			<p>No connections configured.</p>
+			if view.Storage.Paused {
+				<p><a href="/connections/recovery">Review recovery steps</a></p>
+			}
 		} else {
 			<ul class="wake-source-summary">
 				for _,c:=range view.Connections {
 					<li>
-						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a>
-						<div>
-							{{ work := sourceWork(c) }}
-							{{ blocker := "" }}
-							if c.MissingAccess {
-								{{ blocker = "Access review required" }}
-							} else if view.Storage.Paused {
-								{{ blocker = "Paused" }}
-							}
-							if len(work)==0 {
-								if blocker!="" {
-									@StateBadge(blocker)
-								}
-								<p>No automatic work scheduled.</p>
-							} else {
-								<dl class="wake-sync-work">
-									for _,w:=range work {
-										@OverviewSyncWork(w, blocker, now)
-									}
-								</dl>
+						<div class="wake-sync-source">
+							<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>{ c.Name }</a>
+							if view.AccountCount>1 && c.Account.ID()!="" {
+								<p class="wake-help">{ c.Account.Details().Name() }</p>
 							}
 						</div>
+						@SourceSyncWork(csrf, c, view.sourceView, now, false)
 					</li>
 				}
 			</ul>
@@ -156,7 +152,131 @@ templ DashboardOverview(csrf string, view overviewView, refresh string) {
 	</section>
 }
 
-templ OverviewSyncWork(work application.WorkStatus, blocker string, now time.Time) {
+templ OverviewPositionLink(view overviewView) {
+	<a href="/positions">
+		if view.PositionsAsOf!=nil {
+			if view.PositionsAsOf.At!=nil {
+				<time datetime={ *view.PositionsAsOf.At }>{ *view.PositionsAsOf.At }</time>
+			} else {
+				<time datetime={ view.PositionsAsOf.Date }>{ reportDate(view.PositionsAsOf.Date) }</time>
+			}
+		} else if view.PositionsAvailable==0 {
+			No available position set
+		} else if view.AccountCount>1 {
+			Available for { strconv.FormatInt(view.PositionsAvailable,10) } of { strconv.FormatInt(view.AccountCount,10) } accounts
+		} else {
+			Available · effective time unknown
+		}
+	</a>
+}
+
+templ ReportsPage(csrf string, view application.ReportList) {
+	@PageHeader("Reports", "Financial reports in the order Wake received them.")
+	<section class="wake-report-index" aria-label="Report receipts">
+		if view.Total>0 || page(ctx).Query.Get("q")!="" {
+			<form class="wake-filters" method="get" action="/reports">
+				@GridSearch("reports-search", "Search reports", "Source, account or report type")
+				if page(ctx).Query.Get("q")!="" {
+					<a href="/reports">Clear search</a>
+				}
+			</form>
+		}
+		if view.Total==0 {
+			<p>No financial reports received yet. <a href="/connections">Inspect source status</a>.</p>
+		} else if len(view.Items)==0 {
+			<p>No reports on this result page. <a href="/reports">View all reports</a>.</p>
+		} else {
+			<p class="wake-help">Returned periods describe what each source supplied. They can overlap or leave gaps.</p>
+			@ReportEntries(csrf, view.Items)
+		}
+		@ListPagination(view.PageInfo)
+	</section>
+}
+
+templ ReportEntries(csrf string, reports []application.ReportEntry) {
+	<ol class="wake-report-list">
+		for _, report := range reports {
+			<li class="wake-report-entry">
+				<div class="wake-report-date">
+					if report.Received.IsZero() {
+						Receipt time unknown
+					} else {
+						<time datetime={ report.Received.UTC().Format(time.RFC3339Nano) }>
+							<span>{ report.Received.UTC().Format("2 Jan 2006") }</span>
+							<span>{ report.Received.UTC().Format("15:04:05 UTC") }</span>
+						</time>
+					}
+				</div>
+				<div class="wake-report-main">
+					<h3><a href={ templ.SafeURL(reportReceiptURL(report)) }>{ application.ReportTitle(report.Stream) }</a></h3>
+					<p class="wake-report-source">
+						<a href={ templ.SafeURL(connectionURL(report.ConnectionID, "status")) }>{ report.ConnectionName }</a>
+						if report.Operation=="supply" {
+							<span>· Supplied</span>
+						}
+					</p>
+					<p class="wake-report-contribution">
+						<span class="wake-report-state">{ reportState(report) }</span>
+						if contribution:=reportContribution(report); contribution!="" {
+							<span>· { contribution }</span>
+						}
+					</p>
+					if report.CanNormalize && !report.Complete && report.Failure!="" {
+						if csrf!="" {
+							<form method="post" action={ templ.SafeURL("/processing/" + report.Artifact + "/retry") }>
+								<input type="hidden" name="csrf" value={ csrf }/>
+								<input type="hidden" name="return" value="reports"/>
+								<button class="btn" type="submit">Retry processing report</button>
+							</form>
+						} else {
+							<a href="/reports">Review failed processing</a>
+						}
+					}
+				</div>
+				<dl class="wake-report-period">
+					<div><dt>Returned</dt><dd>{ reportPeriod(report.ReportedFrom, report.ReportedTo) }</dd></div>
+					if csrf!="" || report.RequestedFrom!="" || report.RequestedTo!="" {
+						<div><dt>Requested</dt><dd>{ reportPeriod(report.RequestedFrom, report.RequestedTo) }</dd></div>
+					}
+				</dl>
+			</li>
+		}
+	</ol>
+}
+
+templ SourceSyncWork(csrf string, c application.ConnectionView, view sourceView, now time.Time, detail bool) {
+	{{ work := sourceWork(c) }}
+	{{ blocker := sourceSyncBlocker(c, view.Storage.Paused) }}
+	<div class="wake-source-work">
+		if blocker.Label!="" {
+			<p class="wake-sync-blocker">
+				@StateBadge(blocker.Label)
+				if blocker.Href!="" {
+					<a href={ templ.SafeURL(blocker.Href) }>{ blocker.Action }</a>
+				}
+			</p>
+		}
+		if len(work)==0 && blocker.Label=="" {
+			<p>No automatic work scheduled.</p>
+		}
+		if len(work)>0 {
+			<dl class="wake-sync-work">
+				for _,w:=range work {
+					@SyncStream(w, blocker.Label != "", now, c, detail)
+				}
+			</dl>
+		}
+		if detail && blocker.Label=="" {
+			if connectionFailure(c) {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit" data-submit-label="Requesting retry…">Retry connection</button></form>
+			} else if c.CanDiscover && c.Account.ID()=="" && len(work)==0 {
+				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit" data-submit-label="Requesting discovery…">Discover accounts again</button></form>
+			}
+		}
+	</div>
+}
+
+templ SyncStream(work application.WorkStatus, blocked bool, now time.Time, c application.ConnectionView, detail bool) {
 	<div>
 		<dt>
 			if work.Stream=="" || work.Operation=="discover" {
@@ -166,41 +286,57 @@ templ OverviewSyncWork(work application.WorkStatus, blocker string, now time.Tim
 			}
 		</dt>
 		<dd>
-			if blocker=="" {
-				if work.Failure!="" {
-					@StateBadge("failed")
-					<span class="wake-help">{ work.Failure }</span>
+			if !blocked {
+				if !work.Scheduled {
+					<span>No automatic work scheduled</span>
+				} else if work.RetryBlocked {
+					<span class="wake-state" data-state="error">Operator action required</span>
+					if work.AccessBlocked {
+						<a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Review source access</a>
+					} else if !detail {
+						<a href={ templ.SafeURL(connectionURL(c.ID, "status") + "#workflow-progress") }>Inspect source status</a>
+					}
+				} else if work.Failure!="" {
+					<span class="wake-state" data-state="error">Failed</span>
 				} else {
 					<span>{ progressLabel(work.Progress) }</span>
 				}
+				if work.Failure!="" && work.Scheduled {
+					<span class="wake-help">{ work.Failure }</span>
+				}
 			}
-			<span class="wake-help">
+			if work.Total>0 {
+				<span class="wake-help">{ strconv.FormatInt(work.Completed,10) } of { strconv.FormatInt(work.Total,10) } observed</span>
+			}
+			<span class="wake-help wake-sync-timing">
 				Last successful retrieval ·
 				if work.LastRetrieved.IsZero() {
-					No successful retrieval yet
+					None yet
 				} else {
 					@SyncTime(work.LastRetrieved)
 				}
 			</span>
-			<span class="wake-help">
-				Next event ·
-				if blocker!="" {
-					{ blocker }
-				} else if work.RetryBlocked {
-					Operator action required
-				} else {
+			if !blocked && work.Scheduled && !work.RetryBlocked {
+				<span class="wake-help wake-sync-timing">
 					if work.Failure!="" || work.Progress==provider.ProgressUnavailable {
-						Retry ·
+						Next retry ·
 					} else {
-						Attempt ·
+						Next attempt ·
 					}
 					if work.Next.After(now) {
 						@SyncTime(work.Next)
 					} else {
 						Eligible now
 					}
+				</span>
+			}
+			if detail && work.Scheduled && work.Operation=="acquire" {
+				for _,setting:=range c.Polling {
+					if setting.Stream==work.Stream {
+						<span class="wake-help">Polling interval · { pollingValue(setting.Effective()) }</span>
+					}
 				}
-			</span>
+			}
 		</dd>
 	</div>
 }
@@ -210,13 +346,14 @@ templ SyncTime(at time.Time) {
 }
 
 templ ConnectionsPage(csrf string, view sourceView) {
-	@PageHeader("Connections", "Source access, account authority and synchronization.")
+	{{ now := time.Now() }}
+	@PageHeader("Connections", "")
 	@ConnectionsNavigation("sources")
 	if view.Storage.Paused {
 		<section class="wake-card wake-priority"><h2>Upstream work is paused</h2><p>Review restored access before reconnecting to your sources.</p><a class="btn btn-primary" href="/connections/recovery">Review recovery steps</a></section>
 	}
-	<section id="workflow-progress" class="wake-card">
-		<div class="wake-card-heading"><h2>Sources</h2><a class="btn" href="/connections/new">Add source connection</a></div>
+	<section id="workflow-progress" class="wake-card" aria-labelledby="configured-sources">
+		<div class="wake-card-heading"><h2 id="configured-sources">Configured sources</h2><a class={ "btn", templ.KV("btn-primary", len(view.Connections)==0) } href="/connections/new">Add source connection</a></div>
 		if len(view.Connections)==0 {
 			<p>No sources configured. Add a connection to discover accounts.</p>
 		}
@@ -233,21 +370,14 @@ templ ConnectionsPage(csrf string, view sourceView) {
 					} else {
 						<p>Supplied evidence</p>
 					}
-					for _,w:=range sourceWork(c) {
-						<p class="wake-help">{ workLabel(w) }: { progressLabel(w.Progress) }</p>
-					}
 				</div>
-				<div class="wake-actions">
-					if c.MissingAccess {
-						<a class="btn" href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair source access</a>
-					} else {
-						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Inspect source</a>
-					}
-				</div>
+				@SourceSyncWork(csrf, c, view, now, false)
+				if c.Account.ID()=="" && c.CanDiscover && sourceSyncBlocker(c, view.Storage.Paused).Label=="" {
+					<div class="wake-actions">
+						<a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Review discovered accounts</a>
+					</div>
+				}
 			</article>
-			if c.Account.ID()=="" && c.CanDiscover {
-				<p><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>Review discovered accounts</a></p>
-			}
 		}
 		@ListPagination(view.PageInfo)
 	</section>
@@ -270,73 +400,39 @@ templ ConnectionPage(csrf string, v sourceView, c application.ConnectionView) {
 	} else if activeView(ctx,"status")=="reports" {
 		@ConnectionReports(csrf, c)
 	} else {
-		<section class="wake-card" id="workflow-progress">
-			<h2>Current source state</h2>
-			if c.Descriptor.ID()=="" {
-				<p class="wake-notice">This provider is unavailable in this build.</p>
-			} else if !c.CanAcquire && !c.CanDiscover {
-				<p>This source interprets supplied evidence and does not perform automatic acquisition.</p>
-			} else if c.Account.ID()!="" {
-				<p>Authorized account: <strong>{ c.Account.Details().Name() }</strong></p>
-			} else {
-				<p>Account confirmation is required before ongoing synchronization.</p>
-			}
-			if c.UpstreamUnavailable {
-				<p class="wake-notice">Upstream services could not start. Check the daemon logs for the upstream_unavailable event, resolve the reported problem, and restart Wake.</p>
-			}
-			if v.Storage.Paused {
-				<p class="wake-notice">Upstream work is paused. <a href="/connections/recovery">Review recovery steps</a>.</p>
-			}
-			if c.MissingAccess {
-				<p class="wake-notice">Source access is incomplete. <a href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair settings and credentials</a>.</p>
-			}
-			<dl>
-				for _,w:=range sourceWork(c) {
-					<dt>{ workLabel(w) }</dt>
-					<dd>
-						@StateBadge(progressLabel(w.Progress))
-						if w.Total > 0 {
-							<span class="wake-help wake-cell-note">{ strconv.FormatInt(w.Completed,10) } of { strconv.FormatInt(w.Total,10) } observed</span>
-						}
-						if w.Operation=="acquire" {
-							for _,setting:=range c.Polling {
-								if setting.Stream==w.Stream {
-									<span class="wake-help wake-cell-note">Polling interval: { pollingValue(setting.Effective()) }</span>
-								}
-							}
-						}
-						<span class="wake-help wake-cell-note">
-							Next eligible:
-							if w.Next.IsZero() {
-								{ unknownValue }
-							} else {
-								{ w.Next.Format(time.RFC3339Nano) }
-							}
-						</span>
-						if w.Failure!="" {
-							<p class="wake-error-text">{ w.Failure }</p>
-						}
-					</dd>
+		<div class="wake-reading-layout">
+			<div class="wake-reading-body">
+				if c.CanDiscover && c.Account.ID()=="" && (len(c.Candidates)>0 || v.PageInfo.Page>1) {
+					<section class="wake-card">
+						<h2>Choose your account</h2>
+						@DiscoveredAccounts(c)
+						@ListPagination(v.PageInfo)
+					</section>
 				}
-			</dl>
-			if !c.UpstreamUnavailable && connectionFailure(c) && !v.Storage.Paused {
-				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry connection</button></form>
-			} else if !c.UpstreamUnavailable && c.CanDiscover && c.Account.ID()=="" && len(sourceWork(c))==0 && !v.Storage.Paused {
-				<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Discover accounts again</button></form>
-			}
-			<a href={ templ.SafeURL(connectionURL(c.ID, "reports")) }>Inspect processing and recent reports</a>
-		</section>
-		if c.CanDiscover && c.Account.ID()=="" {
-			<section class="wake-card">
-				<h2>Choose your account</h2>@DiscoveredAccounts(c)
-				@ListPagination(v.PageInfo)
-			</section>
-		} else if c.CanDiscover {
-			<details class="wake-card" data-disclosure={ "accounts-" + c.ID }>
-				<summary>Discovered account references</summary>@DiscoveredAccounts(c)
-				@ListPagination(v.PageInfo)
-			</details>
-		}
+				<section class="wake-card" id="workflow-progress">
+					<h2>Synchronization status</h2>
+					if c.Descriptor.ID()!="" && !c.CanAcquire && !c.CanDiscover {
+						<p>This source interprets supplied evidence and does not perform automatic acquisition.</p>
+					} else if c.Account.ID()!="" {
+						<p>Authorized account: <strong>{ c.Account.Details().Name() }</strong></p>
+					} else if c.CanDiscover && len(c.Candidates)==0 && sourceSyncBlocker(c, v.Storage.Paused).Label=="" {
+						<p>Discovery has not returned any accounts yet.</p>
+					}
+					@SourceSyncWork(csrf, c, v, time.Now(), true)
+				</section>
+				if c.CanDiscover && c.Account.ID()!="" {
+					<details class="wake-card" data-disclosure={ "accounts-" + c.ID }>
+						<summary>Discovered account references</summary>@DiscoveredAccounts(c)
+						@ListPagination(v.PageInfo)
+					</details>
+				}
+			</div>
+			<aside class="wake-margin-note" aria-label="Source context">
+				<h2>Financial evidence</h2>
+				<p>Reports show when evidence arrived and which dates it covers.</p>
+				<p><a href={ templ.SafeURL(connectionURL(c.ID, "reports")) }>Inspect processing and recent reports</a></p>
+			</aside>
+		</div>
 	}
 }
 
@@ -379,80 +475,104 @@ templ ProviderSettings(descriptor provider.Descriptor, settings provider.Setting
 }
 
 templ ConnectionAccess(csrf string, c application.ConnectionView) {
-	<section class="wake-card wake-connection">
-		<h2>{ c.Name }</h2>
-		<details data-disclosure={ "identity-" + c.ID }><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
-		<p class="wake-help">Stored settings and credentials do not establish that the provider is reachable.</p>
-		if c.UpstreamUnavailable {
-			<p class="wake-notice">Upstream services could not start. Check the daemon logs for the upstream_unavailable event, resolve the reported problem, and restart Wake.</p>
-		}
-		<fieldset disabled?={ c.UpstreamUnavailable }>
-			if c.MissingAccess {
-				<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Review the source settings and required credentials.</p>
-			}
-			<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }>
-				<input type="hidden" name="csrf" value={ csrf }/>
-				<p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="connection_name" value={ c.Name } maxlength="256" required/></p>
-				@ProviderSettings(c.Descriptor, c.Settings, "update", c.ID)
-				<button class="btn" type="submit">Save connection settings</button>
-			</form>
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">
+			<section class="wake-card wake-connection">
+				<h2>Connection settings</h2>
+				if c.UpstreamUnavailable {
+					<p class="wake-notice">Upstream services could not start. Check the daemon logs for the upstream_unavailable event, resolve the reported problem, and restart Wake.</p>
+				}
+				<fieldset disabled?={ c.UpstreamUnavailable }>
+					if c.MissingAccess {
+						<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete. Review the source settings and required credentials.</p>
+					}
+					<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/settings") }>
+						<input type="hidden" name="csrf" value={ csrf }/>
+						<p><label for={ "name-" + c.ID }>Connection name</label><input class="input" id={ "name-" + c.ID } name="connection_name" value={ c.Name } maxlength="256" required/></p>
+						@ProviderSettings(c.Descriptor, c.Settings, "update", c.ID)
+						<button class="btn" type="submit">Save connection settings</button>
+					</form>
+				</fieldset>
+			</section>
 			for _,field:=range c.Descriptor.Fields() {
 				if field.Kind()==provider.SecretField {
-					<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets") }>
-						<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="secret_key" value={ field.Key() }/>
-						<p><label for={ providerFieldID("update", c.ID, field) }>{ "Replacement "+field.Label() }</label><input class="input" id={ providerFieldID("update", c.ID, field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
-						<button class="btn" type="submit">Replace credential</button>
-					</form>
+					<section class="wake-card">
+						<h2>{ field.Label() }</h2>
+						<fieldset disabled?={ c.UpstreamUnavailable }>
+							<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/secrets") }>
+								<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="secret_key" value={ field.Key() }/>
+								<p><label for={ providerFieldID("update", c.ID, field) }>{ "Replacement "+field.Label() }</label><input class="input" id={ providerFieldID("update", c.ID, field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required maxlength="4096"/></p>
+								<button class="btn" type="submit">Replace credential</button>
+							</form>
+						</fieldset>
+					</section>
 				}
 			}
-		</fieldset>
-	</section>
-	if len(c.Polling)>0 {
-		<section class="wake-card">
-			<fieldset disabled?={ c.UpstreamUnavailable }>
-				<h2>Polling intervals</h2>
-				<p class="wake-help">Changing an interval reschedules a queued routine poll, subject to provider pacing. Work in progress and retries keep their own deadlines.</p>
-				for _,setting:=range c.Polling {
-					<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/polling") }>
-						<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="stream" value={ setting.Stream }/>
-						<p><label for={ "poll-interval-" + setting.Stream }>Polling interval for { setting.Stream }</label><input class="input" id={ "poll-interval-" + setting.Stream } name="interval" value={ pollingValue(setting.Override) } maxlength="32" aria-describedby={ "poll-help-" + setting.Stream }/></p>
-						<p class="wake-help" id={ "poll-help-" + setting.Stream }>Enter { pollingValue(setting.Minimum) } to { pollingValue(provider.MaxPollInterval) }, for example { pollingValue(setting.Default) }. Leave empty to use the default of { pollingValue(setting.Default) }.</p>
-						<button class="btn" type="submit">Save interval for { setting.Stream }</button>
-					</form>
-				}
-			</fieldset>
-		</section>
-	}
+			if len(c.Polling)>0 {
+				<section class="wake-card">
+					<fieldset disabled?={ c.UpstreamUnavailable }>
+						<h2>Polling intervals</h2>
+						<p class="wake-help">Changing an interval reschedules a queued routine poll, subject to provider pacing. Work in progress and retries keep their own deadlines.</p>
+						for _,setting:=range c.Polling {
+							<form method="post" action={ templ.SafeURL("/connections/" + c.ID + "/polling") }>
+								<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="stream" value={ setting.Stream }/>
+								<p><label for={ "poll-interval-" + setting.Stream }>Polling interval for { setting.Stream }</label><input class="input" id={ "poll-interval-" + setting.Stream } name="interval" value={ pollingValue(setting.Override) } maxlength="32" aria-describedby={ "poll-help-" + setting.Stream }/></p>
+								<p class="wake-help" id={ "poll-help-" + setting.Stream }>Enter { pollingValue(setting.Minimum) } to { pollingValue(provider.MaxPollInterval) }, for example { pollingValue(setting.Default) }. Leave empty to use the default of { pollingValue(setting.Default) }.</p>
+								<button class="btn" type="submit">Save interval for { setting.Stream }</button>
+							</form>
+						}
+					</fieldset>
+				</section>
+			}
+		</div>
+		<aside class="wake-margin-note" aria-label="Source access context">
+			<h2>Provider contact</h2>
+			<p><a href={ templ.SafeURL(connectionURL(c.ID, "status")) }>See the latest provider outcome</a>.</p>
+			<details data-disclosure={ "identity-" + c.ID }><summary>Source identity</summary><p>{ c.ID } · { c.Provider }</p></details>
+		</aside>
+	</div>
 }
 
 templ ConnectionSetup(csrf string, registrations []provider.Registration) {
 	@Breadcrumbs("Add source")
-	@PageHeader("Add source connection", "Configure a source before granting synchronization authority.")
-	if len(registrations)==0 {
-		<p>No source providers are available in this build.</p>
-	}
-	for _,registration:=range registrations {
-		<section class="wake-card">
-			<h2>{ registration.Descriptor().Name() }</h2>
-			<form method="post" action="/connections">
-				<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="provider" value={ registration.Descriptor().ID() }/>
-				<p><label for={ "connection-name-" + registration.Descriptor().ID() }>Connection name</label><input class="input" id={ "connection-name-" + registration.Descriptor().ID() } name="connection_name" required maxlength="256"/></p>
-				@ProviderSettings(registration.Descriptor(), provider.Settings{}, "create", registration.Descriptor().ID())
-				for _,field:=range registration.Descriptor().Fields() {
-					if field.Kind()==provider.SecretField {
-						<p><label for={ providerFieldID("create", registration.Descriptor().ID(), field) }>{ field.Label() }</label><input class="input" id={ providerFieldID("create", registration.Descriptor().ID(), field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required?={ field.Required() } maxlength="4096"/></p>
-					}
-				}
-				<button class="btn btn-primary" type="submit">Create connection</button>
-			</form>
-		</section>
-	}
+	@PageHeader("Add source connection", "")
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">
+			if len(registrations)==0 {
+				<p>No source providers are available in this build.</p>
+			}
+			for _,registration:=range registrations {
+				<section class="wake-card">
+					<h2>{ registration.Descriptor().Name() }</h2>
+					<form method="post" action="/connections">
+						<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="provider" value={ registration.Descriptor().ID() }/>
+						<p><label for={ "connection-name-" + registration.Descriptor().ID() }>Connection name</label><input class="input" id={ "connection-name-" + registration.Descriptor().ID() } name="connection_name" required maxlength="256"/></p>
+						@ProviderSettings(registration.Descriptor(), provider.Settings{}, "create", registration.Descriptor().ID())
+						for _,field:=range registration.Descriptor().Fields() {
+							if field.Kind()==provider.SecretField {
+								<p><label for={ providerFieldID("create", registration.Descriptor().ID(), field) }>{ field.Label() }</label><input class="input" id={ providerFieldID("create", registration.Descriptor().ID(), field) } name={ "secret." + field.Key() } type="password" autocomplete="new-password" required?={ field.Required() } maxlength="4096"/></p>
+							}
+						}
+						<button class="btn btn-primary" type="submit">Create connection</button>
+					</form>
+				</section>
+			}
+		</div>
+		if len(registrations)>0 {
+			<aside class="wake-margin-note" aria-label="Account discovery">
+				<h2>After setup</h2>
+				<p>For providers that discover accounts, confirm the account you want Wake to synchronize after it appears under Connections.</p>
+			</aside>
+		}
+	</div>
 }
 
 templ ReferenceSettings(csrf string, view sourceView) {
 	<section class="wake-card" id="reference-setting">
 		<h2>Instrument reference access</h2>
-		<p>OpenFIGI mapping works anonymously. An optional key increases the shared request allowance.</p>
+		if view.Storage.ReferenceReview {
+			<p id="reference-review-required">Save the access setting before resuming synchronization.</p>
+		}
 		if view.ReferenceKey {
 			<p>
 				@StateBadge("Key stored")
@@ -470,29 +590,38 @@ templ ReferenceSettings(csrf string, view sourceView) {
 templ RestartReviewForm(csrf string, view sourceView) {
 	<section class="wake-card">
 		<h2>Review provider restart</h2>
-		<p>Approval applies to these source accounts and streams. Retained reports still record any gaps in history.</p>
-		<ul>
+		<p>Check the accounts, report periods and earliest request times before approving.</p>
+		<ul class="wake-task-list">
 			for _, scope := range view.RestartReview.Scopes {
 				<li>
-					<strong>{ scope.Name }</strong>
-					if scope.Account != "" {
-						<span>· { scope.Account }</span>
-					}
-					if scope.Stream != "" {
-						<span>· { known(scope.Stream) }</span>
-					}
-					if scope.Approved {
-						<p>Already approved.</p>
-					} else if scope.Blocked != "" {
-						<p>{ scope.Blocked } This source remains paused.</p>
-						<a href={ templ.SafeURL(connectionURL(scope.Connection, "access")) }>Review source access</a>
-					} else {
-						if !scope.Plan.From().IsZero() {
-							<p>{ scope.Plan.From().String() } through { scope.Plan.To().String() }</p>
+					<div>
+						<h3>{ scope.Name }</h3>
+						if scope.Account != "" || scope.Stream != "" {
+							<p class="wake-help">
+								if scope.Account != "" {
+									{ scope.Account }
+								}
+								if scope.Account != "" && scope.Stream != "" {
+									<span>· </span>
+								}
+								if scope.Stream != "" {
+									{ known(scope.Stream) }
+								}
+							</p>
 						}
-						<p>{ scope.Plan.Description() }</p>
-						<p>Earliest request <span>@SyncTime(scope.NotBefore)</span></p>
-					}
+						if scope.Approved {
+							<p>Already approved.</p>
+						} else if scope.Blocked != "" {
+							<p>{ scope.Blocked } This source remains paused.</p>
+							<a href={ templ.SafeURL(connectionURL(scope.Connection, "access")) }>Review source access</a>
+						} else {
+							if !scope.Plan.From().IsZero() {
+								<p>{ scope.Plan.From().String() } through { scope.Plan.To().String() }</p>
+							}
+							<p>{ scope.Plan.Description() }</p>
+							<p>Earliest request <span>@SyncTime(scope.NotBefore)</span></p>
+						}
+					</div>
 				</li>
 			}
 		</ul>
@@ -511,86 +640,112 @@ templ RestartReviewForm(csrf string, view sourceView) {
 }
 
 templ RecoveryPage(csrf string, view sourceView) {
-	@PageHeader("Review synchronization recovery", "Retained financial history stays inspectable while upstream work is paused.")
+	@PageHeader("Review synchronization recovery", "")
 	@ConnectionsNavigation("recovery")
-	if view.RestartReview.Required {
-		@RestartReviewForm(csrf, view)
-	} else if !view.Storage.Paused {
-		<section class="wake-card"><h2>Access review complete</h2><p>Upstream work is not paused for storage recovery.</p><a href="/connections">Inspect connections</a></section>
-	} else {
-		<section class="wake-card wake-priority" id="storage-recovery-title">
-			<h2>1. Restore source access</h2>
-			if view.Storage.WarehouseReset {
-				<p id="warehouse-reset-notice">Financial history was reset. Settings and credentials were retained; account discovery and confirmation are required again after resume.</p>
-			}
-			for _,c:=range view.Connections {
-				<p><strong>{ c.Name }</strong> · Settings: { readiness(c.SettingsStored) } · Credentials: { readiness(c.CredentialStored) }</p>
-			}
-			@ListPagination(view.PageInfo)
-		</section>
-		for _,c:=range view.Connections {
-			if c.MissingAccess {
-				<section class="wake-card" id={ "recovery-source-" + c.ID }><h2>{ c.Name }</h2><p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete.</p><a class="btn" id={ "repair-source-" + c.ID } data-repair-source href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair source access</a></section>
-			}
-		}
-		<section class="wake-card">
-			<h2>2. Review reference access</h2>
-			if view.Storage.ReferenceReview {
-				<p id="reference-review-required">Save the OpenFIGI setting, including an explicit anonymous selection if appropriate.</p>
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">
+			if view.RestartReview.Required {
+				@RestartReviewForm(csrf, view)
+			} else if !view.Storage.Paused {
+				<section class="wake-card"><h2>Access review complete</h2><p>Upstream work is not paused for storage recovery.</p><a href="/connections">Inspect connections</a></section>
 			} else {
-				<p>Reference access has been reviewed.</p>
+				<ol class="wake-recovery-steps">
+					<li>
+						<section class="wake-card wake-priority" id="storage-recovery-title">
+							<h2>Restore source access</h2>
+							if view.Storage.WarehouseReset {
+								<p id="warehouse-reset-notice">Financial history was reset. Settings and credentials were retained; account discovery and confirmation are required again after resume.</p>
+							}
+							for _,c:=range view.Connections {
+								<article class="wake-source-row" id={ "recovery-source-" + c.ID }>
+									<div>
+										<h3>{ c.Name }</h3>
+										<dl><dt>Settings</dt><dd>{ readiness(c.SettingsStored) }</dd><dt>Credentials</dt><dd>{ readiness(c.CredentialStored) }</dd></dl>
+										if c.MissingAccess {
+											<p id={ "access-missing-" + c.ID } class="wake-notice">Access configuration is missing or incomplete.</p>
+										}
+									</div>
+									if c.MissingAccess {
+										<a class="btn" id={ "repair-source-" + c.ID } data-repair-source href={ templ.SafeURL(connectionURL(c.ID, "access")) }>Repair source access</a>
+									}
+								</article>
+							}
+							@ListPagination(view.PageInfo)
+						</section>
+					</li>
+					<li>
+						if view.Storage.ReferenceReview {
+							@ReferenceSettings(csrf, view)
+						} else {
+							<section class="wake-card"><h2>Reference access</h2><p>Reviewed</p></section>
+						}
+					</li>
+					<li>
+						<section class="wake-card">
+							<h2>Resume upstream work</h2>
+							if !recoveryReady(view) {
+								<p class="wake-notice">Complete the source and reference steps before resuming. Check every page of source access.</p>
+							}
+							<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
+						</section>
+					</li>
+				</ol>
 			}
-		</section>
-		if view.Storage.ReferenceReview {
-			@ReferenceSettings(csrf, view)
+		</div>
+		if view.Storage.Paused || view.RestartReview.Required {
+			<aside class="wake-margin-note" aria-label="Scope of recovery approval">
+				<h2>What approval covers</h2>
+				if view.RestartReview.Required {
+					<p>Approval lets Wake contact the accounts and streams listed in this plan.</p>
+				} else {
+					<p>Approval lets Wake contact configured sources. Confirm newly discovered accounts separately after synchronization resumes.</p>
+				}
+			</aside>
 		}
-		<section class="wake-card">
-			<h2>3. Resume upstream work</h2>
-			<p>Resume grants permission to contact configured sources. It does not confirm a newly discovered account.</p>
-			if !recoveryReady(view) {
-				<p class="wake-notice">Complete the source and reference steps before resuming. Check every page of source access.</p>
-			}
-			<form method="post" action="/recovery/resume"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="revision" value={ strconv.FormatInt(view.Storage.Revision, 10) }/><button class="btn btn-primary" type="submit" disabled?={ !recoveryReady(view) }>Resume upstream work</button></form>
-		</section>
-	}
+	</div>
 }
 
 templ ConnectionReports(csrf string, c application.ConnectionView) {
-	<section class="wake-card">
-		<h2>Recent reports</h2>
-		<p class="wake-help">Up to 10 recent acquisitions. Requested and returned bounds have distinct meanings; neither proves complete history.</p>
-		if len(c.Processing)==0 {
-			<p>No acquired financial reports yet.</p>
-		}
-		for _,p:=range c.Processing {
-			<article class="wake-report-row">
-				<div class="wake-card-heading">
-					<h3><a href={ templ.SafeURL("/evidence/" + p.Artifact) }>{ known(p.Stream) } report</a></h3>
-					if c.Descriptor.ID()=="" {
-						<p>Provider unavailable. Evidence is retained.</p>
-					} else if !c.CanNormalize {
-						<p>Evidence retained. This source does not provide normalization.</p>
-					} else if p.Complete {
-						@StateBadge("Processing complete")
-					} else {
-						@StateBadge("Processing pending")
+	<div class="wake-reading-layout">
+		<section class="wake-card wake-reading-body">
+			<h2>Recent reports</h2>
+			if len(c.Processing)==0 {
+				<p>No acquired financial reports yet.</p>
+			}
+			for _,p:=range c.Processing {
+				<article class="wake-report-row">
+					<div class="wake-card-heading">
+						<h3><a href={ templ.SafeURL("/evidence/" + p.Artifact) }>{ known(p.Stream) } report</a></h3>
+						if c.Descriptor.ID()=="" {
+							<p>Provider unavailable. Evidence is retained.</p>
+						} else if !c.CanNormalize {
+							<p>Evidence retained. This source does not provide normalization.</p>
+						} else if p.Complete {
+							@StateBadge("Processing complete")
+						} else {
+							@StateBadge("Processing pending")
+						}
+					</div>
+					<dl><dt>Acquired</dt><dd>{ p.Retrieved }</dd><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.ActivityClaims,10) } activity observations</dd></dl>
+					if p.NeedsReview>0 {
+						<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL("/evidence/" + p.Artifact) }>Inspect report observations</a>.</p>
 					}
-				</div>
-				<dl><dt>Acquired</dt><dd>{ p.Retrieved }</dd><dt>Requested</dt><dd>{ known(p.RequestedFrom) } to { known(p.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(p.ReportedFrom) } to { known(p.ReportedTo) }</dd><dt>Processed claims</dt><dd>{ strconv.FormatInt(p.ActivityClaims,10) } activity observations</dd></dl>
-				if p.NeedsReview>0 {
-					<p>{ strconv.FormatInt(p.NeedsReview,10) } source claims need identity review. <a href={ templ.SafeURL("/evidence/" + p.Artifact) }>Inspect report observations</a>.</p>
-				}
-				if c.CanNormalize && p.Failure!="" {
-					<p class="wake-notice">{ p.Failure }</p>
-					<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
-				}
-				<details data-disclosure={ "receipt-" + p.Receipt }><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
-				if c.CanNormalize && p.Failure=="" {
-					<details data-disclosure={ "processing-" + p.Receipt }><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
-				}
-			</article>
-		}
-	</section>
+					if c.CanNormalize && p.Failure!="" {
+						<p class="wake-notice">{ p.Failure }</p>
+						<form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form>
+					}
+					<details data-disclosure={ "receipt-" + p.Receipt }><summary>Receipt, retained report and excluded rows</summary><p>Receipt { p.Receipt }</p><p>Acquired SHA-256 { p.Hash }</p><p>Comparison { p.ComparisonPolicy }</p><p>Retained report { p.Artifact } · { strconv.FormatInt(p.ExcludedRows,10) } excluded rows</p></details>
+					if c.CanNormalize && p.Failure=="" {
+						<details data-disclosure={ "processing-" + p.Receipt }><summary>Processing actions</summary><form method="post" action={ templ.SafeURL("/processing/" + p.Artifact + "/retry") }><input type="hidden" name="csrf" value={ csrf }/><button class="btn" type="submit">Retry processing report</button></form></details>
+					}
+				</article>
+			}
+		</section>
+		<aside class="wake-margin-note" aria-label="Report coverage">
+			<h2>How to read the periods</h2>
+			<p>Wake shows the latest ten acquisitions. The requested period is what Wake asked for. The returned period is the range the provider supplied.</p>
+		</aside>
+	</div>
 }
 
 templ ActivityPage(view activityView) {
@@ -608,34 +763,36 @@ templ ActivityPage(view activityView) {
 }
 
 templ ReviewQueue(view activityView) {
-	<section class="wake-card">
-		<form class="wake-filters" method="get" action="/review"><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
-		if len(view.Reviews)==0 {
-			if view.Total==0 {
-				<p>No activity or identity conflicts are awaiting review.</p>
-			} else {
-				<p>No review items match this result page. Change the search or return to the first page.</p>
-				<a href="/review">View all review items</a>
-			}
-		} else {
-			<ul class="wake-task-list">
-				for _,r:=range view.Reviews {
-					<li>
-						<div>
-							<p><strong><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></strong></p>
-							<p class="wake-help">{ describe(r.Description, r.Kind) }</p>
-							<p>{ r.Reason }</p>
-						</div>
-					</li>
+	<div class="wake-reading-layout">
+		<section class="wake-card wake-reading-body" aria-label="Review items">
+			<form class="wake-filters" method="get" action="/review"><p><label for="review-search">Search review items</label><input class="input" id="review-search" type="search" name="q" value={ page(ctx).Query.Get("q") }/></p><button class="btn" type="submit">Search</button></form>
+			if len(view.Reviews)==0 {
+				if view.Total==0 {
+					<p>No activity or identity conflicts are awaiting review.</p>
+				} else {
+					<p>No review items match this result page. Change the search or return to the first page.</p>
+					<a href="/review">View all review items</a>
 				}
-			</ul>
-		}
-		@ListPagination(view.PageInfo)
-		<details data-disclosure="review-help">
-			<summary>About the review queue</summary>
-			<p>Find source failures in Connections or System, and ordinary reference gaps in Instruments.</p>
-		</details>
-	</section>
+			} else {
+				<ul class="wake-task-list wake-review-list">
+					for _,r:=range view.Reviews {
+						<li>
+							<div>
+								<h2><a href={ templ.SafeURL(r.Href) }>{ r.Label }</a></h2>
+								<p>{ r.Reason }</p>
+								<p class="wake-help">{ describe(r.Description, r.Kind) }</p>
+							</div>
+						</li>
+					}
+				</ul>
+			}
+			@ListPagination(view.PageInfo)
+		</section>
+		<aside class="wake-margin-note" aria-label="Other places to check">
+			<h2>Other work to check</h2>
+			<ul><li><a href="/connections">Source status</a></li><li><a href="/instruments">Instrument reference gaps</a></li></ul>
+		</aside>
+	</div>
 }
 
 templ ActivityRows() {
@@ -705,9 +862,15 @@ templ GridSearch(id, label, placeholder string) {
 }
 
 templ ReferencePage(csrf string, view sourceView) {
-	@PageHeader("Instrument reference", "OpenFIGI access is separate from your financial source.")
+	@PageHeader("Instrument reference", "")
 	@ConnectionsNavigation("reference")
-	@ReferenceSettings(csrf, view)
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">@ReferenceSettings(csrf, view)</div>
+		<aside class="wake-margin-note" aria-label="OpenFIGI access choices">
+			<h2>Request allowance</h2>
+			<p>OpenFIGI maps instrument identifiers with anonymous access. An optional key increases the shared request allowance.</p>
+		</aside>
+	</div>
 }
 
 templ SystemNavigation(view string) {
@@ -741,8 +904,8 @@ templ PositionsPage() {
 }
 
 templ PositionsSummary() {
-	<div data-positions-summary aria-live="polite">
-		<p data-positions-account>Loading reported account…</p>
+	<div class="wake-position-context" data-positions-summary aria-live="polite">
+		<h2 data-positions-account>Loading reported account…</h2>
 		<dl><dt>Availability</dt><dd data-positions-state>Loading…</dd><dt>As of</dt><dd data-positions-as-of>Loading…</dd></dl>
 		<p class="wake-help" data-positions-message hidden></p>
 		<a href="/connections" data-positions-source>Inspect source reports</a>

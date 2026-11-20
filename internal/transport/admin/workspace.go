@@ -139,6 +139,8 @@ func workspaceURL(ctx context.Context) string {
 		return "/"
 	case u.Path == "/positions":
 		return "/positions"
+	case u.Path == "/reports" || strings.HasPrefix(u.Path, "/evidence/"):
+		return "/reports"
 	case u.Path == "/review":
 		return "/review"
 	case u.Path == "/instruments" || strings.HasPrefix(u.Path, "/instruments/"):
@@ -166,6 +168,8 @@ func parentLabel(ctx context.Context) string {
 	switch {
 	case p == "/positions":
 		return "Positions"
+	case p == "/reports":
+		return "Reports"
 	case p == "/activity":
 		return "Activity"
 	case p == "/instruments":
@@ -273,7 +277,7 @@ func sourceWork(c application.ConnectionView) []application.WorkStatus {
 
 	out := []application.WorkStatus{}
 	for _, w := range c.Work {
-		if w.Operation == operation && w.Scheduled {
+		if w.Operation == operation && (w.Scheduled || !w.LastRetrieved.IsZero()) {
 			out = append(out, w)
 		}
 	}
@@ -281,38 +285,30 @@ func sourceWork(c application.ConnectionView) []application.WorkStatus {
 	return out
 }
 
-func repairs(v sourceView) []reviewItem {
-	out := []reviewItem{}
-	if v.Storage.Paused {
-		out = append(
-			out,
-			reviewItem{
-				Label:  "Review restored access",
-				Reason: "Upstream work is paused.",
-				Href:   "/connections/recovery",
-			},
-		)
+type syncBlocker struct{ Label, Action, Href string }
+
+func sourceSyncBlocker(c application.ConnectionView, paused bool) syncBlocker {
+	switch {
+	case paused:
+		return syncBlocker{"Paused", "Review recovery steps", "/connections/recovery"}
+	case c.Provider != "" && c.Descriptor.ID() == "":
+		return syncBlocker{Label: "Provider unavailable in this build"}
+	case c.UpstreamUnavailable:
+		return syncBlocker{"Upstream services unavailable", "Check system status", "/system"}
+	case c.MissingAccess:
+		return syncBlocker{
+			"Access review required",
+			"Repair source settings and credentials",
+			connectionURL(c.ID, "access"),
+		}
+	default:
+		return syncBlocker{}
 	}
+}
 
+func reportAndReferenceIssues(v sourceView) []reviewItem {
+	var out []reviewItem
 	for _, c := range v.Connections {
-		if c.MissingAccess {
-			out = append(
-				out,
-				reviewItem{
-					Label:  c.Name,
-					Reason: "Source settings or credentials are missing.",
-					Href:   connectionURL(c.ID, "access"),
-				},
-			)
-		}
-
-		for _, w := range sourceWork(c) {
-			if w.Failure != "" {
-				out = append(out, reviewItem{Label: c.Name, Reason: w.Failure, Href: connectionURL(c.ID, "status")})
-				break
-			}
-		}
-
 		for _, p := range c.Processing {
 			if p.Failure != "" {
 				out = append(
@@ -342,7 +338,6 @@ func repairs(v sourceView) []reviewItem {
 
 	return out
 }
-func repairCount(v sourceView) int { return len(repairs(v)) }
 
 func stringTitle(s string) string {
 	if s == "" {
@@ -374,12 +369,8 @@ func connectionURL(id, view string) string {
 }
 
 func connectionFailure(c application.ConnectionView) bool {
-	if c.MissingAccess {
-		return true
-	}
-
 	for _, w := range sourceWork(c) {
-		if w.Failure != "" || w.Progress == provider.ProgressUnavailable {
+		if w.Scheduled && (w.Failure != "" || w.RetryBlocked || w.Progress == provider.ProgressUnavailable) {
 			return true
 		}
 	}
@@ -509,6 +500,10 @@ func workspaceLabel(ctx context.Context) string {
 	p := workspaceURL(ctx)
 	if p == "/positions" {
 		return "Positions"
+	}
+
+	if p == "/reports" {
+		return "Reports"
 	}
 
 	if p == "/instruments" {

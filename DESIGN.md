@@ -1,165 +1,50 @@
 ---
 name: Wake admin UI
-description: Steel, Copper and Sage visual rules for Wake administration.
+description: Wake report reading, source inspection and browser appearance standards.
 colors:
-  base-100: "#FAFBFC"
-  base-200: "#B0B6BC"
-  base-300: "#8D98A3"
-  base-content: "#293039"
-  primary: "#DC8E57"
-  primary-content: "#293039"
-  secondary: "#293039"
-  secondary-content: "#FAFBFC"
-  accent: "#E0E5E9"
-  accent-content: "#293039"
-  neutral: "#293039"
-  neutral-content: "#FAFBFC"
-  info: "#DFE5EA"
-  info-content: "#384D5C"
-  success: "#D1D8BD"
-  success-content: "#3B4A32"
-  warning: "#EEE3BA"
-  warning-content: "#65501B"
-  error: "#EAD9D5"
-  error-content: "#713E38"
-  wake-canvas: "#EDF0F2"
-  wake-link: "#805028"
-  wake-sidebar: "#C6CDD3"
-  wake-field: "#EDF0F2"
-  wake-muted: "#3D4650"
-  wake-pending: "#0059C7"
-  wake-control-border: "#687581"
-  wake-selection-edge: "#805028"
+  steel-and-copper:
+    canvas: "#EDF0F2"
+    canvas-dark: "#2B3036"
+    ink: "#293039"
+    copper: "#DC8E57"
+    link: "#805028"
+    link-dark: "#E6A675"
+  source-reader:
+    paper: "#F8F8EF"
+    paper-dark: "#15241E"
+    masthead: "#18342D"
+    masthead-dark: "#0F211C"
+    navigation-selected: "#D9EF89"
 typography:
-  headline-narrow:
+  system:
     fontFamily: "system-ui, sans-serif"
-    fontSize: "1.6rem"
-    fontWeight: 700
-    lineHeight: 1.25
-  specimen:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "2rem"
-    fontWeight: 650
-    lineHeight: 1.2
-  specimen-narrow:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "1.65rem"
-    fontWeight: 650
-    lineHeight: 1.2
-  headline:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "1.8rem"
-    fontWeight: 700
-    lineHeight: 1.25
-    letterSpacing: "-0.02em"
-  title:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "1.15rem"
-    fontWeight: 650
-    lineHeight: 1.4
+  editorial:
+    fontFamily: "STIX Two Text, Georgia, serif"
   body:
     fontFamily: "system-ui, sans-serif"
     fontSize: "1rem"
-    fontWeight: 400
     lineHeight: 1.5
-  label:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "1rem"
-    fontWeight: 550
-    lineHeight: 1.5
-  button:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "0.875rem"
-    fontWeight: 600
-    lineHeight: 1.5
-  navigation:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "0.95rem"
-    fontWeight: 400
-    lineHeight: 1.5
-  help:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "0.875rem"
-    fontWeight: 400
-    lineHeight: 1.5
-  status:
-    fontFamily: "system-ui, sans-serif"
-    fontSize: "0.8rem"
-    fontWeight: 400
-    lineHeight: 1.2
 rounded:
-  selector: "0.375rem"
-  field: "0.375rem"
-  box: "0.625rem"
-spacing:
-  quarter-rem: "0.25rem"
-  half-rem: "0.5rem"
-  three-quarter-rem: "0.75rem"
-  one-rem: "1rem"
-  one-quarter-rem: "1.25rem"
-  one-half-rem: "1.5rem"
-  two-rem: "2rem"
-components:
-  button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.primary-content}"
-    typography: "{typography.button}"
-    rounded: "{rounded.field}"
-    padding: "0 1rem"
-    height: "2.5rem"
-  button-default:
-    backgroundColor: "{colors.base-200}"
-    textColor: "{colors.base-content}"
-    typography: "{typography.button}"
-    rounded: "{rounded.field}"
-    padding: "0 1rem"
-    height: "2.5rem"
-  input:
-    backgroundColor: "{colors.wake-field}"
-    textColor: "{colors.base-content}"
-    typography: "{typography.body}"
-    rounded: "{rounded.field}"
-    padding: "0 0.75rem"
-    height: "2.5rem"
-    width: "100%"
-  navigation-current:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.base-content}"
-    rounded: "{rounded.field}"
-    padding: "0.375rem 0.75rem"
-  status-badge:
-    backgroundColor: "transparent"
-    textColor: "{colors.base-content}"
-    typography: "{typography.status}"
-    rounded: "{rounded.selector}"
-    padding: "0.25rem calc(0.75rem - 1px)"
-  card:
-    backgroundColor: "{colors.base-100}"
-    textColor: "{colors.base-content}"
-    rounded: "{rounded.box}"
-    padding: "1.5rem"
-  disclosure:
-    backgroundColor: "{colors.base-100}"
-    textColor: "{colors.base-content}"
-    rounded: "{rounded.box}"
-    padding: "1rem 1.25rem"
+  field: "0.25rem"
+  page: "0"
 ---
 
-# Design System: Wake
+# Wake admin design
 
-## Purpose
+## Reading sequence
 
-DESIGN.md is Wake's visual-design standard. Its structured frontmatter is the
-portable design baseline. CSS, assets and templates implement that standard;
-inspect their source for exact rendered behavior rather than maintaining another
-component inventory. Keep the baseline aligned with approved design changes.
-The [product brief](.docs/product/brief.md) and [financial language](.docs/product/domain.md)
-own product intent and meaning.
+Wake opens with the state of the accounts, then the reports that support that
+reading. Put the affected record and latest report together, followed by each
+stream’s last successful retrieval and next attempt. Keep a repair beside its blocker.
+Identify the source, the period it reported and any
+decision still to make. Keep retrieval time, processing and the effective time
+of positions distinct. A quiet opening needs supporting facts.
 
-Wake is a calm, precise workspace for financial evidence. Steel and deep-steel
-surfaces, sparse Copper actions and sage-inspired status colors support readable
-work. Use system typography, flat bordered regions and native controls. Keep audit
-metadata secondary while making uncertainty and the next useful action clear.
+The core interaction is an annotated report. Enter through a current record or
+through a source. Keep the selected entry, its exact terms and its relationship
+to the record together. Open the original content for a closer reading. On a
+narrow display, place the current record immediately after the selected terms
+so that checking a difference takes precedence over scrolling through raw data.
 
 ## Identity and assets
 
@@ -182,85 +67,56 @@ Keep the [SVG favicon](internal/transport/admin/assets/brand/favicon.svg),
 with the mark. Export raster variants from the vector source.
 Assets stay local and embedded; no external font/icon service is needed.
 
-## Color and appearance
+## Type, color and space
 
-Use shared light/dark semantic roles rather than page-specific palettes. Steel anchors the
-workspace; Copper emphasizes primary actions sparingly. Body text and keyboard focus use the
-foreground role. Underlined links use a Copper text role: `#805028` in light appearance and
-`#E6A675` in dark appearance. Filled primary actions retain Copper with dark text; secondary actions
-use visible borders and distinct hover/focus states. Selection has a distinct edge as well as
-background and text emphasis. Panels, fields and chrome remain distinct without decorative depth.
-Both themes retain the same layout and density.
+Steel & Copper is the default theme. Use steel surfaces, underlined copper links,
+copper primary actions, sage success, ochre warning and clay errors. Source Reader
+uses an evergreen masthead, a citron navigation mark and ruled paper surfaces.
+Both themes provide distinct light and dark roles for surfaces, text, controls,
+selection and browser chrome. New themes supply these roles to the same components.
+Keep an outline or edge alongside the selection color and a label alongside each status.
 
-Status combines color, wording and shape. Information uses Steel, success Sage,
-warning muted ochre and errors clay. Active/disabled connection states are neutral;
-being connected is not proof of successful synchronization. Failure, malformed
-and blocked treatments remain visibly distinct. Errors include a next action.
-Never communicate a difference or outcome through color alone.
-Use a vivid blue text accent for pending table filters, with `#0059C7` in light
-appearance and `#7CB9FF` in dark appearance.
+System sans is Steel & Copper’s default typography. Source Reader uses locally
+embedded STIX Two Text for editorial headings and featured financial values.
+Keep controls, table labels and supporting text in system sans. Give reported
+and accepted values equal typographic weight, preserve exact precision and use
+tabular numerals for comparisons.
 
-Choose Light, Dark or System appearance in System Settings. Apply the browser's
-choice on sign-in and authenticated pages. System follows the browser preference.
-Keep the choice usable when storage is unavailable. Honor reduced motion.
+Settings offers independent Theme, Mode and Typography choices. A fresh browser
+uses Steel & Copper, System mode and Theme default typography. An explicit font
+choice persists across theme changes. System mode tracks the device in either
+theme. Apply preferences before first paint on sign-in and authenticated pages,
+keep open tabs in sync, and honor reduced motion.
 
-## Typography and icons
+## Navigation and workspaces
 
-Use system UI typography and a clear heading hierarchy. Keep financial values
-readable with tabular numerals. Exact terms and identifiers remain selectable;
-rounded summaries never replace full comparison values. Reserve the logo's custom
-lettering for identity and avoid decorative or condensed evidence typography.
+The horizontal masthead gives direct access to Overview, Reports, Activity,
+Instruments, Positions and Needs review. Connections and System group the
+operator controls. A keyboard-dismissible Menu replaces the full navigation on
+smaller screens. Keep session contact and sign-out reachable there in the lower
+bar. Contact describes the browser's connection to Wake. Give an expired session
+a visible sign-in action.
 
-The [icon sprite](internal/transport/admin/assets/brand/icons.svg) supplies simple
-line icons alongside visible labels. Icons inherit foreground color and are hidden
-from assistive technology when decorative. Never substitute an icon for a control's
-accessible name or decorate every heading and value. Give each sidebar destination
-a distinct icon so Overview, Activity, Instruments, Positions, Needs review, Connections and
-System remain visually distinguishable.
+Reports lists receipts across sources. Lead with receipt time, the report's
+financial contribution and its reported period. A repeated report may refer to
+a body Wake already has. Identify the retrieval separately. Activity,
+Instruments and Positions support independent financial browsing. Lead an
+instrument with its ticker when available, followed by its description.
+Positions presents each account set's availability and reporting time. Needs
+review identifies decisions the operator can make.
 
-## Layout and task hierarchy
+Connections owns account authority, synchronization, source-specific reports,
+access and recovery. Favor maintenance of existing sources before new setup.
+System owns installation status, configuration and settings. Show the loaded
+TOML or its absence. Show storage size in binary units and exact bytes, scoped
+to the financial file.
 
-The first viewport explains the task and shows its relevant status or work.
-Keep navigation compact, financial context readable and identifiers secondary.
-Across admin views, lead instrument identity with its ticker and use its label as a
-secondary description. Fall back to the description when no ticker is available.
-Lead with connection maintenance before new setup; disclose lengthy forms and
-audit metadata on demand. Plain task labels take priority over internal vocabulary.
-
-Use bounded forms, restrained spacing and flat bordered cards to identify tasks,
-financial summaries, comparisons and configuration sections. A light steel canvas
-(`#EDF0F2`) carries light cards; a deep steel canvas (`#2B3036`) carries dark cards
-(`#363D44`). Group related fields within each card rather than treating individual
-fields or table rows as separate cards. Keep daemon contact and Sign out at the
-bottom of the desktop sidebar. At narrow widths, move them into a fixed bottom
-bar that stays visible when navigation collapses. Use a native disclosure that
-opens upward for contact context, and keep session recovery visible when sign-in
-expires. Stack
-simple regions, provide dismissible keyboard-accessible navigation and keep
-genuinely two-dimensional tables locally scrollable. Avoid whole-page overflow.
-
-Overview orients the operator and surfaces specific next actions. Activity owns
-financial-history inspection. Positions owns latest reported account sets, with their own
-availability and reported effective time. Instruments owns instrument browsing, and Needs
-review owns actionable financial and identity uncertainty. These are separate
-Workspace sidebar destinations. Administration groups Connections, then System.
-Connections owns source authority, synchronization, reports and access; System
-owns installation status, effective configuration and advanced maintenance.
-Configuration identifies the TOML file loaded at startup, or states that none was loaded.
-System status includes the current financial database file size, with readable
-binary units and an exact byte count. It describes the warehouse file, including
-retained reports, independently of encrypted access storage and temporary journals.
-Full-page details retain breadcrumbs and a return path to their originating view.
-Workspace paths identify Activity, Instruments, Positions and Needs review independently; query
-parameters control filtering and table presentation. System uses a status landing
-page with separate Configuration and Settings views, following the Connections workspace.
-Resource links carry no navigation ancestry. Tab-local browser history preserves
-the originating workspace and return trail through details, evidence and corrections.
-Direct links use canonical breadcrumbs and return destinations. Reload and browser
-Back/Forward retain the current entry's navigation context; a newly opened tab starts
-from the resource's canonical workspace. In-page fragment links retain that context
-and do not reload financial tables. Store navigation metadata only, never page HTML.
-Applied corrections and ordinary reference gaps remain distinct from review tasks.
+Use ordinary links for drill-down. A direct link has a meaningful canonical
+home. In one tab, retain the originating workspace, applied filters and return
+trail when opening a record, a report or a correction. Back, Forward and reload
+preserve that context. Store navigation metadata only. Keep large financial
+tables locally scrollable. Bounded forms, readable margin notes and ruled
+sections carry the same visual language through sign-in, setup and recovery.
 
 ## Interaction and live feedback
 
@@ -284,9 +140,10 @@ Retain intentional filter, ordering, page and page-size state in URLs, and selec
 column layout and page-size preferences through Tabulator persistence. Restore column order,
 widths and visibility while taking headings from the current application. Remember
 page size separately for activity, positions, instruments and retained observations in
-the current browser; a supported URL size takes precedence. Exact pixel-scroll restoration
-is unnecessary. Native submissions give pending feedback and prevent accidental
-duplicates. Financial history search, filtering, sorting and pagination operate on the complete
+the current browser. A supported URL size takes precedence. When returning from a
+financial record to a selected report entry, restore the reader’s place. Native
+submissions give pending feedback and prevent accidental duplicates. Financial history search,
+filtering, sorting and pagination operate on the complete
 matching warehouse set, with 50 rows per page by default and a Rows per page selector
 offering 10, 25, 50, 100 and 200. Bound other evidence
 views explicitly and clearly label any local interaction scope.
@@ -348,21 +205,25 @@ enabling save; checks do not retain decisions or advance revisions. Keep native
 field selection and ordinary HTTP form submission explicit, with in-place controls
 and preflight feedback provided by JavaScript.
 Require an explicit choice; disclose optional reasons and retain them after errors.
-Observation tables show source location and acceptance rule/version directly in
-their cells, with wrapping and local scrolling for long values.
-Source reports use a bounded observation table with outcome, related activity,
-source location and rule/version columns. Report links identify the retained report
-without passing source paths or highlighting a referenced observation. Preserve every
-appearance and interpretation version. Keep report table column preferences separate
-from other observation tables.
+Report entries identify the trade, broker trade ID and execution ID. On narrow
+screens group identity, exact terms and effect vertically. Include the price basis
+for debt quotes wherever they appear. Keep the
+interpretation rule, version and locator available on the selected entry.
+Use a paginated report index and keep the selected entry separately addressable.
+Preserve its report identity, interpretation version and location. Keep original
+content available alongside readable financial terms. When an entry has several
+appearances or lacks a settled match, describe its actual relationship.
+Account-level positions links lead to the source's reports. Table column
+preferences for reports remain separate from other observation tables.
 Keep evidence/history reachable and distinguish saved decisions from checks still
 in progress. Use named source/context labels before technical references.
 
 ## Verification
 
-Review both themes, narrow layouts, keyboard use, feedback and evidence comparisons
+Review both palettes in light and dark mode with each type treatment. Check
+narrow layouts, keyboard use, feedback and evidence comparisons
 with synthetic data. Inspect logos on their intended surfaces and favicons at
 small sizes after asset changes. Screenshots supplement structure/data checks;
 they do not establish full accessibility certification. The
 [development guide](.docs/engineering/development.md#browser-and-frontend-verification)
-explains check selection. UI polish has its own horizontal delivery slice.
+explains check selection.

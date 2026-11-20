@@ -5,34 +5,170 @@ package admin
 
 import (
 	"go.trippwill.dev/wake/internal/application"
-	"go.trippwill.dev/wake/internal/host"
 	"strconv"
-	"time"
 )
 
-templ RetainedEvidence(retained host.Retained, info application.EvidenceContext) {
+templ RetainedEvidence(info application.EvidenceContext, entry *sourceEvidenceEntry) {
 	@Breadcrumbs("Supporting evidence")
-	@PageHeader("Source report", known(info.ConnectionName)+" · "+retained.Provider)
-	<section class="wake-card">
-		<h2>Acquisition receipts</h2>
-		<p>{ strconv.FormatInt(info.ReceiptCount,10) } acquisitions reference this retained body. The latest 50 receipts are shown. Each receipt preserves the acquired digest and coverage; equivalent report-window variants reuse the retained body below.</p>
+	@PageHeader(application.ReportTitle(info.Stream), known(info.ConnectionName)+" · "+evidencePeriod(info))
+	if r:=info.SelectedReceipt;r!=nil {
+		<section class="wake-card" data-selected-receipt>
+			<h2>Selected receipt</h2>
+			<dl><dt>When Wake received it</dt><dd>{ r.Retrieved }</dd><dt>Purpose</dt><dd>{ operationLabel(r.Operation) }</dd><dt>Requested period</dt><dd>{ reportPeriod(r.RequestedFrom,r.RequestedTo) }</dd><dt>Report period</dt><dd>{ reportPeriod(r.ReportedFrom,r.ReportedTo) }</dd></dl>
+			if r.Equivalent {
+				<p>This receipt refers to an earlier retained copy with equivalent financial content. The entries below come from that copy.</p>
+			}
+		</section>
+	}
+	if entry!=nil {
+		@RetainedSourceEntry(*entry)
+	}
+	<section class="wake-card" data-report-empty={ reportEmptyMessage(info) }>
+		<h2 id="report-entries" tabindex="-1">Report entries</h2>
+		@ReportObservations(info.ID)
+	</section>
+	<section class="wake-card"><h2>Report details</h2><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ info.Provider } · { info.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>When Wake received it</dt><dd>{ info.Retrieved }</dd><dt>Requested period</dt><dd>{ reportPeriod(info.RequestedFrom,info.RequestedTo) }</dd><dt>Report period</dt><dd>{ reportPeriod(info.ReportedFrom,info.ReportedTo) }</dd></dl><p class="wake-help">The report period describes dates supplied by the provider.</p><a href="#original-content">Inspect original report content</a></section>
+	<details class="wake-card">
+		<summary>Receipts</summary>
+		<p>Wake received this report { strconv.FormatInt(info.ReceiptCount,10) } times. The most recent 50 receipts appear here.</p>
 		<ul class="wake-task-list">
 			for _,r:=range info.Receipts {
 				<li>
-					<dl><dt>Acquired</dt><dd>{ r.Retrieved }</dd><dt>Purpose</dt><dd>{ operationLabel(r.Operation) }</dd><dt>Requested</dt><dd>{ known(r.RequestedFrom) } to { known(r.RequestedTo) }</dd><dt>Returned</dt><dd>{ known(r.ReportedFrom) } to { known(r.ReportedTo) }</dd></dl>
+					<dl><dt>Received</dt><dd>{ r.Retrieved }</dd><dt>Purpose</dt><dd>{ operationLabel(r.Operation) }</dd><dt>Requested period</dt><dd>{ reportPeriod(r.RequestedFrom,r.RequestedTo) }</dd><dt>Report period</dt><dd>{ reportPeriod(r.ReportedFrom,r.ReportedTo) }</dd></dl>
 					if r.Equivalent {
-						<p>Equivalent report reused the retained body. Its acquired bytes are represented by this digest and comparison policy.</p>
+						<p>Wake kept the earlier copy because this report had the same financial content.</p>
 					}
 					<details><summary>Receipt identity and comparison</summary><p>{ r.ID }</p><p>Acquired SHA-256 { r.Hash }</p><p>{ r.Policy }</p></details>
 				</li>
 			}
 		</ul>
+	</details>
+	<details class="wake-card"><summary>Retained identity and integrity</summary><dl><dt>Wake report ID</dt><dd>{ info.ID }</dd><dt>Content hash</dt><dd>{ info.Hash }</dd><dt>Format</dt><dd>{ info.Format } · { info.MediaType }</dd></dl></details>
+	<section class="wake-card" id="original-content"><h2>Original report content</h2><a href={ templ.SafeURL(reportURL(info.ID) + "/original") }>Read the full original report</a></section>
+}
+
+templ RetainedSourceEntry(v sourceEvidenceEntry) {
+	{{ termsHeading := "Reported terms" }}
+	if v.ReportedPrice == "" && v.hasPairedFacts() {
+		{{ termsHeading = "Report and record terms" }}
+	}
+	<section class="wake-card wake-source-entry">
+		<h2 id="source-entry" tabindex="-1">{ v.Title }</h2>
+		<nav class="wake-source-nav" aria-label="Report entry navigation">
+			<a href={ templ.SafeURL(reportIndexURL(v.Artifact, page(ctx).Query)) }>Report entries</a>
+			if v.Previous!="" {
+				<a href={ templ.SafeURL(sourceEntryURL(application.SourceLocation{Artifact: v.Artifact, Version: v.Version, Location: v.Previous}, "", page(ctx).Query)) }>Previous entry</a>
+			}
+			if v.Next!="" {
+				<a href={ templ.SafeURL(sourceEntryURL(application.SourceLocation{Artifact: v.Artifact, Version: v.Version, Location: v.Next}, "", page(ctx).Query)) }>Next entry</a>
+			}
+		</nav>
+		if len(v.References) > 0 {
+			<ul class="wake-trade-reference">
+				for _, label := range v.References {
+					<li>{ label }</li>
+				}
+			</ul>
+		}
+		<div class={ "wake-source-context", templ.KV("wake-source-pair",v.ReportedPrice!="") }>
+			<article aria-label={ termsHeading }>
+				if v.ReportedPrice!="" {
+					<h3>Reported price</h3>
+					<p class="wake-source-fact" data-source-field="price" data-source-focus?={ v.Focus=="price" }>{ v.ReportedPrice }</p>
+					if v.ReportedPriceBasis != "" {
+						<p class="wake-help">{ v.ReportedPriceBasis }</p>
+					}
+				} else {
+					<h3>{ termsHeading }</h3>
+					@SourceEntryFacts(v.Facts)
+				}
+			</article>
+			<aside aria-label="Related accepted activity">
+				if v.Price!="" {
+					<h3>Accepted price</h3>
+					<p class="wake-accepted-price">{ v.Price }</p>
+					if v.PriceBasis != "" {
+						<p class="wake-help">{ v.PriceBasis }</p>
+					}
+				} else {
+					<h3>Accepted activity</h3>
+				}
+				@ObservationBadge(v.Outcome)
+				if v.EarlierAppearance {
+					<p>Same entry appeared in an earlier report.</p>
+				}
+				if v.RecordURL!="" {
+					<p><a id="source-entry-record" data-source-return href={ templ.SafeURL(v.RecordURL) }>{ v.RecordLabel }</a></p>
+					if v.Price!="" {
+						if v.PriceCorrected {
+							<p>Price set by operator correction.</p>
+						} else if v.PriceContributed {
+							<p>This report entry supports the accepted price.</p>
+						}
+					}
+				} else if v.ActivityID=="" {
+					<p>Awaiting a link to accepted activity.</p>
+				} else {
+					<p>The related activity is currently unavailable.</p>
+				}
+			</aside>
+		</div>
+		if v.ReportedPrice!="" {
+			if v.hasPairedFacts() {
+				<h3>Other terms</h3>
+			} else {
+				<h3>Other reported terms</h3>
+			}
+			@SourceEntryFacts(v.Facts)
+		}
+		<details class="wake-source-locator">
+			<summary>Location and interpretation</summary>
+			<dl><dt>Source location</dt><dd>{ v.Location }</dd><dt>Interpretation</dt><dd>{ v.Version }</dd><dt>Rule</dt><dd>{ v.Rule }</dd></dl>
+		</details>
+		if v.Raw.Selected.Text!="" {
+			<section class="wake-source-raw" aria-label="Original source context">
+				<h3>Original source context</h3>
+				@SourceExcerptRow(v.Artifact, "Selected source row", v.Raw.Selected, true)
+				if v.Raw.Previous.Text!="" || v.Raw.Next.Text!="" {
+					<details>
+						<summary>Nearby source rows</summary>
+						@SourceExcerptRow(v.Artifact, "Previous source row", v.Raw.Previous, false)
+						@SourceExcerptRow(v.Artifact, "Next source row", v.Raw.Next, false)
+					</details>
+				}
+			</section>
+		} else {
+			<p><a href={ templ.SafeURL(reportURL(v.Artifact) + "/original") }>Inspect original report content</a></p>
+		}
 	</section>
-	<section class="wake-card"><h2>Acquisition context</h2><p>First retained body. Each subsequent acquisition has its own receipt above.</p><dl><dt>Source</dt><dd>{ known(info.ConnectionName) }</dd><dt>Provider / stream</dt><dd>{ retained.Provider } · { retained.Stream }</dd><dt>Purpose</dt><dd>{ operationLabel(info.Operation) }</dd><dt>Retrieved</dt><dd>{ retained.Artifact.RetrievedAt().Format(time.RFC3339Nano) }</dd><dt>Requested coverage</dt><dd>{ known(info.RequestedFrom) } to { known(info.RequestedTo) }</dd><dt>Returned coverage</dt><dd>{ known(info.ReportedFrom) } to { known(info.ReportedTo) }</dd></dl><p class="wake-help">Reported bounds do not establish complete financial history.</p><a href="#original-content">Inspect original report content</a></section>
-	<section class="wake-card">
-		<h2>Observed financial meaning</h2>
-		@ReportObservations(retained.ID)
-	</section>
-	<details class="wake-card"><summary>Retained identity and integrity</summary><dl><dt>Wake report ID</dt><dd>{ retained.ID }</dd><dt>Content hash</dt><dd>{ retained.Artifact.Hash() }</dd><dt>Format</dt><dd>{ retained.Artifact.Format() } · { retained.Artifact.MediaType() }</dd></dl></details>
-	<details class="wake-card" id="original-content"><summary>Original report content</summary><pre>{ string(retained.Artifact.Content()) }</pre></details>
+}
+
+templ SourceEntryFacts(facts []sourceFact) {
+	<dl>
+		for _, fact:=range facts {
+			if fact.Key!="price" {
+				<div class="wake-source-fact" data-source-field={ string(fact.Key) }>
+					<dt>{ fact.Label }</dt>
+					if fact.Accepted != "" {
+						<dd><span class="wake-help">Reported</span> { fact.Value }</dd>
+						<dd><span class="wake-help">Accepted</span> { fact.Accepted }</dd>
+					} else {
+						<dd>{ fact.Value }</dd>
+					}
+				</div>
+			}
+		}
+	</dl>
+}
+
+templ SourceExcerptRow(artifact, label string, row sourceSnippet, selected bool) {
+	if row.Text!="" {
+		<figure data-source-selected?={ selected }>
+			<figcaption>{ label }</figcaption>
+			<pre tabindex="0" aria-label={ label }>{ row.Text }</pre>
+			if row.Truncated {
+				<p>Excerpt limited to 16 KiB. <a href={ templ.SafeURL(reportURL(artifact) + "/original") }>Open the original report</a>.</p>
+			}
+		</figure>
+	}
 }

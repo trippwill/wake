@@ -128,7 +128,8 @@ func TestOverviewSyncTiming(t *testing.T) {
 		}
 
 		work := read()
-		if !work.LastRetrieved.Equal(latest) || !work.Next.Equal(deadline) || work.RetryBlocked != tc.blocked {
+		if !work.LastRetrieved.Equal(latest) || !work.Next.Equal(deadline) || work.RetryBlocked != tc.blocked ||
+			work.AccessBlocked != (tc.code == host.FailureUnauthorized) {
 			t.Fatalf("%s: unexpected Overview timing %+v", tc.code, work)
 		}
 

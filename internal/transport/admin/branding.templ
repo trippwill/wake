@@ -3,18 +3,33 @@
 
 package admin
 
-templ ThemeControl() {
-	<label class="wake-field wake-theme-control" data-theme-control hidden>
-		<span>Theme</span>
-		<select class="select" data-theme-preference>
-			<option value="system">System</option>
-			<option value="light">Light</option>
-			<option value="dark">Dark</option>
-		</select>
-	</label>
+templ AppearanceControls() {
+	<div class="wake-appearance-controls" data-appearance-controls hidden>
+		<label class="wake-field">
+			<span>Theme</span>
+			<select class="select" data-palette-preference></select>
+		</label>
+		<label class="wake-field">
+			<span>Mode</span>
+			<select class="select" data-theme-preference aria-describedby="appearance-mode-help">
+				<option value="system">System</option>
+				<option value="light">Light</option>
+				<option value="dark">Dark</option>
+			</select>
+		</label>
+		<p class="wake-help" id="appearance-mode-help">Select System to follow your device’s appearance.</p>
+		<label class="wake-field">
+			<span>Typography</span>
+			<select class="select" data-typography-preference>
+				<option value="default">Theme default</option>
+				<option value="sans">System sans</option>
+				<option value="serif">Editorial serif</option>
+			</select>
+		</label>
+	</div>
 }
 
-templ SidebarLink(label string, href string, icon string, active bool) {
+templ NavigationLink(label string, href string, icon string, active bool) {
 	<a
 		class="wake-nav-link"
 		href={ href }

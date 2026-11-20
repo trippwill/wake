@@ -38,6 +38,11 @@ type (
 		Progress                   provider.ProgressPhase
 		Completed, Total           int64
 		Scheduled, RetryBlocked    bool
+		AccessBlocked              bool
+	}
+	PollSourceAccess struct {
+		Provider       string
+		CredentialKeys []string
 	}
 	ProcessingStatus struct {
 		Artifact, Failure, Stream                            string
@@ -76,6 +81,7 @@ type (
 		ReadQueries
 		PendingWork(context.Context, time.Time) ([]host.WorkKey, error)
 		RefreshPolls(context.Context, time.Time) (int64, error)
+		RefreshablePollSources(context.Context, time.Time) ([]PollSourceAccess, error)
 		PendingArtifacts(context.Context, time.Time, map[string]string) ([]PendingArtifact, error)
 		RetainedProcessingStore
 		Normalize(context.Context, string, string, provider.Normalizer) (provider.Result, error)
@@ -86,6 +92,8 @@ type (
 		InstrumentDetail(context.Context, string) (InstrumentDetail, error)
 		Retained(context.Context, string) (host.Retained, error)
 		EvidenceContext(context.Context, string) (EvidenceContext, error)
+		SelectedReceipt(context.Context, string, string) (AcquisitionReceipt, error)
+		SourceObservation(context.Context, SourceLocation) (SourceObservation, error)
 		ReferenceEvidence(context.Context, string) (ReferenceEvidence, error)
 		CorrectionForm(context.Context, string, string) (CorrectionForm, error)
 		CorrectionStore
@@ -476,16 +484,19 @@ func (w *Workflow) decorateConnection(connection *ConnectionView) {
 
 	connection.CanDiscover = registration.Discoverer() != nil
 	connection.CanNormalize = registration.Normalizer() != nil
-	connection.CredentialStored = true
-	for _, field := range connection.Descriptor.Fields() {
-		if field.Kind() == provider.SecretField && field.Required() &&
-			!slices.Contains(connection.CredentialKeys, field.Key()) {
-			connection.CredentialStored = false
+	connection.CredentialStored = hasRequiredSourceCredentials(connection.Descriptor, connection.CredentialKeys)
+	connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
+	connection.UpstreamUnavailable = w.host == nil
+}
+
+func hasRequiredSourceCredentials(descriptor provider.Descriptor, keys []string) bool {
+	for _, field := range descriptor.Fields() {
+		if field.Kind() == provider.SecretField && field.Required() && !slices.Contains(keys, field.Key()) {
+			return false
 		}
 	}
 
-	connection.MissingAccess = !connection.SettingsStored || !connection.CredentialStored
-	connection.UpstreamUnavailable = w.host == nil
+	return true
 }
 
 func (w *Workflow) Prerequisites(ctx context.Context) (Prerequisites, error) {
@@ -546,11 +557,33 @@ func (w *Workflow) SystemStatus(ctx context.Context) (SystemStatus, error) {
 
 func (w *Workflow) Overview(ctx context.Context) (OverviewView, error) {
 	view, err := w.store.Overview(ctx)
-	if err == nil {
-		w.decorateConnections(view.Status.Connections)
+	if err != nil {
+		return view, err
 	}
 
-	return view, err
+	w.decorateConnections(view.Status.Connections)
+
+	if w.host == nil || view.Status.Storage.Paused || view.Status.AccountCount == 0 {
+		return view, nil
+	}
+
+	sources, err := w.store.RefreshablePollSources(ctx, w.now())
+	if err != nil {
+		return view, err
+	}
+
+	view.CanRequestSync = slices.ContainsFunc(sources, func(candidate PollSourceAccess) bool {
+		registration, ok := w.Provider(candidate.Provider)
+
+		return ok && registration.Acquirer() != nil &&
+			hasRequiredSourceCredentials(registration.Descriptor(), candidate.CredentialKeys)
+	})
+
+	return view, nil
+}
+
+func (w *Workflow) ReportList(ctx context.Context, query ListQuery) (ReportList, error) {
+	return w.store.ReportList(ctx, query)
 }
 
 func (w *Workflow) Accounts(ctx context.Context) ([]Account, error) {
@@ -599,6 +632,13 @@ func (w *Workflow) InstrumentDetail(ctx context.Context, id string) (InstrumentD
 
 func (w *Workflow) Evidence(ctx context.Context, id string) (host.Retained, error) {
 	return w.store.Retained(ctx, id)
+}
+
+func (w *Workflow) SourceObservation(
+	ctx context.Context,
+	location SourceLocation,
+) (SourceObservation, error) {
+	return w.store.SourceObservation(ctx, location)
 }
 
 func (w *Workflow) ReferenceEvidence(ctx context.Context, id string) (ReferenceEvidence, error) {
@@ -897,15 +937,25 @@ func (w *Workflow) EvidenceContext(ctx context.Context, id string) (EvidenceCont
 	return w.store.EvidenceContext(ctx, id)
 }
 
+func (w *Workflow) SelectedReceipt(
+	ctx context.Context,
+	artifact, receipt string,
+) (AcquisitionReceipt, error) {
+	return w.store.SelectedReceipt(ctx, artifact, receipt)
+}
+
 type (
 	AcquisitionReceipt struct {
 		ID, Operation, Retrieved, Hash, Policy, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
 		Equivalent                                                                                   bool
 	}
 	EvidenceContext struct {
+		ID, Provider, Stream, Format, MediaType, Retrieved, Hash                        string
 		ConnectionName, Operation, RequestedFrom, RequestedTo, ReportedFrom, ReportedTo string
 		Receipts                                                                        []AcquisitionReceipt
 		ReceiptCount                                                                    int64
+		SelectedReceipt                                                                 *AcquisitionReceipt
+		CanProcess, Processed, ProcessingFailed                                         bool
 	}
 )
 

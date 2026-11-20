@@ -11,17 +11,23 @@ templ PasskeyOriginHelp(eligible bool) {
 	if eligible {
 		<p class="wake-help">To use an enrolled passkey, open Wake at the hostname where you added it.</p>
 	} else {
-		<p class="wake-help">For passkeys, open Wake at an allowed HTTPS address or a configured localhost address. When using an SSH tunnel, use the configured localhost URL with the forwarded port.</p>
+		<p class="wake-help">Use an allowed HTTPS address or a configured localhost address for passkeys. For an SSH tunnel, open the configured localhost URL on the forwarded port.</p>
 	}
 }
 
 templ BrowserAccess(csrf string, view BrowserAccessView) {
 	<section class="wake-card" data-browser-access>
 		<h2>Browser access</h2>
-		<div class="wake-access-section">
-			<h3>Password</h3>
+		<section class="wake-access-section" aria-labelledby="access-password">
+			<div class="wake-card-heading">
+				<h3 id="access-password">Password sign-in</h3>
+				if view.Password {
+					@StateBadge("Enabled")
+				} else {
+					@StateBadge("Disabled")
+				}
+			</div>
 			if view.Password {
-				<p>Enabled</p>
 				<div class="wake-actions">
 					<a href={ passwordPath }>Change password</a>
 					if view.CanAssert {
@@ -30,14 +36,13 @@ templ BrowserAccess(csrf string, view BrowserAccessView) {
 					}
 				</div>
 			} else {
-				<p>Disabled</p>
 				if view.CanAssert {
 					<button class="btn" id="password-passkey" type="button" data-passkey-open="set-password" data-passkey-required hidden>Set password</button>
 				}
 			}
-		</div>
-		<div class="wake-access-section">
-			<h3>Passkeys</h3>
+		</section>
+		<section class="wake-access-section" aria-labelledby="access-passkeys">
+			<h3 id="access-passkeys">Passkeys</h3>
 			if len(view.Passkeys) == 0 {
 				<p class="wake-help">No passkeys added.</p>
 			} else {
@@ -76,8 +81,8 @@ templ BrowserAccess(csrf string, view BrowserAccessView) {
 			if !view.Eligible || (len(view.Passkeys) != 0 && !view.CanAssert) {
 				@PasskeyOriginHelp(view.Eligible)
 			}
-		</div>
-		<details>
+		</section>
+		<details class="wake-access-section">
 			<summary>Recover browser access</summary>
 			<p class="wake-help">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p>
 		</details>

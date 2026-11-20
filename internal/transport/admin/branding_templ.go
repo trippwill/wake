@@ -13,7 +13,7 @@ package admin
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func ThemeControl() templ.Component {
+func AppearanceControls() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -30,7 +30,7 @@ func ThemeControl() templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<label class=\"wake-field wake-theme-control\" data-theme-control hidden><span>Theme</span> <select class=\"select\" data-theme-preference><option value=\"system\">System</option> <option value=\"light\">Light</option> <option value=\"dark\">Dark</option></select></label>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"wake-appearance-controls\" data-appearance-controls hidden><label class=\"wake-field\"><span>Theme</span> <select class=\"select\" data-palette-preference></select></label> <label class=\"wake-field\"><span>Mode</span> <select class=\"select\" data-theme-preference aria-describedby=\"appearance-mode-help\"><option value=\"system\">System</option> <option value=\"light\">Light</option> <option value=\"dark\">Dark</option></select></label><p class=\"wake-help\" id=\"appearance-mode-help\">Select System to follow your device’s appearance.</p><label class=\"wake-field\"><span>Typography</span> <select class=\"select\" data-typography-preference><option value=\"default\">Theme default</option> <option value=\"sans\">System sans</option> <option value=\"serif\">Editorial serif</option></select></label></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -38,7 +38,7 @@ func ThemeControl() templ.Component {
 	})
 }
 
-func SidebarLink(label string, href string, icon string, active bool) templ.Component {
+func NavigationLink(label string, href string, icon string, active bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -62,7 +62,7 @@ func SidebarLink(label string, href string, icon string, active bool) templ.Comp
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templruntime.NewAttributeExpression(href).ResolveURL(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 20, Col: 13}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 35, Col: 13}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -85,7 +85,7 @@ func SidebarLink(label string, href string, icon string, active bool) templ.Comp
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/assets/brand/icons.svg#" + icon).ResolveURL(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 26, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 41, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -98,7 +98,7 @@ func SidebarLink(label string, href string, icon string, active bool) templ.Comp
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 28, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/transport/admin/branding.templ`, Line: 43, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {

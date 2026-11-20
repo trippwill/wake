@@ -8,6 +8,7 @@ Wake embeds pinned upstream distributions without a browser build step.
 | Tabulator | 6.7.1 | MIT |
 | htmx | 2.0.11 | 0BSD |
 | htmx SSE extension | 2.2.4 | 0BSD |
+| STIX Two Text | 2.13 | SIL Open Font License 1.1 |
 
 daisyUI and Tabulator come from their published npm distributions. Application styling and
 initialization live outside vendor files.
@@ -27,4 +28,6 @@ d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717  htmx-2.0.11/ht
 d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38  htmx-2.0.11/LICENSE
 98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136  htmx-sse-2.2.4/sse.min.js
 a17d224ce9afdc21ec9491b76a2f5d036d19aa641ac4f85ca29c21f9f7e54fdf  htmx-sse-2.2.4/LICENSE
+242a676ce08515fc58af901e110589759cb426ac66ec917d37ce37d5dbf17945  stix-two-text-2.13/OFL.txt
+c4864ca6ec071c2d31d0d8309001faa1ee3517fffb53a31a405a697b71f52ca1  stix-two-text-2.13/STIXTwoText-Regular.otf
 ```

@@ -17,6 +17,7 @@ type Querier interface {
 	AccountBySource(ctx context.Context, arg AccountBySourceParams) (Account, error)
 	AccountCount(ctx context.Context) (int64, error)
 	Accounts(ctx context.Context) ([]Account, error)
+	AcquisitionReceiptByID(ctx context.Context, arg AcquisitionReceiptByIDParams) (AcquisitionReceiptByIDRow, error)
 	AcquisitionReceipts(ctx context.Context, artifactID string) ([]AcquisitionReceipt, error)
 	ActivityBase(ctx context.Context, activityID string) (ActivityBasis, error)
 	ActivityInputs(ctx context.Context, executionID sql.NullString) ([]RecordValue, error)
@@ -30,16 +31,21 @@ type Querier interface {
 	AdminCandidateCount(ctx context.Context, connectionID string) (int64, error)
 	AdminCandidates(ctx context.Context, arg AdminCandidatesParams) ([]AdminCandidatesRow, error)
 	AdminCounts(ctx context.Context) (AdminCountsRow, error)
+	AdminEvidenceMetadata(ctx context.Context, id string) (AdminEvidenceMetadataRow, error)
 	// SPDX-FileCopyrightText: 2026 trippwill
 	// SPDX-License-Identifier: MPL-2.0
 	AdminInstrumentCount(ctx context.Context, arg AdminInstrumentCountParams) (AdminInstrumentCountRow, error)
 	AdminInstrumentRows(ctx context.Context, arg AdminInstrumentRowsParams) ([]AdminInstrumentRowsRow, error)
-	AdminObservationCount(ctx context.Context, arg AdminObservationCountParams) (AdminObservationCountRow, error)
 	AdminObservationRows(ctx context.Context, arg AdminObservationRowsParams) ([]AdminObservationRowsRow, error)
+	AdminPendingReport(ctx context.Context, versions string) (AdminPendingReportRow, error)
+	AdminPositionOverview(ctx context.Context, accountID string) (AdminPositionOverviewRow, error)
 	AdminReferenceStatus(ctx context.Context) (AdminReferenceStatusRow, error)
+	AdminReportCount(ctx context.Context, search interface{}) (AdminReportCountRow, error)
+	AdminReportRows(ctx context.Context, arg AdminReportRowsParams) ([]AdminReportRowsRow, error)
 	AdminReviewCount(ctx context.Context, arg AdminReviewCountParams) (AdminReviewCountRow, error)
 	AdminReviewRows(ctx context.Context, arg AdminReviewRowsParams) ([]AdminReviewRowsRow, error)
 	AdminSourceCount(ctx context.Context, search interface{}) (int64, error)
+	AdminSourceObservation(ctx context.Context, arg AdminSourceObservationParams) (AdminSourceObservationRow, error)
 	AdminSourceRows(ctx context.Context, arg AdminSourceRowsParams) ([]Connection, error)
 	AdvanceActivityRevision(ctx context.Context, id string) error
 	AdvanceHistoryUpdate(ctx context.Context, arg AdvanceHistoryUpdateParams) error
@@ -192,7 +198,9 @@ type Querier interface {
 	ReferenceFailure(ctx context.Context, failure string) error
 	ReferenceNext(ctx context.Context, arg ReferenceNextParams) error
 	ReferenceSetting(ctx context.Context) (ReferenceSettingRow, error)
+	// Keep RefreshablePollSources aligned with these deadline and scheduling conditions.
 	RefreshPolls(ctx context.Context, arg RefreshPollsParams) (int64, error)
+	RefreshablePollSources(ctx context.Context, arg RefreshablePollSourcesParams) ([]RefreshablePollSourcesRow, error)
 	RelatedSourceCorrections(ctx context.Context, executionID string) ([]SourceCorrection, error)
 	Relationships(ctx context.Context, activityID string) ([]RelationshipsRow, error)
 	RelinkActivityObservation(ctx context.Context, arg RelinkActivityObservationParams) error

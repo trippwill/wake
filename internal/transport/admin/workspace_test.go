@@ -80,7 +80,7 @@ func TestWorkspaceRoutesAndFragments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, route := range []string{"/", "/activity", "/activity?size=invalid", "/activity?size=201", "/review", "/instruments", "/instruments?size=invalid", "/instruments?size=201", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/system", "/system/configuration"} {
+	for _, route := range []string{"/", "/reports", "/activity", "/activity?size=invalid", "/activity?size=201", "/review", "/instruments", "/instruments?size=invalid", "/instruments?size=201", "/connections", "/connections/new", "/connections/one?view=status", "/connections/one?view=reports", "/connections/one?view=access", "/connections/reference", "/connections/recovery", "/system", "/system/configuration"} {
 		for _, fragment := range []bool{false, true} {
 			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+route, nil)
 			r.AddCookie(session.Result().Cookies()[0])
@@ -436,6 +436,7 @@ func TestUnavailableUpstreamKeepsAcquisitionAndAvoidsFalseRepair(t *testing.T) {
 		CanAcquire:          true,
 		CanDiscover:         true,
 		UpstreamUnavailable: true,
+		MissingAccess:       true,
 		Work: []application.WorkStatus{
 			{Operation: "acquire", Scheduled: true, Failure: "retained failure"},
 			{Operation: "discover", Scheduled: true},
@@ -446,18 +447,13 @@ func TestUnavailableUpstreamKeepsAcquisitionAndAvoidsFalseRepair(t *testing.T) {
 		t.Fatal(work)
 	}
 
-	for _, item := range repairs(sourceView{Connections: []application.ConnectionView{c}}) {
-		if strings.Contains(item.Reason, "credentials are missing") {
-			t.Fatal(item)
-		}
-	}
-
 	var out strings.Builder
 	if err := ConnectionPage("csrf", sourceView{}, c).Render(context.Background(), &out); err != nil {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(out.String(), "Upstream services could not start") ||
+	if !strings.Contains(out.String(), "Upstream services unavailable") ||
+		strings.Contains(out.String(), "Repair source") ||
 		strings.Contains(out.String(), "Retry connection") {
 		t.Fatal(out.String())
 	}

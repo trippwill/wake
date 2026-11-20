@@ -64,6 +64,25 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 		t.Fatal("repeated appearances claimed to add information", noContribution)
 	}
 
+	ninth := all[8]
+	entry, err := s.SourceObservation(t.Context(), application.SourceLocation{
+		Artifact: ninth.Artifact, Version: ninth.Version, Location: ninth.Location,
+	})
+	if err != nil || entry.Reported.IsZero() || !strings.HasSuffix(ninth.Location, "/TradeConfirm[9]") ||
+		!strings.HasSuffix(
+			entry.Previous,
+			"/TradeConfirm[8]",
+		) || !strings.HasSuffix(entry.Next, "/TradeConfirm[10]") ||
+		entry.ActivityID != ninth.ActivityID || entry.Outcome != ninth.Outcome {
+		t.Fatal("exact appearance or report order lost", entry, err)
+	}
+
+	if _, err = s.SourceObservation(t.Context(), application.SourceLocation{
+		Artifact: ninth.Artifact, Version: "nonexistent", Location: ninth.Location,
+	}); !errors.Is(err, application.ErrNotFound) {
+		t.Fatal("an unrelated interpretation resolved to a source entry", err)
+	}
+
 	for _, direction := range []string{"asc", "desc"} {
 		query, _ := application.NewListQuery(
 			application.ListOptions{PageSize: 200, Sort: "activity", Direction: direction},
@@ -129,6 +148,77 @@ func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 	}
 }
 
+func TestReportObservationSearchFindsDisplayedTradeTitle(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+
+	microsoft := strings.Replace(equityRow("U1", "target-fill", "99"), `symbol="SYN"`, `symbol="MSFT"`, 1)
+	sell := strings.Replace(
+		strings.Replace(microsoft, "target-fill", "sell-fill", 2),
+		`buySell="BUY"`,
+		`buySell="SELL"`,
+		1,
+	)
+	processConfirmationReport(t, s, "report", equityRow("U1", "other-fill", "100")+microsoft+sell)
+
+	query, err := application.NewListQuery(application.ListOptions{
+		PageSize: 1,
+		Search:   "Buy MSFT",
+	}, application.ObservationScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := s.ObservationList(t.Context(), "artifact", "report", query)
+	if err != nil || result.Total != 4 || result.Matched != 1 || len(result.Items) != 1 {
+		t.Fatal(
+			"search did not find the displayed title before pagination",
+			result.PageInfo,
+			len(result.Items),
+			err,
+		)
+	}
+
+	if id := result.Items[0].Reported.Fields().Event.Value(); id != "target-fill" {
+		t.Fatal("search returned a different fill", id)
+	}
+}
+
+func TestReportAppearanceSearchFindsDisplayedReportTitle(t *testing.T) {
+	s := newStoreWithSyntheticAccount(t)
+	row := equityRow("U1", "repeated-fill", "99")
+	processConfirmationReport(t, s, "first", row)
+	processConfirmationReport(t, s, "second", row)
+
+	original := observationRowsForTest(t, s, "artifact", "first")[0]
+	if original.ActivityID == "" {
+		t.Fatal("first appearance has no accepted activity")
+	}
+
+	processPartial(t, s, "other-stream", original.Reported)
+
+	query, err := application.NewListQuery(application.ListOptions{
+		PageSize: 1,
+		Search:   "Trade confirmations",
+	}, application.ObservationScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := s.ObservationList(t.Context(), "activity-appearances", original.ActivityID, query)
+	if err != nil || result.Total != 3 || result.Matched != 2 || len(result.Items) != 1 {
+		t.Fatal(
+			"search did not filter appearances by displayed report title",
+			result.PageInfo,
+			len(result.Items),
+			err,
+		)
+	}
+
+	if stream := result.Items[0].Stream; stream != "confirmations" {
+		t.Fatal("search returned a different report stream", stream)
+	}
+}
+
 func TestReportObservationPagesIncludeUnlinkedAndEmptyReports(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
 	id := acquireRealized(
@@ -144,6 +234,14 @@ func TestReportObservationPagesIncludeUnlinkedAndEmptyReports(t *testing.T) {
 	result, err := s.ObservationList(t.Context(), "artifact", id, query)
 	if err != nil || result.Total != 1 || len(result.Items) != 1 || result.Items[0].ActivityID != "" {
 		t.Fatal("unlinked observation lost", result, err)
+	}
+
+	unlinked := result.Items[0]
+	entry, err := s.SourceObservation(t.Context(), application.SourceLocation{
+		Artifact: id, Version: unlinked.Version, Location: unlinked.Location,
+	})
+	if err != nil || entry.ActivityID != "" || entry.Outcome != unlinked.Outcome || entry.Reported.IsZero() {
+		t.Fatal("unlinked source entry was lost", entry, err)
 	}
 
 	empty := acquireRealized(t, s, movementReport("CashTransactions", ""))

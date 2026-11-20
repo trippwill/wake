@@ -31,7 +31,6 @@ import (
 	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
-	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/provider"
 )
@@ -223,6 +222,10 @@ func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bo
 	artifact := r.URL.Query().Get("subject") == "artifact"
 	if artifact {
 		count = 75
+		switch r.URL.Query().Get("id") {
+		case "synthetic-pending", "synthetic-positions":
+			count = 0
+		}
 	}
 
 	for i := range count {
@@ -300,6 +303,7 @@ func syntheticObservationData(w http.ResponseWriter, r *http.Request, changed bo
 					Matched:  int64(len(rows)),
 				},
 			},
+			r.URL.Query().Get("subject"),
 		),
 		nil,
 	)
@@ -604,6 +608,7 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 
 		if strings.HasPrefix(r.URL.Path, "/test/") || strings.HasPrefix(r.URL.Path, "/evidence/") ||
 			r.URL.Path == "/" ||
+			r.URL.Path == "/reports" ||
 			r.URL.Path == "/activity/synthetic-activity/correct" ||
 			r.URL.Path == "/instruments/synthetic-instrument" ||
 			r.URL.Path == "/instruments/synthetic-instrument/correct" ||
@@ -640,21 +645,29 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 			case "/instruments/retired-instrument/correct":
 				http.Redirect(w, r, "/instruments/synthetic-instrument/correct?mode=decisions", http.StatusSeeOther)
 				return
-			case "/evidence/synthetic-report":
-				artifact, _ := provider.NewArtifact(
-					"synthetic-xml",
-					"application/xml",
-					time.Now(),
-					[]byte("<SyntheticReport/>"),
-				)
-				component = RetainedEvidence(
-					host.Retained{
-						ID:       strings.TrimPrefix(r.URL.Path, "/evidence/"),
-						Provider: "Synthetic provider",
-						Artifact: artifact,
-					},
-					application.EvidenceContext{ConnectionName: "Synthetic source"},
-				)
+			case "/evidence/synthetic-report", "/evidence/synthetic-pending", "/evidence/synthetic-positions":
+				metadata := application.EvidenceContext{
+					ID: strings.TrimPrefix(r.URL.Path, "/evidence/"), Provider: "Synthetic provider",
+					ConnectionName: "Synthetic source", Retrieved: time.Now().UTC().Format(time.RFC3339Nano),
+				}
+				switch metadata.ID {
+				case "synthetic-pending":
+					metadata.Stream = "activities"
+					metadata.CanProcess = true
+				case "synthetic-positions":
+					metadata.Stream = "positions"
+					metadata.CanProcess = true
+					metadata.Processed = true
+				}
+
+				if r.URL.Query().Get("receipt") == "repeated-receipt" {
+					metadata.SelectedReceipt = &application.AcquisitionReceipt{
+						ID: "repeated-receipt", Operation: "acquire", Retrieved: "2026-10-21T09:05:00.000000001Z",
+						ReportedFrom: "2026-10-20", ReportedTo: "2026-10-20",
+					}
+				}
+
+				component = RetainedEvidence(metadata, nil)
 			case "/test/grid", "/test/dense-grid":
 				component = syntheticActivityGrid(r.URL.Path == "/test/dense-grid")
 			case "/test/instruments":
@@ -692,7 +705,22 @@ func newAdminBrowserFixture(t *testing.T) *adminBrowserFixture {
 					},
 				)
 			case "/":
-				component = DashboardOverview("synthetic-csrf", fixtureOverview(view), "")
+				if scenario := r.URL.Query().Get("fixture"); scenario != "" {
+					component = DashboardOverview(csrf, morningOverview(view, scenario), "")
+				} else {
+					component = DashboardOverview(csrf, fixtureOverview(view), "")
+				}
+			case "/reports":
+				reports := morningOverview(view, "quiet").Reports
+				component = ReportsPage(csrf, application.ReportList{
+					PageInfo: application.PageInfo{
+						Page:     1,
+						PageSize: 50,
+						Total:    int64(len(reports)),
+						Matched:  int64(len(reports)),
+					},
+					Items: reports,
+				})
 			default:
 				http.NotFound(w, r)
 				return

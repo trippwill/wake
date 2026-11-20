@@ -10,6 +10,7 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/source"
 )
 
 const (
@@ -54,10 +55,14 @@ type (
 	}
 	overviewView struct {
 		sourceView
-		Reviews                        []reviewItem
-		HistoryUpdate                  application.HistoryUpdateStatus
-		ReviewPage                     application.PageInfo
-		ActivityCount, InstrumentCount int64
+		Reviews            []reviewItem
+		HistoryUpdate      application.HistoryUpdateStatus
+		ReviewPage         application.PageInfo
+		Reports            []application.ReportEntry
+		PendingReport      application.PendingReport
+		PositionsAsOf      *application.PositionTime
+		PositionsAvailable int64
+		CanRequestSync     bool
 	}
 	instrumentItem struct {
 		ID, Name, Ticker, Kind string
@@ -82,12 +87,15 @@ func statusView(v application.SystemStatus) sourceView {
 
 func overview(v application.OverviewView) overviewView {
 	return overviewView{
-		sourceView:      statusView(v.Status),
-		Reviews:         reviewItems(v.Review),
-		HistoryUpdate:   v.Status.HistoryUpdate,
-		ReviewPage:      v.Review.PageInfo,
-		ActivityCount:   v.ActivityCount,
-		InstrumentCount: v.InstrumentCount,
+		sourceView:         statusView(v.Status),
+		Reviews:            reviewItems(v.Review),
+		HistoryUpdate:      v.Status.HistoryUpdate,
+		ReviewPage:         v.Review.PageInfo,
+		Reports:            v.Reports,
+		PendingReport:      v.PendingReport,
+		PositionsAsOf:      v.PositionsAsOf,
+		PositionsAvailable: v.PositionsAvailable,
+		CanRequestSync:     v.CanRequestSync,
 	}
 }
 
@@ -217,6 +225,11 @@ func activityList(v application.ActivityList) activityView {
 
 			row.Price = publishedMoney(a.Trade.Price)
 			row.Basis = quotationLabel(text(a.Trade.QuotationBasis))
+			if debt := a.Trade.InstrumentTerms.Debt; debt != nil {
+				row.Basis = tradeQuotationLabel(
+					source.DebtType(text(debt.Type)), item.AccountProvider == "ibkr-flex", text(a.Trade.QuotationBasis),
+				)
+			}
 		case "security-transfer":
 			row.Label = activityLabel(a, name)
 			if a.Transfer.Quantity != nil {
@@ -323,6 +336,10 @@ func listQuery(ctx context.Context, scope application.ListScope) (application.Li
 		}
 
 		options.PageSize = size
+	}
+
+	if scope == application.ReportsScope {
+		return application.NewListQuery(options, scope)
 	}
 
 	if scope == application.SourceScope || scope == application.ReviewScope {

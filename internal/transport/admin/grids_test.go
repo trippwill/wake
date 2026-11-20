@@ -13,8 +13,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/host"
+	"go.trippwill.dev/wake/source"
 )
 
 type gridReadStore struct {
@@ -186,6 +189,216 @@ func TestAuthenticatedGridResponsesAndFailures(t *testing.T) {
 				t.Fatal("grid links contain navigation transport", link, page.Data[0].Activity)
 			}
 		})
+	}
+}
+
+type sourceEntryReadStore struct {
+	workspaceStore
+
+	detail application.ExecutionDetail
+}
+
+func (s sourceEntryReadStore) ExecutionDetail(context.Context, string) (application.ExecutionDetail, error) {
+	return s.detail, nil
+}
+
+func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
+	usd, _ := financial.ParseCurrency("USD")
+	nominal, _ := financial.ParseQuantity("10000")
+	price, _ := financial.ParsePrice("98.7654321", usd)
+	principal, _ := financial.ParseMoney("9876.54", usd)
+	date, _ := financial.ParseDate("2026-10-20")
+	account, _ := source.NewReference("ibkr", "account", "", "synthetic")
+	instrumentID, _ := source.NewReference("ibkr", "conid", "", "synthetic-bill")
+	executionID, _ := source.NewReference("ibkr", "execution-id", "synthetic", "fill-123")
+	tradeID, _ := source.NewReference("ibkr", "trade-id", "synthetic", "trade-456")
+	debt, _ := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryBill, Currency: usd})
+	instrument, _ := source.NewInstrument(source.InstrumentInput{
+		Kind: source.Debt, Name: "Synthetic bill", Reference: instrumentID, Debt: debt,
+	})
+
+	trade, err := source.NewTrade(source.TradeInput{
+		Location: "synthetic-row", Side: source.Buy, Account: account, Instrument: instrument,
+		Event: executionID, EventAliases: []source.Reference{tradeID}, EventDistinct: true,
+		Date: date, Quantity: nominal, Price: price, GrossAmount: principal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	row := application.Observation{
+		Artifact:          "synthetic-report",
+		Version:           "report-v1",
+		Location:          "synthetic-row",
+		Reported:          trade.Observation(),
+		EarlierAppearance: true,
+		Outcome:           calculation.ObservationNoContribution,
+	}
+	grid := observationGrid(application.ObservationList{Items: []application.Observation{row}}, "artifact").Data[0]
+	if grid.Date.Text != "2026-10-20" ||
+		grid.Location.Note != "Execution ID fill-123\nBroker trade ID trade-456" ||
+		grid.Terms.Text != "10000 nominal · 98.7654321 USD per 100 face value · Reported principal 9876.54 USD" ||
+		!strings.Contains(grid.Outcome.Note, "earlier report") {
+		t.Fatal(grid)
+	}
+
+	activity := application.ActivityList{Items: []application.ActivityListItem{{
+		AccountProvider: "ibkr-flex",
+		Resource: application.CanonicalResource{ID: "execution", Activity: &application.PublishedActivity{
+			PublishedActivityHeader: application.PublishedActivityHeader{Family: "trade", Date: "2026-10-20"},
+			Trade: &application.PublishedTrade{
+				Price: &application.PublishedMoney{Amount: "98.7654321", Currency: "USD"},
+				InstrumentTerms: application.PublishedInstrumentTerms{
+					Family: "debt", Debt: &application.PublishedDebt{Type: new(string(source.TreasuryBill))},
+				},
+			},
+		}},
+	}}}
+	if cell := activityGrid(activity).Data[0].Price; cell.Text != "98.7654321 USD" ||
+		cell.Note != "per 100 face value" {
+		t.Fatal("Activity grid lost exact Treasury bill price basis", cell)
+	}
+
+	entry := sourceEvidence(
+		t.Context(),
+		nil,
+		host.Retained{},
+		application.SourceObservation{Observation: row},
+		"price",
+	)
+
+	var html strings.Builder
+	if err := RetainedSourceEntry(entry).Render(t.Context(), &html); err != nil {
+		t.Fatal(err)
+	}
+
+	facts := []string{
+		"10000 nominal", "98.7654321 USD", "per 100 face value", "Reported principal", "9876.54 USD",
+		"Execution ID fill-123", "Broker trade ID trade-456",
+	}
+	for _, fact := range facts {
+		if !strings.Contains(html.String(), fact) {
+			t.Fatal("missing reported term", fact, html.String())
+		}
+	}
+
+	if strings.Contains(html.String(), ">Accepted</span>") {
+		t.Fatal("unlinked report entry showed accepted terms", html.String())
+	}
+
+	state, _ := calculation.NewActivityState(calculation.Accepted, 0, calculation.AutomaticSelection)
+
+	execution, err := application.NewExecution("execution", "account", "bill", "", "test-rule", state, trade, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	html.Reset()
+
+	if err := ExecutionPage(
+		application.ExecutionDetail{Execution: execution},
+		nil,
+	).Render(t.Context(), &html); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, fact := range facts {
+		if !strings.Contains(html.String(), fact) {
+			t.Fatal("missing accepted term", fact, html.String())
+		}
+	}
+
+	corrected := trade.Fields()
+	corrected.Quantity, _ = financial.ParseQuantity("9000.000")
+	corrected.GrossAmount, _ = financial.ParseMoney("8888.89", usd)
+
+	acceptedTrade, err := source.NewTrade(corrected)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted, err := application.NewExecution(
+		"execution",
+		"account",
+		"bill",
+		"",
+		"test-rule",
+		state,
+		acceptedTrade,
+		2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reportedGain, _ := financial.ParseMoney("12.3456700", usd)
+	reportDate, _ := financial.ParseDate("2026-10-21")
+	gainField, _ := source.NewActivityField(source.ActivityFieldInput{
+		Name: source.FieldRealizedPnL, Money: reportedGain, ReportedOn: reportDate,
+	})
+	costField, _ := source.NewActivityField(source.ActivityFieldInput{
+		Name: source.FieldReportedCostBasis, Money: principal, ReportedOn: reportDate,
+	})
+	enriched := row.Reported.Fields()
+	enriched.Fields = append(enriched.Fields, gainField, costField)
+
+	row.Reported, err = source.NewActivityObservation(enriched)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	row.ActivityID = accepted.ID()
+	store := sourceEntryReadStore{detail: application.ExecutionDetail{
+		Execution: accepted,
+		Context: application.ActivityContext{
+			Realized: &application.PublishedRealizedPnL{
+				Amount: &application.PublishedMoney{
+					Amount:   "12.3456789",
+					Currency: "USD",
+				},
+				ReportDate: new("2026-10-22"),
+				CostBasis:  &application.PublishedMoney{Amount: "9876.54", Currency: "GBP"},
+			},
+		},
+	}}
+	workflow := application.New(store, nil, nil, nil, nil, nil)
+	entry = sourceEvidence(
+		t.Context(),
+		workflow,
+		host.Retained{},
+		application.SourceObservation{Observation: row},
+		"price",
+	)
+
+	html.Reset()
+
+	if err := RetainedSourceEntry(entry).Render(t.Context(), &html); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, pair := range []struct{ field, reported, accepted string }{
+		{"quantity", "10000 nominal", "9000.000 nominal"},
+		{"gross_amount", "9876.54 USD", "8888.89 USD"},
+		{"realized_pnl", "12.3456700 USD · 2026-10-21", "12.3456789 USD · 2026-10-22"},
+		{"reported_cost_basis", "9876.54 USD", ""},
+	} {
+		var found bool
+		for _, fact := range entry.Facts {
+			if string(fact.Key) == pair.field {
+				found = fact.Value == pair.reported && fact.Accepted == pair.accepted
+				break
+			}
+		}
+
+		if !found {
+			t.Error("report term comparison lost exact value or basis", pair, entry.Facts)
+		}
+	}
+
+	for _, value := range []string{"9000.000 nominal", "8888.89 USD", "12.3456789 USD · 2026-10-22"} {
+		if !strings.Contains(html.String(), ">Accepted</span> "+value) {
+			t.Error("accepted term missing from selected Source Reader entry", value, html.String())
+		}
 	}
 }
 

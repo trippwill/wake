@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.trippwill.dev/wake/internal/application"
+	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/internal/reference"
 	"go.trippwill.dev/wake/provider"
@@ -111,6 +112,103 @@ func TestPollDeadlineChangesLeaveOtherWorkScheduled(t *testing.T) {
 	if err != nil || len(work) != 1 || work[0].Stream != "routine" {
 		t.Fatal("unexpected runnable work", work, err)
 	}
+}
+
+func TestOverviewRequestSyncBeyondDisplayedSources(t *testing.T) {
+	ctx := t.Context()
+	s := newStoreWithSyntheticAccount(t)
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	envelope := testEnvelope(t)
+
+	registration, err := ibkrflex.Registration(ibkrflex.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := host.New(ctx, s, envelope, nil, clock, nil, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	workflow := application.New(s, h.Registrations(), h, nil, clock, nil)
+	check := func(workflow *application.Workflow, want bool) {
+		t.Helper()
+
+		view, err := workflow.Overview(ctx)
+		if err != nil || view.CanRequestSync != want || !view.Status.MoreConnections ||
+			len(view.Status.Connections) != 50 {
+			t.Fatal(
+				"unexpected sync eligibility or overview size",
+				view.CanRequestSync,
+				len(view.Status.Connections),
+				err,
+			)
+		}
+
+		for _, connection := range view.Status.Connections {
+			if connection.ID == "synthetic" {
+				t.Fatal("the confirmed source should be beyond the first 50 displayed")
+			}
+		}
+	}
+
+	connection := host.Connection{
+		ID: "synthetic", Provider: "ibkr-flex", Name: "Zulu source", Settings: confirmationSettings("123"),
+	}
+	if err = s.Reconfigure(ctx, connection); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = s.db.ExecContext(ctx, `
+WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<50)
+INSERT INTO connections(id,provider,name)
+SELECT printf('source-%02d',n),'ibkr-flex',printf('Source %02d',n) FROM numbers`); err != nil {
+		t.Fatal(err)
+	}
+
+	key := host.WorkKey{Connection: connection.ID, Stream: ibkrflex.Confirmations, Operation: "acquire"}
+	if err = s.Schedule(ctx, key, true); err != nil {
+		t.Fatal(err)
+	}
+
+	step, _ := provider.NewStep(provider.State{}, provider.Artifact{}, now.Add(time.Minute))
+	step, _ = step.WithPollCompleted()
+	step = step.NotBefore(now.Add(time.Hour))
+
+	if _, err = s.Accept(ctx, key, 0, step, nil, provider.Progress{}, host.PollCycle{}); err != nil {
+		t.Fatal(err)
+	}
+
+	check(workflow, false)
+
+	secret := credential.NewSecret([]byte("synthetic-token"))
+	defer secret.Clear()
+
+	if _, err = h.ReplaceSecret(ctx, connection.ID, "token", secret); err != nil {
+		t.Fatal(err)
+	}
+
+	check(workflow, true)
+	check(application.New(s, h.Registrations(), nil, nil, clock, nil), false)
+	check(application.New(s, nil, h, nil, clock, nil), false)
+
+	if _, err = s.db.ExecContext(ctx, "UPDATE sync.profile SET paused=1"); err != nil {
+		t.Fatal(err)
+	}
+
+	check(workflow, false)
+
+	if _, err = s.db.ExecContext(ctx, "UPDATE sync.profile SET paused=0"); err != nil {
+		t.Fatal(err)
+	}
+
+	if requested, err := workflow.RefreshPolls(ctx); err != nil || !requested {
+		t.Fatal("eligible source beyond first 50 did not advance", requested, err)
+	}
+
+	check(workflow, false)
 }
 
 func TestPausedQueryRepairPreservesDeadline(t *testing.T) {

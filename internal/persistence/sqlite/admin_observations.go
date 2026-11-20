@@ -11,7 +11,9 @@ import (
 
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
+	"go.trippwill.dev/wake/internal/persistence/sqlite/recordcodec"
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
+	"go.trippwill.dev/wake/source"
 )
 
 func (s *Store) ObservationList(
@@ -22,7 +24,7 @@ func (s *Store) ObservationList(
 	options := query.Options()
 	if query.Scope() != application.ObservationScope || options.Page < 1 || options.PageSize < 1 || id == "" ||
 		len(id) > 256 ||
-		kind != "activity" && kind != "instrument" && kind != "artifact" {
+		kind != "activity" && kind != "instrument" && kind != "artifact" && kind != "activity-appearances" {
 		return application.ObservationList{}, calculation.ErrInvalid
 	}
 
@@ -34,7 +36,7 @@ func (s *Store) ObservationList(
 
 		var err error
 		switch kind {
-		case "activity":
+		case "activity", "activity-appearances":
 			_, err = q.Execution(ctx, id)
 		case "instrument":
 			_, err = q.Instrument(ctx, id)
@@ -50,26 +52,11 @@ func (s *Store) ObservationList(
 			return out, err
 		}
 
-		counts, err := q.AdminObservationCount(
-			ctx,
-			sqlc.AdminObservationCountParams{
-				SubjectKind:    kind,
-				SubjectID:      sql.NullString{String: id, Valid: true},
-				Search:         options.Search,
-				OutcomeMatches: string(matches),
-			},
-		)
-		if err != nil {
-			return out, err
-		}
-
-		out.PageInfo = pageInfo(query, counts.Total, counts.Matched)
-
 		rows, err := q.AdminObservationRows(
 			ctx,
 			sqlc.AdminObservationRowsParams{
 				SubjectKind:    kind,
-				SubjectID:      sql.NullString{String: id, Valid: true},
+				SubjectID:      id,
 				Search:         options.Search,
 				OutcomeMatches: string(matches),
 				OutcomeLabels:  string(labels),
@@ -83,21 +70,80 @@ func (s *Store) ObservationList(
 			return out, err
 		}
 
+		if len(rows) > 0 {
+			out.PageInfo = pageInfo(query, rows[0].Total, rows[0].Matched)
+		}
+
 		for _, row := range rows {
-			out.Items = append(
-				out.Items,
-				application.Observation{
-					Artifact:   row.ArtifactID,
-					Version:    row.Version,
-					Location:   row.Location,
-					Rule:       row.Rule,
-					Retrieved:  row.Retrieved,
-					Outcome:    calculation.ObservationOutcome(row.Outcome),
-					ActivityID: row.ExecutionID.String,
-				},
-			)
+			if row.ArtifactID == "" {
+				continue
+			}
+
+			entry := application.Observation{
+				Artifact:          row.ArtifactID,
+				Version:           row.Version,
+				Location:          row.Location,
+				Rule:              row.Rule,
+				Retrieved:         row.Retrieved,
+				Outcome:           calculation.ObservationOutcome(row.Outcome),
+				ActivityID:        row.ExecutionID,
+				SourceName:        row.SourceName,
+				Stream:            row.Stream,
+				EarlierAppearance: row.EarlierAppearance != 0,
+			}
+			if len(row.Reported) != 0 {
+				entry.Reported, err = reportObservationValue(row.Location, row.Reported)
+				if err != nil {
+					return out, err
+				}
+			}
+
+			out.Items = append(out.Items, entry)
 		}
 
 		return out, nil
 	})
+}
+
+func (s *Store) SourceObservation(
+	ctx context.Context, key application.SourceLocation,
+) (application.SourceObservation, error) {
+	if key.Artifact == "" || len(key.Artifact) > 256 || key.Version == "" || len(key.Version) > 256 ||
+		key.Location == "" || len(key.Location) > 1024 {
+		return application.SourceObservation{}, calculation.ErrInvalid
+	}
+
+	row, err := s.queries.AdminSourceObservation(ctx, sqlc.AdminSourceObservationParams{
+		ArtifactID: key.Artifact, Version: key.Version, Location: key.Location,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		err = application.ErrNotFound
+	}
+
+	if err != nil {
+		return application.SourceObservation{}, err
+	}
+
+	reported, err := reportObservationValue(key.Location, row.Data)
+	if err != nil {
+		return application.SourceObservation{}, err
+	}
+
+	return application.SourceObservation{
+		Observation: application.Observation{
+			Artifact: key.Artifact, Version: key.Version, Location: key.Location,
+			Rule: row.Rule, Outcome: calculation.ObservationOutcome(row.Outcome), ActivityID: row.ExecutionID,
+			Reported: reported, EarlierAppearance: row.EarlierAppearance != 0,
+		},
+		Previous: row.Previous, Next: row.Next,
+	}, nil
+}
+
+func reportObservationValue(location string, data []byte) (source.ActivityObservation, error) {
+	value, err := recordcodec.WithLocation("activity", data, location)
+	if err != nil {
+		return source.ActivityObservation{}, ErrCorrupt
+	}
+
+	return recordcodec.DecodeObservation(value)
 }

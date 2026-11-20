@@ -110,8 +110,43 @@ func (s *Store) Overview(ctx context.Context) (application.OverviewView, error) 
 			return out, err
 		}
 
+		out.Reports, err = s.reportRows(ctx, q, "", 5, 0)
+		if err != nil {
+			return out, err
+		}
+
 		if out.Status.HistoryUpdate.Phase != "" {
 			return out, nil
+		}
+
+		_, versions := s.reportVersions()
+
+		pending, err := q.AdminPendingReport(ctx, versions)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return out, err
+		}
+
+		out.PendingReport = application.PendingReport{
+			Artifact:         pending.ArtifactID,
+			ConnectionID:     pending.ConnectionID,
+			ConnectionName:   pending.ConnectionName,
+			AccountConfirmed: pending.AccountConfirmed != 0,
+			ProcessingFailed: s.processingFailure(pending.ArtifactID) != "",
+		}
+
+		if out.Status.AccountCount > 0 {
+			positions, e := q.AdminPositionOverview(ctx, out.Status.Account.ID())
+			if e != nil {
+				return out, e
+			}
+
+			out.PositionsAvailable = positions.Available
+			if out.Status.AccountCount == 1 && positions.AsOf != "" {
+				out.PositionsAsOf = &application.PositionTime{}
+				if json.Unmarshal([]byte(positions.AsOf), out.PositionsAsOf) != nil {
+					return out, ErrCorrupt
+				}
+			}
 		}
 
 		counts, err := q.AdminCounts(ctx)

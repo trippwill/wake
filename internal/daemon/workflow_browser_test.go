@@ -26,6 +26,7 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/credential"
 	"go.trippwill.dev/wake/internal/currencycatalog"
@@ -156,7 +157,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 			_, _ = fmt.Fprint(
 				w,
-				`<FlexQueryResponse type="TCF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><TradeConfirms><TradeConfirm accountId="U-SYNTHETIC" assetCategory="BOND" transactionType="ExchTrade" levelOfDetail="EXECUTION" origTradeID="debt-trade" code="Ca"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="CASH" symbol="EUR.USD" description="EUR.USD" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="fx-fill" buySell="SELL" quantity="-10.123456789" price="1.2345678901" currency="USD" tradeDate="2026-10-20" netCash="12.00" commission="-0.25" commissionCurrency="GBP" regFINRATradingActivityFee="-0.00100"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="BOND" description="Synthetic debt" conid="debt-1" tradeID="debt-trade" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="debt-fill" buySell="BUY" quantity="10000" price="99.123456789" currency="USD" tradeDate="2026-10-20" accruedInt="-12.3456789"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="OPT" symbol="SYN OUTCOME" description="Reported option" conid="option-1" tradeID="assignment-1" transactionType="BookTrade" levelOfDetail="EXECUTION" quantity="2" tradeDate="2026-10-20" code="A"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="OPT" symbol="SYN OPT" description="Reported option" conid="option-1" underlyingConid="123" underlyingSymbol="SYN" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="option-fill" tradeID="option-trade" buySell="SELL" quantity="2" price="1.2345678901" currency="USD" tradeDate="2026-10-20" strike="100.001" expiry="2026-11-20" putCall="P" multiplier="10"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="STK" symbol="SYN" description="Reported equity" conid="123" isin="US0000000001" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="fill-1" tradeID="trade-1" buySell="BUY" quantity="0.125" price="400.123456789" currency="USD" dateTime="2026-10-20;09:30:00.120 EDT" tradeDate="2026-10-20" amount="50.015432098625" netCash="-50.265432098625"/></TradeConfirms></FlexStatement><FlexStatement accountId="U-OTHER" fromDate="2026-10-20" toDate="2026-10-21"><TradeConfirms/></FlexStatement></FlexStatements></FlexQueryResponse>`,
+				`<FlexQueryResponse type="TCF"><FlexStatements><FlexStatement accountId="U-SYNTHETIC" fromDate="2026-10-20" toDate="2026-10-21"><TradeConfirms><TradeConfirm accountId="U-SYNTHETIC" assetCategory="BOND" transactionType="ExchTrade" levelOfDetail="EXECUTION" origTradeID="debt-trade" code="Ca"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="CASH" symbol="EUR.USD" description="EUR.USD" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="fx-fill" buySell="SELL" quantity="-10.123456789" price="1.2345678901" currency="USD" tradeDate="2026-10-20" netCash="12.00" commission="-0.25" commissionCurrency="GBP" regFINRATradingActivityFee="-0.00100"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="BOND" description="Synthetic debt" conid="debt-1" tradeID="debt-trade" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="debt-fill" buySell="BUY" quantity="10000" price="99.123456789" currency="USD" tradeDate="2026-10-20" accruedInt="-12.3456789"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="OPT" symbol="SYN OUTCOME" description="Reported option" conid="option-1" tradeID="assignment-1" transactionType="BookTrade" levelOfDetail="EXECUTION" quantity="2" tradeDate="2026-10-20" code="A"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="OPT" symbol="SYN OPT" description="Reported option" conid="option-1" underlyingConid="123" underlyingSymbol="SYN" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="option-fill" tradeID="option-trade" buySell="SELL" quantity="2" price="1.2345678901" currency="USD" tradeDate="2026-10-20" strike="100.001" expiry="2026-11-20" putCall="P" multiplier="10"/><TradeConfirm accountId="U-SYNTHETIC" assetCategory="STK" symbol="SYN" description="Reported equity" conid="123" isin="US0000000001" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="fill-1" tradeID="trade-1" buySell="BUY" quantity="0.125" price="400.123456789" currency="USD" dateTime="2026-10-20;09:30:00.120 EDT" tradeDate="2026-10-20" amount="50.015432098625" netCash="-50.265432098625"/></TradeConfirms></FlexStatement><FlexStatement accountId="U-OTHER" fromDate="2026-10-20" toDate="2026-10-21"><TradeConfirms><TradeConfirm accountId="U-OTHER" assetCategory="STK" symbol="UNLINKED" description="Unconfirmed account equity" conid="other-1" transactionType="ExchTrade" levelOfDetail="EXECUTION" execID="unlinked-fill" buySell="BUY" quantity="10" price="20.00" currency="USD" tradeDate="2026-10-20"/></TradeConfirms></FlexStatement></FlexStatements></FlexQueryResponse>`,
 			)
 		case "/mapping":
 			if keyedReference.Load() && r.Header.Get("X-OPENFIGI-APIKEY") != "synthetic-reference-key" {
@@ -566,14 +567,14 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 
 	check(
-		chromedp.Click(chromedp.Search(`//summary[text()='Retained observations and acceptance rules']`)),
+		chromedp.WaitVisible(chromedp.CSS(`[data-grid-variant="appearances"] .tabulator-row`)),
 		newDocument(chromedp.Click(chromedp.CSS(`.tabulator a[href^="/evidence/"]`))),
-		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Acquisition context']`)),
+		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Report details']`)),
 		chromedp.Poll[chromedp.Void](
 			`document.querySelector('[data-grid-variant="artifact"]')?.dataset.gridReady==='true'`,
 		),
 		testbrowser.Evaluate(
-			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested coverage') && document.querySelector('#original-content pre')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger') && !new URL(location.href).searchParams.has('location') && document.querySelector('.tabulator-row a[href^="/activity/"]')!==null`,
+			`document.body.textContent.includes('Synthetic IBKR') && document.body.textContent.includes('Requested period') && document.querySelector('#original-content a[href$="/original"]')!==null && !document.querySelector('#workspace-content').hasAttribute('hx-trigger') && !new URL(location.href).searchParams.has('location') && document.querySelector('.tabulator-row a[href^="/activity/"]')!==null`,
 			&ok,
 		),
 	)
@@ -585,7 +586,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	capture("evidence")
 	check(
 		newDocument(chromedp.Click(chromedp.CSS("[data-return]"))),
-		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Financial summary']`)),
+		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Trade details']`)),
 	)
 
 	check(
@@ -608,7 +609,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	capture("instrument")
 	check(
 		newDocument(chromedp.Click(chromedp.CSS("[data-return]"))),
-		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Financial summary']`)),
+		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Trade details']`)),
 		newDocument(chromedp.Click(chromedp.CSS("[data-return]"))),
 		chromedp.WaitVisible(chromedp.CSS("#activity-search")),
 		chromedp.WaitVisible(chromedp.CSS(".tabulator-row")),
@@ -636,7 +637,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	check(
 		chromedp.NavigateBack(),
-		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Financial summary']`)),
+		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Trade details']`)),
 		chromedp.NavigateForward(),
 		chromedp.WaitVisible(chromedp.CSS("#activity-search")),
 		testbrowser.Evaluate(`document.querySelector('#activity-search').value==='REFERENCE EQUITY'`, &ok),
@@ -654,7 +655,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
 		),
 		newDocument(chromedp.Click(chromedp.CSS(`.tabulator a[href^="/evidence/"]`))),
-		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Acquisition context']`)),
+		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Report details']`)),
 		newDocument(chromedp.Click(chromedp.CSS("[data-return]"))),
 		chromedp.WaitVisible(chromedp.Search(`//h2[text()='Instrument identity']`)),
 		testbrowser.Evaluate(
@@ -706,25 +707,29 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		}
 	}
 
-	for _, target := range []string{"/review", "/instruments?state=gaps"} {
-		check(
-			newDocument(chromedp.Navigate(origin+"/")),
-			chromedp.WaitVisible(chromedp.CSS("h1")),
-			newDocument(chromedp.Click(chromedp.CSS(`main a[href="`+target+`"]`))),
-			chromedp.WaitVisible(chromedp.CSS("h1")),
-			testbrowser.Evaluate(
-				`history.state.wakeNavigation.workspace===location.pathname&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')===location.pathname&&(location.pathname!=='/instruments'||new URL(location.href).searchParams.get('state')==='gaps')`,
-				&ok,
-			),
-		)
+	check(
+		newDocument(chromedp.Navigate(origin+"/")),
+		chromedp.WaitVisible(chromedp.CSS("h1")),
+		newDocument(chromedp.Click(chromedp.CSS(`main a[href="/reports"]`))),
+		chromedp.WaitVisible(chromedp.CSS("h1")),
+		testbrowser.Evaluate(
+			`history.state.wakeNavigation.workspace==='/reports'&&document.querySelector('.wake-nav-link[aria-current="page"]').getAttribute('href')==='/reports'`,
+			&ok,
+		),
+	)
 
-		if !ok {
-			t.Fatal("Overview workspace link lost navigation or filters", target)
-		}
+	if !ok {
+		t.Fatal("Overview Reports link lost workspace navigation")
 	}
 
 	for _, workspace := range []string{"instruments", "review"} {
 		root := "/" + workspace + "?q=REFERENCE+EQUITY&sort=name&dir=asc&page=1&size=25"
+
+		reportContext := `(()=>{const workspace=document.querySelector('.wake-nav-link[aria-current="page"]');return workspace&&new URL(workspace.href).pathname===` +
+			strconv.Quote(
+				"/"+workspace,
+			) +
+			`&&document.querySelector('[data-parent-breadcrumb] a')?.textContent==='Instrument'&&!['origin','parent','page_url'].some(key=>new URL(location.href).searchParams.has(key))})()`
 		check(
 			newDocument(chromedp.Navigate(origin+root)),
 			chromedp.WaitVisible(chromedp.CSS("h1")),
@@ -737,19 +742,11 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			chromedp.WaitVisible(chromedp.Search(`//h2[text()='Instrument identity']`)),
 			newDocument(chromedp.Click(chromedp.CSS(`.tabulator a[href^="/evidence/"]`))),
 			chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`),
+			chromedp.Poll[chromedp.Void](reportContext),
 			newDocument(chromedp.Reload()),
 			chromedp.Poll[chromedp.Void](`document.querySelector('[data-grid]')?.dataset.gridReady==='true'`),
-			testbrowser.Evaluate(
-				`(()=>{const workspace=new URL(document.querySelector('.wake-nav-link[aria-current="page"]').href);return workspace.pathname===`+strconv.Quote(
-					"/"+workspace,
-				)+`&&document.querySelector('[data-parent-breadcrumb] a').textContent==='Instrument'&&!['origin','parent','page_url'].some(key=>new URL(location.href).searchParams.has(key))})()`,
-				&ok,
-			),
+			chromedp.Poll[chromedp.Void](reportContext),
 		)
-
-		if !ok {
-			t.Fatal("workspace or return trail lost on report reload", workspace)
-		}
 
 		if workspace == "review" {
 			var resource string
@@ -767,7 +764,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 				newDocument(chromedp.Reload()),
 				chromedp.WaitVisible(chromedp.CSS("[data-return]")),
 				testbrowser.Evaluate(
-					`new URL(document.querySelector('[data-return]').href).pathname==='/activity'&&!new URL(document.querySelector('[data-return]').href).search&&document.querySelector('[data-parent-breadcrumb]').hidden`,
+					`new URL(document.querySelector('[data-return]').href).pathname==='/reports'&&!new URL(document.querySelector('[data-return]').href).search&&document.querySelector('[data-parent-breadcrumb]').hidden`,
 					&ok,
 				),
 			)
@@ -797,6 +794,97 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			t.Fatal("return to originating workspace lost view parameters", workspace)
 		}
 	}
+
+	navigate(chromedp.Navigate(directActivity))
+	check(chromedp.WaitVisible(chromedp.CSS("#activity-price-source-0")))
+	navigate(chromedp.Click(chromedp.CSS("#activity-price-source-0")))
+	check(
+		chromedp.Poll[chromedp.Void](`document.activeElement.id==='source-entry'`),
+		chromedp.Poll[chromedp.Void](
+			`(()=>{const p=new URL(location.href).searchParams;const raw=document.querySelector('[aria-label="Selected source row"]');return p.get('entry').endsWith('/TradeConfirm[6]')&&p.get('field')==='price'&&document.querySelector('[data-source-focus]').textContent.trim()==='400.123456789 USD'&&raw.textContent.includes('execID="fill-1"')&&document.querySelector('[aria-label="Previous source row"]').textContent.includes('execID="option-fill"')&&!raw.querySelector('*')&&document.querySelector('.wake-source-pair aside').textContent.includes('supports the accepted price')})()`,
+		),
+	)
+
+	var exactEntry string
+	check(testbrowser.Capture(&exactEntry, chromedp.Location()))
+	capture("source-entry")
+
+	navigate(chromedp.Click(chromedp.CSS("#source-entry-record")))
+	check(chromedp.Poll[chromedp.Void](`document.activeElement.id==='activity-price'`))
+	capture("source-linked-record")
+	check(
+		chromedp.NavigateBack(),
+		chromedp.WaitVisible(chromedp.CSS("#source-entry-record")),
+		chromedp.Poll[chromedp.Void](`document.activeElement.id==='source-entry-record'`),
+	)
+
+	navigate(chromedp.Click(chromedp.CSS(`.wake-source-nav a[href$="#report-entries"]`)))
+	check(
+		chromedp.SetValue(chromedp.CSS("#observation-search"), "400.123456789 USD"),
+		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent.startsWith('1 of ')&&document.querySelector('.tabulator-row [tabulator-field="terms"]').textContent.includes('400.123456789 USD')&&document.querySelector('.tabulator-row [tabulator-field="location"]').textContent.includes('Broker trade ID trade-1')&&document.querySelector('.tabulator-row [tabulator-field="location"]').textContent.includes('Execution ID fill-1')`,
+		),
+	)
+	capture("report-index")
+
+	var compactLayout []float64
+	check(
+		testbrowser.SetViewport(390, 850),
+		testbrowser.Evaluate(
+			`(()=>{
+				const row=document.querySelector('.tabulator-row');
+				const rect=field=>row.querySelector('[tabulator-field="'+field+'"]').getBoundingClientRect();
+				const holder=row.closest('.tabulator-tableholder');
+				return [rect('location').bottom,rect('terms').top,rect('terms').bottom,rect('outcome').top,holder.scrollWidth,holder.clientWidth,row.querySelectorAll('.tabulator-col-resize-handle').length];
+			})()`,
+			&compactLayout,
+		),
+		chromedp.Poll[chromedp.Void](
+			`(()=>{const link=document.querySelector('.tabulator-row [tabulator-field="location"] a');link?.focus();return link&&document.activeElement===link})()`,
+		),
+	)
+
+	if compactLayout[0] > compactLayout[1]+1 || compactLayout[2] > compactLayout[3]+1 ||
+		compactLayout[4] > compactLayout[5]+1 || compactLayout[6] != 0 {
+		t.Fatal("compact report entry did not keep its identity, terms and effect in view", compactLayout)
+	}
+
+	navigate(chromedp.KeyEvent(kb.Enter))
+	check(
+		chromedp.Poll[chromedp.Void](`document.activeElement.id==='source-entry'`),
+		chromedp.NavigateBack(),
+		chromedp.WaitVisible(chromedp.CSS("#observation-search")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('#observation-search')?.value==='400.123456789 USD'&&document.activeElement.closest('[data-record]')?.dataset.record===new URL(location.href).searchParams.get('selected')`,
+		),
+	)
+
+	check(testbrowser.SetViewport(1440, 1000))
+	navigate(chromedp.Navigate(exactEntry))
+	check(chromedp.Poll[chromedp.Void](`document.activeElement.id==='source-entry'`))
+	navigate(chromedp.Click(chromedp.Search(`//a[text()='Previous entry']`)))
+	check(
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[aria-label="Selected source row"]').textContent.includes('execID="option-fill"')`,
+		),
+	)
+
+	navigate(chromedp.Click(chromedp.CSS(`.wake-source-nav a[href$="#report-entries"]`)))
+	check(
+		chromedp.SetValue(chromedp.CSS("#observation-search"), "UNLINKED"),
+		chromedp.Click(chromedp.CSS("[data-observation-filters] button")),
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[data-grid-status]').textContent.startsWith('1 of ')&&document.querySelector('.tabulator-row').textContent.includes('unselected account or source')`,
+		),
+	)
+	navigate(chromedp.Click(chromedp.CSS(`.tabulator-row [tabulator-field="location"] a`)))
+	check(
+		chromedp.Poll[chromedp.Void](
+			`document.querySelector('[aria-label="Selected source row"]').textContent.includes('execID="unlinked-fill"')&&!document.querySelector('#source-entry-record')&&document.querySelector('.wake-source-pair aside').textContent.includes('Awaiting a link to accepted activity')`,
+		),
+	)
+	capture("source-unlinked")
 
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),
@@ -1155,7 +1243,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 	navigate(chromedp.Click(chromedp.CSS(`form[action="/reference/key"] button`)))
 	check(
-		chromedp.WaitVisible(chromedp.Search(`//p[text()='Reference access has been reviewed.']`)),
+		chromedp.WaitVisible(chromedp.Search(`//p[normalize-space(text())='Reviewed']`)),
 		chromedp.WaitVisible(chromedp.CSS(`form[action="/recovery/resume"] button:not([disabled])`)),
 	)
 
@@ -1360,6 +1448,15 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		newDocument(chromedp.Click(chromedp.CSS(`form[data-correction] button[type="submit"]`))),
 		chromedp.Poll[chromedp.Void](`document.body.textContent.includes('21.12345678900001')`),
 	)
+	navigate(chromedp.Click(chromedp.CSS("[data-return]")))
+	check(chromedp.WaitVisible(chromedp.CSS("#activity-price-source-0")))
+	navigate(chromedp.Click(chromedp.CSS("#activity-price-source-0")))
+	check(
+		chromedp.Poll[chromedp.Void](
+			`(()=>{const raw=document.querySelector('[aria-label="Selected source row"]');return raw.textContent.includes('19.12345678900001')&&document.querySelector('[data-source-focus]').textContent.includes('19.12345678900001 USD')&&document.querySelector('.wake-source-pair aside').textContent.includes('21.12345678900001 USD')&&document.querySelector('.wake-source-pair aside').textContent.includes('Price set by operator correction')})()`,
+		),
+	)
+	capture("source-corrected-entry")
 
 	// Switching accounts must replace the rows and their timestamp provenance.
 	check(

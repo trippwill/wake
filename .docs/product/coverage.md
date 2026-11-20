@@ -77,6 +77,13 @@ each scheduled source stream. Repeated reports count as successful retrievals.
 The next event time indicates when Wake can attempt the work, subject to source
 access and pacing.
 
+The admin Reports view lists receipts across sources with their reported period
+and known contributions. An activity entry can lead to a linked record. A record
+with an identified supporting report can open its specific entry. Repeated,
+unmatched and conflicting appearances remain distinguishable. Positions keeps
+the source connection as its account-level context where no specific entry is
+established.
+
 Some reported bookings lack execution IDs; acceptance cannot universally require
 one. Keep exact reported values, currencies, units and time precision. Source money
 is not recomputed to make an equation agree. Reported settlement dates are not proof

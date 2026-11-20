@@ -10,19 +10,19 @@ templ Login(message string, view BrowserAccessView) {
 }
 
 templ LoginBody(message string, view BrowserAccessView) {
-	<div class="wake-login wake-stack">
-		<h1>Sign in to Wake</h1>
+	<section class="wake-login wake-stack" aria-labelledby="sign-in-title">
+		<h1 id="sign-in-title">Sign in to Wake</h1>
 		if message != "" {
 			<div class="wake-notice wake-error" role="alert">{ message }</div>
 		}
 		if view.Password {
-			<form method="post" action="/login" class="wake-stack">
+			<form method="post" action="/login" class="wake-stack wake-signin-form">
 				<label class="wake-field" for="password">Password<input class="input" id="password" name="password" type="password" autocomplete="current-password" required/></label>
 				<button class="btn btn-primary" type="submit">Sign in</button>
 			</form>
 		}
 		if view.CanAssert {
-			<form method="post" action="/passkeys/begin" class="wake-stack" data-passkey-login hx-boost="false">
+			<form method="post" action="/passkeys/begin" class="wake-stack wake-signin-form" data-passkey-login hx-boost="false">
 				<button class={ "btn", templ.KV("btn-primary", !view.Password) } id="passkey-login" type="submit" hidden>Sign in with a passkey</button>
 				<div class="wake-passkey-status" role="status" data-passkey-status></div>
 				@PasskeyBrowserHelp()
@@ -30,7 +30,7 @@ templ LoginBody(message string, view BrowserAccessView) {
 		} else if len(view.Passkeys) != 0 {
 			@PasskeyOriginHelp(view.Eligible)
 		}
-		<details>
+		<details class="wake-signin-recovery">
 			if len(view.Passkeys) != 0 {
 				<summary>Lost access?</summary>
 			} else {
@@ -38,7 +38,7 @@ templ LoginBody(message string, view BrowserAccessView) {
 			}
 			<p class="wake-help">Run <code>wake access set password</code> on the Wake host, then sign in with your new password.</p>
 		</details>
-	</div>
+	</section>
 }
 
 templ PasswordRequired() {
@@ -48,9 +48,10 @@ templ PasswordRequired() {
 templ PasswordRequiredBody() {
 	<div class="wake-login wake-stack">
 		<h1>Set your Wake password</h1>
-		<p>On the Wake host, run:</p>
+		<p>Run this command in a terminal on the Wake host.</p>
 		<pre><code>wake access set password</code></pre>
-		<p>Enter and confirm your password in the terminal, then <a href="/login">sign in</a>.</p>
+		<p>Enter and confirm your password in the terminal.</p>
+		<div class="wake-actions"><a class="btn" href="/login">Continue to sign in</a></div>
 	</div>
 }
 
@@ -59,21 +60,27 @@ templ ChangePassword(csrf, message string) {
 }
 
 templ ChangePasswordBody(csrf, message string) {
-	@PageHeader("Change password", "Changing your password signs out your other browser sessions.")
-	<section class="wake-card wake-stack">
-		if message != "" {
-			<div class="wake-notice wake-error" role="alert">{ message }</div>
-		}
-		<form method="post" action={ passwordPath } class="wake-stack">
-			<input type="hidden" name="csrf" value={ csrf }/>
-			<label class="wake-field" for="current">Current password<input class="input" id="current" name="current" type="password" autocomplete="current-password" required/></label>
-			@NewPasswordFields()
-			<div class="wake-actions">
-				<button class="btn btn-primary" type="submit">Change password</button>
-				<a href="/system/settings">Cancel</a>
-			</div>
-		</form>
-	</section>
+	@PageHeader("Change password", "")
+	<div class="wake-reading-layout">
+		<section class="wake-card wake-stack wake-reading-body" aria-label="Password change">
+			if message != "" {
+				<div class="wake-notice wake-error" role="alert">{ message }</div>
+			}
+			<form method="post" action={ passwordPath } class="wake-stack">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label class="wake-field" for="current">Current password<input class="input" id="current" name="current" type="password" autocomplete="current-password" required/></label>
+				@NewPasswordFields()
+				<div class="wake-actions">
+					<button class="btn btn-primary" type="submit">Change password</button>
+					<a href="/system/settings">Cancel</a>
+				</div>
+			</form>
+		</section>
+		<aside class="wake-margin-note" aria-label="Effect on browser sessions">
+			<h2>Other sessions</h2>
+			<p>Changing your password signs out your other browser sessions.</p>
+		</aside>
+	</div>
 }
 
 templ NewPasswordFields() {
@@ -91,78 +98,93 @@ templ Settings(csrf string, view BrowserAccessView) {
 }
 
 templ SettingsBody(csrf string, view BrowserAccessView) {
-	@PageHeader("Settings", "Manage this browser’s appearance and how you sign in to Wake.")
+	@PageHeader("Settings", "")
 	@SystemNavigation("settings")
-	<section class="wake-card wake-appearance">
-		<h2>Appearance</h2>
-		<p class="wake-help">System follows your device’s appearance.</p>
-		@ThemeControl()
-	</section>
-	@BrowserAccess(csrf, view)
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">@BrowserAccess(csrf, view)</div>
+		<section class="wake-margin-note wake-appearance" aria-labelledby="settings-appearance">
+			<h2 id="settings-appearance">Appearance</h2>
+			@AppearanceControls()
+		</section>
+	</div>
 }
 
 templ OverviewBody(path string, status Status, cfg config.Config) {
-	@PageHeader(pageTitle(path), "Installation health, effective configuration and maintenance.")
+	@PageHeader(pageTitle(path), "")
 	@SystemNavigation(systemView(path))
-	if path=="/system/configuration" {
-		<section class="wake-card">
-			<h2>Effective storage and runtime configuration</h2>
-			<dl>
-				<dt>Configuration file</dt>
-				<dd>
-					if cfg.Paths.ConfigFile != "" {
-						{ cfg.Paths.ConfigFile }
-					} else {
-						None · No TOML file loaded at startup.
-					}
-				</dd>
-				<dt>Financial database</dt>
-				<dd>{ cfg.Storage.WarehousePath }</dd>
-				<dt>Connections database</dt>
-				<dd>{ cfg.Storage.ConnectionsPath }</dd>
-				<dt>Runtime directory</dt>
-				<dd>{ cfg.Paths.RuntimeDir }</dd>
-				<dt>Admin authentication</dt>
-				<dd><a href="/system/settings">Manage browser access</a></dd>
-				<dt>Admin listener</dt>
-				<dd>{ cfg.Admin.Address() }</dd>
-				<dt>Browser URL</dt>
-				<dd>{ cfg.Admin.Origin() }</dd>
-				<dt>Financial API listener</dt>
-				<dd>{ cfg.API.Address() }</dd>
-				<dt>Currency list refresh</dt>
-				<dd>
-					if cfg.Admin.CurrencyRefresh {
-						Enabled
-					} else {
-						Disabled
-					}
-				</dd>
-			</dl>
-			<a href="/connections">Manage source and reference access</a>
-		</section>
-	} else {
-		<section class="wake-card">
-			<h2>Daemon status</h2>
-			<p role="status">Daemon running</p>
-			<dl>
-				<dt>Started (UTC)</dt>
-				<dd>{ known(status.StartedAt) }</dd>
-				<dt>Credential protection</dt>
-				<dd>
-					if status.CredentialProtection {
-						Enabled
-					} else {
-						Unavailable. { status.CredentialIssue }
-					}
-				</dd>
-				<dt>Financial database size</dt>
-				<dd>{ warehouseSizeText(status.WarehouseBytes) }</dd>
-			</dl>
-			<p class="wake-help">Financial database, including retained reports. Excludes encrypted access storage and temporary journals.</p>
-			<p class="wake-help">Daemon contact confirms reachability. Acquisition, processing and financial uncertainty are shown in their own workspaces.</p>
-		</section>
-	}
+	<div class="wake-reading-layout">
+		<div class="wake-reading-body">
+			if path=="/system/configuration" {
+				<section class="wake-card">
+					<h2>Storage</h2>
+					<dl>
+						<dt>Configuration file</dt>
+						<dd>
+							if cfg.Paths.ConfigFile != "" {
+								{ cfg.Paths.ConfigFile }
+							} else {
+								None · No TOML file loaded at startup.
+							}
+						</dd>
+						<dt>Financial database</dt>
+						<dd>{ cfg.Storage.WarehousePath }</dd>
+						<dt>Connections database</dt>
+						<dd>{ cfg.Storage.ConnectionsPath }</dd>
+						<dt>Runtime directory</dt>
+						<dd>{ cfg.Paths.RuntimeDir }</dd>
+					</dl>
+				</section>
+				<section class="wake-card">
+					<h2>Network and currency refresh</h2>
+					<dl>
+						<dt>Admin listener</dt>
+						<dd>{ cfg.Admin.Address() }</dd>
+						<dt>Browser URL</dt>
+						<dd>{ cfg.Admin.Origin() }</dd>
+						<dt>Financial API listener</dt>
+						<dd>{ cfg.API.Address() }</dd>
+						<dt>Currency list refresh</dt>
+						<dd>
+							if cfg.Admin.CurrencyRefresh {
+								Enabled
+							} else {
+								Disabled
+							}
+						</dd>
+					</dl>
+				</section>
+			} else {
+				<section class="wake-card">
+					<h2>Daemon status</h2>
+					<p role="status">Daemon running</p>
+					<dl>
+						<dt>Started (UTC)</dt>
+						<dd>{ known(status.StartedAt) }</dd>
+						<dt>Credential protection</dt>
+						<dd>
+							if status.CredentialProtection {
+								Enabled
+							} else {
+								Unavailable. { status.CredentialIssue }
+							}
+						</dd>
+						<dt>Financial database size</dt>
+						<dd>{ warehouseSizeText(status.WarehouseBytes) }</dd>
+					</dl>
+					<p class="wake-help">Database size includes retained reports and excludes encrypted access storage and temporary journals.</p>
+				</section>
+			}
+		</div>
+		<aside class="wake-margin-note" aria-label="Related system controls">
+			if path=="/system/configuration" {
+				<h2>Manage access</h2>
+				<ul><li><a href="/system/settings">Browser sign-in</a></li><li><a href="/connections">Manage source and reference access</a></li></ul>
+			} else {
+				<h2>Financial data</h2>
+				<ul><li><a href="/connections">Acquisition and processing status</a></li><li><a href="/review">Activity and identity conflicts</a></li></ul>
+			}
+		</aside>
+	</div>
 }
 
 templ ErrorPage(title, message string) {

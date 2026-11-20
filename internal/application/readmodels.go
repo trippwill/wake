@@ -15,6 +15,22 @@ import (
 	"go.trippwill.dev/wake/source"
 )
 
+// ReportTitle names a report stream in the reader and its searchable index.
+func ReportTitle(stream string) string {
+	switch stream {
+	case "confirmations":
+		return "Trade confirmations"
+	case "activity", "activities":
+		return "Activity report"
+	case "positions":
+		return "Positions report"
+	case "":
+		return "Source report"
+	default:
+		return strings.ToUpper(stream[:1]) + strings.ReplaceAll(stream[1:], "-", " ") + " report"
+	}
+}
+
 type ListOptions struct {
 	Search, Kind, State, Sort, Direction string
 	Page, PageSize                       int
@@ -66,6 +82,7 @@ const (
 	ReviewScope
 	ObservationScope
 	PositionsScope
+	ReportsScope
 )
 
 type ListQuery struct {
@@ -90,12 +107,13 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 
 	if options.Direction == "" {
 		options.Direction = "desc"
-		if scope != ActivityScope && scope != ObservationScope {
+		if scope != ActivityScope && scope != ObservationScope && scope != ReportsScope {
 			options.Direction = "asc"
 		}
 	}
 
-	if options.Direction != "asc" && options.Direction != "desc" {
+	if options.Direction != "asc" && options.Direction != "desc" ||
+		scope == ReportsScope && options.Direction != "desc" {
 		return ListQuery{}, calculation.ErrInvalid
 	}
 
@@ -126,7 +144,7 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 	}
 
 	if scope == ObservationScope {
-		sorts = []string{"report", "outcome", "location", "rule", "activity"}
+		sorts = []string{"report", "outcome", "location", "rule", "activity", "date"}
 		states = []string{""}
 		kinds = []string{""}
 	}
@@ -137,7 +155,13 @@ func NewListQuery(options ListOptions, scope ListScope) (ListQuery, error) {
 		kinds = []string{"", "equity", "fund", "option", "debt"}
 	}
 
-	if scope > PositionsScope {
+	if scope == ReportsScope {
+		sorts = []string{"received"}
+		states = []string{""}
+		kinds = []string{""}
+	}
+
+	if scope > ReportsScope {
 		return ListQuery{}, calculation.ErrInvalid
 	}
 
@@ -265,7 +289,7 @@ type (
 		Resource                         CanonicalResource
 		State                            calculation.ActivityState
 		InstrumentName, InstrumentTicker string
-		AccountName                      string
+		AccountName, AccountProvider     string
 		Reference                        ReferenceMatch
 	}
 	ActivityList struct {
@@ -309,7 +333,28 @@ type (
 	OverviewView struct {
 		Status                         SystemStatus
 		Review                         ReviewList
+		Reports                        []ReportEntry
+		PendingReport                  PendingReport
+		PositionsAsOf                  *PositionTime
+		PositionsAvailable             int64
 		ActivityCount, InstrumentCount int64
+		CanRequestSync                 bool
+	}
+	ReportEntry struct {
+		ProcessingStatus
+		ConnectionID, ConnectionName, Provider, Operation string
+		Received                                          time.Time
+		ProviderAvailable, CanNormalize, ReusedBody       bool
+		Accepted, Enriched, Repeated, PositionSets        int64
+	}
+	ReportList struct {
+		PageInfo
+		Items []ReportEntry
+	}
+	PendingReport struct {
+		Artifact, ConnectionID, ConnectionName string
+		AccountConfirmed                       bool
+		ProcessingFailed                       bool
 	}
 	ReadQueries interface {
 		Resource(context.Context, string, string) (CanonicalResource, error)
@@ -321,6 +366,7 @@ type (
 		SourceCandidate(context.Context, string, string, source.Reference) (Candidate, error)
 		SystemStatus(context.Context) (SystemStatus, error)
 		Overview(context.Context) (OverviewView, error)
+		ReportList(context.Context, ListQuery) (ReportList, error)
 		Accounts(context.Context) ([]Account, error)
 		ActivityList(context.Context, ListQuery) (ActivityList, error)
 		InstrumentList(context.Context, ListQuery) (InstrumentList, error)

@@ -71,17 +71,29 @@ func TestWorkspaceDestinationsHaveDistinctTitlesAndNavigation(t *testing.T) {
 		}
 
 		previous := -1
-		for _, label := range []string{"Overview", "Activity", "Instruments", "Positions", "Needs review", "Connections", "System"} {
+		for _, label := range []string{"Overview", "Reports", "Activity", "Instruments", "Positions", "Needs review", "Connections", "System"} {
 			index := strings.Index(html, "<span>"+label+"</span>")
 			if index <= previous {
-				t.Fatal("sidebar order changed", label)
+				t.Fatal("masthead order changed", label)
 			}
 
 			previous = index
 		}
 
-		if strings.Index(html, ">Administration</li>") < strings.Index(html, "<span>Needs review</span>") ||
-			strings.Index(html, ">Administration</li>") > strings.Index(html, "<span>Connections</span>") {
+		if strings.Index(
+			html,
+			`<ul aria-label="Administration">`,
+		) < strings.Index(
+			html,
+			"<span>Needs review</span>",
+		) ||
+			strings.Index(
+				html,
+				`<ul aria-label="Administration">`,
+			) > strings.Index(
+				html,
+				"<span>Connections</span>",
+			) {
 			t.Fatal("Connections is outside Administration")
 		}
 	}
@@ -135,7 +147,7 @@ func TestSettingsRequiresSessionAndDoesNotQueryStatus(t *testing.T) {
 
 		html := w.Body.String()
 		if tc.authenticated && (!strings.Contains(html, "data-theme-preference") ||
-			strings.Contains(html, `hx-get="/system/settings"`) || strings.Contains(html, "wake-sidebar") == tc.fragment) {
+			strings.Contains(html, `hx-get="/system/settings"`) || strings.Contains(html, "wake-masthead") == tc.fragment) {
 			t.Fatal("unexpected Settings response", tc, html)
 		}
 	}
@@ -172,7 +184,7 @@ func TestDirectResourceNavigationUsesCanonicalFallbacks(t *testing.T) {
 	for _, tc := range []struct{ path, section, back, label string }{
 		{"/instruments/one", "Instruments", "/instruments", "Instruments"},
 		{"/instruments/one/correct", "Instruments", "/instruments/one", "Instrument"},
-		{"/evidence/report", "Activity", "/activity", "Activity"},
+		{"/evidence/report", "Reports", "/reports", "Reports"},
 		{"/activity/one", "Activity", "/activity", "Activity"},
 		{"/activity/one/correct", "Activity", "/activity/one", "Activity detail"},
 		{"/review", "Needs review", "/review", "Needs review"},

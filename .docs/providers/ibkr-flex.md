@@ -208,10 +208,12 @@ See the [IBKR Confirmation code reference](https://www.ibkrguides.com/reportingr
 
 Debt executions preserve nominal (face) quantity, exact reported price and currency,
 principal/amount, proceeds, accrued interest, commissions, taxes, net cash and net cash with
-billable independently. Wake makes no quotation-basis assertion and does not calculate a missing
-principal or settlement total. In the inspected gilt and Treasury-bill samples, trade net cash
-excludes the separately reported accrued interest. Keep those roles separate even when their
-arithmetic happens to agree. A Confirmation trade row does not establish coupon or maturity from a
+billable independently. The admin reader labels IBKR Treasury bill prices per 100 of face value.
+The financial API preserves the source quotation basis, which may be unspecified. Missing
+principal and settlement totals remain unknown. In the inspected gilt and Treasury-bill samples,
+trade net cash excludes the separately reported accrued interest. Keep those roles separate even
+when their arithmetic happens to agree. A Confirmation trade row does not establish coupon or
+maturity from a
 symbol; missing terms remain unknown. Richer explicitly supplied issue terms retain their own
 provenance. See [debt reporting research](../research/ibkr-debt-reporting.md) for the documentation
 limits and sample evidence. Debt reference identity uses an issue FIGI rather than requiring a

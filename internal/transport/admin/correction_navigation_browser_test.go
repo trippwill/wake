@@ -163,7 +163,7 @@ func TestBrowserCorrectionAndEvidenceNavigation(t *testing.T) {
 		chromedp.Evaluate[chromedp.Void](`window.fragmentContext=JSON.stringify(history.state.wakeNavigation)`),
 	)
 	assert(
-		`new URL(location.href).searchParams.get('sort')==='report'&&new URL(location.href).searchParams.get('dir')==='desc'&&[...document.querySelectorAll('.tabulator-col[tabulator-field]')].filter(column=>column.getClientRects().length).length===4`,
+		`new URL(location.href).searchParams.get('sort')==='report'&&new URL(location.href).searchParams.get('dir')==='desc'&&[...document.querySelectorAll('.tabulator-col[tabulator-field]')].filter(column=>column.getClientRects().length).map(column=>column.getAttribute('tabulator-field')).join(',')==='location,date,terms,outcome,activity'`,
 		"artifact table wrote invalid default ordering into its URL",
 	)
 	check(

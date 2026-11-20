@@ -22,11 +22,14 @@ func known(text string) string {
 }
 
 func operationLabel(operation string) string {
-	if operation == "discover" {
-
+	switch operation {
+	case "discover":
 		return "Account discovery"
+	case "supply":
+		return "Supplied evidence"
+	default:
+		return "Source synchronization"
 	}
-	return "Source synchronization"
 }
 func progressLabel(code provider.ProgressPhase) string {
 	switch code {
@@ -77,149 +80,168 @@ templ ConfirmAccount(csrf, id string, candidate application.Candidate) {
 
 templ ExecutionPage(d application.ExecutionDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Activity detail")
-	@PageHeader(stringTitle(string(d.Execution.Terms().Fields().Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Execution.Terms().Fields().Date.String()))
-	@AcceptedDetailScope()
-	<section class="wake-card">
-		<div class="wake-card-heading">
-			<h2>Financial summary</h2>
-			<div class="wake-actions">
-				@ActivityBadge(d.Execution.State())
-				<a class="btn" href={ templ.SafeURL("/activity/" + d.Execution.ID() + "/correct") }>Correct accepted data</a>
-			</div>
-		</div>
-		<dl>
-			<dt>Side</dt>
-			<dd>{ string(d.Execution.Terms().Fields().Side) }</dd>
-			if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
-				<dt>Face amount</dt>
-				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
-				<dt>Reported price</dt>
-				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
-			} else {
-				<dt>{ "Quantity ("+d.Execution.Terms().QuantityUnit()+")" }</dt>
-				<dd>{ d.Execution.Terms().Fields().Quantity.Value() }</dd>
-				<dt>{ "Price ("+quotationLabel(string(d.Execution.Terms().QuotationBasis()))+")" }</dt>
-				<dd>{ priceText(d.Execution.Terms().Fields().Price) }</dd>
-			}
-			<dt>Trade date</dt>
-			<dd>{ d.Execution.Terms().Fields().Date.String() }</dd>
-			if d.Execution.Terms().Fields().Kind==source.ReportedTrade {
-				<dt>Trade grain</dt>
-				<dd>Reported trade</dd>
-				<dt>Reported trade time</dt>
-			} else {
-				<dt>Execution time (reported precision)</dt>
-			}
-			<dd>{ known(d.Execution.Terms().Fields().At.String()) }</dd>
-		</dl>
-		<a href={ templ.SafeURL("/instruments/" + d.Execution.Instrument()) }>Inspect instrument</a>
-	</section>
-	<section class="wake-card">
-		<h2>Monetary terms</h2>
-		if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
-			<dl><dt>Reported principal</dt><dd>{ moneyText(d.Execution.Terms().Fields().GrossAmount) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Trade net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd></dl>
-			<p class="wake-help">Trade net cash and accrued interest are separate reported amounts. No combined settlement total is calculated.</p>
-			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
-		} else {
-			<dl><dt>Gross amount</dt><dd>{ moneyText(d.Execution.Terms().Fields().GrossAmount) }</dd><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd></dl>
-			<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
-		}
-		@ChargesTable(d.Execution.Terms().Fields().Charges)
-	</section>
-	@ReportedRealized(d.Context.Realized)
-	if !d.Execution.Terms().Fields().Instrument.Option().IsZero() || !d.Execution.Terms().Fields().Instrument.Debt().IsZero() {
-		<section class="wake-card">
-			<h2>Contract terms</h2>@OptionFacts(d.Execution.Terms().Fields().Instrument.Option())
-			@DebtFacts(d.Execution.Terms().Fields().Instrument.Debt())
-		</section>
+	{{
+		terms := d.Execution.Terms()
+		trade := terms.Fields()
+	}}
+	{{ security := instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName) }}
+	if trade.Instrument.Debt().Fields().Type == source.TreasuryBill {
+		{{ security = describe("US Treasury bill", security) }}
 	}
-	<details class="wake-card">
-		<summary>Relationships and source context</summary>@RelationshipLinks(d.Relationships)
-		<dl><dt>Reported order membership</dt><dd>{ referenceText(d.Execution.Terms().Fields().Order) }</dd><dt>Opening/closing</dt><dd>{ known(string(d.Execution.Terms().Fields().PositionEffect)) }</dd><dt>Source event</dt><dd>{ referenceText(d.Execution.Terms().Fields().Event) }</dd><dt>Wake activity identity</dt><dd>{ d.Execution.ID() }</dd></dl>
-	</details>
-	<section class="wake-card">
-		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
-		<details>
-			<summary>Retained observations and acceptance rules</summary>@ObservationHistory("activity", d.Execution.ID())
+	@PageHeader(stringTitle(string(trade.Side))+" "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(security, d.Context.AccountName+" · "+trade.Date.String()))
+	@RecordReading("Trade details", "Monetary terms", "Report appearances") {
+		<section class="wake-card wake-trade-summary">
+			<div class="wake-card-heading">
+				<h2 id="accepted-activity" tabindex="-1">Trade details</h2>
+				<div class="wake-actions">
+					@ActivityBadge(d.Execution.State())
+					<a class="btn" href={ templ.SafeURL("/activity/" + d.Execution.ID() + "/correct") }>Correct accepted data</a>
+				</div>
+			</div>
+			<dl class="wake-trade-figures">
+				<div>
+					if trade.Instrument.Kind() == source.Debt {
+						<dt>Face amount</dt>
+						<dd>{ trade.Quantity.Value() + " " + terms.QuantityUnit() }</dd>
+					} else {
+						<dt>{ "Quantity (" + terms.QuantityUnit() + ")" }</dt>
+						<dd>{ trade.Quantity.Value() }</dd>
+					}
+				</div>
+				<div>
+					if basis := tradePriceBasis(trade.Instrument, terms.QuotationBasis()); basis != "" {
+						<dt>{ "Price " + basis }</dt>
+					} else {
+						<dt>Reported price</dt>
+					}
+					@AcceptedPrice(trade.Price, d.Context)
+				</div>
+				<div>
+					if trade.Instrument.Kind() == source.Debt {
+						<dt>Reported principal</dt>
+					} else {
+						<dt>Gross amount</dt>
+					}
+					<dd>{ moneyText(trade.GrossAmount) }</dd>
+				</div>
+			</dl>
+			<ul class="wake-trade-reference">
+				if trade.Kind == source.ReportedTrade {
+					<li>Reported trade</li>
+				}
+				if !trade.At.IsZero() {
+					<li>{ trade.At.String() }</li>
+				}
+				for _,label := range brokerEventLabels(trade.Event, trade.EventAliases) {
+					<li>{ label }</li>
+				}
+				<li><a href={ templ.SafeURL("/instruments/" + d.Execution.Instrument()) }>Inspect instrument</a></li>
+			</ul>
+		</section>
+		@TradeReportAppearances(d.Execution.ID())
+		<section class="wake-card">
+			<h2 id="record-terms" tabindex="-1">Monetary terms</h2>
+			if d.Execution.Terms().Fields().Instrument.Kind()==source.Debt {
+				<dl><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Trade net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd></dl>
+				<p class="wake-help">Trade net cash and accrued interest are separate reported amounts. No combined settlement total is calculated.</p>
+				<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
+			} else {
+				<dl><dt>Net cash</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCash) }</dd></dl>
+				<details><summary>Settlement and additional monetary terms</summary><dl><dt>Reported settlement date</dt><dd>{ dateText(d.Execution.Terms().Fields().SettlementDate) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Execution.Terms().Fields().Proceeds) }</dd><dt>Accrued interest</dt><dd>{ moneyText(d.Execution.Terms().Fields().AccruedInterest) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Execution.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
+			}
+			@ChargesTable(d.Execution.Terms().Fields().Charges)
+		</section>
+		@ReportedRealized(d.Context.Realized)
+		if !d.Execution.Terms().Fields().Instrument.Option().IsZero() || !d.Execution.Terms().Fields().Instrument.Debt().IsZero() {
+			<section class="wake-card">
+				<h2>Contract terms</h2>@OptionFacts(d.Execution.Terms().Fields().Instrument.Option())
+				@DebtFacts(d.Execution.Terms().Fields().Instrument.Debt())
+			</section>
+		}
+		<details class="wake-card">
+			<summary>Relationships and source context</summary>@RelationshipLinks(d.Relationships)
+			<dl><dt>Reported order membership</dt><dd>{ referenceText(d.Execution.Terms().Fields().Order) }</dd><dt>Opening/closing</dt><dd>{ known(string(d.Execution.Terms().Fields().PositionEffect)) }</dd><dt>Source event</dt><dd>{ referenceText(d.Execution.Terms().Fields().Event) }</dd><dt>Wake activity identity</dt><dd>{ d.Execution.ID() }</dd></dl>
 		</details>
-	</section>
-	@ActivityFieldDetails(fields)
+		@CorrectionReviews(d.Corrections)
+		@ActivityFieldDetails(fields)
+	}
 }
 
 templ InstrumentPage(d application.InstrumentDetail) {
 	@Breadcrumbs("Instrument")
 	@PageHeader(instrumentTitle(d.Instrument.Ticker(), d.Instrument.Name()), describe(instrumentDescription(d.Instrument.Ticker(), d.Instrument.Name()), d.Instrument.Kind()))
-	@AcceptedDetailScope()
-	<section class="wake-card">
-		<div class="wake-card-heading">
-			<h2>Instrument identity</h2>
-			<div class="wake-actions">
-				@InstrumentBadge(d.Instrument)
-				<a class="btn" href={ templ.SafeURL("/instruments/" + d.Instrument.ID() + "/correct") }>Correct instrument data</a>
-			</div>
-		</div>
-		<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported ticker</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd><dt>Reported description</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd></dl>
-		if d.Instrument.Kind()=="option" {
-			<p>
-				Underlier:
-				if d.Underlier!="" {
-					<a href={ templ.SafeURL("/instruments/" + d.Underlier) }>Inspect linked underlier</a>
-				} else {
-					Unknown
-				}
-			</p>
-		}
-	</section>
-	<p>Contract and issue terms belong to their dated observations and activity. Inspect supporting observations below for historical terms.</p>
-	if reason:=d.Instrument.ReferenceMetadata().Reason;reason!="" {
-		<p class="wake-notice">{ referenceReasonText(reason) }</p>
-	}
-	if len(d.Listings)>0 {
+	@RecordReading("Instrument identity", "", "Supporting observations") {
 		<section class="wake-card">
-			<h2>Listings</h2>
-			<section class="wake-table-scroll" aria-label="Listings">
-				<table class="table">
-					<caption>Instrument listings</caption><thead><tr><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">Venue FIGI</th></tr></thead>
-					<tbody>
-						for _,l:=range d.Listings {
-							<tr>
-								<td>{ known(l.Venue()) }</td>
-								<td>{ known(l.Ticker()) }</td>
-								<td>{ l.Currency() }</td>
-								<td>
-									if l.FIGI()=="" {
-										Not established
-									} else {
-										{ l.FIGI() }
-									}
-								</td>
-							</tr>
-						}
-					</tbody>
-				</table>
+			<div class="wake-card-heading">
+				<h2 id="accepted-activity" tabindex="-1">Instrument identity</h2>
+				<div class="wake-actions">
+					@InstrumentBadge(d.Instrument)
+					<a class="btn" href={ templ.SafeURL("/instruments/" + d.Instrument.ID() + "/correct") }>Correct instrument data</a>
+				</div>
+			</div>
+			<dl><dt>{ identityFIGILabel(d.Instrument.ReferenceMetadata().Allocation) }</dt><dd>{ known(d.Instrument.FIGI()) }</dd><dt>Reported ticker</dt><dd>{ known(d.Instrument.Reported().Ticker()) }</dd><dt>Reported description</dt><dd>{ known(d.Instrument.Reported().Name()) }</dd></dl>
+			if d.Instrument.Kind()=="option" {
+				<p>
+					Underlier:
+					if d.Underlier!="" {
+						<a href={ templ.SafeURL("/instruments/" + d.Underlier) }>Inspect linked underlier</a>
+					} else {
+						Unknown
+					}
+				</p>
+			}
+		</section>
+		<p>Contract and issue terms belong to their dated observations and activity. Inspect supporting observations below for historical terms.</p>
+		if reason:=d.Instrument.ReferenceMetadata().Reason;reason!="" {
+			<p class="wake-notice">{ referenceReasonText(reason) }</p>
+		}
+		if len(d.Listings)>0 {
+			<section class="wake-card">
+				<h2>Listings</h2>
+				<section class="wake-table-scroll" aria-label="Listings">
+					<table class="table">
+						<caption>Instrument listings</caption><thead><tr><th scope="col">Venue</th><th scope="col">Symbol</th><th scope="col">Currency</th><th scope="col">Venue FIGI</th></tr></thead>
+						<tbody>
+							for _,l:=range d.Listings {
+								<tr>
+									<td>{ known(l.Venue()) }</td>
+									<td>{ known(l.Ticker()) }</td>
+									<td>{ l.Currency() }</td>
+									<td>
+										if l.FIGI()=="" {
+											Not established
+										} else {
+											{ l.FIGI() }
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</section>
+				<p>A share-class or composite FIGI identifies a broader instrument. It does not establish a FIGI for this venue.</p>
 			</section>
-			<p>A share-class or composite FIGI identifies a broader instrument. It does not establish a FIGI for this venue.</p>
+		}
+		<details class="wake-card">
+			<summary>Reported references and reference evidence</summary>
+			<p>Instrument linking rule: { d.Instrument.Rule() }</p>
+			<ul>
+				<li>{ d.Instrument.Reported().Reference().Authority() } { d.Instrument.Reported().Reference().Kind() } { d.Instrument.Reported().Reference().Value() }</li>
+				for _,id:=range d.Instrument.Reported().Identifiers() {
+					<li>
+						{ identifierLabel(id.Kind()) }: { id.Value() } ({ id.Field() })
+					</li>
+				}
+				for _,attempt:=range d.References {
+					<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL("/reference-evidence/" + attempt.Evidence) }>OpenFIGI mapping evidence</a></li>
+				}
+			</ul>
+			<p>Wake instrument identity: { d.Instrument.ID() }</p>
+		</details>
+		<section class="wake-card">
+			<h2 id="record-sources" tabindex="-1">Supporting observations</h2>@ObservationHistory("instrument", d.Instrument.ID())
 		</section>
 	}
-	<details class="wake-card">
-		<summary>Reported references and reference evidence</summary>
-		<p>Instrument linking rule: { d.Instrument.Rule() }</p>
-		<ul>
-			<li>{ d.Instrument.Reported().Reference().Authority() } { d.Instrument.Reported().Reference().Kind() } { d.Instrument.Reported().Reference().Value() }</li>
-			for _,id:=range d.Instrument.Reported().Identifiers() {
-				<li>
-					{ identifierLabel(id.Kind()) }: { id.Value() } ({ id.Field() })
-				</li>
-			}
-			for _,attempt:=range d.References {
-				<li>{ attempt.Status } · { attempt.Retrieved } · <a href={ templ.SafeURL("/reference-evidence/" + attempt.Evidence) }>OpenFIGI mapping evidence</a></li>
-			}
-		</ul>
-		<p>Wake instrument identity: { d.Instrument.ID() }</p>
-	</details>
-	<section class="wake-card">
-		<h2>Supporting observations</h2>@ObservationHistory("instrument", d.Instrument.ID())
-	</section>
 }
 
 templ EvidencePage(evidence application.ReferenceEvidence) {
@@ -322,32 +344,33 @@ templ RelationshipLinks(links []application.Relationship) {
 templ LifecyclePage(d application.LifecycleDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Option outcome")
 	@PageHeader(stringTitle(string(d.Lifecycle.Terms().Fields().Kind))+" · "+instrumentTitle(d.Context.InstrumentTicker, d.Context.InstrumentName), describe(instrumentDescription(d.Context.InstrumentTicker, d.Context.InstrumentName), d.Context.AccountName+" · "+d.Lifecycle.Terms().Fields().Date.String()))
-	@AcceptedDetailScope()
-	@ReportedRealized(d.Context.Realized)
-	<section class="wake-card">
-		<div class="wake-card-heading">
-			<h2>Reported option outcome</h2>
-			<div class="wake-actions">
-				@ActivityBadge(d.Lifecycle.State())
-				<a class="btn" href={ templ.SafeURL("/activity/" + d.Lifecycle.ID() + "/correct") }>Correct accepted data</a>
+	@RecordReading("Reported option outcome", "Contract terms", "Evidence and decisions") {
+		@ReportedRealized(d.Context.Realized)
+		<section class="wake-card">
+			<div class="wake-card-heading">
+				<h2 id="accepted-activity" tabindex="-1">Reported option outcome</h2>
+				<div class="wake-actions">
+					@ActivityBadge(d.Lifecycle.State())
+					<a class="btn" href={ templ.SafeURL("/activity/" + d.Lifecycle.ID() + "/correct") }>Correct accepted data</a>
+				</div>
 			</div>
-		</div>
-		<dl><dt>Quantity (contracts)</dt><dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd><dt>Reported date</dt><dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd><dt>Reported time</dt><dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd></dl><a href={ templ.SafeURL("/instruments/" + d.Lifecycle.Instrument()) }>Inspect option contract</a>
-	</section>
-	<section class="wake-card">
-		<h2>Contract terms</h2>@OptionFacts(d.Lifecycle.Terms().Fields().Instrument.Option())
-	</section>
-	<section class="wake-card">
-		@RelationshipLinks(d.Relationships)
-	</section>
-	<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Lifecycle.ID() }</dd></dl></details>
-	<section class="wake-card">
-		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
-		<details>
-			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Lifecycle.ID())
-		</details>
-	</section>
-	@ActivityFieldDetails(fields)
+			<dl><dt>Quantity (contracts)</dt><dd>{ d.Lifecycle.Terms().Fields().Quantity.Value() }</dd><dt>Reported date</dt><dd>{ d.Lifecycle.Terms().Fields().Date.String() }</dd><dt>Reported time</dt><dd>{ known(d.Lifecycle.Terms().Fields().At.String()) }</dd></dl><a href={ templ.SafeURL("/instruments/" + d.Lifecycle.Instrument()) }>Inspect option contract</a>
+		</section>
+		<section class="wake-card">
+			<h2 id="record-terms" tabindex="-1">Contract terms</h2>@OptionFacts(d.Lifecycle.Terms().Fields().Instrument.Option())
+		</section>
+		<section class="wake-card">
+			@RelationshipLinks(d.Relationships)
+		</section>
+		<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Lifecycle.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Lifecycle.ID() }</dd></dl></details>
+		<section class="wake-card">
+			<h2 id="record-sources" tabindex="-1">Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
+			<details>
+				<summary>Reports behind this record</summary>@ObservationHistory("activity", d.Lifecycle.ID())
+			</details>
+		</section>
+		@ActivityFieldDetails(fields)
+	}
 }
 
 templ DebtFacts(terms source.DebtTerms) {
@@ -394,47 +417,48 @@ func currencyAmountText(a source.CurrencyAmount) string {
 templ ConversionPage(d application.ConversionDetail, fields []application.PublishedFieldDetail) {
 	@Breadcrumbs("Currency conversion")
 	@PageHeader("Convert "+currencyText(d.Conversion.Terms().Fields().Sent.Currency())+" to "+currencyText(d.Conversion.Terms().Fields().Received.Currency()), d.Context.AccountName+" · "+d.Conversion.Terms().Fields().Date.String())
-	@AcceptedDetailScope()
-	@ReportedRealized(d.Context.Realized)
-	<section class="wake-card">
-		<div class="wake-card-heading">
-			<h2>Currency roles</h2>
-			<div class="wake-actions">
-				@ActivityBadge(d.Conversion.State())
-				<a class="btn" href={ templ.SafeURL("/activity/" + d.Conversion.ID() + "/correct") }>Correct accepted data</a>
+	@RecordReading("Currency roles", "Monetary terms", "Evidence and decisions") {
+		@ReportedRealized(d.Context.Realized)
+		<section class="wake-card">
+			<div class="wake-card-heading">
+				<h2 id="accepted-activity" tabindex="-1">Currency roles</h2>
+				<div class="wake-actions">
+					@ActivityBadge(d.Conversion.State())
+					<a class="btn" href={ templ.SafeURL("/activity/" + d.Conversion.ID() + "/correct") }>Correct accepted data</a>
+				</div>
 			</div>
-		</div>
-		<dl>
-			<dt>Sent</dt>
-			<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Sent) }</dd>
-			<dt>Received</dt>
-			<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Received) }</dd>
-			<dt>Quoted rate</dt>
-			<dd>
-				{ priceText(d.Conversion.Terms().Fields().Rate) }
-				if d.Conversion.Terms().Fields().Rate.Amount()!="" {
-					per { currencyText(d.Conversion.Terms().Fields().RateBase) }
-				}
-			</dd>
-			<dt>Reported date</dt>
-			<dd>{ d.Conversion.Terms().Fields().Date.String() }</dd>
-			<dt>Reported time</dt>
-			<dd>{ known(d.Conversion.Terms().Fields().At.String()) }</dd>
-		</dl>
-	</section>
-	<section class="wake-card">
-		<h2>Monetary terms</h2>
-		<dl><dt>Net cash</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCash) }</dd></dl>@ChargesTable(d.Conversion.Terms().Fields().Charges)
-		<details><summary>Additional monetary roles</summary><dl><dt>Gross</dt><dd>{ moneyText(d.Conversion.Terms().Fields().GrossAmount) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
-	</section>
-	<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Conversion.ID() }</dd></dl></details>
-	<section class="wake-card">
-		<h2>Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
-		<details>
-			<summary>Retained observations and rules</summary>@ObservationHistory("activity", d.Conversion.ID())
-		</details>
-	</section>
-	@ActivityFieldDetails(fields)
+			<dl>
+				<dt>Sent</dt>
+				<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Sent) }</dd>
+				<dt>Received</dt>
+				<dd>{ currencyAmountText(d.Conversion.Terms().Fields().Received) }</dd>
+				<dt>Quoted rate</dt>
+				<dd>
+					{ priceText(d.Conversion.Terms().Fields().Rate) }
+					if d.Conversion.Terms().Fields().Rate.Amount()!="" {
+						per { currencyText(d.Conversion.Terms().Fields().RateBase) }
+					}
+				</dd>
+				<dt>Reported date</dt>
+				<dd>{ d.Conversion.Terms().Fields().Date.String() }</dd>
+				<dt>Reported time</dt>
+				<dd>{ known(d.Conversion.Terms().Fields().At.String()) }</dd>
+			</dl>
+		</section>
+		<section class="wake-card">
+			<h2 id="record-terms" tabindex="-1">Monetary terms</h2>
+			<dl><dt>Net cash</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCash) }</dd></dl>@ChargesTable(d.Conversion.Terms().Fields().Charges)
+			<details><summary>Additional monetary roles</summary><dl><dt>Gross</dt><dd>{ moneyText(d.Conversion.Terms().Fields().GrossAmount) }</dd><dt>Proceeds</dt><dd>{ moneyText(d.Conversion.Terms().Fields().Proceeds) }</dd><dt>Net cash with billable</dt><dd>{ moneyText(d.Conversion.Terms().Fields().NetCashWithBillable) }</dd></dl></details>
+		</section>
+		<details class="wake-card"><summary>Source event and identity</summary><dl><dt>Source event</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Event) }</dd><dt>Reported order membership</dt><dd>{ referenceText(d.Conversion.Terms().Fields().Order) }</dd><dt>Wake activity identity</dt><dd>{ d.Conversion.ID() }</dd></dl></details>
+		<section class="wake-card">
+			<h2 id="record-sources" tabindex="-1">Evidence and decisions</h2>@CorrectionReviews(d.Corrections)
+			<details>
+				<summary>Reports behind this record</summary>@ObservationHistory("activity", d.Conversion.ID())
+			</details>
+		</section>
+		@ActivityFieldDetails(fields)
+	}
 }
 
 templ CorrectionReviews(rows []application.CorrectionReview) {

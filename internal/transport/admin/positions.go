@@ -42,14 +42,14 @@ func positionsGrid(data application.PositionsList) gridPage[positionGridRow] {
 		AsOf:        "Not provided",
 		Version:     data.Version,
 		SourceHref:  "/connections",
-		SourceLabel: "Inspect source reports",
+		SourceLabel: "Recent reports from this source",
 	}
 	if data.Account.ID() == "" {
 		meta.Account = "No account confirmed"
 		meta.Message = "Confirm an account before inspecting reported positions."
 		meta.SourceLabel = "Set up an account"
 	} else {
-		meta.SourceHref = "/connections/" + data.Account.Connection() + "?view=reports"
+		meta.SourceHref = connectionURL(data.Account.Connection(), "reports")
 		switch text(data.Reason) {
 		case "not_reported":
 			meta.Message = "No usable position set has been reported. Check the source setup and retained reports."
