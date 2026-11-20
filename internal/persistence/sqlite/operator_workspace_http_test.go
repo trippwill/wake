@@ -552,6 +552,60 @@ func TestOperatorWorkspacesInspectAndValidateRetainedHistory(t *testing.T) {
 		}
 	}
 
+	t.Run("trace a report entry and its receipt", func(t *testing.T) {
+		archive := request(http.MethodGet, "/reports?q=Trade+confirmations", nil, false)
+		if archive.Code != http.StatusOK ||
+			!strings.Contains(archive.Body.String(), "/evidence/operator-history?receipt=operator-history") {
+			t.Fatal("displayed report title did not find the retained receipt", archive.Code)
+		}
+
+		receipt := request(http.MethodGet, "/evidence/operator-history?receipt=operator-history", nil, false)
+		if receipt.Code != http.StatusOK || !strings.Contains(receipt.Body.String(), "Selected receipt") {
+			t.Fatal("the report did not show the selected receipt", receipt.Code)
+		}
+
+		grid := request(
+			http.MethodGet,
+			"/grids/observations?subject=artifact&id=operator-history&q=option-fill",
+			nil,
+			false,
+		)
+
+		var entries struct {
+			Data []struct {
+				Location struct{ Href string }
+			}
+		}
+
+		if e := json.Unmarshal(grid.Body.Bytes(), &entries); grid.Code != http.StatusOK || e != nil ||
+			len(entries.Data) != 1 || entries.Data[0].Location.Href == "" {
+			t.Fatal("report grid did not find one entry for the execution ID", grid.Code, e)
+		}
+
+		entryPath, _, _ := strings.Cut(entries.Data[0].Location.Href, "#")
+
+		entry := request(http.MethodGet, entryPath, nil, false)
+		body := entry.Body.String()
+		if entry.Code != http.StatusOK || !strings.Contains(body, "1.234567890123456789 USD") ||
+			!strings.Contains(body, "Selected source row") ||
+			!strings.Contains(body, "option-fill") ||
+			!strings.Contains(body, "/executions/"+optionID+"#activity-price") {
+			t.Fatal("selected entry lost the exact reported price, original row or accepted record", entry.Code)
+		}
+
+		for _, unavailable := range []struct{ path, message string }{
+			{"/evidence/removed-report", "Item unavailable"},
+			{"/evidence/removed-report/original", "Report unavailable"},
+			{"/evidence/operator-history?receipt=wrong-report", "Receipt unavailable"},
+			{"/evidence/operator-history?entry=unknown&version=unknown", "Source entry unavailable"},
+		} {
+			page := request(http.MethodGet, unavailable.path, nil, false)
+			if page.Code != http.StatusNotFound || !strings.Contains(page.Body.String(), unavailable.message) {
+				t.Fatal("stale report link did not explain the missing target", unavailable.path, page.Code)
+			}
+		}
+	})
+
 	t.Run("evidence with financial-only storage", func(t *testing.T) {
 		h.Close()
 
