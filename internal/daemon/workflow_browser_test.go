@@ -828,7 +828,10 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 	capture("report-index")
 
-	var compactLayout []float64
+	var (
+		compactLayout        []float64
+		redrawPreservedFocus bool
+	)
 	check(
 		testbrowser.SetViewport(390, 850),
 		testbrowser.Evaluate(
@@ -840,14 +843,24 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 			})()`,
 			&compactLayout,
 		),
-		chromedp.Poll[chromedp.Void](
-			`(()=>{const link=document.querySelector('.tabulator-row [tabulator-field="location"] a');link?.focus();return link&&document.activeElement===link})()`,
+		testbrowser.Evaluate(
+			`(()=>{
+				const selector='.tabulator-row [tabulator-field="location"] a';
+				document.querySelector(selector).focus();
+				window.Tabulator.findTable('.tabulator')[0].redraw();
+				return document.activeElement===document.querySelector(selector);
+			})()`,
+			&redrawPreservedFocus,
 		),
 	)
 
 	if compactLayout[0] > compactLayout[1]+1 || compactLayout[2] > compactLayout[3]+1 ||
 		compactLayout[4] > compactLayout[5]+1 || compactLayout[6] != 0 {
 		t.Fatal("compact report entry did not keep its identity, terms and effect in view", compactLayout)
+	}
+
+	if !redrawPreservedFocus {
+		t.Fatal("resizing the report grid displaced focus from the entry link")
 	}
 
 	navigate(chromedp.KeyEvent(kb.Enter))

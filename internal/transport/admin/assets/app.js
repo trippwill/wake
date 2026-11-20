@@ -1126,7 +1126,6 @@
           restoring: false,
         };
         const rememberFocus = () => {
-          state.focus = null;
           const active = document.activeElement;
           if (!region.contains(active)) return;
           const heading = active.closest(".tabulator-col");
@@ -1141,6 +1140,15 @@
                     ?.getAttribute("tabulator-field"),
                 }
               : null;
+        };
+        const restoreFocus = () => {
+          const focus = state.focus;
+          state.focus = null;
+          if (!focus || document.activeElement !== document.body) return;
+          const selector = focus.field
+            ? `.tabulator-col[tabulator-field="${CSS.escape(focus.field)}"]`
+            : `[data-record="${CSS.escape(focus.record)}"] [tabulator-field="${CSS.escape(focus.column)}"] a[href]`;
+          element.querySelector(selector)?.focus({ preventScroll: true });
         };
         const requestData = async (
           url,
@@ -1410,8 +1418,9 @@
           );
         region.querySelector("[data-grid-reset]").onclick = () =>
           table.setColumns(createColumns());
-        // Capture the current focus immediately before Tabulator removes old rows.
+        // Replacing data and resizing both detach the displayed rows.
         table.on("dataProcessing", rememberFocus);
+        table.on("renderStarted", rememberFocus);
         table.on("tableBuilt", () => {
           element.setAttribute("aria-label", region.getAttribute("aria-label"));
           const selector = element.querySelector(".tabulator-page-size");
@@ -1431,6 +1440,7 @@
                 : "none",
             );
           }
+          restoreFocus();
         });
         table.on("dataProcessed", (rows) => {
           if (state.installing?.data === rows) {
@@ -1440,20 +1450,7 @@
             status.textContent = `${state.displayed.last_row} of ${state.displayed.total} results`;
           }
           region.dataset.gridReady = "true";
-          if (state.focus?.field && document.activeElement === document.body)
-            element
-              .querySelector(
-                `.tabulator-col[tabulator-field="${CSS.escape(state.focus.field)}"]`,
-              )
-              ?.focus();
-          if (state.focus?.record && document.activeElement === document.body) {
-            element
-              .querySelector(
-                `[data-record="${CSS.escape(state.focus.record)}"] [tabulator-field="${CSS.escape(state.focus.column)}"] a[href]`,
-              )
-              ?.focus();
-          }
-          state.focus = null;
+          restoreFocus();
           if (!state.selectionRestored && table.getDataCount() > 0) {
             state.selectionRestored = true;
             const selected = new URL(location.href).searchParams.get(
