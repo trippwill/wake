@@ -497,12 +497,15 @@
     }
   };
   const restoreSourcePosition = () => {
-    if (!sourceFragments.includes(location.hash)) return;
-    const anchor = document.getElementById(location.hash.slice(1));
-    const remembered = document.getElementById(
-      history.state?.wakeSourceFocus || "",
-    );
-    if (location.hash === "#record-sources") {
+    const { hash } = location;
+    if (!sourceFragments.includes(hash)) return;
+    const anchor = document.getElementById(hash.slice(1));
+    // Grid anchors hand focus to the selected row when its data arrives.
+    const remembered =
+      hash === "#source-entry" || hash === "#activity-price"
+        ? document.getElementById(history.state?.wakeSourceFocus || "")
+        : null;
+    if (hash === "#record-sources") {
       const grid = document.querySelector('[data-grid="observations"]');
       const disclosure = grid?.closest("details");
       if (disclosure) disclosure.open = true;

@@ -809,6 +809,29 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	check(testbrowser.Capture(&exactEntry, chromedp.Location()))
 	capture("source-entry")
 
+	check(
+		chromedp.NavigateBack(),
+		chromedp.Poll[chromedp.Void](`document.activeElement.id==='activity-price-source-0'`),
+		chromedp.WaitVisible(chromedp.CSS(`[data-grid-variant="appearances"] .tabulator-row`)),
+	)
+	navigate(
+		chromedp.Click(chromedp.CSS(`[data-grid-variant="appearances"] .tabulator-row a[href^="/evidence/"]`)),
+	)
+	check(
+		chromedp.NavigateBack(),
+		newDocument(chromedp.Reload()),
+		chromedp.Poll[chromedp.Void](
+			`(()=>{
+				const selected=new URLSearchParams(location.search).get('selected');
+				const active=document.activeElement;
+				return location.hash==='#record-sources' && selected &&
+					active.matches('[data-grid-variant="appearances"] [tabulator-field="report"] a') &&
+					active.closest('[data-record]').dataset.record===selected;
+			})()`,
+		),
+	)
+	navigate(chromedp.Click(chromedp.CSS("#activity-price-source-0")))
+
 	navigate(chromedp.Click(chromedp.CSS("#source-entry-record")))
 	check(chromedp.Poll[chromedp.Void](`document.activeElement.id==='activity-price'`))
 	capture("source-linked-record")
