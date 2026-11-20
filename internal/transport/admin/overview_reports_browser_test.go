@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/testbrowser"
 	"go.trippwill.dev/wake/source"
@@ -275,5 +276,37 @@ func TestBrowserReportGridEmptyStates(t *testing.T) {
 			placeholderIs("No matching report entries.")+
 				` && document.querySelector('#observations-grid [data-grid-status]').textContent==='0 of 75 results'`,
 		),
+	)
+}
+
+func TestBrowserReportEntryHeaderDoesNotOfferLocatorSort(t *testing.T) {
+	const (
+		entryHeading = `#observations-grid .tabulator-col[tabulator-field="location"]`
+		dateHeading  = `#observations-grid .tabulator-col[tabulator-field="date"]`
+	)
+
+	f := newAdminBrowserFixture(t)
+	f.check(
+		testbrowser.NewDocument(chromedp.Navigate(f.origin+"/evidence/synthetic-report?sort=location&dir=asc")),
+		chromedp.WaitVisible(chromedp.CSS("#observations-grid .tabulator-row")),
+		chromedp.Evaluate[chromedp.Void](`window.reportHeadingClicks=0;
+			document.querySelector('`+entryHeading+`').addEventListener('click',()=>window.reportHeadingClicks++)`),
+		chromedp.Click(chromedp.CSS(entryHeading)),
+		chromedp.Focus(chromedp.CSS(entryHeading)),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.KeyEvent(" "),
+	)
+	f.assert(`(()=>{
+		const params=new URLSearchParams(location.search);
+		const heading=document.querySelector('`+entryHeading+`');
+		return params.get('sort')==='location' && params.get('dir')==='asc' &&
+			heading.getAttribute('aria-sort')==='none' && window.reportHeadingClicks===1;
+	})()`, "reported entry activated a locator sort or advertised it as a title sort")
+
+	f.check(
+		chromedp.Focus(chromedp.CSS(dateHeading)),
+		chromedp.KeyEvent(kb.Enter),
+		chromedp.Poll[chromedp.Void](`new URLSearchParams(location.search).get('sort')==='date' &&
+			['ascending','descending'].includes(document.querySelector('`+dateHeading+`').getAttribute('aria-sort'))`),
 	)
 }

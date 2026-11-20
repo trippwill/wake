@@ -1093,7 +1093,8 @@
             widthGrow: ["location", "terms"].includes(field) ? 2 : 1,
             visible: !artifact || field !== "rule",
             headerWordWrap: true,
-            headerSort: field !== "terms",
+            headerSort:
+              field !== "terms" && !(artifact && field === "location"),
             variableHeight: true,
             // Header handles avoid inserting resize handles in each row
             // between Tabulator's height reads.
@@ -1433,7 +1434,8 @@
             heading.tabIndex = 0;
             heading.setAttribute(
               "aria-sort",
-              heading.getAttribute("tabulator-field") === sort?.field
+              heading.getAttribute("tabulator-field") === sort?.field &&
+                sort.column.getDefinition().headerSort !== false
                 ? sort.dir === "asc"
                   ? "ascending"
                   : "descending"
@@ -1499,7 +1501,10 @@
                 column.getWidth() + (event.key === "ArrowRight" ? 24 : -24),
               ),
             );
-          } else if (["Enter", " "].includes(event.key)) {
+          } else if (
+            ["Enter", " "].includes(event.key) &&
+            column.getDefinition().headerSort !== false
+          ) {
             event.preventDefault();
             heading.click();
           }
