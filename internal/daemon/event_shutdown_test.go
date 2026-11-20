@@ -46,6 +46,7 @@ func TestEventStreamStopsBeforeShutdownGrace(t *testing.T) {
 	// Keep the browser request independent of daemon cancellation: only the server
 	// can drain it. A client timeout would hide the five-second shutdown defect.
 	client := &http.Client{
+		Transport:     adminLoopbackTransport(t, cfg.Admin),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 

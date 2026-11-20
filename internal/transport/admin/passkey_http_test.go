@@ -22,12 +22,23 @@ import (
 )
 
 func TestPasskeyHTTPBrowserAccessLifecycle(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		t.Run(scheme, func(t *testing.T) {
+			testPasskeyBrowserAccessLifecycle(t, scheme)
+		})
+	}
+}
+
+func testPasskeyBrowserAccessLifecycle(t *testing.T, scheme string) {
+	t.Helper()
+
 	const (
-		origin           = "http://localhost:18787"
-		otherPort        = "http://localhost:28787"
 		password         = "synthetic enrollment password"
 		restoredPassword = "synthetic restored password"
 	)
+
+	origin := scheme + "://localhost:18787"
+	otherPort := scheme + "://localhost:28787"
 
 	dir := privateAuthDir(t)
 	if err := SetPassword(dir, []byte(password)); err != nil {
@@ -301,6 +312,10 @@ func (b *passkeyHTTPBrowser) useSession(w *httptest.ResponseRecorder) {
 
 	for _, cookie := range w.Result().Cookies() {
 		if cookie.Name == sessionCookie {
+			if cookie.Secure != strings.HasPrefix(b.origin, "https://") {
+				b.t.Fatal("session cookie did not match the verified browser scheme")
+			}
+
 			b.session = cookie
 			r := httptest.NewRequestWithContext(b.t.Context(), http.MethodGet, b.origin, nil)
 			r.AddCookie(cookie)

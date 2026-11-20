@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -410,6 +411,14 @@ func (s *Service) fetch(
 	limit int,
 	secret []byte,
 ) ([]Result, error) {
+	if len(secret) > 0 {
+		// Use the same value for screening and on the wire, where field whitespace is trimmed.
+		secret = bytes.Trim(secret, " \t")
+		if len(secret) == 0 {
+			return nil, provider.ErrUnauthorized
+		}
+	}
+
 	admitted, next, err := s.store.ReserveReference(ctx, now, limit)
 	if err != nil {
 		return nil, err
@@ -459,15 +468,16 @@ func (s *Service) fetch(
 
 		evidence.Status = response.StatusCode
 		for _, name := range []string{"Ratelimit-Limit", "Ratelimit-Remaining", "Ratelimit-Reset", "Retry-After"} {
-			if value := response.Header.Get(name); value != "" {
+			if value := response.Header.Get(name); value != "" &&
+				(len(secret) == 0 || !strings.Contains(value, string(secret))) {
 				evidence.Headers.Set(name, value)
 			}
 		}
 
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, (16<<20)+1))
 		if readErr == nil && len(body) <= 16<<20 {
-			if len(secret) > 0 && bytes.Contains(body, secret) {
-				body = []byte(`{"error":"response contained credential material"}`)
+			if !safeResponseBody(body, secret) {
+				body = []byte(`{"error":"response omitted during credential screening"}`)
 			} else if response.StatusCode == http.StatusOK {
 				var decoded []struct {
 					Data    []figi.Record `json:"data"`
@@ -491,18 +501,18 @@ func (s *Service) fetch(
 
 		cooldown := time.Time{}
 
-		reset, _ := strconv.Atoi(response.Header.Get("Ratelimit-Reset"))
+		reset, _ := strconv.Atoi(evidence.Headers.Get("Ratelimit-Reset"))
 		if reset < 1 || reset > 86400 {
 			reset = 60
 		}
 
 		if response.StatusCode == http.StatusTooManyRequests ||
-			response.Header.Get("Ratelimit-Remaining") == "0" {
+			evidence.Headers.Get("Ratelimit-Remaining") == "0" {
 			cooldown = now.Add(time.Duration(reset) * time.Second)
 		}
 
 		if seconds, e := strconv.Atoi(
-			response.Header.Get("Retry-After"),
+			evidence.Headers.Get("Retry-After"),
 		); e == nil && seconds > 0 &&
 			seconds <= 86400 {
 			candidate := now.Add(time.Duration(seconds) * time.Second)
@@ -519,7 +529,7 @@ func (s *Service) fetch(
 			next = cooldown
 		}
 
-		if remaining, e := strconv.Atoi(response.Header.Get("Ratelimit-Remaining")); e == nil && remaining >= 0 {
+		if remaining, e := strconv.Atoi(evidence.Headers.Get("Ratelimit-Remaining")); e == nil && remaining >= 0 {
 			if err = s.store.ReferenceAllowance(
 				ctx,
 				limit-min(remaining, limit),
@@ -559,6 +569,31 @@ func (s *Service) fetch(
 	}
 
 	return results, nil
+}
+
+func safeResponseBody(body, secret []byte) bool {
+	if len(secret) == 0 {
+		return true
+	}
+
+	if bytes.Contains(body, secret) || !json.Valid(body) {
+		return false
+	}
+
+	// Token scanning covers escaped strings in unknown fields and duplicate keys.
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return err == io.EOF
+		}
+
+		if value, ok := token.(string); ok && strings.Contains(value, string(secret)) {
+			return false
+		}
+	}
 }
 
 func (s *Service) parents(

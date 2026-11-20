@@ -175,8 +175,12 @@ allowed dependencies for transitive I/O and runtime access.
 ### Browser and frontend verification
 
 Use `mise run test:browser` for isolated synthetic Chromium workflows and
-`mise run test:browser:repeat` to investigate intermittent failures. Keep the
-browser sandbox enabled and use a disposable profile. Wait for the specific
+`mise run test:browser:repeat` to investigate intermittent failures. The Firefox CI
+job runs `mise run test:browser:firefox` on Linux amd64 with temporary, pinned
+Firefox and geckodriver binaries to verify the default origin, password sign-in,
+and the passkey lifecycle.
+
+Keep the browser sandbox enabled and use a disposable profile. Wait for the specific
 document or interaction state, and use explicit CSS or XPath selectors.
 [DESIGN.md](../../DESIGN.md) owns the visual standard. Inspect screenshots
 alongside functional checks. After editing browser assets, use

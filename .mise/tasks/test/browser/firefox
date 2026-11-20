@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 trippwill
+# SPDX-License-Identifier: MPL-2.0
+
+#MISE description="Verify the default admin origin and sign-in in Firefox on Linux amd64"
+set -euo pipefail
+
+firefox_version=159.0.1
+geckodriver_version=0.37.1
+firefox_sha256=469ce17120018e1c95411d254cf3c5f8db2dd1768a7acde5a2a089b00072ac65
+geckodriver_sha256=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde21e09f7e
+
+binaries=$(mktemp -d)
+trap 'rm -rf "$binaries"' EXIT
+mkdir -p .cache/test-results
+
+download() {
+  local url=$1 checksum=$2 destination=$3
+  curl --fail --silent --show-error --location --retry 3 --output "$binaries/$destination" "$url"
+  (cd "$binaries" && printf '%s  %s\n' "$checksum" "$destination" | sha256sum --strict --check)
+  tar -xf "$binaries/$destination" -C "$binaries"
+}
+
+download "https://archive.mozilla.org/pub/firefox/releases/$firefox_version/linux-x86_64/en-US/firefox-$firefox_version.tar.xz" \
+  "$firefox_sha256" firefox.tar.xz
+download "https://github.com/mozilla/geckodriver/releases/download/v$geckodriver_version/geckodriver-v$geckodriver_version-linux64.tar.gz" \
+  "$geckodriver_sha256" geckodriver.tar.gz
+export WAKE_FIREFOX="$binaries/firefox/firefox"
+export WAKE_GECKODRIVER="$binaries/geckodriver"
+
+go test -json -tags=firefox -run '^TestFirefoxPasskeyLifecycle$' -count=1 -timeout=3m ./internal/daemon \
+  | tee .cache/test-results/firefox.jsonl
+if ! grep -F '"Action":"pass"' .cache/test-results/firefox.jsonl | grep -F '"Test":"TestFirefoxPasskeyLifecycle"' >/dev/null; then
+  printf 'Missing Firefox browser test result\n' >&2
+  exit 1
+fi

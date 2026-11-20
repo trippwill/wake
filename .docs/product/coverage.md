@@ -9,9 +9,10 @@ for usage and the [domain vocabulary](domain.md) for financial policy.
 
 Wake runs as a single-user Linux daemon with separate IPv4 loopback listeners for
 browser administration and the financial API. Each listener has a configurable
-port. The admin listener accepts configured browser origins, including localhost on a
-different forwarded port. The financial listener can restrict accepted HTTP host authorities.
-Operators provide any remote access and transport protection.
+port. Use Wake on the same machine or over operator-provided SSH forwarding
+within a private LAN. The admin listener accepts configured browser origins,
+including a loopback hostname on a different forwarded port. The financial
+listener can restrict accepted HTTP host authorities.
 
 The appliance packages the same daemon and CLI in one Linux image for amd64 and
 arm64. Its rootless Podman Quadlet uses host networking and keeps the complete

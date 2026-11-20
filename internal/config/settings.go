@@ -78,7 +78,7 @@ func Settings() []Setting {
 		{
 			Key:         "admin.allowed_origins",
 			Type:        "array",
-			Default:     "http://127.0.0.1:<admin.port>",
+			Default:     "http://" + adminLoopbackHost + ":<admin.port>",
 			Description: "Exact browser origins in TOML; the first supplies the sign-in URL",
 		},
 		{

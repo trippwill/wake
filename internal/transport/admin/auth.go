@@ -154,7 +154,7 @@ func Open(configDir string, origins ...string) (*authenticator, bool, error) {
 	return auth, access.Password != "" || len(access.Passkeys) != 0, err
 }
 
-func (a *authenticator) login(w http.ResponseWriter, value string) bool {
+func (a *authenticator) login(w http.ResponseWriter, value string, secure bool) bool {
 	if !a.reserveAttempt() {
 		return false
 	}
@@ -176,7 +176,7 @@ func (a *authenticator) login(w http.ResponseWriter, value string) bool {
 	}
 
 	// Sign with the same snapshot that verified the password.
-	a.issue(w, key[:])
+	a.issue(w, key[:], secure)
 
 	return true
 }
@@ -222,14 +222,14 @@ func (a *authenticator) reserveAttempt() bool {
 	return true
 }
 
-func (a *authenticator) issue(w http.ResponseWriter, key []byte) string {
+func (a *authenticator) issue(w http.ResponseWriter, key []byte, secure bool) string {
 	a.sessionMu.Lock()
 	defer a.sessionMu.Unlock()
 
-	return a.issueLocked(w, key)
+	return a.issueLocked(w, key, secure)
 }
 
-func (a *authenticator) issueLocked(w http.ResponseWriter, key []byte) string {
+func (a *authenticator) issueLocked(w http.ResponseWriter, key []byte, secure bool) string {
 	csrf := make([]byte, keySize)
 	// crypto/rand.Read fills the buffer or terminates the process.
 	_, _ = rand.Read(csrf)
@@ -244,19 +244,22 @@ func (a *authenticator) issueLocked(w http.ResponseWriter, key []byte) string {
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(payload))
 	value := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	http.SetCookie(
-		w,
-		//nolint:gosec // The admin listener uses HTTP on IPv4 loopback.
-		&http.Cookie{
-			Name:     sessionCookie,
-			Value:    value,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
-			MaxAge:   int(a.lifetime.Seconds()),
-		})
+	setSessionCookie(w, value, int(a.lifetime.Seconds()), secure)
 
 	return id
+}
+
+func setSessionCookie(w http.ResponseWriter, value string, maxAge int, secure bool) {
+	//nolint:gosec // Allow HTTP for configured loopback and tunneled browser origins.
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	})
 }
 
 func (a *authenticator) registerSessionLocked(id string, expires, now int64) {
@@ -313,9 +316,9 @@ func (a *authenticator) commitBrowserAccess(
 	}
 
 	if sessionID == "" {
-		a.issue(w, updated.Key[:])
+		a.issue(w, updated.Key[:], secureBrowserOrigin(r))
 	} else if rotate {
-		a.issueLocked(w, updated.Key[:])
+		a.issueLocked(w, updated.Key[:], secureBrowserOrigin(r))
 	}
 
 	return updated, nil
@@ -405,6 +408,11 @@ func (a *authenticator) sameOrigin(r *http.Request) bool {
 	host, ok := a.origins[values[0]]
 
 	return ok && strings.EqualFold(host, r.Host)
+}
+
+// Use the browser scheme from an origin already verified by sameOrigin.
+func secureBrowserOrigin(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Origin"), "https://")
 }
 
 func parseVerifier(value []byte) (verifier, error) {

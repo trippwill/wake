@@ -122,6 +122,7 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corr
 	}
 
 	browser := &http.Client{
+		Transport:     adminLoopbackTransport(t, cfg.Admin),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Timeout:       time.Second,
 	}
@@ -322,6 +323,18 @@ func shellConfig(t *testing.T) config.Config {
 		Admin: config.Admin{Port: adminPort},
 		API:   config.API{Port: apiPort},
 	}
+}
+
+func adminLoopbackTransport(t *testing.T, admin config.Admin) *http.Transport {
+	t.Helper()
+
+	// Keep the browser authority in the request without relying on OS DNS for .localhost.
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", admin.Address())
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+
+	return transport
 }
 
 func assertLocalFinancialAccess(

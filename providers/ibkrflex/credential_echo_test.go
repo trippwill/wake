@@ -25,6 +25,11 @@ func TestRejectDecodedCredentialEchoes(t *testing.T) {
 	report := func(attribute string) string {
 		return `<FlexQueryResponse type="TCF"><FlexStatements><FlexStatement ` + attribute + `><TradeConfirms/></FlexStatement></FlexStatements></FlexQueryResponse>`
 	}
+
+	reportText := func(text string) string {
+		return `<FlexQueryResponse type="TCF"><FlexStatements><FlexStatement accountId="TEST">` +
+			`<Ignored>` + text + `</Ignored><TradeConfirms/></FlexStatement></FlexStatements></FlexQueryResponse>`
+	}
 	for _, tc := range []struct {
 		name, operation, body string
 		rejected              bool
@@ -32,8 +37,11 @@ func TestRejectDecodedCredentialEchoes(t *testing.T) {
 		{"escaped alias", "GetStatement", report(`acctAlias="prefix` + encoded.String() + `suffix"`), true},
 		{"escaped description", "GetStatement", report(`description="` + encoded.String() + `"`), true},
 		{"raw report", "GetStatement", report(`acctAlias="` + secret + `"`), true},
+		{"decoded text", "GetStatement", reportText(encoded.String()), true},
+		{"decoded text split across XML tokens", "GetStatement", reportText(`synthetic<!-- note --><![CDATA[-]]><Other>nested</Other>token`), true},
 		{"escaped reference", "SendRequest", `<FlexStatementResponse><Status>Success</Status><ReferenceCode>prefix` + encoded.String() + `suffix</ReferenceCode></FlexStatementResponse>`, true},
 		{"unrelated escaped report", "GetStatement", report(`acctAlias="Synthe&#116;ic"`), false},
+		{"unrelated split text", "GetStatement", reportText(`synthetic<!-- note --><![CDATA[-]]>description`), false},
 		{"unrelated escaped reference", "SendRequest", `<FlexStatementResponse><Status>Success</Status><ReferenceCode>ref&#45;1</ReferenceCode></FlexStatementResponse>`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

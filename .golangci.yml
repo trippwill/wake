@@ -1,7 +1,7 @@
 version: "2"
 
 run:
-  build-tags: [browser, frontend, racefocused]
+  build-tags: [browser, firefox, frontend, racefocused]
 
 linters:
   enable:

@@ -47,10 +47,11 @@ func TestAppliance(t *testing.T) {
 	}
 
 	app := appliance{
-		name:  "wake-appliance-test-" + strings.ToLower(rand.Text()),
-		image: image,
-		data:  filepath.Join(work, "chosen host path"),
-		port:  8787,
+		name:        "wake-appliance-test-" + strings.ToLower(rand.Text()),
+		image:       image,
+		data:        filepath.Join(work, "chosen host path"),
+		adminOrigin: "http://wake.localhost:8787",
+		port:        8787,
 	}
 	must(t, os.Mkdir(app.data, 0o700))
 	t.Cleanup(func() { app.cleanup(t) })
@@ -149,7 +150,7 @@ func TestAppliance(t *testing.T) {
 	must(t, os.WriteFile(config, changed, 0o600))
 
 	app.port = 9787
-	app.adminHost = "wake.example"
+	app.adminOrigin = "https://wake.example"
 	app.start(t)
 	response, _ = app.request(t, "/login", nil, nil)
 	require(t, response.StatusCode == http.StatusOK, "login page rejected the configured authority")
@@ -187,7 +188,7 @@ func TestAppliance(t *testing.T) {
 
 type appliance struct {
 	name, image, data string
-	adminHost         string
+	adminOrigin       string
 	unit              string
 	port, stops       int
 }
@@ -322,17 +323,16 @@ func (app *appliance) request(
 ) (*http.Response, string) {
 	t.Helper()
 
-	origin := fmt.Sprintf("http://127.0.0.1:%d", app.port)
+	origin, err := url.Parse(app.adminOrigin)
+	must(t, err)
+
 	args := []string{
 		"exec", app.name, "curl", "--noproxy", "*", "--silent", "--show-error",
-		"--include", "--raw", "--max-time", "5",
-	}
-	if app.adminHost != "" {
-		args = append(args, "--header", "Host: "+app.adminHost)
+		"--include", "--raw", "--max-time", "5", "--header", "Host: " + origin.Host,
 	}
 
 	if form != nil {
-		args = append(args, "--header", "Origin: "+origin, "--data", form.Encode())
+		args = append(args, "--header", "Origin: "+app.adminOrigin, "--data", form.Encode())
 	}
 
 	if cookie != nil {
@@ -342,8 +342,9 @@ func (app *appliance) request(
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
+	target := fmt.Sprintf("http://127.0.0.1:%d%s", app.port, path)
 	//nolint:gosec // The target is the synthetic Wake loopback server inside the test container.
-	cmd := exec.CommandContext(ctx, "podman", append(args, origin+path)...)
+	cmd := exec.CommandContext(ctx, "podman", append(args, target)...)
 
 	var diagnostics bytes.Buffer
 

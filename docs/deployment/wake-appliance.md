@@ -5,7 +5,7 @@
 - [Rootless quick start](#rootless-quick-start)
 - [Optional user lingering](#optional-user-lingering)
 - [Custom storage](#custom-storage)
-- [Access a remote appliance](#access-a-remote-appliance)
+- [Access the appliance on your LAN](#access-the-appliance-on-your-lan)
 - [Use an untagged commit or branch](#use-an-untagged-commit-or-branch)
 - [Rootful Podman option](#rootful-podman-option)
 - [Logs and snapshots](#logs-and-snapshots)
@@ -44,9 +44,11 @@ manager's `default.target`, so there is no separate `systemctl enable` step.
 On first launch, the image initializes the configuration and encryption key.
 `systemctl --user start wake` waits for the browser to respond, including the
 password-required page. Enter and confirm the password in the terminal, then
-open <http://127.0.0.1:8787>. To reset a forgotten password while Wake runs, use
+open <http://wake.localhost:8787>. To reset a forgotten password while Wake runs, use
 the same `podman exec -it wake wake access set password` command. Existing browser
 sessions are signed out; API client grants are preserved.
+If needed, [set an explicit browser origin](../../README.md#choose-the-browser-origin)
+in the appliance TOML and restart Wake.
 
 | Under the chosen host directory | Container location | Contents |
 | --- | --- | --- |
@@ -114,22 +116,26 @@ unquoted, including spaces, and write `%%` for a literal `%` in a path. The empt
 SELinux label. Use a directory owned by your user; the rootless container creates
 files with your host ownership.
 
-## Access a remote appliance
+## Access the appliance on your LAN
 
 The container uses host networking. Browser administration listens on
 `127.0.0.1:8787` and the financial API on `127.0.0.1:8788` on the Wake host.
-On the client machine, add this entry to `~/.ssh/config`, replacing `HostName`
-and `User` with the Wake host's address and your SSH login:
+On a client on the same private LAN, add this entry to `~/.ssh/config`. Set
+`HostName` to the Wake host's LAN address and `User` to your SSH login:
 
 ```sshconfig
 Host wake
-    HostName wake-host.example
+    HostName wake-host
     User your-user
     LocalForward 127.0.0.1:8787 127.0.0.1:8787
     LocalForward 127.0.0.1:8788 127.0.0.1:8788
     ExitOnForwardFailure yes
     ServerAliveInterval 60
 ```
+
+Before connecting for the first time, obtain the Wake host's SSH key
+fingerprint from a trusted source, such as the host console. Compare it with
+the fingerprint SSH presents before accepting the key.
 
 Start both forwards with:
 
@@ -138,12 +144,12 @@ ssh -N wake
 ```
 
 Keep that SSH connection running while using Wake; Ctrl+C closes both forwards.
-Open <http://127.0.0.1:8787> for the browser and use <http://127.0.0.1:8788> as the
-financial API endpoint. Enroll an API token as described in the [CLI guide](../../README.md#read-financial-data-from-the-cli).
-For passkeys, configure the admin browser origin as `http://localhost` with the
-laptop-side port and open that URL. Each `LocalForward` connects its laptop-side
-port to the listener port on the Wake host. The [configuration example](../../README.md#using-wake-v010)
-shows how to use different ports.
+Open <http://wake.localhost:8787> for the browser and use
+<http://127.0.0.1:8788> as the financial API endpoint. Enroll an API token as
+described in the [CLI guide](../../README.md#read-financial-data-from-the-cli).
+If you change the client-side browser port, set the matching origin under
+`[admin]` on the Wake host and restart Wake. See
+[Choose the browser origin](../../README.md#choose-the-browser-origin).
 
 ### Start the tunnel automatically
 

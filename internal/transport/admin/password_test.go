@@ -137,9 +137,11 @@ func TestBrowserSignOutRevokesOnlyCurrentSessionAndClosesStream(t *testing.T) {
 }
 
 func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
+	const browserOrigin = "https://wake.internal:18787"
+
 	dir := privateAuthDir(t)
 
-	auth, _, err := Open(dir, authTestOrigin)
+	auth, _, err := Open(dir, browserOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,10 +160,14 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 	}
 
 	post := func(path string, values url.Values, cookie *http.Cookie, origin string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodPost, authTestOrigin+path, strings.NewReader(values.Encode()))
+		// Wake receives HTTP from the trusted TLS endpoint.
+		r := httptest.NewRequest(
+			http.MethodPost,
+			"http://wake.internal:18787"+path,
+			strings.NewReader(values.Encode()),
+		)
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Origin", origin)
-		r.Header.Set("X-Forwarded-Proto", "https")
 
 		if cookie != nil {
 			r.AddCookie(cookie)
@@ -184,11 +190,16 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 			t.Fatal("expected a redirect with one browser cookie", w.Code)
 		}
 
+		if cookie := cookies[0]; cookie.Name != sessionCookie || !cookie.Secure || !cookie.HttpOnly ||
+			cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" {
+			t.Fatal("unexpected HTTPS session cookie attributes")
+		}
+
 		return cookies[0]
 	}
 
 	active := func(cookie *http.Cookie) (string, bool) {
-		r := httptest.NewRequest(http.MethodGet, authTestOrigin+"/", nil)
+		r := httptest.NewRequest(http.MethodGet, browserOrigin+"/", nil)
 		r.AddCookie(cookie)
 
 		return auth.session(r)
@@ -207,15 +218,15 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 	now := time.Now()
 	auth.now = func() time.Time { return now }
 
-	original := cookieFrom(post("/login", form, nil, authTestOrigin))
+	original := cookieFrom(post("/login", form, nil, browserOrigin))
 
 	invalidLogin := httptest.NewRequest(
 		http.MethodPost,
-		authTestOrigin+"/login",
+		browserOrigin+"/login",
 		strings.NewReader("password=%"),
 	)
 	invalidLogin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	invalidLogin.Header.Set("Origin", authTestOrigin)
+	invalidLogin.Header.Set("Origin", browserOrigin)
 
 	invalidLoginResult := httptest.NewRecorder()
 	handler.ServeHTTP(invalidLoginResult, invalidLogin)
@@ -233,17 +244,17 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 		"password": {"synthetic changed password"}, "confirm": {"synthetic changed password"},
 		"current": {password},
 	}
-	if got := post(passwordPath, form, original, authTestOrigin).Code; got != http.StatusForbidden {
+	if got := post(passwordPath, form, original, browserOrigin).Code; got != http.StatusForbidden {
 		t.Fatal("password change accepted without CSRF", got)
 	}
 
 	form.Set("csrf", csrf)
 
-	if got := post(passwordPath, form, original, authTestOrigin).Code; got != http.StatusTooManyRequests {
+	if got := post(passwordPath, form, original, browserOrigin).Code; got != http.StatusTooManyRequests {
 		t.Fatal("password change did not respect the login attempt limit", got)
 	}
 
-	settings := httptest.NewRequest(http.MethodGet, authTestOrigin+passwordPath, nil)
+	settings := httptest.NewRequest(http.MethodGet, browserOrigin+passwordPath, nil)
 	settings.AddCookie(original)
 
 	page := httptest.NewRecorder()
@@ -277,7 +288,7 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 
 		now = now.Add(attemptInterval)
 
-		result := post(passwordPath, invalid, original, authTestOrigin)
+		result := post(passwordPath, invalid, original, browserOrigin)
 		if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), test.message) {
 			t.Fatal("password change did not explain a validation error", result.Code, test.message)
 		}
@@ -285,7 +296,7 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 
 	now = now.Add(attemptInterval)
 
-	changed := cookieFrom(post(passwordPath, form, original, authTestOrigin))
+	changed := cookieFrom(post(passwordPath, form, original, browserOrigin))
 	if _, ok := active(original); ok {
 		t.Fatal("old session accepted after password change")
 	}
@@ -295,7 +306,7 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 		t.Fatal("password change did not renew the browser session")
 	}
 
-	signedOut := cookieFrom(post("/logout", url.Values{"csrf": {newCSRF}}, changed, authTestOrigin))
+	signedOut := cookieFrom(post("/logout", url.Values{"csrf": {newCSRF}}, changed, browserOrigin))
 	if signedOut.MaxAge >= 0 {
 		t.Fatal("sign-out did not expire the browser cookie")
 	}
@@ -314,7 +325,7 @@ func TestBrowserPasswordChangeAndSessionRevocation(t *testing.T) {
 
 	now = now.Add(attemptInterval)
 
-	cookieFrom(post("/login", url.Values{"password": {form.Get("password")}}, nil, authTestOrigin))
+	cookieFrom(post("/login", url.Values{"password": {form.Get("password")}}, nil, browserOrigin))
 
 	token, err := secret.Copy()
 	if err != nil {

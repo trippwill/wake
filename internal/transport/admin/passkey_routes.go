@@ -13,7 +13,6 @@ import (
 	"mime"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"go.trippwill.dev/wake/internal/clientaccess"
@@ -179,7 +178,7 @@ func (a *authenticator) beginPasskey(w http.ResponseWriter, r *http.Request) (pa
 		Value:    c.browser,
 		Path:     "/passkeys",
 		HttpOnly: true,
-		Secure:   strings.HasPrefix(origin, "https://"),
+		Secure:   secureBrowserOrigin(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(2 * ceremonyLifetime.Seconds()),
 	})

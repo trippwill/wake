@@ -153,7 +153,7 @@ func TestRotateSessionsRejectsOldCookieAndRetainsUnlock(t *testing.T) {
 		t.Fatal("old browser session accepted after rotation")
 	}
 
-	if !auth.login(httptest.NewRecorder(), string(unlock)) {
+	if !auth.login(httptest.NewRecorder(), string(unlock), false) {
 		t.Fatal("rotation changed the operator unlock")
 	}
 }
@@ -188,7 +188,7 @@ func issueTestSession(t *testing.T, auth *authenticator, w http.ResponseWriter) 
 	}
 	defer clear(key[:])
 
-	return auth.issue(w, key[:])
+	return auth.issue(w, key[:], false)
 }
 
 func privateAuthDir(t *testing.T) string {
@@ -245,7 +245,7 @@ func TestLiveUnlockUsesOneSnapshotAcrossRotation(t *testing.T) {
 	}
 
 	attempt := httptest.NewRecorder()
-	if !auth.login(attempt, oldUnlock) {
+	if !auth.login(attempt, oldUnlock, false) {
 		t.Fatal("old verification did not finish")
 	}
 
@@ -256,7 +256,8 @@ func TestLiveUnlockUsesOneSnapshotAcrossRotation(t *testing.T) {
 		t.Fatal("old unlock yielded a valid cookie after rotation")
 	}
 
-	if auth.login(httptest.NewRecorder(), oldUnlock) || !auth.login(httptest.NewRecorder(), newUnlock) {
+	if auth.login(httptest.NewRecorder(), oldUnlock, false) ||
+		!auth.login(httptest.NewRecorder(), newUnlock, false) {
 		t.Fatal("daemon did not switch to the new unlock")
 	}
 }

@@ -22,11 +22,11 @@ Wake has no maintained release branches at this stage.
 
 ## Security scope
 
-Wake serves one user per instance. Its supported deployment scope is local or
-private LAN use without internet exposure. The operating system account that
-runs Wake, host root, and any front end terminating encrypted traffic are
-trusted. On the network, operators choose transport protection for Wake's HTTP
-listeners. Plain HTTP exposes requests and responses to network observers.
+Wake is a local, single-user daemon. The browser and financial API listen only
+on IPv4 loopback. The supported deployment scope covers same-machine access
+and SSH forwarding within a private LAN. The account that runs Wake, host root,
+and the operator's SSH transport are trusted. Host root can read all Wake data,
+including the credential key used for unattended operation.
 
 Report suspected flaws that let someone cross an access boundary, expose
 credentials or financial data, alter retained financial evidence, or materially
@@ -35,5 +35,5 @@ browser administration without operator authorization, failures to revoke client
 access, and exposure of stored sync credentials. Source responses and imported
 files are untrusted input.
 
-See [Trust and recovery](.docs/engineering/architecture.md#trust-and-recovery)
-for the supported trust model and recovery behavior.
+See the [Wake threat model](.docs/engineering/threat-model.md) for deployment
+assumptions, security controls, and operator responsibilities.

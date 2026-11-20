@@ -22,7 +22,10 @@ import (
 	"go.trippwill.dev/wake/provider"
 )
 
-const directoryMode = 0o700
+const (
+	directoryMode     = 0o700
+	adminLoopbackHost = "wake.localhost"
+)
 
 // Error is a classifiable configuration error.
 type Error string
@@ -84,10 +87,10 @@ func (value Admin) Origin() string {
 	}
 
 	if value.Port == 80 {
-		return "http://127.0.0.1"
+		return "http://" + adminLoopbackHost
 	}
 
-	return "http://" + value.Address()
+	return "http://" + net.JoinHostPort(adminLoopbackHost, strconv.Itoa(int(value.Port)))
 }
 
 func (value Admin) Origins() []string {

@@ -100,19 +100,7 @@ func (s *Source) request(
 	}
 
 	if operation == "GetStatement" && reportRoot(body) {
-		if bytes.Contains(body, secret) {
-			return reply{}, provider.ErrMalformed
-		}
-
-		if err = walk(ctx, body, func(path []node) error {
-			for _, value := range path[len(path)-1].attributes {
-				if strings.Contains(value, string(secret)) {
-					return provider.ErrMalformed
-				}
-			}
-
-			return nil
-		}); err != nil {
+		if err = walkXML(ctx, body, secret, nil); err != nil {
 			return reply{}, err
 		}
 
@@ -149,7 +137,7 @@ func (s *Source) request(
 		return result, nil
 	}
 
-	if !digits(message.Code) || len(message.Code) > 8 {
+	if !digits(message.Code) || len(message.Code) > 8 || strings.Contains(message.Code, string(secret)) {
 		return reply{}, provider.ErrMalformed
 	}
 

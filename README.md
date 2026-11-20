@@ -8,7 +8,7 @@ MPL-2.0 ([LICENSE](LICENSE)).
 ## Using Wake v0.1.0
 
 Each instance serves one user. The browser and financial API listen on IPv4
-loopback. The operator provides any remote access and transport protection.
+loopback. Use Wake on the same machine or over SSH forwarding on a private LAN.
 
 This pre-release build serves and processes retained history locally.
 Inspect activity, instruments, and available reported positions in the admin
@@ -113,23 +113,33 @@ TOML's directory. Wake keeps private browser and client authority in `auth.json`
 that file. Keep a single TOML per instance directory. The default runtime directory is
 scoped to the resolved instance directory.
 
-Both listeners bind to `127.0.0.1` and use distinct ports. By default the browser
-uses the admin listener's address. To open Wake at `http://localhost:18787` on
-your laptop while Wake listens on port 8787 on the server, configure the server:
+#### Choose the browser origin
+
+Both listeners bind to `127.0.0.1` and use distinct ports. Open
+<http://wake.localhost:8787> for the browser at the default admin port. Browsers
+share Wake's session cookie across ports under the same hostname. The dedicated
+name separates it from other local apps you open at `localhost` or `127.0.0.1`
+and gives Wake its own passkey scope. Reserve `wake.localhost` for Wake.
+
+If the name fails to resolve to loopback in your browser, set an explicit
+origin in the TOML and restart Wake. For local password sign-in at the default
+admin port:
 
 ```toml
 [admin]
-port = 8787
-allowed_origins = ["http://localhost:18787"]
+allowed_origins = ["http://127.0.0.1:8787"]
 ```
 
-Start the tunnel on your laptop:
+For SSH access across your private LAN, put the browser's tunnel port in the
+origin. To use port 18787 on your laptop while Wake listens on port 8787 on the
+LAN host, configure that host with `allowed_origins = ["http://wake.localhost:18787"]` and run this
+command on your laptop:
 
 ```sh
 ssh -N -L 127.0.0.1:18787:127.0.0.1:8787 user@wake-host
 ```
 
-Open `http://localhost:18787` and sign in. The list replaces the default.
+Open <http://wake.localhost:18787> and sign in. The list replaces the default.
 Include each browser origin you use, with its scheme and port. The first entry
 supplies the printed sign-in URL.
 
@@ -233,13 +243,13 @@ and choose **Add a passkey**. Confirm your password, then save the passkey with 
 browser, password manager, or security key. You can label it and enroll a backup
 using either your current password or an existing passkey.
 
-For SSH access, use a configured `http://localhost` origin as in the forwarding
-example above. A passkey registered for `localhost` works on each allowed
-`localhost` port for this installation. If your password manager declines the
-forwarded HTTP address, choose a FIDO security key in the browser prompt or enroll
-at a configured HTTPS address. An HTTPS DNS name has its own passkeys.
-At an IP address or an ordinary HTTP internal DNS name, use your password or open
-Wake at the address where you enrolled a passkey.
+Use the [default loopback hostname](#choose-the-browser-origin) for passkeys.
+Wake scopes a passkey to the hostname you use at enrollment. It works on each
+allowed port for that hostname and installation. If you move from `localhost`
+to `wake.localhost`, use password sign-in to enroll a passkey on the new name.
+If password sign-in is disabled, restore it before switching. If your password
+manager declines the HTTP loopback origin, choose a FIDO security key in the
+browser prompt. At a plain HTTP IP address, use password sign-in.
 
 To use passkeys exclusively, choose **Disable password sign-in** and approve a
 fresh passkey prompt. You can set a password again in Settings with a passkey,

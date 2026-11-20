@@ -38,7 +38,7 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 			return
 		}
 
-		if !auth.login(w, r.PostForm.Get("password")) {
+		if !auth.login(w, r.PostForm.Get("password"), secureBrowserOrigin(r)) {
 			rejection(r, "login_rejected")
 
 			access, err := auth.state.BrowserAccess()
@@ -69,10 +69,7 @@ func registerLoginRoutes(mux *http.ServeMux, auth *authenticator) {
 	auth.gate(mux, "POST /logout", func(w http.ResponseWriter, r *http.Request, csrf string) {
 		auth.revokeSession(csrf)
 
-		//nolint:gosec // Remove the existing cookie over Wake's HTTP loopback listener.
-		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode,
-		})
+		setSessionCookie(w, "", -1, secureBrowserOrigin(r))
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 }

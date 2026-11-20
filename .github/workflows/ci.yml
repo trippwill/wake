@@ -134,21 +134,29 @@ jobs:
   browser:
     needs: [changes]
     if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox]
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
-          role: browser
+          role: browser-${{ matrix.engine }}
           cold-cache: ${{ inputs.cold_cache || false }}
-      - name: Run full browser suite
+      - name: Run full Chromium suite
+        if: matrix.engine == 'chromium'
         env:
           # Installed Chrome has Ubuntu's supported sandbox profile.
           WAKE_BROWSER: /usr/bin/google-chrome
         run: mise run test:browser
+      - name: Verify Firefox password and passkey sign-in
+        if: matrix.engine == 'firefox'
+        run: mise run test:browser:firefox
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && matrix.engine == 'chromium'
         with:
           name: synthetic-browser-screenshots
           path: .cache/browser/screenshots/
@@ -156,7 +164,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: browser-results
+          name: browser-${{ matrix.engine }}-results
           path: .cache/test-results/
           if-no-files-found: error
 

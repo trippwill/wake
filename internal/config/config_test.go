@@ -58,7 +58,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 
 	if cfg.Admin.Port != 8787 || cfg.Admin.Address() != "127.0.0.1:8787" ||
-		cfg.Admin.Origin() != "http://127.0.0.1:8787" {
+		cfg.Admin.Origin() != "http://wake.localhost:8787" {
 		t.Errorf("Admin = %#v, address = %q, origin = %q", cfg.Admin, cfg.Admin.Address(), cfg.Admin.Origin())
 	}
 
@@ -110,7 +110,7 @@ func TestLoadRelativeAndAbsolutePaths(t *testing.T) {
 	}
 
 	if cfg.Admin.Port != 8790 || cfg.Admin.Address() != "127.0.0.1:8790" ||
-		cfg.Admin.Origin() != "http://127.0.0.1:8790" {
+		cfg.Admin.Origin() != "http://wake.localhost:8790" {
 		t.Errorf("Admin = %#v, address = %q, origin = %q", cfg.Admin, cfg.Admin.Address(), cfg.Admin.Origin())
 	}
 }
@@ -169,7 +169,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 
 func TestAdminLoopbackOriginOmitsDefaultHTTPPort(t *testing.T) {
 	admin := Admin{Port: 80}
-	if admin.Origin() != "http://127.0.0.1" || admin.Address() != "127.0.0.1:80" {
+	if admin.Origin() != "http://wake.localhost" || admin.Address() != "127.0.0.1:80" {
 		t.Fatal(admin.Origin(), admin.Address())
 	}
 }

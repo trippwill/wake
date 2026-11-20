@@ -429,7 +429,8 @@ OS user and private storage.
 Each instance has one operator and separately enrolled financial clients. Wake
 serves HTTP on separate IPv4 loopback listeners with configurable ports. Browser
 Host checks admit configured browser authorities. A submitted Origin must match a configured
-origin with the request's own authority. The default origin follows the admin listener.
+origin with the request's own authority. The default browser origin uses
+`wake.localhost` and the configured admin port.
 Authenticated changes require the session's CSRF token.
 
 The financial listener optionally restricts HTTP Host authorities before client admission.
@@ -446,10 +447,10 @@ the replacement may already be visible.
 Bounded stream write deadlines limit blocked-client teardown. Already transmitted
 bytes and a client's retained copies cannot be recalled.
 
-The operator controls remote exposure and encryption. An SSH tunnel can forward
-the admin port to a different local port when the configured origin matches the browser URL. The Wake
-account, host root, and any operator-provided transport are inside the trust
-boundary.
+The supported deployment scope covers same-machine access and SSH forwarding
+within a private LAN. A tunnel can forward the admin port to a different local
+port when the configured origin matches the browser URL. The Wake account, host
+root, and the operator's SSH transport are inside the trust boundary.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
@@ -492,8 +493,8 @@ enrolls clients again. After any manual replacement of local authentication stat
 run `wake access reset` with Wake stopped to revoke client grants and rotate the
 session key while retaining the operator’s sign-in methods.
 
-The [release security review](https://github.com/trippwill/wake/issues/52) tracks
-verification of these boundaries for release.
+The [Wake threat model](threat-model.md) describes the deployed boundaries,
+trusted actors, and operator responsibilities.
 
 ## Persistence and work boundaries
 

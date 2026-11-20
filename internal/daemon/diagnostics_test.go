@@ -94,6 +94,8 @@ func assertAdminBinding(t *testing.T, ctx context.Context, output string) {
 			return
 		}
 
+		request.Host = net.JoinHostPort("wake.localhost", entry.Port)
+
 		client := &http.Client{Timeout: time.Second}
 		defer client.CloseIdleConnections()
 
@@ -105,7 +107,7 @@ func assertAdminBinding(t *testing.T, ctx context.Context, output string) {
 
 		_ = response.Body.Close()
 		if response.StatusCode != http.StatusOK {
-			t.Error("admin rejected its bound address", response.Status)
+			t.Error("admin rejected the browser authority on its bound address", response.Status)
 		}
 
 		return

@@ -27,7 +27,8 @@ import (
 func TestPasskeyRelyingPartyEligibility(t *testing.T) {
 	for origin, want := range map[string]string{
 		"http://localhost:18787": "localhost", "http://localhost:28787": "localhost",
-		"https://wake.internal": "wake.internal", "http://wake.internal": "", "http://127.0.0.1:8787": "",
+		"http://wake.localhost:8787": "wake.localhost",
+		"https://wake.internal":      "wake.internal", "http://wake.internal": "", "http://127.0.0.1:8787": "",
 		"https://[::1]": "", "https://co.uk": "",
 	} {
 		rp := passkeyParty(origin)

@@ -21,12 +21,17 @@ type node struct {
 	ordinal    int
 	attributes map[string]string
 	children   map[string]int
+	textTail   []byte
 }
 
-// walk checks the entire bounded XML document, including ignored sections.
-// Locations are structural paths, not reported identifiers or row contents.
 func walk(ctx context.Context, body []byte, visit func([]node) error) error {
-	if !utf8.Valid(body) {
+	return walkXML(ctx, body, nil, visit)
+}
+
+// walkXML checks the entire bounded XML document, including ignored sections.
+// Locations are structural paths, not reported identifiers or row contents.
+func walkXML(ctx context.Context, body, secret []byte, visit func([]node) error) error {
+	if !utf8.Valid(body) || len(secret) > 0 && bytes.Contains(body, secret) {
 		return provider.ErrMalformed
 	}
 
@@ -85,7 +90,8 @@ func walk(ctx context.Context, body []byte, visit func([]node) error) error {
 				children:   make(map[string]int),
 			}
 			for _, attribute := range token.Attr {
-				if attribute.Name.Space != "" {
+				if attribute.Name.Space != "" ||
+					len(secret) > 0 && strings.Contains(attribute.Value, string(secret)) {
 					return provider.ErrMalformed
 				}
 
@@ -115,8 +121,26 @@ func walk(ctx context.Context, body []byte, visit func([]node) error) error {
 				return provider.ErrMalformed
 			}
 		case xml.CharData:
-			if len(stack) == 0 && len(bytes.TrimSpace(token)) != 0 {
-				return provider.ErrMalformed
+			if len(stack) == 0 {
+				if len(bytes.TrimSpace(token)) != 0 {
+					return provider.ErrMalformed
+				}
+			} else if len(secret) > 0 {
+				entry := &stack[len(stack)-1]
+				// XML comments, CDATA and nested elements can split direct element text.
+				// Keep only the overlap needed to check the next decoded text token.
+				overlap := len(secret) - 1
+				entry.textTail = append(entry.textTail, token[:min(len(token), overlap)]...)
+				if bytes.Contains(token, secret) || bytes.Contains(entry.textTail, secret) {
+					return provider.ErrMalformed
+				}
+
+				trailing := entry.textTail
+				if len(token) > overlap {
+					trailing = token
+				}
+
+				entry.textTail = append(entry.textTail[:0], trailing[max(0, len(trailing)-overlap):]...)
 			}
 		}
 	}
