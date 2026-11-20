@@ -96,9 +96,11 @@ and observations. Resource lookups redirect retired IDs to their current identit
 old-ID explanations and new correction submissions are stale. Complete snapshots
 replace a consumer's resource graph, including combined identities and listings.
 
-Debt activity retains nominal face quantity and exact reported price without a
-quotation-basis claim. Principal, proceeds, trade net cash, accrued interest and
-charges remain separate; no combined settlement total is inferred.
+Debt activity retains nominal face quantity, exact reported price and any
+source-supplied quotation basis. The admin reader labels IBKR Treasury bill prices
+per 100 of face value. The financial API preserves the source terms, including an
+unspecified basis. Principal, proceeds, trade net cash, accrued interest and
+charges remain separate. A combined settlement total requires a source report.
 
 Source-established relationships are useful when present. A missing relationship
 does not authorize an inferred stock delivery, cash payment or strategy. Family

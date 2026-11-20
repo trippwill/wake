@@ -84,12 +84,14 @@ terms for the same activity still require resolution.
 
 Treasuries and gilts represent individual debt issues. Nominal quantity, coupon rate,
 maturity, reported price and accrued interest have separate meanings. The coupon rate is
-expressed in annual percentage points. Wake retains
-the reported debt price without asserting a quotation basis or deriving principal
-from quantity and price. Principal, proceeds, trade net cash, accrued interest and
-charges remain independent reported roles; trade net cash does not establish a
-combined settlement total. A reopening
-or a different venue representation does not by itself establish a new issue.
+expressed in annual percentage points. Wake retains the exact reported debt price
+and preserves any quotation basis supplied by the source. Principal remains a
+separate reported amount. The admin reader labels IBKR Treasury bill prices per
+100 of face value as a presentation convention. The label leaves the retained and
+published terms intact. Principal, proceeds, trade net cash, accrued interest and
+charges remain independent reported roles. Trade net cash does not establish a
+combined settlement total. A reopening or a different venue representation does
+not by itself establish a new issue.
 Distinct rights, depositary receipts, share classes and contracts remain distinct.
 
 Supported global identifiers, including ISIN, CUSIP, SEDOL and FIGI, are accepted
