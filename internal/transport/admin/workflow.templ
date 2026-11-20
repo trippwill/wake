@@ -436,7 +436,7 @@ templ ConversionPage(d application.ConversionDetail, fields []application.Publis
 				<dd>
 					{ priceText(d.Conversion.Terms().Fields().Rate) }
 					if d.Conversion.Terms().Fields().Rate.Amount()!="" {
-						per { currencyText(d.Conversion.Terms().Fields().RateBase) }
+						{ conversionRateBasis(d.Conversion.Terms().Fields().RateBase) }
 					}
 				</dd>
 				<dt>Reported date</dt>

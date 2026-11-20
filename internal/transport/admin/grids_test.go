@@ -347,6 +347,21 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	unlinked := sourceEvidence(
+		t.Context(), nil, host.Retained{}, application.SourceObservation{Observation: row}, "",
+	)
+
+	html.Reset()
+
+	if err := RetainedSourceEntry(unlinked).Render(t.Context(), &html); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(html.String(), "12.3456700 USD · 2026-10-21") ||
+		!strings.Contains(html.String(), "9876.54 USD · 2026-10-21") {
+		t.Fatal("unlinked realized amounts lost their source report date", html.String())
+	}
+
 	row.ActivityID = accepted.ID()
 	store := sourceEntryReadStore{detail: application.ExecutionDetail{
 		Execution: accepted,
@@ -380,7 +395,7 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 		{"quantity", "10000 nominal", "9000.000 nominal"},
 		{"gross_amount", "9876.54 USD", "8888.89 USD"},
 		{"realized_pnl", "12.3456700 USD · 2026-10-21", "12.3456789 USD · 2026-10-22"},
-		{"reported_cost_basis", "9876.54 USD", ""},
+		{"reported_cost_basis", "9876.54 USD · 2026-10-21", ""},
 	} {
 		var found bool
 		for _, fact := range entry.Facts {
@@ -399,6 +414,50 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 		if !strings.Contains(html.String(), ">Accepted</span> "+value) {
 			t.Error("accepted term missing from selected Source Reader entry", value, html.String())
 		}
+	}
+}
+
+func TestReportConversionRateUsesRetainedBaseCurrency(t *testing.T) {
+	const formatted = "1.250000000000000001 USD per EUR"
+
+	usd, _ := financial.ParseCurrency("USD")
+	eur, _ := financial.ParseCurrency("EUR")
+	rate, _ := financial.ParsePrice("1.250000000000000001", usd)
+	account, _ := source.NewReference("ibkr", "account", "", "synthetic")
+	rateField, _ := source.NewActivityField(source.ActivityFieldInput{Name: source.FieldRate, Price: rate})
+	baseField, _ := source.NewActivityField(
+		source.ActivityFieldInput{Name: source.FieldRateBase, Currency: eur},
+	)
+
+	observation, err := source.NewActivityObservation(source.ActivityObservationInput{
+		Location: "synthetic-conversion", Account: account, Fields: []source.ActivityField{rateField, baseField},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	row := application.Observation{
+		Artifact: "synthetic-report",
+		Location: "synthetic-conversion",
+		Reported: observation,
+	}
+	grid := observationGrid(application.ObservationList{Items: []application.Observation{row}}, "artifact")
+
+	if got := grid.Data[0].Terms.Text; got != formatted {
+		t.Fatal("report table lost exact quoted rate or base", got)
+	}
+
+	entry := sourceEvidence(
+		t.Context(), nil, host.Retained{}, application.SourceObservation{Observation: row}, "",
+	)
+
+	var html strings.Builder
+	if err := RetainedSourceEntry(entry).Render(t.Context(), &html); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(html.String(), formatted) {
+		t.Fatal("source entry lost exact quoted rate or base", html.String())
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.trippwill.dev/wake/financial"
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/host"
 	"go.trippwill.dev/wake/source"
@@ -190,10 +191,6 @@ func (v *sourceEvidenceEntry) pairSourceFacts(
 		case source.FieldRealizedPnL, source.FieldReportedCostBasis:
 			amount, on := acceptedRealizedAmount(realized, fact.Key)
 			if amount != nil && amount.Amount != "" && input.Money.Currency().String() == amount.Currency {
-				if !input.ReportedOn.IsZero() {
-					fact.Value = describe(fact.Value, input.ReportedOn.String())
-				}
-
 				fact.Accepted = publishedMoney(amount)
 				if on != nil && *on != "" {
 					fact.Accepted = describe(fact.Accepted, *on)
@@ -291,6 +288,14 @@ func tradeQuotationLabel(debtType source.DebtType, ibkr bool, basis string) stri
 	return quotationLabel(basis)
 }
 
+func conversionRateBasis(base financial.Currency) string {
+	if code := currencyText(base); code != "" {
+		return "per " + code
+	}
+
+	return ""
+}
+
 func sourceObservationFacts(v source.ActivityObservation) []sourceFact {
 	instrument, _ := v.Field(source.FieldInstrument)
 	i := instrument.Fields().Instrument
@@ -334,7 +339,13 @@ func sourceObservationFacts(v source.ActivityObservation) []sourceFact {
 				} else if name != "" && name != value {
 					value = describe(value, name)
 				}
-			case source.FieldPrice, source.FieldTransferPrice, source.FieldRate:
+			case source.FieldRate:
+				base, _ := v.Field(source.FieldRateBase)
+				value = priceText(x.Price)
+				if basis := conversionRateBasis(base.Fields().Currency); basis != "" {
+					value += " " + basis
+				}
+			case source.FieldPrice, source.FieldTransferPrice:
 				value = priceText(x.Price)
 				if f.key == source.FieldPrice {
 					if basis := tradePriceBasis(i, x.QuotationBasis); basis != "" {
@@ -346,6 +357,9 @@ func sourceObservationFacts(v source.ActivityObservation) []sourceFact {
 				source.FieldRealizedPnL,
 				source.FieldReportedCostBasis:
 				value = moneyText(x.Money)
+				if !x.ReportedOn.IsZero() {
+					value = describe(value, x.ReportedOn.String())
+				}
 			case source.FieldQuantity:
 				value = strings.TrimSpace(x.Quantity.Value() + " " + x.QuantityUnit)
 			default:
