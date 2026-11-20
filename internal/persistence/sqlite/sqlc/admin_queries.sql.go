@@ -316,7 +316,7 @@ WITH subject AS (
  SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,o.execution_id
  FROM subject s JOIN report_observations o ON s.kind='activity-appearances' AND o.execution_id=s.id
 ), details AS (
- SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id,a.retrieved,a.stream,c.name AS source_name,r.claim_id,r.ordinal,claim.data AS reported,
+ SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id,a.retrieved,a.stream,c.name AS source_name,c.provider AS source_provider,r.claim_id,r.ordinal,claim.data AS reported,
   CASE WHEN ?3='date' THEN (
    SELECT json_extract(f.value,'$.Date') FROM json_each(CAST(claim.data AS TEXT),'$.Fields') f
    WHERE json_extract(f.value,'$.Name')='date'
@@ -325,7 +325,7 @@ WITH subject AS (
  LEFT JOIN records r USING(artifact_id,version,location)
  LEFT JOIN source_claims claim ON claim.id=r.claim_id AND claim.kind='activity'
 ), matched AS (
- SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id, o.retrieved, o.stream, o.source_name, o.claim_id, o.ordinal, o.reported, o.activity_date FROM details o
+ SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id, o.retrieved, o.stream, o.source_name, o.source_provider, o.claim_id, o.ordinal, o.reported, o.activity_date FROM details o
  WHERE ?4='' OR wake_contains(o.artifact_id || ' ' || coalesce(o.execution_id,'') || ' ' ||
   o.location || ' ' || o.rule || ' ' || char(183) || ' ' || o.version || ' ' || o.retrieved || ' ' ||
   o.source_name || ' ' || o.stream,?4)=1
@@ -356,7 +356,7 @@ WITH subject AS (
  SELECT CAST(?3 AS TEXT) AS sort_field,CAST(?6 AS TEXT) AS direction,
   CAST(?7 AS TEXT) AS outcome_labels
 ), ordered AS (
- SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id, o.retrieved, o.stream, o.source_name, o.claim_id, o.ordinal, o.reported, o.activity_date,row_number() OVER (ORDER BY
+ SELECT o.artifact_id, o.version, o.location, o.rule, o.outcome, o.execution_id, o.retrieved, o.stream, o.source_name, o.source_provider, o.claim_id, o.ordinal, o.reported, o.activity_date,row_number() OVER (ORDER BY
   CASE WHEN sort_field='report' AND direction='asc' THEN o.retrieved END COLLATE wake_instant ASC,
   CASE WHEN sort_field='report' AND direction='desc' THEN o.retrieved END COLLATE wake_instant DESC,
   CASE WHEN sort_field='outcome' AND direction='asc' THEN coalesce(labels.value,o.outcome) END COLLATE NOCASE ASC,
@@ -373,7 +373,7 @@ WITH subject AS (
     WHERE r.artifact_id=o.artifact_id AND r.version=o.version AND r.location=o.location) END,o.location) AS position
  FROM matched o CROSS JOIN ordering CROSS JOIN subject s LEFT JOIN json_each(ordering.outcome_labels) labels ON labels.key=o.outcome
 ), page AS (
- SELECT artifact_id, version, location, rule, outcome, execution_id, retrieved, stream, source_name, claim_id, ordinal, reported, activity_date, position FROM ordered ORDER BY position LIMIT ?9 OFFSET ?8
+ SELECT artifact_id, version, location, rule, outcome, execution_id, retrieved, stream, source_name, source_provider, claim_id, ordinal, reported, activity_date, position FROM ordered ORDER BY position LIMIT ?9 OFFSET ?8
 ), counts AS (
  SELECT (SELECT count(*) FROM scoped) AS total,(SELECT count(*) FROM matched) AS matched
 )
@@ -381,7 +381,8 @@ SELECT CAST(coalesce(p.artifact_id,'') AS TEXT) AS artifact_id,CAST(coalesce(p.v
  CAST(coalesce(p.location,'') AS TEXT) AS location,CAST(coalesce(p.rule,'') AS TEXT) AS rule,
  CAST(coalesce(p.outcome,'') AS TEXT) AS outcome,CAST(coalesce(p.execution_id,'') AS TEXT) AS execution_id,
  CAST(coalesce(p.retrieved,'') AS TEXT) AS retrieved,CAST(coalesce(p.source_name,'') AS TEXT) AS source_name,
- CAST(coalesce(p.stream,'') AS TEXT) AS stream,CAST(coalesce(p.reported,'') AS BLOB) AS reported,
+ CAST(coalesce(p.source_provider,'') AS TEXT) AS source_provider,CAST(coalesce(p.stream,'') AS TEXT) AS stream,
+ CAST(coalesce(p.reported,'') AS BLOB) AS reported,
  CAST(CASE WHEN p.outcome='no-additional-contribution' THEN EXISTS (
   SELECT 1 FROM records prior JOIN artifacts other ON other.id=prior.artifact_id
   JOIN processing_receipts done ON done.artifact_id=prior.artifact_id AND done.version=prior.version
@@ -412,6 +413,7 @@ type AdminObservationRowsRow struct {
 	ExecutionID       string
 	Retrieved         string
 	SourceName        string
+	SourceProvider    string
 	Stream            string
 	Reported          []byte
 	EarlierAppearance int64
@@ -447,6 +449,7 @@ func (q *Queries) AdminObservationRows(ctx context.Context, arg AdminObservation
 			&i.ExecutionID,
 			&i.Retrieved,
 			&i.SourceName,
+			&i.SourceProvider,
 			&i.Stream,
 			&i.Reported,
 			&i.EarlierAppearance,

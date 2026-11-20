@@ -410,7 +410,7 @@ func activityContext(
 		return out, err
 	}
 
-	out.AccountName = account.Name
+	out.AccountName, out.AccountProvider = account.Name, account.Provider
 
 	out.Realized, err = publishedRealized(ctx, q, row.ID)
 	if err != nil {

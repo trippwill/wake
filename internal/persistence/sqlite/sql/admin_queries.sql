@@ -122,7 +122,7 @@ WITH subject AS (
  SELECT o.artifact_id,o.version,o.location,o.rule,o.outcome,o.execution_id
  FROM subject s JOIN report_observations o ON s.kind='activity-appearances' AND o.execution_id=s.id
 ), details AS (
- SELECT o.*,a.retrieved,a.stream,c.name AS source_name,r.claim_id,r.ordinal,claim.data AS reported,
+ SELECT o.*,a.retrieved,a.stream,c.name AS source_name,c.provider AS source_provider,r.claim_id,r.ordinal,claim.data AS reported,
   CASE WHEN sqlc.arg(sort_field)='date' THEN (
    SELECT json_extract(f.value,'$.Date') FROM json_each(CAST(claim.data AS TEXT),'$.Fields') f
    WHERE json_extract(f.value,'$.Name')='date'
@@ -187,7 +187,8 @@ SELECT CAST(coalesce(p.artifact_id,'') AS TEXT) AS artifact_id,CAST(coalesce(p.v
  CAST(coalesce(p.location,'') AS TEXT) AS location,CAST(coalesce(p.rule,'') AS TEXT) AS rule,
  CAST(coalesce(p.outcome,'') AS TEXT) AS outcome,CAST(coalesce(p.execution_id,'') AS TEXT) AS execution_id,
  CAST(coalesce(p.retrieved,'') AS TEXT) AS retrieved,CAST(coalesce(p.source_name,'') AS TEXT) AS source_name,
- CAST(coalesce(p.stream,'') AS TEXT) AS stream,CAST(coalesce(p.reported,'') AS BLOB) AS reported,
+ CAST(coalesce(p.source_provider,'') AS TEXT) AS source_provider,CAST(coalesce(p.stream,'') AS TEXT) AS stream,
+ CAST(coalesce(p.reported,'') AS BLOB) AS reported,
  CAST(CASE WHEN p.outcome='no-additional-contribution' THEN EXISTS (
   SELECT 1 FROM records prior JOIN artifacts other ON other.id=prior.artifact_id
   JOIN processing_receipts done ON done.artifact_id=prior.artifact_id AND done.version=prior.version

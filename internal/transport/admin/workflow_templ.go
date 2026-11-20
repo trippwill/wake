@@ -347,7 +347,7 @@ func ExecutionPage(d application.ExecutionDetail, fields []application.Published
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if basis := tradePriceBasis(trade.Instrument, terms.QuotationBasis()); basis != "" {
+			if basis := tradePriceBasis(trade.Instrument, terms.QuotationBasis(), d.Context.AccountProvider); basis != "" {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<dt>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

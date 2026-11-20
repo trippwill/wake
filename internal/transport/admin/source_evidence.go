@@ -82,7 +82,7 @@ func sourceEvidence(
 	v := sourceEvidenceEntry{
 		SourceObservation: observation,
 		Title:             sourceObservationTitle(observation.Reported),
-		Facts:             sourceObservationFacts(observation.Reported),
+		Facts:             sourceObservationFacts(observation.Reported, retained.Provider),
 		References:        brokerEventLabels(fields.Event, fields.EventAliases),
 		Raw:               retainedSourceExcerpt(ctx, retained.Artifact, observation.Location),
 	}
@@ -91,7 +91,11 @@ func sourceEvidence(
 		price := reportedPrice.Fields()
 		instrument, _ := observation.Reported.Field(source.FieldInstrument)
 		v.ReportedPrice = priceText(price.Price)
-		v.ReportedPriceBasis = tradePriceBasis(instrument.Fields().Instrument, price.QuotationBasis)
+		v.ReportedPriceBasis = tradePriceBasis(
+			instrument.Fields().Instrument,
+			price.QuotationBasis,
+			retained.Provider,
+		)
 	}
 
 	if field == string(source.FieldPrice) && knownPrice && reportedPrice.Known() {
@@ -117,7 +121,11 @@ func sourceEvidence(
 			if knownPrice {
 				v.RecordURL = "/executions/" + url.PathEscape(observation.ActivityID) + "#activity-price"
 				v.Price = priceText(terms.Price)
-				v.PriceBasis = tradePriceBasis(terms.Instrument, detail.Execution.Terms().QuotationBasis())
+				v.PriceBasis = tradePriceBasis(
+					terms.Instrument,
+					detail.Execution.Terms().QuotationBasis(),
+					detail.Context.AccountProvider,
+				)
 				v.PriceCorrected = detail.Context.PriceCorrected
 				v.PriceContributed = !v.PriceCorrected &&
 					slices.Contains(detail.Context.PriceSources, observationLocation(observation.Observation))
@@ -272,16 +280,12 @@ func brokerEventLabels(event source.Reference, aliases []source.Reference) []str
 	return labels
 }
 
-func tradePriceBasis(instrument source.Instrument, basis source.QuotationBasis) string {
-	return tradeQuotationLabel(
-		instrument.Debt().Fields().Type,
-		instrument.Reference().Authority() == "ibkr",
-		string(basis),
-	)
+func tradePriceBasis(instrument source.Instrument, basis source.QuotationBasis, provider string) string {
+	return tradeQuotationLabel(instrument.Debt().Fields().Type, provider, string(basis))
 }
 
-func tradeQuotationLabel(debtType source.DebtType, ibkr bool, basis string) string {
-	if ibkr && debtType == source.TreasuryBill {
+func tradeQuotationLabel(debtType source.DebtType, provider, basis string) string {
+	if provider == "ibkr-flex" && debtType == source.TreasuryBill {
 		return "per 100 face value"
 	}
 
@@ -296,7 +300,7 @@ func conversionRateBasis(base financial.Currency) string {
 	return ""
 }
 
-func sourceObservationFacts(v source.ActivityObservation) []sourceFact {
+func sourceObservationFacts(v source.ActivityObservation, provider string) []sourceFact {
 	instrument, _ := v.Field(source.FieldInstrument)
 	i := instrument.Fields().Instrument
 
@@ -348,7 +352,7 @@ func sourceObservationFacts(v source.ActivityObservation) []sourceFact {
 			case source.FieldPrice, source.FieldTransferPrice:
 				value = priceText(x.Price)
 				if f.key == source.FieldPrice {
-					if basis := tradePriceBasis(i, x.QuotationBasis); basis != "" {
+					if basis := tradePriceBasis(i, x.QuotationBasis, provider); basis != "" {
 						value += " " + basis
 					}
 				}

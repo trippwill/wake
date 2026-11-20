@@ -187,7 +187,7 @@ func observationGrid(data application.ObservationList, subject string) gridPage[
 			entry := sourceEntryURL(observationLocation(row), "", nil)
 			report.Href = entry
 			location = gridCell{Text: sourceObservationTitle(row.Reported), Note: row.Location}
-			date, terms = observationTerms(row.Reported)
+			date, terms = observationTerms(row)
 
 			switch subject {
 			case "artifact":
@@ -228,11 +228,11 @@ func observationGrid(data application.ObservationList, subject string) gridPage[
 	return gridResult(rows, data.PageInfo)
 }
 
-func observationTerms(v source.ActivityObservation) (gridCell, gridCell) {
+func observationTerms(row application.Observation) (gridCell, gridCell) {
 	var date gridCell
 
 	var terms []string
-	for _, fact := range sourceObservationFacts(v) {
+	for _, fact := range sourceObservationFacts(row.Reported, row.SourceProvider) {
 		if fact.Value == unknownValue {
 			continue
 		}

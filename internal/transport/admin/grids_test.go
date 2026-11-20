@@ -209,12 +209,11 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 	principal, _ := financial.ParseMoney("9876.54", usd)
 	date, _ := financial.ParseDate("2026-10-20")
 	account, _ := source.NewReference("ibkr", "account", "", "synthetic")
-	instrumentID, _ := source.NewReference("ibkr", "conid", "", "synthetic-bill")
 	executionID, _ := source.NewReference("ibkr", "execution-id", "synthetic", "fill-123")
 	tradeID, _ := source.NewReference("ibkr", "trade-id", "synthetic", "trade-456")
 	debt, _ := source.NewDebtTerms(source.DebtInput{Type: source.TreasuryBill, Currency: usd})
 	instrument, _ := source.NewInstrument(source.InstrumentInput{
-		Kind: source.Debt, Name: "Synthetic bill", Reference: instrumentID, Debt: debt,
+		Kind: source.Debt, Name: "Synthetic bill", Debt: debt,
 	})
 
 	trade, err := source.NewTrade(source.TradeInput{
@@ -230,6 +229,7 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 		Artifact:          "synthetic-report",
 		Version:           "report-v1",
 		Location:          "synthetic-row",
+		SourceProvider:    "ibkr-flex",
 		Reported:          trade.Observation(),
 		EarlierAppearance: true,
 		Outcome:           calculation.ObservationNoContribution,
@@ -259,10 +259,11 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 		t.Fatal("Activity grid lost exact Treasury bill price basis", cell)
 	}
 
+	retained := host.Retained{Provider: "ibkr-flex"}
 	entry := sourceEvidence(
 		t.Context(),
 		nil,
-		host.Retained{},
+		retained,
 		application.SourceObservation{Observation: row},
 		"price",
 	)
@@ -296,7 +297,9 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 	html.Reset()
 
 	if err := ExecutionPage(
-		application.ExecutionDetail{Execution: execution},
+		application.ExecutionDetail{
+			Execution: execution, Context: application.ActivityContext{AccountProvider: "ibkr-flex"},
+		},
 		nil,
 	).Render(t.Context(), &html); err != nil {
 		t.Fatal(err)
@@ -348,7 +351,7 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 	}
 
 	unlinked := sourceEvidence(
-		t.Context(), nil, host.Retained{}, application.SourceObservation{Observation: row}, "",
+		t.Context(), nil, retained, application.SourceObservation{Observation: row}, "",
 	)
 
 	html.Reset()
@@ -366,6 +369,7 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 	store := sourceEntryReadStore{detail: application.ExecutionDetail{
 		Execution: accepted,
 		Context: application.ActivityContext{
+			AccountProvider: "ibkr-flex",
 			Realized: &application.PublishedRealizedPnL{
 				Amount: &application.PublishedMoney{
 					Amount:   "12.3456789",
@@ -380,10 +384,14 @@ func TestReportEntryAndTradeShowExactTreasuryBillTerms(t *testing.T) {
 	entry = sourceEvidence(
 		t.Context(),
 		workflow,
-		host.Retained{},
+		retained,
 		application.SourceObservation{Observation: row},
 		"price",
 	)
+
+	if entry.ReportedPriceBasis != "per 100 face value" || entry.PriceBasis != "per 100 face value" {
+		t.Fatal("price comparison lost the denomination of an IBKR bill without a native instrument ID", entry)
+	}
 
 	html.Reset()
 

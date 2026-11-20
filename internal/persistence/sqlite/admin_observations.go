@@ -88,6 +88,7 @@ func (s *Store) ObservationList(
 				Outcome:           calculation.ObservationOutcome(row.Outcome),
 				ActivityID:        row.ExecutionID,
 				SourceName:        row.SourceName,
+				SourceProvider:    row.SourceProvider,
 				Stream:            row.Stream,
 				EarlierAppearance: row.EarlierAppearance != 0,
 			}

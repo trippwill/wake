@@ -197,16 +197,16 @@ func (e Execution) Terms() source.Trade              { return e.terms }
 
 type (
 	ActivityContext struct {
-		AccountName, InstrumentName, InstrumentTicker string
-		Realized                                      *PublishedRealizedPnL
-		FieldDetails                                  []PublishedFieldDetail
-		PriceSources                                  []SourceLocation
-		PriceCorrected                                bool
+		AccountName, AccountProvider, InstrumentName, InstrumentTicker string
+		Realized                                                       *PublishedRealizedPnL
+		FieldDetails                                                   []PublishedFieldDetail
+		PriceSources                                                   []SourceLocation
+		PriceCorrected                                                 bool
 	}
 	SourceLocation struct{ Artifact, Version, Location string }
 	Observation    struct {
 		Artifact, Version, Location, Rule, Retrieved, ActivityID string
-		SourceName, Stream                                       string
+		SourceName, SourceProvider, Stream                       string
 		EarlierAppearance                                        bool
 		Outcome                                                  calculation.ObservationOutcome
 		Reported                                                 source.ActivityObservation

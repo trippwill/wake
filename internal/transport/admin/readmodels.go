@@ -227,7 +227,7 @@ func activityList(v application.ActivityList) activityView {
 			row.Basis = quotationLabel(text(a.Trade.QuotationBasis))
 			if debt := a.Trade.InstrumentTerms.Debt; debt != nil {
 				row.Basis = tradeQuotationLabel(
-					source.DebtType(text(debt.Type)), item.AccountProvider == "ibkr-flex", text(a.Trade.QuotationBasis),
+					source.DebtType(text(debt.Type)), item.AccountProvider, text(a.Trade.QuotationBasis),
 				)
 			}
 		case "security-transfer":

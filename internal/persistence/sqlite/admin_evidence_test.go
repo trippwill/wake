@@ -13,7 +13,44 @@ import (
 	"go.trippwill.dev/wake/internal/application"
 	"go.trippwill.dev/wake/internal/application/calculation"
 	"go.trippwill.dev/wake/providers/ibkrflex"
+	"go.trippwill.dev/wake/source"
 )
+
+func TestReportObservationAndTradeCarryProviderForBillWithoutContractID(t *testing.T) {
+	const artifact = "bill-without-contract-id"
+
+	s := newStoreWithSyntheticAccount(t)
+
+	processConfirmationReport(
+		t,
+		s,
+		artifact,
+		`<TradeConfirm accountId="U1" assetCategory="BILL" issuerCountryCode="US" conid="0" isin="US912797UJ40" symbol="Synthetic bill" execID="bill-fill" transactionType="ExchTrade" levelOfDetail="EXECUTION" buySell="BUY" tradeDate="2026-10-20" quantity="10000" price="98.7654321" amount="9876.54" currency="USD"/>`,
+	)
+
+	rows := observationRowsForTest(t, s, "artifact", artifact)
+	if len(rows) != 2 || rows[0].ActivityID == "" || rows[0].SourceProvider != "ibkr-flex" {
+		t.Fatal("report lookup did not expose the linked bill and retained provider", rows)
+	}
+
+	instrument, ok := rows[0].Reported.Field(source.FieldInstrument)
+	if !ok || !instrument.Fields().Instrument.Reference().IsZero() ||
+		instrument.Fields().Instrument.Debt().Fields().Type != source.TreasuryBill {
+		t.Fatal("fixture should retain an IBKR bill without an instrument reference", instrument)
+	}
+
+	retained, err := s.Retained(t.Context(), artifact)
+	if err != nil || retained.Provider != "ibkr-flex" {
+		t.Fatal("retained artifact lost its provider", retained.Provider, err)
+	}
+
+	detail, err := s.ExecutionDetail(t.Context(), rows[0].ActivityID)
+	if err != nil || detail.Context.AccountProvider != "ibkr-flex" ||
+		!detail.Execution.Terms().Fields().Instrument.Reference().IsZero() ||
+		detail.Execution.Terms().Fields().Price.Amount() != "98.7654321" {
+		t.Fatal("accepted detail did not retain the account provider and exact bill price", detail, err)
+	}
+}
 
 func TestReportObservationPagesPreserveVersionsLinksAndOrdering(t *testing.T) {
 	s := newStoreWithSyntheticAccount(t)
