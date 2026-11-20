@@ -153,7 +153,10 @@ func TestBrowserThemePreference(t *testing.T) {
 	verifyAppearanceStorage(t, ctx, origin, check)
 	check(selectAppearance("theme", "system"))
 
-	var wrappedLabels []string
+	var reflow struct {
+		Viewport, Content int
+		ClippedLabels     []string
+	}
 	check(
 		chromedp.Poll[chromedp.Void](`localStorage.getItem('wake.theme')==='system'`),
 		testbrowser.EmulateSystemTheme("dark"),
@@ -173,16 +176,21 @@ func TestBrowserThemePreference(t *testing.T) {
 		chromedp.EmulateViewport(320, 800),
 		chromedp.Evaluate[chromedp.Void](`document.documentElement.style.fontSize='200%'`),
 		testbrowser.Evaluate(`(()=>{
-			const range=document.createRange();
-			return [...document.querySelectorAll('nav[aria-label="System views"] a,.wake-appearance h2')].filter(label=>{
+			const range = document.createRange();
+			const labels = [...document.querySelectorAll('nav[aria-label="System views"] a,.wake-appearance h2')];
+			const clippedLabels = labels.filter(label => {
 				range.selectNodeContents(label);
-				return range.getClientRects().length!==1;
-			}).map(label=>label.textContent);
-		})()`, &wrappedLabels),
+				const bounds = label.getBoundingClientRect();
+				const lines = [...range.getClientRects()];
+				return !lines.length || lines.some(line => line.left < bounds.left - 1 || line.right > bounds.right + 1);
+			}).map(label => label.textContent.trim());
+			return {viewport: innerWidth, content: document.documentElement.scrollWidth, clippedLabels};
+		})()`, &reflow),
 	)
 
-	if len(wrappedLabels) != 0 {
-		t.Fatal("labels wrap at 200 percent text", wrappedLabels)
+	if reflow.Content > reflow.Viewport+1 || len(reflow.ClippedLabels) != 0 {
+		t.Fatalf("Settings does not reflow at 200 percent text: content %dpx in %dpx viewport, clipped labels %v",
+			reflow.Content, reflow.Viewport, reflow.ClippedLabels)
 	}
 
 	verifyAppearanceWithoutStorage(t, check)

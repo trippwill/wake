@@ -13,4 +13,4 @@ authority=${origin#*://}
 [ -n "$authority" ]
 body=$(curl --disable --noproxy '*' --fail --silent --show-error --max-time 3 \
     --header "Host: $authority" "http://127.0.0.1:$port/login")
-printf '%s\n' "$body" | grep -Eq '<h1>(Sign in to Wake|Set your Wake password)</h1>'
+printf '%s\n' "$body" | grep -Eq '<h1([[:space:]][^>]*)?>(Sign in to Wake|Set your Wake password)</h1>'
