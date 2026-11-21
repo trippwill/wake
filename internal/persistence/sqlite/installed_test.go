@@ -25,6 +25,17 @@ func TestOpenInstalledInitializesVacantProfile(t *testing.T) {
 	}
 
 	profile := testProfile(filepath.Join(dir, "wake.db"))
+
+	guard, err := lockStoreDirectory(profile.WarehousePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = OpenInstalled(ctx, profile, nil)
+	if closeErr := guard.Close(); closeErr != nil || !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("startup ignored another installation operation", err, closeErr)
+	}
+
 	interrupted, cancel := context.WithCancel(ctx)
 	cancel()
 
@@ -68,6 +79,13 @@ func TestOpenInstalledResumesInterruptedPublication(t *testing.T) {
 
 	if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, ErrRestorePending) {
 		t.Fatal("financial-only startup admitted a partially published set", err)
+	}
+
+	changed := profile
+	changed.SyncPath += ".other"
+
+	if _, err := OpenInstalled(ctx, changed, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("startup accepted an initialization plan for different paths", err)
 	}
 
 	if err := os.WriteFile(paths[1], []byte("unrelated"), 0o600); err != nil {
@@ -115,6 +133,33 @@ func TestOpenInstalledRefusesAliasedDestination(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 0 {
 		t.Fatal("startup wrote a file before validating the destinations", entries, err)
+	}
+}
+
+func TestOpenInstalledRefusesOtherMaintenance(t *testing.T) {
+	for _, test := range []struct {
+		name, suffix, contents string
+		want                   error
+	}{
+		{"upgrade", UpgradeIntentSuffix, `{"plan":{"id":"pending"}}`, ErrUpgradeRecovery},
+		{"malformed intent", RestoreIntentSuffix, "{", ErrRestorePending},
+		{"replacement intent", RestoreIntentSuffix, `{"format":"` + initializeIntentFormat + `","replace":true}`, ErrRestorePending},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			profile := vacantRecoveryProfile(t)
+			if err := os.WriteFile(profile.WarehousePath+test.suffix, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := OpenInstalled(t.Context(), profile, nil); !errors.Is(err, test.want) {
+				t.Fatal("startup accepted an invalid or unrelated maintenance intent", err)
+			}
+
+			paths := profile.paths()
+			if err := checkVacantStores(paths[:]); err != nil {
+				t.Fatal("startup changed the selected stores", err)
+			}
+		})
 	}
 }
 
