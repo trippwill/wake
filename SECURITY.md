@@ -16,9 +16,8 @@ fix and disclosure there.
 
 ## Supported versions
 
-Wake is in pre-release development. Reports against the current `main` branch
-are welcome. Include the exact commit if you are running a development build.
-Wake has no maintained release branches at this stage.
+Report issues affecting the current release candidate or the `main` branch.
+Include the version tag or the exact commit for a development build.
 
 ## Security scope
 

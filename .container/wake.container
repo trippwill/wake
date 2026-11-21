@@ -5,7 +5,7 @@
 Description=Wake financial evidence appliance
 
 [Container]
-Image=ghcr.io/trippwill/wake:v0.1.0
+Image=ghcr.io/trippwill/wake:v0.1.0-rc.1
 ContainerName=wake
 Network=host
 UserNS=host

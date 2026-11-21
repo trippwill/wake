@@ -40,7 +40,7 @@ func TestUpgradeCLIPreviewCreatesNoFilesAndRejectsStaleConfirmation(t *testing.T
 
 	var plan daemon.UpgradePlan
 	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || plan.ID != "" ||
-		len(plan.Stores) != 1 || plan.Stores[0].Target != "wake-warehouse/4" {
+		len(plan.Stores) != 1 || plan.Stores[0].Target != "wake-release-warehouse/1" {
 		t.Fatal(stdout.String(), err)
 	}
 
@@ -95,7 +95,7 @@ func TestUpgradeOutputIncludesApprovedPlanAndReleaseNotes(t *testing.T) {
 	}
 	if err := json.Unmarshal(
 		[]byte(
-			`{"steps":[{"store":"warehouse","from":"wake-warehouse/1","to":"wake-warehouse/2"}],"release_notes":[{"version":2,"text":"Recalculate retained selections."}]}`,
+			`{"steps":[{"store":"warehouse","from":"wake-release-warehouse/1","to":"wake-release-warehouse/2"}],"release_notes":[{"version":2,"text":"Recalculate retained selections."}]}`,
 		),
 		&plan,
 	); err != nil {

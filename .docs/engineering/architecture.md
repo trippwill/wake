@@ -454,7 +454,7 @@ root, and the operator's SSH transport are inside the trust boundary.
 
 Shutdown cancels and joins work before releasing resources. Recovery preserves
 identity, evidence and decisions; derived views are reproducible. Unsupported
-pre-release stores fail closed with explicit recreation guidance. Privacy depends
+development stores fail closed without rewriting the files. Privacy depends
 on the user's host and storage protection as well as Wake's credential handling.
 
 ### Operator access and restore
@@ -546,7 +546,7 @@ under store ownership and checks confirmation before staging replacements. The
 archive can supply settings for matching retained source identities. Runtime state
 and grants from that archive stay outside the recovered association.
 
-Unsupported pre-release formats require a compatible build or explicit recreation.
+Unsupported development formats require a compatible build or explicit recreation.
 The offline warehouse and credential resets preview the selected file and its
 sidecars and require confirmation before deletion. They check ownership without
 opening SQLite or reading encryption keys.

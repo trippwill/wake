@@ -28,11 +28,13 @@ const (
 	RestoreIntentSuffix       = ".restore-intent"
 	ErrRestorePending   Error = "a storage restore is pending; retry with the original archive and profile"
 	ErrRestoreOccupied  Error = "restore destination is occupied"
+	restoreIntentFormat       = "wake-release-restore/1"
 )
 
 // The intent is durable before any destination is replaced. The original
 // identities and prepared bytes determine where a retry can continue.
 type restoreIntent struct {
+	Format        string                   `json:"format,omitempty"`
 	ArchiveDigest string                   `json:"archive_sha256"`
 	Replace       bool                     `json:"replace"`
 	SyncOnly      bool                     `json:"sync_only,omitempty"`
@@ -228,7 +230,7 @@ func prepareRestore(
 
 	var pacing recoveryPacing
 	if originals[2] != nil {
-		prior, err := inspectRecoverableSync(ctx, paths[2], originals[2])
+		prior, _, err := inspectStorageMember(ctx, paths[2], originals[2], 2)
 		if err == nil {
 			pacing, err = readRecoveryPacing(ctx, prior)
 			if err := errors.Join(err, prior.Close()); err != nil {
@@ -307,12 +309,7 @@ func copyRestoreArchive(
 		return nil, "", err
 	}
 
-	baseline := releaseBaseline()
-	if manifest != nil && manifest.Storage.Stores[2].Format == syncArchiveVersion {
-		baseline = installationArchiveBaseline()
-	}
-
-	plan, err := validateStorageSet(ctx, staged[:], owners[:], baseline)
+	plan, err := validateStorageCopy(ctx, staged[:], owners[:])
 	if err != nil {
 		return nil, "", err
 	}
@@ -475,27 +472,6 @@ func renewRestoredStores(
 }
 
 func prepareRecoveredProfile(ctx context.Context, tx *sql.Tx, at time.Time) error {
-	var kind, format, id string
-	if err := tx.QueryRowContext(ctx, profileStatement("Metadata", "sync")).
-		Scan(&kind, &format, &id); err != nil {
-		return err
-	}
-
-	if format == syncArchiveVersion {
-		if _, err := tx.ExecContext(ctx, recoverySchemaSQL); err != nil {
-			return err
-		}
-
-		if _, err := tx.ExecContext(
-			ctx,
-			profileStatement("AdvanceFormat", "sync"),
-			syncSchemaVersion,
-			format,
-		); err != nil {
-			return err
-		}
-	}
-
 	if _, err := tx.ExecContext(ctx, profileStatement("ClearRecoveryScopes", "")); err != nil {
 		return err
 	}
@@ -547,6 +523,11 @@ func readRestoreIntent(path string) (*restoreIntent, error) {
 		return nil, ErrRestorePending
 	}
 
+	// A retry uses the prepared bytes without revalidating the source archive.
+	if intent.Format != restoreIntentFormat {
+		return nil, errors.Join(ErrRestorePending, ErrUnsupportedSchema)
+	}
+
 	return &intent, nil
 }
 
@@ -556,6 +537,8 @@ func publishRestoreIntent(path string, intent restoreIntent) (bool, error) {
 		return false, err
 	}
 	defer func() { _ = os.Remove(file.Name()) }()
+
+	intent.Format = restoreIntentFormat
 
 	err = json.NewEncoder(file).Encode(intent)
 	if err = errors.Join(err, file.Sync(), file.Close()); err != nil {

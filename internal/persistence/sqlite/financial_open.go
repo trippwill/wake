@@ -189,7 +189,7 @@ func (s *Store) initializeFinancial(ctx context.Context, fresh bool) error {
 }
 
 // PreviewFinancial examines the supported financial format without opening the
-// optional stores. This pre-release build has no incoming format migrations.
+// optional stores. The first release has no incoming format migrations.
 func PreviewFinancial(ctx context.Context, path, confirm string) (UpgradePlan, error) {
 	var plan UpgradePlan
 	if err := checkFinancialMaintenance(path); err != nil {

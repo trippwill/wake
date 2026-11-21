@@ -36,14 +36,13 @@ func (e Error) Error() string { return string(e) }
 const storeCount = 3
 
 const (
-	ErrUnsupportedSchema Error = "unsupported store format; use a compatible Wake build or restore a matching backup; for an unsupported development store, stop Wake and preview wake storage reset financial or wake storage reset credentials"
+	ErrUnsupportedSchema Error = "unsupported store format; use a compatible Wake build or restore a matching backup"
 	ErrUnsafeStore       Error = "unsafe or already owned store path"
 	ErrCorrupt                 = recordcodec.ErrCorrupt
 	ErrAssociation       Error = "store associations do not match; restore matching warehouse/access stores or explicitly recreate access"
-	schemaVersion              = "wake-warehouse/4"
-	accessSchemaVersion        = "wake-access/3"
-	syncSchemaVersion          = "wake-sync/2"
-	syncArchiveVersion         = "wake-sync/1"
+	schemaVersion              = "wake-release-warehouse/1"
+	accessSchemaVersion        = "wake-release-access/1"
+	syncSchemaVersion          = "wake-release-sync/1"
 )
 
 // Profile selects the warehouse and independent encrypted access storage.
@@ -73,12 +72,12 @@ var activityDateIndexesSQL string
 var connectionsSQL string
 
 //go:embed sql/sync_schema.sql
-var syncArchiveSQL string
+var syncBaseSQL string
 
 //go:embed sql/recovery_schema.sql
 var recoverySchemaSQL string
 
-var syncSQL = syncArchiveSQL + "\n" + recoverySchemaSQL
+var syncSQL = syncBaseSQL + "\n" + recoverySchemaSQL
 
 //go:embed sql/connection.sql
 var connectionSQL string

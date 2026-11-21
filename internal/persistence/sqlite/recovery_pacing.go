@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"time"
 
 	"go.trippwill.dev/wake/internal/persistence/sqlite/sqlc"
@@ -21,15 +20,6 @@ type savedPacingDeadline struct {
 type recoveryPacing struct {
 	deadlines []savedPacingDeadline
 	reference time.Time
-}
-
-func inspectRecoverableSync(ctx context.Context, path string, owner *os.File) (*sql.DB, error) {
-	db, _, err := inspectStorageMember(ctx, path, owner, 2)
-	if errors.Is(err, ErrUnsupportedSchema) {
-		db, _, err = inspectStorageMemberAt(ctx, path, owner, 2, installationArchiveBaseline())
-	}
-
-	return db, err
 }
 
 func readRecoveryPacing(ctx context.Context, db *sql.DB) (recoveryPacing, error) {

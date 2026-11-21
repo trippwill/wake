@@ -88,6 +88,14 @@ check upload_failure 1 "$view$upload"
 check unreadable 1 "$view"
 GITHUB_REF_TYPE=branch check new 1
 GITHUB_REF_NAME=$version-other check new 1
+
+version=v0.1.0-rc.1
+export GITHUB_REF_NAME=$version
+printf '[Container]\nImage=ghcr.io/trippwill/wake:%s\n' "$version" > .container/wake.container
+view="release view $version --json assets,isDraft"$'\n'
+create="release create $version --verify-tag --generate-notes --prerelease wake-linux-amd64.tar.gz wake-linux-arm64.tar.gz SHA256SUMS"$'\n'
+check new 0 "$view$create"
+GITHUB_REF_NAME=v0.1.0 check new 1
 printf 'invalid checksum\n' > .cache/release/wake-linux-arm64.tar.gz.sha256
 check published 1
 printf 'Tagged release publication gates passed without GitHub access\n'

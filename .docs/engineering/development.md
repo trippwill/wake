@@ -105,10 +105,9 @@ The `ci` workflow runs on pull requests, pushes to `main`, and manual dispatches
 with read-only repository permissions. Full CI builds and tests the appliance
 on native amd64 and arm64 runners and uploads the verified native archives as
 Actions artifacts. Markdown-only changes can skip the application checks. A
-manual run forces the complete gate for the selected branch. Use the [native
-CI artifacts](../../README.md#install-and-run-the-native-command) or [build a
-local appliance image](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch)
-to try an untagged commit.
+manual run forces the complete gate for the selected branch. To try an untagged
+commit, download the native artifact from its CI run and verify the enclosed
+`.sha256` file before extracting, or [build a local appliance image](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch).
 
 ### Publish a version
 
@@ -117,9 +116,18 @@ repository admin pushes a version tag. The [release-tag ruleset](https://github.
 targets `refs/tags/v*` and restricts tag creation, updates and deletion to the
 repository-admin bypass.
 
-1. Choose a version such as `v0.1.0` or `v0.1.0-rc.1`. Use it in the Quadlet's
+1. Use the release version, `v0.1.0-rc.1` for the first candidate, in the Quadlet's
    default image and in the README and appliance guide's release examples.
    Verify the reviewed commit has landed on `main` and its checks have passed.
+   Before tagging RC1, use its artifacts from full CI to rehearse a fresh install
+   and the development format rejection. Before tagging stable v0.1.0, also
+   [rehearse the upgrade from the published candidate](#rehearse-the-upgrade-to-stable).
+
+   ```sh
+   version=v0.1.0-rc.1
+   GITHUB_REF_TYPE=tag GITHUB_REF_NAME="$version" mise run release:check-tag
+   ```
+
 2. On GitHub, open Releases and choose **Draft a new release**. Under
    **Choose a tag**, enter the planned version and select **Create new tag**,
    with `main` as the target. Write the release title and notes, optionally using
@@ -131,7 +139,7 @@ repository-admin bypass.
    that tag. For example, with `revision` set to the reviewed commit SHA:
 
    ```sh
-   version=v0.1.0
+   version=v0.1.0-rc.1
    git tag -a "$version" "${revision:?set the reviewed commit SHA}" -m "Wake $version" &&
      git push origin "refs/tags/$version"
    ```
@@ -141,12 +149,39 @@ repository-admin bypass.
    to GHCR and the native archives with their checksums to the GitHub release.
    It preserves the draft's title and notes when publishing it. If no draft
    exists, it creates a release with GitHub-generated notes.
-5. Review the published title and notes. Download both archives and `SHA256SUMS`
+5. Review the published title, notes, and prerelease designation. Download both archives and `SHA256SUMS`
    and run `sha256sum --check SHA256SUMS` in the download directory. Make the GHCR
    package public for anonymous installation and verify that the Quadlet URL at
    the version tag selects an image available for amd64 and arm64. Follow the
    [published install flow](../../docs/deployment/wake-appliance.md#rootless-quick-start)
    before announcing the release.
+   Install with `go install go.trippwill.dev/wake@v0.1.0-rc.1` outside the checkout
+   on a clean machine and verify that it and the packaged executable report the
+   expected version. For subsequent tags use the version being published.
+
+### Rehearse the upgrade to stable
+
+Use a disposable Linux installation of the published RC being upgraded and
+synthetic evidence. Set browser access, create a financial client grant, and
+sync an independent client pinned to the RC1 contract. Use the
+[consumer acceptance flow](#api-consumer-acceptance) to check its baseline and
+recovery behavior. Keep its committed view and local state for the upgrade.
+
+Stop Wake, save an installation backup and retain the credential key. Use the
+stable candidate's exact reviewed commit and CI artifacts before publication.
+For Podman, install the Quadlet from that checkout with a local image override
+as in the [untagged build flow](../../docs/deployment/wake-appliance.md#use-an-untagged-commit-or-branch).
+Use the [published update flow](../../docs/deployment/wake-appliance.md#update-the-appliance)
+once the tag and its image are available.
+
+Keep the same configuration and data paths. Run the new executable's
+`wake storage upgrade` to check the financial format, then start it on the
+same installation. Reuse the browser credentials and client grant. Verify
+that the unchanged client reconnects and resumes or uses full fallback. Check
+published views, including reported positions, for equivalent resources,
+stable IDs and exact values. Exercise the CLI machine reads on the new build.
+Verify restoration of candidate backups separately, and record the exact Wake
+and client revisions, artifacts and results with the release review.
 
 ## Select meaningful verification
 
@@ -241,7 +276,7 @@ changes. Cover failure and repeat execution so an interrupted update cannot expo
 partial results or duplicate financial activity. Record why no historical update
 is needed when a change leaves retained results valid.
 
-The first release starts the Wake-owned rule, interpretation, continuation,
+RC1 starts the Wake-owned rule, interpretation, continuation,
 checkpoint and comparison identifiers at version 1. Advance the identifier whose
 meaning changed. Private store formats advance independently as their schemas change.
 
@@ -261,13 +296,19 @@ evidence-preservation guidance.
 
 ## Forward store upgrades
 
-The warehouse and access store each have an ordered migration chain starting at
-the first supported release formats. When either format changes, embed the forward migration
-as external SQL and update the matching fresh schema. Migration files run inside
+Supported forward upgrades start at the RC1 store formats. When a format changes,
+embed the forward migration as external SQL and update the matching fresh schema.
+Migration files run inside
 Wake's attached SQLite transaction. Keep transaction control and format metadata
 updates in the runner. Test the upgrade from the earliest supported data and compare the
 result with a fresh store at the target format. Keep migration SQL stable once
 released because its contents identify the approved plan.
+
+Before releasing a supported format or rule change, verify the upgrade or
+rebuild through the same CLI and daemon startup path an operator will use.
+Exercise an existing installation from the supported baseline and check that
+the published data and retained evidence survive. Add or repair the operator
+path if the change needs behavior the current commands cannot exercise.
 
 Include an upgrade note with every retained-claims rule increment. Key the note by
 the new rule version in the upgrade baseline. Explain the change, which retained

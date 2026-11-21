@@ -235,27 +235,30 @@ establish this boundary.
 
 ## Compatibility
 
-The executable targets Linux. Starting with v0.1.0, patch releases within a given
-`0.x` minor preserve the published HTTP/JSON contract, public Go APIs, CLI machine
-output and exit behavior, and supported configuration keys and defaults. A change
-that existing strict consumers reject is breaking even when it only adds a field or
-enum value. New minor releases may introduce documented breaking changes. A breaking
-HTTP change requires a new URL contract version. Concurrent support for older URL
-versions depends on the release.
+The executable targets Linux. Wake v0.1.0-rc.1 starts the compatibility baseline
+through stable v0.1.0. It covers the published HTTP/JSON contract, public Go APIs,
+CLI machine output and exit behavior, supported configuration keys and defaults,
+and forward use of RC1 installations and their supported backups. Patch releases
+within a given `0.x` minor preserve these contracts. A change that existing strict
+consumers reject is breaking even when it only adds a field or enum value. New
+minor releases may introduce documented breaking changes. A breaking HTTP change
+requires a new URL contract version. Concurrent support for older URL versions
+depends on the release.
 
-The executable release, OpenAPI specification revision and HTTP URL contract version
-have separate meanings. Publication versions are opaque equality tokens scoped to
-their published view. Provider interpretation versions identify how Wake reads
-retained source evidence. Private store formats govern whether the executable can
-open its databases.
+RC1 serves the `/v1` HTTP URL contract with
+[OpenAPI document revision 1.0.0](../../api/openapi/v1.yaml). The executable
+release, URL contract version and document revision evolve independently.
+Publication versions are opaque equality tokens scoped to their published view.
+Provider interpretation versions identify how Wake reads retained source evidence.
+Private store formats govern whether the executable can open its databases.
 
-Patch releases preserve usability of supported stores. An incompatible minor release
-documents its supported upgrade or explicit recreation procedure. This pre-release
-storage format assigns separate files to financial data (`storage.financial_path`),
+Changes to supported store formats require a tested, documented forward upgrade.
+The installation keeps separate files for financial data (`storage.financial_path`),
 execution state (`storage.sync_path`), and encrypted upstream access
-(`storage.credentials_path`). Use a compatible build for earlier formats or preserve
-the existing files and sidecars before explicitly recreating the warehouse. Wake
-refuses unsupported formats without rewriting them.
+(`storage.credentials_path`). To move from an earlier development build to RC1,
+create a fresh installation in a new directory. Earlier development databases
+and backup archives remain usable only with a compatible build. Wake refuses
+unsupported formats without rewriting them.
 
 ### Backup and recovery
 
@@ -295,7 +298,8 @@ changed configuration again before it resumes.
 ### Forward upgrades
 
 Stop Wake and run `wake storage upgrade` with the selected configuration to check
-the financial format. The check leaves the stores untouched. Pre-release formats
-have no compatibility migrations. The financial store keeps the durable rebuild
-cursor and serves progress in Overview. A partially rebuilt view remains gated
-until its rebuild finishes.
+the financial format. The check leaves the stores untouched. Supported RC1
+installations carry forward into v0.1.0 with their existing configuration and
+data directory. The financial store keeps the durable rebuild cursor and serves
+progress in Overview. A partially rebuilt view remains gated until its rebuild
+finishes.

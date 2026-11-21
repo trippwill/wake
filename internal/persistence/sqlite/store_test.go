@@ -242,13 +242,16 @@ func TestStoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
 	for _, fixture := range []struct {
 		name, update, legacy string
 	}{
-		{name: "warehouse", update: "UPDATE main.store_metadata SET version=?", legacy: "wake-warehouse/1"},
-		{name: "access", update: "UPDATE access.store_metadata SET version=?", legacy: "wake-access/1"},
+		{name: "warehouse", update: "UPDATE main.store_metadata SET version=?", legacy: "wake-warehouse/4"},
+		{name: "access", update: "UPDATE access.store_metadata SET version=?", legacy: "wake-access/3"},
+		{name: "sync", update: "UPDATE sync.store_metadata SET version=?", legacy: "wake-sync/2"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			ctx := t.Context()
 			profile, store := profileFixture(t)
-			for schema, expected := range map[string]string{"main": schemaVersion, "access": accessSchemaVersion} {
+			for schema, expected := range map[string]string{
+				"main": "wake-release-warehouse/1", "access": "wake-release-access/1", "sync": "wake-release-sync/1",
+			} {
 				var metadata storeMetadata
 				if err := store.db.QueryRowContext(ctx, profileStatement("Metadata", schema)).
 					Scan(&metadata.kind, &metadata.version, &metadata.id); err != nil ||
@@ -286,6 +289,19 @@ func TestStoreFormatsRejectDevelopmentLabelsWithoutWrites(t *testing.T) {
 
 			if !errors.Is(err, ErrUnsupportedSchema) {
 				t.Fatal("opening a development format", err)
+			}
+
+			if _, err := Upgrade(ctx, profile, nil, ""); !errors.Is(err, ErrUnsupportedSchema) {
+				t.Fatal("planning an upgrade from a development format", err)
+			}
+
+			archive := filepath.Join(filepath.Dir(profile.WarehousePath), "development.tar")
+			if err := Backup(ctx, profile, archive); !errors.Is(err, ErrUnsupportedSchema) {
+				t.Fatal("creating an installation backup from a development format", err)
+			}
+
+			if _, err := os.Stat(archive); !os.IsNotExist(err) {
+				t.Fatal("unsupported source yielded an archive", err)
 			}
 
 			for i, path := range profile.paths() {

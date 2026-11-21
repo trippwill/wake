@@ -53,9 +53,10 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
   build pipeline only for a demonstrated need. Published provider extension
   contracts are deliberate public boundaries; internal collaborator interfaces
   belong to consumers. Do not create empty future packages or universal service APIs.
-- Until the first version tag, replace internal APIs directly. Unsupported
-  pre-release databases fail closed with recreate instructions; no compatibility
-  migrations, aliases, or automatic database deletion.
+- Wake v0.1.0-rc.1 sets the first [compatibility baseline](.docs/product/coverage.md#compatibility)
+  for published interfaces and installation formats. Preserve that baseline
+  through v0.1.0. Earlier development databases and archives fail closed.
+  Keep internal APIs replaceable and never delete unsupported databases automatically.
 - No trading/order execution, brokerage gateway, live market-data platform,
   full tax engine, general ledger, SaaS multi-tenancy, or distributed replication.
 

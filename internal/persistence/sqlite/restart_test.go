@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -499,10 +500,17 @@ func TestReviewedRestartPacingAndSourceIsolation(t *testing.T) {
 
 func compactFixtureDate(date string) string { return date[:4] + date[5:7] + date[8:] }
 
-func TestInstallationArchiveFromPreviousSyncFormatRequiresReviewedRestart(t *testing.T) {
+func TestInstallationArchiveRejectsDevelopmentSyncFormat(t *testing.T) {
 	ctx := t.Context()
 	profile := seedUpgradeStores(t)
 	paths := profile.paths()
+
+	plan, err := Upgrade(ctx, profile, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan.Stores[2].Current = "wake-sync/1"
 
 	store, err := OpenInstalled(ctx, profile, nil)
 	if err != nil {
@@ -510,8 +518,8 @@ func TestInstallationArchiveFromPreviousSyncFormatRequiresReviewedRestart(t *tes
 	}
 
 	_, err = store.db.Exec(
-		"DROP TABLE sync.restart_scopes; DROP TABLE sync.recovery_sources; DROP TABLE sync.recovery_state;" +
-			"UPDATE sync.store_metadata SET version='wake-sync/1'",
+		"DROP TABLE sync.restart_scopes; DROP TABLE sync.recovery_sources; DROP TABLE sync.recovery_state;"+
+			"UPDATE sync.store_metadata SET version=?", plan.Stores[2].Current,
 	)
 	if err := errors.Join(err, store.Close()); err != nil {
 		t.Fatal(err)
@@ -528,11 +536,6 @@ func TestInstallationArchiveFromPreviousSyncFormatRequiresReviewedRestart(t *tes
 		owners[i] = owner
 	}
 
-	plan, err := validateStorageSet(ctx, paths[:], owners[:], installationArchiveBaseline())
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	archive := filepath.Join(filepath.Dir(paths[0]), "previous-format.tar")
 	if err := writeInstallationBackup(ctx, archive, paths, owners, plan, InstallationEvidence{}); err != nil {
 		t.Fatal(err)
@@ -544,34 +547,32 @@ func TestInstallationArchiveFromPreviousSyncFormatRequiresReviewedRestart(t *tes
 		t.Fatal("ordinary startup accepted the prior sync format", err)
 	}
 
-	if recovery, err := RecoverSynchronization(
-		ctx,
-		profile,
-		archive,
-		"",
-	); err != nil ||
-		len(recovery.Proposed) != 1 {
-		t.Fatal("prior archive did not propose reviewed settings", recovery, err)
+	before := storeBytes(t, profile)
+
+	recovery, err := RecoverSynchronization(ctx, profile, archive, "")
+	if !errors.Is(err, ErrUnsupportedSchema) || recovery.ID != "" || len(recovery.Proposed) != 0 {
+		t.Fatal("synchronization recovery accepted a development sync archive", recovery, err)
+	}
+
+	for i, after := range storeBytes(t, profile) {
+		if !bytes.Equal(before[i], after) {
+			t.Fatal("refused synchronization import modified a source store", paths[i])
+		}
 	}
 
 	target := vacantRecoveryProfile(t)
-	if _, err := Restore(ctx, target, archive, true); err != nil {
-		t.Fatal(err)
+	if _, err := Restore(ctx, target, archive, true); !errors.Is(err, ErrUnsupportedSchema) {
+		t.Fatal("restore accepted a development sync archive", err)
 	}
 
-	reopened, err := OpenInstalled(ctx, target, nil)
-	if err != nil {
-		t.Fatal(err)
+	targets := target.paths()
+	if err := checkVacantStores(targets[:]); err != nil {
+		t.Fatal("refused restore left destination stores", err)
 	}
 
-	defer func() { _ = reopened.Close() }()
-
-	restart, err := reopened.RestartInputs(ctx)
-	if err != nil || restart.At.IsZero() || len(restart.Sources) != 1 {
-		t.Fatal("restored prior archive bypassed restart review", restart, err)
-	}
-
-	if _, err := reopened.UpstreamRevision(ctx); !errors.Is(err, provider.ErrUnavailable) {
-		t.Fatal("restored prior archive activated an upstream grant", err)
+	for _, warehouse := range []string{profile.WarehousePath, target.WarehousePath} {
+		if err := rejectPendingRestore(warehouse); err != nil {
+			t.Fatal("refused archive left a restore intent", err)
+		}
 	}
 }

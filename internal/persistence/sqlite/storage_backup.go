@@ -120,12 +120,6 @@ func checkNoUpgrade(warehouse string) error {
 }
 
 func validateStorageCopy(ctx context.Context, paths []string, owners []*os.File) (UpgradePlan, error) {
-	return validateStorageSet(ctx, paths, owners, releaseBaseline())
-}
-
-func validateStorageSet(
-	ctx context.Context, paths []string, owners []*os.File, baseline upgradeBaseline,
-) (UpgradePlan, error) {
 	var plan UpgradePlan
 	if len(paths) != len(owners) || (len(paths) != 1 && len(paths) != storeCount) {
 		return plan, ErrUnsupportedSchema
@@ -142,7 +136,7 @@ func validateStorageSet(
 	)
 
 	for i, path := range paths {
-		db, m, err := inspectStorageMemberAt(ctx, path, owners[i], i, baseline)
+		db, m, err := inspectStorageMember(ctx, path, owners[i], i)
 		if err != nil {
 			return plan, err
 		}
@@ -176,7 +170,7 @@ func validateStorageSet(
 
 	full := len(paths) == storeCount
 
-	plan, _, err := baseline.plan(storePaths, metadata, [storeCount]bool{true, full, full}, history)
+	plan, _, err := releaseBaseline().plan(storePaths, metadata, [storeCount]bool{true, full, full}, history)
 	if err != nil {
 		return plan, err
 	}
@@ -223,13 +217,9 @@ func inspectStorageMember(
 	owner *os.File,
 	index int,
 ) (*sql.DB, storeMetadata, error) {
-	return inspectStorageMemberAt(ctx, path, owner, index, releaseBaseline())
-}
-
-func inspectStorageMemberAt(
-	ctx context.Context, path string, owner *os.File, index int, baseline upgradeBaseline,
-) (*sql.DB, storeMetadata, error) {
 	var metadata storeMetadata
+
+	baseline := releaseBaseline()
 
 	db := sql.OpenDB(
 		&connector{paths: [storeCount]string{path}, owners: [storeCount]*os.File{owner}, probe: true},

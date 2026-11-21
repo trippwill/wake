@@ -133,7 +133,7 @@ func planSyncRecovery(
 	}
 
 	if originals[2] != nil {
-		db, err := inspectRecoverableSync(ctx, paths[2], originals[2])
+		db, _, err := inspectStorageMember(ctx, paths[2], originals[2], 2)
 		if err == nil {
 			plan.Current, _ = readSyncConfigurations(ctx, db)
 			pacing, err = readRecoveryPacing(ctx, db)
@@ -228,12 +228,7 @@ func readSyncRecoveryArchive(
 		return nil, recoveryPacing{}, "", ErrAssociation
 	}
 
-	baseline := releaseBaseline()
-	if manifest.Storage.Stores[2].Format == syncArchiveVersion {
-		baseline = installationArchiveBaseline()
-	}
-
-	sync, _, err := inspectStorageMemberAt(ctx, copies[2], owners[2], 2, baseline)
+	sync, _, err := inspectStorageMember(ctx, copies[2], owners[2], 2)
 	if err != nil {
 		return nil, recoveryPacing{}, "", err
 	}

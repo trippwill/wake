@@ -10,7 +10,9 @@ MPL-2.0 ([LICENSE](LICENSE)).
 Each instance serves one user. The browser and financial API listen on IPv4
 loopback. Use Wake on the same machine or over SSH forwarding on a private LAN.
 
-This pre-release build serves and processes retained history locally.
+The installation examples pin v0.1.0-rc.1. This release candidate serves and
+processes retained history locally and sets the first
+[compatibility baseline](.docs/product/coverage.md#compatibility).
 Inspect activity, instruments, and available reported positions in the admin
 console. Wake retains original reports, exact financial values and conflicts.
 
@@ -23,19 +25,15 @@ Once Wake starts, set the browser password in the running container.
 
 ### Install and run the native command
 
-To install the current pre-release with Go, run:
+To install the release candidate with Go, run:
 
 ```sh
-GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@main
+GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0-rc.1
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Replace `main` with a commit SHA to pin a candidate or with a published tag
-such as `v0.1.0` to install that release. The module includes the generated
-sources and browser assets.
-
-For a tagged release on Linux amd64 or arm64, run these commands in an empty
-directory to verify and install the executable:
+For the packaged release on Linux amd64 or arm64, run these commands in an
+empty directory to verify and install the executable:
 
 ```sh
 case "$(uname -m)" in
@@ -43,7 +41,7 @@ case "$(uname -m)" in
   aarch64) arch=arm64 ;;
   *) echo "Unsupported architecture" >&2; exit 1 ;;
 esac
-release=https://github.com/trippwill/wake/releases/download/v0.1.0
+release=https://github.com/trippwill/wake/releases/download/v0.1.0-rc.1
 curl -fLO "$release/wake-linux-$arch.tar.gz" &&
   curl -fLO "$release/SHA256SUMS" &&
   sha256sum --check --ignore-missing SHA256SUMS &&
@@ -51,11 +49,6 @@ curl -fLO "$release/wake-linux-$arch.tar.gz" &&
   install -Dm755 wake "$HOME/.local/bin/wake"
 export PATH="$HOME/.local/bin:$PATH"
 ```
-
-For a pre-release binary, download the `wake-linux-amd64` or `wake-linux-arm64`
-artifact from the candidate's successful GitHub Actions `ci` run. Unzip it and
-run `sha256sum -c wake-linux-*.tar.gz.sha256` before extracting and installing
-the enclosed archive as above.
 
 With `wake` on `PATH`, create the configuration and set a browser password:
 
@@ -231,8 +224,10 @@ With Wake stopped, `wake storage backup installation.tar` saves a complete
 installation. Keep the credential key separately and use
 `wake storage restore installation installation.tar` to restore the backup.
 See [backup and recovery](.docs/product/coverage.md#backup-and-recovery) for
-replacement and source review. `wake storage upgrade` checks the
-financial format.
+replacement and source review. When updating a native installation, stop Wake,
+back up the installation, and run the new executable's `wake storage upgrade`
+with the existing configuration to check its financial format. Start the new
+executable with the same configuration.
 
 To clear financial history or encrypted source access, stop Wake and preview
 the files selected by the reset:

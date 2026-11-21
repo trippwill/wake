@@ -48,16 +48,6 @@ func releaseBaseline() upgradeBaseline {
 	}
 }
 
-// The preceding prerelease format may be read from a verified archive
-// during an explicit restore. Ordinary startup requires the current format.
-func installationArchiveBaseline() upgradeBaseline {
-	baseline := releaseBaseline()
-	baseline.formats[2] = syncArchiveVersion
-	baseline.schemas[2] = syncArchiveSQL
-
-	return baseline
-}
-
 type UpgradeStore struct {
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`

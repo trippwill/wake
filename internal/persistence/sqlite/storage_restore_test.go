@@ -6,6 +6,7 @@ package persistence
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -210,6 +211,30 @@ func TestStorageRestoreResumesPublishedUpgradeBackup(t *testing.T) {
 
 	// Interruption after installing the warehouse, before installing access.
 	if err := renameNewFile(intent.Stores[0].Stage, target.WarehousePath); err != nil {
+		t.Fatal(err)
+	}
+
+	releaseIntent := readRestoreFixture(t, intentPath)
+	intent.Format = ""
+
+	developmentIntent, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(intentPath, developmentIntent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Restore(ctx, target, plan.BackupPath, true); !errors.Is(err, ErrUnsupportedSchema) {
+		t.Fatal("resumed a development restore intent", err)
+	}
+
+	if _, err := os.Stat(target.ConnectionsPath); !os.IsNotExist(err) {
+		t.Fatal("resuming development intent installed access", err)
+	}
+
+	if err := os.WriteFile(intentPath, releaseIntent, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

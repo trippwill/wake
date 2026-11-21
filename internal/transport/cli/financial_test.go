@@ -211,6 +211,7 @@ func TestFinancialCLIReads(t *testing.T) {
 
 	check := call("api", "check")
 	if !bytes.Contains(check, []byte(`"auth":"client_token"`)) ||
+		!bytes.Contains(check, []byte(`"api_version":"v1"`)) ||
 		!bytes.Contains(check, []byte(`"reachable":true`)) {
 		t.Fatal(string(check))
 	}
