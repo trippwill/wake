@@ -163,24 +163,29 @@ func OpenInstalled(ctx context.Context, profile Profile, logger *slog.Logger) (*
 }
 
 func validateStorePaths(paths [storeCount]string, preview bool) error {
+	var parents [storeCount]os.FileInfo
+
 	for i, path := range paths {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			return ErrUnsafeStore
 		}
 
-		for _, other := range paths[:i] {
-			if overlapsStore(path, other) || overlapsStore(other, path) {
+		parent, err := os.Lstat(filepath.Dir(path))
+		if (!preview || !os.IsNotExist(err)) && (err != nil || !parent.IsDir() || !privateOwned(parent)) {
+			return ErrUnsafeStore
+		}
+
+		parents[i] = parent
+
+		for j, other := range paths[:i] {
+			candidate := path
+			if parent != nil && parents[j] != nil && os.SameFile(parent, parents[j]) {
+				candidate = filepath.Join(filepath.Dir(other), filepath.Base(path))
+			}
+
+			if overlapsStore(candidate, other) || overlapsStore(other, candidate) {
 				return ErrUnsafeStore
 			}
-		}
-
-		info, err := os.Lstat(filepath.Dir(path))
-		if preview && os.IsNotExist(err) {
-			continue
-		}
-
-		if err != nil || !info.IsDir() || !privateOwned(info) {
-			return ErrUnsafeStore
 		}
 	}
 

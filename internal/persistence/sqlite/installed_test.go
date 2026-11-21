@@ -93,6 +93,31 @@ func TestOpenInstalledResumesInterruptedPublication(t *testing.T) {
 	}
 }
 
+func TestOpenInstalledRefusesAliasedDestination(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "private", "stores")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(filepath.Dir(dir), alias); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := testProfile(filepath.Join(dir, "wake.db"))
+	profile.ConnectionsPath = filepath.Join(alias, "stores", "wake.db"+RestoreIntentSuffix)
+
+	if _, err := OpenInstalled(t.Context(), profile, nil); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("aliased initialization intent path was allowed", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("startup wrote a file before validating the destinations", entries, err)
+	}
+}
+
 func assertInstalledUpstream(t *testing.T, profile Profile) {
 	t.Helper()
 
