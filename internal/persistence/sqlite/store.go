@@ -150,11 +150,46 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, er
 	return openStore(ctx, profile, logger, releaseBaseline(), upgradeOptions{})
 }
 
-// OpenInstalled opens a complete matching installation without reconstructing
-// missing stores or rebinding an obsolete association.
+// OpenInstalled initializes a vacant profile or opens a complete matching
+// installation. Partial profiles require explicit recovery.
 func OpenInstalled(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
+	if err := ensureInstalled(ctx, profile, logger); err != nil {
+		return nil, err
+	}
+
 	profile.requireInstalled = true
+
 	return Open(ctx, profile, logger)
+}
+
+func validateStorePaths(paths [storeCount]string, preview bool) error {
+	var parents [storeCount]os.FileInfo
+
+	for i, path := range paths {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return ErrUnsafeStore
+		}
+
+		parent, err := os.Lstat(filepath.Dir(path))
+		if (!preview || !os.IsNotExist(err)) && (err != nil || !parent.IsDir() || !privateOwned(parent)) {
+			return ErrUnsafeStore
+		}
+
+		parents[i] = parent
+
+		for j, other := range paths[:i] {
+			candidate := path
+			if parent != nil && parents[j] != nil && os.SameFile(parent, parents[j]) {
+				candidate = filepath.Join(filepath.Dir(other), filepath.Base(path))
+			}
+
+			if overlapsStore(candidate, other) || overlapsStore(other, candidate) {
+				return ErrUnsafeStore
+			}
+		}
+	}
+
+	return nil
 }
 
 func openStore(
@@ -189,36 +224,12 @@ func openStore(
 	}()
 
 	paths := profile.paths()
-	for _, path := range paths {
-		dir := filepath.Dir(path)
-		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
-			return nil, ErrUnsafeStore
-		}
-
-		info, err := os.Lstat(dir)
-		if upgrade.preview && os.IsNotExist(err) {
-			continue
-		}
-
-		if err != nil || !info.IsDir() || !privateOwned(info) {
-			return nil, ErrUnsafeStore
-		}
+	if err := validateStorePaths(paths, upgrade.preview); err != nil {
+		return nil, err
 	}
 
 	if err := rejectPendingRestore(paths[0]); err != nil {
 		return nil, err
-	}
-
-	for i, path := range paths {
-		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return nil, ErrUnsafeStore
-		}
-
-		for _, other := range paths[:i] {
-			if overlapsStore(path, other) || overlapsStore(other, path) {
-				return nil, ErrUnsafeStore
-			}
-		}
 	}
 
 	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: baseline.rule}

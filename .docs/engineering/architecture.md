@@ -89,9 +89,13 @@ structure. Compact explanations expose applicable absence reasons and versioned 
 expectations alongside the existing selection and conflict facts.
 
 Local financial handlers and retained-data processing use the compiled provider
-interpretations. The daemon initializes provider and reference services when the
-optional stores attach. The upstream coordinator admits work under the grant and
-pacing rules. If the stores cannot attach or service initialization fails, the
+interpretations. On first start with vacant paths, the daemon prepares all three
+stores before publishing them. It can resume interrupted publication using the
+prepared files and their recorded identities. Other incomplete installations
+require explicit recovery of their upstream stores. The daemon initializes
+provider and reference services when the optional stores attach. The upstream
+coordinator admits work under the grant and pacing rules. If the stores cannot
+attach or service initialization fails, the
 daemon serves local financial handlers and processes retained evidence with the
 financial file and local authority. Source commands that require those services
 report upstream unavailability.

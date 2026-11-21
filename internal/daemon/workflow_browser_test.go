@@ -219,7 +219,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 		active := cfg
 		if localOnly {
-			options.openSources = nil
+			options.openSources = persistence.OpenFinancial
 			active.Admin.CurrencyRefresh = false
 		}
 
@@ -819,7 +819,9 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 	)
 	check(
 		chromedp.NavigateBack(),
+		chromedp.WaitReady(chromedp.CSS("#activity-price-source-0")),
 		newDocument(chromedp.Reload()),
+		chromedp.WaitReady(chromedp.CSS(`[data-grid-variant="appearances"] .tabulator-row`)),
 		chromedp.Poll[chromedp.Void](
 			`(()=>{
 				const selected=new URLSearchParams(location.search).get('selected');
@@ -1038,17 +1040,17 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		t.Fatal("debt correction lost draft or focus during preflight")
 	}
 
+	var conversionURL string
 	check(
 		newDocument(chromedp.Navigate(origin+"/activity")),
 		chromedp.WaitVisible(chromedp.CSS("#activity-rows")),
-		chromedp.Poll[chromedp.Void](
-			`document.querySelector('[data-grid-ready="true"]')!==null&&!document.querySelector('[data-grid]').hasAttribute('aria-busy')`,
+		testbrowser.Poll(
+			`Array.from(document.querySelectorAll('.tabulator-row a[href^="/activity/"]')).find(a=>a.textContent.includes('Convert '))?.href`,
+			&conversionURL,
 		),
-		newDocument(chromedp.Click(
-			chromedp.Search(
-				`//div[contains(@class,"tabulator-row") and contains(.,"Convert ")]//a[starts-with(@href,"/activity/")][1]`,
-			),
-		)),
+	)
+	navigate(chromedp.Navigate(conversionURL))
+	check(
 		chromedp.WaitVisible(chromedp.CSS(".wake-card dl")),
 		testbrowser.Evaluate(
 			`document.querySelector('h1').textContent==='Convert EUR to USD'&&document.body.textContent.includes('10.123456789 EUR')&&document.body.textContent.includes('Unknown USD')&&document.body.textContent.includes('-0.25 GBP')&&document.body.textContent.includes('Total not reported')&&document.body.textContent.includes('↳ ↳ regFINRATradingActivityFee')&&document.body.textContent.includes('-0.00100 GBP')`,

@@ -66,6 +66,15 @@ func testShellStartupAndJoinedShutdown(t *testing.T, options sourceOptions, corr
 
 		seedSavedCredential(t, cfg, false)
 		seedShellRecovery(t, profile)
+	} else if options.openSources == nil && !corrupt {
+		store, err := persistence.OpenFinancial(t.Context(), profile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	optional := []string{cfg.Storage.ConnectionsPath, cfg.Storage.SyncPath}

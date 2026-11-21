@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"errors"
@@ -15,6 +16,172 @@ import (
 	"testing"
 	"time"
 )
+
+func TestOpenInstalledInitializesVacantProfile(t *testing.T) {
+	ctx := t.Context()
+	dir := filepath.Join(t.TempDir(), "stores")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := testProfile(filepath.Join(dir, "wake.db"))
+
+	guard, err := lockStoreDirectory(profile.WarehousePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = OpenInstalled(ctx, profile, nil)
+	if closeErr := guard.Close(); closeErr != nil || !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("startup ignored another installation operation", err, closeErr)
+	}
+
+	interrupted, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := OpenInstalled(interrupted, profile, nil); !errors.Is(err, context.Canceled) {
+		t.Fatal("interrupted initialization", err)
+	}
+
+	paths := profile.paths()
+	if err := checkVacantStores(paths[:]); err != nil {
+		t.Fatal("interrupted initialization left installed files", err)
+	}
+
+	assertInstalledUpstream(t, profile)
+}
+
+func TestOpenInstalledResumesInterruptedPublication(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+
+	var paths [storeCount]string
+	for i, kind := range storeKinds {
+		dir := filepath.Join(root, kind)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		paths[i] = filepath.Join(dir, "wake.db")
+	}
+
+	profile := Profile{WarehousePath: paths[0], ConnectionsPath: paths[1], SyncPath: paths[2]}
+	intentPath := paths[0] + RestoreIntentSuffix
+
+	intent, err := prepareInitialization(ctx, profile, intentPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := renameNewFile(intent.Stores[0].Stage, paths[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("financial-only startup admitted a partially published set", err)
+	}
+
+	changed := profile
+	changed.SyncPath += ".other"
+
+	if _, err := OpenInstalled(ctx, changed, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("startup accepted an initialization plan for different paths", err)
+	}
+
+	if err := os.WriteFile(paths[1], []byte("unrelated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OpenInstalled(ctx, profile, nil); !errors.Is(err, ErrRestoreOccupied) {
+		t.Fatal("initialization accepted an occupied path", err)
+	}
+
+	if string(readRestoreFixture(t, paths[1])) != "unrelated" {
+		t.Fatal("initialization modified the occupied path")
+	}
+
+	if err := os.Remove(paths[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	assertInstalledUpstream(t, profile)
+
+	if _, err := os.Stat(intentPath); !os.IsNotExist(err) {
+		t.Fatal("initialization intent survived successful publication", err)
+	}
+}
+
+func TestOpenInstalledRefusesAliasedDestination(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "private", "stores")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(filepath.Dir(dir), alias); err != nil {
+		t.Fatal(err)
+	}
+
+	profile := testProfile(filepath.Join(dir, "wake.db"))
+	profile.ConnectionsPath = filepath.Join(alias, "stores", "wake.db"+RestoreIntentSuffix)
+
+	if _, err := OpenInstalled(t.Context(), profile, nil); !errors.Is(err, ErrUnsafeStore) {
+		t.Fatal("aliased initialization intent path was allowed", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("startup wrote a file before validating the destinations", entries, err)
+	}
+}
+
+func TestOpenInstalledRefusesOtherMaintenance(t *testing.T) {
+	for _, test := range []struct {
+		name, suffix, contents string
+		want                   error
+	}{
+		{"upgrade", UpgradeIntentSuffix, `{"plan":{"id":"pending"}}`, ErrUpgradeRecovery},
+		{"malformed intent", RestoreIntentSuffix, "{", ErrRestorePending},
+		{"replacement intent", RestoreIntentSuffix, `{"format":"` + initializeIntentFormat + `","replace":true}`, ErrRestorePending},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			profile := vacantRecoveryProfile(t)
+			if err := os.WriteFile(profile.WarehousePath+test.suffix, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := OpenInstalled(t.Context(), profile, nil); !errors.Is(err, test.want) {
+				t.Fatal("startup accepted an invalid or unrelated maintenance intent", err)
+			}
+
+			paths := profile.paths()
+			if err := checkVacantStores(paths[:]); err != nil {
+				t.Fatal("startup changed the selected stores", err)
+			}
+		})
+	}
+}
+
+func assertInstalledUpstream(t *testing.T, profile Profile) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	store, err := OpenInstalled(ctx, profile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revision, err := store.UpstreamRevision(ctx)
+	if err != nil || revision == "" {
+		t.Error("fresh synchronization profile is unavailable", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestOpenInstalledRejectsSingleWitnessRollback(t *testing.T) {
 	ctx := t.Context()

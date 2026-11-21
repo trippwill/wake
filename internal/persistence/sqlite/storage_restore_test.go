@@ -402,6 +402,10 @@ func TestReplaceInstallationResumesAndPreservesOriginals(t *testing.T) {
 		t.Fatal("financial startup accepted partially replaced files", err)
 	}
 
+	if _, err := OpenInstalled(ctx, target, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("installed startup accepted an explicit restore intent", err)
+	}
+
 	if _, err := Restore(ctx, target, archivePath, true); !errors.Is(err, ErrRestorePending) {
 		t.Fatal("retry accepted a different replacement choice", err)
 	}
