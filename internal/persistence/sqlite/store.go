@@ -150,8 +150,8 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, er
 	return openStore(ctx, profile, logger, releaseBaseline(), upgradeOptions{})
 }
 
-// OpenInstalled opens a complete matching installation without reconstructing
-// missing stores or rebinding an obsolete association.
+// OpenInstalled initializes a vacant profile or opens a complete matching
+// installation. Partial profiles require explicit recovery.
 func OpenInstalled(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
 	profile.requireInstalled = true
 	return Open(ctx, profile, logger)
@@ -250,10 +250,6 @@ func openStore(
 
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
-			if profile.requireInstalled {
-				return nil, ErrAssociation
-			}
-
 			sidecars, e := storeSidecars(path)
 			if upgrade.preview && os.IsNotExist(e) {
 				continue
@@ -359,7 +355,8 @@ func openStore(
 
 	stage, storeKind = "upgrade_plan", "profile"
 
-	if profile.requireInstalled {
+	vacant := s.owners == [storeCount]*os.File{} && intent.Plan.ID == ""
+	if profile.requireInstalled && !vacant {
 		if !present[0] || !present[1] || !present[2] || intent.Plan.ID != "" {
 			return nil, ErrAssociation
 		}

@@ -16,6 +16,28 @@ import (
 	"time"
 )
 
+func TestOpenInstalledInitializesVacantProfile(t *testing.T) {
+	ctx := t.Context()
+	dir := filepath.Join(t.TempDir(), "stores")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := OpenInstalled(ctx, testProfile(filepath.Join(dir, "wake.db")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revision, err := store.UpstreamRevision(ctx)
+	if err != nil || revision == "" {
+		t.Error("fresh synchronization profile is unavailable", err)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenInstalledRejectsSingleWitnessRollback(t *testing.T) {
 	ctx := t.Context()
 

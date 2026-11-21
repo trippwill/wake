@@ -79,6 +79,9 @@ func TestAppliance(t *testing.T) {
 	originalConfig, originalKey := readFile(t, config), readFile(t, key)
 	require(t, len(originalKey) == 32, "missing generated credential key")
 	require(t, fileInfo(t, key).Mode().Perm() == 0o400, "incorrect key permissions")
+	for _, name := range []string{"connections.db", "sync.db"} {
+		require(t, fileInfo(t, filepath.Join(app.data, "state", name)).Size() > 0, "missing initialized "+name)
+	}
 
 	for _, name := range []string{"config", "financial", "state", "backups"} {
 		info := fileInfo(t, filepath.Join(app.data, name))

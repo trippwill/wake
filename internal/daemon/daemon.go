@@ -559,7 +559,7 @@ func RunSynthetic(
 	localOnly bool,
 	ready func(endpoint string) error,
 ) error {
-	var options sourceOptions
+	options := sourceOptions{openSources: persistence.OpenFinancial}
 	if !localOnly {
 		options = sourceOptions{
 			openSources:     persistence.Open,

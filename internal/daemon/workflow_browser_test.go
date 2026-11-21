@@ -219,7 +219,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 		active := cfg
 		if localOnly {
-			options.openSources = nil
+			options.openSources = persistence.OpenFinancial
 			active.Admin.CurrencyRefresh = false
 		}
 

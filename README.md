@@ -10,9 +10,8 @@ MPL-2.0 ([LICENSE](LICENSE)).
 Each instance serves one user. The browser and financial API listen on IPv4
 loopback. Use Wake on the same machine or over SSH forwarding on a private LAN.
 
-The installation examples pin v0.1.0-rc.1. This release candidate serves and
-processes retained history locally and sets the first
-[compatibility baseline](.docs/product/coverage.md#compatibility).
+The installation examples pin v0.1.0-rc.2. This release candidate preserves the
+[compatibility baseline](.docs/product/coverage.md#compatibility) from RC1.
 Inspect activity, instruments, and available reported positions in the admin
 console. Wake retains original reports, exact financial values and conflicts.
 
@@ -28,7 +27,7 @@ Once Wake starts, set the browser password in the running container.
 To install the release candidate with Go, run:
 
 ```sh
-GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0-rc.1
+GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0-rc.2
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -41,7 +40,7 @@ case "$(uname -m)" in
   aarch64) arch=arm64 ;;
   *) echo "Unsupported architecture" >&2; exit 1 ;;
 esac
-release=https://github.com/trippwill/wake/releases/download/v0.1.0-rc.1
+release=https://github.com/trippwill/wake/releases/download/v0.1.0-rc.2
 curl -fLO "$release/wake-linux-$arch.tar.gz" &&
   curl -fLO "$release/SHA256SUMS" &&
   sha256sum --check --ignore-missing SHA256SUMS &&
