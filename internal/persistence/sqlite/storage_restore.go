@@ -505,6 +505,10 @@ func rejectPendingRestore(warehouse string) error {
 }
 
 func readRestoreIntent(path string) (*restoreIntent, error) {
+	return readPublicationIntent(path, restoreIntentFormat)
+}
+
+func readPublicationIntent(path, format string) (*restoreIntent, error) {
 	file, err := openBackup(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -519,13 +523,16 @@ func readRestoreIntent(path string) (*restoreIntent, error) {
 	var intent restoreIntent
 
 	data, err := io.ReadAll(io.LimitReader(file, 1<<20))
-	if err != nil || json.Unmarshal(data, &intent) != nil || len(intent.ArchiveDigest) != sha256.Size*2 {
+	if err != nil || json.Unmarshal(data, &intent) != nil {
 		return nil, ErrRestorePending
 	}
 
-	// A retry uses the prepared bytes without revalidating the source archive.
-	if intent.Format != restoreIntentFormat {
+	if intent.Format != format {
 		return nil, errors.Join(ErrRestorePending, ErrUnsupportedSchema)
+	}
+
+	if format == restoreIntentFormat && len(intent.ArchiveDigest) != sha256.Size*2 {
+		return nil, ErrRestorePending
 	}
 
 	return &intent, nil
@@ -538,7 +545,9 @@ func publishRestoreIntent(path string, intent restoreIntent) (bool, error) {
 	}
 	defer func() { _ = os.Remove(file.Name()) }()
 
-	intent.Format = restoreIntentFormat
+	if intent.Format == "" {
+		intent.Format = restoreIntentFormat
+	}
 
 	err = json.NewEncoder(file).Encode(intent)
 	if err = errors.Join(err, file.Sync(), file.Close()); err != nil {

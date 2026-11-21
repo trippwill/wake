@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"errors"
@@ -23,7 +24,81 @@ func TestOpenInstalledInitializesVacantProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := OpenInstalled(ctx, testProfile(filepath.Join(dir, "wake.db")), nil)
+	profile := testProfile(filepath.Join(dir, "wake.db"))
+	interrupted, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := OpenInstalled(interrupted, profile, nil); !errors.Is(err, context.Canceled) {
+		t.Fatal("interrupted initialization", err)
+	}
+
+	paths := profile.paths()
+	if err := checkVacantStores(paths[:]); err != nil {
+		t.Fatal("interrupted initialization left installed files", err)
+	}
+
+	assertInstalledUpstream(t, profile)
+}
+
+func TestOpenInstalledResumesInterruptedPublication(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+
+	var paths [storeCount]string
+	for i, kind := range storeKinds {
+		dir := filepath.Join(root, kind)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+
+		paths[i] = filepath.Join(dir, "wake.db")
+	}
+
+	profile := Profile{WarehousePath: paths[0], ConnectionsPath: paths[1], SyncPath: paths[2]}
+	intentPath := paths[0] + RestoreIntentSuffix
+
+	intent, err := prepareInitialization(ctx, profile, intentPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := renameNewFile(intent.Stores[0].Stage, paths[0]); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OpenFinancial(ctx, profile, nil); !errors.Is(err, ErrRestorePending) {
+		t.Fatal("financial-only startup admitted a partially published set", err)
+	}
+
+	if err := os.WriteFile(paths[1], []byte("unrelated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OpenInstalled(ctx, profile, nil); !errors.Is(err, ErrRestoreOccupied) {
+		t.Fatal("initialization accepted an occupied path", err)
+	}
+
+	if string(readRestoreFixture(t, paths[1])) != "unrelated" {
+		t.Fatal("initialization modified the occupied path")
+	}
+
+	if err := os.Remove(paths[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	assertInstalledUpstream(t, profile)
+
+	if _, err := os.Stat(intentPath); !os.IsNotExist(err) {
+		t.Fatal("initialization intent survived successful publication", err)
+	}
+}
+
+func assertInstalledUpstream(t *testing.T, profile Profile) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	store, err := OpenInstalled(ctx, profile, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

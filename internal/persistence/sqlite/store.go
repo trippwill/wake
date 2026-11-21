@@ -153,8 +153,38 @@ func Open(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, er
 // OpenInstalled initializes a vacant profile or opens a complete matching
 // installation. Partial profiles require explicit recovery.
 func OpenInstalled(ctx context.Context, profile Profile, logger *slog.Logger) (*Store, error) {
+	if err := ensureInstalled(ctx, profile, logger); err != nil {
+		return nil, err
+	}
+
 	profile.requireInstalled = true
+
 	return Open(ctx, profile, logger)
+}
+
+func validateStorePaths(paths [storeCount]string, preview bool) error {
+	for i, path := range paths {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return ErrUnsafeStore
+		}
+
+		for _, other := range paths[:i] {
+			if overlapsStore(path, other) || overlapsStore(other, path) {
+				return ErrUnsafeStore
+			}
+		}
+
+		info, err := os.Lstat(filepath.Dir(path))
+		if preview && os.IsNotExist(err) {
+			continue
+		}
+
+		if err != nil || !info.IsDir() || !privateOwned(info) {
+			return ErrUnsafeStore
+		}
+	}
+
+	return nil
 }
 
 func openStore(
@@ -189,36 +219,12 @@ func openStore(
 	}()
 
 	paths := profile.paths()
-	for _, path := range paths {
-		dir := filepath.Dir(path)
-		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
-			return nil, ErrUnsafeStore
-		}
-
-		info, err := os.Lstat(dir)
-		if upgrade.preview && os.IsNotExist(err) {
-			continue
-		}
-
-		if err != nil || !info.IsDir() || !privateOwned(info) {
-			return nil, ErrUnsafeStore
-		}
+	if err := validateStorePaths(paths, upgrade.preview); err != nil {
+		return nil, err
 	}
 
 	if err := rejectPendingRestore(paths[0]); err != nil {
 		return nil, err
-	}
-
-	for i, path := range paths {
-		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return nil, ErrUnsafeStore
-		}
-
-		for _, other := range paths[:i] {
-			if overlapsStore(path, other) || overlapsStore(other, path) {
-				return nil, ErrUnsafeStore
-			}
-		}
 	}
 
 	s := &Store{logger: logger, registrations: slices.Clone(profile.Registrations), historyRule: baseline.rule}
@@ -250,6 +256,10 @@ func openStore(
 
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
+			if profile.requireInstalled {
+				return nil, ErrAssociation
+			}
+
 			sidecars, e := storeSidecars(path)
 			if upgrade.preview && os.IsNotExist(e) {
 				continue
@@ -355,8 +365,7 @@ func openStore(
 
 	stage, storeKind = "upgrade_plan", "profile"
 
-	vacant := s.owners == [storeCount]*os.File{} && intent.Plan.ID == ""
-	if profile.requireInstalled && !vacant {
+	if profile.requireInstalled {
 		if !present[0] || !present[1] || !present[2] || intent.Plan.ID != "" {
 			return nil, ErrAssociation
 		}
