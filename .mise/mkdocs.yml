@@ -1,0 +1,46 @@
+site_name: Wake
+site_description: Documentation for using and operating Wake.
+site_url: https://trippwill.github.io/wake/
+repo_url: https://github.com/trippwill/wake
+edit_uri: blob/main/docs/
+docs_dir: ../docs
+site_dir: ../.cache/docs-site
+strict: true
+
+theme:
+  name: readthedocs
+  custom_dir: mkdocs
+  highlightjs: false
+  logo: assets/wake-logo-reversed.svg
+
+plugins:
+  - search
+
+hooks:
+  - mkdocs/brand.py
+
+extra_css:
+  - assets/wake.css
+
+extra_javascript:
+  - assets/navigation.js
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    absolute_links: warn
+    anchors: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Get started: get-started.md
+  - Connect sources:
+      - IBKR Flex: sources/ibkr-flex.md
+      - SnapTrade: sources/snaptrade.md
+  - Explore history: history.md
+  - Operate Wake:
+      - Native installation: deployment/native.md
+      - Podman appliance: deployment/wake-appliance.md
+  - Connect an app: connect-an-app.md

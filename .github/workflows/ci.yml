@@ -67,6 +67,8 @@ jobs:
           install_args: github:mrueg/goldmark-lint aqua:lycheeverse/lychee
           cache: ${{ inputs.cold_cache != true }}
       - run: "mise run --skip-tools docs:check ::: test:ci"
+      - if: ${{ !inputs.release }}
+        run: mise run docs:site:build
 
   checks:
     needs: [changes]

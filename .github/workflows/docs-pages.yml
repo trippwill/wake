@@ -1,0 +1,55 @@
+name: Publish documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - .mise/mkdocs.yml
+      - .mise/mkdocs/**
+      - .mise/config.toml
+      - .mise/mise.lock
+      - .github/workflows/docs-pages.yml
+      - internal/transport/admin/assets/brand/favicon.ico
+      - internal/transport/admin/assets/brand/wake-logo-reversed.svg
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'trippwill/wake' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MISE_NO_HOOKS: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - run: mise run docs:site:build
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .cache/docs-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

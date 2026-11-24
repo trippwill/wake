@@ -30,7 +30,7 @@ to check all Go packages with the existing development build settings.
 Run `mise run release:package` on each supported Linux architecture to package
 the native executable. The tag workflow publishes `wake-linux-amd64.tar.gz`,
 `wake-linux-arm64.tar.gz` and `SHA256SUMS` as GitHub Release assets. The
-[native install instructions](../../README.md#install-and-run-the-native-command)
+[native install instructions](../../docs/get-started.md#install-the-native-command)
 use those filenames.
 
 Keep generated Go sources and embedded assets in the module. To verify a
@@ -357,12 +357,15 @@ Document decisions and rationale that source alone cannot explain. Do not mainta
 parallel catalogs of packages, schemas, CLI flags, API fields, rule implementations
 or test results. CLI help, public contracts, source and tests own those details.
 
-Keep everyday usage help and direct executable instructions in the root README.
-Use `docs/deployment/` for operator deployment and operation instructions, with
-a short entry in the README. The README describes selected v0.1.0 behavior in the
-present tense, without deprecated workflows or future speculation. Keep commands
-grounded in help and source and use actual screen labels. Coverage and limitations
+Publish user workflows from `docs/`. Keep a short executable quick start and
+links to the docs in the root README. Keep commands grounded in the documented
+release's help and source and use its screen labels. Coverage and limitations
 belong in the coverage document. Remove obsolete documents and repair inbound links.
+
+Run `mise run docs:site:serve` for a local preview and `mise run docs:site:build`
+for the strict site build. The Pages workflow deploys the generated site after
+changes land on `main`. Update the release label, installation examples and
+release-specific links together when the user docs move to a different release.
 
 Run `mise run docs:check` for Markdown style and local links, including anchors. Checks include
 Git-tracked and unignored new Markdown files, including hidden directories and fixture

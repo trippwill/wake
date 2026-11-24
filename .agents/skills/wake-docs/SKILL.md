@@ -31,10 +31,15 @@ purpose and content rules here; do not create another home for existing guidance
 ### `docs/deployment/` operator guides
 
 Help operators install, configure, access, update and recover a Wake deployment.
-Keep these guides visible at the repository root through `docs/` and link to
-them from the README. The [appliance guide](../../../docs/deployment/wake-appliance.md)
-owns Podman appliance instructions. Keep packaging and release engineering in
-`.docs/engineering/`.
+The [appliance guide](../../../docs/deployment/wake-appliance.md) owns Podman
+instructions and the [native guide](../../../docs/deployment/native.md) owns
+native operation. Keep packaging and release engineering in `.docs/engineering/`.
+
+### `docs/sources/` source setup
+
+Help users prepare access, connect and confirm an account, check available data,
+and repair source credentials. Keep detailed report interpretation in
+`.docs/providers/`.
 
 ### `.docs/product/`: what Wake is for and what its financial concepts mean
 
@@ -56,17 +61,14 @@ narrate the codebase or maintain prose
 copies of packages, signatures, schemas, configuration options or test results.
 Source, tests, tool configuration, CLI help and OpenAPI own those details.
 
-### `.docs/providers/`: how to configure and understand a particular source
+### `.docs/providers/`: how to interpret a particular source
 
-Provide practical source-specific access/query setup, input meaning, reporting
-limitations, pacing and troubleshooting that help someone use or interpret that
-source. Keep provider-specific interpretation choices here when they require
-explanation beyond source code; use primary sources for external factual claims.
+Explain input meaning, reporting limitations, pacing and provider-specific
+interpretation choices that require context beyond source code. Use primary
+sources for external factual claims.
 
-Link to shared financial policy and the README workflow rather than redefining
-them. Do not put core architecture, generic extension contracts or speculative
-integrations here. Avoid copied vendor manuals and payload/field catalogs that
-source code or upstream documentation already supplies.
+Link to shared financial policy and public source setup. Keep vendor manuals
+and payload/field catalogs with their upstream sources.
 
 ### `.docs/research/`: what external research and experiments have taught us
 
@@ -90,13 +92,10 @@ version or environment.
 ## Root documents
 
 `.docs/README.md` is navigation and document ownership, not another specification.
-The repository `README.md` is a concise, descriptive setup and usage helper for
-selected v0.1.0 behavior. Write it in the present tense, without future speculation
-or deprecated workflows; it is not authoritative for requirements, acceptance or
-implementation status. Keep commands grounded in help/source and avoid invented
-screen labels. Keep direct executable instructions here and link to the operator
-guides in `docs/deployment/` for deployment details. Source-specific setup detail
-may link to `.docs/providers/`.
+The repository `README.md` provides an executable quick start and links to the
+[user docs](../../../docs/index.md). Publish detailed user workflows under
+`docs/` and ground commands and screen labels in the documented release. Build
+the site with `mise run docs:site:build` to validate its links and anchors.
 
 `.docs/product/coverage.md` owns supported financial coverage, compatibility limits
 and the boundaries required to verify them. Keep delivery chronology and completed

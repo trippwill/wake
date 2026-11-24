@@ -4,7 +4,7 @@ Documentation explains intent, decisions and workflows. Source, tests, CLI help
 and public contracts define exact implementation details. Folder purposes live
 in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-and-rules).
 
-- [Quick guide](../README.md#using-wake-v010) — setup and use.
+- [User docs](../docs/index.md) — install, connect a source, review history, and operate Wake.
 - [Current coverage](product/coverage.md) — supported behavior and limitations.
 - [Product brief](product/brief.md) — purpose, principles and boundaries.
 - [Financial language](product/domain.md) — financial meanings and policy.
@@ -13,8 +13,8 @@ in the [Wake docs skill](../.agents/skills/wake-docs/SKILL.md#folder-purposes-an
 - [Visual design](../DESIGN.md) — portable visual standard.
 - [Repository instructions](../AGENTS.md) — work and delivery constraints.
 
-- [IBKR Flex](providers/ibkr-flex.md) — access and source interpretation.
-- [SnapTrade Personal](providers/snaptrade.md) — account setup, cached trade history and Fidelity positions.
+- [IBKR Flex interpretation](providers/ibkr-flex.md) — report semantics and processing.
+- [SnapTrade Personal interpretation](providers/snaptrade.md) — cached trade history and Fidelity positions.
 - [Research](research/README.md) — optional external findings and experiments.
 
 - [Financial API contract](../api/openapi/v1.yaml) — canonical reads and changes.

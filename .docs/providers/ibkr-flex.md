@@ -1,23 +1,13 @@
-# Set up IBKR Flex
+# IBKR Flex report interpretation
 
-The current pre-release daemon serves retained history locally. Live synchronization
-is unavailable in this build.
+For query setup, account confirmation and access repair, see the
+[IBKR Flex user guide](../../docs/sources/ibkr-flex.md).
 
 The selected v0.1.0 coverage uses Trade Confirmation Flex reports for one IBKR account per connection,
 with an optional Activity Flex query for transfers, non-trade cash postings and
 reported realized P&L on individual activities, and reported open positions.
 
 ## Prepare access and the query
-
-In IBKR reporting, create a saved Trade Confirmation Flex query with XML output
-and enable Flex Web Service access. Keep its saved Query ID and access token for
-connection setup. Keep the token private and renew it through IBKR when required.
-
-Include the available account information and execution/booked-trade details:
-instrument identifiers and terms, source account and trade references, quantities,
-buy/sell, prices, currencies, dates and times, commissions and taxes. Include FIGI,
-ISIN and CUSIP where available, alongside IBKR references. Missing identifiers
-remain visible for resolution or review.
 
 Wake accepts equity, ETF and option exchange executions, reported option outcomes and independently
 identified stock bookings and debt executions and reported FX conversions. Order summaries and
@@ -143,8 +133,8 @@ they do not establish live holdings, market values or unrealized P&L.
 
 The [current coverage](../product/coverage.md) defines
 connection creation, account discovery, operator confirmation and automatic
-synchronization; the
-[quick guide](../../README.md#using-wake-v010) describes current setup and use.
+synchronization. See the [IBKR Flex user guide](../../docs/sources/ibkr-flex.md)
+for the operator workflow.
 
 Saved access tokens require encryption. Do not put a token in a display name or
 diagnostic message. Confirmation reports update during the day with an unspecified
@@ -161,8 +151,6 @@ Returned bounds can differ from requested bounds; inspect both in synchronizatio
 progress. Unavailable ranges remain pending while recent work continues.
 A long routine polling interval leaves earlier unavailable-range retries eligible.
 
-Configure each recurring interval in the connection's **Access** view. See
-[retained history](../../README.md#inspect-retained-history).
 Generation polling, pacing and transient retries resume automatically. Invalid
 access or query configuration pauses the affected work. Renew the token or repair
 the saved query configuration, then use the connection's repair/retry controls.

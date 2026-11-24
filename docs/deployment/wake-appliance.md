@@ -22,7 +22,7 @@ The image includes Wake and its runtime dependencies; no checkout or host Wake
 executable is needed.
 
 These examples install v0.1.0-rc.2, which preserves the RC1
-[compatibility baseline](../../.docs/product/coverage.md#compatibility).
+[compatibility baseline](https://github.com/trippwill/wake/blob/v0.1.0-rc.2/.docs/product/coverage.md#compatibility).
 The default installation keeps all persistent files in `~/.local/share/wake`.
 For another host directory, complete [Custom storage](#custom-storage) first and
 continue at **Install and start Wake** below. For the default location, create its directory.
@@ -49,7 +49,7 @@ password-required page. Enter and confirm the password in the terminal, then
 open <http://wake.localhost:8787>. To reset a forgotten password while Wake runs, use
 the same `podman exec -it wake wake access set password` command. Existing browser
 sessions are signed out; API client grants are preserved.
-If needed, [set an explicit browser origin](../../README.md#choose-the-browser-origin)
+If needed, [set an explicit browser origin](native.md#choose-the-browser-origin)
 in the appliance TOML and restart Wake.
 
 | Under the chosen host directory | Container location | Contents |
@@ -62,8 +62,9 @@ in the appliance TOML and restart Wake.
 Runtime files live in an ephemeral `/run/wake` tmpfs. The image filesystem is
 read-only. The image sets `WAKE_CONFIG=/data/config/config.toml`, so commands
 inside the container use the same installation automatically. Subsequent starts
-use the saved configuration and key. The appliance serves retained history with
-the local processing capabilities described in [current coverage](../../.docs/product/coverage.md).
+use the saved configuration and key. The appliance synchronizes
+confirmed accounts and serves retained history locally. After signing in, follow
+[Connect your first account](../get-started.md#connect-your-first-account).
 
 ## Optional user lingering
 
@@ -148,10 +149,10 @@ ssh -N wake
 Keep that SSH connection running while using Wake; Ctrl+C closes both forwards.
 Open <http://wake.localhost:8787> for the browser and use
 <http://127.0.0.1:8788> as the financial API endpoint. Enroll an API token as
-described in the [CLI guide](../../README.md#read-financial-data-from-the-cli).
+described in the [CLI guide](../connect-an-app.md#create-a-client-token).
 If you change the client-side browser port, set the matching origin under
 `[admin]` on the Wake host and restart Wake. See
-[Choose the browser origin](../../README.md#choose-the-browser-origin).
+[Choose the browser origin](native.md#choose-the-browser-origin).
 
 ### Start the tunnel automatically
 
@@ -159,10 +160,9 @@ After verifying the manual connection, press Ctrl+C to free both ports. The serv
 needs SSH credentials available without a terminal prompt, including access to
 your SSH agent if the key requires one.
 
-On the client, install the [tunnel service](../../.container/wake-tunnel.service) from
-the release URL and enable it. The service reads the `Host wake` entry from
-`~/.ssh/config`, the only file you need to edit. For an untagged build, replace
-`v0.1.0-rc.2` in the URL with the full commit SHA.
+On the client, download the tunnel service from the release and enable it.
+The service reads the `Host wake` entry from `~/.ssh/config`. For an untagged
+build, replace `v0.1.0-rc.2` in the URL with the full commit SHA.
 
 ```sh
 mkdir -p ~/.config/systemd/user

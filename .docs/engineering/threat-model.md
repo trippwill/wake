@@ -57,7 +57,7 @@ hostname. Wake defaults to `wake.localhost` for the browser. Reserve it for
 Wake. This separates the cookie from other local apps opened at
 `localhost` or `127.0.0.1` and scopes WebAuthn enrollment to Wake's hostname.
 Services browsed at other ports on `wake.localhost` still share its cookie scope.
-See [Choose the browser origin](../../README.md#choose-the-browser-origin).
+See [Choose the browser origin](../../docs/deployment/native.md#choose-the-browser-origin).
 
 Use separate client token files and revoke a lost token. Closing an SSH connection drops its forwarded
 connections. Remove SSH access and close existing SSH sessions to revoke

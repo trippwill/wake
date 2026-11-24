@@ -1,0 +1,17 @@
+{# SPDX-FileCopyrightText: 2026 trippwill #}
+{# SPDX-License-Identifier: MPL-2.0 #}
+{% extends "base.html" %}
+
+{% block site_name %}
+  <a href="{{ nav.homepage.url | url }}">
+    <img src="{{ config.theme.logo | url }}" class="logo" alt="Wake" />
+  </a>
+{% endblock %}
+
+{% block mobile_nav %}
+  <button type="button" aria-label="Toggle navigation" aria-expanded="false"
+          aria-controls="wake-docs-navigation" class="wake-menu-button">
+    <span class="fa fa-bars" aria-hidden="true"></span>
+  </button>
+  <a href="{{ nav.homepage.url | url }}">{{ config.site_name }}</a>
+{% endblock %}

@@ -1,30 +1,7 @@
-# SnapTrade Personal
+# SnapTrade Personal report interpretation
 
-The current pre-release daemon serves retained history locally. Live synchronization
-is unavailable in this build.
-
-Wake discovers existing Fidelity US and Interactive Brokers investment accounts
-in SnapTrade Personal. Wake reads cached purchases and sales for both brokers
-and reported positions for Fidelity US. Link or repair your
-brokerage in the SnapTrade dashboard. Use a different real account on each Wake
-connection, including direct IBKR Flex connections. See [SnapTrade Personal
-setup](https://docs.snaptrade.com/docs/getting-started#personal-quickstart).
-
-## Connect and confirm
-
-1. Create a Personal API key in SnapTrade and copy its client ID and consumer key.
-2. In Wake, open **Connections → Add source connection**, select **SnapTrade
-   Personal**, and save a name, the client ID, and the consumer key. Wake stores
-   the consumer key encrypted.
-3. Open the connection’s **Status**, select **Confirm account** for the desired
-   candidate, and confirm its details. Leave the account currency empty if it is
-   unknown. Confirmation grants automatic acquisition for that account.
-
-Use **Access** on the connection to replace the consumer key. If Wake reports
-that the upstream account is unavailable, check that the original brokerage
-connection is active in SnapTrade and retry after repairing it. An account with
-changed source identity requires a new connection and confirmation. Keep existing
-financial history when repairing credentials. See [storage recovery](../product/coverage.md#backup-and-recovery).
+For brokerage coverage, account confirmation and access repair, see the
+[SnapTrade Personal user guide](../../docs/sources/snaptrade.md).
 
 ## Understand the history
 

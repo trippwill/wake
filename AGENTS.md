@@ -12,12 +12,10 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
   Source and tests own package layouts, schemas, signatures and exact behavior.
 - Use [DESIGN.md](DESIGN.md) as the portable visual-design standard and
   [development](.docs/engineering/development.md) for tools and check selection.
-- The [README](README.md#using-wake-v010) is a descriptive quick helper for
-  v0.1.0 use, not an authoritative specification. Keep it in the present tense,
-  within selected release scope, without deprecated workflows or future speculation.
-  Keep direct executable instructions in the README and link to the
-  [appliance guide](docs/deployment/wake-appliance.md) for deployment and operation.
-  [IBKR setup](.docs/providers/ibkr-flex.md) provides source setup help.
+- Keep a short executable quick start in the [README](README.md#using-wake-v010)
+  and put detailed user workflows in the [user docs](docs/index.md). Ground
+  the guides in the release they document. The [appliance guide](docs/deployment/wake-appliance.md)
+  covers Podman operation, and [IBKR setup](docs/sources/ibkr-flex.md) covers source access.
   CLI help and published contracts own exact public interfaces.
 - Use [$wake-docs](.agents/skills/wake-docs/SKILL.md) for substantive documentation
   changes. The [index](.docs/README.md) assigns document ownership. Do not recreate

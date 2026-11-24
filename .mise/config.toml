@@ -167,6 +167,18 @@ run = "gofmt -w testdata/external-provider/*.go testdata/provider-integration/*.
 description = "Check Markdown style and local links"
 depends = ["docs:lint", "docs:links", "test:docs"]
 
+[tasks.'docs:site:build']
+description = "Build and validate the public Wake documentation"
+tools = { "pipx:mkdocs" = "1.6.1" }
+env = { PYTHONDONTWRITEBYTECODE = "1" }
+run = "mkdocs build --strict --config-file .mise/mkdocs.yml"
+
+[tasks.'docs:site:serve']
+description = "Preview the public Wake documentation at http://127.0.0.1:8000/wake/"
+tools = { "pipx:mkdocs" = "1.6.1" }
+env = { PYTHONDONTWRITEBYTECODE = "1" }
+run = "mkdocs serve --strict --config-file .mise/mkdocs.yml"
+
 [tasks.'build:wake-dev']
 description = "Build the synthetic environment and independent-client runner"
 run = "go build -buildvcs=true -o .cache/wake-dev ./cmd/wake-dev"
