@@ -112,7 +112,7 @@ templ ExecutionPage(d application.ExecutionDetail, fields []application.Publishe
 					if basis := tradePriceBasis(trade.Instrument, terms.QuotationBasis(), d.Context.AccountProvider); basis != "" {
 						<dt>{ "Price " + basis }</dt>
 					} else {
-						<dt>Reported price</dt>
+						<dt>Price</dt>
 					}
 					@AcceptedPrice(trade.Price, d.Context)
 				</div>

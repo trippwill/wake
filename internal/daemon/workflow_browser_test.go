@@ -811,6 +811,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 
 	check(
 		chromedp.NavigateBack(),
+		chromedp.WaitReady(chromedp.CSS("#activity-price-source-0")),
 		chromedp.Poll[chromedp.Void](`document.activeElement.id==='activity-price-source-0'`),
 		chromedp.WaitVisible(chromedp.CSS(`[data-grid-variant="appearances"] .tabulator-row`)),
 	)
@@ -998,7 +999,7 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		)),
 		chromedp.WaitVisible(chromedp.CSS(".wake-card dl")),
 		testbrowser.Evaluate(
-			`[...document.querySelectorAll('main dt')].some(label=>label.textContent==='Face amount')&&document.body.textContent.includes('-12.3456789 USD')&&document.body.textContent.includes('Reported price')&&document.body.textContent.includes('Trade net cash')&&!document.body.textContent.includes('quotation basis')&&document.body.textContent.includes('Coupon rate (reported)')`,
+			`[...document.querySelectorAll('main dt')].some(label=>label.textContent==='Face amount')&&document.body.textContent.includes('-12.3456789 USD')&&document.querySelector('#activity-price').previousElementSibling.textContent==='Price'&&document.body.textContent.includes('Trade net cash')&&!document.body.textContent.includes('quotation basis')&&document.body.textContent.includes('Coupon rate (reported)')`,
 			&ok,
 		),
 	)
@@ -1487,11 +1488,32 @@ func TestBrowserAccountWorkflow(t *testing.T) {
 		chromedp.Poll[chromedp.Void](`document.body.textContent.includes('21.12345678900001')`),
 	)
 	navigate(chromedp.Click(chromedp.CSS("[data-return]")))
-	check(chromedp.WaitVisible(chromedp.CSS("#activity-price-source-0")))
+	check(
+		chromedp.WaitVisible(chromedp.CSS("#activity-price-source-0")),
+		chromedp.Poll[chromedp.Void](
+			`(() => {
+				const price = document.querySelector('#activity-price');
+				return price.previousElementSibling.textContent === 'Price per share' &&
+					price.textContent.includes('21.12345678900001 USD') &&
+					price.textContent.includes('Operator correction') &&
+					price.querySelector('a').textContent === 'View reported price';
+			})()`,
+		),
+	)
 	navigate(chromedp.Click(chromedp.CSS("#activity-price-source-0")))
 	check(
 		chromedp.Poll[chromedp.Void](
-			`(()=>{const raw=document.querySelector('[aria-label="Selected source row"]');return raw.textContent.includes('19.12345678900001')&&document.querySelector('[data-source-focus]').textContent.includes('19.12345678900001 USD')&&document.querySelector('.wake-source-pair aside').textContent.includes('21.12345678900001 USD')&&document.querySelector('.wake-source-pair aside').textContent.includes('Price set by operator correction')})()`,
+			`(() => {
+				const raw = document.querySelector('[aria-label="Selected source row"]');
+				const pair = document.querySelector('.wake-source-pair');
+				const accepted = pair.querySelector('aside');
+				return raw.textContent.includes('19.12345678900001') &&
+					pair.querySelector('article h3').textContent === 'Reported price' &&
+					pair.querySelector('[data-source-focus]').textContent.includes('19.12345678900001 USD') &&
+					accepted.querySelector('h3').textContent === 'Accepted price' &&
+					accepted.textContent.includes('21.12345678900001 USD') &&
+					accepted.textContent.includes('Price set by operator correction');
+			})()`,
 		),
 	)
 	capture("source-corrected-entry")
