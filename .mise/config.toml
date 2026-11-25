@@ -121,7 +121,7 @@ run = "golangci-lint run"
 
 [tasks.'lint:fix']
 description = "Fix lint issues in all Go packages"
-run = "golangci-lint run --fix"
+run = "golangci-lint run --fix --disable=goheader"
 
 [tasks.'lint:fmt']
 description = "Format all Go files"
@@ -129,8 +129,8 @@ wait_for = ["sqlc:gen", "templ:gen", "assets:gen", "openapi:gen"]
 run = "golangci-lint fmt"
 
 [tasks.'lint:headers']
-description = "Add required SPDX headers to Go files"
-run = "golangci-lint run --fix --enable-only=goheader"
+description = "Check Go SPDX notices and license identifiers"
+run = "golangci-lint run --enable-only=goheader"
 
 [tasks.'vuln:check']
 description = "Scan dependencies for known vulnerabilities"

@@ -23,9 +23,11 @@ linters:
       allow-whole-block: true
       cuddle-max-statements: 3
     goheader:
+      values:
+        regexp:
+          notices: '^(SPDX-FileCopyrightText: [0-9]{4}(-[0-9]{4})? \S[^\n]*\n)+'
       template: |-
-        SPDX-FileCopyrightText: 2026 trippwill
-        SPDX-License-Identifier: MPL-2.0
+        {{ notices }}SPDX-License-Identifier: MPL-2.0
 
 formatters:
   enable:
