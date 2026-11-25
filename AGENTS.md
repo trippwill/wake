@@ -90,13 +90,6 @@ daemon. Licensed under MPL-2.0 ([LICENSE](LICENSE)).
 
 ## Everyday workflow
 
-- When using subagents, explicitly select an appropriate model and reasoning
-  level for each task. Every presented plan includes a recommendation for the
-  implementation model and reasoning level.
-- Normally use one chat, worktree, and branch per reviewable change, usually
-  one PR. Reuse a suitable existing checkout. See the [development guide](.docs/engineering/development.md#workspaces-and-tools)
-  for setup and isolated review instances.
-- Implement, update affected docs, validate, and stage freely.
 - Use one signed Conventional Commit per logical change. Include a body that
   explains why the change is needed. Verify signatures locally and confirm
   GitHub recognizes them on the published PR commits before landing.
