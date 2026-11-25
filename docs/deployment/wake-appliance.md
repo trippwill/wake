@@ -21,8 +21,9 @@ Use rootless Podman on a Linux host with systemd and `podman quadlet install`
 The image includes Wake and its runtime dependencies; no checkout or host Wake
 executable is needed.
 
-These examples install v0.1.0-rc.2, which preserves the RC1
-[compatibility baseline](https://github.com/trippwill/wake/blob/v0.1.0-rc.2/.docs/product/coverage.md#compatibility).
+These examples install v0.1.0, which preserves the
+[compatibility baseline](https://github.com/trippwill/wake/blob/v0.1.0/.docs/product/coverage.md#compatibility)
+established in v0.1.0-rc.1.
 The default installation keeps all persistent files in `~/.local/share/wake`.
 For another host directory, complete [Custom storage](#custom-storage) first and
 continue at **Install and start Wake** below. For the default location, create its directory.
@@ -34,7 +35,7 @@ install -d -m 0700 "$HOME/.local/share/wake"
 **Install and start Wake**, then set the browser password when prompted.
 
 ```sh
-podman quadlet install "https://raw.githubusercontent.com/trippwill/wake/v0.1.0-rc.2/.container/wake.container"
+podman quadlet install "https://raw.githubusercontent.com/trippwill/wake/v0.1.0/.container/wake.container"
 systemctl --user start wake
 podman exec -it wake wake access set password
 ```
@@ -162,12 +163,12 @@ your SSH agent if the key requires one.
 
 On the client, download the tunnel service from the release and enable it.
 The service reads the `Host wake` entry from `~/.ssh/config`. For an untagged
-build, replace `v0.1.0-rc.2` in the URL with the full commit SHA.
+build, replace `v0.1.0` in the URL with the full commit SHA.
 
 ```sh
 mkdir -p ~/.config/systemd/user
 curl --fail --show-error --location \
-  https://raw.githubusercontent.com/trippwill/wake/v0.1.0-rc.2/.container/wake-tunnel.service \
+  https://raw.githubusercontent.com/trippwill/wake/v0.1.0/.container/wake-tunnel.service \
   --output ~/.config/systemd/user/wake-tunnel.service &&
   systemctl --user daemon-reload &&
   systemctl --user enable --now wake-tunnel.service
@@ -251,7 +252,7 @@ Choose another root-owned host directory by changing the volume source. Install
 and start the system service, then set the password:
 
 ```sh
-sudo podman quadlet install "https://raw.githubusercontent.com/trippwill/wake/v0.1.0-rc.2/.container/wake.container"
+sudo podman quadlet install "https://raw.githubusercontent.com/trippwill/wake/v0.1.0/.container/wake.container"
 sudo systemctl start wake
 sudo podman exec -it wake wake access set password
 ```
@@ -302,7 +303,7 @@ install -d -m 0700 "$HOME/.local/share/wake-restored" "$HOME/.local/share/wake-r
 cp "$HOME/.local/share/wake/backups/history.tar" "$HOME/.local/share/wake-restored/backups/"
 podman run --rm --network=none --read-only --cap-drop=all \
   --security-opt=no-new-privileges --volume "$HOME/.local/share/wake-restored:/data:Z" \
-  ghcr.io/trippwill/wake:v0.1.0-rc.2 config init --generate-key \
+  ghcr.io/trippwill/wake:v0.1.0 config init --generate-key \
   --set storage.financial_path=/data/financial/wake.db \
   --set storage.credentials_path=/data/state/connections.db \
   --set storage.sync_path=/data/state/sync.db \
@@ -310,7 +311,7 @@ podman run --rm --network=none --read-only --cap-drop=all \
   --set paths.runtime_dir=/run/wake
 podman run --rm --network=none --read-only --cap-drop=all \
   --security-opt=no-new-privileges --volume "$HOME/.local/share/wake-restored:/data:Z" \
-  ghcr.io/trippwill/wake:v0.1.0-rc.2 storage restore financial /data/backups/history.tar
+  ghcr.io/trippwill/wake:v0.1.0 storage restore financial /data/backups/history.tar
 ```
 
 To switch to the restored installation, stop Wake and prepare the override directory.
@@ -347,14 +348,14 @@ selects the matching image. Remove an untagged build's `image.conf` override
 before returning to a release. Replacing the Quadlet preserves `storage.conf`.
 Run `systemctl --user stop wake` and
 [back up the stopped installation](#move-or-back-up-a-stopped-installation)
-before replacing the Quadlet. For an update from RC1 to RC2 or stable v0.1.0, keep
-the same data directory and configuration. If RC1 started with only the financial
+before replacing the Quadlet. For an update from RC1 or RC2 to v0.1.0, keep the
+same data directory and configuration. If RC1 started with only the financial
 store, [recover synchronization](#troubleshoot-startup) to enable source connections.
 For a move from a pre-RC development build, preserve its directory and configure
 a fresh one for the release.
 
 ```sh
-wake_version=v0.1.0-rc.2
+wake_version=v0.1.0
 podman quadlet install --replace \
   "https://raw.githubusercontent.com/trippwill/wake/$wake_version/.container/wake.container"
 systemctl --user start wake
@@ -377,16 +378,16 @@ a source connection then reports that the provider is unavailable. Check the
 startup logs for `upstream_storage_unavailable` and check that both
 `state/connections.db` and `state/sync.db` are absent under the appliance data directory.
 
-Recover synchronization on the stopped appliance. For the default rootless
-installation, preview the recovery with these commands. Use the image version
-and data directory of your installed appliance.
+Recover synchronization on the stopped appliance with the v0.1.0 image. For the
+default rootless installation, preview the recovery with these commands. If you
+use custom storage, mount your appliance's data directory at `/data`.
 
 ```sh
 systemctl --user stop wake
 podman run --rm --network=none --read-only --cap-drop=all \
   --security-opt=no-new-privileges --tmpfs /run/wake:rw,nosuid,nodev,noexec,mode=0700 \
   --volume "$HOME/.local/share/wake:/data:Z" \
-  ghcr.io/trippwill/wake:v0.1.0-rc.2 storage recover-sync
+  ghcr.io/trippwill/wake:v0.1.0 storage recover-sync
 ```
 
 Review the preview, then repeat the `podman run` command with `--confirm` and the

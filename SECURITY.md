@@ -16,7 +16,7 @@ fix and disclosure there.
 
 ## Supported versions
 
-Report issues affecting the current release candidate or the `main` branch.
+Report issues affecting the current release or the `main` branch.
 Include the version tag or the exact commit for a development build.
 
 ## Security scope

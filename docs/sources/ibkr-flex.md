@@ -92,6 +92,6 @@ or upgrading an installation, follow the recovery guide for your
 [native installation][native-recovery] or [appliance][appliance-recovery].
 
 [flex-service]: https://www.ibkrguides.com/adminportal/performanceandstatements/flex3.htm
-[reference]: https://github.com/trippwill/wake/blob/v0.1.0-rc.2/.docs/providers/ibkr-flex.md#optional-activity-query
+[reference]: https://github.com/trippwill/wake/blob/v0.1.0/.docs/providers/ibkr-flex.md#optional-activity-query
 [native-recovery]: ../deployment/native.md#recover-missing-synchronization-storage
 [appliance-recovery]: ../deployment/wake-appliance.md#troubleshoot-startup

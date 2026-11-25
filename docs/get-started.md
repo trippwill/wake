@@ -2,8 +2,7 @@
 
 Wake runs on a Linux machine you control. Use its browser interface on that
 machine or connect from another device on your private LAN using SSH.
-These instructions use [v0.1.0-rc.2](https://github.com/trippwill/wake/releases/tag/v0.1.0-rc.2),
-a prerelease.
+These instructions use [Wake v0.1.0](https://github.com/trippwill/wake/releases/tag/v0.1.0).
 
 ## Install the Podman appliance
 
@@ -22,7 +21,7 @@ case "$(uname -m)" in
   aarch64) arch=arm64 ;;
   *) echo "Unsupported architecture" >&2; exit 1 ;;
 esac
-release=https://github.com/trippwill/wake/releases/download/v0.1.0-rc.2
+release=https://github.com/trippwill/wake/releases/download/v0.1.0
 curl -fLO "$release/wake-linux-$arch.tar.gz" &&
   curl -fLO "$release/SHA256SUMS" &&
   sha256sum --check --ignore-missing SHA256SUMS &&
@@ -34,7 +33,7 @@ curl -fLO "$release/wake-linux-$arch.tar.gz" &&
 To build and install the release with Go 1.27 or newer, run:
 
 ```sh
-GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0-rc.2
+GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

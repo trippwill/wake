@@ -11,9 +11,9 @@ Read the [Wake user docs](https://trippwill.github.io/wake/) for source setup,
 reviewing financial history, backups, and client access. The guides are also
 [browsable in this repository](docs/index.md).
 
-The quick start installs [v0.1.0-rc.2](https://github.com/trippwill/wake/releases/tag/v0.1.0-rc.2),
-a prerelease for Linux. Each Wake instance serves one user. Use it on the same
-machine or over SSH forwarding on a private LAN.
+The quick start installs [v0.1.0](https://github.com/trippwill/wake/releases/tag/v0.1.0)
+for Linux. Each Wake instance serves one user. Use it on the same machine or over
+SSH forwarding on a private LAN.
 
 ### Install the appliance
 
@@ -25,7 +25,7 @@ on a Linux host with systemd and Podman 5.6 or newer.
 With Go 1.27 or newer installed, run:
 
 ```sh
-GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0-rc.2 &&
+GOBIN="$HOME/.local/bin" go install go.trippwill.dev/wake@v0.1.0 &&
   export PATH="$HOME/.local/bin:$PATH" &&
   wake config init --generate-key &&
   wake access set password &&

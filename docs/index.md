@@ -4,8 +4,7 @@ Wake keeps a financial history on a Linux machine you control. It synchronizes
 authorized sources, retains their original reports, and lets you inspect
 accepted activity alongside the evidence behind it.
 
-These guides cover [v0.1.0-rc.2](https://github.com/trippwill/wake/releases/tag/v0.1.0-rc.2),
-a prerelease.
+These guides cover [Wake v0.1.0](https://github.com/trippwill/wake/releases/tag/v0.1.0).
 
 - [Get started](get-started.md) to install Wake and sign in.
 - Connect [IBKR Flex](sources/ibkr-flex.md) or [SnapTrade Personal](sources/snaptrade.md)

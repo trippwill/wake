@@ -79,6 +79,6 @@ activity, and reported positions. Versioned snapshots and change notifications
 let a client follow updates, with a fresh snapshot when the requested baseline
 is unavailable.
 
-Use the [RC2 OpenAPI contract](https://github.com/trippwill/wake/blob/v0.1.0-rc.2/api/openapi/v1.yaml)
+Use the [v0.1.0 OpenAPI contract](https://github.com/trippwill/wake/blob/v0.1.0/api/openapi/v1.yaml)
 for endpoints and schemas. For access from another machine on your private LAN,
 use [SSH forwarding](deployment/native.md#access-wake-on-your-lan).
